@@ -2,37 +2,37 @@
 A module to represent an measurement.
 """
 
-from datetime import datetime
 import os
+from datetime import datetime
+from typing import Any
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 
-import qubecalib
-from qubecalib.ui import QubeControl
+from qubecalib import Qube
+from qubecalib.qube import SSB
 from qubecalib.pulse import Schedule, Channel, Arbitrary, Blank, Read
 from qubecalib.setupqube import run
 
-from .pulse import Pulse, Rcft
+from .pulse import Waveform, Rcft
 from .params import ctrl_freq_dict, ro_freq_dict, ro_ampl_dict
 
-QUBE_ID = "riken107"
-QUBE_CONFIG_FILE = "qube_riken_1-07.yml"
+QUBE_ID = "riken_1-07"
 QUBITS = ["Q08", "Q09", "Q10", "Q11"]
-CTRL = ""
-RO_SEND = "RO_SEND_"
-RO_RETURN = "RO_RETURN_"
+CTRL = "CTRL_"
+READ_TX = "READ_TX_"
+READ_RX = "READ_RX_"
 T_CONTROL = 10 * 2048  # maximum duration of control [ns]
 T_READOUT = 128 * 12  # maximum duration of readout [ns]
 T_MARGIN = 128 * 2  # margin between readout and control [ns]
 READ_SLICE_RANGE = slice(200, int(200 + 800 / 1.5))
-CTRL_FREQ = ctrl_freq_dict
-RO_FREQ = ro_freq_dict[QUBE_ID]
-RO_AMPL = ro_ampl_dict[QUBE_ID]
+CONTROL_FREQUENCY = ctrl_freq_dict
+READOUT_FREQUENCY = ro_freq_dict[QUBE_ID]
+READOUT_AMPLITUDE = ro_ampl_dict[QUBE_ID]
 
 
-MeasuredSignal = dict[str, complex]
+MeasuredState = dict[str, complex]
 
 
 class Measurement:
@@ -40,40 +40,42 @@ class Measurement:
     A class to represent an measurement.
     """
 
-    def __init__(self):
+    def __init__(self, qube_id: str = QUBE_ID):
         self.qubits = QUBITS
-        self.qube = self.init_qube()
+        self.qube = self.init_qube(qube_id=qube_id)
         self.schedule = Schedule()
         self.init_channels()
         self.init_schedule()
-        self.set_readout_pulse()
+        self.init_readout_pulses()
 
-    def init_qube(self):
+    def init_qube(self, qube_id: str):
         """
         Initialize the QuBE.
         """
-        qubecalib.ui.MATPLOTLIB_PYPLOT = plt
-        qube = QubeControl(QUBE_CONFIG_FILE).qube
+        qube: Any = Qube.create(f"qube_{qube_id}.yml")
+
+        if qube is None:
+            raise ValueError(f"QuBE {qube_id} is not found.")
 
         # mix.vatt: Attenuator value (max: 0xFFF, min: 0x000)
         # The value saturates around 0xC00, so set it to 0xC00 if you want to get the maximum value.
         # Since the noise may be high at 0xC00, set it to 0x800 for channels except for CR pulses.
 
-        # TODO: Clarify the meaning of the following parameters
+        # pylint: disable=no-member
 
-        # RO send
+        # Readout TX
         qube.port0.lo.mhz = 12500
         qube.port0.nco.mhz = 2500
-        qube.port0.mix.ssb = qubecalib.qube.SSB.LSB
+        qube.port0.mix.ssb = SSB.LSB
         qube.port0.awg0.nco.mhz = 0
         qube.port0.mix.vatt = 0x800
 
-        # RO return
+        # Reatout RX
         qube.port1.nco.mhz = 2500
-        qube.port1.adc.capt0.ssb = qubecalib.qube.SSB.LSB
+        qube.port1.adc.capt0.ssb = SSB.LSB
         qube.port1.delay = 128 + 6 * 128  # [ns]
 
-        # Q08
+        # Control Q08
         qube.port5.lo.mhz = 10000
         qube.port5.nco.mhz = 2000
         qube.port5.awg0.nco.mhz = 375
@@ -81,7 +83,7 @@ class Measurement:
         qube.port5.awg2.nco.mhz = 0
         qube.port5.mix.vatt = 0xC00
 
-        # Q09
+        # Control Q09
         qube.port6.lo.mhz = 11000
         qube.port6.nco.mhz = 2250
         qube.port6.awg0.nco.mhz = 375
@@ -89,7 +91,7 @@ class Measurement:
         qube.port6.awg2.nco.mhz = 375
         qube.port6.mix.vatt = 0x800
 
-        # Q10
+        # Control Q10
         qube.port7.lo.mhz = 11000
         qube.port7.nco.mhz = 2500
         qube.port7.awg0.nco.mhz = 375
@@ -97,7 +99,7 @@ class Measurement:
         qube.port7.awg2.nco.mhz = -375
         qube.port7.mix.vatt = 0x800
 
-        # Q11
+        # Control Q11
         qube.port8.lo.mhz = 10000
         qube.port8.nco.mhz = 2250
         qube.port8.awg0.nco.mhz = 375
@@ -105,6 +107,7 @@ class Measurement:
         qube.port8.awg2.nco.mhz = -375
         qube.port8.mix.vatt = 0xC00
 
+        # pylint: enable=no-member
         return qube
 
     def init_channels(self):
@@ -113,11 +116,17 @@ class Measurement:
         """
         for qubit in self.qubits:
             # control channels
-            self.set_control_channel(qubit, Channel(center_frequency=CTRL_FREQ[qubit]))
-            # readout (send) channels
-            self.set_ro_send_channel(qubit, Channel(center_frequency=RO_FREQ[qubit]))
-            # readout (return) channels
-            self.set_ro_return_channel(qubit, Channel(center_frequency=RO_FREQ[qubit]))
+            self.set_control_channel(
+                qubit, Channel(center_frequency=CONTROL_FREQUENCY[qubit])
+            )
+            # readout (tx) channels
+            self.set_readout_tx_channel(
+                qubit, Channel(center_frequency=READOUT_FREQUENCY[qubit])
+            )
+            # readout (rx) channels
+            self.set_readout_rx_channel(
+                qubit, Channel(center_frequency=READOUT_FREQUENCY[qubit])
+            )
 
     def init_schedule(self):
         """
@@ -127,54 +136,52 @@ class Measurement:
         # set the offset of the schedule
         self.schedule.offset = T_CONTROL
 
-        # TODO: Clarify the meaning of the following time parameters
         for qubit in self.qubits:
             # control channels
-            control_ch: Channel = self.control_channel(qubit)
-            control_ch.append(Arbitrary(duration=T_CONTROL))
-            control_ch.append(Blank(duration=T_READOUT + 4 * T_MARGIN))
+            ctrl_ch: Channel = self.control_channel(qubit)
+            ctrl_ch.append(Arbitrary(duration=T_CONTROL))
+            ctrl_ch.append(Blank(duration=T_READOUT + 4 * T_MARGIN))
 
-            # readout (send) channels
-            ro_send_ch: Channel = self.ro_send_channel(qubit)
-            ro_send_ch.append(Blank(duration=T_CONTROL))
-            ro_send_ch.append(Arbitrary(duration=T_READOUT))
-            ro_send_ch.append(Blank(duration=4 * T_MARGIN))
+            # readout (tx) channels
+            read_tx_ch: Channel = self.readout_tx_channel(qubit)
+            read_tx_ch.append(Blank(duration=T_CONTROL))
+            read_tx_ch.append(Arbitrary(duration=T_READOUT))
+            read_tx_ch.append(Blank(duration=4 * T_MARGIN))
 
-            # readout (return) channels
-            ro_return_ch: Channel = self.ro_return_channel(qubit)
-            ro_return_ch.append(Blank(duration=T_CONTROL - T_MARGIN))
-            ro_return_ch.append(Read(duration=T_READOUT + 5 * T_MARGIN))
+            # readout (rx) channels
+            read_rx_ch: Channel = self.readout_rx_channel(qubit)
+            read_rx_ch.append(Blank(duration=T_CONTROL - T_MARGIN))
+            read_rx_ch.append(Read(duration=T_READOUT + 5 * T_MARGIN))
 
         durations = [v.duration for k, v in self.schedule.items()]
         assert len(set(durations)) == 1, "All channels must have the same duration."
 
-    def set_readout_pulse(self):
+    def init_readout_pulses(self):
         """
         Initialize the readout pulses.
         """
         for qubit in self.qubits:
-            # readout (send) pulses
-            # TODO: Clarify the meaning of the following parameters
+            # readout (tx) pulses
+            # NOTE: Check the parameters
             pulse = Rcft(
-                ampl=RO_AMPL[qubit],
+                ampl=READOUT_AMPLITUDE[qubit],
                 rise=50,
                 flat=int(T_READOUT / 1.5),
                 fall=50,
             )
-            self.set_ro_send_pulse(qubit, pulse)
+            self.set_readout_waveform(qubit, pulse)
 
-    # TODO: Clarify the meaning of the following parameters
-    def measure(self, repeats=10_000, interval=100_000) -> MeasuredSignal:
+    def measure(self, repeats=10_000, interval=100_000) -> MeasuredState:
         """
         Runs the measurement.
         """
-        ro_send_channels = [self.ro_send_channel(qubit) for qubit in self.qubits]
-        ro_return_channels = [self.ro_return_channel(qubit) for qubit in self.qubits]
+        read_tx_channels = [self.readout_tx_channel(qubit) for qubit in self.qubits]
+        read_rx_channels = [self.readout_rx_channel(qubit) for qubit in self.qubits]
 
-        adda_to_channels = {  # TODO: hi/lo settings
-            self.qube.port0.dac.awg0: ro_send_channels,
-            self.qube.port1.adc.capt0: ro_return_channels,
-            self.qube.port5.dac.awg2: [self.control_channel("Q08")],
+        adda_to_channels = {  # NOTE: hi/lo settings
+            self.qube.port0.dac.awg0: read_tx_channels,
+            self.qube.port1.adc.capt0: read_rx_channels,
+            self.qube.port5.dac.awg2: [self.control_channel("Q08")],  # NOTE: AWG1 is NG
             self.qube.port6.dac.awg1: [self.control_channel("Q09")],
             self.qube.port7.dac.awg1: [self.control_channel("Q10")],
             self.qube.port8.dac.awg1: [self.control_channel("Q11")],
@@ -190,32 +197,32 @@ class Measurement:
             triggers=triggers,
         )
 
-        signal: MeasuredSignal = self.measured_signal()
-        return signal
+        state: MeasuredState = self.measured_state()
+        return state
 
-    def measured_signal(self) -> MeasuredSignal:
+    def measured_state(self) -> MeasuredState:
         """
-        Returns the measured signal.
+        Returns the measured state (a complex value).
         """
-        signal = MeasuredSignal()
+        state = MeasuredState()
         for qubit in self.qubits:
-            pulse = self.ro_return_pulse(qubit)
-            signal[qubit] = pulse.waveform[READ_SLICE_RANGE].mean()
+            waveform = self.readout_rx_waveform(qubit)
+            state[qubit] = waveform.iq[READ_SLICE_RANGE].mean()
             # save the readout data as a file
-            self.save_readout_pulse(qubit, pulse)
-        return signal
+            self.save_readout_data(qubit, waveform)
+        return state
 
-    def save_readout_pulse(self, qubit: str, pulse: Pulse):
+    def save_readout_data(self, qubit: str, waveform: Waveform):
         """
-        Saves the readout (return) pulse.
+        Saves the readout data.
         """
         now = datetime.now()
         dir_name = now.strftime("%Y/%m/%d/%H%M%S%f")
-        path_str = f"./data/{dir_name}/{RO_RETURN + qubit}.npy"
+        path_str = f"./data/{dir_name}/{READ_RX + qubit}.npy"
         dir_path = os.path.dirname(path_str)
         os.makedirs(dir_path, exist_ok=True)
         path = os.path.normpath(path_str)
-        data = [pulse.time, pulse.waveform]
+        data = [waveform.time, waveform.iq]
         np.save(path, data)
 
     def control_channel(self, qubit: str) -> Channel:
@@ -224,17 +231,17 @@ class Measurement:
         """
         return self.schedule[CTRL + qubit]
 
-    def ro_send_channel(self, qubit: str) -> Channel:
+    def readout_tx_channel(self, qubit: str) -> Channel:
         """
-        Returns the readout (send) channel of the qubit.
+        Returns the readout (tx) channel of the qubit.
         """
-        return self.schedule[RO_SEND + qubit]
+        return self.schedule[READ_TX + qubit]
 
-    def ro_return_channel(self, qubit: str) -> Channel:
+    def readout_rx_channel(self, qubit: str) -> Channel:
         """
-        Returns the readout (return) channel of the qubit.
+        Returns the readout (rx) channel of the qubit.
         """
-        return self.schedule[RO_RETURN + qubit]
+        return self.schedule[READ_RX + qubit]
 
     def set_control_channel(self, qubit: str, channel: Channel):
         """
@@ -242,69 +249,69 @@ class Measurement:
         """
         self.schedule[CTRL + qubit] = channel
 
-    def set_ro_send_channel(self, qubit: str, channel: Channel):
+    def set_readout_tx_channel(self, qubit: str, channel: Channel):
         """
-        Sets the readout (send) channel of the qubit.
+        Sets the readout (tx) channel of the qubit.
         """
-        self.schedule[RO_SEND + qubit] = channel
+        self.schedule[READ_TX + qubit] = channel
 
-    def set_ro_return_channel(self, qubit: str, channel: Channel):
+    def set_readout_rx_channel(self, qubit: str, channel: Channel):
         """
-        Sets the readout (return) channel of the qubit.
+        Sets the readout (rx) channel of the qubit.
         """
-        self.schedule[RO_RETURN + qubit] = channel
+        self.schedule[READ_RX + qubit] = channel
 
-    def control_pulse(self, qubit: str) -> Pulse:
+    def control_waveform(self, qubit: str) -> Waveform:
         """
-        Returns the control pulse of the channel.
+        Returns the control waveform of the channel.
         """
         channel = self.control_channel(qubit)
         slot: Arbitrary = channel.findall(Arbitrary)[0]
-        pulse = Pulse(slot.iq)
-        pulse.time = channel.get_timestamp(slot) - self.schedule.offset
-        return pulse
+        waveform = Waveform(slot.iq)
+        waveform.time = channel.get_timestamp(slot) - self.schedule.offset
+        return waveform
 
-    def ro_send_pulse(self, qubit: str) -> Pulse:
+    def readout_tx_waveform(self, qubit: str) -> Waveform:
         """
-        Returns the readout (send) pulse of the channel.
+        Returns the readout (tx) waveform of the channel.
         """
-        channel: Channel = self.ro_send_channel(qubit)
+        channel: Channel = self.readout_tx_channel(qubit)
         slot: Arbitrary = channel.findall(Arbitrary)[0]
-        pulse = Pulse(slot.iq)
-        pulse.time = channel.get_timestamp(slot) - self.schedule.offset
-        return pulse
+        waveform = Waveform(slot.iq)
+        waveform.time = channel.get_timestamp(slot) - self.schedule.offset
+        return waveform
 
-    def ro_return_pulse(self, qubit: str) -> Pulse:
+    def readout_rx_waveform(self, qubit: str) -> Waveform:
         """
-        Returns the readout (return) pulse of the channel.
+        Returns the readout (rx) waveform.
         """
-        channel: Channel = self.ro_return_channel(qubit)
-        slot: Arbitrary = channel.findall(Read)[0]
+        channel: Channel = self.readout_rx_channel(qubit)
+        slot: Read = channel.findall(Read)[0]
         if slot.iq is None:
             raise RuntimeError("The readout signal is not recorded.")
-        pulse = Pulse(slot.iq)
-        pulse.time = channel.get_timestamp(slot) - self.schedule.offset
-        return pulse
+        waveform = Waveform(slot.iq)
+        waveform.time = channel.get_timestamp(slot) - self.schedule.offset
+        return waveform
 
-    def set_control_pulse(self, qubit: str, pulse: Pulse):
+    def set_control_waveform(self, qubit: str, waveform: Waveform):
         """
-        Set the control pulse to the channel.
+        Set the control waveform to the channel.
         """
         channel: Channel = self.control_channel(qubit)
         slot: Arbitrary = channel.findall(Arbitrary)[0]
         time: np.ndarray = channel.get_timestamp(slot) - self.schedule.offset
         slot.iq[:] = 0j  # initialize
-        slot.iq[(-pulse.duration <= time) & (time < 0)] = pulse.waveform
+        slot.iq[(-waveform.duration <= time) & (time < 0)] = waveform.iq
 
-    def set_ro_send_pulse(self, qubit: str, pulse: Pulse):
+    def set_readout_waveform(self, qubit: str, waveform: Waveform):
         """
-        Set the transmit pulse to the channel.
+        Set the readout waveform to the channel.
         """
-        channel: Channel = self.ro_send_channel(qubit)
+        channel: Channel = self.readout_tx_channel(qubit)
         slot: Arbitrary = channel.findall(Arbitrary)[0]
         time: np.ndarray = channel.get_timestamp(slot) - self.schedule.offset
         slot.iq[:] = 0j  # initialize
-        slot.iq[(0 <= time) & (time < pulse.duration)] = pulse.waveform
+        slot.iq[(0 <= time) & (time < waveform.duration)] = waveform.iq
 
     def show_pulse_sequences(self, xlim=(-3.0, 1.5)):
         """
@@ -347,31 +354,31 @@ class Measurement:
         # plot the control pulses
         # the real and imaginary parts are plotted in the same subplot
         for i, qubit in enumerate(self.qubits):
-            ctrl_pulse = self.control_pulse(qubit)
+            ctrl = self.control_waveform(qubit)
             axes[i].plot(
-                ctrl_pulse.time * 1e-3,
-                ctrl_pulse.real,
-                label=qubit + " ctrl (real)",
+                ctrl.time * 1e-3,
+                ctrl.real,
+                label=qubit + " control (real)",
             )
             axes[i].plot(
-                ctrl_pulse.time * 1e-3,
-                ctrl_pulse.imag,
-                label=qubit + " ctrl (imag)",
+                ctrl.time * 1e-3,
+                ctrl.imag,
+                label=qubit + " control (imag)",
             )
             axes[i].legend()
-            max_ampl_list.append(np.max(ctrl_pulse.ampl))
+            max_ampl_list.append(np.max(ctrl.ampl))
 
         # plot the readout pulses
         for i, qubit in enumerate(self.qubits):
-            ro_pulse = self.ro_send_pulse(qubit)
+            read = self.readout_tx_waveform(qubit)
             axes[N].plot(
-                ro_pulse.time * 1e-3,
-                ro_pulse.ampl,
+                read.time * 1e-3,
+                read.ampl,
                 label=qubit + " readout (abs)",
                 linestyle="dashed",
             )
             axes[N].legend()
-            max_ampl_list.append(np.max(ro_pulse.ampl))
+            max_ampl_list.append(np.max(read.ampl))
 
         # set the y-axis range according to the maximum amplitude
         max_ampl = np.max(max_ampl_list)

@@ -1,103 +1,15 @@
 """
-A module for representing a pulse.
+A module for representing pulses.
 """
 import numpy as np
 
-SAMPLING_TIME: int = 2  # ns
+from .waveform import Waveform
+from .waveform import SAMPLING_TIME
 
 
-class Pulse:
+class Rcft(Waveform):
     """
-    A class to represent a pulse.
-
-    Attributes
-    ----------
-    waveform : np.ndarray[complex]
-        A NumPy array of complex numbers representing the pulse.
-    time : np.ndarray
-        Time array of the pulse in ns.
-
-    Properties
-    ----------
-    duration : int
-        Duration of the pulse in ns.
-    real : np.ndarray
-        Real part of the pulse.
-    imag : np.ndarray
-        Imaginary part of the pulse.
-    ampl : np.ndarray
-        Amplitude of the pulse, calculated as the absolute value.
-    phase : np.ndarray
-        Phase of the pulse, calculated as the angle.
-    """
-
-    @classmethod
-    def concat(cls, *pulses):
-        """
-        Concatenates the given pulses into a single pulse.
-
-        Parameters
-        ----------
-        pulses : Pulse
-            The pulses to concatenate.
-
-        Returns
-        -------
-        Pulse
-            The concatenated pulse.
-        """
-        waveform = np.concatenate([pulse.waveform for pulse in pulses])
-        return cls(waveform)
-
-    def __init__(self, waveform):
-        if isinstance(waveform, np.ndarray):
-            self.waveform = waveform
-        elif isinstance(waveform, list):
-            self.waveform = np.array(waveform)
-        else:
-            raise TypeError("waveform must be a NumPy array or a list.")
-        self.time = np.arange(len(self.waveform)) * SAMPLING_TIME
-
-    def set_time(self, time: np.ndarray):
-        """Sets the time array of the pulse."""
-        if len(time) != len(self.waveform):
-            raise ValueError("time and waveform must have the same length.")
-        self.time = time
-
-    @property
-    def duration(self) -> int:
-        """Returns the duration of the pulse in ns."""
-        return len(self.waveform) * SAMPLING_TIME
-
-    @property
-    def real(self) -> np.ndarray:
-        """Returns the real part of the pulse."""
-        return np.real(self.waveform)
-
-    @property
-    def imag(self) -> np.ndarray:
-        """Returns the imaginary part of the pulse."""
-        return np.imag(self.waveform)
-
-    @property
-    def ampl(self) -> np.ndarray:
-        """Calculates and returns the amplitude of the pulse."""
-        return np.abs(self.waveform)
-
-    @property
-    def phase(self) -> np.ndarray:
-        """Calculates and returns the phase of the pulse."""
-        return np.angle(self.waveform)
-
-
-class Rcft(Pulse):
-    """
-    A subclass of the Pulse class to represent a Raised Cosine Flat Top (RCFT) pulse.
-
-    Attributes
-    ----------
-    waveform : np.ndarray
-        Complex-valued waveform of the pulse.
+    A Raised Cosine Flat Top (RCFT) pulse.
     """
 
     def __init__(self, ampl=1.0, rise=10, flat=10, fall=10):
@@ -119,23 +31,18 @@ class Rcft(Pulse):
         t_flat = np.arange(0, flat, SAMPLING_TIME)
         t_fall = np.arange(0, fall, SAMPLING_TIME)
 
-        rise_waveform = 0.5 * ampl * (1 - np.cos(np.pi * t_rise / rise))
-        flat_waveform = ampl * np.ones_like(t_flat)
-        fall_waveform = 0.5 * ampl * (1 + np.cos(np.pi * t_fall / fall))
+        iq_rise = 0.5 * ampl * (1 - np.cos(np.pi * t_rise / rise))
+        iq_flat = ampl * np.ones_like(t_flat)
+        iq_fall = 0.5 * ampl * (1 + np.cos(np.pi * t_fall / fall))
 
-        waveform = np.concatenate((rise_waveform, flat_waveform, fall_waveform))
+        iq = np.concatenate((iq_rise, iq_flat, iq_fall))
 
-        super().__init__(waveform)
+        super().__init__(iq)
 
 
-# class Drag(Pulse):
+# class Drag(Waveform):
 #     """
-#     A subclass of the Pulse class to represent a Derivative Removal by Adiabatic Gate (DRAG) pulse.
-
-#     Attributes
-#     ----------
-#     waveform : np.ndarray
-#         Complex-valued waveform of the pulse.
+#     A Derivative Removal by Adiabatic Gate (DRAG) pulse.
 #     """
 
 #     def __init__(self, duration=30, ampl=1.0, beta=1.0):
@@ -156,19 +63,14 @@ class Rcft(Pulse):
 #         envelope = ampl * (np.exp(-0.5 * (t / sigma) ** 2) - np.exp(0.5))
 #         correction = beta * (-t / (sigma**2)) * np.exp(-0.5 * (t / sigma) ** 2)
 
-#         waveform = envelope + 1j * correction
+#         iq = envelope + 1j * correction
 
-#         super().__init__(waveform)
+#         super().__init__(iq)
 
 
-class Drag(Pulse):
+class Drag(Waveform):
     """
-    A subclass of the Pulse class to represent a Derivative Removal by Adiabatic Gate (DRAG) pulse.
-
-    Attributes
-    ----------
-    waveform : np.ndarray
-        Complex-valued waveform of the pulse.
+    A Derivative Removal by Adiabatic Gate (DRAG) pulse.
     """
 
     def __init__(self, duration=30, ampl=1.0, beta=1.0):
@@ -188,18 +90,18 @@ class Drag(Pulse):
         envelope = (1.0 - np.cos(2 * np.pi * t / duration)) / 2
         correction = beta * np.sin(2 * np.pi * t / duration) / 2
 
-        waveform = ampl * (envelope + 1j * correction)
+        iq = ampl * (envelope + 1j * correction)
 
-        super().__init__(waveform)
+        super().__init__(iq)
 
 
-class QctrlPi(Pulse):
+class QctrlPi(Waveform):
     """
-    A subclass of the Pulse class to represent an optimized pi pulse.
+    An optimized pi pulse.
     """
 
     def __init__(self):
-        waveform = np.array(
+        iq = np.array(
             [
                 0.03481618 + 5.94384947e-03j,
                 0.03265834 + 9.58042570e-03j,
@@ -233,4 +135,4 @@ class QctrlPi(Pulse):
                 0.0131243 + 5.73832368e-05j,
             ]
         )
-        super().__init__(waveform)
+        super().__init__(iq)
