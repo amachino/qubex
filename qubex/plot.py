@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 
 from .measurement import READ_SLICE_RANGE
 from .waveform import Waveform
+from .analysis import rotate_to_vertical
 
 
 def plot_readout_waveform(qubit: str, waveform: Waveform):
@@ -36,4 +37,38 @@ def plot_readout_waveform(qubit: str, waveform: Waveform):
         color="gray",
         alpha=0.1,
     )
+    plt.show()
+
+
+def plot_states_before_after_rotation(data):
+    states = np.array(data)
+    rotated_states = rotate_to_vertical(data)
+
+    _, axs = plt.subplots(1, 2, figsize=(12, 6))
+
+    axs[0].scatter(states.real, states.imag)
+    axs[0].set_title("Before Rotation")
+
+    axs[1].scatter(rotated_states.real, rotated_states.imag)
+    axs[1].set_title("After Rotation")
+
+    for ax in axs:
+        ax.axis("equal")
+        ax.set_xlabel("I")
+        ax.set_ylabel("Q")
+        ax.grid(True)
+
+    plt.show()
+
+
+def plot_states_vs_index(data):
+    states = np.array(data)
+    _, ax = plt.subplots(figsize=(10, 6))
+
+    ax.plot(np.arange(len(states)), states.real)
+    ax.plot(np.arange(len(states)), states.imag)
+    ax.set_xlabel("Index")
+    ax.set_ylabel("Value")
+    ax.grid(True)
+
     plt.show()
