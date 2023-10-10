@@ -3,10 +3,9 @@ A module for representing pulses.
 """
 import numpy as np
 
-from tabuchi_dd.pulse import TabuchiPulse
-
 from .waveform import Waveform
 from .waveform import SAMPLING_TIME
+from .dd import TabuchiPulse
 
 
 class Rcft(Waveform):
@@ -144,7 +143,7 @@ class DragCos(Waveform):
 #         super().__init__(iq)
 
 
-class TabuchiDD(Waveform):
+class TDD(Waveform):
     """
     Tabuchi DD pulse.
     """
