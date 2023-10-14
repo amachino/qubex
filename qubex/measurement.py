@@ -14,7 +14,7 @@ from qubecalib.qube import SSB
 from qubecalib.pulse import Schedule, Channel, Arbitrary, Blank, Read
 from qubecalib.setupqube import run
 
-from .pulse import Waveform, Rcft
+from .pulse import Waveform, Rect
 
 CTRL = "CTRL_"
 READ_TX = "READ_TX_"
@@ -45,9 +45,8 @@ class Measurement:
         """
         Initialize the QuBE.
         """
-        # qube: Any = Qube.create(f"qube_{qube_id}.yml")
         qc.ui.MATPLOTLIB_PYPLOT = plt
-        qube = qc.ui.QubeControl(f"qube_{qube_id}.yml").qube
+        qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
 
         if qube is None:
             raise ValueError(f"QuBE {qube_id} is not found.")
@@ -113,7 +112,7 @@ class Measurement:
         """
         for qubit, params in self.qubits.items():
             # readout (tx) pulses
-            pulse = Rcft(
+            pulse = Rect(
                 ampl=params["ampl_ro"],
                 rise=50,
                 flat=int(T_READOUT / 1.5),
@@ -164,7 +163,7 @@ class Measurement:
         state = MeasuredState()
         for qubit in self.qubits:
             waveform = self.readout_rx_waveform(qubit)
-            state[qubit] = waveform.iq[READ_SLICE_RANGE].mean()
+            state[qubit] = waveform.values[READ_SLICE_RANGE].mean()
             # save the readout data as a file
             # self.save_readout_data(qubit, waveform)
         return state
@@ -179,7 +178,7 @@ class Measurement:
         dir_path = os.path.dirname(path_str)
         os.makedirs(dir_path, exist_ok=True)
         path = os.path.normpath(path_str)
-        data = [waveform.time, waveform.iq]
+        data = [waveform.times, waveform.values]
         np.save(path, data)
 
     def control_channel(self, qubit: str) -> Channel:
@@ -225,7 +224,7 @@ class Measurement:
         channel = self.control_channel(qubit)
         slot: Arbitrary = channel.findall(Arbitrary)[0]
         waveform = Waveform(slot.iq)
-        waveform.time = channel.get_timestamp(slot) - self.schedule.offset
+        waveform.times = channel.get_timestamp(slot) - self.schedule.offset
         return waveform
 
     def readout_tx_waveform(self, qubit: str) -> Waveform:
@@ -235,7 +234,7 @@ class Measurement:
         channel: Channel = self.readout_tx_channel(qubit)
         slot: Arbitrary = channel.findall(Arbitrary)[0]
         waveform = Waveform(slot.iq)
-        waveform.time = channel.get_timestamp(slot) - self.schedule.offset
+        waveform.times = channel.get_timestamp(slot) - self.schedule.offset
         return waveform
 
     def readout_rx_waveform(self, qubit: str) -> Waveform:
@@ -247,7 +246,7 @@ class Measurement:
         if slot.iq is None:
             raise RuntimeError("The readout signal is not recorded.")
         waveform = Waveform(slot.iq)
-        waveform.time = channel.get_timestamp(slot) - self.schedule.offset
+        waveform.times = channel.get_timestamp(slot) - self.schedule.offset
         return waveform
 
     def set_control_waveform(self, qubit: str, waveform: Waveform):
@@ -258,7 +257,7 @@ class Measurement:
         slot: Arbitrary = channel.findall(Arbitrary)[0]
         time: np.ndarray = channel.get_timestamp(slot) - self.schedule.offset
         slot.iq[:] = 0j  # initialize
-        slot.iq[(-waveform.duration <= time) & (time < 0)] = waveform.iq
+        slot.iq[(-waveform.duration <= time) & (time < 0)] = waveform.values
 
     def set_readout_waveform(self, qubit: str, waveform: Waveform):
         """
@@ -268,7 +267,7 @@ class Measurement:
         slot: Arbitrary = channel.findall(Arbitrary)[0]
         time: np.ndarray = channel.get_timestamp(slot) - self.schedule.offset
         slot.iq[:] = 0j  # initialize
-        slot.iq[(0 <= time) & (time < waveform.duration)] = waveform.iq
+        slot.iq[(0 <= time) & (time < waveform.duration)] = waveform.values
 
     def show_pulse_sequences(self, xlim=(-3.0, 1.5)):
         """
@@ -313,12 +312,12 @@ class Measurement:
         for i, qubit in enumerate(self.qubits):
             ctrl = self.control_waveform(qubit)
             axes[i].plot(
-                ctrl.time * 1e-3,
+                ctrl.times * 1e-3,
                 ctrl.real,
                 label=qubit + " control (real)",
             )
             axes[i].plot(
-                ctrl.time * 1e-3,
+                ctrl.times * 1e-3,
                 ctrl.imag,
                 label=qubit + " control (imag)",
             )
@@ -329,7 +328,7 @@ class Measurement:
         for i, qubit in enumerate(self.qubits):
             read = self.readout_tx_waveform(qubit)
             axes[N].plot(
-                read.time * 1e-3,
+                read.times * 1e-3,
                 read.ampl,
                 label=qubit + " readout (abs)",
                 linestyle="dashed",
