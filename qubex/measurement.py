@@ -23,27 +23,26 @@ from .utils import (
 )
 
 # 実験パラメータ
-from params_jb07_2023_cd7 import (
-    ro_freq_dict,
-    ro_ampl_dict,
-    ctrl_freq_dict,
-    anharm_dict,
-    qubit_true_freq_dict,
-)
+import params_jb07_2023_cd7 as params
+
+T_READ = 128 * 12  # [ns] 128の倍数（2022/08/18）
+T_CTRL = 10 * 2048  # [ns]
+T_MARGIN = 128 * 2  # [ns]
+READ_SLICE_RANGE = slice(200, int(200 + 800 / 1.5))  # 1000) # 読出しデータ切り取り範囲
 
 
 class Measurement:
-    time_ro = 128 * 12  # [ns] 128の倍数（2022/08/18）
-    time_ctrl = 10 * 2048  # [ns]
-    time_margin = 128 * 2  # [ns]
-
     def __init__(
-        self, qube_id: str, qubits: list[str], readout_ports=("port0", "port1")
+        self,
+        qube_id: str,
+        qubits: list[str],
+        readout_ports: tuple[str, str] = ("port0", "port1"),
     ):
         self.qube_id = qube_id
         self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
         self.qubits = qubits
         self.readout_ports = readout_ports
+        self.params = params
         self._setup(self.qube)
 
     def _setup(self, qube):
@@ -88,49 +87,47 @@ class Measurement:
         qube.port8.awg2.nco.mhz = 0
         qube.port8.mix.vatt = 0x800
 
-        all_ro_qubit_list = self.qubits
-        self.all_ro_qubit_list = all_ro_qubit_list
+        self.all_ro_qubit_list = self.qubits
 
-        all_ctrl_qubit_list = [
-            all_ro_qubit_list[0] + "_lo",
-            all_ro_qubit_list[0],
-            all_ro_qubit_list[0] + "_hi",
-            all_ro_qubit_list[1] + "_lo",
-            all_ro_qubit_list[1],
-            all_ro_qubit_list[1] + "_hi",
-            all_ro_qubit_list[2] + "_lo",
-            all_ro_qubit_list[2],
-            all_ro_qubit_list[2] + "_hi",
-            all_ro_qubit_list[3] + "_lo",
-            all_ro_qubit_list[3],
-            all_ro_qubit_list[3] + "_hi",
+        self.all_ctrl_qubit_list = [
+            self.qubits[0] + "_lo",
+            self.qubits[0],
+            self.qubits[0] + "_hi",
+            self.qubits[1] + "_lo",
+            self.qubits[1],
+            self.qubits[1] + "_hi",
+            self.qubits[2] + "_lo",
+            self.qubits[2],
+            self.qubits[2] + "_hi",
+            self.qubits[3] + "_lo",
+            self.qubits[3],
+            self.qubits[3] + "_hi",
         ]
-        self.all_ctrl_qubit_list = all_ctrl_qubit_list
 
         """Scheduleのchannel割り当て"""
         self.schedule = Schedule()
 
-        for qubit_ in all_ro_qubit_list:
+        for qubit_ in self.all_ro_qubit_list:
             self.schedule.add_channel(
                 key="RO_send_" + qubit_,
-                center_frequency=ro_freq_dict[self.qube_id][qubit_],
+                center_frequency=params.ro_freq_dict[self.qube_id][qubit_],
             )
             self.schedule.add_channel(
                 key="RO_return_" + qubit_,
-                center_frequency=ro_freq_dict[self.qube_id][qubit_],
+                center_frequency=params.ro_freq_dict[self.qube_id][qubit_],
             )
-        for qubit_ in all_ctrl_qubit_list:
+        for qubit_ in self.all_ctrl_qubit_list:
             self.schedule.add_channel(
                 key=qubit_,
-                center_frequency=ctrl_freq_dict[qubit_],
+                center_frequency=params.ctrl_freq_dict[qubit_],
             )
 
         """パルスシーケンスの時間ブロック割り当て"""
-        time_ro = self.time_ro
-        time_ctrl = self.time_ctrl
-        time_margin = self.time_margin
+        time_ro = T_READ
+        time_ctrl = T_CTRL
+        time_margin = T_MARGIN
 
-        for qubit_ in all_ro_qubit_list:
+        for qubit_ in self.all_ro_qubit_list:
             (
                 self.schedule["RO_send_" + qubit_]
                 << Blank(duration=time_ctrl)
@@ -142,7 +139,7 @@ class Measurement:
                 << Blank(duration=time_ctrl - time_margin)
                 << Read(duration=time_ro + 5 * time_margin)
             )  # type: ignore
-        for qubit_ in all_ctrl_qubit_list:
+        for qubit_ in self.all_ctrl_qubit_list:
             (
                 self.schedule[qubit_]
                 << Arbit(duration=time_ctrl, amplitude=1)
@@ -154,23 +151,24 @@ class Measurement:
 
         self.adda_to_channels = {
             port_tx.dac.awg0: [
-                self.schedule["RO_send_" + qubit_] for qubit_ in all_ro_qubit_list
+                self.schedule["RO_send_" + qubit_] for qubit_ in self.all_ro_qubit_list
             ],
             port_rx.adc.capt0: [
-                self.schedule["RO_return_" + qubit_] for qubit_ in all_ro_qubit_list
+                self.schedule["RO_return_" + qubit_]
+                for qubit_ in self.all_ro_qubit_list
             ],
-            qube.port5.dac.awg0: [self.schedule[all_ro_qubit_list[0] + "_lo"]],
-            qube.port6.dac.awg0: [self.schedule[all_ro_qubit_list[1] + "_lo"]],
-            qube.port7.dac.awg0: [self.schedule[all_ro_qubit_list[2] + "_lo"]],
-            qube.port8.dac.awg0: [self.schedule[all_ro_qubit_list[3] + "_lo"]],
-            qube.port5.dac.awg1: [self.schedule[all_ro_qubit_list[0]]],
-            qube.port6.dac.awg1: [self.schedule[all_ro_qubit_list[1]]],
-            qube.port7.dac.awg1: [self.schedule[all_ro_qubit_list[2]]],
-            qube.port8.dac.awg1: [self.schedule[all_ro_qubit_list[3]]],
-            qube.port5.dac.awg2: [self.schedule[all_ro_qubit_list[0] + "_hi"]],
-            qube.port6.dac.awg2: [self.schedule[all_ro_qubit_list[1] + "_hi"]],
-            qube.port7.dac.awg2: [self.schedule[all_ro_qubit_list[2] + "_hi"]],
-            qube.port8.dac.awg2: [self.schedule[all_ro_qubit_list[3] + "_hi"]],
+            qube.port5.dac.awg0: [self.schedule[self.qubits[0] + "_lo"]],
+            qube.port6.dac.awg0: [self.schedule[self.qubits[1] + "_lo"]],
+            qube.port7.dac.awg0: [self.schedule[self.qubits[2] + "_lo"]],
+            qube.port8.dac.awg0: [self.schedule[self.qubits[3] + "_lo"]],
+            qube.port5.dac.awg1: [self.schedule[self.qubits[0]]],
+            qube.port6.dac.awg1: [self.schedule[self.qubits[1]]],
+            qube.port7.dac.awg1: [self.schedule[self.qubits[2]]],
+            qube.port8.dac.awg1: [self.schedule[self.qubits[3]]],
+            qube.port5.dac.awg2: [self.schedule[self.qubits[0] + "_hi"]],
+            qube.port6.dac.awg2: [self.schedule[self.qubits[1] + "_hi"]],
+            qube.port7.dac.awg2: [self.schedule[self.qubits[2] + "_hi"]],
+            qube.port8.dac.awg2: [self.schedule[self.qubits[3] + "_hi"]],
         }
 
         self.triggers = [port_tx.dac.awg0]
@@ -178,7 +176,7 @@ class Measurement:
         self.schedule.offset = time_ctrl  # [ns] 読み出し開始時刻（時間基準点）の設定
         self.c = {}
         self.t_c = {}
-        for qubit_ in all_ctrl_qubit_list:
+        for qubit_ in self.all_ctrl_qubit_list:
             self.c[qubit_] = self.schedule[qubit_].findall(Arbit)[
                 0
             ]  # findall(Arbit)はSchedule内からArbitの要素だけ抜き出してリスト化する
@@ -189,14 +187,14 @@ class Measurement:
 
         self.ro = {}
         self.t_ro = {}
-        for qubit_ in all_ro_qubit_list:
+        for qubit_ in self.all_ro_qubit_list:
             self.ro[qubit_] = self.schedule["RO_send_" + qubit_].findall(Arbit)[0]
             self.t_ro[qubit_] = (
                 self.schedule["RO_send_" + qubit_].get_timestamp(self.ro[qubit_])
                 - self.schedule.offset
             )
 
-        self.slice_range = slice(200, int(200 + 800 / 1.5))  # 1000) # 読出しデータ切り取り範囲
+        self.slice_range = READ_SLICE_RANGE
 
     def finalize_circuit(self, ctrl_qubit_list_, ro_qubit_list_, waveforms_dict):
         """
@@ -225,8 +223,10 @@ class Measurement:
 
         ro_iq = {}
         for qubit_ in ro_qubit_list_:
-            self.ro[qubit_].iq[:] = ro_ampl_dict[self.qube_id][qubit_] * raised_cos(
-                self.t_ro[qubit_], 0, self.time_ro / 1.5, 50
+            self.ro[qubit_].iq[:] = params.ro_ampl_dict[self.qube_id][
+                qubit_
+            ] * raised_cos(
+                self.t_ro[qubit_], 0, T_READ / 1.5, 50
             )  # 読み出し波形の指定
             ro_iq[qubit_] = self.ro[qubit_].iq
 
@@ -343,7 +343,7 @@ class Measurement:
         qubit: str,
         sweep_range: np.ndarray,
         duration: int,
-        hpi_count=2,
+        hpi_count=4,
         repeats=10_000,
         interval=100_000,
     ):
@@ -357,13 +357,13 @@ class Measurement:
 
             # === Pulse Sequence ===
             wfs = Waveforms(qubits)
-            for _ in range(hpi_count):
-                drag = pulsex.Drag(
-                    duration=duration,
-                    amplitude=amplitude,
-                    anharmonicity=anharm_dict[qubit] * 1e-9,  # GHz
-                )
-                wfs.waveforms[qubit] = np.append(wfs.waveforms[qubit], drag.values)
+            drag = pulsex.Drag(
+                duration=duration,
+                amplitude=amplitude,
+                anharmonicity=params.anharm_dict[qubit] * 1e-9,  # GHz
+            )
+            sequence = pulsex.Sequence([drag] * hpi_count)
+            wfs.waveforms[qubit] = np.append(wfs.waveforms[qubit], sequence.values)
             # ======================
 
             c_iq, ro_iq = self.finalize_circuit(qubits, qubits, wfs.waveforms)
@@ -418,10 +418,10 @@ class Measurement:
             drag = pulsex.Drag(
                 duration=duration,
                 amplitude=amplitude,
-                anharmonicity=anharm_dict[qubit] * 1e-9,  # GHz
+                anharmonicity=params.anharm_dict[qubit] * 1e-9,  # GHz
             )
-            seq = pulsex.Sequence([drag] * (i + 1))
-            wfs.waveforms[qubit] = np.append(wfs.waveforms[qubit], seq.values)
+            sequence = pulsex.Sequence([drag] * (i + 1))
+            wfs.waveforms[qubit] = np.append(wfs.waveforms[qubit], sequence.values)
             # ======================
 
             c_iq, ro_iq = self.finalize_circuit(qubits, qubits, wfs.waveforms)

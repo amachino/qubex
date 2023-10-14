@@ -68,13 +68,6 @@ class Waveform:
             )
         return duration // self.SAMPLING_PERIOD
 
-
-class Sequence(Waveform):
-    def __init__(self, waveforms: list[Waveform]):
-        self.waveforms = waveforms
-        values = np.concatenate([w.values for w in waveforms])
-        super().__init__(values)
-
     def plot(self, polar=False, title=""):
         """Plots the pulse."""
         if polar:
@@ -116,6 +109,13 @@ class Sequence(Waveform):
         ax[1].step(times, phase, where="post")
 
         plt.show()
+
+
+class Sequence(Waveform):
+    def __init__(self, waveforms: list[Waveform]):
+        self.waveforms = waveforms
+        values = np.concatenate([w.values for w in waveforms])
+        super().__init__(values)
 
 
 class Blank(Waveform):

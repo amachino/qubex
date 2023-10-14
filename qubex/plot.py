@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from .measurement import READ_SLICE_RANGE
-from .pulse.waveform import Waveform
+from .pulse import Waveform
 from .analysis import rotate_to_vertical
 
 
@@ -25,7 +25,7 @@ def plot_readout_waveform(qubit: str, waveform: Waveform):
     window = np.ones(AVG_NUM)
     mov_avg = np.convolve(waveform.values, window, mode="valid") / AVG_NUM
     mov_avg = np.append(mov_avg, np.zeros(AVG_NUM - 1))
-    time = waveform.time * 1e-3
+    time = waveform.times * 1e-3
 
     ax.plot(time, np.real(mov_avg), label="I")
     ax.plot(time, np.imag(mov_avg), label="Q")
