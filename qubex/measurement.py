@@ -1,344 +1,500 @@
-"""
-A module to represent an measurement.
-"""
-
-import os
-from datetime import datetime
-
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import numpy as np
+import matplotlib.pyplot as plt
+from IPython.display import clear_output
+from scipy.optimize import curve_fit
+from scipy.optimize import minimize
+from sklearn.decomposition import PCA
+
+import qubex.pulse as pulsex
 
 import qubecalib as qc
-from qubecalib.qube import SSB
-from qubecalib.pulse import Schedule, Channel, Arbitrary, Blank, Read
+from qubecalib.pulse import Read, Schedule, Blank, Arbit
 from qubecalib.setupqube import run
 
-from .pulse import Waveform, Rect
+qc.ui.MATPLOTLIB_PYPLOT = plt
 
-CTRL = "CTRL_"
-READ_TX = "READ_TX_"
-READ_RX = "READ_RX_"
-T_CONTROL = 10 * 2048  # maximum duration of control [ns]
-T_READOUT = 128 * 12  # maximum duration of readout [ns]
-T_MARGIN = 128 * 2  # margin between readout and control [ns]
-READ_SLICE_RANGE = slice(200, int(200 + 800 / 1.5))
+from .utils import (
+    Waveforms,
+    raised_cos,
+    show_pulse_sequences,
+    show_measurement_results,
+    make_list_dict,
+    linear_fit_and_rotate_IQ,
+)
 
-
-MeasuredState = dict[str, complex]
+# 実験パラメータ
+from params_jb07_2023_cd7 import (
+    ro_freq_dict,
+    ro_ampl_dict,
+    ctrl_freq_dict,
+    anharm_dict,
+    qubit_true_freq_dict,
+)
 
 
 class Measurement:
-    """
-    A class to represent an measurement.
-    """
+    time_ro = 128 * 12  # [ns] 128の倍数（2022/08/18）
+    time_ctrl = 10 * 2048  # [ns]
+    time_margin = 128 * 2  # [ns]
 
-    def __init__(self, qube_id: str, qubits: dict):
-        self.qube = self.init_qube(qube_id=qube_id)
+    def __init__(
+        self, qube_id: str, qubits: list[str], readout_ports=("port0", "port1")
+    ):
+        self.qube_id = qube_id
+        self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
         self.qubits = qubits
+        self.readout_ports = readout_ports
+        self._setup(self.qube)
+
+    def _setup(self, qube):
+        port_tx = qube.ports[self.readout_ports[0]]
+        port_rx = qube.ports[self.readout_ports[1]]
+
+        port_tx.lo.mhz = 12500
+        port_tx.nco.mhz = 2500 - 125
+        port_tx.mix.ssb = qc.qube.SSB.LSB
+        port_tx.awg0.nco.mhz = 0
+        port_tx.mix.vatt = 0x800
+
+        port_rx.nco.mhz = qube.port0.nco.mhz
+        port_rx.adc.capt0.ssb = qc.qube.SSB.LSB
+        port_rx.delay = 128 + 6 * 128  # [ns]
+
+        qube.port5.lo.mhz = 10000
+        qube.port5.nco.mhz = 2000 + 375
+        qube.port5.awg0.nco.mhz = 0
+        qube.port5.awg1.nco.mhz = 0
+        qube.port5.awg2.nco.mhz = 0
+        qube.port5.mix.vatt = 0x800
+
+        qube.port6.lo.mhz = 10000
+        qube.port6.nco.mhz = 2000 - 375
+        qube.port6.awg0.nco.mhz = 0
+        qube.port6.awg1.nco.mhz = 0
+        qube.port6.awg2.nco.mhz = 0
+        qube.port6.mix.vatt = 0x800
+
+        qube.port7.lo.mhz = 10000
+        qube.port7.nco.mhz = 2000 - 375
+        qube.port7.awg0.nco.mhz = 0
+        qube.port7.awg1.nco.mhz = 0
+        qube.port7.awg2.nco.mhz = 0
+        qube.port7.mix.vatt = 0x800
+
+        qube.port8.lo.mhz = 9000
+        qube.port8.nco.mhz = 2000 - 250
+        qube.port8.awg0.nco.mhz = 0
+        qube.port8.awg1.nco.mhz = 0
+        qube.port8.awg2.nco.mhz = 0
+        qube.port8.mix.vatt = 0x800
+
+        all_ro_qubit_list = self.qubits
+        self.all_ro_qubit_list = all_ro_qubit_list
+
+        all_ctrl_qubit_list = [
+            all_ro_qubit_list[0] + "_lo",
+            all_ro_qubit_list[0],
+            all_ro_qubit_list[0] + "_hi",
+            all_ro_qubit_list[1] + "_lo",
+            all_ro_qubit_list[1],
+            all_ro_qubit_list[1] + "_hi",
+            all_ro_qubit_list[2] + "_lo",
+            all_ro_qubit_list[2],
+            all_ro_qubit_list[2] + "_hi",
+            all_ro_qubit_list[3] + "_lo",
+            all_ro_qubit_list[3],
+            all_ro_qubit_list[3] + "_hi",
+        ]
+        self.all_ctrl_qubit_list = all_ctrl_qubit_list
+
+        """Scheduleのchannel割り当て"""
         self.schedule = Schedule()
-        self.init_channels()
-        self.init_schedule()
-        self.init_readout_pulses()
 
-    def init_qube(self, qube_id: str):
-        """
-        Initialize the QuBE.
-        """
-        qc.ui.MATPLOTLIB_PYPLOT = plt
-        qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
-
-        if qube is None:
-            raise ValueError(f"QuBE {qube_id} is not found.")
-
-        qube.port0.mix.ssb = SSB.LSB
-        qube.port1.adc.capt0.ssb = SSB.LSB
-        qube.port12.adc.capt0.ssb = SSB.LSB
-        qube.port13.mix.ssb = SSB.LSB
-        return qube
-
-    def init_channels(self):
-        """
-        Initialize the channels.
-        """
-        for qubit, params in self.qubits.items():
-            # control channels
-            self.set_control_channel(
-                qubit,
-                Channel(center_frequency=params["freq_ge"]),
+        for qubit_ in all_ro_qubit_list:
+            self.schedule.add_channel(
+                key="RO_send_" + qubit_,
+                center_frequency=ro_freq_dict[self.qube_id][qubit_],
             )
-            # readout (tx) channels
-            self.set_readout_tx_channel(
-                qubit,
-                Channel(center_frequency=params["freq_ro"]),
+            self.schedule.add_channel(
+                key="RO_return_" + qubit_,
+                center_frequency=ro_freq_dict[self.qube_id][qubit_],
             )
-            # readout (rx) channels
-            self.set_readout_rx_channel(
-                qubit,
-                Channel(center_frequency=params["freq_ro"]),
+        for qubit_ in all_ctrl_qubit_list:
+            self.schedule.add_channel(
+                key=qubit_,
+                center_frequency=ctrl_freq_dict[qubit_],
             )
 
-    def init_schedule(self):
-        """
-        Initialize the schedule.
-        """
+        """パルスシーケンスの時間ブロック割り当て"""
+        time_ro = self.time_ro
+        time_ctrl = self.time_ctrl
+        time_margin = self.time_margin
 
-        # set the offset of the schedule
-        self.schedule.offset = T_CONTROL
-
-        for qubit in self.qubits:
-            # control channels
-            ctrl_ch: Channel = self.control_channel(qubit)
-            ctrl_ch.append(Arbitrary(duration=T_CONTROL))
-            ctrl_ch.append(Blank(duration=T_READOUT + 4 * T_MARGIN))
-
-            # readout (tx) channels
-            read_tx_ch: Channel = self.readout_tx_channel(qubit)
-            read_tx_ch.append(Blank(duration=T_CONTROL))
-            read_tx_ch.append(Arbitrary(duration=T_READOUT))
-            read_tx_ch.append(Blank(duration=4 * T_MARGIN))
-
-            # readout (rx) channels
-            read_rx_ch: Channel = self.readout_rx_channel(qubit)
-            read_rx_ch.append(Blank(duration=T_CONTROL - T_MARGIN))
-            read_rx_ch.append(Read(duration=T_READOUT + 5 * T_MARGIN))
+        for qubit_ in all_ro_qubit_list:
+            (
+                self.schedule["RO_send_" + qubit_]
+                << Blank(duration=time_ctrl)
+                << Arbit(duration=time_ro, amplitude=1)
+                << Blank(duration=4 * time_margin)
+            )  # type: ignore
+            (
+                self.schedule["RO_return_" + qubit_]
+                << Blank(duration=time_ctrl - time_margin)
+                << Read(duration=time_ro + 5 * time_margin)
+            )  # type: ignore
+        for qubit_ in all_ctrl_qubit_list:
+            (
+                self.schedule[qubit_]
+                << Arbit(duration=time_ctrl, amplitude=1)
+                << Blank(duration=time_ro + 4 * time_margin)
+            )  # type: ignore
 
         durations = [v.duration for k, v in self.schedule.items()]
         assert len(set(durations)) == 1, "All channels must have the same duration."
 
-    def init_readout_pulses(self):
-        """
-        Initialize the readout pulses.
-        """
-        for qubit, params in self.qubits.items():
-            # readout (tx) pulses
-            pulse = Rect(
-                ampl=params["ampl_ro"],
-                rise=50,
-                flat=int(T_READOUT / 1.5),
-                fall=50,
-            )
-            self.set_readout_waveform(qubit, pulse)
-
-    def measure(
-        self,
-        readout_ports: tuple[str, str] = ("port0", "port1"),
-        repeats=10_000,
-        interval=100_000,
-    ) -> MeasuredState:
-        """
-        Runs the measurement.
-        """
-        tx_port = self.qube.ports[readout_ports[0]]
-        rx_port = self.qube.ports[readout_ports[1]]
-        tx_channels = [self.readout_tx_channel(qubit) for qubit in self.qubits]
-        rx_channels = [self.readout_rx_channel(qubit) for qubit in self.qubits]
-
-        adda_to_channels = {
-            tx_port.dac.awg0: tx_channels,
-            rx_port.adc.capt0: rx_channels,
+        self.adda_to_channels = {
+            port_tx.dac.awg0: [
+                self.schedule["RO_send_" + qubit_] for qubit_ in all_ro_qubit_list
+            ],
+            port_rx.adc.capt0: [
+                self.schedule["RO_return_" + qubit_] for qubit_ in all_ro_qubit_list
+            ],
+            qube.port5.dac.awg0: [self.schedule[all_ro_qubit_list[0] + "_lo"]],
+            qube.port6.dac.awg0: [self.schedule[all_ro_qubit_list[1] + "_lo"]],
+            qube.port7.dac.awg0: [self.schedule[all_ro_qubit_list[2] + "_lo"]],
+            qube.port8.dac.awg0: [self.schedule[all_ro_qubit_list[3] + "_lo"]],
+            qube.port5.dac.awg1: [self.schedule[all_ro_qubit_list[0]]],
+            qube.port6.dac.awg1: [self.schedule[all_ro_qubit_list[1]]],
+            qube.port7.dac.awg1: [self.schedule[all_ro_qubit_list[2]]],
+            qube.port8.dac.awg1: [self.schedule[all_ro_qubit_list[3]]],
+            qube.port5.dac.awg2: [self.schedule[all_ro_qubit_list[0] + "_hi"]],
+            qube.port6.dac.awg2: [self.schedule[all_ro_qubit_list[1] + "_hi"]],
+            qube.port7.dac.awg2: [self.schedule[all_ro_qubit_list[2] + "_hi"]],
+            qube.port8.dac.awg2: [self.schedule[all_ro_qubit_list[3] + "_hi"]],
         }
 
-        for qubit, param in self.qubits.items():
-            port = self.qube.ports[param["port"]]
-            adda_to_channels[port.dac.awg1] = [self.control_channel(qubit)]
+        self.triggers = [port_tx.dac.awg0]
 
-        triggers = [tx_port.dac.awg0]
+        self.schedule.offset = time_ctrl  # [ns] 読み出し開始時刻（時間基準点）の設定
+        self.c = {}
+        self.t_c = {}
+        for qubit_ in all_ctrl_qubit_list:
+            self.c[qubit_] = self.schedule[qubit_].findall(Arbit)[
+                0
+            ]  # findall(Arbit)はSchedule内からArbitの要素だけ抜き出してリスト化する
+            self.t_c[qubit_] = (
+                self.schedule[qubit_].get_timestamp(self.c[qubit_])
+                - self.schedule.offset
+            )  # [ns] 任意波形の時間座標の指定
 
-        run(
-            self.schedule,
-            repeats=repeats,
-            interval=interval,
-            adda_to_channels=adda_to_channels,
-            triggers=triggers,
+        self.ro = {}
+        self.t_ro = {}
+        for qubit_ in all_ro_qubit_list:
+            self.ro[qubit_] = self.schedule["RO_send_" + qubit_].findall(Arbit)[0]
+            self.t_ro[qubit_] = (
+                self.schedule["RO_send_" + qubit_].get_timestamp(self.ro[qubit_])
+                - self.schedule.offset
+            )
+
+        self.slice_range = slice(200, int(200 + 800 / 1.5))  # 1000) # 読出しデータ切り取り範囲
+
+    def finalize_circuit(self, ctrl_qubit_list_, ro_qubit_list_, waveforms_dict):
+        """
+        波形リストの辞書を受けて, QuBEの制御IQ波形オブジェクトを生成する.
+
+        Parameters
+        ----------
+        ctrl_qubit_list_ : qubit制御チャンネルのリスト
+        ro_qubit_list_ : 読み出しチャンネルのリスト
+        waveforms_dict : qubit制御波形リストの辞書
+
+        Returns
+        -------
+        c_iq : 制御パルスIQ波形リストの辞書
+        ro_iq : 読み出しパルスIQ波形リストの辞書
+        """
+        c_iq = {}
+        for qubit_ in ctrl_qubit_list_:
+            t_wf = 2 * len(waveforms_dict[qubit_])  # ns
+            self.c[qubit_].iq[
+                (-t_wf <= self.t_c[qubit_]) & (self.t_c[qubit_] < 0)
+            ] = waveforms_dict[
+                qubit_
+            ]  # Arbitのパルス波形をここで指定
+            c_iq[qubit_] = self.c[qubit_].iq  # 制御パルスIQ波形リストの辞書
+
+        ro_iq = {}
+        for qubit_ in ro_qubit_list_:
+            self.ro[qubit_].iq[:] = ro_ampl_dict[self.qube_id][qubit_] * raised_cos(
+                self.t_ro[qubit_], 0, self.time_ro / 1.5, 50
+            )  # 読み出し波形の指定
+            ro_iq[qubit_] = self.ro[qubit_].iq
+
+        return c_iq, ro_iq
+
+    def initialize_circuit(self, ctrl_qubit_list_, ro_qubit_list_):
+        for qubit_ in ctrl_qubit_list_:
+            self.c[qubit_].iq[:] = 0  # パルス波形の初期化
+
+        for qubit_ in ro_qubit_list_:
+            self.ro[qubit_].iq[:] = 0
+
+    def detect_ro_waveform(self, ro_qubit_list_):
+        """
+        Parameters
+        ----------
+        ro_qubit_list_ : 読み出しで用いるqubitリスト
+
+        Returns
+        -------
+        IQ_sig_list_dict : 新たにIQ値を追加されたIQ_sig_list_dict
+        detected_iq : 検波された読み出しIQ波形リストの辞書
+        detected_time : detected_iqに対応する時間リストの辞書
+        c_iq : 制御パルスIQ波形リストの辞書
+        """
+        detected_obj = {}
+        detected_iq = {}
+        detected_time = {}
+
+        for qubit_ in ro_qubit_list_:
+            detected_obj[qubit_] = self.schedule["RO_return_" + qubit_].findall(Read)[
+                0
+            ]  # 検出した読み出しパルスのオブジェクト
+            detected_iq[qubit_] = detected_obj[qubit_].iq  # 検出した読み出しパルスのIQ波形リスト
+            detected_time[qubit_] = detected_obj[
+                qubit_
+            ].timestamp  # [ns] 検出した読み出しパルスの時間リスト
+
+        return detected_iq, detected_time
+
+    def time_integrate_IQ(self, detected_iq, ro_qubit_list_):
+        """
+        Parameters
+        ----------
+        detected_iq : 検波された読み出しIQ波形リストの辞書
+        ro_qubit_list_ : 読み出しで用いるqubitリスト
+
+        Returns
+        -------
+        IQ_sig_dict : 時間積分されたIQ値のqubitごとの辞書
+
+        """
+        IQ_sig_dict = {}
+
+        for qubit_ in ro_qubit_list_:
+            IQ_sig_dict[qubit_] = detected_iq[qubit_][
+                self.slice_range
+            ].mean()  # 1点の平均複素振幅を取得
+
+        return IQ_sig_dict
+
+    def rabi_sweep_duration(
+        self,
+        qubit: str,
+        sweep_range: np.ndarray,
+        amplitude=0.1,
+        repeats=10_000,
+        interval=100_000,
+    ):
+        qubits = [qubit]
+
+        IQ_before_list_dict = make_list_dict(self.all_ro_qubit_list)
+        IQ_after_list_dict = make_list_dict(self.all_ro_qubit_list)
+
+        for i, duration in enumerate(sweep_range):
+            self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
+
+            # === Pulse Sequence ===
+            wfs = Waveforms(qubits)
+            wfs.rcft(qubit, amplitude, 0, duration, 0)
+            # ======================
+
+            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, wfs.waveforms)
+            run(
+                self.schedule,
+                repeats=repeats,
+                interval=interval,
+                adda_to_channels=self.adda_to_channels,
+                triggers=self.triggers,
+            )
+            detected_iq_dict, detected_time_dict = self.detect_ro_waveform(qubits)
+            IQ_sig_dict = self.time_integrate_IQ(detected_iq_dict, qubits)
+            IQ_before_list_dict[qubit].append(IQ_sig_dict[qubit])
+            IQ_after_list_dict, grad_dict, intercept_dict = linear_fit_and_rotate_IQ(
+                qubits, IQ_before_list_dict
+            )
+            clear_output(True)
+            show_measurement_results(
+                qubits,
+                detected_time_dict,
+                detected_iq_dict,
+                self.slice_range,
+                sweep_range[: i + 1],
+                IQ_before_list_dict,
+                IQ_after_list_dict,
+            )
+            print(duration)
+
+        result = np.array(IQ_before_list_dict[qubit])
+        return result
+
+    def rabi_sweep_amplitude(
+        self,
+        qubit: str,
+        sweep_range: np.ndarray,
+        duration: int,
+        hpi_count=2,
+        repeats=10_000,
+        interval=100_000,
+    ):
+        qubits = [qubit]
+
+        IQ_before_list_dict = make_list_dict(self.all_ro_qubit_list)
+        IQ_after_list_dict = make_list_dict(self.all_ro_qubit_list)
+
+        for i, amplitude in enumerate(sweep_range):
+            self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
+
+            # === Pulse Sequence ===
+            wfs = Waveforms(qubits)
+            for _ in range(hpi_count):
+                drag = pulsex.Drag(
+                    duration=duration,
+                    amplitude=amplitude,
+                    anharmonicity=anharm_dict[qubit] * 1e-9,  # GHz
+                )
+                wfs.waveforms[qubit] = np.append(wfs.waveforms[qubit], drag.values)
+            # ======================
+
+            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, wfs.waveforms)
+            run(
+                self.schedule,
+                repeats=repeats,
+                interval=interval,
+                adda_to_channels=self.adda_to_channels,
+                triggers=self.triggers,
+            )
+            detected_iq_dict, detected_time_dict = self.detect_ro_waveform(qubits)
+            IQ_sig_dict = self.time_integrate_IQ(detected_iq_dict, qubits)
+            IQ_before_list_dict[qubit].append(IQ_sig_dict[qubit])
+            IQ_after_list_dict, grad_dict, intercept_dict = linear_fit_and_rotate_IQ(
+                qubits, IQ_before_list_dict
+            )
+            clear_output(True)
+            show_measurement_results(
+                qubits,
+                detected_time_dict,
+                detected_iq_dict,
+                self.slice_range,
+                sweep_range[: i + 1],
+                IQ_before_list_dict,
+                IQ_after_list_dict,
+            )
+            show_pulse_sequences([qubit], self.t_c, c_iq, [qubit], self.t_ro, ro_iq)
+            print(amplitude)
+
+        result = np.array(IQ_before_list_dict[qubit])
+        return result
+
+    def rabi_repeat_hpi(
+        self,
+        qubit: str,
+        sweep_range: np.ndarray,
+        duration: int,
+        amplitude: float,
+        repeats=10_000,
+        interval=100_000,
+    ):
+        qubits = [qubit]
+
+        IQ_before_list_dict = make_list_dict(self.all_ro_qubit_list)
+        IQ_after_list_dict = make_list_dict(self.all_ro_qubit_list)
+
+        for i in sweep_range:
+            self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
+
+            # === Pulse Sequence ===
+            wfs = Waveforms(qubits)
+            drag = pulsex.Drag(
+                duration=duration,
+                amplitude=amplitude,
+                anharmonicity=anharm_dict[qubit] * 1e-9,  # GHz
+            )
+            seq = pulsex.Sequence([drag] * (i + 1))
+            wfs.waveforms[qubit] = np.append(wfs.waveforms[qubit], seq.values)
+            # ======================
+
+            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, wfs.waveforms)
+            run(
+                self.schedule,
+                repeats=repeats,
+                interval=interval,
+                adda_to_channels=self.adda_to_channels,
+                triggers=self.triggers,
+            )
+            detected_iq_dict, detected_time_dict = self.detect_ro_waveform(qubits)
+            IQ_sig_dict = self.time_integrate_IQ(detected_iq_dict, qubits)
+            IQ_before_list_dict[qubit].append(IQ_sig_dict[qubit])
+            IQ_after_list_dict, grad_dict, intercept_dict = linear_fit_and_rotate_IQ(
+                qubits, IQ_before_list_dict
+            )
+            clear_output(True)
+            show_measurement_results(
+                qubits,
+                detected_time_dict,
+                detected_iq_dict,
+                self.slice_range,
+                sweep_range[: i + 1],
+                IQ_before_list_dict,
+                IQ_after_list_dict,
+            )
+            print(amplitude)
+
+        result = np.array(IQ_before_list_dict[qubit])
+        return result
+
+    def principal_components(self, iq_complex, pca=None):
+        iq_vector = np.column_stack([np.real(iq_complex), np.imag(iq_complex)])
+        if pca is None:
+            pca = PCA(n_components=1)
+        results = pca.fit_transform(iq_vector).squeeze()
+        return results, pca
+
+    def fit_and_find_minimum(self, x, y, p0=None):
+        def cos_func(t, ampl, omega, phi, offset):
+            return ampl * np.cos(omega * t + phi) + offset
+
+        if p0 is None:
+            p0 = (
+                np.abs(np.max(y) - np.min(y)) / 2,
+                1 / (x[-1] - x[0]),
+                0,
+                (np.max(y) + np.min(y)) / 2,
+            )
+
+        popt, _ = curve_fit(cos_func, x, y, p0=p0)
+        print(
+            f"Fitted function: {popt[0]:.3f} * cos({popt[1]:.3f} * t + {popt[2]:.3f}) + {popt[3]:.3f}"
         )
 
-        state: MeasuredState = self.measured_state()
-        return state
+        result = minimize(
+            cos_func,
+            x0=np.mean(x),
+            args=tuple(popt),
+            bounds=[(np.min(x), np.max(x))],
+        )
+        min_x = result.x[0]
+        min_y = cos_func(min_x, *popt)
 
-    def measured_state(self) -> MeasuredState:
-        """
-        Returns the measured state (a complex value).
-        """
-        state = MeasuredState()
-        for qubit in self.qubits:
-            waveform = self.readout_rx_waveform(qubit)
-            state[qubit] = waveform.values[READ_SLICE_RANGE].mean()
-            # save the readout data as a file
-            # self.save_readout_data(qubit, waveform)
-        return state
+        x_fine = np.linspace(np.min(x), np.max(x), 1000)
+        y_fine = cos_func(x_fine, *popt)
 
-    def save_readout_data(self, qubit: str, waveform: Waveform):
-        """
-        Saves the readout data.
-        """
-        now = datetime.now()
-        dir_name = now.strftime("%Y/%m/%d/%H%M%S%f")
-        path_str = f"./data/{dir_name}/{READ_RX + qubit}.npy"
-        dir_path = os.path.dirname(path_str)
-        os.makedirs(dir_path, exist_ok=True)
-        path = os.path.normpath(path_str)
-        data = [waveform.times, waveform.values]
-        np.save(path, data)
-
-    def control_channel(self, qubit: str) -> Channel:
-        """
-        Returns the control channel of the qubit.
-        """
-        return self.schedule[CTRL + qubit]
-
-    def readout_tx_channel(self, qubit: str) -> Channel:
-        """
-        Returns the readout (tx) channel of the qubit.
-        """
-        return self.schedule[READ_TX + qubit]
-
-    def readout_rx_channel(self, qubit: str) -> Channel:
-        """
-        Returns the readout (rx) channel of the qubit.
-        """
-        return self.schedule[READ_RX + qubit]
-
-    def set_control_channel(self, qubit: str, channel: Channel):
-        """
-        Sets the control channel of the qubit.
-        """
-        self.schedule[CTRL + qubit] = channel
-
-    def set_readout_tx_channel(self, qubit: str, channel: Channel):
-        """
-        Sets the readout (tx) channel of the qubit.
-        """
-        self.schedule[READ_TX + qubit] = channel
-
-    def set_readout_rx_channel(self, qubit: str, channel: Channel):
-        """
-        Sets the readout (rx) channel of the qubit.
-        """
-        self.schedule[READ_RX + qubit] = channel
-
-    def control_waveform(self, qubit: str) -> Waveform:
-        """
-        Returns the control waveform of the channel.
-        """
-        channel = self.control_channel(qubit)
-        slot: Arbitrary = channel.findall(Arbitrary)[0]
-        waveform = Waveform(slot.iq)
-        waveform.times = channel.get_timestamp(slot) - self.schedule.offset
-        return waveform
-
-    def readout_tx_waveform(self, qubit: str) -> Waveform:
-        """
-        Returns the readout (tx) waveform of the channel.
-        """
-        channel: Channel = self.readout_tx_channel(qubit)
-        slot: Arbitrary = channel.findall(Arbitrary)[0]
-        waveform = Waveform(slot.iq)
-        waveform.times = channel.get_timestamp(slot) - self.schedule.offset
-        return waveform
-
-    def readout_rx_waveform(self, qubit: str) -> Waveform:
-        """
-        Returns the readout (rx) waveform.
-        """
-        channel: Channel = self.readout_rx_channel(qubit)
-        slot: Read = channel.findall(Read)[0]
-        if slot.iq is None:
-            raise RuntimeError("The readout signal is not recorded.")
-        waveform = Waveform(slot.iq)
-        waveform.times = channel.get_timestamp(slot) - self.schedule.offset
-        return waveform
-
-    def set_control_waveform(self, qubit: str, waveform: Waveform):
-        """
-        Set the control waveform to the channel.
-        """
-        channel: Channel = self.control_channel(qubit)
-        slot: Arbitrary = channel.findall(Arbitrary)[0]
-        time: np.ndarray = channel.get_timestamp(slot) - self.schedule.offset
-        slot.iq[:] = 0j  # initialize
-        slot.iq[(-waveform.duration <= time) & (time < 0)] = waveform.values
-
-    def set_readout_waveform(self, qubit: str, waveform: Waveform):
-        """
-        Set the readout waveform to the channel.
-        """
-        channel: Channel = self.readout_tx_channel(qubit)
-        slot: Arbitrary = channel.findall(Arbitrary)[0]
-        time: np.ndarray = channel.get_timestamp(slot) - self.schedule.offset
-        slot.iq[:] = 0j  # initialize
-        slot.iq[(0 <= time) & (time < waveform.duration)] = waveform.values
-
-    def show_pulse_sequences(self, xlim=(-3.0, 1.5)):
-        """
-        Shows the pulse sequences.
-        """
-
-        # number of qubits
-        N = len(self.qubits)
-
-        # initialize the figure
-        plt.figure(figsize=(15, 1.5 * (N + 1)))
-        plt.subplots_adjust(hspace=0.0)  # no space between subplots
-
-        # the grid is adjusted to the number of qubits (N)
-        # the last row (N+1) is for the readout waveform
-        gs = gridspec.GridSpec(N + 1, 1)
-
-        # initialize the axes
-        # share the x-axis with the first subplot
-        axes: list = []
-        for i, qubit in enumerate(self.qubits):
-            if i == 0:
-                ax = plt.subplot(gs[i])
-                ax.set_title("Pulse waveform")
-                ax.set_xlim(xlim)  # us
-                ax.xaxis.set_visible(False)
-                axes.append(ax)
-            else:
-                ax = plt.subplot(gs[i], sharex=axes[0])
-                ax.xaxis.set_visible(False)
-                axes.append(ax)
-        ro_ax = plt.subplot(gs[N], sharex=axes[0])
-        ro_ax.set_xlabel("Time / us")
-        ro_ax.xaxis.set_visible(True)
-        axes.append(ro_ax)
-
-        # the list of the maximum amplitudes used for the ylim
-        max_ampl_list = []
-
-        # plot the control pulses
-        # the real and imaginary parts are plotted in the same subplot
-        for i, qubit in enumerate(self.qubits):
-            ctrl = self.control_waveform(qubit)
-            axes[i].plot(
-                ctrl.times * 1e-3,
-                ctrl.real,
-                label=qubit + " control (real)",
-            )
-            axes[i].plot(
-                ctrl.times * 1e-3,
-                ctrl.imag,
-                label=qubit + " control (imag)",
-            )
-            axes[i].legend()
-            max_ampl_list.append(np.max(ctrl.ampl))
-
-        # plot the readout pulses
-        for i, qubit in enumerate(self.qubits):
-            read = self.readout_tx_waveform(qubit)
-            axes[N].plot(
-                read.times * 1e-3,
-                read.ampl,
-                label=qubit + " readout (abs)",
-                linestyle="dashed",
-            )
-            axes[N].legend()
-            max_ampl_list.append(np.max(read.ampl))
-
-        # set the y-axis range according to the maximum amplitude
-        max_ampl = np.max(max_ampl_list)
-        for i in range(N + 1):
-            axes[i].set_ylim(-1.1 * max_ampl, 1.1 * max_ampl)
-
+        plt.scatter(x, y, label="Data")
+        plt.plot(x_fine, y_fine, label="Fit")
+        plt.scatter(min_x, min_y, color="red", label="Minimum")
+        plt.legend()
         plt.show()
+
+        print(f"Minimum: ({min_x}, {min_y})")
+
+        return min_x, min_y
