@@ -5,7 +5,7 @@ a plot library for qubex
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .measurement import READ_SLICE_RANGE
+from .measurement import READ_RANGE
 from .pulse import Waveform
 from .analysis import rotate_to_vertical
 
@@ -30,7 +30,7 @@ def plot_readout_waveform(qubit: str, waveform: Waveform):
     ax.plot(time, np.real(mov_avg), label="I")
     ax.plot(time, np.imag(mov_avg), label="Q")
 
-    sliced_time = time[READ_SLICE_RANGE]
+    sliced_time = time[READ_RANGE]
     ax.axvspan(
         sliced_time[0],
         sliced_time[-1],

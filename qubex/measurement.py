@@ -1,3 +1,5 @@
+from typing import Callable
+
 import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
@@ -5,13 +7,13 @@ from scipy.optimize import curve_fit
 from scipy.optimize import minimize
 from sklearn.decomposition import PCA
 
-import qubex.pulse as pulsex
-
 import qubecalib as qc
 from qubecalib.pulse import Read, Schedule, Blank, Arbit
 from qubecalib.setupqube import run
 
 qc.ui.MATPLOTLIB_PYPLOT = plt
+
+from .pulse import Waveform, Sequence
 
 from .utils import (
     Waveforms,
@@ -23,7 +25,7 @@ from .utils import (
 )
 
 # 実験パラメータ
-import params_jb07_2023_cd7 as params
+import qubex.params as params
 
 T_READ = 128 * 12  # [ns] 128の倍数（2022/08/18）
 T_CTRL = 10 * 2048  # [ns]
@@ -288,11 +290,12 @@ class Measurement:
 
         return IQ_sig_dict
 
-    def rabi_sweep_duration(
+    def sweep_pulse_duration(
         self,
         qubit: str,
         sweep_range: np.ndarray,
-        amplitude=0.1,
+        amplitude: float,
+        waveform: Callable[[int, float], Waveform],
         repeats=10_000,
         interval=100_000,
     ):
@@ -304,12 +307,11 @@ class Measurement:
         for i, duration in enumerate(sweep_range):
             self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
 
-            # === Pulse Sequence ===
-            wfs = Waveforms(qubits)
-            wfs.rcft(qubit, amplitude, 0, duration, 0)
-            # ======================
+            waveforms = {
+                qubit: waveform(duration, amplitude).values,
+            }
 
-            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, wfs.waveforms)
+            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, waveforms)
             run(
                 self.schedule,
                 repeats=repeats,
@@ -333,17 +335,19 @@ class Measurement:
                 IQ_before_list_dict,
                 IQ_after_list_dict,
             )
+            show_pulse_sequences([qubit], self.t_c, c_iq, [qubit], self.t_ro, ro_iq)
             print(duration)
 
         result = np.array(IQ_before_list_dict[qubit])
         return result
 
-    def rabi_sweep_amplitude(
+    def sweep_pulse_amplitude(
         self,
         qubit: str,
         sweep_range: np.ndarray,
         duration: int,
-        hpi_count=4,
+        waveform: Callable[[int, float], Waveform],
+        pulse_count=4,
         repeats=10_000,
         interval=100_000,
     ):
@@ -355,18 +359,13 @@ class Measurement:
         for i, amplitude in enumerate(sweep_range):
             self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
 
-            # === Pulse Sequence ===
-            wfs = Waveforms(qubits)
-            drag = pulsex.Drag(
-                duration=duration,
-                amplitude=amplitude,
-                anharmonicity=params.anharm_dict[qubit] * 1e-9,  # GHz
-            )
-            sequence = pulsex.Sequence([drag] * hpi_count)
-            wfs.waveforms[qubit] = np.append(wfs.waveforms[qubit], sequence.values)
-            # ======================
+            pulse = waveform(duration, amplitude)
+            sequence = Sequence([pulse] * pulse_count)
+            waveforms = {
+                qubit: sequence.values,
+            }
 
-            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, wfs.waveforms)
+            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, waveforms)
             run(
                 self.schedule,
                 repeats=repeats,
@@ -396,12 +395,11 @@ class Measurement:
         result = np.array(IQ_before_list_dict[qubit])
         return result
 
-    def rabi_repeat_hpi(
+    def repeat_pulse(
         self,
         qubit: str,
         sweep_range: np.ndarray,
-        duration: int,
-        amplitude: float,
+        waveform: Waveform,
         repeats=10_000,
         interval=100_000,
     ):
@@ -413,18 +411,12 @@ class Measurement:
         for i in sweep_range:
             self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
 
-            # === Pulse Sequence ===
-            wfs = Waveforms(qubits)
-            drag = pulsex.Drag(
-                duration=duration,
-                amplitude=amplitude,
-                anharmonicity=params.anharm_dict[qubit] * 1e-9,  # GHz
-            )
-            sequence = pulsex.Sequence([drag] * (i + 1))
-            wfs.waveforms[qubit] = np.append(wfs.waveforms[qubit], sequence.values)
-            # ======================
+            sequence = Sequence([waveform] * (i + 1))
+            waveforms = {
+                qubit: sequence.values,
+            }
 
-            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, wfs.waveforms)
+            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, waveforms)
             run(
                 self.schedule,
                 repeats=repeats,
@@ -448,7 +440,7 @@ class Measurement:
                 IQ_before_list_dict,
                 IQ_after_list_dict,
             )
-            print(amplitude)
+            show_pulse_sequences([qubit], self.t_c, c_iq, [qubit], self.t_ro, ro_iq)
 
         result = np.array(IQ_before_list_dict[qubit])
         return result

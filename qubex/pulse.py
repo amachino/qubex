@@ -290,23 +290,25 @@ class TabuchiDD(Waveform):
         2.4900307,
     ]
 
-    def __init__(self, duration: int, beta=0.0, phi=0.0):
+    def __init__(self, duration: int, scale=1.0, beta=0.0, phi=0.0):
         length = self._ns_to_samples(duration)
         self.t = np.linspace(0, duration, length)
         self.T = duration
         self.vx_n = np.array(self.vx_n_T_over_pi) * np.pi / duration
         self.vy_n = np.array(self.vy_n_T_over_pi) * np.pi / duration
-        values = self._calc_values(beta, phi)
+        values = self._calc_values(scale, beta, phi)
         super().__init__(values)
 
-    def _calc_values(self, beta: float, phi: float) -> np.ndarray:
+    def _calc_values(self, scale: float, beta: float, phi: float) -> np.ndarray:
         error_x = phi + np.tan(beta * np.pi / 180)
         x = (1 + error_x) * np.array([self.vx(t) for t in self.t])
 
         error_y = phi
         y = (1 + error_y) * np.array([self.vy(t) for t in self.t])
 
-        return x + 1j * y
+        values = scale * (x + 1j * y) / np.pi / 2 * 1e2
+
+        return values
 
     def vx(self, t) -> float:
         return sum(
