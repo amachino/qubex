@@ -207,7 +207,7 @@ class Drag(Waveform):
             / (sigma**2)
             * (factor * (np.exp(-((t - sigma) ** 2) / (2 * sigma**2))))
         )
-        values = real - 2j / anharmonicity * imag
+        values = real - 1j / (np.pi * anharmonicity) * imag
         super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
 
 
@@ -228,7 +228,7 @@ class DragGauss(Waveform):
         mu = duration * 0.5
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
         imag = (mu - t) / (sigma**2) * real
-        values = real - 2j / anharmonicity * imag
+        values = real - 1j / (np.pi * anharmonicity) * imag
         super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
 
 
@@ -248,7 +248,7 @@ class DragCos(Waveform):
         t = np.linspace(0, duration, length)
         real = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
         imag = 2 * np.pi / duration * amplitude * np.sin(2 * np.pi * t / duration) * 0.5
-        values = real - 2j / anharmonicity * imag
+        values = real - 1j / (np.pi * anharmonicity) * imag
         super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
 
 

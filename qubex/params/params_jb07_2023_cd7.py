@@ -71,6 +71,16 @@ ampl_drag_hpi_dict = {
     "Q11": 0.03,
 }
 
+ampl_drag_pi_dict = {
+    "Q08": 0.03,
+    "Q09": 0.03,
+    "Q10": 0.04089,
+    "Q11": 0.03,
+}
+
 ample_10MHz = 0.10853
 
 duration_drag_hpi = 50
+
+ampl_hpi_rect_50ns = 0.01947
+ampl_hpi_rect_4ns = 0.24639
