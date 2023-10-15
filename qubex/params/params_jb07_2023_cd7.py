@@ -55,32 +55,17 @@ ampl_hpi_dict = {
     }
 }
 
-# Drag
-# ampl_drag_hpi_dict = {
-#     "Q08": 0.09042,
-#     "Q09": 0.03,
-#     "Q10": 0.03260,  # 0.03262,  # 0.03300,
-#     "Q11": 0.03,
-# }
-
-# DragCos
-ampl_drag_hpi_dict = {
-    "Q08": 0.03,
-    "Q09": 0.03,
-    "Q10": 0.04167,
-    "Q11": 0.03,
+ample_10MHz = {
+    "Q08": 0.10853,
+    "Q10": 0.03941,
 }
 
-ampl_drag_pi_dict = {
-    "Q08": 0.03,
-    "Q09": 0.03,
-    "Q10": 0.04089,
-    "Q11": 0.03,
-}
+ampl_hpi_drag_20ns = 0.08753
+ampl_hpi_drag_50ns = 0.03260
 
-ample_10MHz = 0.10853
-
-duration_drag_hpi = 50
+ampl_hpi_dragcos_20ns = 0.10906
+ampl_pi_dragcos_20ns = 0.22266
+ampl_hpi_dragcos_50ns = 0.04167
 
 ampl_hpi_rect_50ns = 0.01947
 ampl_hpi_rect_4ns = 0.24639
