@@ -5,9 +5,9 @@ a plot library for qubex
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .measurement import READ_RANGE
+from .measurement import READ_SLICE_RANGE
 from .pulse import Waveform
-from .analysis import rotate_to_vertical
+from .analysis import rotate_to_vertical, principal_components
 
 
 def plot_readout_waveform(qubit: str, waveform: Waveform):
@@ -25,12 +25,12 @@ def plot_readout_waveform(qubit: str, waveform: Waveform):
     window = np.ones(AVG_NUM)
     mov_avg = np.convolve(waveform.values, window, mode="valid") / AVG_NUM
     mov_avg = np.append(mov_avg, np.zeros(AVG_NUM - 1))
-    time = waveform.times * 1e-3
+    times = waveform.times * 1e-3
 
-    ax.plot(time, np.real(mov_avg), label="I")
-    ax.plot(time, np.imag(mov_avg), label="Q")
+    ax.plot(times, np.real(mov_avg), label="I")
+    ax.plot(times, np.imag(mov_avg), label="Q")
 
-    sliced_time = time[READ_RANGE]
+    sliced_time = times[READ_SLICE_RANGE]
     ax.axvspan(
         sliced_time[0],
         sliced_time[-1],
@@ -44,7 +44,7 @@ def plot_states_before_after_rotation(data):
     states = np.array(data)
     rotated_states = rotate_to_vertical(data)
 
-    _, axs = plt.subplots(1, 2, figsize=(12, 6))
+    _, axs = plt.subplots(1, 2, figsize=(8, 4))
 
     axs[0].scatter(states.real, states.imag)
     axs[0].set_title("Before Rotation")
@@ -63,12 +63,25 @@ def plot_states_before_after_rotation(data):
 
 def plot_states_vs_index(data):
     states = np.array(data)
-    _, ax = plt.subplots(figsize=(10, 6))
+    _, ax = plt.subplots(figsize=(8, 4))
 
-    ax.plot(np.arange(len(states)), states.real)
-    ax.plot(np.arange(len(states)), states.imag)
+    ax.plot(states.real)
+    ax.plot(states.imag)
     ax.set_xlabel("Index")
-    ax.set_ylabel("Value")
+    ax.set_ylabel("Amplitude / a.u.")
+    ax.grid(True)
+
+    plt.show()
+
+
+def plot_states_vs_times(times, data):
+    states = np.array(data)
+    _, ax = plt.subplots(figsize=(8, 4))
+
+    ax.plot(times, states.real)
+    ax.plot(times, states.imag)
+    ax.set_xlabel("Time / ns")
+    ax.set_ylabel("Amplitude / a.u.")
     ax.grid(True)
 
     plt.show()

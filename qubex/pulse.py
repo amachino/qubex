@@ -1,3 +1,4 @@
+from math import e
 from typing import Final, Union
 
 import numpy as np
@@ -76,7 +77,7 @@ class Waveform:
             self.plot_xy(title)
 
     def plot_xy(self, title=""):
-        ax = plt.subplot()
+        _, ax = plt.subplots(figsize=(8, 4))
         ax.set_title(title)
         ax.set_xlabel("Time / ns")
         ax.set_ylabel("Amplitude / a.u.")
@@ -93,7 +94,7 @@ class Waveform:
         plt.show()
 
     def plot_polar(self, title=""):
-        fig, ax = plt.subplots(2, 1, sharex=True)
+        fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8, 4))
         fig.suptitle(title)
         ax[0].set_ylabel("Amplitude / a.u.")
         ax[1].set_ylabel("Phase / rad")
@@ -297,9 +298,11 @@ class TabuchiDD(Waveform):
         length = self._ns_to_samples(duration)
         self.t = np.linspace(0, duration, length)
         self.T = duration
-        self.vx_n = np.array(self.vx_n_T_over_pi) * np.pi / duration
-        self.vy_n = np.array(self.vy_n_T_over_pi) * np.pi / duration
-        values = self._calc_values(scale, beta, phi)
+        values = np.array([])
+        if duration != 0:
+            self.vx_n = np.array(self.vx_n_T_over_pi) * np.pi / duration
+            self.vy_n = np.array(self.vy_n_T_over_pi) * np.pi / duration
+            values = self._calc_values(scale, beta, phi)
         super().__init__(values)
 
     def _calc_values(self, scale: float, beta: float, phi: float) -> np.ndarray:

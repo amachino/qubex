@@ -10,7 +10,7 @@ from qubecalib.setupqube import run
 
 qc.ui.MATPLOTLIB_PYPLOT = plt
 
-from .pulse import Waveform, Sequence
+from .pulse import Rect, Waveform, Sequence
 
 from .utils import (
     raised_cos,
@@ -20,28 +20,38 @@ from .utils import (
 )
 
 # 実験パラメータ
-import qubex.params as params
+from .params import ro_ampl_dict, ro_freq_dict, ctrl_freq_dict
 
 T_READ = 128 * 12  # [ns] 128の倍数（2022/08/18）
 T_CTRL = 10 * 2048  # [ns]
 T_MARGIN = 128 * 2  # [ns]
 READ_SLICE_RANGE = slice(200, int(200 + 800 / 1.5))  # 1000) # 読出しデータ切り取り範囲
 
+MUX = [
+    ["Q00", "Q01", "Q02", "Q03"],
+    ["Q04", "Q05", "Q06", "Q07"],
+    ["Q08", "Q09", "Q10", "Q11"],
+    ["Q12", "Q13", "Q14", "Q15"],
+]
+
 
 class Measurement:
     def __init__(
         self,
         qube_id: str,
-        qubits: list[str],
+        mux_number: int,
         readout_ports: tuple[str, str] = ("port0", "port1"),
         time_ctrl=T_CTRL,
+        repeats=10_000,
+        interval=100_000,
     ):
         self.qube_id = qube_id
         self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
-        self.qubits = qubits
+        self.qubits = MUX[mux_number]
         self.readout_ports = readout_ports
         self.time_ctrl = time_ctrl
-        self.params = params
+        self.repeats = repeats
+        self.interval = interval
         self._setup(self.qube)
 
     def _setup(self, qube):
@@ -109,16 +119,16 @@ class Measurement:
         for qubit_ in self.all_ro_qubit_list:
             self.schedule.add_channel(
                 key="RO_send_" + qubit_,
-                center_frequency=params.ro_freq_dict[self.qube_id][qubit_],
+                center_frequency=ro_freq_dict[self.qube_id][qubit_],
             )
             self.schedule.add_channel(
                 key="RO_return_" + qubit_,
-                center_frequency=params.ro_freq_dict[self.qube_id][qubit_],
+                center_frequency=ro_freq_dict[self.qube_id][qubit_],
             )
         for qubit_ in self.all_ctrl_qubit_list:
             self.schedule.add_channel(
                 key=qubit_,
-                center_frequency=params.ctrl_freq_dict[qubit_],
+                center_frequency=ctrl_freq_dict[qubit_],
             )
 
         """パルスシーケンスの時間ブロック割り当て"""
@@ -222,9 +232,7 @@ class Measurement:
 
         ro_iq = {}
         for qubit_ in ro_qubit_list_:
-            self.ro[qubit_].iq[:] = params.ro_ampl_dict[self.qube_id][
-                qubit_
-            ] * raised_cos(
+            self.ro[qubit_].iq[:] = ro_ampl_dict[self.qube_id][qubit_] * raised_cos(
                 self.t_ro[qubit_], 0, T_READ / 1.5, 50
             )  # 読み出し波形の指定
             ro_iq[qubit_] = self.ro[qubit_].iq
@@ -290,8 +298,6 @@ class Measurement:
     def measure(
         self,
         waveforms: dict[str, np.ndarray],
-        repeats=10_000,
-        interval=100_000,
     ):
         qubits = list(waveforms.keys())
 
@@ -300,8 +306,8 @@ class Measurement:
 
         run(
             self.schedule,
-            repeats=repeats,
-            interval=interval,
+            repeats=self.repeats,
+            interval=self.interval,
             adda_to_channels=self.adda_to_channels,
             triggers=self.triggers,
         )
@@ -310,14 +316,111 @@ class Measurement:
         result = self.time_integrate_IQ(detected_iq, qubits)
         return result
 
+    def rabi_experiment(
+        self,
+        qubit: str,
+        sweep_range: np.ndarray,
+        amplitude: float,
+    ):
+        qubits = [qubit]
+
+        IQ_before_list_dict = {qubit: [] for qubit in qubits}
+        IQ_after_list_dict = {qubit: [] for qubit in qubits}
+
+        for i, duration in enumerate(sweep_range):
+            self.initialize_circuit()
+
+            waveforms = {
+                qubit: Rect(duration, amplitude).values,
+            }
+
+            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, waveforms)
+            run(
+                self.schedule,
+                repeats=self.repeats,
+                interval=self.interval,
+                adda_to_channels=self.adda_to_channels,
+                triggers=self.triggers,
+            )
+            detected_iq_dict, detected_time_dict = self.detect_ro_waveform(qubits)
+            IQ_sig_dict = self.time_integrate_IQ(detected_iq_dict, qubits)
+            IQ_before_list_dict[qubit].append(IQ_sig_dict[qubit])
+            IQ_after_list_dict, grad_dict, intercept_dict = linear_fit_and_rotate_IQ(
+                qubits, IQ_before_list_dict
+            )
+            clear_output(True)
+            show_measurement_results(
+                qubits,
+                detected_time_dict,
+                detected_iq_dict,
+                self.slice_range,
+                sweep_range[: i + 1],
+                IQ_before_list_dict,
+                IQ_after_list_dict,
+            )
+            show_pulse_sequences([qubit], self.t_c, c_iq, [qubit], self.t_ro, ro_iq)
+            print(duration)
+
+        result = np.array(IQ_before_list_dict[qubit])
+        return result
+
+    def sweep_pramameter(
+        self,
+        qubit: str,
+        sweep_range: np.ndarray,
+        waveform: Callable[[float], Waveform],
+        pulse_count=1,
+    ):
+        qubits = [qubit]
+
+        IQ_before_list_dict = {qubit: [] for qubit in qubits}
+        IQ_after_list_dict = {qubit: [] for qubit in qubits}
+
+        for i, v in enumerate(sweep_range):
+            self.initialize_circuit()
+
+            pulse = waveform(v)
+            sequence = Sequence([pulse] * pulse_count)
+            waveforms = {
+                qubit: sequence.values,
+            }
+
+            c_iq, ro_iq = self.finalize_circuit(qubits, qubits, waveforms)
+            run(
+                self.schedule,
+                repeats=self.repeats,
+                interval=self.interval,
+                adda_to_channels=self.adda_to_channels,
+                triggers=self.triggers,
+            )
+            detected_iq_dict, detected_time_dict = self.detect_ro_waveform(qubits)
+            IQ_sig_dict = self.time_integrate_IQ(detected_iq_dict, qubits)
+            IQ_before_list_dict[qubit].append(IQ_sig_dict[qubit])
+            IQ_after_list_dict, grad_dict, intercept_dict = linear_fit_and_rotate_IQ(
+                qubits, IQ_before_list_dict
+            )
+            clear_output(True)
+            show_measurement_results(
+                qubits,
+                detected_time_dict,
+                detected_iq_dict,
+                self.slice_range,
+                sweep_range[: i + 1],
+                IQ_before_list_dict,
+                IQ_after_list_dict,
+            )
+            show_pulse_sequences([qubit], self.t_c, c_iq, [qubit], self.t_ro, ro_iq)
+            print(f"{i+1}/{len(sweep_range)}: {v}")
+
+        result = np.array(IQ_before_list_dict[qubit])
+        return result
+
     def sweep_pulse_duration(
         self,
         qubit: str,
         sweep_range: np.ndarray,
         amplitude: float,
         waveform: Callable[[int, float], Waveform],
-        repeats=10_000,
-        interval=100_000,
     ):
         qubits = [qubit]
 
@@ -334,8 +437,6 @@ class Measurement:
             c_iq, ro_iq = self.finalize_circuit(qubits, qubits, waveforms)
             run(
                 self.schedule,
-                repeats=repeats,
-                interval=interval,
                 adda_to_channels=self.adda_to_channels,
                 triggers=self.triggers,
             )
@@ -368,8 +469,6 @@ class Measurement:
         duration: int,
         waveform: Callable[[int, float], Waveform],
         pulse_count=4,
-        repeats=10_000,
-        interval=100_000,
     ):
         qubits = [qubit]
 
@@ -388,8 +487,8 @@ class Measurement:
             c_iq, ro_iq = self.finalize_circuit(qubits, qubits, waveforms)
             run(
                 self.schedule,
-                repeats=repeats,
-                interval=interval,
+                repeats=self.repeats,
+                interval=self.interval,
                 adda_to_channels=self.adda_to_channels,
                 triggers=self.triggers,
             )
@@ -418,16 +517,15 @@ class Measurement:
     def repeat_pulse(
         self,
         qubit: str,
-        sweep_range: np.ndarray,
+        n: int,
         waveform: Waveform,
-        repeats=10_000,
-        interval=100_000,
     ):
         qubits = [qubit]
 
         IQ_before_list_dict = {qubit: [] for qubit in qubits}
         IQ_after_list_dict = {qubit: [] for qubit in qubits}
 
+        sweep_range = np.arange(n)
         for i in sweep_range:
             self.initialize_circuit()
 
@@ -439,8 +537,8 @@ class Measurement:
             c_iq, ro_iq = self.finalize_circuit(qubits, qubits, waveforms)
             run(
                 self.schedule,
-                repeats=repeats,
-                interval=interval,
+                repeats=self.repeats,
+                interval=self.interval,
                 adda_to_channels=self.adda_to_channels,
                 triggers=self.triggers,
             )
