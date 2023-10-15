@@ -3,9 +3,6 @@ from typing import Callable
 import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
-from scipy.optimize import curve_fit
-from scipy.optimize import minimize
-from sklearn.decomposition import PCA
 
 import qubecalib as qc
 from qubecalib.pulse import Read, Schedule, Blank, Arbit
@@ -16,11 +13,9 @@ qc.ui.MATPLOTLIB_PYPLOT = plt
 from .pulse import Waveform, Sequence
 
 from .utils import (
-    Waveforms,
     raised_cos,
     show_pulse_sequences,
     show_measurement_results,
-    make_list_dict,
     linear_fit_and_rotate_IQ,
 )
 
@@ -39,11 +34,13 @@ class Measurement:
         qube_id: str,
         qubits: list[str],
         readout_ports: tuple[str, str] = ("port0", "port1"),
+        time_ctrl=T_CTRL,
     ):
         self.qube_id = qube_id
         self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
         self.qubits = qubits
         self.readout_ports = readout_ports
+        self.time_ctrl = time_ctrl
         self.params = params
         self._setup(self.qube)
 
@@ -126,7 +123,7 @@ class Measurement:
 
         """パルスシーケンスの時間ブロック割り当て"""
         time_ro = T_READ
-        time_ctrl = T_CTRL
+        time_ctrl = self.time_ctrl
         time_margin = T_MARGIN
 
         for qubit_ in self.all_ro_qubit_list:
@@ -234,11 +231,11 @@ class Measurement:
 
         return c_iq, ro_iq
 
-    def initialize_circuit(self, ctrl_qubit_list_, ro_qubit_list_):
-        for qubit_ in ctrl_qubit_list_:
+    def initialize_circuit(self):
+        for qubit_ in self.all_ctrl_qubit_list:
             self.c[qubit_].iq[:] = 0  # パルス波形の初期化
 
-        for qubit_ in ro_qubit_list_:
+        for qubit_ in self.all_ro_qubit_list:
             self.ro[qubit_].iq[:] = 0
 
     def detect_ro_waveform(self, ro_qubit_list_):
@@ -290,6 +287,29 @@ class Measurement:
 
         return IQ_sig_dict
 
+    def measure(
+        self,
+        waveforms: dict[str, np.ndarray],
+        repeats=10_000,
+        interval=100_000,
+    ):
+        qubits = list(waveforms.keys())
+
+        self.initialize_circuit()
+        self.finalize_circuit(qubits, qubits, waveforms)
+
+        run(
+            self.schedule,
+            repeats=repeats,
+            interval=interval,
+            adda_to_channels=self.adda_to_channels,
+            triggers=self.triggers,
+        )
+
+        detected_iq, _ = self.detect_ro_waveform(qubits)
+        result = self.time_integrate_IQ(detected_iq, qubits)
+        return result
+
     def sweep_pulse_duration(
         self,
         qubit: str,
@@ -301,11 +321,11 @@ class Measurement:
     ):
         qubits = [qubit]
 
-        IQ_before_list_dict = make_list_dict(self.all_ro_qubit_list)
-        IQ_after_list_dict = make_list_dict(self.all_ro_qubit_list)
+        IQ_before_list_dict = {qubit: [] for qubit in qubits}
+        IQ_after_list_dict = {qubit: [] for qubit in qubits}
 
         for i, duration in enumerate(sweep_range):
-            self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
+            self.initialize_circuit()
 
             waveforms = {
                 qubit: waveform(duration, amplitude).values,
@@ -353,11 +373,11 @@ class Measurement:
     ):
         qubits = [qubit]
 
-        IQ_before_list_dict = make_list_dict(self.all_ro_qubit_list)
-        IQ_after_list_dict = make_list_dict(self.all_ro_qubit_list)
+        IQ_before_list_dict = {qubit: [] for qubit in qubits}
+        IQ_after_list_dict = {qubit: [] for qubit in qubits}
 
         for i, amplitude in enumerate(sweep_range):
-            self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
+            self.initialize_circuit()
 
             pulse = waveform(duration, amplitude)
             sequence = Sequence([pulse] * pulse_count)
@@ -405,13 +425,13 @@ class Measurement:
     ):
         qubits = [qubit]
 
-        IQ_before_list_dict = make_list_dict(self.all_ro_qubit_list)
-        IQ_after_list_dict = make_list_dict(self.all_ro_qubit_list)
+        IQ_before_list_dict = {qubit: [] for qubit in qubits}
+        IQ_after_list_dict = {qubit: [] for qubit in qubits}
 
         for i in sweep_range:
-            self.initialize_circuit(self.all_ctrl_qubit_list, self.all_ro_qubit_list)
+            self.initialize_circuit()
 
-            sequence = Sequence([waveform] * (i + 1))
+            sequence = Sequence([waveform] * i)
             waveforms = {
                 qubit: sequence.values,
             }
@@ -444,49 +464,3 @@ class Measurement:
 
         result = np.array(IQ_before_list_dict[qubit])
         return result
-
-    def principal_components(self, iq_complex, pca=None):
-        iq_vector = np.column_stack([np.real(iq_complex), np.imag(iq_complex)])
-        if pca is None:
-            pca = PCA(n_components=1)
-        results = pca.fit_transform(iq_vector).squeeze()
-        return results, pca
-
-    def fit_and_find_minimum(self, x, y, p0=None):
-        def cos_func(t, ampl, omega, phi, offset):
-            return ampl * np.cos(omega * t + phi) + offset
-
-        if p0 is None:
-            p0 = (
-                np.abs(np.max(y) - np.min(y)) / 2,
-                1 / (x[-1] - x[0]),
-                0,
-                (np.max(y) + np.min(y)) / 2,
-            )
-
-        popt, _ = curve_fit(cos_func, x, y, p0=p0)
-        print(
-            f"Fitted function: {popt[0]:.3f} * cos({popt[1]:.3f} * t + {popt[2]:.3f}) + {popt[3]:.3f}"
-        )
-
-        result = minimize(
-            cos_func,
-            x0=np.mean(x),
-            args=tuple(popt),
-            bounds=[(np.min(x), np.max(x))],
-        )
-        min_x = result.x[0]
-        min_y = cos_func(min_x, *popt)
-
-        x_fine = np.linspace(np.min(x), np.max(x), 1000)
-        y_fine = cos_func(x_fine, *popt)
-
-        plt.scatter(x, y, label="Data")
-        plt.plot(x_fine, y_fine, label="Fit")
-        plt.scatter(min_x, min_y, color="red", label="Minimum")
-        plt.legend()
-        plt.show()
-
-        print(f"Minimum: ({min_x}, {min_y})")
-
-        return min_x, min_y

@@ -63,3 +63,5 @@ ampl_drag_hpi_dict = {
 }
 
 ample_10MHz = 0.10853
+
+duration_drag_hpi = 50

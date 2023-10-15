@@ -114,7 +114,10 @@ class Waveform:
 class Sequence(Waveform):
     def __init__(self, waveforms: list[Waveform]):
         self.waveforms = waveforms
-        values = np.concatenate([w.values for w in waveforms])
+        if len(waveforms) == 0:
+            values = np.array([])
+        else:
+            values = np.concatenate([w.values for w in waveforms])
         super().__init__(values)
 
 
