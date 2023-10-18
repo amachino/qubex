@@ -253,7 +253,7 @@ class DragCos(Waveform):
 
 
 class CPMG(Sequence):
-    def __init__(self, tau: int, pi: Waveform, n=1):
+    def __init__(self, tau: int, pi: Waveform, n=2):
         if tau % (2 * self.SAMPLING_PERIOD) != 0:
             raise ValueError(
                 f"Tau must be a multiple of twice the sampling period ({2 * self.SAMPLING_PERIOD} ns)."
