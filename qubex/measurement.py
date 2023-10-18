@@ -393,7 +393,7 @@ class Measurement:
         ctrl_qubits = qubits
         read_qubits = qubits
 
-        states = {qubit: [] for qubit in qubits}
+        states: dict[str, list[complex]] = {qubit: [] for qubit in qubits}
         states_rotated = {}
 
         for idx, duration in enumerate(time_range):
@@ -537,7 +537,7 @@ class Measurement:
         states: dict[str, list[complex]] = {qubit: [] for qubit in qubits}
         states_rotated = {}
 
-        sweep_range = np.arange(n)
+        sweep_range = np.arange(n + 1)
         for idx in sweep_range:
             self.initialize_circuit(
                 ctrl_qubits=ctrl_qubits,
@@ -585,7 +585,7 @@ class Measurement:
                 read_qubits,
                 read_waveforms,
             )
-            print(f"{idx+1}/{len(sweep_range)}")
+            print(f"{idx}/{n}")
 
         return states[qubit]
 

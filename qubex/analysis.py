@@ -59,12 +59,13 @@ def fit_and_find_minimum(x, y, p0=None):
     return min_x, min_y
 
 
+def cos_func(t, ampl, omega, phi, offset):
+    return ampl * np.cos(omega * t + phi) + offset
+
+
 def normalize_rabi(result, wave_count=2.5):
     time = result.time
-    values, pca = principal_components(result.vector)
-
-    def cos_func(t, ampl, omega, phi, offset):
-        return ampl * np.cos(omega * t + phi) + offset
+    values = rotate_to_vertical(result.data).imag
 
     p0 = (
         np.abs(np.max(values) - np.min(values)) / 2,
@@ -95,7 +96,7 @@ def normalize_rabi(result, wave_count=2.5):
     plt.title(f"Rabi oscillation ({omega / (2 * np.pi) * 1e3:.3f} MHz)")
     plt.show()
 
-    return norm_values, pca, popt
+    return norm_values, popt
 
 
 def rotate_to_vertical(data) -> np.ndarray:
