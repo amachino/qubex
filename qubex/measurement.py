@@ -1,8 +1,10 @@
 from typing import Callable
+from attr import dataclass
 
-import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import numpy as np
+from numpy.typing import NDArray
 from IPython.display import clear_output
 
 import qubecalib as qc
@@ -34,6 +36,25 @@ MUX = [
     ["Q08", "Q09", "Q10", "Q11"],
     ["Q12", "Q13", "Q14", "Q15"],
 ]
+
+
+@dataclass
+class MeasurementResult:
+    qubit: str
+    time: NDArray[np.int64]
+    data: NDArray[np.complex128]
+
+    @property
+    def real(self):
+        return np.real(self.data)
+
+    @property
+    def imag(self):
+        return np.imag(self.data)
+
+    @property
+    def vector(self):
+        return np.column_stack([self.real, self.imag])
 
 
 class Measurement:
@@ -236,12 +257,44 @@ class Measurement:
         for qubit in read_qubits:
             self.read_channels[qubit].iq[:] = ro_ampl_dict[self.qube_id][
                 qubit
-            ] * self.raised_cos(
-                self.read_times[qubit], 0, T_READ / 1.5, 50
+            ] * self.readout_waveform(
+                self.read_times[qubit]
             )  # 読み出し波形の指定
             read_waveforms[qubit] = self.read_channels[qubit].iq
 
         return ctrl_waveforms, read_waveforms
+
+    def readout_waveform(self, t_list):
+        t_start = 0
+        t_duration = T_READ / 1.5
+        rise_time = 50
+
+        t0 = 0
+        t1 = t0 + t_start  # 立ち上がり開始時刻
+        t2 = t1 + rise_time  # 立ち上がり完了時刻
+        t3 = t2 + t_duration  # 立ち下がり開始時刻
+        t4 = t3 + rise_time  # 立ち下がり完了時刻
+
+        cond_12 = (t1 <= t_list) & (t_list < t2)  # 立ち上がり時間領域の条件ブール値
+        cond_23 = (t2 <= t_list) & (t_list < t3)  # 一定値領域の条件ブール値
+        cond_34 = (t3 <= t_list) & (t_list < t4)  # 立ち下がり時間領域の条件ブール値
+
+        t_12 = t_list[cond_12]  # 立ち上がり時間領域の時間リスト
+        t_23 = t_list[cond_23]  # 一定値領域の時間リスト
+        t_34 = t_list[cond_34]  # 立ち下がり時間領域の時間リスト
+
+        waveform = t_list + 0 * 1j  # 波形リストの雛形
+        waveform[:] = 0  # 波形リストの初期化
+        waveform[cond_12] = (
+            1.0 - np.cos(np.pi * (t_12 - t1) / rise_time)
+        ) / 2 + 1j * 0.0  # 立ち上がり時間領域
+        waveform[cond_23] = 1.0 + 1j * 0.0  # 一定値領域
+        waveform[cond_34] = (
+            1.0 - np.cos(np.pi * (t4 - t_34) / rise_time)
+        ) / 2 + 1j * 0.0  # 立ち下がり時間領域
+        # waveform[cond_34] = (1.0 + np.cos(np.pi*(t_34-t3)/rise_time)) / 2 + 1j*0.0 # 立ち下がり時間領域
+
+        return waveform
 
     def get_rx_waveforms(
         self,
@@ -307,26 +360,55 @@ class Measurement:
         )
         return result
 
+    def rabi_check(
+        self,
+        sweep_range=np.arange(0, 200, 10),
+        amplitude=0.03,
+    ) -> dict[str, MeasurementResult]:
+        result = self._rabi_experiment(
+            time_range=sweep_range,
+            amplitudes={qubit: amplitude for qubit in self.all_read_qubits},
+        )
+        return result
+
     def rabi_experiment(
         self,
         qubit: str,
-        sweep_range: np.ndarray,
+        time_range: NDArray[np.int64],
         amplitude: float,
-    ):
-        qubits = [qubit]
+    ) -> MeasurementResult:
+        result = self._rabi_experiment(
+            time_range=time_range,
+            amplitudes={qubit: amplitude},
+        )[qubit]
+        return result
+
+    def _rabi_experiment(
+        self,
+        time_range: NDArray[np.int64],
+        amplitudes: dict[str, float],
+    ) -> dict[str, MeasurementResult]:
+        qubits = list(amplitudes.keys())
+
         ctrl_qubits = qubits
         read_qubits = qubits
 
-        states: dict[str, list[complex]] = {qubit: [] for qubit in qubits}
+        states = {qubit: [] for qubit in qubits}
         states_rotated = {}
 
-        for idx, duration in enumerate(sweep_range):
+        for idx, duration in enumerate(time_range):
             self.initialize_circuit(
                 ctrl_qubits=ctrl_qubits,
                 read_qubits=read_qubits,
             )
 
-            waveforms = {qubit: Rect(duration, amplitude).values for qubit in qubits}
+            waveforms = {
+                qubit: Rect(
+                    duration,
+                    amplitudes[qubit],
+                ).values
+                for qubit in qubits
+            }
 
             ctrl_waveforms, read_waveforms = self.finalize_circuit(
                 ctrl_qubits=ctrl_qubits,
@@ -354,7 +436,7 @@ class Measurement:
                 read_qubits,
                 rx_time,
                 rx_waveform,
-                sweep_range[: idx + 1],
+                time_range[: idx + 1],
                 states,
                 states_rotated,
             )
@@ -364,9 +446,17 @@ class Measurement:
                 ctrl_qubits,
                 read_waveforms,
             )
-            print(f"{idx+1}/{len(sweep_range)}: {duration} ns")
+            print(f"{idx+1}/{len(time_range)}: {duration} ns")
 
-        return states[qubit]
+        result = {
+            qubit: MeasurementResult(
+                qubit=qubit,
+                time=time_range,
+                data=np.array(state),
+            )
+            for qubit, state in states.items()
+        }
+        return result
 
     def sweep_pramameter(
         self,
@@ -688,32 +778,3 @@ class Measurement:
             )
             ax[qubit][2].legend()
         plt.show()
-
-    # レイズドコサイン波形の定義
-    def raised_cos(self, t_list, t_start, t_duration, rise_time):
-        t0 = 0
-        t1 = t0 + t_start  # 立ち上がり開始時刻
-        t2 = t1 + rise_time  # 立ち上がり完了時刻
-        t3 = t2 + t_duration  # 立ち下がり開始時刻
-        t4 = t3 + rise_time  # 立ち下がり完了時刻
-
-        cond_12 = (t1 <= t_list) & (t_list < t2)  # 立ち上がり時間領域の条件ブール値
-        cond_23 = (t2 <= t_list) & (t_list < t3)  # 一定値領域の条件ブール値
-        cond_34 = (t3 <= t_list) & (t_list < t4)  # 立ち下がり時間領域の条件ブール値
-
-        t_12 = t_list[cond_12]  # 立ち上がり時間領域の時間リスト
-        t_23 = t_list[cond_23]  # 一定値領域の時間リスト
-        t_34 = t_list[cond_34]  # 立ち下がり時間領域の時間リスト
-
-        waveform = t_list + 0 * 1j  # 波形リストの雛形
-        waveform[:] = 0  # 波形リストの初期化
-        waveform[cond_12] = (
-            1.0 - np.cos(np.pi * (t_12 - t1) / rise_time)
-        ) / 2 + 1j * 0.0  # 立ち上がり時間領域
-        waveform[cond_23] = 1.0 + 1j * 0.0  # 一定値領域
-        waveform[cond_34] = (
-            1.0 - np.cos(np.pi * (t4 - t_34) / rise_time)
-        ) / 2 + 1j * 0.0  # 立ち下がり時間領域
-        # waveform[cond_34] = (1.0 + np.cos(np.pi*(t_34-t3)/rise_time)) / 2 + 1j*0.0 # 立ち下がり時間領域
-
-        return waveform

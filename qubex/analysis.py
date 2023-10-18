@@ -2,9 +2,9 @@
 a module for data analysis of qube experiment
 """
 
-from locale import normalize
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+from numpy.typing import NDArray
 from scipy.optimize import curve_fit
 from scipy.optimize import minimize
 from sklearn.decomposition import PCA
@@ -59,18 +59,21 @@ def fit_and_find_minimum(x, y, p0=None):
     return min_x, min_y
 
 
-def normalize_rabi(x, y, wave_count=2.5):
+def normalize_rabi(result, wave_count=2.5):
+    time = result.time
+    values, pca = principal_components(result.vector)
+
     def cos_func(t, ampl, omega, phi, offset):
         return ampl * np.cos(omega * t + phi) + offset
 
     p0 = (
-        np.abs(np.max(y) - np.min(y)) / 2,
-        wave_count * 2 * np.pi / (x[-1] - x[0]),
-        0 if y[0] > 0 else np.pi,
-        (np.max(y) + np.min(y)) / 2,
+        np.abs(np.max(values) - np.min(values)) / 2,
+        wave_count * 2 * np.pi / (time[-1] - time[0]),
+        0 if values[0] > 0 else np.pi,
+        (np.max(values) + np.min(values)) / 2,
     )
 
-    popt, _ = curve_fit(cos_func, x, y, p0=p0)
+    popt, _ = curve_fit(cos_func, time, values, p0=p0)
 
     ampl, omega, phi, offset = popt
 
@@ -79,20 +82,20 @@ def normalize_rabi(x, y, wave_count=2.5):
     )
     print(f"Rabi frequency: {omega / (2 * np.pi) * 1e3:.3f} MHz")
 
-    y = (y - offset) / ampl
+    norm_values = (values - offset) / ampl
 
-    x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = cos_func(x_fine, 1, omega, phi, 0)
+    t_fine = np.linspace(np.min(time), np.max(time), 1000)
+    v_fine = cos_func(t_fine, 1, omega, phi, 0)
 
-    plt.scatter(x, y, label="Data")
-    plt.plot(x_fine, y_fine, label="Fit")
+    plt.scatter(time, norm_values, label="Data")
+    plt.plot(t_fine, v_fine, label="Fit")
     plt.xlabel("Time / ns")
     plt.ylabel("Normalized amplitude")
     plt.legend()
     plt.title(f"Rabi oscillation ({omega / (2 * np.pi) * 1e3:.3f} MHz)")
     plt.show()
 
-    return y
+    return norm_values, pca, popt
 
 
 def rotate_to_vertical(data) -> np.ndarray:
@@ -102,10 +105,15 @@ def rotate_to_vertical(data) -> np.ndarray:
         return states
 
     fit_params = np.polyfit(states.real, states.imag, 1)
-    a, _ = fit_params
+    grad, intercept = fit_params
 
-    theta = np.arctan(a)
-    rotation_angle = np.pi / 2 - theta
+    theta = np.arctan(grad)
+    rotation_angle = -theta
+    if intercept > 0:
+        rotation_angle -= np.pi / 2
+    else:
+        rotation_angle += np.pi / 2
+
     rotated_states = states * np.exp(1j * rotation_angle)
 
     return rotated_states
