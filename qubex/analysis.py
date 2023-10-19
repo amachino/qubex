@@ -1,6 +1,9 @@
-"""
-a module for data analysis of qube experiment
-"""
+from attr import dataclass
+from typing import Union
+import numpy as np
+from numpy.typing import NDArray
+
+ComplexValues = Union[NDArray[np.complex128], list[complex]]
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -59,62 +62,23 @@ def fit_and_find_minimum(x, y, p0=None):
     return min_x, min_y
 
 
-def cos_func(t, ampl, omega, phi, offset):
-    return ampl * np.cos(omega * t + phi) + offset
+def rotate_to_vertical(data: ComplexValues, angle=None):
+    points = np.array(data)
 
+    if len(points) < 2:
+        return points, 0.0
 
-def normalize_rabi(result, wave_count=2.5):
-    time = result.time
-    values = rotate_to_vertical(result.data).imag
+    if angle is None:
+        fit_params = np.polyfit(points.real, points.imag, 1)
+        gradient, intercept = fit_params
 
-    p0 = (
-        np.abs(np.max(values) - np.min(values)) / 2,
-        wave_count * 2 * np.pi / (time[-1] - time[0]),
-        0 if values[0] > 0 else np.pi,
-        (np.max(values) + np.min(values)) / 2,
-    )
+        theta = np.arctan(gradient)
+        angle = theta
+        if intercept > 0:
+            angle += np.pi / 2
+        else:
+            angle -= np.pi / 2
 
-    popt, _ = curve_fit(cos_func, time, values, p0=p0)
+    rotated_points = points * np.exp(-1j * angle)
 
-    ampl, omega, phi, offset = popt
-
-    print(
-        f"Fitted function: {ampl:.3f} * cos({omega:.3f} * t + {phi:.3f}) + {offset:.3f}"
-    )
-    print(f"Rabi frequency: {omega / (2 * np.pi) * 1e3:.3f} MHz")
-
-    norm_values = (values - offset) / ampl
-
-    t_fine = np.linspace(np.min(time), np.max(time), 1000)
-    v_fine = cos_func(t_fine, 1, omega, phi, 0)
-
-    plt.scatter(time, norm_values, label="Data")
-    plt.plot(t_fine, v_fine, label="Fit")
-    plt.xlabel("Time / ns")
-    plt.ylabel("Normalized amplitude")
-    plt.legend()
-    plt.title(f"Rabi oscillation ({omega / (2 * np.pi) * 1e3:.3f} MHz)")
-    plt.show()
-
-    return norm_values, popt
-
-
-def rotate_to_vertical(data) -> np.ndarray:
-    states = np.array(data)
-
-    if len(states) < 2:
-        return states
-
-    fit_params = np.polyfit(states.real, states.imag, 1)
-    grad, intercept = fit_params
-
-    theta = np.arctan(grad)
-    rotation_angle = -theta
-    if intercept > 0:
-        rotation_angle -= np.pi / 2
-    else:
-        rotation_angle += np.pi / 2
-
-    rotated_states = states * np.exp(1j * rotation_angle)
-
-    return rotated_states
+    return rotated_points, angle

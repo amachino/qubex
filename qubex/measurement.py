@@ -1,11 +1,12 @@
-from typing import Callable
+from typing import Callable, Union
 from attr import dataclass
 
+from IPython.display import clear_output
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 from numpy.typing import NDArray
-from IPython.display import clear_output
+from scipy.optimize import curve_fit
 
 import qubecalib as qc
 from qubecalib.pulse import Read, Schedule, Blank, Arbit
@@ -18,6 +19,7 @@ from .analysis import rotate_to_vertical
 
 # 実験パラメータ
 from .params import ro_ampl_dict, ro_freq_dict, ctrl_freq_dict
+
 
 T_READ = 128 * 12  # [ns] 128の倍数（2022/08/18）
 T_CTRL = 10 * 2048  # [ns]
@@ -38,11 +40,24 @@ MUX = [
 ]
 
 
+ComplexValues = Union[NDArray[np.complex128], list[complex]]
+
+
+@dataclass
+class RabiParams:
+    qubit: str
+    phase_shift: float
+    amplitude: float
+    omega: float
+    offset: float
+
+
 @dataclass
 class MeasurementResult:
     qubit: str
-    time: NDArray[np.int64]
+    sweep_range: NDArray
     data: NDArray[np.complex128]
+    phase_shift: float
 
     @property
     def real(self):
@@ -56,6 +71,10 @@ class MeasurementResult:
     def vector(self):
         return np.column_stack([self.real, self.imag])
 
+    @property
+    def rotated(self):
+        return self.data * np.exp(-1j * self.phase_shift)
+
 
 class Measurement:
     def __init__(
@@ -65,7 +84,8 @@ class Measurement:
         readout_ports: tuple[str, str] = ("port0", "port1"),
         time_ctrl=T_CTRL,
         repeats=10_000,
-        interval=100_000,
+        interval=150_000,
+        read_range=READ_SLICE_RANGE,
     ):
         self.qube_id = qube_id
         self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
@@ -74,6 +94,8 @@ class Measurement:
         self.time_ctrl = time_ctrl
         self.repeats = repeats
         self.interval = interval
+        self.read_range = read_range
+        self.rabi_params: dict[str, RabiParams] = {}
         self._setup(self.qube)
 
     def _setup(self, qube):
@@ -224,8 +246,6 @@ class Measurement:
                 - self.schedule.offset
             )
 
-        self.slice_range = READ_SLICE_RANGE
-
     def initialize_circuit(
         self,
         ctrl_qubits: list[str],
@@ -313,7 +333,7 @@ class Measurement:
         waveforms: dict[str, np.ndarray],
     ) -> dict[str, complex]:
         iq = {
-            qubit: waveform[self.slice_range].mean()
+            qubit: waveform[self.read_range].mean()
             for qubit, waveform in waveforms.items()
         }
         return iq
@@ -362,11 +382,9 @@ class Measurement:
 
     def rabi_check(
         self,
-        sweep_range=np.arange(0, 200, 10),
         amplitude=0.03,
     ) -> dict[str, MeasurementResult]:
         result = self._rabi_experiment(
-            time_range=sweep_range,
             amplitudes={qubit: amplitude for qubit in self.all_read_qubits},
         )
         return result
@@ -374,19 +392,17 @@ class Measurement:
     def rabi_experiment(
         self,
         qubit: str,
-        time_range: NDArray[np.int64],
         amplitude: float,
     ) -> MeasurementResult:
         result = self._rabi_experiment(
-            time_range=time_range,
             amplitudes={qubit: amplitude},
         )[qubit]
         return result
 
     def _rabi_experiment(
         self,
-        time_range: NDArray[np.int64],
         amplitudes: dict[str, float],
+        time_range=np.arange(0, 201, 10),
     ) -> dict[str, MeasurementResult]:
         qubits = list(amplitudes.keys())
 
@@ -395,6 +411,7 @@ class Measurement:
 
         states: dict[str, list[complex]] = {qubit: [] for qubit in qubits}
         states_rotated = {}
+        phase_shift = {}
 
         for idx, duration in enumerate(time_range):
             self.initialize_circuit(
@@ -429,7 +446,9 @@ class Measurement:
 
             for qubit in read_qubits:
                 states[qubit].append(iq[qubit])
-                states_rotated[qubit] = rotate_to_vertical(states[qubit])
+                states_rotated[qubit], phase_shift[qubit] = rotate_to_vertical(
+                    states[qubit]
+                )
 
             clear_output(True)
             self.show_measurement_results(
@@ -451,10 +470,11 @@ class Measurement:
         result = {
             qubit: MeasurementResult(
                 qubit=qubit,
-                time=time_range,
-                data=np.array(state),
+                sweep_range=time_range,
+                data=np.array(values),
+                phase_shift=phase_shift[qubit],
             )
-            for qubit, state in states.items()
+            for qubit, values in states.items()
         }
         return result
 
@@ -464,13 +484,14 @@ class Measurement:
         sweep_range: np.ndarray,
         waveform: Callable[[float], Waveform],
         pulse_count=1,
-    ):
+    ) -> MeasurementResult:
         qubits = [qubit]
         ctrl_qubits = qubits
         read_qubits = qubits
 
         states: dict[str, list[complex]] = {qubit: [] for qubit in qubits}
         states_rotated = {}
+        phase_shift = {}
 
         for idx, var in enumerate(sweep_range):
             self.initialize_circuit(
@@ -503,7 +524,9 @@ class Measurement:
 
             for qubit in read_qubits:
                 states[qubit].append(iq[qubit])
-                states_rotated[qubit] = rotate_to_vertical(states[qubit])
+                states_rotated[qubit], phase_shift[qubit] = rotate_to_vertical(
+                    states[qubit]
+                )
 
             clear_output(True)
             self.show_measurement_results(
@@ -522,7 +545,13 @@ class Measurement:
             )
             print(f"{idx+1}/{len(sweep_range)}: {var}")
 
-        return states[qubit]
+        result = MeasurementResult(
+            qubit=qubit,
+            sweep_range=sweep_range,
+            data=np.array(states[qubit]),
+            phase_shift=phase_shift[qubit],
+        )
+        return result
 
     def repeat_pulse(
         self,
@@ -536,6 +565,7 @@ class Measurement:
 
         states: dict[str, list[complex]] = {qubit: [] for qubit in qubits}
         states_rotated = {}
+        phase_shift = {}
 
         sweep_range = np.arange(n + 1)
         for idx in sweep_range:
@@ -568,7 +598,9 @@ class Measurement:
 
             for qubit in read_qubits:
                 states[qubit].append(iq[qubit])
-                states_rotated[qubit] = rotate_to_vertical(states[qubit])
+                states_rotated[qubit], phase_shift[qubit] = rotate_to_vertical(
+                    states[qubit]
+                )
 
             clear_output(True)
             self.show_measurement_results(
@@ -587,7 +619,13 @@ class Measurement:
             )
             print(f"{idx}/{n}")
 
-        return states[qubit]
+        result = MeasurementResult(
+            qubit=qubit,
+            sweep_range=sweep_range,
+            data=np.array(states[qubit]),
+            phase_shift=phase_shift[qubit],
+        )
+        return result
 
     def show_pulse_sequences(
         self,
@@ -713,15 +751,14 @@ class Measurement:
                 label="Q",
             )
 
-            slice_range = self.slice_range
             ax[qubit][0].plot(
-                rx_time[qubit][slice_range] * 1e-3,
-                np.real(mov_avg_readout_iq)[slice_range],
+                rx_time[qubit][self.read_range] * 1e-3,
+                np.real(mov_avg_readout_iq)[self.read_range],
                 lw=5,
             )
             ax[qubit][0].plot(
-                rx_time[qubit][slice_range] * 1e-3,
-                np.imag(mov_avg_readout_iq)[slice_range],
+                rx_time[qubit][self.read_range] * 1e-3,
+                np.imag(mov_avg_readout_iq)[self.read_range],
                 lw=5,
             )
 
@@ -763,7 +800,7 @@ class Measurement:
             ax[qubit][2].scatter(
                 np.real(states[qubit])[0],
                 np.imag(states[qubit])[0],
-                color="red",
+                color="blue",
             )
 
             ax[qubit][2].scatter(
@@ -774,7 +811,78 @@ class Measurement:
             ax[qubit][2].scatter(
                 np.real(states_rotated[qubit][0]),
                 np.imag(states_rotated[qubit][0]),
-                color="blue",
+                color="red",
             )
             ax[qubit][2].legend()
         plt.show()
+
+    def normalize_rabi(self, result, wave_count=2.5):
+        def cos_func(t, ampl, omega, offset):
+            return -ampl * np.cos(omega * t) + offset
+
+        time = result.sweep_range
+        points, angle = rotate_to_vertical(data=result.data)
+        values = points.imag
+
+        p0 = (
+            np.abs(np.max(values) - np.min(values)) / 2,
+            wave_count * 2 * np.pi / (time[-1] - time[0]),
+            (np.max(values) + np.min(values)) / 2,
+        )
+
+        popt, _ = curve_fit(cos_func, time, values, p0=p0)
+
+        params = RabiParams(
+            qubit=result.qubit,
+            phase_shift=angle,
+            amplitude=popt[0],
+            omega=popt[1],
+            offset=popt[2],
+        )
+        self.rabi_params[result.qubit] = params
+
+        rabi_freq = params.omega / (2 * np.pi)
+
+        print(
+            f"Phase shift: {params.phase_shift:.3f} rad, {params.phase_shift * 180 / np.pi:.3f} deg"
+        )
+        print(
+            f"Fitted function: {params.amplitude:.0f} * cos({params.omega:.6f} * t + {params.offset:.0f}"
+        )
+        print(f"Rabi frequency: {rabi_freq * 1e3:.3f} MHz")
+
+        norm_values = (values - params.offset) / params.amplitude
+
+        time_fit = np.linspace(np.min(time), np.max(time), 1000)
+        values_fit = cos_func(time_fit, params.amplitude, params.omega, params.offset)
+        norm_values_fit = cos_func(time_fit, 1, params.omega, 0)
+
+        fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+        fig.suptitle(f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)")
+
+        ax[0].scatter(time, values, label="Data")
+        ax[0].plot(time_fit, values_fit, label="Fit")
+        ax[0].set_title("Raw data")
+        ax[0].set_xlabel("Time / ns")
+        ax[0].set_ylabel("Amplitude / a.u.")
+        ax[0].grid(True)
+
+        ax[1].scatter(time, norm_values, label="Data")
+        ax[1].plot(time_fit, norm_values_fit, label="Fit")
+        ax[1].set_title("Normalized data")
+        ax[1].set_xlabel("Time / ns")
+        ax[1].set_ylabel("Amplitude / a.u.")
+        ax[1].grid(True)
+
+        return norm_values, params
+
+    def expectation_value(
+        self,
+        qubit: str,
+        iq: complex,
+    ):
+        params = self.rabi_params[qubit]
+        iq = iq * np.exp(-1j * params.phase_shift)
+        value = iq.imag
+        value = (value - params.offset) / params.amplitude
+        return value
