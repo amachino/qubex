@@ -1,10 +1,3 @@
-from attr import dataclass
-from typing import Union
-import numpy as np
-from numpy.typing import NDArray
-
-ComplexValues = Union[NDArray[np.complex128], list[complex]]
-
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
@@ -62,7 +55,7 @@ def fit_and_find_minimum(x, y, p0=None):
     return min_x, min_y
 
 
-def rotate_to_vertical(data: ComplexValues, angle=None):
+def rotate_to_vertical(data, angle=None):
     points = np.array(data)
 
     if len(points) < 2:
@@ -82,3 +75,47 @@ def rotate_to_vertical(data: ComplexValues, angle=None):
     rotated_points = points * np.exp(-1j * angle)
 
     return rotated_points, angle
+
+
+def find_nearest_frequency_combinations(
+    target_frequency,
+    lo_range=(8000, 12000),
+    nco_range=(0, 3000),
+    lo_step=500,
+    nco_step=375,
+):
+    # Adjust the start of the range to the nearest multiple of the step using integer division
+    lo_start = ((lo_range[0] + lo_step - 1) // lo_step) * lo_step
+    nco_start = ((nco_range[0] + nco_step - 1) // nco_step) * nco_step
+
+    # Generate the possible LO and NCO frequencies based on the adjusted ranges and steps
+    lo_frequencies = [freq for freq in range(lo_start, lo_range[1] + lo_step, lo_step)]
+    nco_frequencies = [
+        freq for freq in range(nco_start, nco_range[1] + nco_step, nco_step)
+    ]
+
+    # Initialize variables to store the best combinations and minimum difference
+    best_combinations = []
+    best_frequency = None
+    min_difference = float("inf")
+
+    # Loop through each LO frequency and find the NCO frequency that makes LO - NCO closest to the target
+    for lo in lo_frequencies:
+        for nco in nco_frequencies:
+            lo_minus_nco = lo - nco
+            difference = abs(target_frequency - lo_minus_nco)
+
+            if difference < min_difference:
+                # Clear the best_combinations list, update the best_frequency, and update the minimum difference
+                best_combinations = [(lo, nco)]
+                best_frequency = lo_minus_nco
+                min_difference = difference
+            elif difference == min_difference:
+                # Add the new combination to the list
+                best_combinations.append((lo, nco))
+
+    print(f"Target frequency: {target_frequency}")
+    print(f"Nearest frequency: {best_frequency}")
+    print(f"Combinations: {best_combinations}")
+
+    return best_frequency, best_combinations
