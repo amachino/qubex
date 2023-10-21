@@ -1,12 +1,11 @@
-from typing import Callable, Union
 from attr import dataclass
+from typing import Callable
 
 from IPython.display import clear_output
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
 from numpy.typing import NDArray
-from scipy.optimize import curve_fit
 
 import qubecalib as qc
 from qubecalib.pulse import Read, Schedule, Blank, Arbit
@@ -15,13 +14,12 @@ from qubecalib.setupqube import run
 qc.ui.MATPLOTLIB_PYPLOT = plt
 
 from .pulse import Rect, Waveform, Sequence
-from .analysis import rotate_to_vertical
+from .analysis import rotate_to_vertical, fit_rabi
+
 
 # 実験パラメータ
 from .params import (
     ctrl_freq_dict,
-    anharm_dict,
-    qubit_true_freq_dict,
     ro_freq_dict,
     ro_ampl_dict,
     ampl_hpi_dict,
@@ -47,15 +45,13 @@ MUX = [
 ]
 
 
-ComplexValues = Union[NDArray[np.complex128], list[complex]]
-
-
 @dataclass
 class RabiParams:
     qubit: str
     phase_shift: float
     amplitude: float
     omega: float
+    phi: float
     offset: float
 
 
@@ -105,13 +101,11 @@ class Measurement:
         self.rabi_params: dict[str, RabiParams] = {}
         self._setup(self.qube)
 
-    def _setup_params(self):
-        self.ctrl_frequencies = ctrl_freq_dict
-        self.true_frequencies = qubit_true_freq_dict
-        self.anharmonicities = anharm_dict
-        self.read_frequencies = ro_freq_dict[self.qube_id]
-        self.read_amplitudes = ro_ampl_dict[self.qube_id]
-        self.hpi_amplitudes = ampl_hpi_dict[self.qube_id]
+    def get_ctrl_frequency(self, qubit: str) -> float:
+        return self.schedule[qubit].center_frequency
+
+    def set_ctrl_frequency(self, qubit: str, frequency: float):
+        self.schedule[qubit].center_frequency = frequency
 
     def _setup_channels(self):
         self.all_read_qubits = self.qubits
@@ -126,16 +120,16 @@ class Measurement:
         for qubit in self.all_read_qubits:
             self.schedule.add_channel(
                 key=READ_TX + qubit,
-                center_frequency=self.read_frequencies[qubit],
+                center_frequency=ro_freq_dict[self.qube_id][qubit],
             )
             self.schedule.add_channel(
                 key=READ_RX + qubit,
-                center_frequency=self.read_frequencies[qubit],
+                center_frequency=ro_freq_dict[self.qube_id][qubit],
             )
         for qubit in self.all_ctrl_qubits:
             self.schedule.add_channel(
                 key=qubit,
-                center_frequency=self.ctrl_frequencies[qubit],
+                center_frequency=ctrl_freq_dict[qubit],
             )
 
         """パルスシーケンスの時間ブロック割り当て"""
@@ -185,7 +179,6 @@ class Measurement:
             )
 
     def _setup(self, qube):
-        self._setup_params()
         self._setup_channels()
 
         port_tx = qube.ports[self.readout_ports[0]]
@@ -392,7 +385,7 @@ class Measurement:
         self,
         time_range=np.arange(0, 201, 10),
     ) -> dict[str, MeasurementResult]:
-        amplitudes = self.hpi_amplitudes
+        amplitudes = ampl_hpi_dict[self.qube_id]
         result = self._rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -828,65 +821,51 @@ class Measurement:
             ax[qubit][2].legend()
         plt.show()
 
-    def normalize_rabi(self, result, wave_count=2.5):
-        def cos_func(t, ampl, omega, offset):
-            return -ampl * np.cos(omega * t) + offset
-
+    def normalize_rabi(
+        self,
+        result: MeasurementResult,
+        wave_count=2.5,
+    ):
+        """
+        Normalize the Rabi oscillation data.
+        """
         time = result.sweep_range
+
+        # Rotate the data to the vertical (Q) axis
         points, angle = rotate_to_vertical(data=result.data)
         values = points.imag
+        print(f"Phase shift: {angle:.3f} rad, {angle * 180 / np.pi:.3f} deg")
 
-        p0 = (
-            np.abs(np.max(values) - np.min(values)) / 2,
-            wave_count * 2 * np.pi / (time[-1] - time[0]),
-            (np.max(values) + np.min(values)) / 2,
+        # Estimate the initial parameters
+        omega0 = 2 * np.pi / (time[-1] - time[0])
+        ampl_est = (np.max(values) - np.min(values)) / 2
+        omega_est = wave_count * omega0
+        phase_est = np.pi
+        offset_est = (np.max(values) + np.min(values)) / 2
+        p0 = (ampl_est, omega_est, phase_est, offset_est)
+
+        # Set the bounds for the parameters
+        bounds = (
+            [0, 0, -np.pi, -2 * np.abs(offset_est)],
+            [2 * ampl_est, 2 * omega_est, np.pi, 2 * np.abs(offset_est)],
         )
 
-        popt, _ = curve_fit(cos_func, time, values, p0=p0)
+        # Fit the data
+        popt, _ = fit_rabi(time, values, p0, bounds)
 
-        params = RabiParams(
+        # Set the parameters as the instance attributes
+        rabi_params = RabiParams(
             qubit=result.qubit,
             phase_shift=angle,
             amplitude=popt[0],
             omega=popt[1],
-            offset=popt[2],
+            phi=popt[2],
+            offset=popt[3],
         )
-        self.rabi_params[result.qubit] = params
+        self.rabi_params[result.qubit] = rabi_params
 
-        rabi_freq = params.omega / (2 * np.pi)
-
-        print(
-            f"Phase shift: {params.phase_shift:.3f} rad, {params.phase_shift * 180 / np.pi:.3f} deg"
-        )
-        print(
-            f"Fitted function: {params.amplitude:.0f} * cos({params.omega:.6f} * t + {params.offset:.0f}"
-        )
-        print(f"Rabi frequency: {rabi_freq * 1e3:.3f} MHz")
-
-        norm_values = (values - params.offset) / params.amplitude
-
-        time_fit = np.linspace(np.min(time), np.max(time), 1000)
-        values_fit = cos_func(time_fit, params.amplitude, params.omega, params.offset)
-        norm_values_fit = cos_func(time_fit, 1, params.omega, 0)
-
-        fig, ax = plt.subplots(1, 2, figsize=(12, 4))
-        fig.suptitle(f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)")
-
-        ax[0].scatter(time, values, label="Data")
-        ax[0].plot(time_fit, values_fit, label="Fit")
-        ax[0].set_title("Raw data")
-        ax[0].set_xlabel("Time / ns")
-        ax[0].set_ylabel("Amplitude / a.u.")
-        ax[0].grid(True)
-
-        ax[1].scatter(time, norm_values, label="Data")
-        ax[1].plot(time_fit, norm_values_fit, label="Fit")
-        ax[1].set_title("Normalized data")
-        ax[1].set_xlabel("Time / ns")
-        ax[1].set_ylabel("Amplitude / a.u.")
-        ax[1].grid(True)
-
-        return norm_values, params
+        values_normalized = (values - rabi_params.offset) / rabi_params.amplitude
+        return values_normalized, rabi_params
 
     def expectation_value(
         self,
