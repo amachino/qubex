@@ -124,29 +124,33 @@ def fit_and_find_minimum(x, y, p0=None):
     return min_x, min_y
 
 
-def rotate_to_vertical(data, angle=None):
+def rotate(data, angle: float) -> np.ndarray:
+    points = np.array(data)
+    rotated_points = points * np.exp(-1j * angle)
+    return rotated_points
+
+
+def fit_and_rotate(data) -> tuple[np.ndarray, float]:
     points = np.array(data)
 
     if len(points) < 2:
         return points, 0.0
 
-    if angle is None:
-        fit_params = np.polyfit(points.real, points.imag, 1)
-        gradient, intercept = fit_params
+    fit_params = np.polyfit(points.real, points.imag, 1)
+    gradient, intercept = fit_params
 
-        theta = np.arctan(gradient)
-        angle = theta
-        if intercept > 0:
-            angle += np.pi / 2
-        else:
-            angle -= np.pi / 2
+    theta = np.arctan(gradient)
+    angle = theta
+    if intercept > 0:
+        angle += np.pi / 2
+    else:
+        angle -= np.pi / 2
 
     rotated_points = points * np.exp(-1j * angle)
-
     return rotated_points, angle
 
 
-def principal_components(iq_complex, pca=None):
+def principal_components(iq_complex, pca=None) -> tuple[np.ndarray, PCA]:
     iq_complex = np.array(iq_complex)
     iq_vector = np.column_stack([np.real(iq_complex), np.imag(iq_complex)])
     if pca is None:

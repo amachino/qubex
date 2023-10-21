@@ -113,13 +113,13 @@ class Waveform:
 
 
 class Sequence(Waveform):
-    def __init__(self, waveforms: list[Waveform]):
+    def __init__(self, waveforms: list[Waveform], phase_offset=0.0):
         self.waveforms = waveforms
         if len(waveforms) == 0:
             values = np.array([])
         else:
             values = np.concatenate([w.values for w in waveforms])
-        super().__init__(values)
+        super().__init__(values, phase_offset=phase_offset)
 
 
 class Blank(Waveform):
@@ -254,7 +254,7 @@ class DragCos(Waveform):
 
 
 class CPMG(Sequence):
-    def __init__(self, tau: int, pi: Waveform, n=2):
+    def __init__(self, tau: int, pi: Waveform, n=2, phase_offset=0.0):
         if tau % (2 * self.SAMPLING_PERIOD) != 0:
             raise ValueError(
                 f"Tau must be a multiple of twice the sampling period ({2 * self.SAMPLING_PERIOD} ns)."
@@ -267,7 +267,7 @@ class CPMG(Sequence):
         for _ in range(n - 1):
             sequence += [pi, Blank(tau)]
         sequence += [pi, Blank(tau // 2)]
-        super().__init__(sequence)
+        super().__init__(sequence, phase_offset=phase_offset)
 
 
 class TabuchiDD(Waveform):

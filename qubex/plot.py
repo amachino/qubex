@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 from .measurement import READ_SLICE_RANGE
 from .pulse import Waveform
-from .analysis import rotate_to_vertical, principal_components
+from .analysis import fit_and_rotate, principal_components
 
 
 def plot_readout_waveform(qubit: str, waveform: Waveform):
@@ -42,7 +42,7 @@ def plot_readout_waveform(qubit: str, waveform: Waveform):
 
 def plot_states_before_after_rotation(data):
     states = np.array(data)
-    rotated_states = rotate_to_vertical(data)
+    rotated_states = fit_and_rotate(data)
 
     _, axs = plt.subplots(1, 2, figsize=(8, 4))
 

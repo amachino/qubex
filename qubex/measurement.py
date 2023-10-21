@@ -1,5 +1,6 @@
+from cmath import phase
 from attr import dataclass
-from typing import Callable
+from typing import Callable, Optional
 
 from IPython.display import clear_output
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ from qubecalib.setupqube import run
 qc.ui.MATPLOTLIB_PYPLOT = plt
 
 from .pulse import Rect, Waveform, Sequence
-from .analysis import rotate_to_vertical, fit_rabi
+from .analysis import rotate, fit_and_rotate, fit_rabi
 
 
 # 実験パラメータ
@@ -451,7 +452,7 @@ class Measurement:
 
             for qubit in read_qubits:
                 states[qubit].append(iq[qubit])
-                states_rotated[qubit], phase_shift[qubit] = rotate_to_vertical(
+                states_rotated[qubit], phase_shift[qubit] = fit_and_rotate(
                     states[qubit]
                 )
 
@@ -483,12 +484,27 @@ class Measurement:
         }
         return result
 
+    def repeat_pulse(
+        self,
+        qubit: str,
+        waveform: Waveform,
+        n: int,
+    ) -> MeasurementResult:
+        result = self.sweep_pramameter(
+            qubit=qubit,
+            sweep_range=np.arange(n + 1),
+            waveform=lambda x: Sequence([waveform] * int(x)),
+            pulse_count=1,
+        )
+        return result
+
     def sweep_pramameter(
         self,
         qubit: str,
         sweep_range: np.ndarray,
         waveform: Callable[[float], Waveform],
         pulse_count=1,
+        rabi_params: Optional[RabiParams] = None,
     ) -> MeasurementResult:
         qubits = [qubit]
         ctrl_qubits = qubits
@@ -529,9 +545,14 @@ class Measurement:
 
             for qubit in read_qubits:
                 states[qubit].append(iq[qubit])
-                states_rotated[qubit], phase_shift[qubit] = rotate_to_vertical(
-                    states[qubit]
-                )
+                if rabi_params is not None:
+                    # use the given phase shift if it is given
+                    phase_shift[qubit] = rabi_params.phase_shift
+                    states_rotated[qubit] = rotate(states[qubit], phase_shift[qubit])
+                else:
+                    states_rotated[qubit], phase_shift[qubit] = fit_and_rotate(
+                        states[qubit]
+                    )
 
             clear_output(True)
             self.show_measurement_results(
@@ -549,80 +570,6 @@ class Measurement:
                 read_waveforms,
             )
             print(f"{idx+1}/{len(sweep_range)}: {var}")
-
-        result = MeasurementResult(
-            qubit=qubit,
-            sweep_range=sweep_range,
-            data=np.array(states[qubit]),
-            phase_shift=phase_shift[qubit],
-        )
-        return result
-
-    def repeat_pulse(
-        self,
-        qubit: str,
-        n: int,
-        waveform: Waveform,
-    ):
-        qubits = [qubit]
-        ctrl_qubits = qubits
-        read_qubits = qubits
-
-        states: dict[str, list[complex]] = {qubit: [] for qubit in qubits}
-        states_rotated = {}
-        phase_shift = {}
-
-        sweep_range = np.arange(n + 1)
-        for idx in sweep_range:
-            self.initialize_circuit(
-                ctrl_qubits=ctrl_qubits,
-                read_qubits=read_qubits,
-            )
-
-            sequence = Sequence([waveform] * idx)
-            waveforms = {
-                qubit: sequence.values,
-            }
-
-            ctrl_waveforms, read_waveforms = self.finalize_circuit(
-                ctrl_qubits=ctrl_qubits,
-                read_qubits=read_qubits,
-                waveforms=waveforms,
-            )
-
-            run(
-                self.schedule,
-                repeats=self.repeats,
-                interval=self.interval,
-                adda_to_channels=self.adda_to_channels,
-                triggers=self.triggers,
-            )
-
-            rx_waveform, rx_time = self.get_rx_waveforms(read_qubits)
-            iq = self.get_integrated_iq(rx_waveform)
-
-            for qubit in read_qubits:
-                states[qubit].append(iq[qubit])
-                states_rotated[qubit], phase_shift[qubit] = rotate_to_vertical(
-                    states[qubit]
-                )
-
-            clear_output(True)
-            self.show_measurement_results(
-                read_qubits,
-                rx_time,
-                rx_waveform,
-                sweep_range[: idx + 1],
-                states,
-                states_rotated,
-            )
-            self.show_pulse_sequences(
-                ctrl_qubits,
-                ctrl_waveforms,
-                read_qubits,
-                read_waveforms,
-            )
-            print(f"{idx}/{n}")
 
         result = MeasurementResult(
             qubit=qubit,
@@ -832,7 +779,7 @@ class Measurement:
         time = result.sweep_range
 
         # Rotate the data to the vertical (Q) axis
-        points, angle = rotate_to_vertical(data=result.data)
+        points, angle = fit_and_rotate(data=result.data)
         values = points.imag
         print(f"Phase shift: {angle:.3f} rad, {angle * 180 / np.pi:.3f} deg")
 
