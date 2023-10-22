@@ -74,7 +74,7 @@ class Measurement:
         readout_ports: tuple[str, str] = ("port0", "port1"),
         repeats=10_000,
         interval=150_000,
-        max_ctrl_duration=T_CONTROL,
+        ctrl_duration=T_CONTROL,
         read_range=READOUT_RANGE,
     ):
         self.qube_id = qube_id
@@ -83,7 +83,7 @@ class Measurement:
         self.readout_ports = readout_ports
         self.repeats = repeats
         self.interval = interval
-        self.max_ctrl_duration = max_ctrl_duration
+        self.ctrl_duration = ctrl_duration
         self.read_range = read_range
         self.schedule = Schedule()
         self.rabi_params: dict[str, RabiParams] = {}
@@ -230,11 +230,11 @@ class Measurement:
         max_duration = max_length * SAMPLING_PERIOD
         # TODO: 動的に ctrl_duration を決めるためには、位相のずれを考慮する必要がある
         # self.schedule.offset = (max_duration // MIN_DURATION + 1) * MIN_DURATION + T_MARGIN
-        self.ctrl_duration = (
+        self.ctrl_duration_ = (
             max_duration // MIN_DURATION + 1
         ) * MIN_DURATION + T_MARGIN
 
-        self.schedule.offset = self.max_ctrl_duration
+        self.schedule.offset = self.ctrl_duration
 
         for ch in self._ctrl_channels():
             ch.clear()
@@ -547,7 +547,7 @@ class Measurement:
 
         # the x-axis range
         xlim = (
-            min(-1.0, -self.ctrl_duration * 1e-3),
+            min(-1.0, -self.ctrl_duration_ * 1e-3),
             T_READOUT * 1e-3,
         )
 
