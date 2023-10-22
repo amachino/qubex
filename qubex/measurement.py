@@ -1,4 +1,3 @@
-from cmath import phase
 from attr import dataclass
 from typing import Callable, Optional
 
@@ -9,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 import qubecalib as qc
-from qubecalib.pulse import Read, Schedule, Blank, Arbit
+from qubecalib.pulse import Schedule, Channel, Blank, Arbitrary, Read
 from qubecalib.setupqube import run
 
 qc.ui.MATPLOTLIB_PYPLOT = plt
@@ -17,8 +16,6 @@ qc.ui.MATPLOTLIB_PYPLOT = plt
 from .pulse import Rect, Waveform, Sequence
 from .analysis import rotate, fit_and_rotate, fit_rabi
 
-
-# 実験パラメータ
 from .params import (
     ctrl_freq_dict,
     ro_freq_dict,
@@ -26,17 +23,18 @@ from .params import (
     ampl_hpi_dict,
 )
 
+SAMPLING_PERIOD = 2  # [ns]
+MIN_SAMPLE = 64
+MIN_DURATION = MIN_SAMPLE * SAMPLING_PERIOD
+T_CONTROL = 10 * 2048
+T_READOUT = 12 * MIN_DURATION
+T_MARGIN = 2 * MIN_DURATION
+READOUT_RANGE = slice(200, int(200 + 800 / 1.5))
 
-T_READ = 128 * 12  # [ns] 128の倍数（2022/08/18）
-T_CTRL = 10 * 2048  # [ns]
-T_MARGIN = 128 * 2  # [ns]
-READ_SLICE_RANGE = slice(200, int(200 + 800 / 1.5))  # 1000) # 読出しデータ切り取り範囲
-
-SAMPLING_PERIOD = 2
-
-CTRL = "CTRL_"
-READ_TX = "READ_TX_"
-READ_RX = "READ_RX_"
+CTRL_HI = "_hi"
+CTRL_LO = "_lo"
+READ_TX = "TX_"
+READ_RX = "RX_"
 
 MUX = [
     ["Q00", "Q01", "Q02", "Q03"],
@@ -86,97 +84,87 @@ class Measurement:
         qube_id: str,
         mux_number: int,
         readout_ports: tuple[str, str] = ("port0", "port1"),
-        time_ctrl=T_CTRL,
         repeats=10_000,
         interval=150_000,
-        read_range=READ_SLICE_RANGE,
+        read_range=READOUT_RANGE,
     ):
         self.qube_id = qube_id
         self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
         self.qubits = MUX[mux_number]
         self.readout_ports = readout_ports
-        self.time_ctrl = time_ctrl
         self.repeats = repeats
         self.interval = interval
+        self.ctrl_duration = T_CONTROL
         self.read_range = read_range
+        self.schedule = Schedule()
         self.rabi_params: dict[str, RabiParams] = {}
         self._setup(self.qube)
 
-    def get_ctrl_frequency(self, qubit: str) -> float:
+    def ctrl_frequency(self, qubit: str) -> float:
         return self.schedule[qubit].center_frequency
 
     def set_ctrl_frequency(self, qubit: str, frequency: float):
         self.schedule[qubit].center_frequency = frequency
 
+    def _ctrl_channel(self, qubit: str) -> Channel:
+        return self.schedule[qubit]
+
+    def _read_tx_channel(self, qubit: str) -> Channel:
+        return self.schedule[READ_TX + qubit]
+
+    def _read_rx_channel(self, qubit: str) -> Channel:
+        return self.schedule[READ_RX + qubit]
+
+    def _ctrl_channels(self) -> list[Channel]:
+        return [self._ctrl_channel(qubit) for qubit in self.all_ctrl_qubits]
+
+    def _read_tx_channels(self) -> list[Channel]:
+        return [self._read_tx_channel(qubit) for qubit in self.all_read_qubits]
+
+    def _read_rx_channels(self) -> list[Channel]:
+        return [self._read_rx_channel(qubit) for qubit in self.all_read_qubits]
+
+    def _ctrl_slot(self, qubit: str) -> Arbitrary:
+        return self._ctrl_channel(qubit).findall(Arbitrary)[0]
+
+    def _read_tx_slot(self, qubit: str) -> Arbitrary:
+        return self._read_tx_channel(qubit).findall(Arbitrary)[0]
+
+    def _read_rx_slot(self, qubit: str) -> Read:
+        return self._read_rx_channel(qubit).findall(Read)[0]
+
+    def _ctrl_times(self, qubit: str) -> np.ndarray:
+        channel = self._ctrl_channel(qubit)
+        slot = self._ctrl_slot(qubit)
+        local_times = channel.get_timestamp(slot)
+        global_times = local_times - self.schedule.offset
+        return global_times
+
+    def _read_times(self, qubit: str) -> np.ndarray:
+        channel = self._read_tx_channel(qubit)
+        slot = self._read_tx_slot(qubit)
+        local_times = channel.get_timestamp(slot)
+        global_times = local_times - self.schedule.offset
+        return global_times
+
     def _setup_channels(self):
         self.all_read_qubits = self.qubits
-
         self.all_ctrl_qubits = []
+
         for qubit in self.qubits:
-            self.all_ctrl_qubits.extend([f"{qubit}_lo", qubit, f"{qubit}_hi"])
-
-        """Scheduleのchannel割り当て"""
-        self.schedule = Schedule()
+            self.all_ctrl_qubits.extend([qubit + CTRL_LO, qubit, qubit + CTRL_HI])
 
         for qubit in self.all_read_qubits:
-            self.schedule.add_channel(
-                key=READ_TX + qubit,
+            self.schedule[READ_TX + qubit] = Channel(
                 center_frequency=ro_freq_dict[self.qube_id][qubit],
             )
-            self.schedule.add_channel(
-                key=READ_RX + qubit,
+            self.schedule[READ_RX + qubit] = Channel(
                 center_frequency=ro_freq_dict[self.qube_id][qubit],
             )
+
         for qubit in self.all_ctrl_qubits:
-            self.schedule.add_channel(
-                key=qubit,
+            self.schedule[qubit] = Channel(
                 center_frequency=ctrl_freq_dict[qubit],
-            )
-
-        """パルスシーケンスの時間ブロック割り当て"""
-        for qubit in self.all_read_qubits:
-            (
-                self.schedule[READ_TX + qubit]
-                << Blank(duration=self.time_ctrl)
-                << Arbit(duration=T_READ, amplitude=1)
-                << Blank(duration=4 * T_MARGIN)
-            )  # type: ignore
-            (
-                self.schedule[READ_RX + qubit]
-                << Blank(duration=self.time_ctrl - T_MARGIN)
-                << Read(duration=T_READ + 5 * T_MARGIN)
-            )  # type: ignore
-        for qubit in self.all_ctrl_qubits:
-            (
-                self.schedule[qubit]
-                << Arbit(duration=self.time_ctrl, amplitude=1)
-                << Blank(duration=T_READ + 4 * T_MARGIN)
-            )  # type: ignore
-
-        durations = [v.duration for k, v in self.schedule.items()]
-        assert len(set(durations)) == 1, "All channels must have the same duration."
-
-        self.schedule.offset = self.time_ctrl  # [ns] 読み出し開始時刻（時間基準点）の設定
-
-        self.ctrl_channels = {}
-        self.ctrl_times = {}
-        for qubit in self.all_ctrl_qubits:
-            # findall(Arbit)はSchedule内からArbitの要素だけ抜き出してリスト化する
-            self.ctrl_channels[qubit] = self.schedule[qubit].findall(Arbit)[0]
-
-            # 任意波形の時間座標の指定 [ns]
-            self.ctrl_times[qubit] = (
-                self.schedule[qubit].get_timestamp(self.ctrl_channels[qubit])
-                - self.schedule.offset
-            )
-
-        self.read_channels = {}
-        self.read_times = {}
-        for qubit in self.all_read_qubits:
-            self.read_channels[qubit] = self.schedule[READ_TX + qubit].findall(Arbit)[0]
-            self.read_times[qubit] = (
-                self.schedule[READ_TX + qubit].get_timestamp(self.read_channels[qubit])
-                - self.schedule.offset
             )
 
     def _setup(self, qube):
@@ -228,67 +216,76 @@ class Measurement:
         self.triggers = [port_tx.dac.awg0]
 
         self.adda_to_channels = {
-            port_tx.dac.awg0: [
-                self.schedule[READ_TX + qubit] for qubit in self.all_read_qubits
-            ],
-            port_rx.adc.capt0: [
-                self.schedule[READ_RX + qubit] for qubit in self.all_read_qubits
-            ],
-            qube.port5.dac.awg0: [self.schedule[self.qubits[0] + "_lo"]],
-            qube.port6.dac.awg0: [self.schedule[self.qubits[1] + "_lo"]],
-            qube.port7.dac.awg0: [self.schedule[self.qubits[2] + "_lo"]],
-            qube.port8.dac.awg0: [self.schedule[self.qubits[3] + "_lo"]],
-            qube.port5.dac.awg1: [self.schedule[self.qubits[0]]],
-            qube.port6.dac.awg1: [self.schedule[self.qubits[1]]],
-            qube.port7.dac.awg1: [self.schedule[self.qubits[2]]],
-            qube.port8.dac.awg1: [self.schedule[self.qubits[3]]],
-            qube.port5.dac.awg2: [self.schedule[self.qubits[0] + "_hi"]],
-            qube.port6.dac.awg2: [self.schedule[self.qubits[1] + "_hi"]],
-            qube.port7.dac.awg2: [self.schedule[self.qubits[2] + "_hi"]],
-            qube.port8.dac.awg2: [self.schedule[self.qubits[3] + "_hi"]],
+            port_tx.dac.awg0: self._read_tx_channels(),
+            port_rx.adc.capt0: self._read_rx_channels(),
+            qube.port5.dac.awg0: [self._ctrl_channel(self.qubits[0] + CTRL_LO)],
+            qube.port6.dac.awg0: [self._ctrl_channel(self.qubits[1] + CTRL_LO)],
+            qube.port7.dac.awg0: [self._ctrl_channel(self.qubits[2] + CTRL_LO)],
+            qube.port8.dac.awg0: [self._ctrl_channel(self.qubits[3] + CTRL_LO)],
+            qube.port5.dac.awg1: [self._ctrl_channel(self.qubits[0])],
+            qube.port6.dac.awg1: [self._ctrl_channel(self.qubits[1])],
+            qube.port7.dac.awg1: [self._ctrl_channel(self.qubits[2])],
+            qube.port8.dac.awg1: [self._ctrl_channel(self.qubits[3])],
+            qube.port5.dac.awg2: [self._ctrl_channel(self.qubits[0] + CTRL_HI)],
+            qube.port6.dac.awg2: [self._ctrl_channel(self.qubits[1] + CTRL_HI)],
+            qube.port7.dac.awg2: [self._ctrl_channel(self.qubits[2] + CTRL_HI)],
+            qube.port8.dac.awg2: [self._ctrl_channel(self.qubits[3] + CTRL_HI)],
         }
 
-    def initialize_circuit(
-        self,
-        ctrl_qubits: list[str],
-        read_qubits: list[str],
-    ):
-        for qubit in ctrl_qubits:
-            self.ctrl_channels[qubit].iq[:] = 0  # パルス波形の初期化
-
-        for qubit in read_qubits:
-            self.read_channels[qubit].iq[:] = 0
-
-    def finalize_circuit(
+    def set_circuit(
         self,
         ctrl_qubits: list[str],
         read_qubits: list[str],
         waveforms: dict[str, np.ndarray],
     ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+        # TODO: 動的に ctrl_duration を決めるためには、位相のずれを考慮する必要がある
+        # max_length = max([len(waveform) for waveform in waveforms.values()])
+        # max_duration = max_length * SAMPLING_PERIOD
+        # ctrl_duration = (max_duration // MIN_DURATION + 1) * MIN_DURATION + T_MARGIN
+        ctrl_duration = self.ctrl_duration
+
+        self.schedule.offset = ctrl_duration  # [ns]
+
+        for ch in self._ctrl_channels():
+            ch.clear()
+            ch.append(Arbitrary(duration=ctrl_duration, amplitude=1))
+            ch.append(Blank(duration=T_READOUT + 4 * T_MARGIN))
+
+        for ch in self._read_tx_channels():
+            ch.clear()
+            ch.append(Blank(duration=ctrl_duration))
+            ch.append(Arbitrary(duration=T_READOUT, amplitude=1))
+            ch.append(Blank(duration=4 * T_MARGIN))
+
+        for ch in self._read_rx_channels():
+            ch.clear()
+            ch.append(Blank(duration=ctrl_duration - T_MARGIN))
+            ch.append(Read(duration=T_READOUT + 5 * T_MARGIN))
+
+        durations = [channel.duration for channel in self.schedule.values()]
+        assert len(set(durations)) == 1, "All channels must have the same duration."
+
         ctrl_waveforms = {}
         for qubit in ctrl_qubits:
-            t_wave = SAMPLING_PERIOD * len(waveforms[qubit])  # ns
-            self.ctrl_channels[qubit].iq[
-                (-t_wave <= self.ctrl_times[qubit]) & (self.ctrl_times[qubit] < 0)
-            ] = waveforms[
-                qubit
-            ]  # Arbitのパルス波形をここで指定
-            ctrl_waveforms[qubit] = self.ctrl_channels[qubit].iq
+            T = len(waveforms[qubit]) * SAMPLING_PERIOD
+            t = self._ctrl_times(qubit)
+            self._ctrl_slot(qubit).iq[(-T <= t) & (t < 0)] = waveforms[qubit]
+            iq = self._ctrl_slot(qubit).iq
+            ctrl_waveforms[qubit] = iq
 
         read_waveforms = {}
         for qubit in read_qubits:
-            self.read_channels[qubit].iq[:] = ro_ampl_dict[self.qube_id][
-                qubit
-            ] * self.readout_waveform(
-                self.read_times[qubit]
-            )  # 読み出し波形の指定
-            read_waveforms[qubit] = self.read_channels[qubit].iq
+            ampl = ro_ampl_dict[self.qube_id][qubit]
+            t = self._read_times(qubit)
+            self._read_tx_slot(qubit).iq[:] = ampl * self._readout_waveform(t)
+            iq = self._read_tx_slot(qubit).iq
+            read_waveforms[qubit] = iq
 
         return ctrl_waveforms, read_waveforms
 
-    def readout_waveform(self, t_list):
+    def _readout_waveform(self, t_list):
         t_start = 0
-        t_duration = T_READ / 1.5
+        t_duration = T_READOUT / 1.5
         rise_time = 50
 
         t0 = 0
@@ -318,19 +315,19 @@ class Measurement:
 
         return waveform
 
-    def get_rx_waveforms(
+    def _received_waveforms(
         self,
         read_qubits: list[str],
     ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         waveforms = {}
         timestamps = {}
         for qubit in read_qubits:
-            waveform = self.schedule[READ_RX + qubit].findall(Read)[0]
-            waveforms[qubit] = waveform.iq
-            timestamps[qubit] = waveform.timestamp
+            slot = self._read_rx_slot(qubit)
+            waveforms[qubit] = slot.iq
+            timestamps[qubit] = slot.timestamp
         return waveforms, timestamps
 
-    def get_integrated_iq(
+    def _integrated_iq(
         self,
         waveforms: dict[str, np.ndarray],
     ) -> dict[str, complex]:
@@ -346,12 +343,7 @@ class Measurement:
         read_qubits: list[str],
         waveforms: dict[str, np.ndarray],
     ) -> dict[str, complex]:
-        self.initialize_circuit(
-            ctrl_qubits=ctrl_qubits,
-            read_qubits=read_qubits,
-        )
-
-        self.finalize_circuit(
+        self.set_circuit(
             ctrl_qubits=ctrl_qubits,
             read_qubits=read_qubits,
             waveforms=waveforms,
@@ -365,8 +357,8 @@ class Measurement:
             triggers=self.triggers,
         )
 
-        rx_waveforms, _ = self.get_rx_waveforms(read_qubits)
-        result: dict[str, complex] = self.get_integrated_iq(rx_waveforms)
+        rx_waveforms, _ = self._received_waveforms(read_qubits)
+        result: dict[str, complex] = self._integrated_iq(rx_waveforms)
         return result
 
     def measure(
@@ -416,24 +408,19 @@ class Measurement:
         read_qubits = qubits
 
         states: dict[str, list[complex]] = {qubit: [] for qubit in qubits}
-        states_rotated = {}
-        phase_shift = {}
+        states_rotated: dict[str, np.ndarray] = {}
+        phase_shift: dict[str, float] = {}
 
         for idx, duration in enumerate(time_range):
-            self.initialize_circuit(
-                ctrl_qubits=ctrl_qubits,
-                read_qubits=read_qubits,
-            )
-
             waveforms = {
                 qubit: Rect(
-                    duration,
-                    amplitudes[qubit],
+                    duration=duration,
+                    amplitude=amplitudes[qubit],
                 ).values
                 for qubit in qubits
             }
 
-            ctrl_waveforms, read_waveforms = self.finalize_circuit(
+            ctrl_waveforms, read_waveforms = self.set_circuit(
                 ctrl_qubits=ctrl_qubits,
                 read_qubits=read_qubits,
                 waveforms=waveforms,
@@ -447,8 +434,8 @@ class Measurement:
                 triggers=self.triggers,
             )
 
-            rx_waveform, rx_time = self.get_rx_waveforms(read_qubits)
-            iq = self.get_integrated_iq(rx_waveform)
+            rx_waveform, rx_time = self._received_waveforms(read_qubits)
+            iq = self._integrated_iq(rx_waveform)
 
             for qubit in read_qubits:
                 states[qubit].append(iq[qubit])
@@ -458,18 +445,18 @@ class Measurement:
 
             clear_output(True)
             self.show_measurement_results(
-                read_qubits,
-                rx_time,
-                rx_waveform,
-                time_range[: idx + 1],
-                states,
-                states_rotated,
+                read_qubits=read_qubits,
+                rx_time=rx_time,
+                rx_waveform=rx_waveform,
+                sweep_range=time_range[: idx + 1],
+                states=states,
+                states_rotated=states_rotated,
             )
             self.show_pulse_sequences(
-                qubits,
-                ctrl_waveforms,
-                ctrl_qubits,
-                read_waveforms,
+                ctrl_qubits=ctrl_qubits,
+                ctrl_waveforms=ctrl_waveforms,
+                read_qubits=read_qubits,
+                read_waveforms=read_waveforms,
             )
             print(f"{idx+1}/{len(time_range)}: {duration} ns")
 
@@ -515,18 +502,13 @@ class Measurement:
         phase_shift = {}
 
         for idx, var in enumerate(sweep_range):
-            self.initialize_circuit(
-                ctrl_qubits=ctrl_qubits,
-                read_qubits=read_qubits,
-            )
-
             pulse = waveform(var)
             sequence = Sequence([pulse] * pulse_count)
             waveforms = {
                 qubit: sequence.values,
             }
 
-            ctrl_waveforms, read_waveforms = self.finalize_circuit(
+            ctrl_waveforms, read_waveforms = self.set_circuit(
                 ctrl_qubits=ctrl_qubits,
                 read_qubits=read_qubits,
                 waveforms=waveforms,
@@ -540,13 +522,12 @@ class Measurement:
                 triggers=self.triggers,
             )
 
-            rx_waveform, rx_time = self.get_rx_waveforms(read_qubits)
-            iq = self.get_integrated_iq(rx_waveform)
+            rx_waveform, rx_time = self._received_waveforms(read_qubits)
+            iq = self._integrated_iq(rx_waveform)
 
             for qubit in read_qubits:
                 states[qubit].append(iq[qubit])
                 if rabi_params is not None:
-                    # use the given phase shift if it is given
                     phase_shift[qubit] = rabi_params.phase_shift
                     states_rotated[qubit] = rotate(states[qubit], phase_shift[qubit])
                 else:
@@ -556,18 +537,18 @@ class Measurement:
 
             clear_output(True)
             self.show_measurement_results(
-                read_qubits,
-                rx_time,
-                rx_waveform,
-                sweep_range[: idx + 1],
-                states,
-                states_rotated,
+                read_qubits=read_qubits,
+                rx_time=rx_time,
+                rx_waveform=rx_waveform,
+                sweep_range=sweep_range[: idx + 1],
+                states=states,
+                states_rotated=states_rotated,
             )
             self.show_pulse_sequences(
-                ctrl_qubits,
-                ctrl_waveforms,
-                read_qubits,
-                read_waveforms,
+                ctrl_qubits=ctrl_qubits,
+                ctrl_waveforms=ctrl_waveforms,
+                read_qubits=read_qubits,
+                read_waveforms=read_waveforms,
             )
             print(f"{idx+1}/{len(sweep_range)}: {var}")
 
@@ -585,7 +566,6 @@ class Measurement:
         ctrl_waveforms,
         read_qubits,
         read_waveforms,
-        xlim=(-3.0, 1.5),
     ):
         """
         Shows the pulse sequences.
@@ -601,6 +581,9 @@ class Measurement:
         # the grid is adjusted to the number of qubits (N)
         # the last row (N+1) is for the readout waveform
         gs = gridspec.GridSpec(N + 1, 1)
+
+        # the x-axis range
+        xlim = (-self.schedule.offset * 1e-3, T_READOUT * 1e-3)
 
         # initialize the axes
         # share the x-axis with the first subplot
@@ -627,7 +610,7 @@ class Measurement:
         # plot the control pulses
         # the real and imaginary parts are plotted in the same subplot
         for i, qubit in enumerate(ctrl_qubits):
-            ctrl_time = self.ctrl_times[qubit] * 1e-3  # ns -> us
+            ctrl_time = self._ctrl_times(qubit) * 1e-3  # ns -> us
             ctrl_waveform = ctrl_waveforms[qubit]
             axes[i].plot(
                 ctrl_time,
@@ -644,7 +627,7 @@ class Measurement:
 
         # plot the readout pulses
         for i, qubit in enumerate(read_qubits):
-            read_time = self.read_times[qubit] * 1e-3  # ns -> us
+            read_time = self._read_times(qubit) * 1e-3  # ns -> us
             read_waveform = read_waveforms[qubit]
             axes[N].plot(
                 read_time,
