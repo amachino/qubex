@@ -26,10 +26,11 @@ from .params import (
 SAMPLING_PERIOD = 2  # [ns]
 MIN_SAMPLE = 64
 MIN_DURATION = MIN_SAMPLE * SAMPLING_PERIOD
-T_CONTROL = 10 * 2048
-T_READOUT = 12 * MIN_DURATION
-T_MARGIN = 2 * MIN_DURATION
-READOUT_RANGE = slice(200, int(200 + 800 / 1.5))
+T_CONTROL = 10 * 1024
+T_READOUT = 1024
+T_MARGIN = MIN_DURATION
+READOUT_RANGE = slice(T_MARGIN // 2, T_READOUT // 2 + T_MARGIN)
+# READOUT_RANGE = slice(200, int(200 + 800 / 1.5))
 
 CTRL_HI = "_hi"
 CTRL_LO = "_lo"
@@ -62,19 +63,7 @@ class MeasurementResult:
     phase_shift: float
 
     @property
-    def real(self):
-        return np.real(self.data)
-
-    @property
-    def imag(self):
-        return np.imag(self.data)
-
-    @property
-    def vector(self):
-        return np.column_stack([self.real, self.imag])
-
-    @property
-    def rotated(self):
+    def rotated(self) -> NDArray[np.complex128]:
         return self.data * np.exp(-1j * self.phase_shift)
 
 
@@ -86,6 +75,7 @@ class Measurement:
         readout_ports: tuple[str, str] = ("port0", "port1"),
         repeats=10_000,
         interval=150_000,
+        max_ctrl_duration=T_CONTROL,
         read_range=READOUT_RANGE,
     ):
         self.qube_id = qube_id
@@ -94,11 +84,12 @@ class Measurement:
         self.readout_ports = readout_ports
         self.repeats = repeats
         self.interval = interval
-        self.ctrl_duration = T_CONTROL
+        self.max_ctrl_duration = max_ctrl_duration
         self.read_range = read_range
         self.schedule = Schedule()
         self.rabi_params: dict[str, RabiParams] = {}
-        self._setup(self.qube)
+        self._init_channels()
+        self._init_ports(self.qube)
 
     def ctrl_frequency(self, qubit: str) -> float:
         return self.schedule[qubit].center_frequency
@@ -147,7 +138,7 @@ class Measurement:
         global_times = local_times - self.schedule.offset
         return global_times
 
-    def _setup_channels(self):
+    def _init_channels(self):
         self.all_read_qubits = self.qubits
         self.all_ctrl_qubits = []
 
@@ -167,9 +158,7 @@ class Measurement:
                 center_frequency=ctrl_freq_dict[qubit],
             )
 
-    def _setup(self, qube):
-        self._setup_channels()
-
+    def _init_ports(self, qube):
         port_tx = qube.ports[self.readout_ports[0]]
         port_rx = qube.ports[self.readout_ports[1]]
         self.port_tx = port_tx
@@ -238,28 +227,30 @@ class Measurement:
         read_qubits: list[str],
         waveforms: dict[str, np.ndarray],
     ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+        max_length = max([len(waveform) for waveform in waveforms.values()])
+        max_duration = max_length * SAMPLING_PERIOD
         # TODO: 動的に ctrl_duration を決めるためには、位相のずれを考慮する必要がある
-        # max_length = max([len(waveform) for waveform in waveforms.values()])
-        # max_duration = max_length * SAMPLING_PERIOD
-        # ctrl_duration = (max_duration // MIN_DURATION + 1) * MIN_DURATION + T_MARGIN
-        ctrl_duration = self.ctrl_duration
+        # self.schedule.offset = (max_duration // MIN_DURATION + 1) * MIN_DURATION + T_MARGIN
+        self.ctrl_duration = (
+            max_duration // MIN_DURATION + 1
+        ) * MIN_DURATION + T_MARGIN
 
-        self.schedule.offset = ctrl_duration  # [ns]
+        self.schedule.offset = self.max_ctrl_duration
 
         for ch in self._ctrl_channels():
             ch.clear()
-            ch.append(Arbitrary(duration=ctrl_duration, amplitude=1))
+            ch.append(Arbitrary(duration=self.schedule.offset, amplitude=1))
             ch.append(Blank(duration=T_READOUT + 4 * T_MARGIN))
 
         for ch in self._read_tx_channels():
             ch.clear()
-            ch.append(Blank(duration=ctrl_duration))
+            ch.append(Blank(duration=self.schedule.offset))
             ch.append(Arbitrary(duration=T_READOUT, amplitude=1))
             ch.append(Blank(duration=4 * T_MARGIN))
 
         for ch in self._read_rx_channels():
             ch.clear()
-            ch.append(Blank(duration=ctrl_duration - T_MARGIN))
+            ch.append(Blank(duration=self.schedule.offset - T_MARGIN))
             ch.append(Read(duration=T_READOUT + 5 * T_MARGIN))
 
         durations = [channel.duration for channel in self.schedule.values()]
@@ -277,43 +268,48 @@ class Measurement:
         for qubit in read_qubits:
             ampl = ro_ampl_dict[self.qube_id][qubit]
             t = self._read_times(qubit)
-            self._read_tx_slot(qubit).iq[:] = ampl * self._readout_waveform(t)
+            waveform = Rect(
+                duration=T_READOUT,
+                amplitude=ampl,
+                risetime=50,
+            )
+            self._read_tx_slot(qubit).iq[:] = waveform.values
             iq = self._read_tx_slot(qubit).iq
             read_waveforms[qubit] = iq
 
         return ctrl_waveforms, read_waveforms
 
-    def _readout_waveform(self, t_list):
-        t_start = 0
-        t_duration = T_READOUT / 1.5
-        rise_time = 50
+    # def _readout_waveform(self, t_list):
+    #     t_start = 0
+    #     t_duration = T_READOUT / 1.5
+    #     rise_time = 50
 
-        t0 = 0
-        t1 = t0 + t_start  # 立ち上がり開始時刻
-        t2 = t1 + rise_time  # 立ち上がり完了時刻
-        t3 = t2 + t_duration  # 立ち下がり開始時刻
-        t4 = t3 + rise_time  # 立ち下がり完了時刻
+    #     t0 = 0
+    #     t1 = t0 + t_start  # 立ち上がり開始時刻
+    #     t2 = t1 + rise_time  # 立ち上がり完了時刻
+    #     t3 = t2 + t_duration  # 立ち下がり開始時刻
+    #     t4 = t3 + rise_time  # 立ち下がり完了時刻
 
-        cond_12 = (t1 <= t_list) & (t_list < t2)  # 立ち上がり時間領域の条件ブール値
-        cond_23 = (t2 <= t_list) & (t_list < t3)  # 一定値領域の条件ブール値
-        cond_34 = (t3 <= t_list) & (t_list < t4)  # 立ち下がり時間領域の条件ブール値
+    #     cond_12 = (t1 <= t_list) & (t_list < t2)  # 立ち上がり時間領域の条件ブール値
+    #     cond_23 = (t2 <= t_list) & (t_list < t3)  # 一定値領域の条件ブール値
+    #     cond_34 = (t3 <= t_list) & (t_list < t4)  # 立ち下がり時間領域の条件ブール値
 
-        t_12 = t_list[cond_12]  # 立ち上がり時間領域の時間リスト
-        t_23 = t_list[cond_23]  # 一定値領域の時間リスト
-        t_34 = t_list[cond_34]  # 立ち下がり時間領域の時間リスト
+    #     t_12 = t_list[cond_12]  # 立ち上がり時間領域の時間リスト
+    #     t_23 = t_list[cond_23]  # 一定値領域の時間リスト
+    #     t_34 = t_list[cond_34]  # 立ち下がり時間領域の時間リスト
 
-        waveform = t_list + 0 * 1j  # 波形リストの雛形
-        waveform[:] = 0  # 波形リストの初期化
-        waveform[cond_12] = (
-            1.0 - np.cos(np.pi * (t_12 - t1) / rise_time)
-        ) / 2 + 1j * 0.0  # 立ち上がり時間領域
-        waveform[cond_23] = 1.0 + 1j * 0.0  # 一定値領域
-        waveform[cond_34] = (
-            1.0 - np.cos(np.pi * (t4 - t_34) / rise_time)
-        ) / 2 + 1j * 0.0  # 立ち下がり時間領域
-        # waveform[cond_34] = (1.0 + np.cos(np.pi*(t_34-t3)/rise_time)) / 2 + 1j*0.0 # 立ち下がり時間領域
+    #     waveform = t_list + 0 * 1j  # 波形リストの雛形
+    #     waveform[:] = 0  # 波形リストの初期化
+    #     waveform[cond_12] = (
+    #         1.0 - np.cos(np.pi * (t_12 - t1) / rise_time)
+    #     ) / 2 + 1j * 0.0  # 立ち上がり時間領域
+    #     waveform[cond_23] = 1.0 + 1j * 0.0  # 一定値領域
+    #     waveform[cond_34] = (
+    #         1.0 - np.cos(np.pi * (t4 - t_34) / rise_time)
+    #     ) / 2 + 1j * 0.0  # 立ち下がり時間領域
+    #     # waveform[cond_34] = (1.0 + np.cos(np.pi*(t_34-t3)/rise_time)) / 2 + 1j*0.0 # 立ち下がり時間領域
 
-        return waveform
+    #     return waveform
 
     def _received_waveforms(
         self,
@@ -583,7 +579,10 @@ class Measurement:
         gs = gridspec.GridSpec(N + 1, 1)
 
         # the x-axis range
-        xlim = (-self.schedule.offset * 1e-3, T_READOUT * 1e-3)
+        xlim = (
+            min(-1.0, -self.ctrl_duration * 1e-3),
+            T_READOUT * 1e-3,
+        )
 
         # initialize the axes
         # share the x-axis with the first subplot
