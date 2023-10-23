@@ -3,11 +3,12 @@ a plot library for qubex
 """
 
 import numpy as np
+import numpy.typing as npt
 import matplotlib.pyplot as plt
 
 from .measurement import READOUT_RANGE
 from .pulse import Waveform
-from .analysis import fit_and_rotate, principal_components
+from .analysis import fit_and_rotate
 
 
 def plot_readout_waveform(qubit: str, waveform: Waveform):
@@ -40,9 +41,9 @@ def plot_readout_waveform(qubit: str, waveform: Waveform):
     plt.show()
 
 
-def plot_states_before_after_rotation(data):
+def plot_states_before_after_rotation(data: npt.ArrayLike):
     states = np.array(data)
-    rotated_states = fit_and_rotate(data)
+    rotated_states, _ = fit_and_rotate(data)
 
     _, axs = plt.subplots(1, 2, figsize=(8, 4))
 
@@ -61,7 +62,7 @@ def plot_states_before_after_rotation(data):
     plt.show()
 
 
-def plot_states_vs_index(data):
+def plot_states_vs_index(data: npt.ArrayLike):
     states = np.array(data)
     _, ax = plt.subplots(figsize=(8, 4))
 
@@ -74,7 +75,7 @@ def plot_states_vs_index(data):
     plt.show()
 
 
-def plot_states_vs_times(times, data):
+def plot_states_vs_times(times: npt.ArrayLike, data: npt.ArrayLike):
     states = np.array(data)
     _, ax = plt.subplots(figsize=(8, 4))
 
