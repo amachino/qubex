@@ -1,7 +1,7 @@
-from math import e
-from typing import Final, Union
+from typing import Final
 
 import numpy as np
+import numpy.typing as npt
 import matplotlib.pyplot as plt
 
 
@@ -13,52 +13,52 @@ class Waveform:
 
     Attributes
     ----------
-    values : np.ndarray[complex]
+    values : npt.NDArray[np.complex128]
         A NumPy array of complex numbers representing the waveform.
-    times : np.ndarray[int]
+    times : npt.NDArray[np.int64]
         Time array of the waveform in ns.
     """
 
     def __init__(
         self,
-        values: Union[np.ndarray, list],
-        time_offset=0,
-        phase_offset=0.0,
+        values: npt.ArrayLike,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
     ):
-        self._values = np.array(values, dtype=complex)
+        self._values = np.array(values)
         self.time_offset = time_offset
         self.phase_offset = phase_offset
 
     @property
-    def values(self):
+    def values(self) -> npt.NDArray[np.complex128]:
         return self._values * np.exp(1j * self.phase_offset)
 
     @property
-    def length(self):
+    def length(self) -> int:
         return len(self.values)
 
     @property
-    def duration(self):
+    def duration(self) -> int:
         return self.length * self.SAMPLING_PERIOD
 
     @property
-    def times(self):
+    def times(self) -> npt.NDArray[np.int64]:
         return np.arange(self.length) * self.SAMPLING_PERIOD + self.time_offset
 
     @property
-    def real(self):
+    def real(self) -> npt.NDArray[np.float64]:
         return np.real(self.values)
 
     @property
-    def imag(self):
+    def imag(self) -> npt.NDArray[np.float64]:
         return np.imag(self.values)
 
     @property
-    def ampl(self):
+    def ampl(self) -> npt.NDArray[np.float64]:
         return np.abs(self.values)
 
     @property
-    def phase(self):
+    def phase(self) -> npt.NDArray[np.float64]:
         return np.angle(self.values)
 
     def _ns_to_samples(self, duration: int) -> int:
@@ -113,13 +113,18 @@ class Waveform:
 
 
 class Sequence(Waveform):
-    def __init__(self, waveforms: list[Waveform], phase_offset=0.0):
+    def __init__(
+        self,
+        waveforms: list[Waveform],
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
+    ):
         self.waveforms = waveforms
         if len(waveforms) == 0:
-            values = np.array([])
+            values = []
         else:
             values = np.concatenate([w.values for w in waveforms])
-        super().__init__(values, phase_offset=phase_offset)
+        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
 
 
 class Blank(Waveform):
@@ -139,10 +144,21 @@ class Rect(Waveform):
         self,
         duration: int,
         amplitude: float,
-        risetime=0,
-        time_offset=0,
-        phase_offset=0.0,
+        risetime: int = 0,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
     ):
+        values = []
+        if duration != 0:
+            values = self._calc_values(duration, amplitude, risetime)
+        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+
+    def _calc_values(
+        self,
+        duration: int,
+        amplitude: float,
+        risetime: int,
+    ) -> npt.NDArray[np.complex128]:
         flattime = duration - 2 * risetime
 
         if flattime < 0:
@@ -158,10 +174,9 @@ class Rect(Waveform):
         v_flat = amplitude * np.ones_like(t_flat)
         v_fall = 0.5 * amplitude * (1 + np.cos(np.pi * t_rise / risetime))
 
-        real = np.concatenate((v_rise, v_flat, v_fall))
-        imag = 0
-        values = real + 1j * imag
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        values = np.concatenate((v_rise, v_flat, v_fall), dtype=np.complex128)
+
+        return values
 
 
 class Gauss(Waveform):
@@ -170,18 +185,30 @@ class Gauss(Waveform):
         duration: int,
         amplitude: float,
         sigma: float,
-        time_offset=0,
-        phase_offset=0.0,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
     ):
+        values = []
+        if duration != 0:
+            values = self._calc_values(duration, amplitude, sigma)
+        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+
+    def _calc_values(
+        self,
+        duration: int,
+        amplitude: float,
+        sigma: float,
+    ) -> npt.NDArray[np.complex128]:
         if sigma == 0:
             raise ValueError("Sigma cannot be zero.")
+
         length = self._ns_to_samples(duration)
         t = np.linspace(0, duration, length)
         mu = duration * 0.5
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
         imag = 0
         values = real + 1j * imag
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        return values
 
 
 class Drag(Waveform):
@@ -190,9 +217,20 @@ class Drag(Waveform):
         duration: int,
         amplitude: float,
         anharmonicity: float,
-        time_offset=0,
-        phase_offset=0.0,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
     ):
+        values = []
+        if duration != 0:
+            values = self._calc_values(duration, amplitude, anharmonicity)
+        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+
+    def _calc_values(
+        self,
+        duration: int,
+        amplitude: float,
+        anharmonicity: float,
+    ) -> npt.NDArray[np.complex128]:
         if anharmonicity == 0:
             raise ValueError("Anharmonicity cannot be zero.")
 
@@ -208,7 +246,7 @@ class Drag(Waveform):
             * (factor * (np.exp(-((t - sigma) ** 2) / (2 * sigma**2))))
         )
         values = real - 1j / (np.pi * anharmonicity * 1e-9) * imag
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        return values
 
 
 class DragGauss(Waveform):
@@ -218,9 +256,21 @@ class DragGauss(Waveform):
         amplitude: float,
         sigma: float,
         anharmonicity: float,
-        time_offset=0,
-        phase_offset=0.0,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
     ):
+        values = []
+        if duration != 0:
+            values = self._calc_values(duration, amplitude, sigma, anharmonicity)
+        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+
+    def _calc_values(
+        self,
+        duration: int,
+        amplitude: float,
+        sigma: float,
+        anharmonicity: float,
+    ) -> npt.NDArray[np.complex128]:
         if sigma == 0:
             raise ValueError("Sigma cannot be zero.")
 
@@ -230,7 +280,7 @@ class DragGauss(Waveform):
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
         imag = (mu - t) / (sigma**2) * real
         values = real - 1j / (np.pi * anharmonicity * 1e-9) * imag
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        return values
 
 
 class DragCos(Waveform):
@@ -239,9 +289,20 @@ class DragCos(Waveform):
         duration: int,
         amplitude: float,
         anharmonicity: float,
-        time_offset=0,
-        phase_offset=0.0,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
     ):
+        values = []
+        if duration != 0:
+            values = self._calc_values(duration, amplitude, anharmonicity)
+        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+
+    def _calc_values(
+        self,
+        duration: int,
+        amplitude: float,
+        anharmonicity: float,
+    ) -> npt.NDArray[np.complex128]:
         if anharmonicity == 0:
             raise ValueError("Anharmonicity cannot be zero.")
 
@@ -250,24 +311,32 @@ class DragCos(Waveform):
         real = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
         imag = 2 * np.pi / duration * amplitude * np.sin(2 * np.pi * t / duration) * 0.5
         values = real - 1j / (np.pi * anharmonicity * 1e-9) * imag
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        return values
 
 
 class CPMG(Sequence):
-    def __init__(self, tau: int, pi: Waveform, n=2, phase_offset=0.0):
+    def __init__(
+        self,
+        tau: int,
+        pi: Waveform,
+        n: int = 2,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
+    ):
         if tau % (2 * self.SAMPLING_PERIOD) != 0:
             raise ValueError(
                 f"Tau must be a multiple of twice the sampling period ({2 * self.SAMPLING_PERIOD} ns)."
             )
-        self.tau = tau
-        self.pi = pi
-        self.n = n
-
-        sequence: list[Waveform] = [Blank(tau // 2)]
-        for _ in range(n - 1):
-            sequence += [pi, Blank(tau)]
-        sequence += [pi, Blank(tau // 2)]
-        super().__init__(sequence, phase_offset=phase_offset)
+        sequence: list[Waveform] = []
+        if tau > 0:
+            self.tau = tau
+            self.pi = pi
+            self.n = n
+            sequence = [Blank(tau // 2)]
+            for _ in range(n - 1):
+                sequence += [pi, Blank(tau)]
+            sequence += [pi, Blank(tau // 2)]
+        super().__init__(sequence, time_offset=time_offset, phase_offset=phase_offset)
 
 
 class TabuchiDD(Waveform):
@@ -295,16 +364,24 @@ class TabuchiDD(Waveform):
         2.4900307,
     ]
 
-    def __init__(self, duration: int, scale=1.0, beta=0.0, phi=0.0):
+    def __init__(
+        self,
+        duration: int,
+        scale=1.0,
+        beta=0.0,
+        phi=0.0,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
+    ):
         length = self._ns_to_samples(duration)
         self.t = np.linspace(0, duration, length)
-        self.T = duration
-        values = np.array([])
+        self.T = duration  # [ns]
+        values = []  # [MHz]
         if duration != 0:
             self.vx_n = np.array(self.vx_n_T_over_pi) * np.pi / duration
             self.vy_n = np.array(self.vy_n_T_over_pi) * np.pi / duration
             values = self._calc_values(scale, beta, phi)
-        super().__init__(values)
+        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
 
     def _calc_values(self, scale: float, beta: float, phi: float) -> np.ndarray:
         error_x = phi + np.tan(beta * np.pi / 180)
@@ -313,7 +390,7 @@ class TabuchiDD(Waveform):
         error_y = phi
         y = (1 + error_y) * np.array([self.vy(t) for t in self.t])
 
-        values = scale * (x + 1j * y) / np.pi / 2 * 1e2
+        values = scale * (x + 1j * y) / np.pi / 2 * 1e3
 
         return values
 

@@ -1,11 +1,11 @@
 from attr import dataclass
 from typing import Callable, Optional
 
-from IPython.display import clear_output
+import numpy as np
+import numpy.typing as npt
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-import numpy as np
-from numpy.typing import NDArray
+from IPython.display import clear_output
 
 import qubecalib as qc
 from qubecalib.pulse import Schedule, Channel, Blank, Arbitrary, Read
@@ -23,13 +23,13 @@ from .params import (
     ampl_hpi_dict,
 )
 
-SAMPLING_PERIOD = 2  # [ns]
-MIN_SAMPLE = 64
-MIN_DURATION = MIN_SAMPLE * SAMPLING_PERIOD
-T_CONTROL = 10 * 1024
-T_READOUT = 1024
-T_MARGIN = MIN_DURATION
-READOUT_RANGE = slice(T_MARGIN // 2, T_READOUT // 2 + T_MARGIN)
+SAMPLING_PERIOD: int = 2  # [ns]
+MIN_SAMPLE: int = 64  # min number of samples of e7awg
+MIN_DURATION: int = MIN_SAMPLE * SAMPLING_PERIOD
+T_CONTROL: int = 10 * 1024  # [ns]
+T_READOUT: int = 1024  # [ns]
+T_MARGIN: int = MIN_DURATION  # [ns]
+READOUT_RANGE = slice(T_MARGIN // 2, (T_READOUT + T_MARGIN) // 2)
 
 CTRL_HI = "_hi"
 CTRL_LO = "_lo"
@@ -45,6 +45,18 @@ MUX = [
 
 
 @dataclass
+class ExperimentResult:
+    qubit: str
+    sweep_range: npt.NDArray
+    data: npt.NDArray[np.complex128]
+    phase_shift: float
+
+    @property
+    def rotated(self) -> npt.NDArray[np.complex128]:
+        return self.data * np.exp(-1j * self.phase_shift)
+
+
+@dataclass
 class RabiParams:
     qubit: str
     phase_shift: float
@@ -52,18 +64,6 @@ class RabiParams:
     omega: float
     phi: float
     offset: float
-
-
-@dataclass
-class MeasurementResult:
-    qubit: str
-    sweep_range: NDArray
-    data: NDArray[np.complex128]
-    phase_shift: float
-
-    @property
-    def rotated(self) -> NDArray[np.complex128]:
-        return self.data * np.exp(-1j * self.phase_shift)
 
 
 class Measurement:
@@ -75,7 +75,6 @@ class Measurement:
         repeats=10_000,
         interval=150_000,
         ctrl_duration=T_CONTROL,
-        read_range=READOUT_RANGE,
     ):
         self.qube_id = qube_id
         self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
@@ -84,7 +83,6 @@ class Measurement:
         self.repeats = repeats
         self.interval = interval
         self.ctrl_duration = ctrl_duration
-        self.read_range = read_range
         self.schedule = Schedule()
         self.rabi_params: dict[str, RabiParams] = {}
         self._init_channels()
@@ -295,7 +293,7 @@ class Measurement:
         waveforms: dict[str, np.ndarray],
     ) -> dict[str, complex]:
         iq = {
-            qubit: waveform[self.read_range].mean()
+            qubit: waveform[READOUT_RANGE].mean()
             for qubit, waveform in waveforms.items()
         }
         return iq
@@ -339,8 +337,8 @@ class Measurement:
 
     def rabi_check(
         self,
-        time_range=np.arange(0, 201, 10),
-    ) -> dict[str, MeasurementResult]:
+        time_range=np.arange(0, 201, 20),
+    ) -> dict[str, ExperimentResult]:
         amplitudes = ampl_hpi_dict[self.qube_id]
         result = self._rabi_experiment(
             amplitudes=amplitudes,
@@ -352,8 +350,8 @@ class Measurement:
         self,
         qubit: str,
         amplitude: float,
-        time_range=np.arange(0, 201, 10),
-    ) -> MeasurementResult:
+        time_range=np.arange(0, 201, 8),
+    ) -> ExperimentResult:
         result = self._rabi_experiment(
             amplitudes={qubit: amplitude},
             time_range=time_range,
@@ -364,7 +362,7 @@ class Measurement:
         self,
         amplitudes: dict[str, float],
         time_range: np.ndarray,
-    ) -> dict[str, MeasurementResult]:
+    ) -> dict[str, ExperimentResult]:
         qubits = list(amplitudes.keys())
 
         ctrl_qubits = qubits
@@ -424,7 +422,7 @@ class Measurement:
             print(f"{idx+1}/{len(time_range)}: {duration} ns")
 
         result = {
-            qubit: MeasurementResult(
+            qubit: ExperimentResult(
                 qubit=qubit,
                 sweep_range=time_range,
                 data=np.array(values),
@@ -439,7 +437,7 @@ class Measurement:
         qubit: str,
         waveform: Waveform,
         n: int,
-    ) -> MeasurementResult:
+    ) -> ExperimentResult:
         result = self.sweep_pramameter(
             qubit=qubit,
             sweep_range=np.arange(n + 1),
@@ -455,7 +453,7 @@ class Measurement:
         waveform: Callable[[float], Waveform],
         pulse_count=1,
         rabi_params: Optional[RabiParams] = None,
-    ) -> MeasurementResult:
+    ) -> ExperimentResult:
         qubits = [qubit]
         ctrl_qubits = qubits
         read_qubits = qubits
@@ -515,7 +513,7 @@ class Measurement:
             )
             print(f"{idx+1}/{len(sweep_range)}: {var}")
 
-        result = MeasurementResult(
+        result = ExperimentResult(
             qubit=qubit,
             sweep_range=sweep_range,
             data=np.array(states[qubit]),
@@ -653,13 +651,13 @@ class Measurement:
             )
 
             ax[qubit][0].plot(
-                rx_time[qubit][self.read_range] * 1e-3,
-                np.real(mov_avg_readout_iq)[self.read_range],
+                rx_time[qubit][READOUT_RANGE] * 1e-3,
+                np.real(mov_avg_readout_iq)[READOUT_RANGE],
                 lw=5,
             )
             ax[qubit][0].plot(
-                rx_time[qubit][self.read_range] * 1e-3,
-                np.imag(mov_avg_readout_iq)[self.read_range],
+                rx_time[qubit][READOUT_RANGE] * 1e-3,
+                np.imag(mov_avg_readout_iq)[READOUT_RANGE],
                 lw=5,
             )
 
@@ -667,6 +665,7 @@ class Measurement:
             ax[qubit][0].set_xlim(0, 2.0)
             ax[qubit][0].set_title("Detected readout pulse waveform " + qubit)
             ax[qubit][0].legend()
+            ax[qubit][0].grid()
 
             """Rabi振動"""
             ax[qubit][1].plot(sweep_range, np.real(states[qubit]), "o-", label="I")
@@ -674,6 +673,7 @@ class Measurement:
             ax[qubit][1].set_xlabel("Sweep index")
             ax[qubit][1].set_title("Detected signal " + qubit)
             ax[qubit][1].legend()
+            ax[qubit][1].grid()
 
             """IQ平面上での複素振幅"""
             ax[qubit][2].plot(
@@ -715,11 +715,12 @@ class Measurement:
                 color="red",
             )
             ax[qubit][2].legend()
+            ax[qubit][2].grid()
         plt.show()
 
     def normalize_rabi(
         self,
-        result: MeasurementResult,
+        result: ExperimentResult,
         wave_count=2.5,
     ):
         """
