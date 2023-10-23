@@ -718,11 +718,11 @@ class Measurement:
             ax[qubit][2].grid()
         plt.show()
 
-    def normalize_rabi(
+    def fit_rabi_params(
         self,
         result: ExperimentResult,
         wave_count=2.5,
-    ):
+    ) -> RabiParams:
         """
         Normalize the Rabi oscillation data.
         """
@@ -760,17 +760,26 @@ class Measurement:
             offset=popt[3],
         )
         self.rabi_params[result.qubit] = rabi_params
+        return rabi_params
 
-        values_normalized = (values - rabi_params.offset) / rabi_params.amplitude
-        return values_normalized, rabi_params
+    def normalize_rabi(
+        self,
+        result: ExperimentResult,
+        params: RabiParams,
+    ) -> npt.NDArray[np.float64]:
+        values = result.rotated.imag
+        values_normalized = -(values - params.offset) / params.amplitude
+        return values_normalized
 
     def expectation_value(
         self,
         qubit: str,
         iq: complex,
-    ):
-        params = self.rabi_params[qubit]
+        params: RabiParams,
+    ) -> float:
+        if params is None:
+            params = self.rabi_params[qubit]
         iq = iq * np.exp(-1j * params.phase_shift)
         value = iq.imag
-        value = (value - params.offset) / params.amplitude
+        value = -(value - params.offset) / params.amplitude
         return value

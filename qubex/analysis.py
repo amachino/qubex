@@ -1,15 +1,27 @@
-import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
+import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.optimize import minimize
 from sklearn.decomposition import PCA
 
 
-def func_rabi(t, ampl, omega, phi, offset):
+def func_rabi(
+    t: npt.NDArray[np.float64],
+    ampl: float,
+    omega: float,
+    phi: float,
+    offset: float,
+) -> npt.NDArray[np.float64]:
     return ampl * np.cos(omega * t + phi) + offset
 
 
-def fit_rabi(x, y, p0=None, bounds=None):
+def fit_rabi(
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    p0=None,
+    bounds=None,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     if p0 is None:
         p0 = (
             np.abs(np.max(y) - np.min(y)) / 2,
@@ -48,11 +60,23 @@ def fit_rabi(x, y, p0=None, bounds=None):
     return popt, pcov
 
 
-def func_ramsey(t, ampl, tau, omega, phi, offset):
+def func_ramsey(
+    t: npt.NDArray[np.float64],
+    ampl: float,
+    tau: float,
+    omega: float,
+    phi: float,
+    offset: float,
+) -> npt.NDArray[np.float64]:
     return ampl * np.exp(-t / tau) * np.cos(omega * t + phi) + offset
 
 
-def fit_ramsey(x, y, p0=None, bounds=None):
+def fit_ramsey(
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    p0=None,
+    bounds=None,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     if p0 is None:
         p0 = (
             np.abs(np.max(y) - np.min(y)) / 2,
@@ -79,12 +103,65 @@ def fit_ramsey(x, y, p0=None, bounds=None):
     plt.scatter(x, y, label="Data")
     plt.plot(x_fine, y_fine, label="Fit")
     plt.legend()
+    plt.grid(True)
     plt.show()
 
     return popt, pcov
 
 
-def fit_and_find_minimum(x, y, p0=None):
+def func_decay(
+    t: npt.NDArray[np.float64],
+    ampl: float,
+    tau: float,
+    offset: float,
+) -> npt.NDArray[np.float64]:
+    return ampl * np.exp(-t / tau) + offset
+
+
+def fit_decay(
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    p0=None,
+    bounds=None,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    if p0 is None:
+        p0 = (
+            np.abs(np.max(y) - np.min(y)) / 2,
+            10_000,
+            (np.max(y) + np.min(y)) / 2,
+        )
+
+    if bounds is None:
+        bounds = (
+            (0, 0, -np.inf),
+            (np.inf, np.inf, np.inf),
+        )
+
+    popt, pcov = curve_fit(func_decay, x, y, p0=p0, bounds=bounds)
+    print(f"Fitted function: {popt[0]:.3f} * exp(-t/{popt[1]:.3f}) + {popt[2]:.3f}")
+    print(f"Decay time: {popt[1] / 1e3:.3f} us")
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_decay(x_fine, *popt)
+
+    plt.scatter(x, y, label="Data")
+    plt.plot(x_fine, y_fine, label="Fit")
+    plt.title(f"Decay time: {popt[1] / 1e3:.3f} us")
+    plt.xlabel("Time / ns")
+    plt.ylabel("Readout signal / a.u.")
+    plt.semilogx()
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    return popt, pcov
+
+
+def fit_cos_and_find_minimum(
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    p0=None,
+) -> tuple[float, float]:
     def cos_func(t, ampl, omega, phi, offset):
         return ampl * np.cos(omega * t + phi) + offset
 
@@ -117,6 +194,7 @@ def fit_and_find_minimum(x, y, p0=None):
     plt.plot(x_fine, y_fine, label="Fit")
     plt.scatter(min_x, min_y, color="red", label="Minimum")
     plt.legend()
+    plt.grid(True)
     plt.show()
 
     print(f"Minimum: ({min_x}, {min_y})")
@@ -124,13 +202,18 @@ def fit_and_find_minimum(x, y, p0=None):
     return min_x, min_y
 
 
-def rotate(data, angle: float) -> np.ndarray:
+def rotate(
+    data: npt.ArrayLike,
+    angle: float,
+) -> npt.NDArray[np.complex128]:
     points = np.array(data)
     rotated_points = points * np.exp(-1j * angle)
     return rotated_points
 
 
-def fit_and_rotate(data) -> tuple[np.ndarray, float]:
+def fit_and_rotate(
+    data: npt.ArrayLike,
+) -> tuple[npt.NDArray[np.complex128], float]:
     points = np.array(data)
 
     if len(points) < 2:
@@ -150,7 +233,10 @@ def fit_and_rotate(data) -> tuple[np.ndarray, float]:
     return rotated_points, angle
 
 
-def principal_components(iq_complex, pca=None) -> tuple[np.ndarray, PCA]:
+def principal_components(
+    iq_complex: npt.ArrayLike,
+    pca=None,
+) -> tuple[npt.NDArray[np.float64], PCA]:
     iq_complex = np.array(iq_complex)
     iq_vector = np.column_stack([np.real(iq_complex), np.imag(iq_complex)])
     if pca is None:
@@ -163,9 +249,9 @@ def find_nearest_frequency_combinations(
     target_frequency,
     lo_range=(8000, 12000),
     nco_range=(0, 3000),
-    lo_step=500,
-    nco_step=375,
-):
+    lo_step: int = 500,
+    nco_step: int = 375,
+) -> tuple[int, list[tuple[int, int]]]:
     # Adjust the start of the range to the nearest multiple of the step using integer division
     lo_start = ((lo_range[0] + lo_step - 1) // lo_step) * lo_step
     nco_start = ((nco_range[0] + nco_step - 1) // nco_step) * nco_step
@@ -178,7 +264,7 @@ def find_nearest_frequency_combinations(
 
     # Initialize variables to store the best combinations and minimum difference
     best_combinations = []
-    best_frequency = None
+    best_frequency = 0
     min_difference = float("inf")
 
     # Loop through each LO frequency and find the NCO frequency that makes LO - NCO closest to the target
