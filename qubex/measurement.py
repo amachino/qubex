@@ -44,6 +44,7 @@ MUX = [
     ["Q12", "Q13", "Q14", "Q15"],
 ]
 
+
 @dataclass
 class ExperimentResult:
     qubit: str
@@ -322,12 +323,16 @@ class Measurement:
         self,
         ctrl_qubits: list[str],
         read_qubits: list[str],
-        waveforms: dict[str, np.ndarray],
+        waveforms: dict[str, Waveform],
     ) -> dict[str, complex]:
+        waveform_values = {
+            qubit: waveform.values for qubit, waveform in waveforms.items()
+        }
+
         self.set_circuit(
             ctrl_qubits=ctrl_qubits,
             read_qubits=read_qubits,
-            waveforms=waveforms,
+            waveforms=waveform_values,
         )
 
         run(
@@ -344,7 +349,7 @@ class Measurement:
 
     def measure(
         self,
-        waveforms: dict[str, np.ndarray],
+        waveforms: dict[str, Waveform],
     ) -> dict[str, complex]:
         qubits = list(waveforms.keys())
 
@@ -799,17 +804,19 @@ class Measurement:
         self,
         result: ExperimentResult,
         params: RabiParams,
+        title: str = "Expectation value",
         xlabel: str = "Time / ns",
         ylabel: str = r"Expectation Value $\langle \sigma_z \rangle$",
-    ):
+    ) -> npt.NDArray[np.float64]:
         values = self.expectation_values(result, params)
         _, ax = plt.subplots(figsize=(8, 4))
 
         ax.plot(result.sweep_range, values, "o-")
-        ax.set_title(f"Expectation value of {result.qubit}")
+        ax.set_title(f"{title}, {result.qubit}")
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.grid(True)
         ax.set_ylim(-1.1, 1.1)
-
         plt.show()
+
+        return values

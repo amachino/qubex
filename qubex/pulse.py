@@ -65,10 +65,22 @@ class Waveform:
     def copy(self):
         return deepcopy(self)
 
-    def inverse(self):
-        """Returns the inverse of the waveform."""
+    def shifted(self, phase: float):
+        """Returns the waveform shifted by the given phase."""
+        new_waveform = deepcopy(self)
+        new_waveform.phase_offset += phase
+        return new_waveform
+
+    def inverted(self):
+        """Returns the waveform inverted."""
         new_waveform = deepcopy(self)
         new_waveform.phase_offset += np.pi
+        return new_waveform
+
+    def repeated(self, n: int):
+        """Returns the waveform repeated n times."""
+        new_waveform = deepcopy(self)
+        new_waveform._values = np.tile(new_waveform._values, n)
         return new_waveform
 
     def _ns_to_samples(self, duration: int) -> int:
