@@ -340,7 +340,7 @@ class Measurement:
         time_range=np.arange(0, 201, 20),
     ) -> dict[str, ExperimentResult]:
         amplitudes = ampl_hpi_dict[self.qube_id]
-        result = self._rabi_experiment(
+        result = self.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
         )
@@ -348,20 +348,8 @@ class Measurement:
 
     def rabi_experiment(
         self,
-        qubit: str,
-        amplitude: float,
-        time_range=np.arange(0, 201, 8),
-    ) -> ExperimentResult:
-        result = self._rabi_experiment(
-            amplitudes={qubit: amplitude},
-            time_range=time_range,
-        )[qubit]
-        return result
-
-    def _rabi_experiment(
-        self,
         amplitudes: dict[str, float],
-        time_range: np.ndarray,
+        time_range=np.arange(0, 201, 8),
     ) -> dict[str, ExperimentResult]:
         qubits = list(amplitudes.keys())
 
@@ -434,27 +422,28 @@ class Measurement:
 
     def repeat_pulse(
         self,
-        qubit: str,
-        waveform: Waveform,
+        waveforms: dict[str, Waveform],
         n: int,
-    ) -> ExperimentResult:
+    ) -> dict[str, ExperimentResult]:
         result = self.sweep_pramameter(
-            qubit=qubit,
             sweep_range=np.arange(n + 1),
-            waveform=lambda x: Sequence([waveform] * int(x)),
+            waveforms={
+                qubit: lambda x: Sequence([waveform] * int(x))
+                for qubit, waveform in waveforms.items()
+            },
             pulse_count=1,
         )
         return result
 
     def sweep_pramameter(
         self,
-        qubit: str,
         sweep_range: np.ndarray,
-        waveform: Callable[[float], Waveform],
+        waveforms: dict[str, Callable[[float], Waveform]],
         pulse_count=1,
         rabi_params: Optional[RabiParams] = None,
-    ) -> ExperimentResult:
-        qubits = [qubit]
+    ) -> dict[str, ExperimentResult]:
+        qubits = list(waveforms.keys())
+
         ctrl_qubits = qubits
         read_qubits = qubits
 
@@ -463,16 +452,15 @@ class Measurement:
         phase_shift = {}
 
         for idx, var in enumerate(sweep_range):
-            pulse = waveform(var)
-            sequence = Sequence([pulse] * pulse_count)
-            waveforms = {
-                qubit: sequence.values,
+            waveforms_var = {
+                qubit: Sequence([waveform(var)] * pulse_count).values
+                for qubit, waveform in waveforms.items()
             }
 
             ctrl_waveforms, read_waveforms = self.set_circuit(
                 ctrl_qubits=ctrl_qubits,
                 read_qubits=read_qubits,
-                waveforms=waveforms,
+                waveforms=waveforms_var,
             )
 
             run(
@@ -513,12 +501,15 @@ class Measurement:
             )
             print(f"{idx+1}/{len(sweep_range)}: {var}")
 
-        result = ExperimentResult(
-            qubit=qubit,
-            sweep_range=sweep_range,
-            data=np.array(states[qubit]),
-            phase_shift=phase_shift[qubit],
-        )
+        result = {
+            qubit: ExperimentResult(
+                qubit=qubit,
+                sweep_range=sweep_range,
+                data=np.array(states[qubit]),
+                phase_shift=phase_shift[qubit],
+            )
+            for qubit in qubits
+        }
         return result
 
     def show_pulse_sequences(
@@ -762,7 +753,7 @@ class Measurement:
         self.rabi_params[result.qubit] = rabi_params
         return rabi_params
 
-    def normalize_rabi(
+    def expectation_values(
         self,
         result: ExperimentResult,
         params: RabiParams,
@@ -783,3 +774,22 @@ class Measurement:
         value = iq.imag
         value = -(value - params.offset) / params.amplitude
         return value
+
+    def plot_expectation_values(
+        self,
+        result: ExperimentResult,
+        params: RabiParams,
+        xlabel: str = "Time / ns",
+        ylabel: str = r"Expectation Value $\langle \sigma_z \rangle$",
+    ):
+        values = self.expectation_values(result, params)
+        _, ax = plt.subplots(figsize=(8, 4))
+
+        ax.plot(result.sweep_range, values, "o-")
+        ax.set_title(f"Expectation value of {result.qubit}")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.grid(True)
+        ax.set_ylim(-1.1, 1.1)
+
+        plt.show()

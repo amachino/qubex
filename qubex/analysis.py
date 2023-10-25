@@ -48,6 +48,7 @@ def fit_rabi(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_rabi(x_fine, *popt)
 
+    plt.figure(figsize=(8, 4))
     plt.scatter(x, y, label="Data")
     plt.plot(x_fine, y_fine, label="Fit")
     plt.title(f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)")
@@ -144,6 +145,7 @@ def fit_decay(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_decay(x_fine, *popt)
 
+    plt.figure(figsize=(8, 4))
     plt.scatter(x, y, label="Data")
     plt.plot(x_fine, y_fine, label="Fit")
     plt.title(f"Decay time: {popt[1] / 1e3:.3f} us")

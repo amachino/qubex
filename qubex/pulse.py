@@ -1,4 +1,5 @@
-from typing import Final
+from typing import Final, Optional
+from copy import deepcopy
 
 import numpy as np
 import numpy.typing as npt
@@ -61,6 +62,15 @@ class Waveform:
     def phase(self) -> npt.NDArray[np.float64]:
         return np.angle(self.values)
 
+    def copy(self):
+        return deepcopy(self)
+
+    def inverse(self):
+        """Returns the inverse of the waveform."""
+        new_waveform = deepcopy(self)
+        new_waveform.phase_offset += np.pi
+        return new_waveform
+
     def _ns_to_samples(self, duration: int) -> int:
         """Converts a duration in ns to a length in samples."""
         if duration % self.SAMPLING_PERIOD != 0:
@@ -69,7 +79,7 @@ class Waveform:
             )
         return duration // self.SAMPLING_PERIOD
 
-    def plot(self, polar=False, title=""):
+    def plot(self, polar=False, title="Pulse Sequence"):
         """Plots the pulse."""
         if polar:
             self.plot_polar(title)
@@ -77,7 +87,7 @@ class Waveform:
             self.plot_xy(title)
 
     def plot_xy(self, title=""):
-        _, ax = plt.subplots(figsize=(8, 4))
+        _, ax = plt.subplots(figsize=(6, 2))
         ax.set_title(title)
         ax.set_xlabel("Time / ns")
         ax.set_ylabel("Amplitude / a.u.")
@@ -94,7 +104,7 @@ class Waveform:
         plt.show()
 
     def plot_polar(self, title=""):
-        fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8, 4))
+        fig, ax = plt.subplots(2, 1, sharex=True, figsize=(6, 2))
         fig.suptitle(title)
         ax[0].set_ylabel("Amplitude / a.u.")
         ax[1].set_ylabel("Phase / rad")
@@ -115,16 +125,48 @@ class Waveform:
 class Sequence(Waveform):
     def __init__(
         self,
-        waveforms: list[Waveform],
+        waveforms: Optional[list[Waveform]] = None,
         time_offset: int = 0,
         phase_offset: float = 0.0,
     ):
+        if waveforms is None:
+            waveforms = []
         self.waveforms = waveforms
-        if len(waveforms) == 0:
-            values = []
-        else:
-            values = np.concatenate([w.values for w in waveforms])
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        self.current_phase = 0.0
+        super().__init__([], time_offset=time_offset, phase_offset=phase_offset)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
+
+    @property
+    def values(self) -> npt.NDArray[np.complex128]:
+        """Returns the concatenated values of the sequence."""
+        if len(self.waveforms) == 0:
+            return np.array([])
+        concat_values = np.concatenate([w.values for w in self.waveforms])
+        values = concat_values * np.exp(1j * self.phase_offset)
+        return values
+
+    def add(self, waveform: Waveform):
+        """Adds a waveform to the sequence."""
+        w = deepcopy(waveform)
+        w.phase_offset += self.current_phase
+        self.waveforms.append(w)
+
+    def shift(self, phase: float):
+        """Shifts the phase of the sequence."""
+        self.current_phase += phase
+
+    def inverse(self):
+        """Returns the inverse of the sequence."""
+        new_seq = deepcopy(self)
+        new_seq.waveforms.reverse()
+        for w in new_seq.waveforms:
+            w.phase_offset += np.pi
+        return new_seq
 
 
 class Blank(Waveform):
