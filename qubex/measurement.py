@@ -1,3 +1,4 @@
+import os, datetime, pickle
 from attr import dataclass
 from typing import Callable, Optional
 
@@ -43,13 +44,13 @@ MUX = [
     ["Q12", "Q13", "Q14", "Q15"],
 ]
 
-
 @dataclass
 class ExperimentResult:
     qubit: str
     sweep_range: npt.NDArray
     data: npt.NDArray[np.complex128]
     phase_shift: float
+    datetime: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     @property
     def rotated(self) -> npt.NDArray[np.complex128]:
@@ -75,6 +76,7 @@ class Measurement:
         repeats=10_000,
         interval=150_000,
         ctrl_duration=T_CONTROL,
+        data_dir="./data",
     ):
         self.qube_id = qube_id
         self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
@@ -85,8 +87,26 @@ class Measurement:
         self.ctrl_duration = ctrl_duration
         self.schedule = Schedule()
         self.rabi_params: dict[str, RabiParams] = {}
+        self.data_dir = data_dir
         self._init_channels()
         self._init_ports(self.qube)
+
+    def save_data(self, data: object, name: str = "data"):
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
+        current_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        file_name = f"{current_time}_{name}.pkl"
+        file_path = os.path.join(self.data_dir, file_name)
+        with open(file_path, "wb") as f:
+            pickle.dump(data, f)
+
+    def load_data(self, name: str) -> object:
+        if not name.endswith(".pkl"):
+            name = name + ".pkl"
+        path = os.path.join(self.data_dir, name)
+        with open(path, "rb") as f:
+            data = pickle.load(f)
+        return data
 
     def ctrl_frequency(self, qubit: str) -> float:
         return self.schedule[qubit].center_frequency
@@ -337,7 +357,7 @@ class Measurement:
 
     def rabi_check(
         self,
-        time_range=np.arange(0, 201, 20),
+        time_range=np.arange(0, 201, 10),
     ) -> dict[str, ExperimentResult]:
         amplitudes = ampl_hpi_dict[self.qube_id]
         result = self.rabi_experiment(
@@ -349,7 +369,7 @@ class Measurement:
     def rabi_experiment(
         self,
         amplitudes: dict[str, float],
-        time_range=np.arange(0, 201, 8),
+        time_range=np.arange(0, 201, 10),
     ) -> dict[str, ExperimentResult]:
         qubits = list(amplitudes.keys())
 
