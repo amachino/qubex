@@ -83,6 +83,12 @@ class Waveform:
         new_waveform._values = np.tile(new_waveform._values, n)
         return new_waveform
 
+    def scaled(self, scale: float):
+        """Returns the waveform scaled by the given factor."""
+        new_waveform = deepcopy(self)
+        new_waveform._values *= scale
+        return new_waveform
+
     def _ns_to_samples(self, duration: int) -> int:
         """Converts a duration in ns to a length in samples."""
         if duration % self.SAMPLING_PERIOD != 0:
@@ -438,10 +444,10 @@ class TabuchiDD(Waveform):
         super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
 
     def _calc_values(self, scale: float, beta: float, phi: float) -> np.ndarray:
-        error_x = phi + np.tan(beta * np.pi / 180)
+        error_x = beta + np.tan(phi * np.pi / 180)
         x = (1 + error_x) * np.array([self.vx(t) for t in self.t])
 
-        error_y = phi
+        error_y = beta
         y = (1 + error_y) * np.array([self.vy(t) for t in self.t])
 
         values = scale * (x + 1j * y) / np.pi / 2 * 1e3

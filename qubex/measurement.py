@@ -100,6 +100,7 @@ class Measurement:
         file_path = os.path.join(self.data_dir, file_name)
         with open(file_path, "wb") as f:
             pickle.dump(data, f)
+        print(f"Data saved to {file_path}")
 
     def load_data(self, name: str) -> object:
         if not name.endswith(".pkl"):
