@@ -102,7 +102,7 @@ class Measurement:
             pickle.dump(data, f)
         print(f"Data saved to {file_path}")
 
-    def load_data(self, name: str) -> object:
+    def load_data(self, name: str):
         if not name.endswith(".pkl"):
             name = name + ".pkl"
         path = os.path.join(self.data_dir, name)
