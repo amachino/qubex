@@ -37,12 +37,7 @@ CTRL_LO = "_lo"
 READ_TX = "TX_"
 READ_RX = "RX_"
 
-MUX = [
-    ["Q00", "Q01", "Q02", "Q03"],
-    ["Q04", "Q05", "Q06", "Q07"],
-    ["Q08", "Q09", "Q10", "Q11"],
-    ["Q12", "Q13", "Q14", "Q15"],
-]
+MUX = [[f"Q{i*4+j:02d}" for j in range(4)] for i in range(16)]
 
 
 @dataclass
