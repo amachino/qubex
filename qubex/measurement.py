@@ -12,9 +12,9 @@ import qubecalib as qc
 from qubecalib.pulse import Schedule, Channel, Blank, Arbitrary, Read
 from qubecalib.setupqube import run
 
-qc.ui.MATPLOTLIB_PYPLOT = plt
+qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
 
-from .pulse import Rect, Waveform, Sequence
+from .pulse import Rect, Waveform, PulseSequence
 from .analysis import rotate, fit_and_rotate, fit_rabi
 
 from .params import (
@@ -454,7 +454,7 @@ class Measurement:
         result = self.sweep_pramameter(
             sweep_range=np.arange(n + 1),
             waveforms={
-                qubit: lambda x: Sequence([waveform] * int(x))
+                qubit: lambda x: PulseSequence([waveform] * int(x))
                 for qubit, waveform in waveforms.items()
             },
             pulse_count=1,
@@ -479,7 +479,7 @@ class Measurement:
 
         for idx, var in enumerate(sweep_range):
             waveforms_var = {
-                qubit: Sequence([waveform(var)] * pulse_count).values
+                qubit: PulseSequence([waveform(var)] * pulse_count).values
                 for qubit, waveform in waveforms.items()
             }
 

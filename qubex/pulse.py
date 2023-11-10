@@ -1,4 +1,5 @@
-from typing import Final, Optional
+from abc import ABC, abstractmethod
+from typing import Final, Optional, Sequence
 from copy import deepcopy
 
 import numpy as np
@@ -6,11 +7,11 @@ import numpy.typing as npt
 import matplotlib.pyplot as plt
 
 
-class Waveform:
+class Waveform(ABC):
     SAMPLING_PERIOD: Final[int] = 2  # ns
 
     """
-    A class to represent a waveform.
+    An abstract base class to represent a waveform.
 
     Attributes
     ----------
@@ -22,17 +23,18 @@ class Waveform:
 
     def __init__(
         self,
-        values: npt.ArrayLike,
+        scale: float = 1.0,
         time_offset: int = 0,
         phase_offset: float = 0.0,
     ):
-        self._values = np.array(values)
+        self.scale = scale
         self.time_offset = time_offset
         self.phase_offset = phase_offset
 
     @property
+    @abstractmethod
     def values(self) -> npt.NDArray[np.complex128]:
-        return self._values * np.exp(1j * self.phase_offset)
+        pass
 
     @property
     def length(self) -> int:
@@ -62,32 +64,25 @@ class Waveform:
     def phase(self) -> npt.NDArray[np.float64]:
         return np.angle(self.values)
 
-    def copy(self):
-        return deepcopy(self)
+    @abstractmethod
+    def copy(self) -> "Waveform":
+        pass
 
-    def shifted(self, phase: float):
-        """Returns the waveform shifted by the given phase."""
-        new_waveform = deepcopy(self)
-        new_waveform.phase_offset += phase
-        return new_waveform
+    @abstractmethod
+    def scaled(self, scale: float) -> "Waveform":
+        pass
 
-    def inverted(self):
-        """Returns the waveform inverted."""
-        new_waveform = deepcopy(self)
-        new_waveform.phase_offset += np.pi
-        return new_waveform
+    @abstractmethod
+    def shifted(self, phase: float) -> "Waveform":
+        pass
 
-    def repeated(self, n: int):
-        """Returns the waveform repeated n times."""
-        new_waveform = deepcopy(self)
-        new_waveform._values = np.tile(new_waveform._values, n)
-        return new_waveform
+    @abstractmethod
+    def inverted(self) -> "Waveform":
+        pass
 
-    def scaled(self, scale: float):
-        """Returns the waveform scaled by the given factor."""
-        new_waveform = deepcopy(self)
-        new_waveform._values *= scale
-        return new_waveform
+    @abstractmethod
+    def repeated(self, n: int) -> "Waveform":
+        pass
 
     def _ns_to_samples(self, duration: int) -> int:
         """Converts a duration in ns to a length in samples."""
@@ -97,7 +92,7 @@ class Waveform:
             )
         return duration // self.SAMPLING_PERIOD
 
-    def plot(self, polar=False, title="Pulse Sequence"):
+    def plot(self, polar=False, title=""):
         """Plots the pulse."""
         if polar:
             self.plot_polar(title)
@@ -107,8 +102,8 @@ class Waveform:
     def plot_xy(self, title=""):
         _, ax = plt.subplots(figsize=(6, 2))
         ax.set_title(title)
-        ax.set_xlabel("Time / ns")
-        ax.set_ylabel("Amplitude / a.u.")
+        ax.set_xlabel("Time (ns)")
+        ax.set_ylabel("Amplitude (arb. units)")
         ax.grid()
 
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
@@ -124,9 +119,9 @@ class Waveform:
     def plot_polar(self, title=""):
         fig, ax = plt.subplots(2, 1, sharex=True, figsize=(6, 2))
         fig.suptitle(title)
-        ax[0].set_ylabel("Amplitude / a.u.")
-        ax[1].set_ylabel("Phase / rad")
-        ax[1].set_xlabel("Time / ns")
+        ax[0].set_ylabel("Amplitude (arb. units)")
+        ax[1].set_ylabel("Phase (rad)")
+        ax[1].set_xlabel("Time (ns)")
         ax[0].grid()
         ax[1].grid()
 
@@ -140,54 +135,123 @@ class Waveform:
         plt.show()
 
 
-class Sequence(Waveform):
+class Pulse(Waveform):
+    """
+    A class to represent a pulse.
+
+    Attributes
+    ----------
+    values : npt.NDArray[np.complex128]
+        A NumPy array of complex numbers representing the pulse.
+    times : npt.NDArray[np.int64]
+        Time array of the pulse in ns.
+    """
+
     def __init__(
         self,
-        waveforms: Optional[list[Waveform]] = None,
+        values: npt.ArrayLike,
+        scale: float = 1.0,
+        time_offset: int = 0,
+        phase_offset: float = 0.0,
+    ):
+        self._values = np.array(values)
+        self.scale = scale
+        self.time_offset = time_offset
+        self.phase_offset = phase_offset
+
+    @property
+    def values(self) -> npt.NDArray[np.complex128]:
+        return self._values * self.scale * np.exp(1j * self.phase_offset)
+
+    def copy(self) -> "Pulse":
+        """Returns a copy of the pulse."""
+        return deepcopy(self)
+
+    def scaled(self, scale: float) -> "Pulse":
+        """Returns a copy of the pulse scaled by the given factor."""
+        new_pulse = deepcopy(self)
+        new_pulse.scale *= scale
+        return new_pulse
+
+    def shifted(self, phase: float) -> "Pulse":
+        """Returns a copy of the pulse shifted by the given phase."""
+        new_pulse = deepcopy(self)
+        new_pulse.phase_offset += phase
+        return new_pulse
+
+    def inverted(self) -> "Pulse":
+        """Returns a copy of the pulse inverted."""
+        new_pulse = deepcopy(self)
+        new_pulse.phase_offset += np.pi
+        return new_pulse
+
+    def repeated(self, n: int) -> "Pulse":
+        """Returns a copy of the pulse repeated n times."""
+        new_pulse = deepcopy(self)
+        new_pulse._values = np.tile(new_pulse._values, n)
+        return new_pulse
+
+
+class PulseSequence(Waveform):
+    def __init__(
+        self,
+        waveforms: Optional[Sequence[Waveform]] = None,
+        scale: float = 1.0,
         time_offset: int = 0,
         phase_offset: float = 0.0,
     ):
         if waveforms is None:
             waveforms = []
         self.waveforms = waveforms
-        self.current_phase = 0.0
-        super().__init__([], time_offset=time_offset, phase_offset=phase_offset)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        pass
+        self.scale = scale
+        self.time_offset = time_offset
+        self.phase_offset = phase_offset
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
-        """Returns the concatenated values of the sequence."""
+        """Returns the concatenated values of the pulse sequence."""
         if len(self.waveforms) == 0:
             return np.array([])
         concat_values = np.concatenate([w.values for w in self.waveforms])
-        values = concat_values * np.exp(1j * self.phase_offset)
+        values = concat_values * self.scale * np.exp(1j * self.phase_offset)
         return values
 
-    def add(self, waveform: Waveform):
-        """Adds a waveform to the sequence."""
-        w = deepcopy(waveform)
-        w.phase_offset += self.current_phase
-        self.waveforms.append(w)
+    def copy(self) -> "PulseSequence":
+        """Returns a copy of the pulse sequence."""
+        return deepcopy(self)
 
-    def shift(self, phase: float):
-        """Shifts the phase of the sequence."""
-        self.current_phase += phase
+    def scaled(self, scale: float) -> "PulseSequence":
+        """Returns a copy of the pulse sequence scaled by the given factor."""
+        new_sequence = deepcopy(self)
+        new_sequence.scale *= scale
+        return new_sequence
 
-    def inverse(self):
-        """Returns the inverse of the sequence."""
-        new_seq = deepcopy(self)
-        new_seq.waveforms.reverse()
-        for w in new_seq.waveforms:
-            w.phase_offset += np.pi
-        return new_seq
+    def shifted(self, phase: float) -> "PulseSequence":
+        """Returns a copy of the pulse sequence shifted by the given phase."""
+        new_sequence = deepcopy(self)
+        new_sequence.phase_offset += phase
+        return new_sequence
+
+    def inverted(self) -> "PulseSequence":
+        """Returns a copy of the pulse sequence inverted."""
+        new_sequence = deepcopy(self)
+        new_sequence.phase_offset += np.pi
+        return new_sequence
+
+    def repeated(self, n: int) -> "PulseSequence":
+        """Returns a copy of the pulse sequence repeated n times."""
+        new_sequence = deepcopy(self)
+        new_sequence.waveforms = list(new_sequence.waveforms) * n
+        return new_sequence
+
+    def reversed(self) -> "PulseSequence":
+        """Returns a copy of the pulse sequence with the order of the waveforms reversed."""
+        new_sequence = deepcopy(self)
+        new_sequence.waveforms = list(reversed(new_sequence.waveforms))
+        return new_sequence
 
 
-class Blank(Waveform):
+class Blank(Pulse):
     def __init__(
         self,
         duration: int,
@@ -199,19 +263,18 @@ class Blank(Waveform):
         super().__init__(values)
 
 
-class Rect(Waveform):
+class Rect(Pulse):
     def __init__(
         self,
         duration: int,
         amplitude: float,
         risetime: int = 0,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        **kwargs,
     ):
-        values = []
+        values = np.array([])
         if duration != 0:
             values = self._calc_values(duration, amplitude, risetime)
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
@@ -239,19 +302,18 @@ class Rect(Waveform):
         return values
 
 
-class Gauss(Waveform):
+class Gauss(Pulse):
     def __init__(
         self,
         duration: int,
         amplitude: float,
         sigma: float,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        **kwargs,
     ):
-        values = []
+        values = np.array([])
         if duration != 0:
             values = self._calc_values(duration, amplitude, sigma)
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
@@ -271,19 +333,18 @@ class Gauss(Waveform):
         return values
 
 
-class Drag(Waveform):
+class Drag(Pulse):
     def __init__(
         self,
         duration: int,
         amplitude: float,
         anharmonicity: float,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        **kwargs,
     ):
-        values = []
+        values = np.array([])
         if duration != 0:
             values = self._calc_values(duration, amplitude, anharmonicity)
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
@@ -309,20 +370,19 @@ class Drag(Waveform):
         return values
 
 
-class DragGauss(Waveform):
+class DragGauss(Pulse):
     def __init__(
         self,
         duration: int,
         amplitude: float,
         sigma: float,
         anharmonicity: float,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        **kwargs,
     ):
-        values = []
+        values = np.array([])
         if duration != 0:
             values = self._calc_values(duration, amplitude, sigma, anharmonicity)
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
@@ -343,19 +403,18 @@ class DragGauss(Waveform):
         return values
 
 
-class DragCos(Waveform):
+class DragCos(Pulse):
     def __init__(
         self,
         duration: int,
         amplitude: float,
         anharmonicity: float,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        **kwargs,
     ):
-        values = []
+        values = np.array([])
         if duration != 0:
             values = self._calc_values(duration, amplitude, anharmonicity)
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+        super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
@@ -374,32 +433,31 @@ class DragCos(Waveform):
         return values
 
 
-class CPMG(Sequence):
+class CPMG(PulseSequence):
     def __init__(
         self,
         tau: int,
         pi: Waveform,
         n: int = 2,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        **kwargs,
     ):
         if tau % (2 * self.SAMPLING_PERIOD) != 0:
             raise ValueError(
                 f"Tau must be a multiple of twice the sampling period ({2 * self.SAMPLING_PERIOD} ns)."
             )
-        sequence: list[Waveform] = []
+        waveforms: list[Waveform] = []
         if tau > 0:
             self.tau = tau
             self.pi = pi
             self.n = n
-            sequence = [Blank(tau // 2)]
+            waveforms = [Blank(tau // 2)]
             for _ in range(n - 1):
-                sequence += [pi, Blank(tau)]
-            sequence += [pi, Blank(tau // 2)]
-        super().__init__(sequence, time_offset=time_offset, phase_offset=phase_offset)
+                waveforms += [pi, Blank(tau)]
+            waveforms += [pi, Blank(tau // 2)]
+        super().__init__(waveforms, **kwargs)
 
 
-class TabuchiDD(Waveform):
+class TabuchiDD(Pulse):
     vx_n_T_over_pi = [
         -0.7030256,
         3.3281747,
@@ -427,31 +485,28 @@ class TabuchiDD(Waveform):
     def __init__(
         self,
         duration: int,
-        scale=1.0,
         beta=0.0,
         phi=0.0,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        **kwargs,
     ):
         length = self._ns_to_samples(duration)
         self.t = np.linspace(0, duration, length)
         self.T = duration  # [ns]
-        values = []  # [MHz]
+        values = np.array([])  # [MHz]
         if duration != 0:
             self.vx_n = np.array(self.vx_n_T_over_pi) * np.pi / duration
             self.vy_n = np.array(self.vy_n_T_over_pi) * np.pi / duration
-            values = self._calc_values(scale, beta, phi)
-        super().__init__(values, time_offset=time_offset, phase_offset=phase_offset)
+            values = self._calc_values(beta, phi)
+        super().__init__(values, **kwargs)
 
-    def _calc_values(self, scale: float, beta: float, phi: float) -> np.ndarray:
+    def _calc_values(self, beta: float, phi: float) -> np.ndarray:
         error_x = beta + np.tan(phi * np.pi / 180)
         x = (1 + error_x) * np.array([self.vx(t) for t in self.t])
 
         error_y = beta
         y = (1 + error_y) * np.array([self.vy(t) for t in self.t])
 
-        values = scale * (x + 1j * y) / np.pi / 2 * 1e3
-
+        values = (x + 1j * y) / np.pi / 2 * 1e3
         return values
 
     def vx(self, t) -> float:
