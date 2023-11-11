@@ -1,6 +1,7 @@
 import os, datetime, pickle
-from attr import dataclass
 from typing import Callable, Optional
+from collections import defaultdict
+from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
@@ -563,7 +564,7 @@ class Measurement:
 
         # initialize the axes
         # share the x-axis with the first subplot
-        axes: list = []
+        axes = []
         for i in range(N):
             if i == 0:
                 ax = plt.subplot(gs[i])
