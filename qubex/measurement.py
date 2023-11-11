@@ -1,5 +1,5 @@
 import os, datetime, pickle
-from typing import Callable, Optional
+from typing import Optional
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -15,10 +15,16 @@ from qubecalib.setupqube import run
 
 qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
 
-from .typing import QubitLabel, QubitDict, IQValue, IQArray, ReadoutPorts
 from .pulse import Rect, Waveform, PulseSequence
 from .analysis import rotate, fit_and_rotate, fit_rabi
-
+from .typing import (
+    QubitLabel,
+    QubitDict,
+    IQValue,
+    IQArray,
+    ReadoutPorts,
+    ParametricWaveform,
+)
 from .params import (
     ctrl_freq_dict,
     ro_freq_dict,
@@ -323,16 +329,11 @@ class Measurement:
         read_qubits: list[QubitLabel],
         waveforms: QubitDict[Waveform],
     ) -> QubitDict[IQValue]:
-        waveform_values = {
-            qubit: waveform.values for qubit, waveform in waveforms.items()
-        }
-
         self.set_circuit(
             ctrl_qubits=ctrl_qubits,
             read_qubits=read_qubits,
-            waveforms=waveform_values,
+            waveforms={qubit: waveform.values for qubit, waveform in waveforms.items()},
         )
-
         run(
             self.schedule,
             repeats=self.repeats,
@@ -340,9 +341,8 @@ class Measurement:
             adda_to_channels=self.adda_to_channels,
             triggers=self.triggers,
         )
-
         rx_waveforms, _ = self._received_waveforms(read_qubits)
-        result: QubitDict[IQValue] = self._integrated_iq(rx_waveforms)
+        result = self._integrated_iq(rx_waveforms)
         return result
 
     def measure(
@@ -350,8 +350,7 @@ class Measurement:
         waveforms: QubitDict[Waveform],
     ) -> QubitDict[IQValue]:
         qubits = list(waveforms.keys())
-
-        result: QubitDict[IQValue] = self._measure(
+        result = self._measure(
             ctrl_qubits=qubits,
             read_qubits=qubits,
             waveforms=waveforms,
@@ -461,7 +460,7 @@ class Measurement:
     def sweep_pramameter(
         self,
         sweep_range: NDArray,
-        waveforms: QubitDict[Callable[[float], Waveform]],
+        waveforms: QubitDict[ParametricWaveform],
         pulse_count=1,
         rabi_params: Optional[RabiParams] = None,
     ) -> QubitDict[ExperimentResult]:
