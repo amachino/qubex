@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
 
-from .measurement import Measurement
+from .qube_manager import QubeManager
 from .pulse import Rect, Waveform, PulseSequence
 from .analysis import rotate, get_angle, fit_rabi
 from .plot import show_pulse_sequences, show_measurement_results
@@ -63,7 +63,7 @@ class Experiment:
         ctrl_duration: int = T_CONTROL,
         data_dir="./data",
     ):
-        self.measurement = Measurement(
+        self.qube = QubeManager(
             qube_id=qube_id,
             mux_number=mux_number,
             readout_ports=readout_ports,
@@ -96,7 +96,7 @@ class Experiment:
         waveforms: QubitDict[Waveform],
     ) -> QubitDict[IQValue]:
         qubits = list(waveforms.keys())
-        result = self.measurement.measure(
+        result = self.qube.measure(
             ctrl_qubits=qubits,
             read_qubits=qubits,
             waveforms=waveforms,
@@ -195,7 +195,7 @@ class Experiment:
         self,
         time_range=np.arange(0, 201, 10),
     ) -> QubitDict[ExperimentResult]:
-        amplitudes = ampl_hpi_dict[self.measurement.qube_id]
+        amplitudes = ampl_hpi_dict[self.qube.qube_id]
         result = self.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -231,12 +231,12 @@ class Experiment:
             angle = get_angle(signals[qubit])
             signals_rotated[qubit] = rotate(signals[qubit], angle)
 
-        control_waveforms = self.measurement.get_control_waveforms(control_qubits)
-        control_times = self.measurement.get_control_times(control_qubits)
-        readout_tx_waveforms = self.measurement.get_readout_tx_waveforms(readout_qubits)
-        readout_tx_times = self.measurement.get_readout_tx_times(readout_qubits)
-        readout_rx_waveforms = self.measurement.get_readout_rx_waveforms(readout_qubits)
-        readout_rx_times = self.measurement.get_readout_rx_times(readout_qubits)
+        control_waveforms = self.qube.get_control_waveforms(control_qubits)
+        control_times = self.qube.get_control_times(control_qubits)
+        readout_tx_waveforms = self.qube.get_readout_tx_waveforms(readout_qubits)
+        readout_tx_times = self.qube.get_readout_tx_times(readout_qubits)
+        readout_rx_waveforms = self.qube.get_readout_rx_waveforms(readout_qubits)
+        readout_rx_times = self.qube.get_readout_rx_times(readout_qubits)
 
         clear_output(True)
         show_measurement_results(
@@ -252,7 +252,7 @@ class Experiment:
             control_qubits=control_qubits,
             control_waveforms=control_waveforms,
             control_times=control_times,
-            control_duration=self.measurement.ctrl_duration_,
+            control_duration=self.qube.ctrl_duration_,
             readout_tx_qubits=readout_qubits,
             readout_tx_waveforms=readout_tx_waveforms,
             readout_tx_times=readout_tx_times,

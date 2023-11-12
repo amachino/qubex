@@ -36,7 +36,7 @@ READ_TX = "TX_"
 READ_RX = "RX_"
 
 
-class Measurement:
+class QubeManager:
     def __init__(
         self,
         qube_id: str,
