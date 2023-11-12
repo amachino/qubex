@@ -148,7 +148,7 @@ class Experiment:
         }
         return result
 
-    def sweep_pramameter(
+    def sweep_parameter(
         self,
         sweep_range: NDArray,
         waveforms: QubitDict[ParametricWaveform],
@@ -207,10 +207,10 @@ class Experiment:
         waveforms: QubitDict[Waveform],
         n: int,
     ) -> QubitDict[ExperimentResult]:
-        result = self.sweep_pramameter(
+        result = self.sweep_parameter(
             sweep_range=np.arange(n + 1),
             waveforms={
-                qubit: lambda x: PulseSequence([waveform] * int(x))
+                qubit: lambda x, w=waveform: PulseSequence([w] * int(x))
                 for qubit, waveform in waveforms.items()
             },
             pulse_count=1,
