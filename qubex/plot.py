@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from .measurement import READOUT_RANGE
 from .pulse import Waveform
-from .analysis import fit_and_rotate
+from .analysis import get_angle
 
 
 def plot_readout_waveform(qubit: str, waveform: Waveform):
@@ -43,7 +43,7 @@ def plot_readout_waveform(qubit: str, waveform: Waveform):
 
 def plot_states_before_after_rotation(data: npt.ArrayLike):
     states = np.array(data)
-    rotated_states, _ = fit_and_rotate(data)
+    rotated_states, _ = get_angle(data)
 
     _, axs = plt.subplots(1, 2, figsize=(8, 4))
 

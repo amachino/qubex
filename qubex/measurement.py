@@ -15,7 +15,7 @@ from qubecalib.setupqube import run
 qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
 
 from .pulse import Rect, Waveform, PulseSequence
-from .analysis import rotate, fit_and_rotate, fit_rabi
+from .analysis import rotate, get_angle, fit_rabi
 from .typing import (
     QubitKey,
     QubitDict,
@@ -145,14 +145,14 @@ class Measurement:
     def _read_rx_slot(self, qubit: QubitKey) -> Read:
         return self._read_rx_channel(qubit).findall(Read)[0]
 
-    def _ctrl_times(self, qubit: QubitKey) -> NDArray[np.int64]:
+    def _ctrl_times(self, qubit: QubitKey) -> IntArray:
         channel = self._ctrl_channel(qubit)
         slot = self._ctrl_slot(qubit)
         local_times = channel.get_timestamp(slot)
         global_times = local_times - self.schedule.offset
         return global_times
 
-    def _read_times(self, qubit: QubitKey) -> NDArray[np.int64]:
+    def _read_times(self, qubit: QubitKey) -> IntArray:
         channel = self._read_tx_channel(qubit)
         slot = self._read_tx_slot(qubit)
         local_times = channel.get_timestamp(slot)
@@ -284,7 +284,6 @@ class Measurement:
 
         for qubit in read_qubits:
             ampl = ro_ampl_dict[self.qube_id][qubit]
-            t = self._read_times(qubit)
             waveform = Rect(
                 duration=T_READOUT,
                 amplitude=ampl,
@@ -295,38 +294,38 @@ class Measurement:
     def get_control_waveforms(
         self,
         ctrl_qubits: list[QubitKey],
-    ) -> tuple[QubitDict[IQArray], QubitDict[IntArray]]:
-        waveforms = {}
-        timestamps = {}
-        for qubit in ctrl_qubits:
-            slot = self._ctrl_slot(qubit)
-            waveforms[qubit] = slot.iq
-            timestamps[qubit] = slot.timestamp
-        return waveforms, timestamps
+    ) -> QubitDict[IQArray]:
+        return {qubit: self._ctrl_slot(qubit).iq for qubit in ctrl_qubits}
+
+    def get_control_times(
+        self,
+        ctrl_qubits: list[QubitKey],
+    ) -> QubitDict[IntArray]:
+        return {qubit: self._ctrl_times(qubit) for qubit in ctrl_qubits}
 
     def get_readout_tx_waveforms(
         self,
         read_qubits: list[QubitKey],
-    ) -> tuple[QubitDict[IQArray], QubitDict[IntArray]]:
-        waveforms = {}
-        timestamps = {}
-        for qubit in read_qubits:
-            slot = self._read_tx_slot(qubit)
-            waveforms[qubit] = slot.iq
-            timestamps[qubit] = slot.timestamp
-        return waveforms, timestamps
+    ) -> QubitDict[IQArray]:
+        return {qubit: self._read_tx_slot(qubit).iq for qubit in read_qubits}
+
+    def get_readout_tx_times(
+        self,
+        read_qubits: list[QubitKey],
+    ) -> QubitDict[IntArray]:
+        return {qubit: self._read_times(qubit) for qubit in read_qubits}
 
     def get_readout_rx_waveforms(
         self,
         read_qubits: list[QubitKey],
-    ) -> tuple[QubitDict[IQArray], QubitDict[IntArray]]:
-        waveforms = {}
-        timestamps = {}
-        for qubit in read_qubits:
-            slot = self._read_rx_slot(qubit)
-            waveforms[qubit] = slot.iq
-            timestamps[qubit] = slot.timestamp
-        return waveforms, timestamps
+    ) -> QubitDict[IQArray]:
+        return {qubit: self._read_rx_slot(qubit).iq for qubit in read_qubits}  # type: ignore
+
+    def get_readout_rx_times(
+        self,
+        read_qubits: list[QubitKey],
+    ) -> QubitDict[IntArray]:
+        return {qubit: self._read_rx_slot(qubit).timestamp for qubit in read_qubits}
 
     def _integrated_iq(
         self,
@@ -356,7 +355,7 @@ class Measurement:
             adda_to_channels=self.adda_to_channels,
             triggers=self.triggers,
         )
-        rx_waveforms, _ = self.get_readout_rx_waveforms(read_qubits)
+        rx_waveforms = self.get_readout_rx_waveforms(read_qubits)
         result = self._integrated_iq(rx_waveforms)
         return result
 
@@ -378,9 +377,9 @@ class Measurement:
         time_range=np.arange(0, 201, 10),
     ) -> QubitDict[ExperimentResult]:
         qubits = list(amplitudes.keys())
-        ctrl_qubits = qubits
-        read_qubits = qubits
-        buffer: QubitDict[list[IQValue]] = defaultdict(list)
+        control_qubits = qubits
+        readout_qubits = qubits
+        signals: QubitDict[list[IQValue]] = defaultdict(list)
 
         for idx, duration in enumerate(time_range):
             waveforms = {
@@ -394,24 +393,26 @@ class Measurement:
             response = self.measure(waveforms)
 
             for qubit, iq in response.items():
-                buffer[qubit].append(iq)
+                signals[qubit].append(iq)
 
-            self.plot_measurement_results(
-                idx=idx,
-                ctrl_qubits=ctrl_qubits,
-                read_qubits=read_qubits,
+            self.show_experiments_results(
+                control_qubits=control_qubits,
+                readout_qubits=readout_qubits,
                 sweep_range=time_range,
-                states=buffer,
+                idx=idx,
+                signals=signals,
             )
+
+        phase_shifts = {qubit: get_angle(data) for qubit, data in signals.items()}
 
         result = {
             qubit: ExperimentResult(
                 qubit=qubit,
                 sweep_range=time_range,
                 data=np.array(data),
-                phase_shift=0.0,
+                phase_shift=phase_shifts[qubit],
             )
-            for qubit, data in buffer.items()
+            for qubit, data in signals.items()
         }
         return result
 
@@ -422,9 +423,9 @@ class Measurement:
         pulse_count=1,
     ) -> QubitDict[ExperimentResult]:
         qubits = list(waveforms.keys())
-        ctrl_qubits = qubits
-        read_qubits = qubits
-        buffer: QubitDict[list[IQValue]] = defaultdict(list)
+        control_qubits = qubits
+        readout_qubits = qubits
+        signals: QubitDict[list[IQValue]] = defaultdict(list)
 
         for idx, var in enumerate(sweep_range):
             waveforms_var = {
@@ -435,24 +436,26 @@ class Measurement:
             response = self.measure(waveforms_var)
 
             for qubit, iq in response.items():
-                buffer[qubit].append(iq)
+                signals[qubit].append(iq)
 
-            self.plot_measurement_results(
-                idx=idx,
-                ctrl_qubits=ctrl_qubits,
-                read_qubits=read_qubits,
+            self.show_experiments_results(
+                control_qubits=control_qubits,
+                readout_qubits=readout_qubits,
                 sweep_range=sweep_range,
-                states=buffer,
+                idx=idx,
+                signals=signals,
             )
+
+        phase_shifts = {qubit: get_angle(data) for qubit, data in signals.items()}
 
         result = {
             qubit: ExperimentResult(
                 qubit=qubit,
                 sweep_range=sweep_range,
                 data=np.array(data),
-                phase_shift=0.0,
+                phase_shift=phase_shifts[qubit],
             )
-            for qubit, data in buffer.items()
+            for qubit, data in signals.items()
         }
         return result
 
@@ -482,53 +485,61 @@ class Measurement:
         )
         return result
 
-    def plot_measurement_results(
+    def show_experiments_results(
         self,
-        idx: int,
-        ctrl_qubits: list[QubitKey],
-        read_qubits: list[QubitKey],
+        control_qubits: list[QubitKey],
+        readout_qubits: list[QubitKey],
         sweep_range: NDArray,
-        states: QubitDict[list[IQValue]],
+        idx: int,
+        signals: QubitDict[list[IQValue]],
     ):
-        states_rotated = {}
+        signals_rotated = {}
 
-        for qubit in states:
-            states_rotated[qubit], _ = fit_and_rotate(states[qubit])
+        for qubit in signals:
+            angle = get_angle(signals[qubit])
+            signals_rotated[qubit] = rotate(signals[qubit], angle)
 
-        rx_waveform, rx_time = self.get_readout_rx_waveforms(read_qubits)
-        ctrl_waveforms, _ = self.get_control_waveforms(ctrl_qubits)
-        read_waveforms, _ = self.get_readout_tx_waveforms(read_qubits)
+        control_waveforms = self.get_control_waveforms(control_qubits)
+        control_times = self.get_control_times(control_qubits)
+        readout_tx_waveforms = self.get_readout_tx_waveforms(readout_qubits)
+        readout_tx_times = self.get_readout_tx_times(readout_qubits)
+        readout_rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
+        readout_rx_times = self.get_readout_rx_times(readout_qubits)
 
         clear_output(True)
         self.show_measurement_results(
-            read_qubits=read_qubits,
-            rx_time=rx_time,
-            rx_waveform=rx_waveform,
+            readout_qubits=readout_qubits,
+            readout_rx_waveforms=readout_rx_waveforms,
+            readout_rx_times=readout_rx_times,
             sweep_range=sweep_range[: idx + 1],
-            states=states,
-            states_rotated=states_rotated,
+            signals=signals,
+            signals_rotated=signals_rotated,
         )
         self.show_pulse_sequences(
-            ctrl_qubits=ctrl_qubits,
-            ctrl_waveforms=ctrl_waveforms,
-            read_qubits=read_qubits,
-            read_waveforms=read_waveforms,
+            control_qubits=control_qubits,
+            control_waveforms=control_waveforms,
+            control_times=control_times,
+            readout_tx_qubits=readout_qubits,
+            readout_tx_waveforms=readout_tx_waveforms,
+            readout_tx_times=readout_tx_times,
         )
         print(f"{idx+1}/{len(sweep_range)}")
 
     def show_pulse_sequences(
         self,
-        ctrl_qubits,
-        ctrl_waveforms,
-        read_qubits,
-        read_waveforms,
+        control_qubits: list[QubitKey],
+        control_waveforms: QubitDict[IQArray],
+        control_times: QubitDict[IntArray],
+        readout_tx_qubits: list[QubitKey],
+        readout_tx_waveforms: QubitDict[IQArray],
+        readout_tx_times: QubitDict[IntArray],
     ):
         """
         Shows the pulse sequences.
         """
 
         # number of qubits
-        N = len(ctrl_qubits)
+        N = len(control_qubits)
 
         # initialize the figure
         plt.figure(figsize=(15, 1.5 * (N + 1)))
@@ -551,7 +562,7 @@ class Measurement:
             if i == 0:
                 ax = plt.subplot(gs[i])
                 ax.set_title("Pulse waveform")
-                ax.set_xlim(xlim)  # us
+                ax.set_xlim(xlim)  # μs
                 ax.xaxis.set_visible(False)
                 axes.append(ax)
             else:
@@ -559,7 +570,7 @@ class Measurement:
                 ax.xaxis.set_visible(False)
                 axes.append(ax)
         ro_ax = plt.subplot(gs[N], sharex=axes[0])
-        ro_ax.set_xlabel("Time / us")
+        ro_ax.set_xlabel("Time (μs)")
         ro_ax.xaxis.set_visible(True)
         axes.append(ro_ax)
 
@@ -568,34 +579,34 @@ class Measurement:
 
         # plot the control pulses
         # the real and imaginary parts are plotted in the same subplot
-        for i, qubit in enumerate(ctrl_qubits):
-            ctrl_time = self._ctrl_times(qubit) * 1e-3  # ns -> us
-            ctrl_waveform = ctrl_waveforms[qubit]
+        for i, qubit in enumerate(control_qubits):
+            times = control_times[qubit] * 1e-3  # ns -> μs
+            waveform = control_waveforms[qubit]
             axes[i].plot(
-                ctrl_time,
-                np.real(ctrl_waveform),
+                times,
+                np.real(waveform),
                 label=qubit + " control (real)",
             )
             axes[i].plot(
-                ctrl_time,
-                np.imag(ctrl_waveform),
+                times,
+                np.imag(waveform),
                 label=qubit + " control (imag)",
             )
             axes[i].legend()
-            max_ampl_list.append(np.max(np.abs(ctrl_waveform)))
+            max_ampl_list.append(np.max(np.abs(waveform)))
 
         # plot the readout pulses
-        for i, qubit in enumerate(read_qubits):
-            read_time = self._read_times(qubit) * 1e-3  # ns -> us
-            read_waveform = read_waveforms[qubit]
+        for i, qubit in enumerate(readout_tx_qubits):
+            times = readout_tx_times[qubit] * 1e-3  # ns -> us
+            waveform = readout_tx_waveforms[qubit]
             axes[N].plot(
-                read_time,
-                np.abs(read_waveform),
+                times,
+                np.abs(waveform),
                 label=qubit + " readout (abs)",
                 linestyle="dashed",
             )
             axes[N].legend()
-            max_ampl_list.append(np.max(np.abs(read_waveform)))
+            max_ampl_list.append(np.max(np.abs(waveform)))
 
         # set the y-axis range according to the maximum amplitude
         max_ampl = np.max(max_ampl_list)
@@ -606,65 +617,65 @@ class Measurement:
 
     def show_measurement_results(
         self,
-        read_qubits,
-        rx_time,
-        rx_waveform,
-        sweep_range,
-        states,
-        states_rotated,
+        readout_qubits: list[QubitKey],
+        readout_rx_waveforms: QubitDict[IQArray],
+        readout_rx_times: QubitDict[IntArray],
+        sweep_range: NDArray,
+        signals: QubitDict[list[IQValue]],
+        signals_rotated: QubitDict[IQArray],
     ):
-        plt.figure(figsize=(15, 6 * len(read_qubits)))
-        gs = gridspec.GridSpec(2 * len(read_qubits), 2, wspace=0.3, hspace=0.5)
+        plt.figure(figsize=(15, 6 * len(readout_qubits)))
+        gs = gridspec.GridSpec(2 * len(readout_qubits), 2, wspace=0.3, hspace=0.5)
 
         ax = {}
-        for i, qubit in enumerate(read_qubits):
+        for i, qubit in enumerate(readout_qubits):
             ax[qubit] = [
                 plt.subplot(gs[i * 2, 0]),
                 plt.subplot(gs[i * 2 + 1, 0]),
                 plt.subplot(gs[i * 2 : i * 2 + 2, 1]),
             ]
 
-        for qubit in read_qubits:
+        for qubit in readout_qubits:
             """検波した読み出しパルス波形表示"""
             avg_num = 50  # 平均化する個数
 
             mov_avg_readout_iq = (
-                np.convolve(rx_waveform[qubit], np.ones(avg_num), mode="valid")
+                np.convolve(readout_rx_waveforms[qubit], np.ones(avg_num), mode="valid")
                 / avg_num
             )  # 移動平均
             mov_avg_readout_iq = np.append(mov_avg_readout_iq, np.zeros(avg_num - 1))
 
             ax[qubit][0].plot(
-                rx_time[qubit] * 1e-3,
+                readout_rx_times[qubit] * 1e-3,
                 np.real(mov_avg_readout_iq),
                 label="I",
             )
             ax[qubit][0].plot(
-                rx_time[qubit] * 1e-3,
+                readout_rx_times[qubit] * 1e-3,
                 np.imag(mov_avg_readout_iq),
                 label="Q",
             )
 
             ax[qubit][0].plot(
-                rx_time[qubit][READOUT_RANGE] * 1e-3,
+                readout_rx_times[qubit][READOUT_RANGE] * 1e-3,
                 np.real(mov_avg_readout_iq)[READOUT_RANGE],
                 lw=5,
             )
             ax[qubit][0].plot(
-                rx_time[qubit][READOUT_RANGE] * 1e-3,
+                readout_rx_times[qubit][READOUT_RANGE] * 1e-3,
                 np.imag(mov_avg_readout_iq)[READOUT_RANGE],
                 lw=5,
             )
 
-            ax[qubit][0].set_xlabel("Time / us")
+            ax[qubit][0].set_xlabel("Time (μs)")
             ax[qubit][0].set_xlim(0, 2.0)
             ax[qubit][0].set_title("Detected readout pulse waveform " + qubit)
             ax[qubit][0].legend()
             ax[qubit][0].grid()
 
             """Rabi振動"""
-            ax[qubit][1].plot(sweep_range, np.real(states[qubit]), "o-", label="I")
-            ax[qubit][1].plot(sweep_range, np.imag(states[qubit]), "o-", label="Q")
+            ax[qubit][1].plot(sweep_range, np.real(signals[qubit]), "o-", label="I")
+            ax[qubit][1].plot(sweep_range, np.imag(signals[qubit]), "o-", label="Q")
             ax[qubit][1].set_xlabel("Sweep index")
             ax[qubit][1].set_title("Detected signal " + qubit)
             ax[qubit][1].legend()
@@ -675,7 +686,7 @@ class Measurement:
                 np.real(mov_avg_readout_iq), np.imag(mov_avg_readout_iq), lw=0.2
             )
 
-            width = max(np.abs(states[qubit]))
+            width = max(np.abs(signals[qubit]))
             ax[qubit][2].set_xlim(-width, width)
             ax[qubit][2].set_ylim(-width, width)
             ax[qubit][2].plot(
@@ -689,24 +700,24 @@ class Measurement:
             ax[qubit][2].set_title("Complex amplitude on IQ plane " + qubit)
 
             ax[qubit][2].scatter(
-                np.real(states[qubit]),
-                np.imag(states[qubit]),
+                np.real(signals[qubit]),
+                np.imag(signals[qubit]),
                 label="Before rotation",
             )
             ax[qubit][2].scatter(
-                np.real(states[qubit])[0],
-                np.imag(states[qubit])[0],
+                np.real(signals[qubit])[0],
+                np.imag(signals[qubit])[0],
                 color="blue",
             )
 
             ax[qubit][2].scatter(
-                np.real(states_rotated[qubit]),
-                np.imag(states_rotated[qubit]),
+                np.real(signals_rotated[qubit]),
+                np.imag(signals_rotated[qubit]),
                 label="After rotation",
             )
             ax[qubit][2].scatter(
-                np.real(states_rotated[qubit][0]),
-                np.imag(states_rotated[qubit][0]),
+                np.real(signals_rotated[qubit][0]),
+                np.imag(signals_rotated[qubit][0]),
                 color="red",
             )
             ax[qubit][2].legend()
@@ -724,7 +735,8 @@ class Measurement:
         time = result.sweep_range
 
         # Rotate the data to the vertical (Q) axis
-        points, angle = fit_and_rotate(data=result.data)
+        angle = get_angle(data=result.data)
+        points = rotate(data=result.data, angle=angle)
         values = points.imag
         print(f"Phase shift: {angle:.3f} rad, {angle * 180 / np.pi:.3f} deg")
 

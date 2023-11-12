@@ -213,13 +213,13 @@ def rotate(
     return rotated_points
 
 
-def fit_and_rotate(
+def get_angle(
     data: npt.ArrayLike,
-) -> tuple[npt.NDArray[np.complex128], float]:
+) -> float:
     points = np.array(data)
 
     if len(points) < 2:
-        return points, 0.0
+        return 0.0
 
     fit_params = np.polyfit(points.real, points.imag, 1)
     gradient, intercept = fit_params
@@ -231,8 +231,7 @@ def fit_and_rotate(
     else:
         angle -= np.pi / 2
 
-    rotated_points = points * np.exp(-1j * angle)
-    return rotated_points, angle
+    return angle
 
 
 def principal_components(
