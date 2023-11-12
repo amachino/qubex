@@ -1,5 +1,4 @@
 import os, datetime, pickle
-from typing import Optional
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -20,7 +19,6 @@ from .analysis import rotate, fit_and_rotate, fit_rabi
 from .typing import (
     QubitKey,
     QubitDict,
-    QubitMutableDict,
     IQValue,
     IQArray,
     IntArray,
@@ -374,30 +372,15 @@ class Measurement:
         )
         return result
 
-    def rabi_check(
-        self,
-        time_range=np.arange(0, 201, 10),
-    ) -> QubitDict[ExperimentResult]:
-        amplitudes = ampl_hpi_dict[self.qube_id]
-        result = self.rabi_experiment(
-            amplitudes=amplitudes,
-            time_range=time_range,
-        )
-        return result
-
     def rabi_experiment(
         self,
         amplitudes: QubitDict[float],
         time_range=np.arange(0, 201, 10),
     ) -> QubitDict[ExperimentResult]:
         qubits = list(amplitudes.keys())
-
         ctrl_qubits = qubits
         read_qubits = qubits
-
-        states: QubitDict[list[IQValue]] = defaultdict(list)
-        states_rotated: QubitMutableDict[IQArray] = {}
-        phase_shift: QubitMutableDict[float] = {}
+        buffer: QubitDict[list[IQValue]] = defaultdict(list)
 
         for idx, duration in enumerate(time_range):
             waveforms = {
@@ -411,29 +394,77 @@ class Measurement:
             response = self.measure(waveforms)
 
             for qubit, iq in response.items():
-                states[qubit].append(iq)
-                states_rotated[qubit], phase_shift[qubit] = fit_and_rotate(
-                    states[qubit]
-                )
+                buffer[qubit].append(iq)
 
             self.plot_measurement_results(
                 idx=idx,
                 ctrl_qubits=ctrl_qubits,
                 read_qubits=read_qubits,
                 sweep_range=time_range,
-                states=states,
-                states_rotated=states_rotated,
+                states=buffer,
             )
 
         result = {
             qubit: ExperimentResult(
                 qubit=qubit,
                 sweep_range=time_range,
-                data=np.array(values),
-                phase_shift=phase_shift[qubit],
+                data=np.array(data),
+                phase_shift=0.0,
             )
-            for qubit, values in states.items()
+            for qubit, data in buffer.items()
         }
+        return result
+
+    def sweep_pramameter(
+        self,
+        sweep_range: NDArray,
+        waveforms: QubitDict[ParametricWaveform],
+        pulse_count=1,
+    ) -> QubitDict[ExperimentResult]:
+        qubits = list(waveforms.keys())
+        ctrl_qubits = qubits
+        read_qubits = qubits
+        buffer: QubitDict[list[IQValue]] = defaultdict(list)
+
+        for idx, var in enumerate(sweep_range):
+            waveforms_var = {
+                qubit: PulseSequence([waveform(var)] * pulse_count)
+                for qubit, waveform in waveforms.items()
+            }
+
+            response = self.measure(waveforms_var)
+
+            for qubit, iq in response.items():
+                buffer[qubit].append(iq)
+
+            self.plot_measurement_results(
+                idx=idx,
+                ctrl_qubits=ctrl_qubits,
+                read_qubits=read_qubits,
+                sweep_range=sweep_range,
+                states=buffer,
+            )
+
+        result = {
+            qubit: ExperimentResult(
+                qubit=qubit,
+                sweep_range=sweep_range,
+                data=np.array(data),
+                phase_shift=0.0,
+            )
+            for qubit, data in buffer.items()
+        }
+        return result
+
+    def rabi_check(
+        self,
+        time_range=np.arange(0, 201, 10),
+    ) -> QubitDict[ExperimentResult]:
+        amplitudes = ampl_hpi_dict[self.qube_id]
+        result = self.rabi_experiment(
+            amplitudes=amplitudes,
+            time_range=time_range,
+        )
         return result
 
     def repeat_pulse(
@@ -451,64 +482,19 @@ class Measurement:
         )
         return result
 
-    def sweep_pramameter(
-        self,
-        sweep_range: NDArray,
-        waveforms: QubitDict[ParametricWaveform],
-        pulse_count=1,
-    ) -> QubitDict[ExperimentResult]:
-        qubits = list(waveforms.keys())
-
-        ctrl_qubits = qubits
-        read_qubits = qubits
-
-        states: QubitDict[list[IQValue]] = defaultdict(list)
-        states_rotated: QubitMutableDict[IQArray] = {}
-        phase_shift: QubitMutableDict[float] = {}
-
-        for idx, var in enumerate(sweep_range):
-            waveforms_var = {
-                qubit: PulseSequence([waveform(var)] * pulse_count)
-                for qubit, waveform in waveforms.items()
-            }
-
-            response = self.measure(waveforms_var)
-
-            for qubit, iq in response.items():
-                states[qubit].append(iq)
-                states_rotated[qubit], phase_shift[qubit] = fit_and_rotate(
-                    states[qubit]
-                )
-
-            self.plot_measurement_results(
-                idx=idx,
-                ctrl_qubits=ctrl_qubits,
-                read_qubits=read_qubits,
-                sweep_range=sweep_range,
-                states=states,
-                states_rotated=states_rotated,
-            )
-
-        result = {
-            qubit: ExperimentResult(
-                qubit=qubit,
-                sweep_range=sweep_range,
-                data=np.array(values),
-                phase_shift=phase_shift[qubit],
-            )
-            for qubit, values in states.items()
-        }
-        return result
-
     def plot_measurement_results(
         self,
-        idx,
-        read_qubits,
-        sweep_range,
-        states,
-        states_rotated,
-        ctrl_qubits,
+        idx: int,
+        ctrl_qubits: list[QubitKey],
+        read_qubits: list[QubitKey],
+        sweep_range: NDArray,
+        states: QubitDict[list[IQValue]],
     ):
+        states_rotated = {}
+
+        for qubit in states:
+            states_rotated[qubit], _ = fit_and_rotate(states[qubit])
+
         rx_waveform, rx_time = self.get_readout_rx_waveforms(read_qubits)
         ctrl_waveforms, _ = self.get_control_waveforms(ctrl_qubits)
         read_waveforms, _ = self.get_readout_tx_waveforms(read_qubits)

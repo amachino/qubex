@@ -8,7 +8,6 @@ from .pulse import Waveform
 QubitKey = str
 QubitValue = TypeVar("QubitValue")
 QubitDict = Mapping[QubitKey, QubitValue]
-QubitMutableDict = MutableMapping[QubitKey, QubitValue]
 
 IQValue = complex
 IQArray = NDArray[np.complex128]
