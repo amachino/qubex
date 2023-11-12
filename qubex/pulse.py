@@ -154,10 +154,8 @@ class Pulse(Waveform):
         time_offset: int = 0,
         phase_offset: float = 0.0,
     ):
+        super().__init__(scale, time_offset, phase_offset)
         self._values = np.array(values)
-        self.scale = scale
-        self.time_offset = time_offset
-        self.phase_offset = phase_offset
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
@@ -185,11 +183,11 @@ class Pulse(Waveform):
         new_pulse.phase_offset += np.pi
         return new_pulse
 
-    def repeated(self, n: int) -> "Pulse":
-        """Returns a copy of the pulse repeated n times."""
+    def repeated(self, n: int) -> "PulseSequence":
+        """Returns a pulse sequence of n copies of the pulse."""
         new_pulse = deepcopy(self)
-        new_pulse._values = np.tile(new_pulse._values, n)
-        return new_pulse
+        sequence = PulseSequence([new_pulse] * n)
+        return sequence
 
 
 class PulseSequence(Waveform):
@@ -200,12 +198,10 @@ class PulseSequence(Waveform):
         time_offset: int = 0,
         phase_offset: float = 0.0,
     ):
+        super().__init__(scale, time_offset, phase_offset)
         if waveforms is None:
             waveforms = []
         self.waveforms = waveforms
-        self.scale = scale
-        self.time_offset = time_offset
-        self.phase_offset = phase_offset
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
@@ -297,7 +293,7 @@ class Rect(Pulse):
         v_flat = amplitude * np.ones_like(t_flat)
         v_fall = 0.5 * amplitude * (1 + np.cos(np.pi * t_rise / risetime))
 
-        values = np.concatenate((v_rise, v_flat, v_fall), dtype=np.complex128)
+        values = np.concatenate((v_rise, v_flat, v_fall)).astype(np.complex128)
 
         return values
 

@@ -5,7 +5,7 @@ a plot library for qubex
 import numpy as np
 from numpy.typing import NDArray
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+from matplotlib import gridspec
 
 from .typing import (
     QubitKey,
@@ -129,7 +129,6 @@ def show_measurement_results(
         ]
 
     for qubit in readout_qubits:
-        """検波した読み出しパルス波形表示"""
         avg_num = 50  # 平均化する個数
 
         mov_avg_readout_iq = (
@@ -166,7 +165,6 @@ def show_measurement_results(
         ax[qubit][0].legend()
         ax[qubit][0].grid()
 
-        """Rabi振動"""
         ax[qubit][1].plot(sweep_range, np.real(signals[qubit]), "o-", label="I")
         ax[qubit][1].plot(sweep_range, np.imag(signals[qubit]), "o-", label="Q")
         ax[qubit][1].set_xlabel("Sweep index")
@@ -174,7 +172,6 @@ def show_measurement_results(
         ax[qubit][1].legend()
         ax[qubit][1].grid()
 
-        """IQ平面上での複素振幅"""
         ax[qubit][2].plot(
             np.real(mov_avg_readout_iq), np.imag(mov_avg_readout_iq), lw=0.2
         )
