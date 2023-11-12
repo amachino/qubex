@@ -18,10 +18,12 @@ qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
 from .pulse import Rect, Waveform, PulseSequence
 from .analysis import rotate, fit_and_rotate, fit_rabi
 from .typing import (
-    QubitLabel,
+    QubitKey,
     QubitDict,
+    QubitMutableDict,
     IQValue,
     IQArray,
+    IntArray,
     ReadoutPorts,
     ParametricWaveform,
 )
@@ -50,7 +52,7 @@ MUX = [[f"Q{i*4+j:02d}" for j in range(4)] for i in range(16)]
 
 @dataclass
 class ExperimentResult:
-    qubit: QubitLabel
+    qubit: QubitKey
     sweep_range: NDArray
     data: IQArray
     phase_shift: float
@@ -63,7 +65,7 @@ class ExperimentResult:
 
 @dataclass
 class RabiParams:
-    qubit: QubitLabel
+    qubit: QubitKey
     phase_shift: float
     amplitude: float
     omega: float
@@ -90,7 +92,6 @@ class Measurement:
         self.interval = interval
         self.ctrl_duration = ctrl_duration
         self.schedule = Schedule()
-        self.rabi_params: QubitDict[RabiParams] = {}
         self.data_dir = data_dir
         self._init_channels()
         self._init_ports(self.qube)
@@ -113,19 +114,19 @@ class Measurement:
             data = pickle.load(f)
         return data
 
-    def ctrl_frequency(self, qubit: QubitLabel) -> float:
+    def get_control_frequency(self, qubit: QubitKey) -> float:
         return self.schedule[qubit].center_frequency
 
-    def set_ctrl_frequency(self, qubit: QubitLabel, frequency: float):
+    def set_control_frequency(self, qubit: QubitKey, frequency: float):
         self.schedule[qubit].center_frequency = frequency
 
-    def _ctrl_channel(self, qubit: QubitLabel) -> Channel:
+    def _ctrl_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[qubit]
 
-    def _read_tx_channel(self, qubit: QubitLabel) -> Channel:
+    def _read_tx_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[READ_TX + qubit]
 
-    def _read_rx_channel(self, qubit: QubitLabel) -> Channel:
+    def _read_rx_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[READ_RX + qubit]
 
     def _ctrl_channels(self) -> list[Channel]:
@@ -137,23 +138,23 @@ class Measurement:
     def _read_rx_channels(self) -> list[Channel]:
         return [self._read_rx_channel(qubit) for qubit in self.all_read_qubits]
 
-    def _ctrl_slot(self, qubit: QubitLabel) -> Arbitrary:
+    def _ctrl_slot(self, qubit: QubitKey) -> Arbitrary:
         return self._ctrl_channel(qubit).findall(Arbitrary)[0]
 
-    def _read_tx_slot(self, qubit: QubitLabel) -> Arbitrary:
+    def _read_tx_slot(self, qubit: QubitKey) -> Arbitrary:
         return self._read_tx_channel(qubit).findall(Arbitrary)[0]
 
-    def _read_rx_slot(self, qubit: QubitLabel) -> Read:
+    def _read_rx_slot(self, qubit: QubitKey) -> Read:
         return self._read_rx_channel(qubit).findall(Read)[0]
 
-    def _ctrl_times(self, qubit: QubitLabel) -> NDArray[np.int64]:
+    def _ctrl_times(self, qubit: QubitKey) -> NDArray[np.int64]:
         channel = self._ctrl_channel(qubit)
         slot = self._ctrl_slot(qubit)
         local_times = channel.get_timestamp(slot)
         global_times = local_times - self.schedule.offset
         return global_times
 
-    def _read_times(self, qubit: QubitLabel) -> NDArray[np.int64]:
+    def _read_times(self, qubit: QubitKey) -> NDArray[np.int64]:
         channel = self._read_tx_channel(qubit)
         slot = self._read_tx_slot(qubit)
         local_times = channel.get_timestamp(slot)
@@ -243,10 +244,10 @@ class Measurement:
             qube.port8.dac.awg2: [self._ctrl_channel(self.qubits[3] + CTRL_HI)],
         }
 
-    def set_circuit(
+    def set_waveforms(
         self,
-        ctrl_qubits: list[QubitLabel],
-        read_qubits: list[QubitLabel],
+        ctrl_qubits: list[QubitKey],
+        read_qubits: list[QubitKey],
         waveforms: QubitDict[IQArray],
     ) -> tuple[QubitDict[IQArray], QubitDict[IQArray]]:
         max_length = max([len(waveform) for waveform in waveforms.values()])
@@ -301,10 +302,34 @@ class Measurement:
 
         return ctrl_waveforms, read_waveforms
 
-    def _received_waveforms(
+    def get_control_waveforms(
         self,
-        read_qubits: list[QubitLabel],
-    ) -> tuple[QubitDict[IQArray], QubitDict[IQArray]]:
+        ctrl_qubits: list[QubitKey],
+    ) -> tuple[QubitDict[IQArray], QubitDict[IntArray]]:
+        waveforms = {}
+        timestamps = {}
+        for qubit in ctrl_qubits:
+            slot = self._ctrl_slot(qubit)
+            waveforms[qubit] = slot.iq
+            timestamps[qubit] = slot.timestamp
+        return waveforms, timestamps
+
+    def get_readout_tx_waveforms(
+        self,
+        read_qubits: list[QubitKey],
+    ) -> tuple[QubitDict[IQArray], QubitDict[IntArray]]:
+        waveforms = {}
+        timestamps = {}
+        for qubit in read_qubits:
+            slot = self._read_tx_slot(qubit)
+            waveforms[qubit] = slot.iq
+            timestamps[qubit] = slot.timestamp
+        return waveforms, timestamps
+
+    def get_readout_rx_waveforms(
+        self,
+        read_qubits: list[QubitKey],
+    ) -> tuple[QubitDict[IQArray], QubitDict[IntArray]]:
         waveforms = {}
         timestamps = {}
         for qubit in read_qubits:
@@ -325,11 +350,11 @@ class Measurement:
 
     def _measure(
         self,
-        ctrl_qubits: list[QubitLabel],
-        read_qubits: list[QubitLabel],
+        ctrl_qubits: list[QubitKey],
+        read_qubits: list[QubitKey],
         waveforms: QubitDict[Waveform],
     ) -> QubitDict[IQValue]:
-        self.set_circuit(
+        self.set_waveforms(
             ctrl_qubits=ctrl_qubits,
             read_qubits=read_qubits,
             waveforms={qubit: waveform.values for qubit, waveform in waveforms.items()},
@@ -341,7 +366,7 @@ class Measurement:
             adda_to_channels=self.adda_to_channels,
             triggers=self.triggers,
         )
-        rx_waveforms, _ = self._received_waveforms(read_qubits)
+        rx_waveforms, _ = self.get_readout_rx_waveforms(read_qubits)
         result = self._integrated_iq(rx_waveforms)
         return result
 
@@ -379,8 +404,8 @@ class Measurement:
         read_qubits = qubits
 
         states: QubitDict[list[IQValue]] = defaultdict(list)
-        states_rotated: QubitDict[IQArray] = {}
-        phase_shift: QubitDict[float] = {}
+        states_rotated: QubitMutableDict[IQArray] = {}
+        phase_shift: QubitMutableDict[float] = {}
 
         for idx, duration in enumerate(time_range):
             waveforms = {
@@ -391,7 +416,7 @@ class Measurement:
                 for qubit in qubits
             }
 
-            ctrl_waveforms, read_waveforms = self.set_circuit(
+            ctrl_waveforms, read_waveforms = self.set_waveforms(
                 ctrl_qubits=ctrl_qubits,
                 read_qubits=read_qubits,
                 waveforms=waveforms,
@@ -405,7 +430,7 @@ class Measurement:
                 triggers=self.triggers,
             )
 
-            rx_waveform, rx_time = self._received_waveforms(read_qubits)
+            rx_waveform, rx_time = self.get_readout_rx_waveforms(read_qubits)
             iq = self._integrated_iq(rx_waveform)
 
             for qubit in read_qubits:
@@ -470,8 +495,8 @@ class Measurement:
         read_qubits = qubits
 
         states: QubitDict[list[IQValue]] = defaultdict(list)
-        states_rotated: QubitDict[IQArray] = {}
-        phase_shift: QubitDict[float] = {}
+        states_rotated: QubitMutableDict[IQArray] = {}
+        phase_shift: QubitMutableDict[float] = {}
 
         for idx, var in enumerate(sweep_range):
             waveforms_var = {
@@ -479,7 +504,7 @@ class Measurement:
                 for qubit, waveform in waveforms.items()
             }
 
-            ctrl_waveforms, read_waveforms = self.set_circuit(
+            ctrl_waveforms, read_waveforms = self.set_waveforms(
                 ctrl_qubits=ctrl_qubits,
                 read_qubits=read_qubits,
                 waveforms=waveforms_var,
@@ -493,7 +518,7 @@ class Measurement:
                 triggers=self.triggers,
             )
 
-            rx_waveform, rx_time = self._received_waveforms(read_qubits)
+            rx_waveform, rx_time = self.get_readout_rx_waveforms(read_qubits)
             iq = self._integrated_iq(rx_waveform)
 
             for qubit in read_qubits:
@@ -772,7 +797,6 @@ class Measurement:
             phi=popt[2],
             offset=popt[3],
         )
-        self.rabi_params[result.qubit] = rabi_params
         return rabi_params
 
     def expectation_values(
@@ -786,12 +810,9 @@ class Measurement:
 
     def expectation_value(
         self,
-        qubit: QubitLabel,
         iq: IQValue,
         params: RabiParams,
     ) -> float:
-        if params is None:
-            params = self.rabi_params[qubit]
         iq = iq * np.exp(-1j * params.phase_shift)
         value = iq.imag
         value = -(value - params.offset) / params.amplitude

@@ -1,21 +1,21 @@
-from typing import TypeVar, Literal, Callable, Union
+from typing import TypeVar, Literal, Callable, Mapping, MutableMapping
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .pulse import Waveform
 
-QubitLabel = str
-
-T = TypeVar("T")
-QubitDict = dict[QubitLabel, T]
+QubitKey = str
+QubitValue = TypeVar("QubitValue")
+QubitDict = Mapping[QubitKey, QubitValue]
+QubitMutableDict = MutableMapping[QubitKey, QubitValue]
 
 IQValue = complex
-
 IQArray = NDArray[np.complex128]
+IntArray = NDArray[np.int64]
 
 ReadoutTxPort = Literal["port0", "port13"]
 ReadoutRxPort = Literal["port1", "port12"]
 ReadoutPorts = tuple[ReadoutTxPort, ReadoutRxPort]
 
-ParametricWaveform = Callable[[Union[float, int]], Waveform]
+ParametricWaveform = Callable[..., Waveform]
