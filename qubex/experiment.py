@@ -57,7 +57,7 @@ class Experiment:
         self,
         qube_id: str,
         mux_number: int,
-        cooldown: str,
+        params: str,
         readout_ports: ReadoutPorts = ("port0", "port1"),
         control_duration: int = T_CONTROL,
         readout_duration: int = T_READOUT,
@@ -65,7 +65,7 @@ class Experiment:
         measurement_inverval: int = 150_000,
         data_path="./data",
     ):
-        self.params = self._get_params(cooldown, qube_id)
+        self.params = self._get_params(params, qube_id)
         self.qube_manager: Final = QubeManager(
             qube_id=qube_id,
             mux_number=mux_number,
