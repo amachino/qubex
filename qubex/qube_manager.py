@@ -25,15 +25,15 @@ from .params import (
 from .consts import (
     MUX,
     SAMPLING_PERIOD,
+    T_CONTROL,
     T_READOUT,
     T_MARGIN,
-    READOUT_RANGE,
 )
 
-CONTROL_HIGH = "_hi"
-CONTROL_LOW = "_lo"
-READOUT_TX = "TX_"
-READOUT_RX = "RX_"
+CONTROL_HIGH: Final = "_hi"
+CONTROL_LOW: Final = "_lo"
+READOUT_TX: Final = "TX_"
+READOUT_RX: Final = "RX_"
 
 
 class QubeManager:
@@ -42,17 +42,18 @@ class QubeManager:
         qube_id: str,
         mux_number: int,
         readout_ports: ReadoutPorts,
-        control_window: int,
+        control_duration: int = T_CONTROL,
+        readout_duration: int = T_READOUT,
     ):
         self.qube_id: Final = qube_id
         self.qube: Final = qc.ui.QubeControl(f"{qube_id}.yml").qube
         self.qubits: Final = MUX[mux_number]
         self.readout_ports: Final = readout_ports
-        self.control_window: Final = control_window
+        self.control_duration: Final = control_duration
+        self.readout_duration: Final = readout_duration
         self.schedule: Final = Schedule()
-        self.max_control_duration = 0
         self._init_channels()
-        self._init_ports(self.qube)
+        self._init_ports()
 
     def _ctrl_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[qubit]
@@ -114,7 +115,8 @@ class QubeManager:
                 center_frequency=ro_freq_dict[self.qube_id][qubit],
             )
 
-    def _init_ports(self, qube):
+    def _init_ports(self):
+        qube = self.qube
         port_tx = qube.ports[self.readout_ports[0]]
         port_rx = qube.ports[self.readout_ports[1]]
         self.port_tx = port_tx
@@ -158,6 +160,8 @@ class QubeManager:
         qube.port8.awg2.nco.mhz = 0
         qube.port8.mix.vatt = 0x800
 
+        qube.gpio.write_value(0x0000)  # loopback off
+
         self.triggers = [port_tx.dac.awg0]
 
         self.adda_to_channels = {
@@ -177,47 +181,81 @@ class QubeManager:
             qube.port8.dac.awg2: [self._ctrl_channel(self.qubits[3] + CONTROL_HIGH)],
         }
 
+    def _init_slots(self):
+        self.schedule.offset = self.control_duration
+
+        for ch in self._ctrl_channels():
+            ch.clear()
+            ch.append(Arbitrary(duration=self.control_duration, amplitude=1))
+            ch.append(Blank(duration=self.readout_duration + 4 * T_MARGIN))
+
+        for ch in self._read_tx_channels():
+            ch.clear()
+            ch.append(Blank(duration=self.control_duration))
+            ch.append(Arbitrary(duration=self.readout_duration, amplitude=1))
+            ch.append(Blank(duration=4 * T_MARGIN))
+
+        for ch in self._read_rx_channels():
+            ch.clear()
+            ch.append(Blank(duration=self.control_duration - T_MARGIN))
+            ch.append(Read(duration=self.readout_duration + 5 * T_MARGIN))
+
+        durations = [channel.duration for channel in self.schedule.values()]
+        assert len(set(durations)) == 1, "All channels must have the same duration."
+
     def _set_waveforms(
         self,
         control_qubits: list[QubitKey],
         readout_qubits: list[QubitKey],
         control_waveforms: QubitDict[Waveform],
     ):
-        self.schedule.offset = self.control_window
+        self._init_slots()
 
-        for ch in self._ctrl_channels():
-            ch.clear()
-            ch.append(Arbitrary(duration=self.schedule.offset, amplitude=1))
-            ch.append(Blank(duration=T_READOUT + 4 * T_MARGIN))
+        self._set_control_waveforms(control_qubits, control_waveforms)
 
-        for ch in self._read_tx_channels():
-            ch.clear()
-            ch.append(Blank(duration=self.schedule.offset))
-            ch.append(Arbitrary(duration=T_READOUT, amplitude=1))
-            ch.append(Blank(duration=4 * T_MARGIN))
+        readout_waveforms = {
+            qubit: Rect(
+                duration=T_READOUT,
+                amplitude=ro_ampl_dict[self.qube_id][qubit],
+                risetime=50,
+            )
+            for qubit in readout_qubits
+        }
+        self._set_readout_waveforms(readout_qubits, readout_waveforms)
 
-        for ch in self._read_rx_channels():
-            ch.clear()
-            ch.append(Blank(duration=self.schedule.offset - T_MARGIN))
-            ch.append(Read(duration=T_READOUT + 5 * T_MARGIN))
-
-        durations = [channel.duration for channel in self.schedule.values()]
-        assert len(set(durations)) == 1, "All channels must have the same duration."
-
-        for qubit in control_qubits:
-            values = control_waveforms[qubit].values
+    def _set_control_waveforms(
+        self,
+        qubits: list[QubitKey],
+        waveforms: QubitDict[Waveform],
+    ):
+        for qubit in qubits:
+            values = waveforms[qubit].values
             T = len(values) * SAMPLING_PERIOD
             t = self._ctrl_times(qubit)
             self._ctrl_slot(qubit).iq[(-T <= t) & (t < 0)] = values
 
-        for qubit in readout_qubits:
-            ampl = ro_ampl_dict[self.qube_id][qubit]
-            readout_waveform = Rect(
-                duration=T_READOUT,
-                amplitude=ampl,
-                risetime=50,
-            )
-            self._read_tx_slot(qubit).iq[:] = readout_waveform.values
+    def _set_readout_waveforms(
+        self,
+        qubits: list[QubitKey],
+        waveforms: QubitDict[Waveform],
+    ):
+        for qubit in qubits:
+            values = waveforms[qubit].values
+            self._read_tx_slot(qubit).iq[:] = values
+
+    def loopback_mode(
+        self,
+        use_loopback: bool,
+    ):
+        if use_loopback:
+            self.qube.gpio.write_value(0xFFFF)
+        else:
+            self.qube.gpio.write_value(0x0000)
+
+    def readout_range(
+        self,
+    ) -> slice:
+        return slice(T_MARGIN // 2, (self.readout_duration + T_MARGIN) // 2)
 
     def get_control_frequency(
         self,
@@ -296,8 +334,9 @@ class QubeManager:
             triggers=self.triggers,
         )
         rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
+        readout_range = self.readout_range()
         result = {
-            qubit: waveform[READOUT_RANGE].mean()
+            qubit: waveform[readout_range].mean()
             for qubit, waveform in rx_waveforms.items()
         }
         return result

@@ -28,7 +28,6 @@ from .params import (
 from .consts import (
     T_CONTROL,
     T_READOUT,
-    READOUT_RANGE,
 )
 
 
@@ -61,7 +60,8 @@ class Experiment:
         qube_id: str,
         mux_number: int,
         readout_ports: ReadoutPorts = ("port0", "port1"),
-        control_window: int = T_CONTROL,
+        control_duration: int = T_CONTROL,
+        readout_duration: int = T_READOUT,
         measurement_repetition: int = 10_000,
         measurement_inverval: int = 150_000,
         data_path="./data",
@@ -70,7 +70,8 @@ class Experiment:
             qube_id=qube_id,
             mux_number=mux_number,
             readout_ports=readout_ports,
-            control_window=control_window,
+            control_duration=control_duration,
+            readout_duration=readout_duration,
         )
         self.qube_id: Final = qube_id
         self.qube: Final = self.qube_manager.qube
@@ -95,6 +96,9 @@ class Experiment:
         with open(path, "rb") as f:
             data = pickle.load(f)
         return data
+
+    def loopback_mode(self, use_loopback: bool):
+        self.qube_manager.loopback_mode(use_loopback)
 
     def measure(
         self,
@@ -245,6 +249,9 @@ class Experiment:
         rotx_times = self.qube_manager.get_readout_tx_times(readout_qubits)
         rorx_waveforms = self.qube_manager.get_readout_rx_waveforms(readout_qubits)
         rorx_times = self.qube_manager.get_readout_rx_times(readout_qubits)
+        readout_range = self.qube_manager.readout_range()
+        control_duration = self.qube_manager.control_duration
+        readout_duration = self.qube_manager.readout_duration
 
         clear_output(True)
         show_measurement_results(
@@ -254,17 +261,17 @@ class Experiment:
             sweep_range=sweep_range[: index + 1],
             signals=signals,
             signals_rotated=signals_rotated,
-            readout_range=READOUT_RANGE,
+            readout_range=readout_range,
         )
         show_pulse_sequences(
             control_qubits=control_qubits,
             control_waveforms=ctrl_waveforms,
             control_times=ctrl_times,
-            control_duration=T_CONTROL,
+            control_duration=control_duration,
             readout_qubits=readout_qubits,
             readout_waveforms=rotx_waveforms,
             readout_times=rotx_times,
-            readout_duration=T_READOUT,
+            readout_duration=readout_duration,
         )
         print(f"{index+1}/{len(sweep_range)}")
 
