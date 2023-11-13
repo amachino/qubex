@@ -146,9 +146,9 @@ class QubeManager:
         ports[rx].adc.capt0.ssb = qc.qube.SSB.LSB
         ports[rx].delay = 128 + 6 * 128  # [ns]
 
-        for port in CONTROL_PORTS:
-            config = self.params["port_config"][port]
-            port = ports[port]
+        for control_port in CONTROL_PORTS:
+            config = self.params["port_config"][control_port]
+            port = ports[control_port]
             port.lo.mhz = config["lo"]
             port.nco.mhz = config["nco"]
             port.awg0.nco.mhz = config["awg0"]
@@ -164,16 +164,12 @@ class QubeManager:
             ports[tx].dac.awg0: self._read_tx_channels(),
             ports[rx].adc.capt0: self._read_rx_channels(),
         }
-        for port in CONTROL_PORTS:
-            adda_to_channels[ports[port].dac.awg0] = [
-                self._ctrl_channel(qubit + CONTROL_LOW) for qubit in self.qubits
-            ]
-            adda_to_channels[ports[port].dac.awg1] = [
-                self._ctrl_channel(qubit) for qubit in self.qubits
-            ]
-            adda_to_channels[ports[port].dac.awg2] = [
-                self._ctrl_channel(qubit + CONTROL_HIGH) for qubit in self.qubits
-            ]
+        for index, control_port in enumerate(CONTROL_PORTS):
+            port = ports[control_port]
+            qubit = self.qubits[index]
+            adda_to_channels[port.dac.awg0] = [self._ctrl_lo_channel(qubit)]
+            adda_to_channels[port.dac.awg1] = [self._ctrl_channel(qubit)]
+            adda_to_channels[port.dac.awg2] = [self._ctrl_hi_channel(qubit)]
         self.adda_to_channels = adda_to_channels
 
     def _init_slots(self):
