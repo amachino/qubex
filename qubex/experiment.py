@@ -4,7 +4,7 @@ import json
 import pickle
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Final, Optional, Union
+from typing import Final, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -57,7 +57,7 @@ class Experiment:
         self,
         qube_id: str,
         mux_number: int,
-        params: Union[dict, str],
+        cooldown: str,
         readout_ports: ReadoutPorts = ("port0", "port1"),
         control_duration: int = T_CONTROL,
         readout_duration: int = T_READOUT,
@@ -65,7 +65,7 @@ class Experiment:
         measurement_inverval: int = 150_000,
         data_path="./data",
     ):
-        self.params = self._get_params(params)
+        self.params = self._get_params(cooldown, qube_id)
         self.qube_manager: Final = QubeManager(
             qube_id=qube_id,
             mux_number=mux_number,
@@ -74,22 +74,17 @@ class Experiment:
             control_duration=control_duration,
             readout_duration=readout_duration,
         )
-        self.qube_id: Final = qube_id
         self.qube: Final = self.qube_manager.qube
         self.measurement_repetition: Final = measurement_repetition
         self.measurement_inverval: Final = measurement_inverval
         self.data_path: Final = data_path
 
-    def _get_params(self, params: Union[str, dict]) -> dict:
-        result = {}
-        if isinstance(params, str):
-            current_dir = os.path.dirname(__file__)
-            params_path = os.path.join(current_dir, "params", f"params_{params}.json")
-            with open(params_path, "r", encoding="utf-8") as f:
-                result = json.load(f)
-        else:
-            result = params
-        return result
+    def _get_params(self, cooldown: str, qube_id: str) -> dict:
+        current_dir = os.path.dirname(__file__)
+        params_path = os.path.join(current_dir, "params", cooldown, f"{qube_id}.json")
+        with open(params_path, "r", encoding="utf-8") as f:
+            params = json.load(f)
+        return params
 
     def save_data(self, data: object, name: str = "data"):
         if not os.path.exists(self.data_path):
