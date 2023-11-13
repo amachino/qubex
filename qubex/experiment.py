@@ -12,7 +12,7 @@ from IPython.display import clear_output
 from .qube_manager import QubeManager
 from .pulse import Rect, Waveform
 from .analysis import fit_and_rotate, rotate, get_angle, fit_rabi
-from .plot import show_pulse_sequences, show_measurement_results
+from .visualization import show_pulse_sequences, show_measurement_results
 from .typing import (
     QubitKey,
     QubitDict,
