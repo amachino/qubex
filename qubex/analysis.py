@@ -204,6 +204,15 @@ def fit_cos_and_find_minimum(
     return min_x, min_y
 
 
+def fit_and_rotate(
+    data: npt.ArrayLike,
+) -> npt.NDArray[np.complex128]:
+    points = np.array(data)
+    angle = get_angle(points)
+    rotated_points = rotate(points, angle)
+    return rotated_points
+
+
 def rotate(
     data: npt.ArrayLike,
     angle: float,

@@ -21,10 +21,10 @@ def show_pulse_sequences(
     control_waveforms: QubitDict[IQArray],
     control_times: QubitDict[IntArray],
     control_duration: int,
-    readout_tx_qubits: list[QubitKey],
-    readout_tx_waveforms: QubitDict[IQArray],
-    readout_tx_times: QubitDict[IntArray],
-    readout_tx_duration: int,
+    readout_qubits: list[QubitKey],
+    readout_waveforms: QubitDict[IQArray],
+    readout_times: QubitDict[IntArray],
+    readout_duration: int,
 ):
     """
     Shows the pulse sequences.
@@ -44,7 +44,7 @@ def show_pulse_sequences(
     # the x-axis range
     xlim = (
         min(-1.0, -control_duration * 1e-3),
-        readout_tx_duration * 1e-3,
+        readout_duration * 1e-3,
     )
 
     # initialize the axes
@@ -88,9 +88,9 @@ def show_pulse_sequences(
         max_ampl_list.append(np.max(np.abs(waveform)))
 
     # plot the readout pulses
-    for i, qubit in enumerate(readout_tx_qubits):
-        times = readout_tx_times[qubit] * 1e-3  # ns -> us
-        waveform = readout_tx_waveforms[qubit]
+    for i, qubit in enumerate(readout_qubits):
+        times = readout_times[qubit] * 1e-3  # ns -> us
+        waveform = readout_waveforms[qubit]
         axes[N].plot(
             times,
             np.abs(waveform),
@@ -109,52 +109,51 @@ def show_pulse_sequences(
 
 
 def show_measurement_results(
-    readout_qubits: list[QubitKey],
-    readout_rx_waveforms: QubitDict[IQArray],
-    readout_rx_times: QubitDict[IntArray],
+    qubits: list[QubitKey],
+    waveforms: QubitDict[IQArray],
+    times: QubitDict[IntArray],
     sweep_range: NDArray,
     signals: QubitDict[list[IQValue]],
     signals_rotated: QubitDict[IQArray],
     readout_range: slice,
 ):
-    plt.figure(figsize=(15, 6 * len(readout_qubits)))
-    gs = gridspec.GridSpec(2 * len(readout_qubits), 2, wspace=0.3, hspace=0.5)
+    plt.figure(figsize=(15, 6 * len(qubits)))
+    gs = gridspec.GridSpec(2 * len(qubits), 2, wspace=0.3, hspace=0.5)
 
     ax = {}
-    for i, qubit in enumerate(readout_qubits):
+    for i, qubit in enumerate(qubits):
         ax[qubit] = [
             plt.subplot(gs[i * 2, 0]),
             plt.subplot(gs[i * 2 + 1, 0]),
             plt.subplot(gs[i * 2 : i * 2 + 2, 1]),
         ]
 
-    for qubit in readout_qubits:
+    for qubit in qubits:
         avg_num = 50  # 平均化する個数
 
         mov_avg_readout_iq = (
-            np.convolve(readout_rx_waveforms[qubit], np.ones(avg_num), mode="valid")
-            / avg_num
+            np.convolve(waveforms[qubit], np.ones(avg_num), mode="valid") / avg_num
         )  # 移動平均
         mov_avg_readout_iq = np.append(mov_avg_readout_iq, np.zeros(avg_num - 1))
 
         ax[qubit][0].plot(
-            readout_rx_times[qubit] * 1e-3,
+            times[qubit] * 1e-3,
             np.real(mov_avg_readout_iq),
             label="I",
         )
         ax[qubit][0].plot(
-            readout_rx_times[qubit] * 1e-3,
+            times[qubit] * 1e-3,
             np.imag(mov_avg_readout_iq),
             label="Q",
         )
 
         ax[qubit][0].plot(
-            readout_rx_times[qubit][readout_range] * 1e-3,
+            times[qubit][readout_range] * 1e-3,
             np.real(mov_avg_readout_iq)[readout_range],
             lw=5,
         )
         ax[qubit][0].plot(
-            readout_rx_times[qubit][readout_range] * 1e-3,
+            times[qubit][readout_range] * 1e-3,
             np.imag(mov_avg_readout_iq)[readout_range],
             lw=5,
         )
