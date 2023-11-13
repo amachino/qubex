@@ -8,6 +8,7 @@ from qubecalib.setupqube import run
 
 qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
 
+from . import params
 from .pulse import Rect, Waveform
 from .typing import (
     QubitKey,
@@ -17,11 +18,6 @@ from .typing import (
     IntArray,
     ReadoutPorts,
 )
-from .params import (
-    ctrl_freq_dict,
-    ro_freq_dict,
-    ro_ampl_dict,
-)
 from .consts import (
     MUX,
     SAMPLING_PERIOD,
@@ -29,6 +25,8 @@ from .consts import (
     T_READOUT,
     T_MARGIN,
 )
+
+CONTROL_PORTS: Final = ["port5", "port6", "port7", "port8"]
 
 CONTROL_HIGH: Final = "_hi"
 CONTROL_LOW: Final = "_lo"
@@ -51,6 +49,7 @@ class QubeManager:
         self.readout_ports: Final = readout_ports
         self.control_duration: Final = control_duration
         self.readout_duration: Final = readout_duration
+        self.params: Final = params
         self.schedule: Final = Schedule()
         self._init_channels()
         self._init_ports()
@@ -105,81 +104,62 @@ class QubeManager:
             )
         for qubit in self.all_control_qubits:
             self.schedule[qubit] = Channel(
-                center_frequency=ctrl_freq_dict[qubit],
+                center_frequency=self.params.ctrl_freq_dict[qubit],
             )
         for qubit in self.all_readout_qubits:
             self.schedule[READOUT_TX + qubit] = Channel(
-                center_frequency=ro_freq_dict[self.qube_id][qubit],
+                center_frequency=self.params.ro_freq_dict[self.qube_id][qubit],
             )
             self.schedule[READOUT_RX + qubit] = Channel(
-                center_frequency=ro_freq_dict[self.qube_id][qubit],
+                center_frequency=self.params.ro_freq_dict[self.qube_id][qubit],
             )
 
     def _init_ports(self):
-        qube = self.qube
-        port_tx = qube.ports[self.readout_ports[0]]
-        port_rx = qube.ports[self.readout_ports[1]]
-        self.port_tx = port_tx
-        self.port_rx = port_rx
+        ports = self.qube.ports
 
-        port_tx.lo.mhz = 11500
-        port_tx.nco.mhz = 1500
-        port_tx.mix.ssb = qc.qube.SSB.LSB
-        port_tx.awg0.nco.mhz = 0
-        port_tx.mix.vatt = 0x800
+        tx = self.readout_ports[0]
+        rx = self.readout_ports[1]
 
-        port_rx.nco.mhz = qube.port0.nco.mhz
-        port_rx.adc.capt0.ssb = qc.qube.SSB.LSB
-        port_rx.delay = 128 + 6 * 128  # [ns]
+        config_tx = self.params.port_configs[tx]
+        ports[tx].lo.mhz = config_tx["lo"]
+        ports[tx].nco.mhz = config_tx["nco"]
+        ports[tx].mix.ssb = qc.qube.SSB.LSB
+        ports[tx].awg0.nco.mhz = config_tx["awg0"]
+        ports[tx].mix.vatt = config_tx["vatt"]
 
-        qube.port5.lo.mhz = 9500
-        qube.port5.nco.mhz = 1875
-        qube.port5.awg0.nco.mhz = 0
-        qube.port5.awg1.nco.mhz = 0
-        qube.port5.awg2.nco.mhz = 0
-        qube.port5.mix.vatt = 0x800
+        ports[rx].nco.mhz = ports[tx].nco.mhz
+        ports[rx].adc.capt0.ssb = qc.qube.SSB.LSB
+        ports[rx].delay = 128 + 6 * 128  # [ns]
 
-        qube.port6.lo.mhz = 10000
-        qube.port6.nco.mhz = 1500
-        qube.port6.awg0.nco.mhz = 0
-        qube.port6.awg1.nco.mhz = 0
-        qube.port6.awg2.nco.mhz = 0
-        qube.port6.mix.vatt = 0x800
+        for port in CONTROL_PORTS:
+            config = self.params.port_configs[port]
+            port = ports[port]
+            port.lo.mhz = config["lo"]
+            port.nco.mhz = config["nco"]
+            port.awg0.nco.mhz = config["awg0"]
+            port.awg1.nco.mhz = config["awg1"]
+            port.awg2.nco.mhz = config["awg2"]
+            port.mix.vatt = config["vatt"]
 
-        qube.port7.lo.mhz = 9500
-        qube.port7.nco.mhz = 1125
-        qube.port7.awg0.nco.mhz = 0
-        qube.port7.awg1.nco.mhz = 0
-        qube.port7.awg2.nco.mhz = 0
-        qube.port7.mix.vatt = 0x800
+        self.qube.gpio.write_value(0x0000)  # loopback off
 
-        qube.port8.lo.mhz = 9000
-        qube.port8.nco.mhz = 1875
-        qube.port8.awg0.nco.mhz = 0
-        qube.port8.awg1.nco.mhz = 0
-        qube.port8.awg2.nco.mhz = 0
-        qube.port8.mix.vatt = 0x800
+        self.triggers = [ports[tx].dac.awg0]
 
-        qube.gpio.write_value(0x0000)  # loopback off
-
-        self.triggers = [port_tx.dac.awg0]
-
-        self.adda_to_channels = {
-            port_tx.dac.awg0: self._read_tx_channels(),
-            port_rx.adc.capt0: self._read_rx_channels(),
-            qube.port5.dac.awg0: [self._ctrl_channel(self.qubits[0] + CONTROL_LOW)],
-            qube.port6.dac.awg0: [self._ctrl_channel(self.qubits[1] + CONTROL_LOW)],
-            qube.port7.dac.awg0: [self._ctrl_channel(self.qubits[2] + CONTROL_LOW)],
-            qube.port8.dac.awg0: [self._ctrl_channel(self.qubits[3] + CONTROL_LOW)],
-            qube.port5.dac.awg1: [self._ctrl_channel(self.qubits[0])],
-            qube.port6.dac.awg1: [self._ctrl_channel(self.qubits[1])],
-            qube.port7.dac.awg1: [self._ctrl_channel(self.qubits[2])],
-            qube.port8.dac.awg1: [self._ctrl_channel(self.qubits[3])],
-            qube.port5.dac.awg2: [self._ctrl_channel(self.qubits[0] + CONTROL_HIGH)],
-            qube.port6.dac.awg2: [self._ctrl_channel(self.qubits[1] + CONTROL_HIGH)],
-            qube.port7.dac.awg2: [self._ctrl_channel(self.qubits[2] + CONTROL_HIGH)],
-            qube.port8.dac.awg2: [self._ctrl_channel(self.qubits[3] + CONTROL_HIGH)],
+        adda_to_channels = {
+            ports[tx].dac.awg0: self._read_tx_channels(),
+            ports[rx].adc.capt0: self._read_rx_channels(),
         }
+        for port in CONTROL_PORTS:
+            adda_to_channels[ports[port].dac.awg0] = [
+                self._ctrl_channel(qubit + CONTROL_LOW) for qubit in self.qubits
+            ]
+            adda_to_channels[ports[port].dac.awg1] = [
+                self._ctrl_channel(qubit) for qubit in self.qubits
+            ]
+            adda_to_channels[ports[port].dac.awg2] = [
+                self._ctrl_channel(qubit + CONTROL_HIGH) for qubit in self.qubits
+            ]
+        self.adda_to_channels = adda_to_channels
 
     def _init_slots(self):
         self.schedule.offset = self.control_duration
@@ -216,7 +196,7 @@ class QubeManager:
         readout_waveforms = {
             qubit: Rect(
                 duration=T_READOUT,
-                amplitude=ro_ampl_dict[self.qube_id][qubit],
+                amplitude=self.params.ro_ampl_dict[self.qube_id][qubit],
                 risetime=50,
             )
             for qubit in readout_qubits
