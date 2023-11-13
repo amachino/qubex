@@ -38,7 +38,7 @@ class QubeManager:
         self,
         qube_id: str,
         mux_number: int,
-        params,
+        params: dict,
         readout_ports: ReadoutPorts,
         control_duration: int = T_CONTROL,
         readout_duration: int = T_READOUT,
@@ -109,23 +109,24 @@ class QubeManager:
 
     def _init_channels(self):
         for qubit in self.qubits:
+            control_frequency = self.params["qubit_dressed_frequency"][qubit]
+            anharmonicity = self.params["anharmonicity"][qubit]
             self.schedule[qubit] = Channel(
-                center_frequency=self.params.ctrl_freq_dict[qubit],
+                center_frequency=control_frequency,
             )
             self.schedule[qubit + CONTROL_LOW] = Channel(
-                center_frequency=self.params.ctrl_freq_dict[qubit]
-                + self.params.anharm_dict[qubit],
+                center_frequency=control_frequency + anharmonicity,
             )
             self.schedule[qubit + CONTROL_HIGH] = Channel(
-                center_frequency=self.params.ctrl_freq_dict[qubit]
-                - self.params.anharm_dict[qubit],
+                center_frequency=control_frequency - anharmonicity,
             )
         for qubit in self.qubits:
+            readout_frequency = self.params["cavity_frequency"][qubit]
             self.schedule[READOUT_TX + qubit] = Channel(
-                center_frequency=self.params.ro_freq_dict[qubit],
+                center_frequency=readout_frequency,
             )
             self.schedule[READOUT_RX + qubit] = Channel(
-                center_frequency=self.params.ro_freq_dict[qubit],
+                center_frequency=readout_frequency,
             )
 
     def _init_ports(self):
@@ -134,7 +135,7 @@ class QubeManager:
         tx = self.readout_ports[0]
         rx = self.readout_ports[1]
 
-        config_tx = self.params.port_configs[tx]
+        config_tx = self.params["port_config"][tx]
         ports[tx].lo.mhz = config_tx["lo"]
         ports[tx].nco.mhz = config_tx["nco"]
         ports[tx].mix.ssb = qc.qube.SSB.LSB
@@ -146,7 +147,7 @@ class QubeManager:
         ports[rx].delay = 128 + 6 * 128  # [ns]
 
         for port in CONTROL_PORTS:
-            config = self.params.port_configs[port]
+            config = self.params["port_config"][port]
             port = ports[port]
             port.lo.mhz = config["lo"]
             port.nco.mhz = config["nco"]
@@ -217,10 +218,11 @@ class QubeManager:
 
         self._set_control_waveforms(control_qubits, control_waveforms)
 
+        readout_amplitude = self.params["readout_amplitude"]
         readout_waveforms = {
             qubit: Rect(
                 duration=T_READOUT,
-                amplitude=self.params.ro_ampl_dict[qubit],
+                amplitude=readout_amplitude[qubit],
                 risetime=50,
             )
             for qubit in readout_qubits
