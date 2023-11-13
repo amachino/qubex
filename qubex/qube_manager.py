@@ -8,7 +8,6 @@ from qubecalib.setupqube import run
 
 qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
 
-from . import params
 from .pulse import Rect, Waveform
 from .typing import (
     QubitKey,
@@ -39,6 +38,7 @@ class QubeManager:
         self,
         qube_id: str,
         mux_number: int,
+        params,
         readout_ports: ReadoutPorts,
         control_duration: int = T_CONTROL,
         readout_duration: int = T_READOUT,
@@ -46,16 +46,22 @@ class QubeManager:
         self.qube_id: Final = qube_id
         self.qube: Final = qc.ui.QubeControl(f"{qube_id}.yml").qube
         self.qubits: Final = MUX[mux_number]
+        self.params: Final = params
         self.readout_ports: Final = readout_ports
         self.control_duration: Final = control_duration
         self.readout_duration: Final = readout_duration
-        self.params: Final = params
         self.schedule: Final = Schedule()
         self._init_channels()
         self._init_ports()
 
     def _ctrl_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[qubit]
+
+    def _ctrl_lo_channel(self, qubit: QubitKey) -> Channel:
+        return self.schedule[qubit + CONTROL_LOW]
+
+    def _ctrl_hi_channel(self, qubit: QubitKey) -> Channel:
+        return self.schedule[qubit + CONTROL_HIGH]
 
     def _read_tx_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[READOUT_TX + qubit]
@@ -64,13 +70,19 @@ class QubeManager:
         return self.schedule[READOUT_RX + qubit]
 
     def _ctrl_channels(self) -> list[Channel]:
-        return [self._ctrl_channel(qubit) for qubit in self.all_control_qubits]
+        return [self._ctrl_channel(qubit) for qubit in self.qubits]
+
+    def _ctrl_lo_channels(self) -> list[Channel]:
+        return [self._ctrl_lo_channel(qubit) for qubit in self.qubits]
+
+    def _ctrl_hi_channels(self) -> list[Channel]:
+        return [self._ctrl_hi_channel(qubit) for qubit in self.qubits]
 
     def _read_tx_channels(self) -> list[Channel]:
-        return [self._read_tx_channel(qubit) for qubit in self.all_readout_qubits]
+        return [self._read_tx_channel(qubit) for qubit in self.qubits]
 
     def _read_rx_channels(self) -> list[Channel]:
-        return [self._read_rx_channel(qubit) for qubit in self.all_readout_qubits]
+        return [self._read_rx_channel(qubit) for qubit in self.qubits]
 
     def _ctrl_slot(self, qubit: QubitKey) -> Arbitrary:
         return self._ctrl_channel(qubit).findall(Arbitrary)[0]
@@ -96,22 +108,24 @@ class QubeManager:
         return global_times
 
     def _init_channels(self):
-        self.all_readout_qubits = self.qubits
-        self.all_control_qubits = []
         for qubit in self.qubits:
-            self.all_control_qubits.extend(
-                [qubit + CONTROL_LOW, qubit, qubit + CONTROL_HIGH]
-            )
-        for qubit in self.all_control_qubits:
             self.schedule[qubit] = Channel(
                 center_frequency=self.params.ctrl_freq_dict[qubit],
             )
-        for qubit in self.all_readout_qubits:
+            self.schedule[qubit + CONTROL_LOW] = Channel(
+                center_frequency=self.params.ctrl_freq_dict[qubit]
+                + self.params.anharm_dict[qubit],
+            )
+            self.schedule[qubit + CONTROL_HIGH] = Channel(
+                center_frequency=self.params.ctrl_freq_dict[qubit]
+                - self.params.anharm_dict[qubit],
+            )
+        for qubit in self.qubits:
             self.schedule[READOUT_TX + qubit] = Channel(
-                center_frequency=self.params.ro_freq_dict[self.qube_id][qubit],
+                center_frequency=self.params.ro_freq_dict[qubit],
             )
             self.schedule[READOUT_RX + qubit] = Channel(
-                center_frequency=self.params.ro_freq_dict[self.qube_id][qubit],
+                center_frequency=self.params.ro_freq_dict[qubit],
             )
 
     def _init_ports(self):
@@ -169,6 +183,16 @@ class QubeManager:
             ch.append(Arbitrary(duration=self.control_duration, amplitude=1))
             ch.append(Blank(duration=self.readout_duration + 4 * T_MARGIN))
 
+        for ch in self._ctrl_lo_channels():
+            ch.clear()
+            ch.append(Arbitrary(duration=self.control_duration, amplitude=1))
+            ch.append(Blank(duration=self.readout_duration + 4 * T_MARGIN))
+
+        for ch in self._ctrl_hi_channels():
+            ch.clear()
+            ch.append(Arbitrary(duration=self.control_duration, amplitude=1))
+            ch.append(Blank(duration=self.readout_duration + 4 * T_MARGIN))
+
         for ch in self._read_tx_channels():
             ch.clear()
             ch.append(Blank(duration=self.control_duration))
@@ -196,7 +220,7 @@ class QubeManager:
         readout_waveforms = {
             qubit: Rect(
                 duration=T_READOUT,
-                amplitude=self.params.ro_ampl_dict[self.qube_id][qubit],
+                amplitude=self.params.ro_ampl_dict[qubit],
                 risetime=50,
             )
             for qubit in readout_qubits
@@ -261,13 +285,6 @@ class QubeManager:
         ctrl_qubits: list[QubitKey],
     ) -> QubitDict[IntArray]:
         return {qubit: self._ctrl_times(qubit) for qubit in ctrl_qubits}
-
-    def get_max_control_duration(
-        self,
-    ) -> int:
-        waveforms = self.get_control_waveforms(self.all_control_qubits)
-        max_length = max([len(waveform) for waveform in waveforms.values()])
-        return max_length * SAMPLING_PERIOD
 
     def get_readout_tx_waveforms(
         self,

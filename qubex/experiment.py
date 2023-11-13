@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 from IPython.display import clear_output
 
+from . import params
 from .qube_manager import QubeManager
 from .pulse import Rect, Waveform
 from .analysis import fit_and_rotate, rotate, get_angle, fit_rabi
@@ -21,9 +22,6 @@ from .typing import (
     IntArray,
     ReadoutPorts,
     ParametricWaveform,
-)
-from .params import (
-    ampl_hpi_dict,
 )
 from .consts import (
     T_CONTROL,
@@ -69,6 +67,7 @@ class Experiment:
         self.qube_manager: Final = QubeManager(
             qube_id=qube_id,
             mux_number=mux_number,
+            params=params,
             readout_ports=readout_ports,
             control_duration=control_duration,
             readout_duration=readout_duration,
@@ -208,7 +207,7 @@ class Experiment:
         self,
         time_range=np.arange(0, 201, 10),
     ) -> QubitDict[ExperimentResult]:
-        amplitudes = ampl_hpi_dict[self.qube_id]
+        amplitudes = params.ampl_hpi_dict
         result = self.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -277,17 +276,17 @@ class Experiment:
 
     def fit_rabi_params(
         self,
-        result: ExperimentResult,
+        experiment_result: ExperimentResult,
         wave_count=2.5,
     ) -> RabiParams:
         """
         Normalize the Rabi oscillation data.
         """
-        times = result.sweep_range
+        times = experiment_result.sweep_range
 
         # Rotate the data to the vertical (Q) axis
-        angle = get_angle(data=result.data)
-        points = rotate(data=result.data, angle=angle)
+        angle = get_angle(data=experiment_result.data)
+        points = rotate(data=experiment_result.data, angle=angle)
         values = points.imag
         print(f"Phase shift: {angle:.3f} rad, {angle * 180 / np.pi:.3f} deg")
 
@@ -310,7 +309,7 @@ class Experiment:
 
         # Set the parameters as the instance attributes
         rabi_params = RabiParams(
-            qubit=result.qubit,
+            qubit=experiment_result.qubit,
             phase_shift=angle,
             amplitude=popt[0],
             omega=popt[1],
@@ -321,19 +320,19 @@ class Experiment:
 
     def expectation_values(
         self,
-        result: ExperimentResult,
-        params: RabiParams,
+        experiment_result: ExperimentResult,
+        rabi_params: RabiParams,
     ) -> NDArray[np.float64]:
-        values = result.rotated.imag
-        values_normalized = -(values - params.offset) / params.amplitude
+        values = experiment_result.rotated.imag
+        values_normalized = -(values - rabi_params.offset) / rabi_params.amplitude
         return values_normalized
 
     def expectation_value(
         self,
-        iq: IQValue,
-        params: RabiParams,
+        iq_value: IQValue,
+        rabi_params: RabiParams,
     ) -> float:
-        iq = iq * np.exp(-1j * params.phase_shift)
-        value = iq.imag
-        value = -(value - params.offset) / params.amplitude
+        iq_value = iq_value * np.exp(-1j * rabi_params.phase_shift)
+        value = iq_value.imag
+        value = -(value - rabi_params.offset) / rabi_params.amplitude
         return value

@@ -42,12 +42,10 @@ port_configs = {
 }
 
 ro_freq_dict = {
-    "quel-1_5-01": {
-        "Q08": 9902.0e6,
-        "Q09": 10108.2e6,
-        "Q10": 10173.0e6,
-        "Q11": 10031.5e6,
-    }
+    "Q08": 9902.0e6,
+    "Q09": 10108.2e6,
+    "Q10": 10173.0e6,
+    "Q11": 10031.5e6,
 }
 
 ctrl_freq_dict = {
@@ -64,10 +62,6 @@ anharm_dict = {
     "Q11": -368e6,
 }
 
-for qubit in ["Q08", "Q09", "Q10", "Q11"]:
-    ctrl_freq_dict[f"{qubit}_lo"] = ctrl_freq_dict[qubit] + anharm_dict[qubit]
-    ctrl_freq_dict[f"{qubit}_hi"] = ctrl_freq_dict[qubit] - anharm_dict[qubit]
-
 qubit_true_freq_dict = {
     "Q08": 7650.92e6,
     "Q09": 8456.053e6,
@@ -76,19 +70,15 @@ qubit_true_freq_dict = {
 }
 
 ro_ampl_dict = {
-    "quel-1_5-01": {
-        "Q08": 0.01,
-        "Q09": 0.01,
-        "Q10": 0.01,
-        "Q11": 0.01,
-    },
+    "Q08": 0.01,
+    "Q09": 0.01,
+    "Q10": 0.01,
+    "Q11": 0.01,
 }
 
 ampl_hpi_dict = {
-    "quel-1_5-01": {
-        "Q08": 0.10139,  # 0.13183,
-        "Q09": 0.02678,  # 0.02737,
-        "Q10": 0.04051,  # 0.04893,
-        "Q11": 0.05,  # NG
-    }
+    "Q08": 0.10139,
+    "Q09": 0.02678,
+    "Q10": 0.04051,
+    "Q11": 0.05,  # NG
 }
