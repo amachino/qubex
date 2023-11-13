@@ -216,7 +216,7 @@ class Experiment:
         }
         return result
 
-    def rabi_check(
+    def check_rabi(
         self,
         time_range=np.arange(0, 201, 10),
     ) -> QubitDict[ExperimentResult]:
