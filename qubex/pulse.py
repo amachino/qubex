@@ -264,34 +264,47 @@ class Rect(Pulse):
         self,
         duration: int,
         amplitude: float,
-        risetime: int = 0,
+        tau: int = 0,
         **kwargs,
     ):
+        """
+        |        ________________________
+        |       /                        \
+        |      /                          \
+        |     /                            \
+        |    /                              \
+        |___                                 _______
+        |   <---->                      <---->
+        |     tau                        tau
+        |      <-------------------------->
+        |      ^         duration
+        |      t0
+        """
         values = np.array([])
         if duration != 0:
-            values = self._calc_values(duration, amplitude, risetime)
+            values = self._calc_values(duration, amplitude, tau)
         super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
         duration: int,
         amplitude: float,
-        risetime: int,
+        tau: int,
     ) -> npt.NDArray[np.complex128]:
-        flattime = duration - 2 * risetime
+        flattime = duration - tau
 
         if flattime < 0:
-            raise ValueError("Duration must be at least twice the rise time.")
+            raise ValueError("Duration must be greater than tau.")
 
-        length_rise = self._ns_to_samples(risetime)
+        length_rise = self._ns_to_samples(tau)
         length_flat = self._ns_to_samples(flattime)
 
-        t_rise = np.linspace(0, risetime, length_rise)
+        t_rise = np.linspace(0, tau, length_rise)
         t_flat = np.linspace(0, flattime, length_flat)
 
-        v_rise = 0.5 * amplitude * (1 - np.cos(np.pi * t_rise / risetime))
+        v_rise = 0.5 * amplitude * (1 - np.cos(np.pi * t_rise / tau))
         v_flat = amplitude * np.ones_like(t_flat)
-        v_fall = 0.5 * amplitude * (1 + np.cos(np.pi * t_rise / risetime))
+        v_fall = 0.5 * amplitude * (1 + np.cos(np.pi * t_rise / tau))
 
         values = np.concatenate((v_rise, v_flat, v_fall)).astype(np.complex128)
 
