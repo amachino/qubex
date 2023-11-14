@@ -108,6 +108,12 @@ class Experiment:
     def loopback_mode(self, use_loopback: bool):
         self.qube_manager.loopback_mode(use_loopback)
 
+    def get_control_frequency(self, qubit: QubitKey) -> float:
+        return self.qube_manager.get_control_frequency(qubit)
+
+    def set_control_frequency(self, qubit: QubitKey, frequency: float):
+        self.qube_manager.set_control_frequency(qubit, frequency)
+
     def measure(
         self,
         waveforms: QubitDict[Waveform],
@@ -130,8 +136,8 @@ class Experiment:
 
     def rabi_experiment(
         self,
-        amplitudes: QubitDict[float],
         time_range: IntArray,
+        amplitudes: QubitDict[float],
     ) -> QubitDict[ExperimentResult]:
         qubits = list(amplitudes.keys())
         control_qubits = qubits
@@ -175,7 +181,7 @@ class Experiment:
         self,
         sweep_range: NDArray,
         parametric_waveforms: QubitDict[ParametricWaveform],
-        waveform_repetition=1,
+        pulse_count=1,
     ) -> QubitDict[ExperimentResult]:
         qubits = list(parametric_waveforms.keys())
         control_qubits = qubits
@@ -184,7 +190,7 @@ class Experiment:
 
         for index, param in enumerate(sweep_range):
             waveforms = {
-                qubit: waveform(param).repeated(waveform_repetition)
+                qubit: waveform(param).repeated(pulse_count)
                 for qubit, waveform in parametric_waveforms.items()
             }
 
@@ -235,7 +241,7 @@ class Experiment:
         result = self.sweep_parameter(
             sweep_range=np.arange(n + 1),
             parametric_waveforms=parametric_waveforms,
-            waveform_repetition=1,
+            pulse_count=1,
         )
         return result
 

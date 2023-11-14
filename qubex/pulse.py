@@ -277,8 +277,8 @@ class Rect(Pulse):
         |   <---->                      <---->
         |     tau                        tau
         |      <-------------------------->
-        |      ^         duration
-        |      t0
+        |                duration
+        | 
         """
         values = np.array([])
         if duration != 0:
