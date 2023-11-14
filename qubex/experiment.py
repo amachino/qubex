@@ -12,7 +12,7 @@ from IPython.display import clear_output
 
 from .qube_manager import QubeManager
 from .pulse import Rect, Waveform
-from .analysis import fit_and_rotate, rotate, get_angle, fit_rabi
+from .analysis import fit_and_rotate, get_angle, fit_rabi
 from .visualization import show_pulse_sequences, show_measurement_results
 from .typing import (
     QubitKey,
@@ -46,6 +46,7 @@ class ExperimentResult:
 class RabiParams:
     qubit: QubitKey
     phase_shift: float
+    fluctuation: float
     amplitude: float
     omega: float
     phi: float
@@ -61,8 +62,8 @@ class Experiment:
         readout_ports: ReadoutPorts = ("port0", "port1"),
         control_duration: int = T_CONTROL,
         readout_duration: int = T_READOUT,
-        measurement_repetition: int = 10_000,
-        measurement_inverval: int = 150_000,
+        repeats: int = 10_000,
+        interval: int = 150_000,
         data_path="./data",
     ):
         self.params = self._get_params(params, qube_id)
@@ -75,8 +76,8 @@ class Experiment:
             readout_duration=readout_duration,
         )
         self.qube: Final = self.qube_manager.qube
-        self.measurement_repetition: Final = measurement_repetition
-        self.measurement_inverval: Final = measurement_inverval
+        self.repeats: Final = repeats
+        self.interval: Final = interval
         self.data_path: Final = data_path
 
     def _get_params(self, cooldown: str, qube_id: str) -> dict:
@@ -114,9 +115,9 @@ class Experiment:
         interval: Optional[int] = None,
     ) -> QubitDict[IQValue]:
         if repeats is None:
-            repeats = self.measurement_repetition
+            repeats = self.repeats
         if interval is None:
-            interval = self.measurement_inverval
+            interval = self.interval
         qubits = list(waveforms.keys())
         result = self.qube_manager.measure(
             control_qubits=qubits,
@@ -282,43 +283,24 @@ class Experiment:
         )
         print(f"{index+1}/{len(sweep_range)}")
 
-    def fit_rabi_params(
+    def fit_rabi(
         self,
         experiment_result: ExperimentResult,
         wave_count=2.5,
     ) -> RabiParams:
-        """
-        Normalize the Rabi oscillation data.
-        """
         times = experiment_result.sweep_range
+        data = experiment_result.data
 
-        # Rotate the data to the vertical (Q) axis
-        angle = get_angle(data=experiment_result.data)
-        points = rotate(data=experiment_result.data, angle=angle)
-        values = points.imag
-        print(f"Phase shift: {angle:.3f} rad, {angle * 180 / np.pi:.3f} deg")
-
-        # Estimate the initial parameters
-        omega0 = 2 * np.pi / (times[-1] - times[0])
-        ampl_est = (np.max(values) - np.min(values)) / 2
-        omega_est = wave_count * omega0
-        phase_est = np.pi
-        offset_est = (np.max(values) + np.min(values)) / 2
-        p0 = (ampl_est, omega_est, phase_est, offset_est)
-
-        # Set the bounds for the parameters
-        bounds = (
-            [0, 0, -np.pi, -2 * np.abs(offset_est)],
-            [2 * ampl_est, 2 * omega_est, np.pi, 2 * np.abs(offset_est)],
+        phase_shift, fluctuation, popt = fit_rabi(
+            times=times,
+            data=data,
+            wave_count=wave_count,
         )
 
-        # Fit the data
-        popt, _ = fit_rabi(times, values, p0, bounds)
-
-        # Set the parameters as the instance attributes
         rabi_params = RabiParams(
             qubit=experiment_result.qubit,
-            phase_shift=angle,
+            phase_shift=phase_shift,
+            fluctuation=fluctuation,
             amplitude=popt[0],
             omega=popt[1],
             phi=popt[2],

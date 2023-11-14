@@ -215,11 +215,12 @@ class QubeManager:
         self._set_control_waveforms(control_qubits, control_waveforms)
 
         readout_amplitude = self.params["readout_amplitude"]
+        tau = 50
         readout_waveforms = {
             qubit: Rect(
-                duration=T_READOUT,
+                duration=T_READOUT - tau,
                 amplitude=readout_amplitude[qubit],
-                risetime=50,
+                tau=tau,
             )
             for qubit in readout_qubits
         }
