@@ -87,12 +87,26 @@ class Experiment:
             params = json.load(f)
         return params
 
-    def save_data(self, data: object, name: str = "data"):
+    def save_data(self, data: object, name: str):
         if not os.path.exists(self.data_path):
             os.makedirs(self.data_path)
-        current_time = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        file_name = f"{current_time}_{name}.pkl"
-        file_path = os.path.join(self.data_path, file_name)
+
+        extension = ".pkl"
+        counter = 1
+        current_date = datetime.datetime.now().strftime("%Y%m%d")
+        file_path = os.path.join(
+            self.data_path,
+            f"{current_date}_{name}_{counter}{extension}",
+        )
+
+        # Check if the file exists and create a new name if it does
+        while os.path.exists(file_path):
+            file_path = os.path.join(
+                self.data_path,
+                f"{current_date}_{name}_{counter}{extension}",
+            )
+            counter += 1
+
         with open(file_path, "wb") as f:
             pickle.dump(data, f)
         print(f"Data saved to {file_path}")
