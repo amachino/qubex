@@ -6,8 +6,6 @@ import qubecalib as qc
 from qubecalib.pulse import Schedule, Channel, Blank, Arbitrary, Read
 from qubecalib.setupqube import run
 
-qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
-
 from .pulse import Rect, Waveform
 from .typing import (
     QubitKey,
@@ -51,6 +49,7 @@ class QubeManager:
         self.control_duration: Final = control_duration
         self.readout_duration: Final = readout_duration
         self.schedule: Final = Schedule()
+        qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
         self._init_channels()
         self._init_ports()
 

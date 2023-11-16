@@ -1,7 +1,6 @@
 import os
 import datetime
 import json
-import pickle
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Final, Optional
@@ -35,7 +34,7 @@ class ExperimentResult:
     sweep_range: NDArray
     data: IQArray
     phase_shift: float
-    datetime: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     @property
     def rotated(self) -> IQArray:
@@ -86,38 +85,6 @@ class Experiment:
         with open(params_path, "r", encoding="utf-8") as f:
             params = json.load(f)
         return params
-
-    def save_data(self, data: object, name: str):
-        if not os.path.exists(self.data_path):
-            os.makedirs(self.data_path)
-
-        extension = ".pkl"
-        counter = 1
-        current_date = datetime.datetime.now().strftime("%Y%m%d")
-        file_path = os.path.join(
-            self.data_path,
-            f"{current_date}_{name}_{counter}{extension}",
-        )
-
-        # Check if the file exists and create a new name if it does
-        while os.path.exists(file_path):
-            file_path = os.path.join(
-                self.data_path,
-                f"{current_date}_{name}_{counter}{extension}",
-            )
-            counter += 1
-
-        with open(file_path, "wb") as f:
-            pickle.dump(data, f)
-        print(f"Data saved to {file_path}")
-
-    def load_data(self, name: str):
-        if not name.endswith(".pkl"):
-            name = name + ".pkl"
-        path = os.path.join(self.data_path, name)
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-        return data
 
     def loopback_mode(self, use_loopback: bool):
         self.qube_manager.loopback_mode(use_loopback)
