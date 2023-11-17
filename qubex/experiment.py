@@ -75,6 +75,7 @@ class Experiment:
             readout_duration=readout_duration,
         )
         self.qube: Final = self.qube_manager.qube
+        self.qubits: Final = self.qube_manager.qubits
         self.repeats: Final = repeats
         self.interval: Final = interval
         self.data_path: Final = data_path
@@ -119,6 +120,7 @@ class Experiment:
         self,
         time_range: IntArray,
         amplitudes: QubitDict[float],
+        plot: bool = True,
     ) -> QubitDict[ExperimentResult]:
         qubits = list(amplitudes.keys())
         control_qubits = qubits
@@ -139,13 +141,16 @@ class Experiment:
             for qubit, value in measured_values.items():
                 signals[qubit].append(value)
 
-            self.show_experiment_results(
-                control_qubits=control_qubits,
-                readout_qubits=readout_qubits,
-                sweep_range=time_range,
-                index=index,
-                signals=signals,
-            )
+            if plot:
+                self.show_experiment_results(
+                    control_qubits=control_qubits,
+                    readout_qubits=readout_qubits,
+                    sweep_range=time_range,
+                    index=index,
+                    signals=signals,
+                )
+
+            print(f"{index+1}/{len(time_range)} : {duration} ns")
 
         result = {
             qubit: ExperimentResult(
@@ -163,6 +168,7 @@ class Experiment:
         sweep_range: NDArray,
         parametric_waveforms: QubitDict[ParametricWaveform],
         pulse_count=1,
+        plot: bool = True,
     ) -> QubitDict[ExperimentResult]:
         qubits = list(parametric_waveforms.keys())
         control_qubits = qubits
@@ -180,13 +186,16 @@ class Experiment:
             for qubit, value in measured_values.items():
                 signals[qubit].append(value)
 
-            self.show_experiment_results(
-                control_qubits=control_qubits,
-                readout_qubits=readout_qubits,
-                sweep_range=sweep_range,
-                index=index,
-                signals=signals,
-            )
+            if plot:
+                self.show_experiment_results(
+                    control_qubits=control_qubits,
+                    readout_qubits=readout_qubits,
+                    sweep_range=sweep_range,
+                    index=index,
+                    signals=signals,
+                )
+
+            print(f"{index+1}/{len(sweep_range)}")
 
         result = {
             qubit: ExperimentResult(
@@ -268,7 +277,6 @@ class Experiment:
             readout_times=rotx_times,
             readout_duration=readout_duration,
         )
-        print(f"{index+1}/{len(sweep_range)}")
 
     def fit_rabi(
         self,

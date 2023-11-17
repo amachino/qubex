@@ -7,14 +7,15 @@ from sklearn.decomposition import PCA  # type: ignore
 # pylint: disable=unbalanced-tuple-unpacking
 
 
-def func_rabi(
+def func_damped_cos(
     t: npt.NDArray[np.float64],
+    tau: float,
     ampl: float,
     omega: float,
     phi: float,
     offset: float,
 ) -> npt.NDArray[np.float64]:
-    return ampl * np.cos(omega * t + phi) + offset
+    return ampl * np.exp(-t / tau) * np.cos(omega * t + phi) + offset
 
 
 def fit_rabi(
@@ -35,26 +36,29 @@ def fit_rabi(
     # Estimate the initial parameters
     omega0 = 2 * np.pi / (x[-1] - x[0])
     ampl_est = (np.max(y) - np.min(y)) / 2
+    tau_est = 10_000
     omega_est = wave_count * omega0
     phase_est = np.pi
     offset_est = (np.max(y) + np.min(y)) / 2
-    p0 = (ampl_est, omega_est, phase_est, offset_est)
+    p0 = (ampl_est, tau_est, omega_est, phase_est, offset_est)
 
     bounds = (
-        (0, 0, 0, -np.inf),
-        (np.inf, np.inf, np.pi, np.inf),
+        (0, 0, 0, 0, -np.inf),
+        (np.inf, np.inf, np.inf, np.pi, np.inf),
     )
 
-    popt, _ = curve_fit(func_rabi, x, y, p0=p0, bounds=bounds)
+    popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
 
-    rabi_freq = popt[1] / (2 * np.pi)
+    rabi_freq = popt[2] / (2 * np.pi)
 
+    print(
+        f"Fitted function: {popt[0]:.3f} * exp(-t/{popt[1]:.3f}) * cos({popt[2]:.3f} * t + {popt[3]:.3f}) + {popt[4]:.3f}"
+    )
     print(f"Rabi frequency: {rabi_freq * 1e3:.3f} MHz")
     print(f"Rabi period: {1 / rabi_freq:.3f} ns")
-    print(f"(amplitude, offset): ({popt[0]:.3f}, {popt[3]:.3f})")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = func_rabi(x_fine, *popt)
+    y_fine = func_damped_cos(x_fine, *popt)
 
     plt.figure(figsize=(8, 4))
     plt.errorbar(x, y, yerr=fluctuation, label="Data", fmt="o", color="C0")
@@ -66,17 +70,6 @@ def fit_rabi(
     plt.show()
 
     return phase_shift, fluctuation, popt
-
-
-def func_ramsey(
-    t: npt.NDArray[np.float64],
-    ampl: float,
-    tau: float,
-    omega: float,
-    phi: float,
-    offset: float,
-) -> npt.NDArray[np.float64]:
-    return ampl * np.exp(-t / tau) * np.cos(omega * t + phi) + offset
 
 
 def fit_ramsey(
@@ -100,13 +93,13 @@ def fit_ramsey(
             (np.inf, np.inf, np.inf, np.pi, np.inf),
         )
 
-    popt, pcov = curve_fit(func_ramsey, x, y, p0=p0, bounds=bounds)
+    popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
     print(
         f"Fitted function: {popt[0]:.3f} * exp(-t/{popt[1]:.3f}) * cos({popt[2]:.3f} * t + {popt[3]:.3f}) + {popt[4]:.3f}"
     )
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = func_ramsey(x_fine, *popt)
+    y_fine = func_damped_cos(x_fine, *popt)
 
     plt.scatter(x, y, label="Data")
     plt.plot(x_fine, y_fine, label="Fit")
