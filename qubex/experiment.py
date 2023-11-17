@@ -19,6 +19,7 @@ from .typing import (
     IQValue,
     IQArray,
     IntArray,
+    FloatArray,
     ReadoutPorts,
     ParametricWaveform,
 )
@@ -39,6 +40,10 @@ class ExperimentResult:
     @property
     def rotated(self) -> IQArray:
         return self.data * np.exp(-1j * self.phase_shift)
+
+    @property
+    def signals(self) -> FloatArray:
+        return self.rotated.imag
 
 
 @dataclass
@@ -208,7 +213,7 @@ class Experiment:
         }
         return result
 
-    def check_rabi(
+    def rabi_check(
         self,
         time_range=np.arange(0, 201, 10),
     ) -> QubitDict[ExperimentResult]:
@@ -321,3 +326,30 @@ class Experiment:
         value = iq_value.imag
         value = -(value - rabi_params.offset) / rabi_params.amplitude
         return value
+
+    def chevron_experiment(
+        self,
+        time_range: IntArray,
+        freq_range: IntArray,
+    ) -> QubitDict[list[FloatArray]]:
+        amplitudes = self.params["hpi_amplitude"]
+        frequenties = self.params["qubit_dressed_frequency"]
+
+        result = defaultdict(list)
+
+        for idx, freq in enumerate(freq_range):
+            print(f"### {idx+1}/{len(freq_range)}: {freq:.2f} MHz")
+            for qubit in self.qubits:
+                freq_mod = frequenties[qubit] + freq * 1e6
+                self.set_control_frequency(qubit, freq_mod)
+
+            result_rabi = self.rabi_experiment(
+                time_range=time_range,
+                amplitudes=amplitudes,
+                plot=False,
+            )
+
+            for qubit in self.qubits:
+                result[qubit].append(result_rabi[qubit].signals)
+
+        return result

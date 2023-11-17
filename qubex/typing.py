@@ -11,7 +11,9 @@ QubitDict = Mapping[QubitKey, QubitValue]
 
 IQValue = complex
 IQArray = NDArray[np.complex128]
+
 IntArray = NDArray[np.int64]
+FloatArray = NDArray[np.float64]
 
 PortConfigs = dict[str, dict[str, int]]
 
