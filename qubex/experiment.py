@@ -9,10 +9,19 @@ import numpy as np
 from numpy.typing import NDArray
 from IPython.display import clear_output
 
+from .experiment_record import ExperimentRecord
 from .qube_manager import QubeManager
 from .pulse import Rect, Waveform
-from .analysis import fit_and_rotate, get_angle, fit_rabi
-from .visualization import show_pulse_sequences, show_measurement_results
+from .analysis import (
+    fit_and_rotate,
+    get_angle,
+    fit_rabi,
+    fit_chevron,
+)
+from .visualization import (
+    show_pulse_sequences,
+    show_measurement_results,
+)
 from .typing import (
     QubitKey,
     QubitDict,
@@ -329,8 +338,9 @@ class Experiment:
 
     def chevron_experiment(
         self,
+        qubits: list[QubitKey],
         time_range: IntArray,
-        freq_range: IntArray,
+        freq_range: FloatArray,
     ) -> QubitDict[list[FloatArray]]:
         amplitudes = self.params["hpi_amplitude"]
         frequenties = self.params["qubit_dressed_frequency"]
@@ -345,11 +355,33 @@ class Experiment:
 
             result_rabi = self.rabi_experiment(
                 time_range=time_range,
-                amplitudes=amplitudes,
+                amplitudes={qubit: amplitudes[qubit] for qubit in qubits},
                 plot=False,
             )
 
-            for qubit in self.qubits:
+            for qubit in qubits:
                 result[qubit].append(result_rabi[qubit].signals)
 
+        ExperimentRecord.create(
+            name="result_chevron",
+            description="Chevron experiment",
+            data=result,
+        )
+
         return result
+
+    def fit_chevron(
+        self,
+        result_chevron: QubitDict[list[FloatArray]],
+        time_range: IntArray,
+        freq_range: FloatArray,
+    ):
+        frequenties = self.params["qubit_dressed_frequency"]
+
+        fit_chevron(
+            qubits=list(result_chevron.keys()),
+            result_chevron=result_chevron,
+            time_range=time_range,
+            freq_range=freq_range,
+            frequenties=frequenties,
+        )

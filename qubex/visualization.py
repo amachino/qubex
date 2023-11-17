@@ -1,5 +1,3 @@
-from collections import defaultdict
-
 import numpy as np
 from numpy.typing import NDArray
 import matplotlib.pyplot as plt
@@ -11,7 +9,6 @@ from .typing import (
     IQValue,
     IQArray,
     IntArray,
-    FloatArray,
 )
 
 
@@ -211,38 +208,3 @@ def show_measurement_results(
         ax[qubit][2].legend()
         ax[qubit][2].grid()
     plt.show()
-
-
-def plot_chevron(
-    qubits: list[QubitKey],
-    result_chevron: QubitDict[list[FloatArray]],
-    time_range: IntArray,
-    freq_range: FloatArray,
-    frequenties: QubitDict[FloatArray],
-):
-    for qubit in qubits:
-        time, freq = np.meshgrid(time_range, frequenties[qubit] + freq_range * 1e6)
-        plt.pcolor(time, freq * 1e-6, result_chevron[qubit])
-        plt.xlabel("Pulse length (ns)")
-        plt.ylabel("Drive frequency (MHz)")
-        plt.show()
-
-    length = 2**10
-    dt = (time_range[1] - time_range[0]) * 1e-9
-    freq_rabi_range = np.linspace(0, 0.5 / dt, length // 2)
-
-    chevron_fourier = defaultdict(list)
-
-    for qubit in qubits:
-        for data in result_chevron[qubit]:
-            signal = data - np.average(data)
-            signal_zero_filled = np.append(signal, np.zeros(length - len(signal)))
-            fourier = np.abs(np.fft.fft(signal_zero_filled))[: length // 2]
-            chevron_fourier[qubit].append(fourier)
-
-        freq_ctrl_range = frequenties[qubit] + freq_range * 1e6
-        freq_rabi, freq_ctrl = np.meshgrid(freq_rabi_range, freq_ctrl_range)
-        plt.pcolor(freq_rabi * 1e-6, freq_ctrl * 1e-6, chevron_fourier[qubit])
-        plt.xlabel("Rabi frequency (MHz)")
-        plt.ylabel("Drive frequency (MHz)")
-        plt.show()

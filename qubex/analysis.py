@@ -1,10 +1,19 @@
+# pylint: disable=unbalanced-tuple-unpacking
+
+from collections import defaultdict
+
 import numpy as np
 import numpy.typing as npt
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit, minimize  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
 
-# pylint: disable=unbalanced-tuple-unpacking
+from .typing import (
+    QubitKey,
+    QubitDict,
+    IntArray,
+    FloatArray,
+)
 
 
 def func_damped_cos(
@@ -297,3 +306,73 @@ def find_nearest_frequency_combinations(
     print(f"Combinations: {best_combinations}")
 
     return best_frequency, best_combinations
+
+
+def fit_chevron(
+    qubits: list[QubitKey],
+    result_chevron: QubitDict[list[FloatArray]],
+    time_range: IntArray,
+    freq_range: FloatArray,
+    frequenties: QubitDict[FloatArray],
+):
+    for qubit in qubits:
+        time, freq = np.meshgrid(time_range, frequenties[qubit] + freq_range * 1e6)
+        plt.pcolor(time, freq * 1e-6, result_chevron[qubit])
+        plt.xlabel("Pulse length (ns)")
+        plt.ylabel("Drive frequency (MHz)")
+        plt.show()
+
+    length = 2**10
+    dt = (time_range[1] - time_range[0]) * 1e-9
+    freq_rabi_range = np.linspace(0, 0.5 / dt, length // 2)
+
+    chevron_fourier = defaultdict(list)
+
+    for qubit in qubits:
+        for data in result_chevron[qubit]:
+            signal = data - np.average(data)
+            signal_zero_filled = np.append(signal, np.zeros(length - len(signal)))
+            fourier = np.abs(np.fft.fft(signal_zero_filled))[: length // 2]
+            chevron_fourier[qubit].append(fourier)
+
+        freq_ctrl_range = frequenties[qubit] + freq_range * 1e6
+        grid_rabi, grid_ctrl = np.meshgrid(freq_rabi_range, freq_ctrl_range)
+        plt.pcolor(grid_rabi * 1e-6, grid_ctrl * 1e-6, chevron_fourier[qubit])
+        plt.xlabel("Rabi frequency (MHz)")
+        plt.ylabel("Drive frequency (MHz)")
+        plt.show()
+
+    for qubit in qubits:
+        buf = []
+        for f in chevron_fourier[qubit]:
+            max_index = np.argmax(f)
+            buf.append(freq_rabi_range[max_index])
+        freq_rabi = np.array(buf)
+
+        def func(f_ctrl, f_rabi, f_reso, coeff):
+            return coeff * np.sqrt(f_rabi**2 + (f_ctrl - f_reso) ** 2)
+
+        p0 = [10.0e6, 8000.0e6, 1.0]
+
+        freq_ctrl = frequenties[qubit] + freq_range * 1e6
+
+        popt, _ = curve_fit(func, freq_ctrl, freq_rabi, p0=p0, maxfev=100000)
+
+        f_rabi = popt[0]
+        f_reso = popt[1]
+        coeff = popt[2]  # ge: 1, ef: sqrt(2)
+
+        print(
+            f"f_reso = {f_reso * 1e-6:.2f} MHz, f_rabi = {f_rabi * 1e-6:.2f} MHz, coeff = {coeff:.2f}"
+        )
+
+        freq_ctrl_fine = np.linspace(np.min(freq_ctrl), np.max(freq_ctrl), 1000)
+        freq_rabi_fit = func(freq_ctrl_fine, *popt)
+
+        plt.scatter(freq_ctrl * 1e-6, freq_rabi * 1e-6, label="Data")
+        plt.plot(freq_ctrl_fine * 1e-6, freq_rabi_fit * 1e-6, label="Fit")
+
+        plt.xlabel("Drive frequency (MHz)")
+        plt.ylabel("Rabi frequency (MHz)")
+        plt.legend()
+        plt.show()
