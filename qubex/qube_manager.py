@@ -42,7 +42,7 @@ class QubeManager:
         readout_duration: int = T_READOUT,
     ):
         self.qube_id: Optional[str] = None
-        self.qube: Optional[qc.qube.Qube] = None
+        self.qube: Optional[qc.qube.QubeTypeA] = None
         self.qubits: Final = MUX[mux_number]
         self.params: Final = params
         self.readout_ports: Final = readout_ports
@@ -133,6 +133,9 @@ class QubeManager:
             )
 
     def _init_qube(self):
+        if self.qube is None:
+            raise RuntimeError("QuBE is not connected.")
+
         ports = self.qube.ports
 
         tx = self.readout_ports[0]
@@ -161,7 +164,8 @@ class QubeManager:
 
         self.qube.gpio.write_value(0x0000)  # loopback off
 
-        self.triggers = [ports[tx].dac.awg0]
+        # pylint: disable=attribute-defined-outside-init
+        self._triggers = [ports[tx].dac.awg0]
 
         adda_to_channels = {
             ports[tx].dac.awg0: self._read_tx_channels(),
@@ -173,7 +177,8 @@ class QubeManager:
             adda_to_channels[port.dac.awg0] = [self._ctrl_lo_channel(qubit)]
             adda_to_channels[port.dac.awg1] = [self._ctrl_channel(qubit)]
             adda_to_channels[port.dac.awg2] = [self._ctrl_hi_channel(qubit)]
-        self.adda_to_channels = adda_to_channels
+        self._adda_to_channels = adda_to_channels
+        # pylint: enable=attribute-defined-outside-init
 
     def _init_slots(self):
         self.schedule.offset = self.control_duration
@@ -253,6 +258,9 @@ class QubeManager:
         self,
         use_loopback: bool,
     ):
+        if self.qube is None:
+            raise RuntimeError("QuBE is not connected.")
+
         if use_loopback:
             self.qube.gpio.write_value(0xFFFF)
         else:
@@ -320,6 +328,9 @@ class QubeManager:
         repeats: int = 10_000,
         interval: int = 150_000,
     ) -> QubitDict[IQValue]:
+        if self.qube is None:
+            raise RuntimeError("QuBE is not connected.")
+
         self._set_waveforms(
             control_qubits=control_qubits,
             readout_qubits=readout_qubits,
@@ -329,8 +340,8 @@ class QubeManager:
             schedule=self.schedule,
             repeats=repeats,
             interval=interval,
-            adda_to_channels=self.adda_to_channels,
-            triggers=self.triggers,
+            adda_to_channels=self._adda_to_channels,
+            triggers=self._triggers,
         )
         rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
         readout_range = self.readout_range()
