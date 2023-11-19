@@ -1,6 +1,4 @@
-import os
 import datetime
-import json
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Final, Optional
@@ -12,6 +10,7 @@ from IPython.display import clear_output
 from .experiment_record import ExperimentRecord
 from .qube_manager import QubeManager
 from .pulse import Rect, Waveform
+from .params import Params
 from .analysis import (
     fit_and_rotate,
     get_angle,
@@ -39,20 +38,26 @@ from .consts import (
 
 
 @dataclass
-class ExperimentResult:
+class SweepResult:
     qubit: QubitKey
     sweep_range: NDArray
-    data: IQArray
+    signals: IQArray
     phase_shift: float
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     @property
     def rotated(self) -> IQArray:
-        return self.data * np.exp(-1j * self.phase_shift)
+        return self.signals * np.exp(-1j * self.phase_shift)
 
-    @property
-    def signals(self) -> FloatArray:
-        return self.rotated.imag
+
+@dataclass
+class ChevronResult:
+    qubit: QubitKey
+    center_frequency: float
+    freq_range: FloatArray
+    time_range: IntArray
+    signals: list[FloatArray]
+    created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 @dataclass
@@ -70,8 +75,8 @@ class Experiment:
     def __init__(
         self,
         qube_id: str,
+        cooldown_id: str,
         mux_number: int,
-        params: str,
         readout_ports: ReadoutPorts = ("port0", "port1"),
         control_duration: int = T_CONTROL,
         readout_duration: int = T_READOUT,
@@ -79,7 +84,7 @@ class Experiment:
         interval: int = 150_000,
         data_path="./data",
     ):
-        self.params = self._get_params(params, qube_id)
+        self.params = Params.load(f"{cooldown_id}/{qube_id}")
         self.qube_manager: Final = QubeManager(
             qube_id=qube_id,
             mux_number=mux_number,
@@ -94,12 +99,8 @@ class Experiment:
         self.interval: Final = interval
         self.data_path: Final = data_path
 
-    def _get_params(self, cooldown: str, qube_id: str) -> dict:
-        current_dir = os.path.dirname(__file__)
-        params_path = os.path.join(current_dir, "params", cooldown, f"{qube_id}.json")
-        with open(params_path, "r", encoding="utf-8") as f:
-            params = json.load(f)
-        return params
+    def env(self):
+        self.params.print()
 
     def loopback_mode(self, use_loopback: bool):
         self.qube_manager.loopback_mode(use_loopback)
@@ -135,7 +136,7 @@ class Experiment:
         time_range: IntArray,
         amplitudes: QubitDict[float],
         plot: bool = True,
-    ) -> QubitDict[ExperimentResult]:
+    ) -> QubitDict[SweepResult]:
         qubits = list(amplitudes.keys())
         control_qubits = qubits
         readout_qubits = qubits
@@ -167,13 +168,13 @@ class Experiment:
             print(f"{index+1}/{len(time_range)} : {duration} ns")
 
         result = {
-            qubit: ExperimentResult(
+            qubit: SweepResult(
                 qubit=qubit,
                 sweep_range=time_range,
-                data=np.array(data),
-                phase_shift=get_angle(data),
+                signals=np.array(values),
+                phase_shift=get_angle(values),
             )
-            for qubit, data in signals.items()
+            for qubit, values in signals.items()
         }
         return result
 
@@ -183,7 +184,7 @@ class Experiment:
         parametric_waveforms: QubitDict[ParametricWaveform],
         pulse_count=1,
         plot: bool = True,
-    ) -> QubitDict[ExperimentResult]:
+    ) -> QubitDict[SweepResult]:
         qubits = list(parametric_waveforms.keys())
         control_qubits = qubits
         readout_qubits = qubits
@@ -212,21 +213,21 @@ class Experiment:
             print(f"{index+1}/{len(sweep_range)}")
 
         result = {
-            qubit: ExperimentResult(
+            qubit: SweepResult(
                 qubit=qubit,
                 sweep_range=sweep_range,
-                data=np.array(data),
-                phase_shift=get_angle(data),
+                signals=np.array(values),
+                phase_shift=get_angle(values),
             )
-            for qubit, data in signals.items()
+            for qubit, values in signals.items()
         }
         return result
 
     def rabi_check(
         self,
         time_range=np.arange(0, 201, 10),
-    ) -> QubitDict[ExperimentResult]:
-        amplitudes = self.params["hpi_amplitude"]
+    ) -> QubitDict[SweepResult]:
+        amplitudes = self.params.hpi_amplitude
         result = self.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -237,7 +238,7 @@ class Experiment:
         self,
         waveforms: QubitDict[Waveform],
         n: int,
-    ) -> QubitDict[ExperimentResult]:
+    ) -> QubitDict[SweepResult]:
         parametric_waveforms = {
             qubit: lambda param, w=waveform: w.repeated(int(param))
             for qubit, waveform in waveforms.items()
@@ -258,7 +259,7 @@ class Experiment:
         signals: QubitDict[list[IQValue]],
     ):
         signals_rotated = {
-            qubit: fit_and_rotate(data) for qubit, data in signals.items()
+            qubit: fit_and_rotate(values) for qubit, values in signals.items()
         }
 
         ctrl_waveforms = self.qube_manager.get_control_waveforms(control_qubits)
@@ -292,34 +293,9 @@ class Experiment:
             readout_duration=readout_duration,
         )
 
-    def fit_rabi(
-        self,
-        experiment_result: ExperimentResult,
-        wave_count=2.5,
-    ) -> RabiParams:
-        times = experiment_result.sweep_range
-        data = experiment_result.data
-
-        phase_shift, fluctuation, popt = fit_rabi(
-            times=times,
-            data=data,
-            wave_count=wave_count,
-        )
-
-        rabi_params = RabiParams(
-            qubit=experiment_result.qubit,
-            phase_shift=phase_shift,
-            fluctuation=fluctuation,
-            amplitude=popt[0],
-            omega=popt[1],
-            phi=popt[2],
-            offset=popt[3],
-        )
-        return rabi_params
-
     def expectation_values(
         self,
-        experiment_result: ExperimentResult,
+        experiment_result: SweepResult,
         rabi_params: RabiParams,
     ) -> NDArray[np.float64]:
         values = experiment_result.rotated.imag
@@ -336,16 +312,41 @@ class Experiment:
         value = -(value - rabi_params.offset) / rabi_params.amplitude
         return value
 
+    def fit_rabi(
+        self,
+        data: SweepResult,
+        wave_count=2.5,
+    ) -> RabiParams:
+        times = data.sweep_range
+        signals = data.signals
+
+        phase_shift, fluctuation, popt = fit_rabi(
+            times=times,
+            signals=signals,
+            wave_count=wave_count,
+        )
+
+        rabi_params = RabiParams(
+            qubit=data.qubit,
+            phase_shift=phase_shift,
+            fluctuation=fluctuation,
+            amplitude=popt[0],
+            omega=popt[1],
+            phi=popt[2],
+            offset=popt[3],
+        )
+        return rabi_params
+
     def chevron_experiment(
         self,
         qubits: list[QubitKey],
-        time_range: IntArray,
         freq_range: FloatArray,
-    ) -> QubitDict[list[FloatArray]]:
-        amplitudes = self.params["hpi_amplitude"]
-        frequenties = self.params["qubit_dressed_frequency"]
+        time_range: IntArray,
+    ) -> QubitDict[ChevronResult]:
+        amplitudes = self.params.hpi_amplitude
+        frequenties = self.params.qubit_dressed_frequency
 
-        result = defaultdict(list)
+        signals = defaultdict(list)
 
         for idx, freq in enumerate(freq_range):
             print(f"### {idx+1}/{len(freq_range)}: {freq:.2f} MHz")
@@ -355,12 +356,23 @@ class Experiment:
 
             result_rabi = self.rabi_experiment(
                 time_range=time_range,
-                amplitudes={qubit: amplitudes[qubit] for qubit in qubits},
+                amplitudes=amplitudes,
                 plot=False,
             )
 
             for qubit in qubits:
-                result[qubit].append(result_rabi[qubit].signals)
+                signals[qubit].append(result_rabi[qubit].rotated.imag)
+
+        result = {
+            qubit: ChevronResult(
+                qubit=qubit,
+                center_frequency=frequenties[qubit],
+                freq_range=freq_range,
+                time_range=time_range,
+                signals=values,
+            )
+            for qubit, values in signals.items()
+        }
 
         ExperimentRecord.create(
             name="result_chevron",
@@ -372,16 +384,11 @@ class Experiment:
 
     def fit_chevron(
         self,
-        result_chevron: QubitDict[list[FloatArray]],
-        time_range: IntArray,
-        freq_range: FloatArray,
+        data: ChevronResult,
     ):
-        frequenties = self.params["qubit_dressed_frequency"]
-
         fit_chevron(
-            qubits=list(result_chevron.keys()),
-            result_chevron=result_chevron,
-            time_range=time_range,
-            freq_range=freq_range,
-            frequenties=frequenties,
+            center_frequency=data.center_frequency,
+            freq_range=data.freq_range,
+            time_range=data.time_range,
+            signals=data.signals,
         )

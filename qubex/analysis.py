@@ -1,19 +1,11 @@
 # pylint: disable=unbalanced-tuple-unpacking
 
-from collections import defaultdict
-
+# Don't include custom modules in analysis.py
 import numpy as np
 import numpy.typing as npt
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit, minimize  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
-
-from .typing import (
-    QubitKey,
-    QubitDict,
-    IntArray,
-    FloatArray,
-)
 
 
 def func_damped_cos(
@@ -29,12 +21,12 @@ def func_damped_cos(
 
 def fit_rabi(
     times: npt.NDArray[np.int64],
-    data: npt.NDArray[np.complex128],
+    signals: npt.NDArray[np.complex128],
     wave_count: float = 2.5,
 ) -> tuple[float, float, npt.NDArray[np.float64]]:
     # Rotate the data to the vertical (Q) axis
-    phase_shift = get_angle(data=data)
-    points = rotate(data=data, angle=phase_shift)
+    phase_shift = get_angle(signals=signals)
+    points = rotate(signals=signals, angle=phase_shift)
     fluctuation = float(np.std(points.real))
     print(f"Phase shift: {phase_shift:.3f} rad, {phase_shift * 180 / np.pi:.3f} deg")
     print(f"Fluctuation: {fluctuation:.3f}")
@@ -223,18 +215,18 @@ def fit_and_rotate(
 
 
 def rotate(
-    data: npt.ArrayLike,
+    signals: npt.ArrayLike,
     angle: float,
 ) -> npt.NDArray[np.complex128]:
-    points = np.array(data)
+    points = np.array(signals)
     rotated_points = points * np.exp(-1j * angle)
     return rotated_points
 
 
 def get_angle(
-    data: npt.ArrayLike,
+    signals: npt.ArrayLike,
 ) -> float:
-    points = np.array(data)
+    points = np.array(signals)
 
     if len(points) < 2:
         return 0.0
@@ -264,115 +256,67 @@ def principal_components(
     return results, pca
 
 
-def find_nearest_frequency_combinations(
-    target_frequency,
-    lo_range=(8000, 12000),
-    nco_range=(0, 3000),
-    lo_step: int = 500,
-    nco_step: int = 375,
-) -> tuple[int, list[tuple[int, int]]]:
-    # Adjust the start of the range to the nearest multiple of the step using integer division
-    lo_start = ((lo_range[0] + lo_step - 1) // lo_step) * lo_step
-    nco_start = ((nco_range[0] + nco_step - 1) // nco_step) * nco_step
-
-    # Generate the possible LO and NCO frequencies based on the adjusted ranges and steps
-    lo_frequencies = [freq for freq in range(lo_start, lo_range[1] + lo_step, lo_step)]
-    nco_frequencies = [
-        freq for freq in range(nco_start, nco_range[1] + nco_step, nco_step)
-    ]
-
-    # Initialize variables to store the best combinations and minimum difference
-    best_combinations = []
-    best_frequency = 0
-    min_difference = float("inf")
-
-    # Loop through each LO frequency and find the NCO frequency that makes LO - NCO closest to the target
-    for lo in lo_frequencies:
-        for nco in nco_frequencies:
-            lo_minus_nco = lo - nco
-            difference = abs(target_frequency - lo_minus_nco)
-
-            if difference < min_difference:
-                # Clear the best_combinations list, update the best_frequency, and update the minimum difference
-                best_combinations = [(lo, nco)]
-                best_frequency = lo_minus_nco
-                min_difference = difference
-            elif difference == min_difference:
-                # Add the new combination to the list
-                best_combinations.append((lo, nco))
-
-    print(f"Target frequency: {target_frequency}")
-    print(f"Nearest frequency: {best_frequency}")
-    print(f"Combinations: {best_combinations}")
-
-    return best_frequency, best_combinations
-
-
 def fit_chevron(
-    qubits: list[QubitKey],
-    result_chevron: QubitDict[list[FloatArray]],
-    time_range: IntArray,
-    freq_range: FloatArray,
-    frequenties: QubitDict[FloatArray],
+    center_frequency: float,
+    freq_range: npt.NDArray[np.float64],
+    time_range: npt.NDArray[np.int64],
+    signals: list[npt.NDArray[np.float64]],
 ):
-    for qubit in qubits:
-        time, freq = np.meshgrid(time_range, frequenties[qubit] + freq_range * 1e6)
-        plt.pcolor(time, freq * 1e-6, result_chevron[qubit])
-        plt.xlabel("Pulse length (ns)")
-        plt.ylabel("Drive frequency (MHz)")
-        plt.show()
+    time, freq = np.meshgrid(time_range, center_frequency + freq_range * 1e6)
+    plt.pcolor(time, freq * 1e-6, signals)
+    plt.xlabel("Pulse length (ns)")
+    plt.ylabel("Drive frequency (MHz)")
+    plt.show()
 
     length = 2**10
     dt = (time_range[1] - time_range[0]) * 1e-9
     freq_rabi_range = np.linspace(0, 0.5 / dt, length // 2)
 
-    chevron_fourier = defaultdict(list)
+    fourier_values = []
 
-    for qubit in qubits:
-        for data in result_chevron[qubit]:
-            signal = data - np.average(data)
-            signal_zero_filled = np.append(signal, np.zeros(length - len(signal)))
-            fourier = np.abs(np.fft.fft(signal_zero_filled))[: length // 2]
-            chevron_fourier[qubit].append(fourier)
+    for s in signals:
+        s = s - np.average(s)
+        signal_zero_filled = np.append(s, np.zeros(length - len(s)))
+        fourier = np.abs(np.fft.fft(signal_zero_filled))[: length // 2]
+        fourier_values.append(fourier)
 
-        freq_ctrl_range = frequenties[qubit] + freq_range * 1e6
-        grid_rabi, grid_ctrl = np.meshgrid(freq_rabi_range, freq_ctrl_range)
-        plt.pcolor(grid_rabi * 1e-6, grid_ctrl * 1e-6, chevron_fourier[qubit])
-        plt.xlabel("Rabi frequency (MHz)")
-        plt.ylabel("Drive frequency (MHz)")
-        plt.show()
+    freq_ctrl_range = center_frequency + freq_range * 1e6
+    grid_rabi, grid_ctrl = np.meshgrid(freq_rabi_range, freq_ctrl_range)
+    plt.pcolor(grid_rabi * 1e-6, grid_ctrl * 1e-6, fourier_values)
+    plt.xlabel("Rabi frequency (MHz)")
+    plt.ylabel("Drive frequency (MHz)")
+    plt.show()
 
-    for qubit in qubits:
-        buf = []
-        for f in chevron_fourier[qubit]:
-            max_index = np.argmax(f)
-            buf.append(freq_rabi_range[max_index])
-        freq_rabi = np.array(buf)
+    buf = []
+    for f in fourier_values:
+        max_index = np.argmax(f)
+        buf.append(freq_rabi_range[max_index])
+    freq_rabi = np.array(buf)
 
-        def func(f_ctrl, f_rabi, f_reso, coeff):
-            return coeff * np.sqrt(f_rabi**2 + (f_ctrl - f_reso) ** 2)
+    def func(f_ctrl, f_rabi, f_reso, coeff):
+        return coeff * np.sqrt(f_rabi**2 + (f_ctrl - f_reso) ** 2)
 
-        p0 = [10.0e6, 8000.0e6, 1.0]
+    p0 = [10.0e6, 8000.0e6, 1.0]
 
-        freq_ctrl = frequenties[qubit] + freq_range * 1e6
+    freq_ctrl = center_frequency + freq_range * 1e6
 
-        popt, _ = curve_fit(func, freq_ctrl, freq_rabi, p0=p0, maxfev=100000)
+    popt, _ = curve_fit(func, freq_ctrl, freq_rabi, p0=p0, maxfev=100000)
 
-        f_rabi = popt[0]
-        f_reso = popt[1]
-        coeff = popt[2]  # ge: 1, ef: sqrt(2)
+    f_rabi = popt[0]
+    f_reso = popt[1]
+    coeff = popt[2]  # ge: 1, ef: sqrt(2)
 
-        print(
-            f"f_reso = {f_reso * 1e-6:.2f} MHz, f_rabi = {f_rabi * 1e-6:.2f} MHz, coeff = {coeff:.2f}"
-        )
+    print(
+        f"f_reso = {f_reso * 1e-6:.2f} MHz, f_rabi = {f_rabi * 1e-6:.2f} MHz, coeff = {coeff:.2f}"
+    )
 
-        freq_ctrl_fine = np.linspace(np.min(freq_ctrl), np.max(freq_ctrl), 1000)
-        freq_rabi_fit = func(freq_ctrl_fine, *popt)
+    freq_ctrl_fine = np.linspace(np.min(freq_ctrl), np.max(freq_ctrl), 1000)
+    freq_rabi_fit = func(freq_ctrl_fine, *popt)
 
-        plt.scatter(freq_ctrl * 1e-6, freq_rabi * 1e-6, label="Data")
-        plt.plot(freq_ctrl_fine * 1e-6, freq_rabi_fit * 1e-6, label="Fit")
+    plt.scatter(freq_ctrl * 1e-6, freq_rabi * 1e-6, label="Data")
+    plt.plot(freq_ctrl_fine * 1e-6, freq_rabi_fit * 1e-6, label="Fit")
 
-        plt.xlabel("Drive frequency (MHz)")
-        plt.ylabel("Rabi frequency (MHz)")
-        plt.legend()
-        plt.show()
+    plt.xlabel("Drive frequency (MHz)")
+    plt.ylabel("Rabi frequency (MHz)")
+    plt.legend()
+    plt.show()
