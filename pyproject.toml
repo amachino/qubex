@@ -1,6 +1,6 @@
 [project]
 name = "qubex"
-version = "0.0.7"
+version = "0.0.8"
 requires-python = ">=3.9"
 dependencies = [
     "jupyter",
