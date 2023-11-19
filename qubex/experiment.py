@@ -84,20 +84,22 @@ class Experiment:
         interval: int = 150_000,
         data_path="./data",
     ):
-        self.params = Params.load(f"{cooldown_id}/{qube_id}")
+        self.qube_id: Final = qube_id
+        self.params: Final = Params.load(f"{cooldown_id}/{qube_id}")
         self.qube_manager: Final = QubeManager(
-            qube_id=qube_id,
             mux_number=mux_number,
             params=self.params,
             readout_ports=readout_ports,
             control_duration=control_duration,
             readout_duration=readout_duration,
         )
-        self.qube: Final = self.qube_manager.qube
         self.qubits: Final = self.qube_manager.qubits
         self.repeats: Final = repeats
         self.interval: Final = interval
         self.data_path: Final = data_path
+
+    def connect(self):
+        self.qube_manager.connect(self.qube_id)
 
     def env(self):
         self.params.print()

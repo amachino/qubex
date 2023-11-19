@@ -1,4 +1,4 @@
-from typing import Final
+from typing import Final, Optional
 
 import matplotlib.pyplot as plt
 
@@ -35,15 +35,14 @@ READOUT_RX: Final = "RX_"
 class QubeManager:
     def __init__(
         self,
-        qube_id: str,
         mux_number: int,
         params: Params,
         readout_ports: ReadoutPorts,
         control_duration: int = T_CONTROL,
         readout_duration: int = T_READOUT,
     ):
-        self.qube_id: Final = qube_id
-        self.qube: Final = qc.ui.QubeControl(f"{qube_id}.yml").qube
+        self.qube_id: Optional[str] = None
+        self.qube: Optional[qc.qube.Qube] = None
         self.qubits: Final = MUX[mux_number]
         self.params: Final = params
         self.readout_ports: Final = readout_ports
@@ -52,7 +51,11 @@ class QubeManager:
         self.schedule: Final = Schedule()
         qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
         self._init_channels()
-        self._init_ports()
+
+    def connect(self, qube_id: str):
+        self.qube_id = qube_id
+        self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
+        self._init_qube()
 
     def _ctrl_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[qubit]
@@ -129,7 +132,7 @@ class QubeManager:
                 center_frequency=readout_frequency,
             )
 
-    def _init_ports(self):
+    def _init_qube(self):
         ports = self.qube.ports
 
         tx = self.readout_ports[0]
