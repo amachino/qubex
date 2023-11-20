@@ -8,6 +8,16 @@ from scipy.optimize import curve_fit, minimize  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
 
 
+def func_cos(
+    t: npt.NDArray[np.float64],
+    ampl: float,
+    omega: float,
+    phi: float,
+    offset: float,
+) -> npt.NDArray[np.float64]:
+    return ampl * np.cos(omega * t + phi) + offset
+
+
 def func_damped_cos(
     t: npt.NDArray[np.float64],
     tau: float,
@@ -20,6 +30,59 @@ def func_damped_cos(
 
 
 def fit_rabi(
+    times: npt.NDArray[np.int64],
+    signals: npt.NDArray[np.complex128],
+    wave_count: float = 2.5,
+) -> tuple[float, float, npt.NDArray[np.float64]]:
+    # Rotate the data to the vertical (Q) axis
+    phase_shift = get_angle(signals=signals)
+    points = rotate(signals=signals, angle=phase_shift)
+    fluctuation = float(np.std(points.real))
+    print(f"Phase shift: {phase_shift:.3f} rad, {phase_shift * 180 / np.pi:.3f} deg")
+    print(f"Fluctuation: {fluctuation:.3f}")
+
+    x = times
+    y = points.imag
+
+    # Estimate the initial parameters
+    omega0 = 2 * np.pi / (x[-1] - x[0])
+    ampl_est = (np.max(y) - np.min(y)) / 2
+    omega_est = wave_count * omega0
+    phase_est = np.pi
+    offset_est = (np.max(y) + np.min(y)) / 2
+    p0 = (ampl_est, omega_est, phase_est, offset_est)
+
+    bounds = (
+        (0, 0, 0, -np.inf),
+        (np.inf, np.inf, np.pi, np.inf),
+    )
+
+    popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+
+    rabi_freq = popt[1] / (2 * np.pi)
+
+    print(
+        f"Fitted function: {popt[0]:.3f} * cos({popt[1]:.3f} * t + {popt[2]:.3f}) + {popt[3]:.3f}"
+    )
+    print(f"Rabi frequency: {rabi_freq * 1e3:.3f} MHz")
+    print(f"Rabi period: {1 / rabi_freq:.3f} ns")
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_cos(x_fine, *popt)
+
+    plt.figure(figsize=(8, 4))
+    plt.errorbar(x, y, yerr=fluctuation, label="Data", fmt="o", color="C0")
+    plt.plot(x_fine, y_fine, label="Fit", color="C0")
+    plt.title(f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)")
+    plt.xlabel("Time (ns)")
+    plt.ylabel("Amplitude (arb. units)")
+    plt.legend()
+    plt.show()
+
+    return phase_shift, fluctuation, popt
+
+
+def fit_damped_rabi(
     times: npt.NDArray[np.int64],
     signals: npt.NDArray[np.complex128],
     wave_count: float = 2.5,
