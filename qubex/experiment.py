@@ -229,7 +229,7 @@ class Experiment:
         self,
         time_range=np.arange(0, 201, 10),
     ) -> QubitDict[SweepResult]:
-        amplitudes = self.params.hpi_amplitude
+        amplitudes = self.params.default_hpi_amplitude
         result = self.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -345,8 +345,8 @@ class Experiment:
         freq_range: FloatArray,
         time_range: IntArray,
     ) -> QubitDict[ChevronResult]:
-        amplitudes = self.params.hpi_amplitude
-        frequenties = self.params.qubit_dressed_frequency
+        amplitudes = self.params.default_hpi_amplitude
+        frequenties = self.params.transmon_dressed_frequency_ge
 
         signals = defaultdict(list)
 

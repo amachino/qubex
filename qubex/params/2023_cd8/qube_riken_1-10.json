@@ -47,13 +47,13 @@
         "Q30": 0,
         "Q31": 10188.06e6
     },
-    "qubit_dressed_frequency": {
+    "transmon_dressed_frequency_ge": {
         "Q28": 8054.27e6,
         "Q29": 0,
         "Q30": 0,
         "Q31": 7543.29e6
     },
-    "qubit_true_frequency": {
+    "transmon_bare_frequency_ge": {
         "Q28": 0,
         "Q29": 0,
         "Q30": 0,
@@ -71,7 +71,7 @@
         "Q30": 0,
         "Q31": 0.05
     },
-    "hpi_amplitude": {
+    "default_hpi_amplitude": {
         "Q28": 0.332,
         "Q29": 0,
         "Q30": 0,

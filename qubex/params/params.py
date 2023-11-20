@@ -8,11 +8,11 @@ from pprint import pprint
 class Params:
     port_config: dict[str, dict[str, int]]
     cavity_frequency: dict[str, float]
-    qubit_dressed_frequency: dict[str, float]
-    qubit_true_frequency: dict[str, float]
+    transmon_dressed_frequency_ge: dict[str, float]
+    transmon_bare_frequency_ge: dict[str, float]
     anharmonicity: dict[str, float]
     readout_amplitude: dict[str, float]
-    hpi_amplitude: dict[str, float]
+    default_hpi_amplitude: dict[str, float]
 
     @classmethod
     def load(cls, path: str):

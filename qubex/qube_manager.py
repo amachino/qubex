@@ -112,7 +112,7 @@ class QubeManager:
 
     def _init_channels(self):
         for qubit in self.qubits:
-            control_frequency = self.params.qubit_dressed_frequency[qubit]
+            control_frequency = self.params.transmon_dressed_frequency_ge[qubit]
             anharmonicity = self.params.anharmonicity[qubit]
             self.schedule[qubit] = Channel(
                 center_frequency=control_frequency,

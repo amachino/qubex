@@ -47,13 +47,13 @@
         "Q10": 10173.0e6,
         "Q11": 10031.5e6
     },
-    "qubit_dressed_frequency": {
+    "transmon_dressed_frequency_ge": {
         "Q08": 7651.43e6,
         "Q09": 8456.08e6,
         "Q10": 8336.69e6,
         "Q11": 7182.0e6
     },
-    "qubit_true_frequency": {
+    "transmon_bare_frequency_ge": {
         "Q08": 7650.92e6,
         "Q09": 8456.053e6,
         "Q10": 8336.76e6,
@@ -71,7 +71,7 @@
         "Q10": 0.01,
         "Q11": 0.01
     },
-    "hpi_amplitude": {
+    "default_hpi_amplitude": {
         "Q08": 0.10139,
         "Q09": 0.02678,
         "Q10": 0.04051,
