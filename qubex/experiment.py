@@ -295,7 +295,7 @@ class Experiment:
             readout_duration=readout_duration,
         )
 
-    def expectation_values(
+    def normalize_result(
         self,
         experiment_result: SweepResult,
         rabi_params: RabiParams,
@@ -304,7 +304,7 @@ class Experiment:
         values_normalized = -(values - rabi_params.offset) / rabi_params.amplitude
         return values_normalized
 
-    def expectation_value(
+    def normalize_value(
         self,
         iq_value: IQValue,
         rabi_params: RabiParams,
