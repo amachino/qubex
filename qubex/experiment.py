@@ -15,6 +15,7 @@ from .analysis import (
     fit_and_rotate,
     get_angle,
     fit_rabi,
+    fit_damped_rabi,
     fit_chevron,
 )
 from .visualization import (
@@ -336,6 +337,31 @@ class Experiment:
             omega=popt[1],
             phi=popt[2],
             offset=popt[3],
+        )
+        return rabi_params
+
+    def fit_damped_rabi(
+        self,
+        data: SweepResult,
+        wave_count=2.5,
+    ) -> RabiParams:
+        times = data.sweep_range
+        signals = data.signals
+
+        phase_shift, fluctuation, popt = fit_damped_rabi(
+            times=times,
+            signals=signals,
+            wave_count=wave_count,
+        )
+
+        rabi_params = RabiParams(
+            qubit=data.qubit,
+            phase_shift=phase_shift,
+            fluctuation=fluctuation,
+            amplitude=popt[0],
+            omega=popt[2],
+            phi=popt[3],
+            offset=popt[4],
         )
         return rabi_params
 
