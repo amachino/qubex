@@ -79,8 +79,8 @@ class Experiment:
         cooldown_id: str,
         mux_number: int,
         readout_ports: ReadoutPorts = ("port0", "port1"),
-        control_duration: int = T_CONTROL,
-        readout_duration: int = T_READOUT,
+        control_window: int = T_CONTROL,
+        readout_window: int = T_READOUT,
         repeats: int = 10_000,
         interval: int = 150_000,
         data_path="./data",
@@ -91,8 +91,8 @@ class Experiment:
             mux_number=mux_number,
             params=self.params,
             readout_ports=readout_ports,
-            control_duration=control_duration,
-            readout_duration=readout_duration,
+            control_window=control_window,
+            readout_window=readout_window,
         )
         self.qubits: Final = self.qube_manager.qubits
         self.repeats: Final = repeats
@@ -272,8 +272,8 @@ class Experiment:
         rorx_waveforms = self.qube_manager.get_readout_rx_waveforms(readout_qubits)
         rorx_times = self.qube_manager.get_readout_rx_times(readout_qubits)
         readout_range = self.qube_manager.readout_range()
-        control_duration = self.qube_manager.control_duration
-        readout_duration = self.qube_manager.readout_duration
+        control_duration = self.qube_manager.control_window
+        readout_duration = self.qube_manager.readout_window
 
         clear_output(True)
         show_measurement_results(

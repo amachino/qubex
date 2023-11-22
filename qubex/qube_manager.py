@@ -38,16 +38,16 @@ class QubeManager:
         mux_number: int,
         params: Params,
         readout_ports: ReadoutPorts,
-        control_duration: int = T_CONTROL,
-        readout_duration: int = T_READOUT,
+        control_window: int = T_CONTROL,
+        readout_window: int = T_READOUT,
     ):
         self.qube_id: Optional[str] = None
         self.qube: Optional[qc.qube.QubeTypeA] = None
         self.qubits: Final = MUX[mux_number]
         self.params: Final = params
         self.readout_ports: Final = readout_ports
-        self.control_duration: Final = control_duration
-        self.readout_duration: Final = readout_duration
+        self.control_window: Final = control_window
+        self.readout_window: Final = readout_window
         self.schedule: Final = Schedule()
         qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
         self._init_channels()
@@ -181,33 +181,33 @@ class QubeManager:
         # pylint: enable=attribute-defined-outside-init
 
     def _init_slots(self):
-        self.schedule.offset = self.control_duration
+        self.schedule.offset = self.control_window
 
         for ch in self._ctrl_channels():
             ch.clear()
-            ch.append(Arbitrary(duration=self.control_duration, amplitude=1))
-            ch.append(Blank(duration=self.readout_duration + 4 * T_MARGIN))
+            ch.append(Arbitrary(duration=self.control_window, amplitude=1))
+            ch.append(Blank(duration=self.readout_window + 4 * T_MARGIN))
 
         for ch in self._ctrl_lo_channels():
             ch.clear()
-            ch.append(Arbitrary(duration=self.control_duration, amplitude=1))
-            ch.append(Blank(duration=self.readout_duration + 4 * T_MARGIN))
+            ch.append(Arbitrary(duration=self.control_window, amplitude=1))
+            ch.append(Blank(duration=self.readout_window + 4 * T_MARGIN))
 
         for ch in self._ctrl_hi_channels():
             ch.clear()
-            ch.append(Arbitrary(duration=self.control_duration, amplitude=1))
-            ch.append(Blank(duration=self.readout_duration + 4 * T_MARGIN))
+            ch.append(Arbitrary(duration=self.control_window, amplitude=1))
+            ch.append(Blank(duration=self.readout_window + 4 * T_MARGIN))
 
         for ch in self._read_tx_channels():
             ch.clear()
-            ch.append(Blank(duration=self.control_duration))
-            ch.append(Arbitrary(duration=self.readout_duration, amplitude=1))
+            ch.append(Blank(duration=self.control_window))
+            ch.append(Arbitrary(duration=self.readout_window, amplitude=1))
             ch.append(Blank(duration=4 * T_MARGIN))
 
         for ch in self._read_rx_channels():
             ch.clear()
-            ch.append(Blank(duration=self.control_duration - T_MARGIN))
-            ch.append(Read(duration=self.readout_duration + 5 * T_MARGIN))
+            ch.append(Blank(duration=self.control_window - T_MARGIN))
+            ch.append(Read(duration=self.readout_window + 5 * T_MARGIN))
 
         durations = [channel.duration for channel in self.schedule.values()]
         assert len(set(durations)) == 1, "All channels must have the same duration."
@@ -269,7 +269,7 @@ class QubeManager:
     def readout_range(
         self,
     ) -> slice:
-        return slice(T_MARGIN // 2, (self.readout_duration + T_MARGIN) // 2)
+        return slice(T_MARGIN // 2, (self.readout_window + T_MARGIN) // 2)
 
     def get_control_frequency(
         self,
