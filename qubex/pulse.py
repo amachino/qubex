@@ -110,8 +110,8 @@ class Waveform(ABC):
 
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
-        ax.step(times, real, label="X", where="post")
-        ax.step(times, imag, label="Y", where="post")
+        ax.step(times, real, label="I", where="post")
+        ax.step(times, imag, label="Q", where="post")
 
         ax.legend()
         plt.show()
