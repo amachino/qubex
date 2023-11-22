@@ -13,7 +13,6 @@ from .pulse import Rect, Waveform
 from .params import Params
 from .analysis import (
     fit_and_rotate,
-    get_angle,
     fit_rabi,
     fit_damped_rabi,
     fit_chevron,
@@ -39,16 +38,30 @@ from .consts import (
 
 
 @dataclass
+class RabiParams:
+    qubit: QubitKey
+    phase_shift: float
+    fluctuation: float
+    amplitude: float
+    omega: float
+    phi: float
+    offset: float
+
+
+@dataclass
 class SweepResult:
     qubit: QubitKey
     sweep_range: NDArray
     signals: IQArray
-    phase_shift: float
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    @property
-    def rotated(self) -> IQArray:
-        return self.signals * np.exp(-1j * self.phase_shift)
+    def rotated(self, rabi_params: RabiParams) -> IQArray:
+        return self.signals * np.exp(-1j * rabi_params.phase_shift)
+
+    def normalized(self, rabi_params: RabiParams) -> FloatArray:
+        values = self.signals * np.exp(-1j * rabi_params.phase_shift)
+        values_normalized = -(values.imag - rabi_params.offset) / rabi_params.amplitude
+        return values_normalized
 
 
 @dataclass
@@ -59,17 +72,6 @@ class ChevronResult:
     time_range: IntArray
     signals: list[FloatArray]
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-@dataclass
-class RabiParams:
-    qubit: QubitKey
-    phase_shift: float
-    fluctuation: float
-    amplitude: float
-    omega: float
-    phi: float
-    offset: float
 
 
 class Experiment:
@@ -175,7 +177,6 @@ class Experiment:
                 qubit=qubit,
                 sweep_range=time_range,
                 signals=np.array(values),
-                phase_shift=get_angle(values),
             )
             for qubit, values in signals.items()
         }
@@ -220,7 +221,6 @@ class Experiment:
                 qubit=qubit,
                 sweep_range=sweep_range,
                 signals=np.array(values),
-                phase_shift=get_angle(values),
             )
             for qubit, values in signals.items()
         }
@@ -296,16 +296,7 @@ class Experiment:
             readout_duration=readout_duration,
         )
 
-    def normalize_result(
-        self,
-        experiment_result: SweepResult,
-        rabi_params: RabiParams,
-    ) -> NDArray[np.float64]:
-        values = experiment_result.rotated.imag
-        values_normalized = -(values - rabi_params.offset) / rabi_params.amplitude
-        return values_normalized
-
-    def normalize_value(
+    def normalize(
         self,
         iq_value: IQValue,
         rabi_params: RabiParams,
@@ -370,6 +361,7 @@ class Experiment:
         qubits: list[QubitKey],
         freq_range: FloatArray,
         time_range: IntArray,
+        rabi_params: RabiParams,
     ) -> QubitDict[ChevronResult]:
         amplitudes = self.params.default_hpi_amplitude
         frequenties = self.params.transmon_dressed_frequency_ge
@@ -389,7 +381,7 @@ class Experiment:
             )
 
             for qubit in qubits:
-                signals[qubit].append(result_rabi[qubit].rotated.imag)
+                signals[qubit].append(result_rabi[qubit].normalized(rabi_params))
 
         result = {
             qubit: ChevronResult(
