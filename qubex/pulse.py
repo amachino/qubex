@@ -86,6 +86,8 @@ class Waveform(ABC):
 
     def _ns_to_samples(self, duration: int) -> int:
         """Converts a duration in ns to a length in samples."""
+        if duration < 0:
+            raise ValueError("Duration must be positive.")
         if duration % self.SAMPLING_PERIOD != 0:
             raise ValueError(
                 f"Duration must be a multiple of the sampling period ({self.SAMPLING_PERIOD} ns)."
