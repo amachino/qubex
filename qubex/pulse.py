@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Final, Optional, Sequence
 from copy import deepcopy
+from typing import Final, Optional, Sequence
 
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import matplotlib.pyplot as plt
 
 
 class Waveform(ABC):

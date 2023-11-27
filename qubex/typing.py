@@ -1,4 +1,4 @@
-from typing import TypeVar, Literal, Callable, Mapping
+from typing import Callable, Literal, Mapping, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray

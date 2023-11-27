@@ -1,15 +1,9 @@
-import numpy as np
-from numpy.typing import NDArray
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib import gridspec
+from numpy.typing import NDArray
 
-from .typing import (
-    QubitKey,
-    QubitDict,
-    IQValue,
-    IQArray,
-    IntArray,
-)
+from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
 
 
 def show_pulse_sequences(

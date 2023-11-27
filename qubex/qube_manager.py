@@ -1,28 +1,14 @@
 from typing import Final, Optional
 
 import matplotlib.pyplot as plt
-
 import qubecalib as qc
-from qubecalib.pulse import Schedule, Channel, Blank, Arbitrary, Read
+from qubecalib.pulse import Arbitrary, Blank, Channel, Read, Schedule
 from qubecalib.setupqube import run
 
-from .pulse import Rect, Waveform
+from .consts import MUX, SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
 from .params import Params
-from .typing import (
-    QubitKey,
-    QubitDict,
-    IQValue,
-    IQArray,
-    IntArray,
-    ReadoutPorts,
-)
-from .consts import (
-    MUX,
-    SAMPLING_PERIOD,
-    T_CONTROL,
-    T_READOUT,
-    T_MARGIN,
-)
+from .pulse import Rect, Waveform
+from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey, ReadoutPorts
 
 CONTROL_PORTS: Final = ["port5", "port6", "port7", "port8"]
 

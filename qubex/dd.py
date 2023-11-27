@@ -1,6 +1,6 @@
 import numpy as np
 
-from .pulse import Pulse, PulseSequence, Waveform, Blank
+from .pulse import Blank, Pulse, PulseSequence, Waveform
 
 
 class CPMG(PulseSequence):

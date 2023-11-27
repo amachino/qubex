@@ -1,9 +1,9 @@
 # pylint: disable=unbalanced-tuple-unpacking
 
 # Don't include custom modules in analysis.py
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit, minimize  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
 

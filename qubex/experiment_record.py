@@ -1,9 +1,8 @@
-import os
 import datetime
+import os
 import pickle
 from dataclasses import dataclass
-from typing import Final, Any
-
+from typing import Any, Final
 
 DATA_PATH: Final[str] = "./data"
 
