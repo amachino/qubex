@@ -8,14 +8,13 @@ from qubecalib.setupqube import run
 from .consts import MUX, SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
 from .params import Params
 from .pulse import Rect, Waveform
-from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey, ReadoutPorts
+from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
 
-CONTROL_PORTS: Final = ["port5", "port6", "port7", "port8"]
+READOUT_TX: Final = "TX_"
+READOUT_RX: Final = "RX_"
 
 CONTROL_HIGH: Final = "_hi"
 CONTROL_LOW: Final = "_lo"
-READOUT_TX: Final = "TX_"
-READOUT_RX: Final = "RX_"
 
 
 class QubeManager:
@@ -23,17 +22,19 @@ class QubeManager:
         self,
         mux_number: int,
         params: Params,
-        readout_ports: ReadoutPorts,
-        control_window: int = T_CONTROL,
+        readout_ports: tuple = ("port0", "port1"),
+        control_ports: tuple = ("port5", "port6", "port7", "port8"),
         readout_window: int = T_READOUT,
+        control_window: int = T_CONTROL,
     ):
         self.qube_id: Optional[str] = None
         self.qube: Optional[qc.qube.QubeTypeA] = None
         self.qubits: Final = MUX[mux_number]
         self.params: Final = params
         self.readout_ports: Final = readout_ports
-        self.control_window: Final = control_window
+        self.control_ports: Final = control_ports
         self.readout_window: Final = readout_window
+        self.control_window: Final = control_window
         self.schedule: Final = Schedule()
         qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
         self._init_channels()
@@ -138,7 +139,7 @@ class QubeManager:
         ports[rx].adc.capt0.ssb = qc.qube.SSB.LSB
         ports[rx].delay = 128 + 6 * 128  # [ns]
 
-        for control_port in CONTROL_PORTS:
+        for control_port in self.control_ports:
             config = self.params.port_config[control_port]
             port = ports[control_port]
             port.lo.mhz = config["lo"]
@@ -157,7 +158,7 @@ class QubeManager:
             ports[tx].dac.awg0: self._read_tx_channels(),
             ports[rx].adc.capt0: self._read_rx_channels(),
         }
-        for index, control_port in enumerate(CONTROL_PORTS):
+        for index, control_port in enumerate(self.control_ports):
             port = ports[control_port]
             qubit = self.qubits[index]
             adda_to_channels[port.dac.awg0] = [self._ctrl_lo_channel(qubit)]
