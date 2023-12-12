@@ -4,9 +4,10 @@ import matplotlib.pyplot as plt
 import qubecalib as qc
 from qubecalib.pulse import Arbitrary, Blank, Channel, Read, Schedule
 from qubecalib.setupqube import run
+from qubecalib.qube import SSB
 
-from .consts import MUX, SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
-from .params import Params
+from .configs import Configs
+from .consts import SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
 from .pulse import Rect, Waveform
 from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
 
@@ -25,22 +26,16 @@ DEFAULT_INTERVAL: Final[int] = 150_000  # [ns]
 class QubeManager:
     def __init__(
         self,
-        qube_id: str,
-        mux_number: int,
-        params: Params,
-        readout_ports: tuple = ("port0", "port1"),
-        control_ports: tuple = ("port5", "port6", "port7", "port8"),
+        configs: Configs,
         readout_window: int = T_READOUT,
         control_window: int = T_CONTROL,
     ):
-        self.qube_id: Final = qube_id
-        self.qube: Optional[qc.qube.QubeTypeA] = None
-        self.qubits: Final = MUX[mux_number]
-        self.params: Final = params
-        self.readout_ports: Final = readout_ports
-        self.control_ports: Final = control_ports
+        self.configs: Final = configs
         self.readout_window: Final = readout_window
         self.control_window: Final = control_window
+        self.qubits: Final = configs.qubits
+        self.params: Final = configs.params
+        self.qube: Optional[qc.qube.QubeTypeA] = None
         self.schedule: Final = Schedule()
         self.readout_range: Final = slice(
             T_MARGIN // 2, (self.readout_window + T_MARGIN) // 2
@@ -49,7 +44,7 @@ class QubeManager:
         self._init_channels()
 
     def connect(self):
-        self.qube = qc.ui.QubeControl(f"{self.qube_id}.yml").qube
+        self.qube = qc.ui.QubeControl(f"{self.configs.qube_id}.yml").qube
         self._init_qube()
 
     def loopback_mode(self, use_loopback: bool):
@@ -264,29 +259,29 @@ class QubeManager:
 
         ports = self.qube.ports
 
-        tx = self.readout_ports[0]
-        rx = self.readout_ports[1]
+        tx = self.configs.readout_ports[0]
+        rx = self.configs.readout_ports[1]
 
-        config_tx = self.params.port_config[tx]
-        ports[tx].lo.mhz = config_tx["lo"]
-        ports[tx].nco.mhz = config_tx["nco"]
-        ports[tx].mix.ssb = qc.qube.SSB.LSB
-        ports[tx].awg0.nco.mhz = config_tx["awg0"]
-        ports[tx].mix.vatt = config_tx["vatt"]
+        config_tx = self.configs.ports[tx]
+        ports[tx].lo.mhz = config_tx.lo
+        ports[tx].nco.mhz = config_tx.nco
+        ports[tx].mix.ssb = SSB.LSB if config_tx.ssb == "LSB" else SSB.USB
+        ports[tx].awg0.nco.mhz = config_tx.awg0
+        ports[tx].mix.vatt = config_tx.vatt
 
         ports[rx].nco.mhz = ports[tx].nco.mhz
-        ports[rx].adc.capt0.ssb = qc.qube.SSB.LSB
+        ports[rx].adc.capt0.ssb = ports[tx].mix.ssb
         ports[rx].delay = READOUT_DELAY
 
-        for control_port in self.control_ports:
-            config = self.params.port_config[control_port]
+        for control_port in self.configs.control_ports:
+            config = self.configs.ports[control_port]
             port = ports[control_port]
-            port.lo.mhz = config["lo"]
-            port.nco.mhz = config["nco"]
-            port.awg0.nco.mhz = config["awg0"]
-            port.awg1.nco.mhz = config["awg1"]
-            port.awg2.nco.mhz = config["awg2"]
-            port.mix.vatt = config["vatt"]
+            port.lo.mhz = config.lo
+            port.nco.mhz = config.nco
+            port.awg0.nco.mhz = config.awg0
+            port.awg1.nco.mhz = config.awg1
+            port.awg2.nco.mhz = config.awg2
+            port.mix.vatt = config.vatt
 
         self.qube.gpio.write_value(0x0000)  # loopback off
 
@@ -299,7 +294,7 @@ class QubeManager:
                 self._read_rx_channel(qubit) for qubit in self.qubits
             ],
         }
-        for index, control_port in enumerate(self.control_ports):
+        for index, control_port in enumerate(self.configs.control_ports):
             port = ports[control_port]
             qubit = self.qubits[index]
             adda_to_channels[port.dac.awg0] = [self._ctrl_lo_channel(qubit)]
