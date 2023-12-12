@@ -21,7 +21,6 @@ from .typing import (
     ParametricWaveform,
     QubitDict,
     QubitKey,
-    ReadoutPorts,
 )
 from .visualization import show_measurement_results, show_pulse_sequences
 
@@ -69,7 +68,7 @@ class Experiment:
         qube_id: str,
         cooldown_id: str,
         mux_number: int,
-        readout_ports: ReadoutPorts = ("port0", "port1"),
+        readout_ports: tuple = ("port0", "port1"),
         control_window: int = T_CONTROL,
         readout_window: int = T_READOUT,
         repeats: int = 10_000,
@@ -79,6 +78,7 @@ class Experiment:
         self.qube_id: Final = qube_id
         self.params: Final = Params.load(f"{cooldown_id}/{qube_id}")
         self.qube_manager: Final = QubeManager(
+            qube_id=qube_id,
             mux_number=mux_number,
             params=self.params,
             readout_ports=readout_ports,
@@ -91,7 +91,7 @@ class Experiment:
         self.data_path: Final = data_path
 
     def connect(self):
-        self.qube_manager.connect(self.qube_id)
+        self.qube_manager.connect()
 
     def env(self):
         self.params.print()
@@ -260,7 +260,7 @@ class Experiment:
         rotx_times = self.qube_manager.get_readout_tx_times(readout_qubits)
         rorx_waveforms = self.qube_manager.get_readout_rx_waveforms(readout_qubits)
         rorx_times = self.qube_manager.get_readout_rx_times(readout_qubits)
-        readout_range = self.qube_manager.readout_range()
+        readout_range = self.qube_manager.readout_range
         control_duration = self.qube_manager.control_window
         readout_duration = self.qube_manager.readout_window
 
