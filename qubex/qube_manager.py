@@ -43,8 +43,11 @@ class QubeManager:
         qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
         self._init_channels()
 
-    def connect(self):
-        self.qube = qc.ui.QubeControl(f"{self.configs.qube_id}.yml").qube
+    def connect(self, ui: bool = True):
+        if ui:
+            self.qube = qc.ui.QubeControl(f"{self.configs.qube_id}.yml").qube
+        else:
+            self.qube = qc.qube.Qube.create(f"{self.configs.qube_id}.yml")
         self._init_qube()
 
     def loopback_mode(self, use_loopback: bool):

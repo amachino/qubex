@@ -84,8 +84,8 @@ class Experiment:
         self.interval: Final = interval
         self.data_dir: Final = data_dir
 
-    def connect(self):
-        self.qube_manager.connect()
+    def connect(self, ui: bool = True):
+        self.qube_manager.connect(ui=ui)
 
     def loopback_mode(self, use_loopback: bool):
         self.qube_manager.loopback_mode(use_loopback)
