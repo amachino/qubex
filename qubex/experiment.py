@@ -8,9 +8,9 @@ from IPython.display import clear_output
 from numpy.typing import NDArray
 
 from .analysis import fit_and_rotate, fit_chevron, fit_damped_rabi, fit_rabi
+from .configs import Configs
 from .consts import T_CONTROL, T_READOUT
 from .experiment_record import ExperimentRecord
-from .params import Params
 from .pulse import Rect, Waveform
 from .qube_manager import QubeManager
 from .typing import (
@@ -21,7 +21,6 @@ from .typing import (
     ParametricWaveform,
     QubitDict,
     QubitKey,
-    ReadoutPorts,
 )
 from .visualization import show_measurement_results, show_pulse_sequences
 
@@ -66,35 +65,27 @@ class ChevronResult:
 class Experiment:
     def __init__(
         self,
-        qube_id: str,
-        cooldown_id: str,
-        mux_number: int,
-        readout_ports: ReadoutPorts = ("port0", "port1"),
-        control_window: int = T_CONTROL,
+        config_file: str,
         readout_window: int = T_READOUT,
+        control_window: int = T_CONTROL,
         repeats: int = 10_000,
         interval: int = 150_000,
-        data_path="./data",
+        data_dir="./data",
     ):
-        self.qube_id: Final = qube_id
-        self.params: Final = Params.load(f"{cooldown_id}/{qube_id}")
+        self.configs: Final = Configs.load(config_file)
         self.qube_manager: Final = QubeManager(
-            mux_number=mux_number,
-            params=self.params,
-            readout_ports=readout_ports,
-            control_window=control_window,
+            configs=self.configs,
             readout_window=readout_window,
+            control_window=control_window,
         )
-        self.qubits: Final = self.qube_manager.qubits
+        self.qubits: Final = self.configs.qubits
+        self.params: Final = self.configs.params
         self.repeats: Final = repeats
         self.interval: Final = interval
-        self.data_path: Final = data_path
+        self.data_dir: Final = data_dir
 
     def connect(self):
-        self.qube_manager.connect(self.qube_id)
-
-    def env(self):
-        self.params.print()
+        self.qube_manager.connect()
 
     def loopback_mode(self, use_loopback: bool):
         self.qube_manager.loopback_mode(use_loopback)
@@ -260,7 +251,7 @@ class Experiment:
         rotx_times = self.qube_manager.get_readout_tx_times(readout_qubits)
         rorx_waveforms = self.qube_manager.get_readout_rx_waveforms(readout_qubits)
         rorx_times = self.qube_manager.get_readout_rx_times(readout_qubits)
-        readout_range = self.qube_manager.readout_range()
+        readout_range = self.qube_manager.readout_range
         control_duration = self.qube_manager.control_window
         readout_duration = self.qube_manager.readout_window
 

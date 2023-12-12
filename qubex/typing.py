@@ -1,4 +1,4 @@
-from typing import Callable, Literal, Mapping, TypeVar
+from typing import Callable, Mapping, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -16,9 +16,5 @@ IntArray = NDArray[np.int64]
 FloatArray = NDArray[np.float64]
 
 PortConfigs = dict[str, dict[str, int]]
-
-ReadoutTxPort = Literal["port0", "port13"]
-ReadoutRxPort = Literal["port1", "port12"]
-ReadoutPorts = tuple[ReadoutTxPort, ReadoutRxPort]
 
 ParametricWaveform = Callable[..., Waveform]

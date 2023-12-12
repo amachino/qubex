@@ -94,46 +94,69 @@ class Waveform(ABC):
             )
         return duration // self.SAMPLING_PERIOD
 
-    def plot(self, polar=False, title=""):
+    def plot(
+        self,
+        polar=False,
+        savefig: Optional[str] = None,
+        title="",
+    ):
         """Plots the pulse."""
         if polar:
-            self.plot_polar(title)
+            self.plot_polar(
+                title=title,
+                savefig=savefig,
+            )
         else:
-            self.plot_xy(title)
+            self.plot_xy(
+                title=title,
+                savefig=savefig,
+            )
 
-    def plot_xy(self, title=""):
+    def plot_xy(
+        self,
+        savefig: Optional[str] = None,
+        title="",
+        xlabel="Time (ns)",
+        ylabel="Amplitude (arb. units)",
+    ):
         _, ax = plt.subplots(figsize=(6, 2))
         ax.set_title(title)
-        ax.set_xlabel("Time (ns)")
-        ax.set_ylabel("Amplitude (arb. units)")
-        ax.grid()
-
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
-
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
         ax.step(times, real, label="I", where="post")
         ax.step(times, imag, label="Q", where="post")
-
         ax.legend()
+        if savefig is not None:
+            plt.savefig(savefig, dpi=300)
+        else:
+            ax.grid()
         plt.show()
 
-    def plot_polar(self, title=""):
-        fig, ax = plt.subplots(2, 1, sharex=True, figsize=(6, 2))
+    def plot_polar(
+        self,
+        savefig: Optional[str] = None,
+        title="",
+        xlabel="Time (ns)",
+        ylabel="Amplitude (arb. units)",
+    ):
+        fig, ax = plt.subplots(2, 1, sharex=True, figsize=(6, 4))
         fig.suptitle(title)
-        ax[0].set_ylabel("Amplitude (arb. units)")
+        ax[0].set_ylabel(ylabel)
         ax[1].set_ylabel("Phase (rad)")
-        ax[1].set_xlabel("Time (ns)")
-        ax[0].grid()
-        ax[1].grid()
-
+        ax[1].set_xlabel(xlabel)
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
-
         ampl = np.append(self.ampl, self.ampl[-1])
         phase = np.append(self.phase, self.phase[-1])
         ax[0].step(times, ampl, where="post")
         ax[1].step(times, phase, where="post")
-
+        if savefig is not None:
+            plt.savefig(savefig, dpi=300)
+        else:
+            ax[0].grid()
+            ax[1].grid()
         plt.show()
 
 
