@@ -10,16 +10,22 @@ from .params import Params
 from .pulse import Rect, Waveform
 from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
 
-READOUT_TX: Final = "TX_"
-READOUT_RX: Final = "RX_"
+READOUT_TX: Final = "_TX"
+READOUT_RX: Final = "_RX"
 
-CONTROL_HIGH: Final = "_hi"
-CONTROL_LOW: Final = "_lo"
+CONTROL_HI: Final = "_hi"
+CONTROL_LO: Final = "_lo"
+
+READOUT_DELAY: Final[int] = 128 + 6 * 128  # [ns]
+
+DEFAULT_REPEATS: Final[int] = 10_000
+DEFAULT_INTERVAL: Final[int] = 150_000  # [ns]
 
 
 class QubeManager:
     def __init__(
         self,
+        qube_id: str,
         mux_number: int,
         params: Params,
         readout_ports: tuple = ("port0", "port1"),
@@ -27,7 +33,7 @@ class QubeManager:
         readout_window: int = T_READOUT,
         control_window: int = T_CONTROL,
     ):
-        self.qube_id: Optional[str] = None
+        self.qube_id: Final = qube_id
         self.qube: Optional[qc.qube.QubeTypeA] = None
         self.qubits: Final = MUX[mux_number]
         self.params: Final = params
@@ -39,25 +45,121 @@ class QubeManager:
         qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
         self._init_channels()
 
-    def connect(self, qube_id: str):
-        self.qube_id = qube_id
-        self.qube = qc.ui.QubeControl(f"{qube_id}.yml").qube
+    def connect(self):
+        self.qube = qc.ui.QubeControl(f"{self.qube_id}.yml").qube
         self._init_qube()
+
+    def loopback_mode(
+        self,
+        use_loopback: bool,
+    ):
+        if self.qube is None:
+            raise RuntimeError("QuBE is not connected.")
+
+        if use_loopback:
+            self.qube.gpio.write_value(0xFFFF)
+        else:
+            self.qube.gpio.write_value(0x0000)
+
+    def readout_range(
+        self,
+    ) -> slice:
+        return slice(T_MARGIN // 2, (self.readout_window + T_MARGIN) // 2)
+
+    def get_control_frequency(
+        self,
+        qubit: QubitKey,
+    ) -> float:
+        return self.schedule[qubit].center_frequency
+
+    def set_control_frequency(
+        self,
+        qubit: QubitKey,
+        frequency: float,
+    ):
+        self.schedule[qubit].center_frequency = frequency
+
+    def get_control_waveforms(
+        self,
+        ctrl_qubits: list[QubitKey],
+    ) -> QubitDict[IQArray]:
+        return {qubit: self._ctrl_slot(qubit).iq for qubit in ctrl_qubits}
+
+    def get_control_times(
+        self,
+        ctrl_qubits: list[QubitKey],
+    ) -> QubitDict[IntArray]:
+        return {qubit: self._ctrl_times(qubit) for qubit in ctrl_qubits}
+
+    def get_readout_tx_waveforms(
+        self,
+        read_qubits: list[QubitKey],
+    ) -> QubitDict[IQArray]:
+        return {qubit: self._read_tx_slot(qubit).iq for qubit in read_qubits}
+
+    def get_readout_tx_times(
+        self,
+        read_qubits: list[QubitKey],
+    ) -> QubitDict[IntArray]:
+        return {qubit: self._read_tx_times(qubit) for qubit in read_qubits}
+
+    def get_readout_rx_waveforms(
+        self,
+        read_qubits: list[QubitKey],
+    ) -> QubitDict[IQArray]:
+        return {qubit: self._read_rx_slot(qubit).iq for qubit in read_qubits}  # type: ignore
+
+    def get_readout_rx_times(
+        self,
+        read_qubits: list[QubitKey],
+    ) -> QubitDict[IntArray]:
+        return {qubit: self._read_rx_slot(qubit).timestamp for qubit in read_qubits}
+
+    def measure(
+        self,
+        control_qubits: list[QubitKey],
+        readout_qubits: list[QubitKey],
+        control_waveforms: QubitDict[Waveform],
+        repeats: int = DEFAULT_REPEATS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> QubitDict[IQValue]:
+        if self.qube is None:
+            raise RuntimeError("QuBE is not connected.")
+
+        self._set_waveforms(
+            control_qubits=control_qubits,
+            readout_qubits=readout_qubits,
+            control_waveforms=control_waveforms,
+        )
+        run(
+            schedule=self.schedule,
+            repeats=repeats,
+            interval=interval,
+            adda_to_channels=self._adda_to_channels,
+            triggers=self._triggers,
+        )
+        rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
+        readout_range = self.readout_range()
+        result = {
+            qubit: waveform[readout_range].mean()
+            for qubit, waveform in rx_waveforms.items()
+        }
+        return result
 
     def _ctrl_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[qubit]
 
     def _ctrl_lo_channel(self, qubit: QubitKey) -> Channel:
-        return self.schedule[qubit + CONTROL_LOW]
+        return self.schedule[qubit + CONTROL_LO]
 
     def _ctrl_hi_channel(self, qubit: QubitKey) -> Channel:
-        return self.schedule[qubit + CONTROL_HIGH]
+        return self.schedule[qubit + CONTROL_HI]
 
     def _read_tx_channel(self, qubit: QubitKey) -> Channel:
-        return self.schedule[READOUT_TX + qubit]
+        return self.schedule[qubit + READOUT_TX]
 
     def _read_rx_channel(self, qubit: QubitKey) -> Channel:
-        return self.schedule[READOUT_RX + qubit]
+        return self.schedule[qubit + READOUT_RX]
 
     def _ctrl_channels(self) -> list[Channel]:
         return [self._ctrl_channel(qubit) for qubit in self.qubits]
@@ -104,18 +206,18 @@ class QubeManager:
             self.schedule[qubit] = Channel(
                 center_frequency=control_frequency,
             )
-            self.schedule[qubit + CONTROL_LOW] = Channel(
+            self.schedule[qubit + CONTROL_LO] = Channel(
                 center_frequency=control_frequency + anharmonicity,
             )
-            self.schedule[qubit + CONTROL_HIGH] = Channel(
-                center_frequency=control_frequency - anharmonicity,
+            self.schedule[qubit + CONTROL_HI] = Channel(
+                center_frequency=control_frequency,  # tmp
             )
         for qubit in self.qubits:
             readout_frequency = self.params.cavity_frequency[qubit]
-            self.schedule[READOUT_TX + qubit] = Channel(
+            self.schedule[qubit + READOUT_TX] = Channel(
                 center_frequency=readout_frequency,
             )
-            self.schedule[READOUT_RX + qubit] = Channel(
+            self.schedule[qubit + READOUT_RX] = Channel(
                 center_frequency=readout_frequency,
             )
 
@@ -137,7 +239,7 @@ class QubeManager:
 
         ports[rx].nco.mhz = ports[tx].nco.mhz
         ports[rx].adc.capt0.ssb = qc.qube.SSB.LSB
-        ports[rx].delay = 128 + 6 * 128  # [ns]
+        ports[rx].delay = READOUT_DELAY
 
         for control_port in self.control_ports:
             config = self.params.port_config[control_port]
@@ -240,100 +342,3 @@ class QubeManager:
         for qubit in qubits:
             values = waveforms[qubit].values
             self._read_tx_slot(qubit).iq[:] = values
-
-    def loopback_mode(
-        self,
-        use_loopback: bool,
-    ):
-        if self.qube is None:
-            raise RuntimeError("QuBE is not connected.")
-
-        if use_loopback:
-            self.qube.gpio.write_value(0xFFFF)
-        else:
-            self.qube.gpio.write_value(0x0000)
-
-    def readout_range(
-        self,
-    ) -> slice:
-        return slice(T_MARGIN // 2, (self.readout_window + T_MARGIN) // 2)
-
-    def get_control_frequency(
-        self,
-        qubit: QubitKey,
-    ) -> float:
-        return self.schedule[qubit].center_frequency
-
-    def set_control_frequency(
-        self,
-        qubit: QubitKey,
-        frequency: float,
-    ):
-        self.schedule[qubit].center_frequency = frequency
-
-    def get_control_waveforms(
-        self,
-        ctrl_qubits: list[QubitKey],
-    ) -> QubitDict[IQArray]:
-        return {qubit: self._ctrl_slot(qubit).iq for qubit in ctrl_qubits}
-
-    def get_control_times(
-        self,
-        ctrl_qubits: list[QubitKey],
-    ) -> QubitDict[IntArray]:
-        return {qubit: self._ctrl_times(qubit) for qubit in ctrl_qubits}
-
-    def get_readout_tx_waveforms(
-        self,
-        read_qubits: list[QubitKey],
-    ) -> QubitDict[IQArray]:
-        return {qubit: self._read_tx_slot(qubit).iq for qubit in read_qubits}
-
-    def get_readout_tx_times(
-        self,
-        read_qubits: list[QubitKey],
-    ) -> QubitDict[IntArray]:
-        return {qubit: self._read_tx_times(qubit) for qubit in read_qubits}
-
-    def get_readout_rx_waveforms(
-        self,
-        read_qubits: list[QubitKey],
-    ) -> QubitDict[IQArray]:
-        return {qubit: self._read_rx_slot(qubit).iq for qubit in read_qubits}  # type: ignore
-
-    def get_readout_rx_times(
-        self,
-        read_qubits: list[QubitKey],
-    ) -> QubitDict[IntArray]:
-        return {qubit: self._read_rx_slot(qubit).timestamp for qubit in read_qubits}
-
-    def measure(
-        self,
-        control_qubits: list[QubitKey],
-        readout_qubits: list[QubitKey],
-        control_waveforms: QubitDict[Waveform],
-        repeats: int = 10_000,
-        interval: int = 150_000,
-    ) -> QubitDict[IQValue]:
-        if self.qube is None:
-            raise RuntimeError("QuBE is not connected.")
-
-        self._set_waveforms(
-            control_qubits=control_qubits,
-            readout_qubits=readout_qubits,
-            control_waveforms=control_waveforms,
-        )
-        run(
-            schedule=self.schedule,
-            repeats=repeats,
-            interval=interval,
-            adda_to_channels=self._adda_to_channels,
-            triggers=self._triggers,
-        )
-        rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
-        readout_range = self.readout_range()
-        result = {
-            qubit: waveform[readout_range].mean()
-            for qubit, waveform in rx_waveforms.items()
-        }
-        return result
