@@ -70,9 +70,6 @@ waveform = lambda x: PulseSequence(
     ]
 )
 
-# Check the waveform
-waveform.plot()
-
 # Run a parameter sweep experiment
 result = ex1.sweep_parameter(
     sweep_range=np.arange(0, 1000, 100),
