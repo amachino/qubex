@@ -1,3 +1,5 @@
+"""Typing definitions for qubex."""
+
 from typing import Callable, Mapping, TypeVar
 
 import numpy as np

@@ -1,9 +1,48 @@
+"""
+Provides classes for dynamical decoupling pulse sequences.
+"""
+
 import numpy as np
 
 from .pulse import Blank, Pulse, PulseSequence, Waveform
 
 
 class CPMG(PulseSequence):
+    """
+    A class representing the CPMG pulse sequence used in quantum experiments.
+
+    Parameters
+    ----------
+    tau : int
+        The inter-pulse spacing in nanoseconds.
+    pi : Waveform
+        The pi pulse waveform.
+    n : int, optional
+        The number of pi pulses in the sequence.
+    **kwargs
+        Additional keyword arguments passed to the PulseSequence constructor.
+
+    Attributes
+    ----------
+    tau : int
+        The inter-pulse spacing used in the sequence.
+    pi : Waveform
+        The pi pulse waveform used in the sequence.
+    n : int
+        The number of pi pulses in the sequence.
+
+    Raises
+    ------
+    ValueError
+        If `tau` is not a multiple of twice the sampling period.
+
+    Notes
+    -----
+    The CPMG sequence typically consists of a series of pi pulses separated
+    by a delay `tau`. It's often used in NMR and quantum computing for
+    refocusing and decoherence studies.
+    """
+
     def __init__(
         self,
         tau: int,
@@ -28,6 +67,42 @@ class CPMG(PulseSequence):
 
 
 class TabuchiDD(Pulse):
+    """
+    Class representing the Tabuchi Dynamical Decoupling pulse sequence.
+
+    Parameters
+    ----------
+    duration : int
+        The total duration of the pulse sequence in nanoseconds.
+    beta : float, optional
+        Beta parameter influencing the x and y components of the pulse.
+    phi : float, optional
+        Phi parameter influencing the x component of the pulse.
+    **kwargs
+        Additional keyword arguments passed to the Pulse constructor.
+
+    Attributes
+    ----------
+    vx_n_T_over_pi : list[float]
+        Coefficients for the x component of the pulse.
+    vy_n_T_over_pi : list[float]
+        Coefficients for the y component of the pulse.
+    t : np.ndarray
+        Time points for the pulse sequence.
+    T : int
+        Total duration of the pulse sequence in nanoseconds.
+    vx_n : np.ndarray
+        Scaled coefficients for the x component.
+    vy_n : np.ndarray
+        Scaled coefficients for the y component.
+
+    Notes
+    -----
+    Y. Tabuchi, M. Negoro, and M. Kitagawa, “Design method of dynamical
+    decouplingsequences integrated with optimal control theory,” Phys.
+    Rev. A, vol.96, p.022331, Aug. 2017.
+    """
+
     vx_n_T_over_pi = [
         -0.7030256,
         3.3281747,
@@ -71,20 +146,20 @@ class TabuchiDD(Pulse):
 
     def _calc_values(self, beta: float, phi: float) -> np.ndarray:
         error_x = beta + np.tan(phi * np.pi / 180)
-        x = (1 + error_x) * np.array([self.vx(t) for t in self.t])
+        x = (1 + error_x) * np.array([self._vx(t) for t in self.t])
 
         error_y = beta
-        y = (1 + error_y) * np.array([self.vy(t) for t in self.t])
+        y = (1 + error_y) * np.array([self._vy(t) for t in self.t])
 
         values = (x + 1j * y) / np.pi / 2 * 1e3
         return values
 
-    def vx(self, t) -> float:
+    def _vx(self, t) -> float:
         return sum(
             v * np.sin(2 * np.pi * n * t / self.T) for n, v in enumerate(self.vx_n, 1)
         )
 
-    def vy(self, t) -> float:
+    def _vy(self, t) -> float:
         return sum(
             v * np.sin(2 * np.pi * n * t / self.T) for n, v in enumerate(self.vy_n, 1)
         )

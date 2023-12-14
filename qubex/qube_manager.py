@@ -1,3 +1,9 @@
+"""
+Provides a manager class `QubeManager` for setting up and executing quantum
+experiments on QuBE devices. This module facilitates the configuration, control,
+and readout of qubits in a quantum computing environment.
+"""
+
 from typing import Final, Optional
 
 import matplotlib.pyplot as plt
@@ -24,6 +30,39 @@ DEFAULT_INTERVAL: Final[int] = 150_000  # [ns]
 
 
 class QubeManager:
+    """
+    Manages quantum experiments on QuBE devices, including setup, control, and
+    readout of qubits.
+
+    Parameters
+    ----------
+    configs : Configs
+        Configuration settings for the QuBE device and experiment.
+    readout_window : int, optional
+        Duration of the readout window in nanoseconds. Defaults to T_READOUT.
+    control_window : int, optional
+        Duration of the control window in nanoseconds. Defaults to T_CONTROL.
+
+    Attributes
+    ----------
+    configs : Final
+        Configuration settings for the QuBE device and experiment.
+    readout_window : Final
+        Duration of the readout window in nanoseconds.
+    control_window : Final
+        Duration of the control window in nanoseconds.
+    qubits : Final
+        List of qubit identifiers.
+    params : Final
+        Parameters related to qubit control and readout.
+    qube : Optional[qc.qube.QubeTypeA]
+        Instance of the QuBE device, if connected.
+    schedule : Final
+        Schedule of control and readout pulses for the experiment.
+    readout_range : Final
+        Slice object defining the range for readout signal analysis.
+    """
+
     def __init__(
         self,
         configs: Configs,
@@ -44,6 +83,14 @@ class QubeManager:
         self._init_channels()
 
     def connect(self, ui: bool = True):
+        """
+        Connects to the QuBE device.
+
+        Parameters
+        ----------
+        ui : bool, optional
+            Whether to use the QuBE UI. Defaults to True.
+        """
         if ui:
             self.qube = qc.ui.QubeControl(f"{self.configs.qube_id}.yml").qube
         else:
@@ -51,6 +98,14 @@ class QubeManager:
         self._init_qube()
 
     def loopback_mode(self, use_loopback: bool):
+        """
+        Sets the QuBE to loopback mode.
+
+        Parameters
+        ----------
+        use_loopback : bool
+            Whether to use loopback mode.
+        """
         if self.qube is None:
             raise RuntimeError("QuBE is not connected.")
 
@@ -60,51 +115,67 @@ class QubeManager:
             self.qube.gpio.write_value(0x0000)
 
     def get_control_frequency(self, qubit: QubitKey) -> float:
+        """Returns the control frequency of the given qubit in MHz."""
         return self._ctrl_channel(qubit).center_frequency
 
     def get_control_lo_frequency(self, qubit: QubitKey) -> float:
+        """Returns the control (lo) frequency of the given qubit in MHz."""
         return self._ctrl_lo_channel(qubit).center_frequency
 
     def get_control_hi_frequency(self, qubit: QubitKey) -> float:
+        """Returns the control (hi) frequency of the given qubit in MHz."""
         return self._ctrl_hi_channel(qubit).center_frequency
 
     def set_control_frequency(self, qubit: QubitKey, frequency: float):
+        """Sets the control frequency of the given qubit in MHz."""
         self._ctrl_channel(qubit).center_frequency = frequency
 
     def set_control_lo_frequency(self, qubit: QubitKey, frequency: float):
+        """Sets the control (lo) frequency of the given qubit in MHz."""
         self._ctrl_lo_channel(qubit).center_frequency = frequency
 
     def set_control_hi_frequency(self, qubit: QubitKey, frequency: float):
+        """Sets the control (hi) frequency of the given qubit in MHz."""
         self._ctrl_hi_channel(qubit).center_frequency = frequency
 
     def get_control_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
+        """Returns the control waveforms of the given qubits."""
         return {qubit: self._ctrl_slots[qubit].iq for qubit in qubits}
 
     def get_control_lo_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
+        """Returns the control (lo) waveforms of the given qubits."""
         return {qubit: self._ctrl_lo_slots[qubit].iq for qubit in qubits}
 
     def get_control_hi_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
+        """Returns the control (hi) waveforms of the given qubits."""
         return {qubit: self._ctrl_hi_slots[qubit].iq for qubit in qubits}
 
     def get_readout_tx_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
+        """Returns the readout (tx) waveforms of the given qubits."""
         return {qubit: self._read_tx_slots[qubit].iq for qubit in qubits}
 
     def get_readout_rx_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
+        """Returns the readout (rx) waveforms of the given qubits."""
         return {qubit: self._read_rx_slots[qubit].iq for qubit in qubits}
 
     def get_control_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
+        """Returns the control times of the given qubits."""
         return {qubit: self._ctrl_times[qubit] for qubit in qubits}
 
     def get_control_lo_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
+        """Returns the control (lo) times of the given qubits."""
         return {qubit: self._ctrl_lo_times[qubit] for qubit in qubits}
 
     def get_control_hi_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
+        """Returns the control (hi) times of the given qubits."""
         return {qubit: self._ctrl_hi_times[qubit] for qubit in qubits}
 
     def get_readout_tx_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
+        """Returns the readout (tx) times of the given qubits."""
         return {qubit: self._read_tx_times[qubit] for qubit in qubits}
 
     def get_readout_rx_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
+        """Returns the readout (rx) times of the given qubits."""
         return {qubit: self._read_rx_times[qubit] for qubit in qubits}
 
     def measure(
@@ -115,6 +186,22 @@ class QubeManager:
         repeats: int = DEFAULT_REPEATS,
         interval: int = DEFAULT_INTERVAL,
     ) -> QubitDict[IQValue]:
+        """
+        Executes a quantum measurement on the given qubits.
+
+        Parameters
+        ----------
+        control_qubits : list[QubitKey]
+            List of qubits to control.
+        readout_qubits : list[QubitKey]
+            List of qubits to readout.
+        control_waveforms : QubitDict[Waveform]
+            Dictionary of control waveforms for each qubit.
+        repeats : int, optional
+            Number of times to repeat the measurement. Defaults to DEFAULT_REPEATS.
+        interval : int, optional
+            Interval between repeats in nanoseconds. Defaults to DEFAULT_INTERVAL.
+        """
         self._set_waveforms(
             control_qubits=control_qubits,
             readout_qubits=readout_qubits,
