@@ -1,3 +1,7 @@
+"""
+Data analysis functions for quantum experiments.
+"""
+
 # pylint: disable=unbalanced-tuple-unpacking
 
 # Don't include custom modules in analysis.py
@@ -15,6 +19,27 @@ def func_cos(
     phi: float,
     offset: float,
 ) -> npt.NDArray[np.float64]:
+    """
+    Calculate the cosine function with amplitude, frequency, phase, and offset.
+
+    Parameters
+    ----------
+    t : npt.NDArray[np.float64]
+        The time points at which to evaluate the cosine function.
+    ampl : float
+        Amplitude of the cosine wave.
+    omega : float
+        Angular frequency of the cosine wave.
+    phi : float
+        Phase shift of the cosine wave.
+    offset : float
+        Vertical offset of the cosine wave.
+
+    Returns
+    -------
+    npt.NDArray[np.float64]
+        The evaluated cosine function values at each time point.
+    """
     return ampl * np.cos(omega * t + phi) + offset
 
 
@@ -26,6 +51,29 @@ def func_damped_cos(
     phi: float,
     offset: float,
 ) -> npt.NDArray[np.float64]:
+    """
+    Calculate a damped cosine function with specified parameters.
+
+    Parameters
+    ----------
+    t : npt.NDArray[np.float64]
+        Time points for the function evaluation.
+    tau : float
+        Time constant of the exponential decay.
+    ampl : float
+        Amplitude of the cosine wave.
+    omega : float
+        Angular frequency of the cosine wave.
+    phi : float
+        Phase shift of the cosine wave.
+    offset : float
+        Vertical offset of the cosine wave.
+
+    Returns
+    -------
+    npt.NDArray[np.float64]
+        Evaluated damped cosine function values.
+    """
     return ampl * np.exp(-t / tau) * np.cos(omega * t + phi) + offset
 
 
@@ -34,6 +82,23 @@ def fit_rabi(
     signals: npt.NDArray[np.complex128],
     wave_count: float = 2.5,
 ) -> tuple[float, float, npt.NDArray[np.float64]]:
+    """
+    Fit Rabi oscillation data to a cosine function and plot the results.
+
+    Parameters
+    ----------
+    times : npt.NDArray[np.int64]
+        Array of time points for the Rabi oscillations.
+    signals : npt.NDArray[np.complex128]
+        Complex signal data corresponding to the Rabi oscillations.
+    wave_count : float, optional
+        Initial estimate for the number of wave cycles over the time span.
+
+    Returns
+    -------
+    tuple[float, float, npt.NDArray[np.float64]]
+        Phase shift, fluctuation of data, and optimized parameters of fit.
+    """
     # Rotate the data to the vertical (Q) axis
     phase_shift = get_angle(signals=signals)
     points = rotate(signals=signals, angle=phase_shift)
@@ -87,6 +152,23 @@ def fit_damped_rabi(
     signals: npt.NDArray[np.complex128],
     wave_count: float = 2.5,
 ) -> tuple[float, float, npt.NDArray[np.float64]]:
+    """
+    Fit damped Rabi oscillation data to a damped cosine function and plot.
+
+    Parameters
+    ----------
+    times : npt.NDArray[np.int64]
+        Array of time points for the Rabi oscillations.
+    signals : npt.NDArray[np.complex128]
+        Complex signal data corresponding to the Rabi oscillations.
+    wave_count : float, optional
+        Estimate for the number of wave cycles over the time span.
+
+    Returns
+    -------
+    tuple[float, float, npt.NDArray[np.float64]]
+        Phase shift, fluctuation of data, and optimized fit parameters.
+    """
     # Rotate the data to the vertical (Q) axis
     phase_shift = get_angle(signals=signals)
     points = rotate(signals=signals, angle=phase_shift)
@@ -142,6 +224,25 @@ def fit_ramsey(
     p0=None,
     bounds=None,
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    """
+    Fit Ramsey fringes using a damped cosine function and plot the results.
+
+    Parameters
+    ----------
+    x : npt.NDArray[np.float64]
+        Array of time points for the Ramsey fringes.
+    y : npt.NDArray[np.float64]
+        Amplitude data for the Ramsey fringes.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+
+    Returns
+    -------
+    tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        Optimized fit parameters and covariance of the fit.
+    """
     if p0 is None:
         p0 = (
             np.abs(np.max(y) - np.min(y)) / 2,
@@ -181,6 +282,25 @@ def func_decay(
     tau: float,
     offset: float,
 ) -> npt.NDArray[np.float64]:
+    """
+    Calculate an exponential decay function with given parameters.
+
+    Parameters
+    ----------
+    t : npt.NDArray[np.float64]
+        Time points for the function evaluation.
+    ampl : float
+        Amplitude of the exponential decay.
+    tau : float
+        Time constant of the exponential decay.
+    offset : float
+        Vertical offset of the decay curve.
+
+    Returns
+    -------
+    npt.NDArray[np.float64]
+        Evaluated exponential decay function values.
+    """
     return ampl * np.exp(-t / tau) + offset
 
 
@@ -190,6 +310,25 @@ def fit_decay(
     p0=None,
     bounds=None,
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    """
+    Fit decay data to an exponential decay function and plot the results.
+
+    Parameters
+    ----------
+    x : npt.NDArray[np.float64]
+        Time points for the decay data.
+    y : npt.NDArray[np.float64]
+        Amplitude data for the decay.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+
+    Returns
+    -------
+    tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
+        Optimized fit parameters and covariance of the fit.
+    """
     if p0 is None:
         p0 = (
             np.abs(np.max(y) - np.min(y)) / 2,
@@ -228,6 +367,24 @@ def fit_cos_and_find_minimum(
     y: npt.NDArray[np.float64],
     p0=None,
 ) -> tuple[float, float]:
+    """
+    Fit data to a cosine function and find the minimum of the fit.
+
+    Parameters
+    ----------
+    x : npt.NDArray[np.float64]
+        Time points for the decay data.
+    y : npt.NDArray[np.float64]
+        Amplitude data for the decay.
+    p0 : optional
+        Initial guess for the fitting parameters.
+
+    Returns
+    -------
+    tuple[float, float]
+        Time and amplitude of the minimum of the fit.
+    """
+
     def cos_func(t, ampl, omega, phi, offset):
         return ampl * np.cos(omega * t + phi) + offset
 
@@ -271,6 +428,19 @@ def fit_cos_and_find_minimum(
 def fit_and_rotate(
     data: npt.ArrayLike,
 ) -> npt.NDArray[np.complex128]:
+    """
+    Rotate complex data points based on the angle determined by linear fit.
+
+    Parameters
+    ----------
+    data : npt.ArrayLike
+        Array of complex data points to be rotated.
+
+    Returns
+    -------
+    npt.NDArray[np.complex128]
+        Rotated complex data points.
+    """
     points = np.array(data)
     angle = get_angle(points)
     rotated_points = rotate(points, angle)
@@ -281,6 +451,21 @@ def rotate(
     signals: npt.ArrayLike,
     angle: float,
 ) -> npt.NDArray[np.complex128]:
+    """
+    Rotate complex data points by a specified angle.
+
+    Parameters
+    ----------
+    signals : npt.ArrayLike
+        Array of complex data points to be rotated.
+    angle : float
+        Angle in radians by which to rotate the data points.
+
+    Returns
+    -------
+    npt.NDArray[np.complex128]
+        Rotated complex data points.
+    """
     points = np.array(signals)
     rotated_points = points * np.exp(-1j * angle)
     return rotated_points
@@ -289,6 +474,19 @@ def rotate(
 def get_angle(
     signals: npt.ArrayLike,
 ) -> float:
+    """
+    Determine the angle of a linear fit to the complex data points.
+
+    Parameters
+    ----------
+    signals : npt.ArrayLike
+        Array of complex data points to be rotated.
+
+    Returns
+    -------
+    float
+        Angle in radians of the linear fit to the data points.
+    """
     points = np.array(signals)
 
     if len(points) < 2:
@@ -311,6 +509,21 @@ def principal_components(
     iq_complex: npt.ArrayLike,
     pca=None,
 ) -> tuple[npt.NDArray[np.float64], PCA]:
+    """
+    Perform PCA on complex IQ data and return the principal components.
+
+    Parameters
+    ----------
+    iq_complex : npt.ArrayLike
+        Array of complex IQ data.
+    pca : PCA, optional
+        Predefined PCA object, if available.
+
+    Returns
+    -------
+    tuple[npt.NDArray[np.float64], PCA]
+        Principal component values and the PCA object used.
+    """
     iq_complex = np.array(iq_complex)
     iq_vector = np.column_stack([np.real(iq_complex), np.imag(iq_complex)])
     if pca is None:
@@ -325,6 +538,25 @@ def fit_chevron(
     time_range: npt.NDArray[np.int64],
     signals: list[npt.NDArray[np.float64]],
 ):
+    """
+    Plot Chevron patterns, perform Fourier analysis, and fit the data.
+
+    Parameters
+    ----------
+    center_frequency : float
+        Central frequency around which the Chevron patterns are analyzed.
+    freq_range : npt.NDArray[np.float64]
+        Frequency range for the Chevron analysis.
+    time_range : npt.NDArray[np.int64]
+        Time range for the Chevron analysis.
+    signals : list[npt.NDArray[np.float64]]
+        Signal data for different frequencies in the Chevron analysis.
+
+    Returns
+    -------
+    None
+        The function plots the Chevron patterns and their Fourier analysis.
+    """
     time, freq = np.meshgrid(time_range, center_frequency + freq_range * 1e6)
     plt.pcolor(time, freq * 1e-6, signals)
     plt.xlabel("Pulse length (ns)")

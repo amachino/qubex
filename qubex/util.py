@@ -1,3 +1,6 @@
+"""Utility functions for qubex."""
+
+
 def find_nearest_frequency_combinations(
     target_frequency,
     lo_range=(8000, 12000),
@@ -5,6 +8,22 @@ def find_nearest_frequency_combinations(
     lo_step: int = 500,
     nco_step: int = 375,
 ) -> tuple[int, list[tuple[int, int]]]:
+    """
+    Find the nearest LO and NCO frequencies to a target frequency.
+
+    Parameters
+    ----------
+    target_frequency : int
+        The target frequency.
+    lo_range : tuple[int, int], optional
+        The range of LO frequencies to search.
+    nco_range : tuple[int, int], optional
+        The range of NCO frequencies to search.
+    lo_step : int, optional
+        The step size for LO frequencies.
+    nco_step : int, optional
+        The step size for NCO frequencies.
+    """
     # Adjust the start of the range to the nearest multiple of the step using integer division
     lo_start = ((lo_range[0] + lo_step - 1) // lo_step) * lo_step
     nco_start = ((nco_range[0] + nco_step - 1) // nco_step) * nco_step

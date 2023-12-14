@@ -1,3 +1,7 @@
+"""
+Constants used in the qubex package.
+"""
+
 from typing import Final
 
 SAMPLING_PERIOD: Final[int] = 2  # [ns]

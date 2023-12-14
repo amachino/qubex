@@ -1,3 +1,5 @@
+"""Visualization functions."""
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
@@ -18,6 +20,25 @@ def show_pulse_sequences(
 ):
     """
     Shows the pulse sequences.
+
+    Parameters
+    ----------
+    control_qubits : list[QubitKey]
+        The list of control qubits.
+    control_waveforms : QubitDict[IQArray]
+        The dictionary of control waveforms.
+    control_times : QubitDict[IntArray]
+        The dictionary of control times.
+    control_duration : int
+        The duration of the control pulses.
+    readout_qubits : list[QubitKey]
+        The list of readout qubits.
+    readout_waveforms : QubitDict[IQArray]
+        The dictionary of readout waveforms.
+    readout_times : QubitDict[IntArray]
+        The dictionary of readout times.
+    readout_duration : int
+        The duration of the readout pulses.
     """
 
     # number of qubits
@@ -107,6 +128,26 @@ def show_measurement_results(
     signals_rotated: QubitDict[IQArray],
     readout_range: slice,
 ):
+    """
+    Shows the measurement results.
+    
+    Parameters
+    ----------
+    qubits : list[QubitKey]
+        The list of qubits.
+    waveforms : QubitDict[IQArray]
+        The dictionary of waveforms.
+    times : QubitDict[IntArray]
+        The dictionary of times.
+    sweep_range : NDArray
+        The sweep range.
+    signals : QubitDict[list[IQValue]]
+        The dictionary of signals.
+    signals_rotated : QubitDict[IQArray]
+        The dictionary of signals after rotation.
+    readout_range : slice
+        The slice of the readout range.
+    """
     plt.figure(figsize=(15, 6 * len(qubits)))
     gs = gridspec.GridSpec(2 * len(qubits), 2, wspace=0.3, hspace=0.5)
 

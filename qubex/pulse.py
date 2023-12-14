@@ -1,3 +1,10 @@
+"""
+Provides classes to represent waveforms. A waveform is a sequence of complex
+numbers representing I and Q values of a pulse. The waveform can be plotted
+in the time domain as a function of time or in the polar domain as a function
+of amplitude and phase.
+"""
+
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import Final, Optional, Sequence
@@ -8,18 +15,20 @@ import numpy.typing as npt
 
 
 class Waveform(ABC):
-    SAMPLING_PERIOD: Final[int] = 2  # ns
-
     """
     An abstract base class to represent a waveform.
 
-    Attributes
+    Parameters
     ----------
-    values : npt.NDArray[np.complex128]
-        A NumPy array of complex numbers representing the waveform.
-    times : npt.NDArray[np.int64]
-        Time array of the waveform in ns.
+    scale : float, optional
+        Scaling factor of the waveform.
+    time_offset : int, optional
+        Time offset of the waveform in ns.
+    phase_offset : float, optional
+        Phase offset of the waveform in rad.
     """
+
+    SAMPLING_PERIOD: Final[int] = 2  # ns
 
     def __init__(
         self,
@@ -34,55 +43,62 @@ class Waveform(ABC):
     @property
     @abstractmethod
     def values(self) -> npt.NDArray[np.complex128]:
-        pass
+        """Returns the values of the waveform."""
 
     @property
     def length(self) -> int:
+        """Returns the length of the waveform in samples."""
         return len(self.values)
 
     @property
     def duration(self) -> int:
+        """Returns the duration of the waveform in ns."""
         return self.length * self.SAMPLING_PERIOD
 
     @property
     def times(self) -> npt.NDArray[np.int64]:
+        """Returns the time array of the waveform in ns."""
         return np.arange(self.length) * self.SAMPLING_PERIOD + self.time_offset
 
     @property
     def real(self) -> npt.NDArray[np.float64]:
+        """Returns the real part of the waveform."""
         return np.real(self.values)
 
     @property
     def imag(self) -> npt.NDArray[np.float64]:
+        """Returns the imaginary part of the waveform."""
         return np.imag(self.values)
 
     @property
     def ampl(self) -> npt.NDArray[np.float64]:
+        """Returns the amplitude of the waveform."""
         return np.abs(self.values)
 
     @property
     def phase(self) -> npt.NDArray[np.float64]:
+        """Returns the phase of the waveform."""
         return np.angle(self.values)
 
     @abstractmethod
     def copy(self) -> "Waveform":
-        pass
+        """Returns a copy of the waveform."""
 
     @abstractmethod
     def scaled(self, scale: float) -> "Waveform":
-        pass
+        """Returns a copy of the waveform scaled by the given factor."""
 
     @abstractmethod
     def shifted(self, phase: float) -> "Waveform":
-        pass
+        """Returns a copy of the waveform shifted by the given phase."""
 
     @abstractmethod
     def inverted(self) -> "Waveform":
-        pass
+        """Returns a copy of the waveform inverted."""
 
     @abstractmethod
     def repeated(self, n: int) -> "Waveform":
-        pass
+        """Returns a copy of the waveform repeated n times."""
 
     def _ns_to_samples(self, duration: int) -> int:
         """Converts a duration in ns to a length in samples."""
@@ -100,7 +116,19 @@ class Waveform(ABC):
         savefig: Optional[str] = None,
         title="",
     ):
-        """Plots the pulse."""
+        """
+        Plots the waveform.
+
+        Parameters
+        ----------
+        polar : bool, optional
+            If True, plots the waveform in the polar domain, otherwise in the
+            time domain.
+        savefig : str, optional
+            If provided, saves the figure to the given path.
+        title : str, optional
+            Title of the plot.
+        """
         if polar:
             self.plot_polar(
                 title=title,
@@ -119,6 +147,20 @@ class Waveform(ABC):
         xlabel="Time (ns)",
         ylabel="Amplitude (arb. units)",
     ):
+        """
+        Plots the waveform in the time domain.
+
+        Parameters
+        ----------
+        savefig : str, optional
+            If provided, saves the figure to the given path.
+        title : str, optional
+            Title of the plot.
+        xlabel : str, optional
+            Label of the x-axis.
+        ylabel : str, optional
+            Label of the y-axis.
+        """
         _, ax = plt.subplots(figsize=(6, 2))
         ax.set_title(title)
         ax.set_xlabel(xlabel)
@@ -142,6 +184,20 @@ class Waveform(ABC):
         xlabel="Time (ns)",
         ylabel="Amplitude (arb. units)",
     ):
+        """
+        Plots the waveform in the polar domain.
+
+        Parameters
+        ----------
+        savefig : str, optional
+            If provided, saves the figure to the given path.
+        title : str, optional
+            Title of the plot.
+        xlabel : str, optional
+            Label of the x-axis.
+        ylabel : str, optional
+            Label of the y-axis.
+        """
         fig, ax = plt.subplots(2, 1, sharex=True, figsize=(6, 4))
         fig.suptitle(title)
         ax[0].set_ylabel(ylabel)
@@ -164,12 +220,16 @@ class Pulse(Waveform):
     """
     A class to represent a pulse.
 
-    Attributes
+    Parameters
     ----------
-    values : npt.NDArray[np.complex128]
-        A NumPy array of complex numbers representing the pulse.
-    times : npt.NDArray[np.int64]
-        Time array of the pulse in ns.
+    values : ArrayLike
+        Values of the pulse.
+    scale : float, optional
+        Scaling factor of the pulse.
+    time_offset : int, optional
+        Time offset of the pulse in ns.
+    phase_offset : float, optional
+        Phase offset of the pulse in rad.
     """
 
     def __init__(
@@ -184,6 +244,7 @@ class Pulse(Waveform):
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
+        """Returns the values of the pulse."""
         return self._values * self.scale * np.exp(1j * self.phase_offset)
 
     def copy(self) -> "Pulse":
@@ -216,6 +277,29 @@ class Pulse(Waveform):
 
 
 class PulseSequence(Waveform):
+    """
+    A class to represent a pulse sequence.
+
+    Parameters
+    ----------
+    waveforms : Sequence[Waveform], optional
+        Waveforms of the pulse sequence.
+    scale : float, optional
+        Scaling factor of the pulse sequence.
+    time_offset : int, optional
+        Time offset of the pulse sequence in ns.
+    phase_offset : float, optional
+        Phase offset of the pulse sequence in rad.
+
+    Examples
+    --------
+    >>> seq = PulseSequence([
+    ...     Rect(duration=10, amplitude=1.0),
+    ...     Blank(duration=10),
+    ...     Gauss(duration=10, amplitude=1.0, sigma=2.0),
+    ... ])
+    """
+
     def __init__(
         self,
         waveforms: Optional[Sequence[Waveform]] = None,
@@ -273,6 +357,19 @@ class PulseSequence(Waveform):
 
 
 class Blank(Pulse):
+    """
+    A class to represent a blank pulse.
+
+    Parameters
+    ----------
+    duration : int
+        Duration of the blank pulse in ns.
+
+    Examples
+    --------
+    >>> blank = Blank(duration=100)
+    """
+
     def __init__(
         self,
         duration: int,
@@ -285,6 +382,41 @@ class Blank(Pulse):
 
 
 class Rect(Pulse):
+    """
+    A class to represent a rectangular pulse.
+
+    Parameters
+    ----------
+    duration : int
+        Duration of the rectangular pulse in ns.
+    amplitude : float
+        Amplitude of the rectangular pulse.
+    tau : int, optional
+        Rise and fall time of the rectangular pulse in ns.
+    
+    Examples
+    --------
+    >>> rect = Rect(
+    ...     duration=100,
+    ...     amplitude=1.0,
+    ...     tau=10,
+    ... )
+
+    Notes
+    -----
+    |        ________________________
+    |       /                        \
+    |      /                          \
+    |     /                            \
+    |    /                              \
+    |___                                 _______
+    |   <---->                      <---->
+    |     tau                        tau
+    |      <-------------------------->
+    |                duration
+    | 
+    """
+
     def __init__(
         self,
         duration: int,
@@ -292,19 +424,6 @@ class Rect(Pulse):
         tau: int = 0,
         **kwargs,
     ):
-        """
-        |        ________________________
-        |       /                        \
-        |      /                          \
-        |     /                            \
-        |    /                              \
-        |___                                 _______
-        |   <---->                      <---->
-        |     tau                        tau
-        |      <-------------------------->
-        |                duration
-        | 
-        """
         values = np.array([])
         if duration != 0:
             values = self._calc_values(duration, amplitude, tau)
@@ -337,6 +456,23 @@ class Rect(Pulse):
 
 
 class Gauss(Pulse):
+    """
+    A class to represent a Gaussian pulse.
+
+    Parameters
+    ----------
+    duration : int
+        Duration of the Gaussian pulse in ns.
+    amplitude : float
+        Amplitude of the Gaussian pulse.
+    sigma : float
+        Standard deviation of the Gaussian pulse in ns.
+
+    Examples
+    --------
+    >>> gauss = Gauss(duration=100, amplitude=1.0, sigma=10)
+    """
+
     def __init__(
         self,
         duration: int,
@@ -368,6 +504,27 @@ class Gauss(Pulse):
 
 
 class Drag(Pulse):
+    """
+    A class to represent a DRAG pulse.
+
+    Parameters
+    ----------
+    duration : int
+        Duration of the DRAG pulse in ns.
+    amplitude : float
+        Amplitude of the DRAG pulse.
+    anharmonicity : float
+        Anharmonicity of the qubit in Hz.
+
+    Examples
+    --------
+    >>> drag = Drag(
+    ...     duration=100,
+    ...     amplitude=1.0,
+    ...     anharmonicity=-400e6,
+    ... )
+    """
+
     def __init__(
         self,
         duration: int,
@@ -405,6 +562,30 @@ class Drag(Pulse):
 
 
 class DragGauss(Pulse):
+    """
+    A class to represent a DRAG Gaussian pulse.
+
+    Parameters
+    ----------
+    duration : int
+        Duration of the DRAG Gaussian pulse in ns.
+    amplitude : float
+        Amplitude of the DRAG Gaussian pulse.
+    sigma : float
+        Standard deviation of the DRAG Gaussian pulse in ns.
+    anharmonicity : float
+        Anharmonicity of the qubit in Hz.
+
+    Examples
+    --------
+    >>> drag_gauss = DragGauss(
+    ...     duration=100,
+    ...     amplitude=1.0,
+    ...     sigma=10,
+    ...     anharmonicity=-400e6,
+    ... )
+    """
+
     def __init__(
         self,
         duration: int,
@@ -438,6 +619,27 @@ class DragGauss(Pulse):
 
 
 class DragCos(Pulse):
+    """
+    A class to represent a DRAG cosine pulse.
+
+    Parameters
+    ----------
+    duration : int
+        Duration of the DRAG cosine pulse in ns.
+    amplitude : float
+        Amplitude of the DRAG cosine pulse.
+    anharmonicity : float
+        Anharmonicity of the qubit in Hz.
+
+    Examples
+    --------
+    >>> drag_cos = DragCos(
+    ...     duration=100,
+    ...     amplitude=1.0,
+    ...     anharmonicity=-400e6,
+    ... )
+    """
+
     def __init__(
         self,
         duration: int,
