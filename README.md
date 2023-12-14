@@ -42,7 +42,7 @@ exp = Experiment(
 exp.connect()
 
 # Run a Rabi experiment
-result = experiment.rabi_experiment(
+result = exp.rabi_experiment(
     time_range=np.arange(0, 201, 10),
     amplitudes={
         "Q01": 0.03,
