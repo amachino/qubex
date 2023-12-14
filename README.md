@@ -35,7 +35,7 @@ from qubex.experiment import Experiment
 
 # Create an experiment object
 exp = Experiment(
-    config_file="./path/to/your/config.json",
+    config_file="/path/to/your/config.json",
 )
 
 # Connect to the QuBE device
@@ -57,9 +57,20 @@ result = experiment.rabi_experiment(
 from qubex.experiment import Experiment
 from qubex.pulse import PulseSequence, Rect
 
+# Create an experiment object
+exp2 = Experiment(
+    config_file="/path/to/your/config.json",
+)
+
+# Connect to the QuBE device
+exp2.connect()
+
 # Create a pulse object
 hpi = Rect(duration=20, amplitude=0.03),
 hpi_inv = hpi.inverted()
+
+# Check the pulse shape
+hpi.plot()
 
 # Create a parameterized waveform
 waveform = lambda x: PulseSequence(
@@ -71,7 +82,7 @@ waveform = lambda x: PulseSequence(
 )
 
 # Run a parameter sweep experiment
-result = ex1.sweep_parameter(
+result = exp2.sweep_parameter(
     sweep_range=np.arange(0, 1000, 100),
     parametric_waveforms={
         "Q08": waveform,
