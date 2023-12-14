@@ -55,7 +55,7 @@ result = experiment.rabi_experiment(
 
 ```python
 from qubex.experiment import Experiment
-from qubex.pulse import PulseSequence, Rect
+from qubex.pulse import PulseSequence, Rect, Blank
 
 # Create an experiment object
 exp2 = Experiment(
