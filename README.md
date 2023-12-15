@@ -13,7 +13,7 @@
 
 To install qubex, follow these steps:
 
-1. Clone the repository to your local machine.
+1. Clone the repository to your machine.
 
 2. Install the package using `pip`:
 
@@ -32,59 +32,57 @@ To install qubex, follow these steps:
 
 ```python
 from qubex.experiment import Experiment
+%matplotlib inline
 
 # Create an experiment object
-exp = Experiment(
+ex1 = Experiment(
     config_file="/path/to/your/config.json",
 )
 
 # Connect to the QuBE device
-exp.connect()
+ex1.connect()
 
 # Run a Rabi experiment
-result = exp.rabi_experiment(
-    time_range=np.arange(0, 201, 10),
-    amplitudes={
-        "Q01": 0.03,
-        "Q02": 0.03,
-    },
-)
+result1 = ex1.rabi_check()
 ```
 
 ### Sweep parameters of a pulse sequence
 
 ```python
+import numpy as np
 from qubex.experiment import Experiment
-from qubex.pulse import PulseSequence, Rect, Blank
+from qubex.pulse import Blank, DragCos, PulseSequence 
+%matplotlib inline
 
 # Create an experiment object
-exp2 = Experiment(
+ex2 = Experiment(
     config_file="/path/to/your/config.json",
 )
 
 # Connect to the QuBE device
-exp2.connect()
+ex2.connect()
 
 # Create a pulse object
-hpi = Rect(duration=20, amplitude=0.03),
-hpi_inv = hpi.inverted()
+U = DragCos(duration=20, amplitude=0.03, anharmonicity=-400e6)
+U_inv = U.inverted()
 
 # Check the pulse shape
-hpi.plot()
+U.plot()
+U_inv.plot()
 
 # Create a parameterized waveform
 waveform = lambda x: PulseSequence(
     [
-        hpi,
+        U,
         Blank(duration=x),
-        hpi_inv,
+        U_inv,
     ]
 )
 
 # Run a parameter sweep experiment
-result = exp2.sweep_parameter(
+result2 = ex2.sweep_parameter(
     sweep_range=np.arange(0, 1000, 100),
     parametric_waveforms={
-        "Q08": waveform,
+        "Qxx": waveform,
     },
 )
