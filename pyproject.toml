@@ -1,7 +1,7 @@
 [project]
 name = "qubex"
 version = "0.2.0"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 dependencies = [
     "jupyter",
     "matplotlib",
