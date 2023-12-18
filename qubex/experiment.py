@@ -634,7 +634,7 @@ class Experiment:
         qubits: list[QubitKey],
         freq_range: FloatArray,
         time_range: IntArray,
-        rabi_params: RabiParams,
+        rabi_params: QubitDict[RabiParams],
     ) -> QubitDict[ChevronResult]:
         """
         Conducts a chevron experiment.
@@ -647,7 +647,7 @@ class Experiment:
             Frequency range of the experiment.
         time_range : IntArray
             Time range of the experiment.
-        rabi_params : RabiParams
+        rabi_params : QubitDict[RabiParams]
             Parameters of the Rabi oscillation.
 
         Returns
@@ -673,7 +673,7 @@ class Experiment:
             )
 
             for qubit in qubits:
-                signals[qubit].append(result_rabi[qubit].normalized(rabi_params))
+                signals[qubit].append(result_rabi[qubit].normalized(rabi_params[qubit]))
 
         result = {
             qubit: ChevronResult(
