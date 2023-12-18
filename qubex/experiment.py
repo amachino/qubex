@@ -210,6 +210,10 @@ class Experiment:
         """
         self.qube_manager.loopback_mode(use_loopback)
 
+    def set_readout_range(self, readout_range: slice):
+        """Sets the readout range."""
+        self.qube_manager.readout_range = readout_range
+
     def get_control_frequency(self, qubit: QubitKey) -> float:
         """Returns the control frequency of the qubit."""
         return self.qube_manager.get_control_frequency(qubit)
@@ -630,7 +634,7 @@ class Experiment:
         qubits: list[QubitKey],
         freq_range: FloatArray,
         time_range: IntArray,
-        rabi_params: RabiParams,
+        rabi_params: QubitDict[RabiParams],
     ) -> QubitDict[ChevronResult]:
         """
         Conducts a chevron experiment.
@@ -643,7 +647,7 @@ class Experiment:
             Frequency range of the experiment.
         time_range : IntArray
             Time range of the experiment.
-        rabi_params : RabiParams
+        rabi_params : QubitDict[RabiParams]
             Parameters of the Rabi oscillation.
 
         Returns
@@ -669,7 +673,7 @@ class Experiment:
             )
 
             for qubit in qubits:
-                signals[qubit].append(result_rabi[qubit].normalized(rabi_params))
+                signals[qubit].append(result_rabi[qubit].normalized(rabi_params[qubit]))
 
         result = {
             qubit: ChevronResult(
