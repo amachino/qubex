@@ -76,9 +76,7 @@ class QubeManager:
         self.params: Final = configs.params
         self.qube: Optional[qc.qube.QubeTypeA] = None
         self.schedule: Final = Schedule()
-        self.readout_range: Final = slice(
-            T_MARGIN // 2, (self.readout_window + T_MARGIN) // 2
-        )
+        self.readout_range = slice(T_MARGIN // 2, (self.readout_window + T_MARGIN) // 2)
         qc.ui.MATPLOTLIB_PYPLOT = plt  # type: ignore
         self._init_channels()
 
