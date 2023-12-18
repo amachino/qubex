@@ -391,14 +391,26 @@ class QubeManager:
         self._adda_to_channels = adda_to_channels
         # pylint: enable=attribute-defined-outside-init
 
+    def _reset_tx_waveforms(self):
+        for qubit in self.qubits:
+            self._ctrl_slots[qubit].iq[:] = 0.0
+            self._ctrl_lo_slots[qubit].iq[:] = 0.0
+            self._ctrl_hi_slots[qubit].iq[:] = 0.0
+            self._read_tx_slots[qubit].iq[:] = 0.0
+
     def _set_waveforms(
         self,
         control_qubits: list[QubitKey],
         readout_qubits: list[QubitKey],
         control_waveforms: QubitDict[Waveform],
     ):
+        # reset tx waveforms
+        self._reset_tx_waveforms()
+
+        # set control waveforms
         self._set_control_waveforms(control_qubits, control_waveforms)
 
+        # set readout waveforms
         readout_amplitude = self.params.readout_amplitude
         tau = 50
         readout_waveforms = {
