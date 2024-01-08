@@ -7,6 +7,8 @@ and readout of qubits in a quantum computing environment.
 from typing import Final, Optional
 
 import matplotlib.pyplot as plt
+
+# mypy: disable-error-code="import-untyped"
 import qubecalib as qc
 from qubecalib.pulse import Arbitrary, Blank, Channel, Read, Schedule
 from qubecalib.setupqube import run
