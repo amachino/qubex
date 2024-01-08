@@ -93,10 +93,6 @@ class Waveform(ABC):
         """Returns a copy of the waveform shifted by the given phase."""
 
     @abstractmethod
-    def inverted(self) -> "Waveform":
-        """Returns a copy of the waveform inverted."""
-
-    @abstractmethod
     def repeated(self, n: int) -> "Waveform":
         """Returns a copy of the waveform repeated n times."""
 
@@ -263,12 +259,6 @@ class Pulse(Waveform):
         new_pulse.phase_offset += phase
         return new_pulse
 
-    def inverted(self) -> "Pulse":
-        """Returns a copy of the pulse inverted."""
-        new_pulse = deepcopy(self)
-        new_pulse.phase_offset += np.pi
-        return new_pulse
-
     def repeated(self, n: int) -> "PulseSequence":
         """Returns a pulse sequence of n copies of the pulse."""
         new_pulse = deepcopy(self)
@@ -335,12 +325,6 @@ class PulseSequence(Waveform):
         """Returns a copy of the pulse sequence shifted by the given phase."""
         new_sequence = deepcopy(self)
         new_sequence.phase_offset += phase
-        return new_sequence
-
-    def inverted(self) -> "PulseSequence":
-        """Returns a copy of the pulse sequence inverted."""
-        new_sequence = deepcopy(self)
-        new_sequence.phase_offset += np.pi
         return new_sequence
 
     def repeated(self, n: int) -> "PulseSequence":
