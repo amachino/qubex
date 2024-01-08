@@ -64,7 +64,7 @@ ex2.connect()
 
 # Create a pulse object
 U = DragCos(duration=20, amplitude=0.03, anharmonicity=-400e6)
-U_inv = U.inverted()
+U_inv = U.shifted(np.pi)
 
 # Check the pulse shape
 U.plot()
