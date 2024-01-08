@@ -497,15 +497,15 @@ class Drag(Pulse):
         Duration of the DRAG pulse in ns.
     amplitude : float
         Amplitude of the DRAG pulse.
-    anharmonicity : float
-        Anharmonicity of the qubit in Hz.
+    beta : float
+        The correction amplitude.
 
     Examples
     --------
     >>> drag = Drag(
     ...     duration=100,
     ...     amplitude=1.0,
-    ...     anharmonicity=-400e6,
+    ...     beta=1.0,
     ... )
     """
 
@@ -513,23 +513,20 @@ class Drag(Pulse):
         self,
         duration: int,
         amplitude: float,
-        anharmonicity: float,
+        beta: float,
         **kwargs,
     ):
         values = np.array([])
         if duration != 0:
-            values = self._calc_values(duration, amplitude, anharmonicity)
+            values = self._calc_values(duration, amplitude, beta)
         super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
         duration: int,
         amplitude: float,
-        anharmonicity: float,
+        beta: float,
     ) -> npt.NDArray[np.complex128]:
-        if anharmonicity == 0:
-            raise ValueError("Anharmonicity cannot be zero.")
-
         length = self._ns_to_samples(duration)
         t = np.linspace(0, duration, length)
         sigma = duration * 0.5
@@ -541,7 +538,7 @@ class Drag(Pulse):
             / (sigma**2)
             * (factor * (np.exp(-((t - sigma) ** 2) / (2 * sigma**2))))
         )
-        values = real - 1j / (np.pi * anharmonicity * 1e-9) * imag
+        values = real + beta * 1j * imag
         return values
 
 
@@ -557,8 +554,8 @@ class DragGauss(Pulse):
         Amplitude of the DRAG Gaussian pulse.
     sigma : float
         Standard deviation of the DRAG Gaussian pulse in ns.
-    anharmonicity : float
-        Anharmonicity of the qubit in Hz.
+    beta : float
+        The correction amplitude.
 
     Examples
     --------
@@ -566,7 +563,7 @@ class DragGauss(Pulse):
     ...     duration=100,
     ...     amplitude=1.0,
     ...     sigma=10,
-    ...     anharmonicity=-400e6,
+    ...     beta=0.1,
     ... )
     """
 
@@ -575,12 +572,12 @@ class DragGauss(Pulse):
         duration: int,
         amplitude: float,
         sigma: float,
-        anharmonicity: float,
+        beta: float,
         **kwargs,
     ):
         values = np.array([])
         if duration != 0:
-            values = self._calc_values(duration, amplitude, sigma, anharmonicity)
+            values = self._calc_values(duration, amplitude, sigma, beta)
         super().__init__(values, **kwargs)
 
     def _calc_values(
@@ -588,7 +585,7 @@ class DragGauss(Pulse):
         duration: int,
         amplitude: float,
         sigma: float,
-        anharmonicity: float,
+        beta: float,
     ) -> npt.NDArray[np.complex128]:
         if sigma == 0:
             raise ValueError("Sigma cannot be zero.")
@@ -598,7 +595,7 @@ class DragGauss(Pulse):
         mu = duration * 0.5
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
         imag = (mu - t) / (sigma**2) * real
-        values = real - 1j / (np.pi * anharmonicity * 1e-9) * imag
+        values = real + beta * 1j * imag
         return values
 
 
@@ -612,15 +609,15 @@ class DragCos(Pulse):
         Duration of the DRAG cosine pulse in ns.
     amplitude : float
         Amplitude of the DRAG cosine pulse.
-    anharmonicity : float
-        Anharmonicity of the qubit in Hz.
+    beta : float
+        The correction amplitude.
 
     Examples
     --------
     >>> drag_cos = DragCos(
     ...     duration=100,
     ...     amplitude=1.0,
-    ...     anharmonicity=-400e6,
+    ...     beta=0.1,
     ... )
     """
 
@@ -628,26 +625,23 @@ class DragCos(Pulse):
         self,
         duration: int,
         amplitude: float,
-        anharmonicity: float,
+        beta: float,
         **kwargs,
     ):
         values = np.array([])
         if duration != 0:
-            values = self._calc_values(duration, amplitude, anharmonicity)
+            values = self._calc_values(duration, amplitude, beta)
         super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
         duration: int,
         amplitude: float,
-        anharmonicity: float,
+        beta: float,
     ) -> npt.NDArray[np.complex128]:
-        if anharmonicity == 0:
-            raise ValueError("Anharmonicity cannot be zero.")
-
         length = self._ns_to_samples(duration)
         t = np.linspace(0, duration, length)
         real = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
         imag = 2 * np.pi / duration * amplitude * np.sin(2 * np.pi * t / duration) * 0.5
-        values = real - 1j / (np.pi * anharmonicity * 1e-9) * imag
+        values = real + beta * 1j * imag
         return values
