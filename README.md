@@ -51,7 +51,7 @@ result1 = ex1.rabi_check()
 ```python
 import numpy as np
 from qubex.experiment import Experiment
-from qubex.pulse import Blank, DragCos, PulseSequence 
+from qubex.pulse import Blank, Drag, PulseSequence 
 %matplotlib inline
 
 # Create an experiment object
@@ -63,7 +63,7 @@ ex2 = Experiment(
 ex2.connect()
 
 # Create a pulse object
-U = DragCos(duration=20, amplitude=0.03, anharmonicity=-400e6)
+U = Drag(duration=20, amplitude=0.03, beta=-0.1)
 U_inv = U.shifted(np.pi)
 
 # Check the pulse shape
