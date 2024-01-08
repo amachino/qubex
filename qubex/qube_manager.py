@@ -92,7 +92,7 @@ class QubeManager:
         if ui:
             self.qube = qc.ui.QubeControl(f"{self.configs.qube_id}.yml").qube
         else:
-            self.qube = qc.qube.Qube.create(f"{self.configs.qube_id}.yml")
+            self.qube = qc.qube.Qube.create(f"{self.configs.qube_id}.yml")  # type: ignore
         self._init_qube()
 
     def loopback_mode(self, use_loopback: bool):
@@ -181,6 +181,7 @@ class QubeManager:
         control_qubits: list[QubitKey],
         readout_qubits: list[QubitKey],
         control_waveforms: QubitDict[Waveform],
+        control_frequencies: Optional[QubitDict[float]] = None,
         repeats: int = DEFAULT_REPEATS,
         interval: int = DEFAULT_INTERVAL,
     ) -> QubitDict[IQValue]:
@@ -195,16 +196,28 @@ class QubeManager:
             List of qubits to readout.
         control_waveforms : QubitDict[Waveform]
             Dictionary of control waveforms for each qubit.
+        control_frequencies : Optional[QubitDict[float]], optional
+            Dictionary of control frequencies for each qubit. Defaults to None.
         repeats : int, optional
             Number of times to repeat the measurement. Defaults to DEFAULT_REPEATS.
         interval : int, optional
             Interval between repeats in nanoseconds. Defaults to DEFAULT_INTERVAL.
         """
+        # set waveforms
         self._set_waveforms(
             control_qubits=control_qubits,
             readout_qubits=readout_qubits,
             control_waveforms=control_waveforms,
         )
+
+        # set control frequencies
+        current_frequencies = {}
+        if control_frequencies is not None:
+            for qubit, frequency in control_frequencies.items():
+                current_frequencies[qubit] = self.get_control_frequency(qubit)
+                self.set_control_frequency(qubit, frequency)
+
+        # run experiment
         run(
             schedule=self.schedule,
             repeats=repeats,
@@ -212,6 +225,13 @@ class QubeManager:
             adda_to_channels=self._adda_to_channels,
             triggers=self._triggers,
         )
+
+        # reset control frequencies
+        if control_frequencies is not None:
+            for qubit, frequency in current_frequencies.items():
+                self.set_control_frequency(qubit, frequency)
+
+        # get results
         rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
         result = {
             qubit: waveform[self.readout_range].mean()
