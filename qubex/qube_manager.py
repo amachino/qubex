@@ -4,15 +4,16 @@ experiments on QuBE devices. This module facilitates the configuration, control,
 and readout of qubits in a quantum computing environment.
 """
 
-from typing import Final, Optional
+from typing import Final, Optional, Union
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 # mypy: disable-error-code="import-untyped"
 import qubecalib as qc
 from qubecalib.pulse import Arbitrary, Blank, Channel, Read, Schedule
-from qubecalib.setupqube import run
 from qubecalib.qube import SSB
+from qubecalib.setupqube import run
 
 from .configs import Configs
 from .consts import SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
@@ -182,7 +183,7 @@ class QubeManager:
         self,
         control_qubits: list[QubitKey],
         readout_qubits: list[QubitKey],
-        control_waveforms: QubitDict[Waveform],
+        control_waveforms: QubitDict[Union[Waveform, IQArray, list[complex]]],
         control_frequencies: Optional[QubitDict[float]] = None,
         repeats: int = DEFAULT_REPEATS,
         interval: int = DEFAULT_INTERVAL,
@@ -205,11 +206,12 @@ class QubeManager:
         interval : int, optional
             Interval between repeats in nanoseconds. Defaults to DEFAULT_INTERVAL.
         """
+
         # set waveforms
         self._set_waveforms(
             control_qubits=control_qubits,
             readout_qubits=readout_qubits,
-            control_waveforms=control_waveforms,
+            control_waveforms=self._normalize_waveform(control_waveforms),
         )
 
         # set control frequencies
@@ -240,6 +242,21 @@ class QubeManager:
             for qubit, waveform in rx_waveforms.items()
         }
         return result
+
+    def _normalize_waveform(
+        self,
+        waveforms: QubitDict[Union[Waveform, IQArray, list[complex]]],
+    ) -> QubitDict[IQArray]:
+        """Normalizes the given waveforms to IQArray."""
+        waveform_values = {}
+        for qubit, waveform in waveforms.items():
+            if isinstance(waveform, Waveform):
+                waveform_values[qubit] = waveform.values
+            elif isinstance(waveform, list):
+                waveform_values[qubit] = np.array(waveform)
+            else:
+                waveform_values[qubit] = waveform
+        return waveform_values
 
     def _ctrl_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[qubit]
@@ -424,7 +441,7 @@ class QubeManager:
         self,
         control_qubits: list[QubitKey],
         readout_qubits: list[QubitKey],
-        control_waveforms: QubitDict[Waveform],
+        control_waveforms: QubitDict[IQArray],
     ):
         # reset tx waveforms
         self._reset_tx_waveforms()
@@ -433,25 +450,16 @@ class QubeManager:
         self._set_control_waveforms(control_qubits, control_waveforms)
 
         # set readout waveforms
-        readout_amplitude = self.params.readout_amplitude
-        tau = 50
-        readout_waveforms = {
-            qubit: Rect(
-                duration=T_READOUT - tau,
-                amplitude=readout_amplitude[qubit],
-                tau=tau,
-            )
-            for qubit in readout_qubits
-        }
+        readout_waveforms = self._create_readout_waveforms(readout_qubits)
         self._set_readout_waveforms(readout_qubits, readout_waveforms)
 
     def _set_control_waveforms(
         self,
         qubits: list[QubitKey],
-        waveforms: QubitDict[Waveform],
+        waveforms: QubitDict[IQArray],
     ):
         for qubit in qubits:
-            values = waveforms[qubit].values
+            values = waveforms[qubit]
             T = len(values) * SAMPLING_PERIOD
             t = self._ctrl_times[qubit]
             self._ctrl_slots[qubit].iq[(-T <= t) & (t < 0)] = values
@@ -459,8 +467,21 @@ class QubeManager:
     def _set_readout_waveforms(
         self,
         qubits: list[QubitKey],
-        waveforms: QubitDict[Waveform],
+        waveforms: QubitDict[IQArray],
     ):
         for qubit in qubits:
-            values = waveforms[qubit].values
+            values = waveforms[qubit]
             self._read_tx_slots[qubit].iq[:] = values
+
+    def _create_readout_waveforms(self, qubits: list[QubitKey]):
+        """Creates readout waveforms for the given qubits."""
+        readout_amplitude = self.params.readout_amplitude
+        tau = 50
+        return {
+            qubit: Rect(
+                duration=T_READOUT - tau,
+                amplitude=readout_amplitude[qubit],
+                tau=tau,
+            ).values
+            for qubit in qubits
+        }
