@@ -17,13 +17,13 @@ class Port(BaseModel):
         Single sideband (SSB) identifier.
     lo : int
         Local oscillator (LO) frequency identifier.
-    nco : int
+    nco : float
         Numerically controlled oscillator (NCO) frequency identifier.
-    awg0 : int
+    awg0 : float
         Arbitrary waveform generator (AWG) channel 0 identifier.
-    awg1 : int
+    awg1 : float
         AWG channel 1 identifier.
-    awg2 : int
+    awg2 : float
         AWG channel 2 identifier.
     vatt : int
         Variable attenuator (VATT) identifier.
@@ -31,10 +31,10 @@ class Port(BaseModel):
 
     ssb: str
     lo: int
-    nco: int
-    awg0: int
-    awg1: int
-    awg2: int
+    nco: float
+    awg0: float
+    awg1: float
+    awg2: float
     vatt: int
 
 
