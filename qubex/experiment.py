@@ -262,7 +262,6 @@ class Experiment:
         """
         qubits = list(waveforms.keys())
         result = self.qube_manager.measure(
-            control_qubits=qubits,
             readout_qubits=qubits,
             control_waveforms=waveforms,
             repeats=repeats,
