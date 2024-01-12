@@ -305,9 +305,11 @@ class QubeManager:
             center_frequency=control_frequency + anharmonicity,
         )
         # control (cr)
-        self.schedule[qubit + CONTROL_CR] = Channel(
-            center_frequency=control_frequency,  # tmp
-        )
+        cr_control_index = self.qubits.index(qubit)
+        cr_target_index = {0: 1, 1: 3, 3: 2, 2: 0}[cr_control_index]
+        cr_target_qubit = self.qubits[cr_target_index]
+        cr_frequency = self.params.transmon_dressed_frequency_ge[cr_target_qubit]
+        self.schedule[qubit + CONTROL_CR] = Channel(center_frequency=cr_frequency)
 
     def _init_readout_channels(self, qubit: QubitKey):
         readout_frequency = self.params.cavity_frequency[qubit]
