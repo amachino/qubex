@@ -181,7 +181,6 @@ class QubeManager:
 
     def measure(
         self,
-        control_qubits: list[QubitKey],
         readout_qubits: list[QubitKey],
         control_waveforms: QubitDict[Union[Waveform, IQArray, list[complex]]],
         control_frequencies: Optional[QubitDict[float]] = None,
@@ -193,8 +192,6 @@ class QubeManager:
 
         Parameters
         ----------
-        control_qubits : list[QubitKey]
-            List of qubits to control.
         readout_qubits : list[QubitKey]
             List of qubits to readout.
         control_waveforms : QubitDict[Waveform]
@@ -209,9 +206,8 @@ class QubeManager:
 
         # set waveforms
         self._set_waveforms(
-            control_qubits=control_qubits,
-            readout_qubits=readout_qubits,
             control_waveforms=self._normalize_waveform(control_waveforms),
+            readout_qubits=readout_qubits,
         )
 
         # set control frequencies
@@ -439,15 +435,14 @@ class QubeManager:
 
     def _set_waveforms(
         self,
-        control_qubits: list[QubitKey],
-        readout_qubits: list[QubitKey],
         control_waveforms: QubitDict[IQArray],
+        readout_qubits: list[QubitKey],
     ):
         # reset tx waveforms
         self._reset_tx_waveforms()
 
         # set control waveforms
-        self._set_control_waveforms(control_qubits, control_waveforms)
+        self._set_control_waveforms(control_waveforms)
 
         # set readout waveforms
         readout_waveforms = self._create_readout_waveforms(readout_qubits)
@@ -455,14 +450,37 @@ class QubeManager:
 
     def _set_control_waveforms(
         self,
-        qubits: list[QubitKey],
         waveforms: QubitDict[IQArray],
     ):
-        for qubit in qubits:
-            values = waveforms[qubit]
-            T = len(values) * SAMPLING_PERIOD
-            t = self._ctrl_times[qubit]
-            self._ctrl_slots[qubit].iq[(-T <= t) & (t < 0)] = values
+        possible_keys = [
+            qubit + suffix
+            for qubit in self.qubits
+            for suffix in ["", CONTROL_LO, CONTROL_HI]
+        ]
+        if not all(key in possible_keys for key in waveforms.keys()):
+            raise ValueError("Invalid waveform keys.")
+
+        for qubit in self.qubits:
+            # control
+            if qubit in waveforms:
+                values = waveforms[qubit]
+                T = len(values) * SAMPLING_PERIOD
+                t = self._ctrl_times[qubit]
+                self._ctrl_slots[qubit].iq[(-T <= t) & (t < 0)] = values
+
+            # control (lo)
+            if qubit + CONTROL_LO in waveforms:
+                values = waveforms[qubit + CONTROL_LO]
+                T = len(values) * SAMPLING_PERIOD
+                t = self._ctrl_lo_times[qubit]
+                self._ctrl_lo_slots[qubit].iq[(-T <= t) & (t < 0)] = values
+
+            # control (hi)
+            if qubit + CONTROL_HI in waveforms:
+                values = waveforms[qubit + CONTROL_HI]
+                T = len(values) * SAMPLING_PERIOD
+                t = self._ctrl_hi_times[qubit]
+                self._ctrl_hi_slots[qubit].iq[(-T <= t) & (t < 0)] = values
 
     def _set_readout_waveforms(
         self,
