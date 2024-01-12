@@ -23,8 +23,8 @@ from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
 READOUT_TX: Final = "_TX"
 READOUT_RX: Final = "_RX"
 
-CONTROL_HI: Final = "_hi"
-CONTROL_LO: Final = "_lo"
+CONTROL_CR: Final = "_CR"
+CONTROL_EF: Final = "_ef"
 
 READOUT_DELAY: Final[int] = 7 * 128  # [ns]
 
@@ -119,37 +119,37 @@ class QubeManager:
         """Returns the control frequency of the given qubit in MHz."""
         return self._ctrl_channel(qubit).center_frequency
 
-    def get_control_lo_frequency(self, qubit: QubitKey) -> float:
-        """Returns the control (lo) frequency of the given qubit in MHz."""
-        return self._ctrl_lo_channel(qubit).center_frequency
+    def get_control_ef_frequency(self, qubit: QubitKey) -> float:
+        """Returns the control (ef) frequency of the given qubit in MHz."""
+        return self._ctrl_ef_channel(qubit).center_frequency
 
-    def get_control_hi_frequency(self, qubit: QubitKey) -> float:
-        """Returns the control (hi) frequency of the given qubit in MHz."""
-        return self._ctrl_hi_channel(qubit).center_frequency
+    def get_control_cr_frequency(self, qubit: QubitKey) -> float:
+        """Returns the control (cr) frequency of the given qubit in MHz."""
+        return self._ctrl_cr_channel(qubit).center_frequency
 
     def set_control_frequency(self, qubit: QubitKey, frequency: float):
         """Sets the control frequency of the given qubit in MHz."""
         self._ctrl_channel(qubit).center_frequency = frequency
 
-    def set_control_lo_frequency(self, qubit: QubitKey, frequency: float):
-        """Sets the control (lo) frequency of the given qubit in MHz."""
-        self._ctrl_lo_channel(qubit).center_frequency = frequency
+    def set_control_ef_frequency(self, qubit: QubitKey, frequency: float):
+        """Sets the control (ef) frequency of the given qubit in MHz."""
+        self._ctrl_ef_channel(qubit).center_frequency = frequency
 
-    def set_control_hi_frequency(self, qubit: QubitKey, frequency: float):
-        """Sets the control (hi) frequency of the given qubit in MHz."""
-        self._ctrl_hi_channel(qubit).center_frequency = frequency
+    def set_control_cr_frequency(self, qubit: QubitKey, frequency: float):
+        """Sets the control (cr) frequency of the given qubit in MHz."""
+        self._ctrl_cr_channel(qubit).center_frequency = frequency
 
     def get_control_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
         """Returns the control waveforms of the given qubits."""
         return {qubit: self._ctrl_slots[qubit].iq for qubit in qubits}
 
-    def get_control_lo_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
-        """Returns the control (lo) waveforms of the given qubits."""
-        return {qubit: self._ctrl_lo_slots[qubit].iq for qubit in qubits}
+    def get_control_ef_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
+        """Returns the control (ef) waveforms of the given qubits."""
+        return {qubit: self._ctrl_ef_slots[qubit].iq for qubit in qubits}
 
-    def get_control_hi_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
-        """Returns the control (hi) waveforms of the given qubits."""
-        return {qubit: self._ctrl_hi_slots[qubit].iq for qubit in qubits}
+    def get_control_cr_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
+        """Returns the control (cr) waveforms of the given qubits."""
+        return {qubit: self._ctrl_cr_slots[qubit].iq for qubit in qubits}
 
     def get_readout_tx_waveforms(self, qubits: list[QubitKey]) -> QubitDict[IQArray]:
         """Returns the readout (tx) waveforms of the given qubits."""
@@ -163,13 +163,13 @@ class QubeManager:
         """Returns the control times of the given qubits."""
         return {qubit: self._ctrl_times[qubit] for qubit in qubits}
 
-    def get_control_lo_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
-        """Returns the control (lo) times of the given qubits."""
-        return {qubit: self._ctrl_lo_times[qubit] for qubit in qubits}
+    def get_control_ef_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
+        """Returns the control (ef) times of the given qubits."""
+        return {qubit: self._ctrl_ef_times[qubit] for qubit in qubits}
 
-    def get_control_hi_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
-        """Returns the control (hi) times of the given qubits."""
-        return {qubit: self._ctrl_hi_times[qubit] for qubit in qubits}
+    def get_control_cr_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
+        """Returns the control (cr) times of the given qubits."""
+        return {qubit: self._ctrl_cr_times[qubit] for qubit in qubits}
 
     def get_readout_tx_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
         """Returns the readout (tx) times of the given qubits."""
@@ -257,11 +257,11 @@ class QubeManager:
     def _ctrl_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[qubit]
 
-    def _ctrl_lo_channel(self, qubit: QubitKey) -> Channel:
-        return self.schedule[qubit + CONTROL_LO]
+    def _ctrl_ef_channel(self, qubit: QubitKey) -> Channel:
+        return self.schedule[qubit + CONTROL_EF]
 
-    def _ctrl_hi_channel(self, qubit: QubitKey) -> Channel:
-        return self.schedule[qubit + CONTROL_HI]
+    def _ctrl_cr_channel(self, qubit: QubitKey) -> Channel:
+        return self.schedule[qubit + CONTROL_CR]
 
     def _read_tx_channel(self, qubit: QubitKey) -> Channel:
         return self.schedule[qubit + READOUT_TX]
@@ -271,14 +271,14 @@ class QubeManager:
 
     def _init_channels(self):
         self._ctrl_slots = {}
-        self._ctrl_lo_slots = {}
-        self._ctrl_hi_slots = {}
+        self._ctrl_ef_slots = {}
+        self._ctrl_cr_slots = {}
         self._read_tx_slots = {}
         self._read_rx_slots = {}
 
         self._ctrl_times = {}
-        self._ctrl_lo_times = {}
-        self._ctrl_hi_times = {}
+        self._ctrl_ef_times = {}
+        self._ctrl_cr_times = {}
         self._read_tx_times = {}
         self._read_rx_times = {}
 
@@ -300,12 +300,12 @@ class QubeManager:
         self.schedule[qubit] = Channel(
             center_frequency=control_frequency,
         )
-        # control (lo)
-        self.schedule[qubit + CONTROL_LO] = Channel(
+        # control (ef)
+        self.schedule[qubit + CONTROL_EF] = Channel(
             center_frequency=control_frequency + anharmonicity,
         )
-        # control (hi)
-        self.schedule[qubit + CONTROL_HI] = Channel(
+        # control (cr)
+        self.schedule[qubit + CONTROL_CR] = Channel(
             center_frequency=control_frequency,  # tmp
         )
 
@@ -332,26 +332,26 @@ class QubeManager:
             ctrl_ch.get_timestamp(ctrl_slot) + self.schedule.offset
         )
 
-        # control (lo)
-        ctrl_lo_slot = Arbitrary(duration=self.control_window, amplitude=1)
-        ctrl_lo_ch = self._ctrl_lo_channel(qubit)
-        ctrl_lo_ch.clear()
-        ctrl_lo_ch.append(ctrl_lo_slot)
-        ctrl_lo_ch.append(Blank(duration=self.readout_window + 4 * T_MARGIN))
-        self._ctrl_lo_slots[qubit] = ctrl_lo_slot
-        self._ctrl_lo_times[qubit] = (
-            ctrl_lo_ch.get_timestamp(ctrl_lo_slot) + self.schedule.offset
+        # control (ef)
+        ctrl_ef_slot = Arbitrary(duration=self.control_window, amplitude=1)
+        ctrl_ef_ch = self._ctrl_ef_channel(qubit)
+        ctrl_ef_ch.clear()
+        ctrl_ef_ch.append(ctrl_ef_slot)
+        ctrl_ef_ch.append(Blank(duration=self.readout_window + 4 * T_MARGIN))
+        self._ctrl_ef_slots[qubit] = ctrl_ef_slot
+        self._ctrl_ef_times[qubit] = (
+            ctrl_ef_ch.get_timestamp(ctrl_ef_slot) + self.schedule.offset
         )
 
-        # control (hi)
-        ctrl_hi_slot = Arbitrary(duration=self.control_window, amplitude=1)
-        ctrl_hi_ch = self._ctrl_hi_channel(qubit)
-        ctrl_hi_ch.clear()
-        ctrl_hi_ch.append(ctrl_hi_slot)
-        ctrl_hi_ch.append(Blank(duration=self.readout_window + 4 * T_MARGIN))
-        self._ctrl_hi_slots[qubit] = ctrl_hi_slot
-        self._ctrl_hi_times[qubit] = (
-            ctrl_hi_ch.get_timestamp(ctrl_hi_slot) + self.schedule.offset
+        # control (cr)
+        ctrl_cr_slot = Arbitrary(duration=self.control_window, amplitude=1)
+        ctrl_cr_ch = self._ctrl_cr_channel(qubit)
+        ctrl_cr_ch.clear()
+        ctrl_cr_ch.append(ctrl_cr_slot)
+        ctrl_cr_ch.append(Blank(duration=self.readout_window + 4 * T_MARGIN))
+        self._ctrl_cr_slots[qubit] = ctrl_cr_slot
+        self._ctrl_cr_times[qubit] = (
+            ctrl_cr_ch.get_timestamp(ctrl_cr_slot) + self.schedule.offset
         )
 
     def _init_readout_slots(self, qubit: QubitKey):
@@ -420,17 +420,17 @@ class QubeManager:
         for index, control_port in enumerate(self.configs.control_ports):
             port = ports[control_port]
             qubit = self.qubits[index]
-            adda_to_channels[port.dac.awg0] = [self._ctrl_lo_channel(qubit)]
+            adda_to_channels[port.dac.awg0] = [self._ctrl_ef_channel(qubit)]
             adda_to_channels[port.dac.awg1] = [self._ctrl_channel(qubit)]
-            adda_to_channels[port.dac.awg2] = [self._ctrl_hi_channel(qubit)]
+            adda_to_channels[port.dac.awg2] = [self._ctrl_cr_channel(qubit)]
         self._adda_to_channels = adda_to_channels
         # pylint: enable=attribute-defined-outside-init
 
     def _reset_tx_waveforms(self):
         for qubit in self.qubits:
             self._ctrl_slots[qubit].iq[:] = 0.0
-            self._ctrl_lo_slots[qubit].iq[:] = 0.0
-            self._ctrl_hi_slots[qubit].iq[:] = 0.0
+            self._ctrl_ef_slots[qubit].iq[:] = 0.0
+            self._ctrl_cr_slots[qubit].iq[:] = 0.0
             self._read_tx_slots[qubit].iq[:] = 0.0
 
     def _set_waveforms(
@@ -455,7 +455,7 @@ class QubeManager:
         possible_keys = [
             qubit + suffix
             for qubit in self.qubits
-            for suffix in ["", CONTROL_LO, CONTROL_HI]
+            for suffix in ["", CONTROL_EF, CONTROL_CR]
         ]
         if not all(key in possible_keys for key in waveforms.keys()):
             raise ValueError("Invalid waveform keys.")
@@ -468,19 +468,19 @@ class QubeManager:
                 t = self._ctrl_times[qubit]
                 self._ctrl_slots[qubit].iq[(-T <= t) & (t < 0)] = values
 
-            # control (lo)
-            if qubit + CONTROL_LO in waveforms:
-                values = waveforms[qubit + CONTROL_LO]
+            # control (ef)
+            if qubit + CONTROL_EF in waveforms:
+                values = waveforms[qubit + CONTROL_EF]
                 T = len(values) * SAMPLING_PERIOD
-                t = self._ctrl_lo_times[qubit]
-                self._ctrl_lo_slots[qubit].iq[(-T <= t) & (t < 0)] = values
+                t = self._ctrl_ef_times[qubit]
+                self._ctrl_ef_slots[qubit].iq[(-T <= t) & (t < 0)] = values
 
-            # control (hi)
-            if qubit + CONTROL_HI in waveforms:
-                values = waveforms[qubit + CONTROL_HI]
+            # control (cr)
+            if qubit + CONTROL_CR in waveforms:
+                values = waveforms[qubit + CONTROL_CR]
                 T = len(values) * SAMPLING_PERIOD
-                t = self._ctrl_hi_times[qubit]
-                self._ctrl_hi_slots[qubit].iq[(-T <= t) & (t < 0)] = values
+                t = self._ctrl_cr_times[qubit]
+                self._ctrl_cr_slots[qubit].iq[(-T <= t) & (t < 0)] = values
 
     def _set_readout_waveforms(
         self,
