@@ -294,7 +294,7 @@ class QubeManager:
         assert len(set(durations)) == 1, "All channels must have the same duration."
 
     def _init_control_channels(self, qubit: QubitKey):
-        control_frequency = self.params.transmon_dressed_frequency_ge[qubit]
+        control_frequency = self.params.transmon_bare_frequency_ge[qubit]
         anharmonicity = self.params.anharmonicity[qubit]
         # control
         self.schedule[qubit] = Channel(
@@ -308,7 +308,7 @@ class QubeManager:
         cr_control_index = self.qubits.index(qubit)
         cr_target_index = {0: 1, 1: 3, 3: 2, 2: 0}[cr_control_index]
         cr_target_qubit = self.qubits[cr_target_index]
-        cr_frequency = self.params.transmon_dressed_frequency_ge[cr_target_qubit]
+        cr_frequency = self.params.transmon_bare_frequency_ge[cr_target_qubit]
         self.schedule[qubit + CONTROL_CR] = Channel(center_frequency=cr_frequency)
 
     def _init_readout_channels(self, qubit: QubitKey):
