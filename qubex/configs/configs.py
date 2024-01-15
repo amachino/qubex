@@ -56,6 +56,8 @@ class Params(BaseModel):
         Readout pulse amplitude for each qubit.
     default_hpi_amplitude : dict[str, float]
         Default π/2 pulse amplitude for each qubit.
+    default_ef_hpi_amplitude : dict[str, float]
+        Default π/2 pulse amplitude for each qubit in the ef subspace.
     """
 
     cavity_frequency: dict[str, float]
@@ -64,6 +66,7 @@ class Params(BaseModel):
     anharmonicity: dict[str, float]
     readout_amplitude: dict[str, float]
     default_hpi_amplitude: dict[str, float]
+    default_ef_hpi_amplitude: dict[str, float]
 
 
 class Configs(BaseModel):
