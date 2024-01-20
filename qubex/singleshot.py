@@ -8,7 +8,14 @@ Assume that the qube is in standalone mode.
 from __future__ import annotations
 
 import numpy as np
-from e7awgsw import AwgCtrl, CaptureCtrl, CaptureModule, CaptureParam, CaptureUnit
+from e7awgsw import (
+    AwgCtrl,
+    CaptureCtrl,
+    CaptureModule,
+    CaptureParam,
+    CaptureUnit,
+    DspUnit,
+)
 from qubecalib.meas import WaveSequenceFactory
 from qubecalib.pulse import Channel, Read
 from qubecalib.qube import AWG, CPT, QubeTypeA
@@ -26,7 +33,6 @@ class Send(AwgCtrl):
         self.awg_id_list = [awg.id for awg, _ in args]
         self.initialize(*self.awg_id_list)
         for awg, seq in args:
-            # print(seq.sequence)
             self.set_wave_sequence(awg.id, seq.sequence)
 
     def start(self):
@@ -49,7 +55,6 @@ class Recv(CaptureCtrl):
         self.initialize(*self.capt_units)
         for captm, param in args:
             for unit in CaptureModule.get_units(captm.id):
-                print(param)
                 self.set_capture_params(unit, param)
 
     def wait_for_trigger(self, awg: AWG):
@@ -74,6 +79,8 @@ def singleshot(
     shots: int,
     timeout: int = 30,
     interval: int = 150_000,
+    sum_start: int = 0,
+    sum_words: int = CaptureParam.MAX_SUM_SECTION_LEN,
 ):
     # create config object for e7awgsw
     qube_to_e7awgsw: dict[QubeTypeA, dict[str, dict]] = _conv_to_e7awgsw(
@@ -95,6 +102,14 @@ def singleshot(
 
     awg_to_wavesequence: dict[AWG, WaveSequenceFactory] = config["awg_to_wavesequence"]
     capt_to_captparam: dict[CPT, CaptureParam] = config["capt_to_captparam"]
+
+    # modify CaptureParam for singleshot
+    for captparam in capt_to_captparam.values():
+        # NOTE: DspUnit.INTEGRATION is enabled by _conv_to_e7awgsw if shots > 1
+        # by calling sel_dsp_units_to_enable(DspUnit.SUM), INTEGRATION is disabled
+        captparam.sel_dsp_units_to_enable(DspUnit.SUM)
+        captparam.sum_start_word_no = sum_start
+        captparam.num_words_to_sum = sum_words
 
     # args for Send and Recv
     arg_send = list(awg_to_wavesequence.items())
