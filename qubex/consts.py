@@ -4,6 +4,7 @@ Constants used in the qubex package.
 
 from typing import Final
 
+SAMPLES_PER_WORDS = 4
 SAMPLING_PERIOD: Final[int] = 2  # [ns]
 MIN_SAMPLE: Final[int] = 64  # min number of samples of e7awg
 MIN_DURATION: Final[int] = MIN_SAMPLE * SAMPLING_PERIOD

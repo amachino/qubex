@@ -16,8 +16,9 @@ from qubecalib.qube import SSB
 from qubecalib.setupqube import run
 
 from .configs import Configs
-from .consts import SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
+from .consts import SAMPLES_PER_WORDS, SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
 from .pulse import Rect, Waveform
+from .singleshot import singleshot
 from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
 
 READOUT_TX: Final = "_TX"
@@ -178,6 +179,46 @@ class QubeManager:
     def get_readout_rx_times(self, qubits: list[QubitKey]) -> QubitDict[IntArray]:
         """Returns the readout (rx) times of the given qubits."""
         return {qubit: self._read_rx_times[qubit] for qubit in qubits}
+
+    def singleshot(
+        self,
+        readout_qubits: list[QubitKey],
+        control_waveforms: QubitDict[Union[Waveform, IQArray, list[complex]]],
+        control_frequencies: Optional[QubitDict[float]] = None,
+        shots: int = DEFAULT_REPEATS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> QubitDict[IQArray]:
+        # set waveforms
+        self._set_waveforms(
+            control_waveforms=self._normalize_waveform(control_waveforms),
+            readout_qubits=readout_qubits,
+        )
+
+        # set control frequencies
+        current_frequencies = {}
+        if control_frequencies is not None:
+            for qubit, frequency in control_frequencies.items():
+                current_frequencies[qubit] = self.get_control_frequency(qubit)
+                self.set_control_frequency(qubit, frequency)
+
+        singleshot(
+            adda_to_channels=self._adda_to_channels,
+            triggers=self._triggers,
+            shots=shots,
+            interval=interval,
+            sum_start=self.readout_range.start // SAMPLING_PERIOD // SAMPLES_PER_WORDS,
+            sum_words=self.readout_window // SAMPLING_PERIOD // SAMPLES_PER_WORDS,
+        )
+
+        # reset control frequencies
+        if control_frequencies is not None:
+            for qubit, frequency in current_frequencies.items():
+                self.set_control_frequency(qubit, frequency)
+
+        # get results
+        rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
+        result = {qubit: waveform.squeeze() for qubit, waveform in rx_waveforms.items()}
+        return result
 
     def measure(
         self,
