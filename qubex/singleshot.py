@@ -8,7 +8,7 @@ Assume that the qube is in standalone mode.
 from __future__ import annotations
 
 import numpy as np
-from e7awgsw import (
+from e7awgsw import (  # type: ignore
     AwgCtrl,
     CaptureCtrl,
     CaptureModule,
@@ -107,7 +107,10 @@ def singleshot(
     for captparam in capt_to_captparam.values():
         # NOTE: DspUnit.INTEGRATION is enabled by _conv_to_e7awgsw if shots > 1
         # by calling sel_dsp_units_to_enable(DspUnit.SUM), INTEGRATION is disabled
-        captparam.sel_dsp_units_to_enable(DspUnit.SUM)
+        # captparam.sel_dsp_units_to_enable(DspUnit.SUM)
+
+        # disable all DSP units
+        captparam.sel_dsp_units_to_enable()
         captparam.sum_start_word_no = sum_start
         captparam.num_words_to_sum = sum_words
 

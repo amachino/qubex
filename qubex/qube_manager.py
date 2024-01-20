@@ -217,7 +217,10 @@ class QubeManager:
 
         # get results
         rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
-        result = {qubit: waveform.squeeze() for qubit, waveform in rx_waveforms.items()}
+        result = {
+            qubit: waveform[:, self.readout_range].mean(axis=1)
+            for qubit, waveform in rx_waveforms.items()
+        }
         return result
 
     def measure(
