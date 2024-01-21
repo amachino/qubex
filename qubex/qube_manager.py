@@ -6,7 +6,7 @@ and readout of qubits in a quantum computing environment.
 
 from __future__ import annotations
 
-from typing import Final, Optional, Union
+from typing import Final, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -186,7 +186,7 @@ class QubeManager:
     def singleshot(
         self,
         readout_qubits: list[QubitKey],
-        control_waveforms: QubitDict[Union[Waveform, IQArray, list[complex]]],
+        control_waveforms: QubitDict[Waveform | IQArray | list[complex]],
         control_frequencies: Optional[QubitDict[float]] = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -241,7 +241,7 @@ class QubeManager:
     def measure(
         self,
         readout_qubits: list[QubitKey],
-        control_waveforms: QubitDict[Union[Waveform, IQArray, list[complex]]],
+        control_waveforms: QubitDict[Waveform | IQArray | list[complex]],
         control_frequencies: Optional[QubitDict[float]] = None,
         repeats: int = DEFAULT_REPEATS,
         interval: int = DEFAULT_INTERVAL,
@@ -300,7 +300,7 @@ class QubeManager:
 
     def _normalize_waveform(
         self,
-        waveforms: QubitDict[Union[Waveform, IQArray, list[complex]]],
+        waveforms: QubitDict[Waveform | IQArray | list[complex]],
     ) -> QubitDict[IQArray]:
         """Normalizes the given waveforms to IQArray."""
         waveform_values = {}
