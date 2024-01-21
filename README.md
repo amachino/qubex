@@ -35,15 +35,15 @@ from qubex.experiment import Experiment
 %matplotlib inline
 
 # Create an experiment object
-ex1 = Experiment(
+exp = Experiment(
     config_file="/path/to/your/config.json",
 )
 
 # Connect to the QuBE device
-ex1.connect()
+exp.connect()
 
 # Run a Rabi experiment
-result1 = ex1.rabi_check()
+result = exp.rabi_check()
 ```
 
 ### Sweep parameters of a pulse sequence
@@ -55,12 +55,12 @@ from qubex.pulse import Blank, Drag, PulseSequence
 %matplotlib inline
 
 # Create an experiment object
-ex2 = Experiment(
+exp = Experiment(
     config_file="/path/to/your/config.json",
 )
 
 # Connect to the QuBE device
-ex2.connect()
+exp.connect()
 
 # Create a pulse object
 U = Drag(duration=20, amplitude=0.03, beta=-0.1)
@@ -84,7 +84,7 @@ waveform(0).plot()
 waveform(100).plot()
 
 # Run a parameter sweep experiment
-result2 = ex2.sweep_parameter(
+result = exp.sweep_parameter(
     sweep_range=np.arange(0, 1000, 100),
     parametric_waveforms={
         "Qxx": waveform,
