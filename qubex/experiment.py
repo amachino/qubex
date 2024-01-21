@@ -4,6 +4,8 @@ devices. This module includes functionalities for setting up experiments,
 measuring quantum states, and analyzing results.
 """
 
+from __future__ import annotations
+
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
@@ -222,9 +224,56 @@ class Experiment:
         """Sets the control frequency of the qubit."""
         self.qube_manager.set_control_frequency(qubit, frequency)
 
+    def singleshot(
+        self,
+        waveforms: QubitDict[Waveform | IQArray | list[complex]],
+        shots: int = 1024,
+        interval: int = 150_000,
+    ) -> QubitDict[IQArray]:
+        """
+        Conducts a singleshot experiment.
+
+        Parameters
+        ----------
+        waveforms : QubitDict[Waveform]
+            Waveforms to apply to the qubits.
+        shots : int, optional
+            Number of shots to repeat the experiment. Defaults to 1024.
+        interval : int, optional
+            Interval between each experiment in nanoseconds. Defaults to 150_000.
+
+        Returns
+        -------
+        QubitDict[IQArray]
+            Measured values of the qubits.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> exp = Experiment(config_file="config.json")
+        >>> exp.connect()
+        >>> exp.singleshot(
+        ...     waveforms={
+        ...         "Q01": Rect(duration=20, amplitude=0.5),
+        ...         "Q02": Rect(duration=20, amplitude=0.5),
+        ...     },
+        ...     shots=1024,
+        ...     interval=150_000,
+        ... )
+        {"Q01": (0.0005+0.0005j), "Q02": (0.0005+0.0005j)}
+        """
+        qubits = list(waveforms.keys())
+        result = self.qube_manager.singleshot(
+            readout_qubits=qubits,
+            control_waveforms=waveforms,
+            shots=shots,
+            interval=interval,
+        )
+        return result
+
     def measure(
         self,
-        waveforms: QubitDict[Waveform],
+        waveforms: QubitDict[Waveform | IQArray | list[complex]],
         repeats: int = 10_000,
         interval: int = 150_000,
     ) -> QubitDict[IQValue]:
@@ -248,9 +297,9 @@ class Experiment:
         Examples
         --------
         >>> from qubex import Experiment
-        >>> experiment = Experiment(config_file="config.json")
-        >>> experiment.connect()
-        >>> experiment.measure(
+        >>> exp = Experiment(config_file="config.json")
+        >>> exp.connect()
+        >>> exp.measure(
         ...     waveforms={
         ...         "Q01": Rect(duration=20, amplitude=0.5),
         ...         "Q02": Rect(duration=20, amplitude=0.5),
@@ -295,9 +344,9 @@ class Experiment:
         Examples
         --------
         >>> from qubex import Experiment
-        >>> experiment = Experiment(config_file="config.json")
-        >>> experiment.connect()
-        >>> experiment.rabi_experiment(
+        >>> exp = Experiment(config_file="config.json")
+        >>> exp.connect()
+        >>> exp.rabi_experiment(
         ...     time_range=np.arange(0, 201, 10),
         ...     amplitudes={
         ...         "Q01": 0.5,
