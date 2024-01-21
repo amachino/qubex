@@ -191,6 +191,23 @@ class QubeManager:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> QubitDict[IQArray]:
+        """
+        Executes a quantum measurement on the given qubits.
+
+        Parameters
+        ----------
+        readout_qubits : list[QubitKey]
+            List of qubits to readout.
+        control_waveforms : QubitDict[Waveform]
+            Dictionary of control waveforms for each qubit.
+        control_frequencies : Optional[QubitDict[float]], optional
+            Dictionary of control frequencies for each qubit. Defaults to None.
+        shots : int, optional
+            Number of shots to repeat the measurement. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between repeats in nanoseconds. Defaults to DEFAULT_INTERVAL.
+        """
+
         # set waveforms
         self._set_waveforms(
             control_waveforms=self._normalize_waveform(control_waveforms),
@@ -207,6 +224,7 @@ class QubeManager:
         singleshot(
             adda_to_channels=self._adda_to_channels,
             triggers=self._triggers,
+            readout_range=self.readout_range,
             shots=shots,
             interval=interval,
         )
@@ -217,11 +235,7 @@ class QubeManager:
                 self.set_control_frequency(qubit, frequency)
 
         # get results
-        rx_waveforms = self.get_readout_rx_waveforms(readout_qubits)
-        result = {
-            qubit: waveform[:, self.readout_range].mean(axis=1)
-            for qubit, waveform in rx_waveforms.items()
-        }
+        result = self.get_readout_rx_waveforms(readout_qubits)
         return result
 
     def measure(

@@ -8,6 +8,7 @@ Assume that the qube is in standalone mode.
 from __future__ import annotations
 
 import numpy as np
+import numpy.typing as npt
 
 # mypy: disable-error-code="import-untyped"
 from e7awgsw import AwgCtrl, CaptureCtrl, CaptureModule, CaptureParam, CaptureUnit
@@ -71,9 +72,10 @@ class Recv(CaptureCtrl):
 def singleshot(
     adda_to_channels: dict[AWG | CPT, list[Channel]],
     triggers: list[AWG],
-    shots: int,
-    timeout: int = 30,
+    readout_range: slice = slice(None),
+    shots: int = 1024,
     interval: int = 150_000,
+    timeout: int = 30,
 ):
     # create config object for e7awgsw
     qube_to_e7awgsw: dict[QubeTypeA, dict[str, dict]] = _conv_to_e7awgsw(
@@ -121,31 +123,43 @@ def singleshot(
 
     # store readout data
     for capt_unit, read_channel in zip(capt_units, read_channels):
-        _store_readout_data(
+        # demodulate readout data
+        read_slot = read_channel.findall(Read)[0]
+        frequency = read_channel.center_frequency * 1e-6
+        data = _demodulate_readout_data(
             capt_module=capt_module,
             capt_unit=capt_unit,
-            read_channel=read_channel,
-            repeats=shots,
+            frequency=frequency,
+            readout_range=readout_range,
+            shots=shots,
         )
+        # store demodulated data to readout slot
+        read_slot.iq = data
 
 
-def _store_readout_data(
+def _demodulate_readout_data(
     capt_module: CPT,
     capt_unit: CaptureUnit,
-    read_channel: Channel,
-    repeats: int,
-):
-    read_slot: Read = read_channel.findall(Read)[0]
-
+    frequency: float,
+    readout_range: slice,
+    shots: int,
+) -> npt.NDArray[np.complex128]:
     with CaptureCtrl(capt_module.port.qube.ipfpga) as capt_ctrl:
+        # get the number of captured samples
         n_samples = capt_ctrl.num_captured_samples(capt_unit)
+        # get the captured data from the capture unit
         capture_data = np.array(capt_ctrl.get_capture_data(capt_unit, n_samples))
+        # convert to complex array
         values = capture_data[:, 0] + 1j * capture_data[:, 1]
-        values = values.reshape(repeats, int(len(values) / repeats))
+        # reshape the array to separate shots
+        values = values.reshape(shots, len(values) // shots)
+        # calculate time axis
         times = np.arange(0, len(values[0])) / CaptureCtrl.SAMPLING_RATE
-        frequency = read_channel.center_frequency * 1e-6
+        # calculate modulated frequency (difference from NCO frequency)
         modulated_frequency = capt_module.modulation_frequency(frequency)
+        # demodulate the readout waveform
         values *= np.exp(-1j * 2 * np.pi * modulated_frequency * 1e6 * times)
-
-        # store readout data to Read slot
-        read_slot.iq = values
+        # average the waveform to get a I/Q value
+        values = values[:, readout_range].mean(axis=1)
+        # return the I/Q value
+        return values
