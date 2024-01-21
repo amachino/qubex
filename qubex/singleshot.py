@@ -8,14 +8,9 @@ Assume that the qube is in standalone mode.
 from __future__ import annotations
 
 import numpy as np
-from e7awgsw import (  # type: ignore
-    AwgCtrl,
-    CaptureCtrl,
-    CaptureModule,
-    CaptureParam,
-    CaptureUnit,
-    DspUnit,
-)
+
+# mypy: disable-error-code="import-untyped"
+from e7awgsw import AwgCtrl, CaptureCtrl, CaptureModule, CaptureParam, CaptureUnit
 from qubecalib.meas import WaveSequenceFactory
 from qubecalib.pulse import Channel, Read
 from qubecalib.qube import AWG, CPT, QubeTypeA
@@ -79,8 +74,6 @@ def singleshot(
     shots: int,
     timeout: int = 30,
     interval: int = 150_000,
-    sum_start: int = 0,
-    sum_words: int = CaptureParam.MAX_SUM_SECTION_LEN,
 ):
     # create config object for e7awgsw
     qube_to_e7awgsw: dict[QubeTypeA, dict[str, dict]] = _conv_to_e7awgsw(
@@ -105,14 +98,7 @@ def singleshot(
 
     # modify CaptureParam for singleshot
     for captparam in capt_to_captparam.values():
-        # NOTE: DspUnit.INTEGRATION is enabled by _conv_to_e7awgsw if shots > 1
-        # by calling sel_dsp_units_to_enable(DspUnit.SUM), INTEGRATION is disabled
-        # captparam.sel_dsp_units_to_enable(DspUnit.SUM)
-
-        # disable all DSP units
         captparam.sel_dsp_units_to_enable()
-        captparam.sum_start_word_no = sum_start
-        captparam.num_words_to_sum = sum_words
 
     # args for Send and Recv
     arg_send = list(awg_to_wavesequence.items())
