@@ -8,7 +8,8 @@ import numpy.typing as npt
 import qctrlvisualizer as qv  # type: ignore
 import qutip as qt  # type: ignore
 
-from .system import System
+from .system import System, StateAlias
+
 
 SAMPLING_PERIOD: float = 2.0  # ns
 
@@ -42,11 +43,16 @@ class Simulator:
     def simulate(
         self,
         controls: dict[str, list | npt.NDArray],
-        initial_state: Optional[qt.Qobj] = None,
+        initial_state: qt.Qobj | StateAlias | dict[str, StateAlias] = "0",
     ):
+        # normalize the controls
         times, waveforms = self._normalize(controls)
 
-        initial_state = initial_state or self.system.ground_state()
+        # convert the initial state to a Qobj
+        if not isinstance(initial_state, qt.Qobj):
+            initial_state = self.system.state(initial_state)
+
+        # create the hamiltonian and collapse operators
         hamiltonian: list = [self.system.hamiltonian]
         collapse_operators: list = []
 

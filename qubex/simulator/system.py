@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 from dataclasses import asdict, dataclass
 from typing import Final, Literal
 
 import networkx as nx  # type: ignore
 import qutip as qt  # type: ignore
+from typing_extensions import TypeAlias
+
+StateAlias: TypeAlias = Literal["0", "1", "+", "-", "+i", "-i", "*"]
 
 
 @dataclass
@@ -38,43 +43,48 @@ class System:
         self.hamiltonian = qt.Qobj()
         self._init_system()
 
-    def ground_state(self) -> qt.Qobj:
-        return self.pauli_state("0")
-
-    def excited_state(self) -> qt.Qobj:
-        return self.pauli_state("1")
-
-    def superposition_state(self) -> qt.Qobj:
-        return self.pauli_state("-i")
-
-    def random_state(self) -> qt.Qobj:
-        return qt.tensor(
-            [(qt.rand_ket_haar(transmon.dimension)) for transmon in self.transmons]
-        )
-
-    def pauli_state(
+    def state(
         self,
-        label: Literal["0", "1", "+", "-", "+i", "-i"],
+        alias: StateAlias | dict[str, StateAlias],
+        default: StateAlias = "0",
     ) -> qt.Qobj:
-        states = []
-        for transmon in self.transmons:
-            dim = transmon.dimension
-            if label == "0":
-                state = qt.basis(dim, 0)
-            elif label == "1":
-                state = qt.basis(dim, 1)
-            elif label == "+":
-                state = qt.basis(dim, 0) + qt.basis(dim, 1)
-            elif label == "-":
-                state = qt.basis(dim, 0) - qt.basis(dim, 1)
-            elif label == "+i":
-                state = qt.basis(dim, 0) + 1j * qt.basis(dim, 1)
-            elif label == "-i":
-                state = qt.basis(dim, 0) - 1j * qt.basis(dim, 1)
-            else:
-                raise ValueError(f"Invalid Pauli state {label}.")
-            states.append(state.unit())
-        return qt.tensor(states)
+        if isinstance(alias, str):
+            return qt.tensor(
+                [self._state(transmon.dimension, alias) for transmon in self.transmons]
+            )
+        elif isinstance(alias, dict):
+            states = []
+            for transmon in self.transmons:
+                if transmon.label in alias:
+                    states.append(
+                        self._state(transmon.dimension, alias[transmon.label])
+                    )
+                else:
+                    states.append(self._state(transmon.dimension, default))
+            return qt.tensor(states)
+
+    def _state(
+        self,
+        dim: int,
+        alias: StateAlias,
+    ) -> qt.Qobj:
+        if alias == "0":
+            state = qt.basis(dim, 0)
+        elif alias == "1":
+            state = qt.basis(dim, 1)
+        elif alias == "+":
+            state = (qt.basis(dim, 0) + qt.basis(dim, 1)).unit()
+        elif alias == "-":
+            state = (qt.basis(dim, 0) - qt.basis(dim, 1)).unit()
+        elif alias == "+i":
+            state = (qt.basis(dim, 0) + 1j * qt.basis(dim, 1)).unit()
+        elif alias == "-i":
+            state = (qt.basis(dim, 0) - 1j * qt.basis(dim, 1)).unit()
+        elif alias == "*":
+            state = qt.rand_ket_haar(dim)
+        else:
+            raise ValueError(f"Invalid state alias: {alias}")
+        return state
 
     def index(self, label: str) -> int:
         if label not in self.graph.nodes:
