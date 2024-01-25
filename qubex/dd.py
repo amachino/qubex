@@ -151,8 +151,7 @@ class TabuchiDD(Pulse):
         error_y = beta
         y = (1 + error_y) * np.array([self._vy(t) for t in self.t])
 
-        values = (x + 1j * y) / np.pi / 2 * 1e3
-        return values
+        return x + 1j * y
 
     def _vx(self, t) -> float:
         return sum(

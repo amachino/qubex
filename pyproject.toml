@@ -1,6 +1,6 @@
 [project]
 name = "qubex"
-version = "0.4.0"
+version = "0.4.1"
 requires-python = ">=3.9"
 dependencies = [
     "jupyter",
@@ -10,4 +10,5 @@ dependencies = [
     "scikit-learn",
     "qutip",
     "pydantic",
+    "qctrl-visualizer",
 ]
