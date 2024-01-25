@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Final, Literal
 
+import numpy as np
 import networkx as nx  # type: ignore
 import qutip as qt  # type: ignore
 from typing_extensions import TypeAlias
@@ -53,6 +54,10 @@ class System:
                 [self._state(transmon.dimension, alias) for transmon in self.transmons]
             )
         elif isinstance(alias, dict):
+            for label in alias:
+                if label not in self.graph.nodes:
+                    raise ValueError(f"Transmon {label} does not exist.")
+
             states = []
             for transmon in self.transmons:
                 if transmon.label in alias:
@@ -81,7 +86,8 @@ class System:
         elif alias == "-i":
             state = (qt.basis(dim, 0) - 1j * qt.basis(dim, 1)).unit()
         elif alias == "*":
-            state = qt.rand_ket_haar(dim)
+            # random state in qubit {|0>, |1>} subspace
+            state = qt.Qobj(np.append(qt.rand_ket_haar(2), [0 + 0j] * (dim - 2)))
         else:
             raise ValueError(f"Invalid state alias: {alias}")
         return state
@@ -102,14 +108,14 @@ class System:
         return Coupling(**self.graph.edges[pair])
 
     def transmon_hamiltonian(self, transmon: Transmon) -> qt.Qobj:
-        omega = transmon.frequency
-        alpha = transmon.anharmonicity
+        omega = 2 * np.pi * transmon.frequency
+        alpha = 2 * np.pi * transmon.anharmonicity
         b = self.lowering_operator(transmon.label)
         bd = b.dag()
         return omega * bd * b + 0.5 * alpha * (bd * bd * b * b)
 
     def coupling_hamiltonian(self, coupling: Coupling) -> qt.Qobj:
-        g = coupling.strength
+        g = 2 * np.pi * coupling.strength
         b_0 = self.lowering_operator(coupling.pair[0])
         bd_0 = b_0.dag()
         b_1 = self.lowering_operator(coupling.pair[1])
@@ -129,7 +135,11 @@ class System:
         )
 
     def draw(self, **kwargs):
-        nx.draw(self.graph, **kwargs)
+        nx.draw(
+            self.graph,
+            with_labels=True,
+            **kwargs,
+        )
 
     def _validate(self, transmons: list[Transmon], couplings: list[Coupling]):
         transmon_labels = [transmon.label for transmon in transmons]
