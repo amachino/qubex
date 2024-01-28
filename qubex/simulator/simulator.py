@@ -102,11 +102,9 @@ class Simulator:
         def duplicate_last_value(
             waveform: list | npt.NDArray,
         ) -> npt.NDArray[np.complex128]:
-            waveform = list(waveform)
-            last_point = waveform[-1]
-            waveform.append(last_point)
-            waveform = np.array(waveform, dtype=np.complex128)
-            return waveform
+            arr = np.array(waveform, dtype=np.complex128)
+            arr = np.append(arr, arr[-1])
+            return arr
 
         # duplicate the last value of each waveform to use as a step function
         waveforms = {
