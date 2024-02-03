@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final, Optional
+from typing import Final
 
 import numpy as np
 import numpy.typing as npt
