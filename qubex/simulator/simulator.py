@@ -61,10 +61,8 @@ class Simulator:
             transmon = self.system.transmon(label)
             a = self.system.lowering_operator(label)
             ad = a.dag()
-            sigma_x = a + ad
-            sigma_y = -1.0j * (a - ad)
-            hamiltonian.append([0.5 * sigma_x, np.real(waveform)])
-            hamiltonian.append([0.5 * sigma_y, np.imag(waveform)])
+            hamiltonian.append([0.5 * a, waveform])
+            hamiltonian.append([0.5 * ad, np.conj(waveform)])
 
         # add noise to the system
         for transmon in self.system.transmons:
