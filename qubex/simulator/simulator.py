@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final, Optional
+from typing import Final, Literal
 
 import numpy as np
 import numpy.typing as npt
 import qctrlvisualizer as qv  # type: ignore
 import qutip as qt  # type: ignore
 
-from .system import System, StateAlias
-
+from .system import StateAlias, System
 
 SAMPLING_PERIOD: float = 2.0  # ns
 
@@ -17,111 +16,110 @@ SAMPLING_PERIOD: float = 2.0  # ns
 @dataclass
 class Result:
     system: System
-    times: npt.NDArray[np.float64]
-    waveforms: dict[str, npt.NDArray[np.complex128]]
+    control: Control
     states: list[qt.Qobj]
 
     def ptrace(self, label: str) -> list[qt.Qobj]:
         index = self.system.index(label)
         return [state.ptrace(index) for state in self.states]
 
-    def draw(self, label: str):
-        rho = np.array(self.ptrace(label)).squeeze()
-        rho_qubit_subspace = rho[:, :2, :2]
-        qv.display_bloch_sphere_from_density_matrices(rho_qubit_subspace)
+    def draw(
+        self,
+        label: str,
+        frame: Literal["qubit", "drive"] = "qubit",
+    ) -> None:
+        pstates = self.ptrace(label)
+
+        if frame == "qubit":
+            qubit = self.system.transmon(label)
+            times = self.control.times
+            f_drive = self.control.frequency
+            f_qubit = qubit.frequency
+            delta = 2 * np.pi * (f_drive - f_qubit)
+            dim = qubit.dimension
+            a = qt.destroy(dim)
+            ad = a.dag()
+
+            def U(t):
+                return (-1j * delta * ad * a * t).expm()
+
+            pstates = [U(t) * state * U(t).dag() for t, state in zip(times, pstates)]
+
+        rho = np.array(pstates).squeeze()[:, :2, :2]
+        qv.display_bloch_sphere_from_density_matrices(rho)
+
+
+@dataclass
+class Control:
+    target: str
+    frequency: float
+    waveform: npt.NDArray
+    sampling_period: float = SAMPLING_PERIOD
+
+    @property
+    def values(self) -> npt.NDArray[np.complex128]:
+        # duplicate the last value to use as a step function
+        arr = np.array(self.waveform, dtype=np.complex128)
+        arr = np.append(arr, arr[-1])
+        return arr
+
+    @property
+    def times(self) -> npt.NDArray[np.float64]:
+        length = len(self.values)
+        return np.linspace(
+            0.0,
+            (length - 1) * self.sampling_period,
+            length,
+        )
 
 
 class Simulator:
     def __init__(
         self,
         system: System,
-        sampling_period: float = SAMPLING_PERIOD,
     ):
         self.system: Final = system
-        self.sampling_period: Final = sampling_period
 
     def simulate(
         self,
-        controls: dict[str, list | npt.NDArray],
+        control: Control,
         initial_state: qt.Qobj | StateAlias | dict[str, StateAlias] = "0",
     ):
-        # normalize the controls
-        times, waveforms = self._normalize(controls)
-
         # convert the initial state to a Qobj
         if not isinstance(initial_state, qt.Qobj):
             initial_state = self.system.state(initial_state)
 
-        # create the hamiltonian and collapse operators
-        hamiltonian: list = [self.system.hamiltonian]
+        static_hamiltonian = self.system.hamiltonian
+        dynamic_hamiltonian: list = []
         collapse_operators: list = []
 
-        # add controls to the system
-        for label, waveform in waveforms.items():
-            transmon = self.system.transmon(label)
-            a = self.system.lowering_operator(label)
-            ad = a.dag()
-            sigma_x = a + ad
-            sigma_y = -1.0j * (a - ad)
-            hamiltonian.append([0.5 * sigma_x, np.real(waveform)])
-            hamiltonian.append([0.5 * sigma_y, np.imag(waveform)])
-
-        # add noise to the system
         for transmon in self.system.transmons:
             a = self.system.lowering_operator(transmon.label)
             ad = a.dag()
+
+            # rotating frame of the control frequency
+            static_hamiltonian -= 2 * np.pi * control.frequency * ad * a
+
+            if transmon.label == control.target:
+                dynamic_hamiltonian.append([0.5 * a, control.values])
+                dynamic_hamiltonian.append([0.5 * ad, np.conj(control.values)])
+
             decay_operator = np.sqrt(transmon.decay_rate) * a
             dephasing_operator = np.sqrt(transmon.dephasing_rate) * ad * a
             collapse_operators.append(decay_operator)
             collapse_operators.append(dephasing_operator)
 
+        total_hamiltonian = [static_hamiltonian] + dynamic_hamiltonian
+
         result = qt.mesolve(
-            H=hamiltonian,
+            H=total_hamiltonian,
             rho0=initial_state,
-            tlist=times,
+            tlist=control.times,
             c_ops=collapse_operators,
         )
 
         return Result(
             system=self.system,
-            waveforms=waveforms,
-            times=result.times,
+            control=control,
             states=result.states,
         )
-
-    def _normalize(
-        self,
-        controls: dict[str, list | npt.NDArray],
-    ) -> tuple[npt.NDArray[np.float64], dict[str, npt.NDArray[np.complex128]]]:
-        if len(controls) == 0:
-            raise ValueError("At least one control must be provided.")
-
-        if len({len(waveform) for waveform in controls.values()}) != 1:
-            raise ValueError("All controls must have the same length.")
-
-        def duplicate_last_value(
-            waveform: list | npt.NDArray,
-        ) -> npt.NDArray[np.complex128]:
-            waveform = list(waveform)
-            last_point = waveform[-1]
-            waveform.append(last_point)
-            waveform = np.array(waveform, dtype=np.complex128)
-            return waveform
-
-        # duplicate the last value of each waveform to use as a step function
-        waveforms = {
-            label: duplicate_last_value(waveform)
-            for label, waveform in controls.items()
-        }
-
-        # get length of the waveforms
-        waveform_length = list(waveforms.values())[0].shape[0]
-
-        # create time array for the step function
-        times = np.linspace(
-            0.0,
-            (waveform_length - 1) * self.sampling_period,
-            waveform_length,
-        )
-
-        return times, waveforms

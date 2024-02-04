@@ -7,7 +7,7 @@ def test_rect():
     from qubex.pulse import Rect
 
     rect = Rect(
-        duration=10,
+        width=10,
         amplitude=0.1,
     )
     assert rect.values.shape == (5,)
@@ -16,6 +16,6 @@ def test_rect():
 
     with pytest.raises(ValueError):
         Rect(
-            duration=11,
+            width=11,
             amplitude=0.1,
         )

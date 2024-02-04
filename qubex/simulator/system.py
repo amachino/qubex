@@ -35,11 +35,10 @@ class System:
     def __init__(
         self,
         transmons: list[Transmon],
-        couplings: list[Coupling],
+        couplings: list[Coupling] | None = None,
     ):
-        self._validate(transmons, couplings)
         self.transmons: Final = transmons
-        self.couplings: Final = couplings
+        self.couplings: Final = couplings or []
         self.graph: Final = nx.Graph()
         self.hamiltonian = qt.Qobj()
         self._init_system()
@@ -127,9 +126,11 @@ class System:
             raise ValueError(f"Node {label} does not exist.")
         return qt.tensor(
             [
-                qt.destroy(transmon.dimension)
-                if transmon.label == label
-                else qt.qeye(transmon.dimension)
+                (
+                    qt.destroy(transmon.dimension)
+                    if transmon.label == label
+                    else qt.qeye(transmon.dimension)
+                )
                 for transmon in self.transmons
             ]
         )
@@ -141,15 +142,16 @@ class System:
             **kwargs,
         )
 
-    def _validate(self, transmons: list[Transmon], couplings: list[Coupling]):
-        transmon_labels = [transmon.label for transmon in transmons]
+    def _init_system(self):
+        # validate the transmons and couplings
+        transmon_labels = [transmon.label for transmon in self.transmons]
         if len(transmon_labels) != len(set(transmon_labels)):
             raise ValueError("Transmons must have unique labels.")
-        for coupling in couplings:
+        for coupling in self.couplings:
             if any(label not in transmon_labels for label in coupling.pair):
                 raise ValueError("Couplings must be between existing transmons.")
 
-    def _init_system(self):
+        # create the graph and hamiltonian
         for transmon in self.transmons:
             self.graph.add_node(transmon.label, **asdict(transmon))
             self.hamiltonian += self.transmon_hamiltonian(transmon)

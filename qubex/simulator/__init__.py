@@ -1,2 +1,2 @@
-from .simulator import Simulator
+from .simulator import Simulator, Control
 from .system import Coupling, System, Transmon
