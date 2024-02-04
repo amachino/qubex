@@ -371,8 +371,8 @@ class Rect(Pulse):
 
     Parameters
     ----------
-    duration : int
-        Duration of the rectangular pulse in ns.
+    width : int
+        Effective duration of the rectangular pulse in ns.
     amplitude : float
         Amplitude of the rectangular pulse.
     tau : int, optional
@@ -381,13 +381,15 @@ class Rect(Pulse):
     Examples
     --------
     >>> rect = Rect(
-    ...     duration=100,
+    ...     width=100,
     ...     amplitude=1.0,
     ...     tau=10,
     ... )
 
     Notes
     -----
+    Note that the width of the pulse is the effective duration of the pulse.
+    The actual duration of the pulse is `width + tau`.
     |        ________________________
     |       /                        \
     |      /                          \
@@ -397,32 +399,34 @@ class Rect(Pulse):
     |   <---->                      <---->
     |     tau                        tau
     |      <-------------------------->
+    |                 width           
+    |   <-------------------------------->
     |                duration
     | 
     """
 
     def __init__(
         self,
-        duration: int,
+        width: int,
         amplitude: float,
         tau: int = 0,
         **kwargs,
     ):
         values = np.array([])
-        if duration != 0:
-            values = self._calc_values(duration, amplitude, tau)
+        if width != 0:
+            values = self._calc_values(width, amplitude, tau)
         super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
-        duration: int,
+        width: int,
         amplitude: float,
         tau: int,
     ) -> npt.NDArray[np.complex128]:
-        flattime = duration - tau
+        flattime = width - tau
 
         if flattime < 0:
-            raise ValueError("Duration must be greater than tau.")
+            raise ValueError("width must be greater than tau.")
 
         length_rise = self._ns_to_samples(tau)
         length_flat = self._ns_to_samples(flattime)
