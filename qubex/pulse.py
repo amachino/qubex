@@ -351,7 +351,7 @@ class Blank(Pulse):
 
     Examples
     --------
-    >>> blank = Blank(duration=100)
+    >>> pulse = Blank(duration=100)
     """
 
     def __init__(
@@ -371,16 +371,54 @@ class Rect(Pulse):
 
     Parameters
     ----------
-    width : int
-        Effective duration of the rectangular pulse in ns.
+    duration : int
+        Duration of the rectangular pulse in ns.
     amplitude : float
         Amplitude of the rectangular pulse.
+
+    Examples
+    --------
+    >>> pulse = Rect(duration=100, amplitude=0.1)
+    """
+
+    def __init__(
+        self,
+        duration: int,
+        amplitude: float,
+    ):
+        values = np.array([])
+        if duration != 0:
+            values = self._calc_values(duration, amplitude)
+        super().__init__(values)
+
+    def _calc_values(
+        self,
+        duration: int,
+        amplitude: float,
+    ) -> npt.NDArray[np.complex128]:
+        length = self._ns_to_samples(duration)
+        real = amplitude * np.ones(length)
+        imag = 0
+        values = real + 1j * imag
+        return values
+
+
+class FlatTop(Pulse):
+    """
+    A class to represent a raised cosine flat-top pulse.
+
+    Parameters
+    ----------
+    duration : int
+        Duration of the pulse in ns.
+    amplitude : float
+        Amplitude of the pulse.
     tau : int, optional
-        Rise and fall time of the rectangular pulse in ns.
+        Rise and fall time of the pulse in ns.
     
     Examples
     --------
-    >>> rect = Rect(
+    >>> pulse = FlatTop(
     ...     width=100,
     ...     amplitude=1.0,
     ...     tau=10,
@@ -388,8 +426,6 @@ class Rect(Pulse):
 
     Notes
     -----
-    Note that the width of the pulse is the effective duration of the pulse.
-    The actual duration of the pulse is `width + tau`.
     |        ________________________
     |       /                        \
     |      /                          \
@@ -398,8 +434,6 @@ class Rect(Pulse):
     |___                                 _______
     |   <---->                      <---->
     |     tau                        tau
-    |      <-------------------------->
-    |                 width           
     |   <-------------------------------->
     |                duration
     | 
@@ -407,26 +441,26 @@ class Rect(Pulse):
 
     def __init__(
         self,
-        width: int,
+        duration: int,
         amplitude: float,
         tau: int = 0,
         **kwargs,
     ):
         values = np.array([])
-        if width != 0:
-            values = self._calc_values(width, amplitude, tau)
+        if duration != 0:
+            values = self._calc_values(duration, amplitude, tau)
         super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
-        width: int,
+        duration: int,
         amplitude: float,
         tau: int,
     ) -> npt.NDArray[np.complex128]:
-        flattime = width - tau
+        flattime = duration - 2 * tau
 
         if flattime < 0:
-            raise ValueError("width must be greater than tau.")
+            raise ValueError("duration must be greater than `2 * tau`.")
 
         length_rise = self._ns_to_samples(tau)
         length_flat = self._ns_to_samples(flattime)
@@ -458,7 +492,7 @@ class Gauss(Pulse):
 
     Examples
     --------
-    >>> gauss = Gauss(duration=100, amplitude=1.0, sigma=10)
+    >>> pulse = Gauss(duration=100, amplitude=1.0, sigma=10)
     """
 
     def __init__(
@@ -506,7 +540,7 @@ class Drag(Pulse):
 
     Examples
     --------
-    >>> drag = Drag(
+    >>> pulse = Drag(
     ...     duration=100,
     ...     amplitude=1.0,
     ...     beta=1.0,
@@ -563,7 +597,7 @@ class DragGauss(Pulse):
 
     Examples
     --------
-    >>> drag_gauss = DragGauss(
+    >>> pulse = DragGauss(
     ...     duration=100,
     ...     amplitude=1.0,
     ...     sigma=10,
@@ -618,7 +652,7 @@ class DragCos(Pulse):
 
     Examples
     --------
-    >>> drag_cos = DragCos(
+    >>> pulse = DragCos(
     ...     duration=100,
     ...     amplitude=1.0,
     ...     beta=0.1,

@@ -43,6 +43,14 @@ class System:
         self.hamiltonian = qt.Qobj()
         self._init_system()
 
+    @property
+    def basis_indices(self) -> list[tuple[int, ...]]:
+        return list(np.ndindex(*[transmon.dimension for transmon in self.transmons]))
+
+    @property
+    def basis_labels(self) -> list[str]:
+        return ["".join(str(i) for i in basis) for basis in self.basis_indices]
+
     def state(
         self,
         alias: StateAlias | dict[str, StateAlias],

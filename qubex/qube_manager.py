@@ -19,7 +19,7 @@ from qubecalib.setupqube import run
 
 from .configs import Configs
 from .consts import MIN_SAMPLE, SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
-from .pulse import Rect, Waveform
+from .pulse import FlatTop, Waveform
 from .singleshot import singleshot
 from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
 
@@ -552,12 +552,12 @@ class QubeManager:
     def _create_readout_waveforms(self, qubits: list[QubitKey]):
         """Creates readout waveforms for the given qubits."""
         readout_amplitude = self.params.readout_amplitude
-        tau = 50
+        risetime = 50
         return {
-            qubit: Rect(
-                duration=self.readout_window - tau,
+            qubit: FlatTop(
+                duration=self.readout_window,
                 amplitude=readout_amplitude[qubit],
-                tau=tau,
+                tau=risetime,
             ).values
             for qubit in qubits
         }
