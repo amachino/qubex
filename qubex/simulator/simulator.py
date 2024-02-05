@@ -9,7 +9,6 @@ import numpy as np
 import numpy.typing as npt
 import qctrlvisualizer as qv  # type: ignore
 import qutip as qt  # type: ignore
-from IPython.display import Math, display
 
 from .system import StateAlias, System
 
@@ -61,7 +60,8 @@ class Result:
         states = self.states if label is None else self.substates(label)
         population = states[-1].diag()
         for idx, prob in enumerate(population):
-            display(Math(rf"$|{idx}\rangle: {prob * 100:.2f}\%$"))
+            basis = self.system.basis_labels[idx] if label is None else str(idx)
+            print(f"|{basis}⟩: {prob:.3f}")
 
     def plot_population_dynamics(
         self,
@@ -72,11 +72,11 @@ class Result:
         for state in states:
             population = state.diag()
             for idx, prob in enumerate(population):
-                populations[rf"$|{idx}\rangle$"].append(prob)
+                basis = self.system.basis_labels[idx] if label is None else str(idx)
+                populations[rf"$|{basis}\rangle$"].append(prob)
 
         figure = plt.figure()
         figure.suptitle(f"Population dynamics of {label}")
-
         qv.plot_population_dynamics(
             self.control.times,
             populations,
