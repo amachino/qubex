@@ -16,6 +16,38 @@ SAMPLING_PERIOD: float = 2.0  # ns
 
 
 @dataclass
+class Control:
+    target: str
+    frequency: float
+    waveform: list | npt.NDArray
+    sampling_period: float = SAMPLING_PERIOD
+
+    @property
+    def values(self) -> npt.NDArray[np.complex128]:
+        return np.array(self.waveform, dtype=np.complex128)
+
+    @property
+    def times(self) -> npt.NDArray[np.float64]:
+        length = len(self.values)
+        return np.linspace(
+            0.0,
+            length * self.sampling_period,
+            length,
+        )
+
+    def plot(self, polar: bool = False) -> None:
+        durations = [self.sampling_period * 1e-9] * len(self.waveform)
+        values = np.array(self.waveform, dtype=np.complex128) * 1e9
+        qv.plot_controls(
+            controls={
+                self.target: {"durations": durations, "values": values},
+            },
+            polar=polar,
+            figure=plt.figure(),
+        )
+
+
+@dataclass
 class Result:
     system: System
     control: Control
@@ -81,38 +113,6 @@ class Result:
             self.control.times,
             populations,
             figure=figure,
-        )
-
-
-@dataclass
-class Control:
-    target: str
-    frequency: float
-    waveform: list | npt.NDArray
-    sampling_period: float = SAMPLING_PERIOD
-
-    @property
-    def values(self) -> npt.NDArray[np.complex128]:
-        return np.array(self.waveform, dtype=np.complex128)
-
-    @property
-    def times(self) -> npt.NDArray[np.float64]:
-        length = len(self.values)
-        return np.linspace(
-            0.0,
-            length * self.sampling_period,
-            length,
-        )
-
-    def plot(self):
-        durations = [self.sampling_period * 1e-9] * len(self.waveform)
-        values = np.array(self.waveform, dtype=np.complex128)
-        qv.plot_controls(
-            controls={
-                self.target: {"durations": durations, "values": values},
-            },
-            polar=False,
-            figure=plt.figure(),
         )
 
 
