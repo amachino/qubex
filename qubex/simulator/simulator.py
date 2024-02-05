@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import Final, Literal, Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import qctrlvisualizer as qv  # type: ignore
 import qutip as qt  # type: ignore
+from IPython.display import Math, display
 
 from .system import StateAlias, System
 
@@ -19,34 +22,66 @@ class Result:
     control: Control
     states: list[qt.Qobj]
 
-    def ptrace(self, label: str) -> list[qt.Qobj]:
-        index = self.system.index(label)
-        return [state.ptrace(index) for state in self.states]
-
-    def draw(
+    def substates(
         self,
         label: str,
         frame: Literal["qubit", "drive"] = "qubit",
-    ) -> None:
-        pstates = self.ptrace(label)
+    ) -> list[qt.Qobj]:
+        index = self.system.index(label)
+        substates = [state.ptrace(index) for state in self.states]
 
         if frame == "qubit":
-            qubit = self.system.transmon(label)
+            # rotate the states to the qubit frame
             times = self.control.times
+            qubit = self.system.transmon(label)
             f_drive = self.control.frequency
             f_qubit = qubit.frequency
             delta = 2 * np.pi * (f_drive - f_qubit)
             dim = qubit.dimension
             a = qt.destroy(dim)
-            ad = a.dag()
+            U = lambda t: (-1j * delta * a.dag() * a * t).expm()
+            substates = [U(t) * rho * U(t).dag() for t, rho in zip(times, substates)]
 
-            def U(t):
-                return (-1j * delta * ad * a * t).expm()
+        return substates
 
-            pstates = [U(t) * state * U(t).dag() for t, state in zip(times, pstates)]
-
-        rho = np.array(pstates).squeeze()[:, :2, :2]
+    def display_bloch_sphere(
+        self,
+        label: str,
+        frame: Literal["qubit", "drive"] = "qubit",
+    ) -> None:
+        substates = self.substates(label, frame)
+        rho = np.array(substates).squeeze()[:, :2, :2]
+        print(f"{label} in the {frame} frame")
         qv.display_bloch_sphere_from_density_matrices(rho)
+
+    def show_last_population(
+        self,
+        label: Optional[str] = None,
+    ) -> None:
+        states = self.states if label is None else self.substates(label)
+        population = states[-1].diag()
+        for idx, prob in enumerate(population):
+            display(Math(rf"$|{idx}\rangle: {prob * 100:.2f}\%$"))
+
+    def plot_population_dynamics(
+        self,
+        label: Optional[str] = None,
+    ) -> None:
+        states = self.states if label is None else self.substates(label)
+        populations = defaultdict(list)
+        for state in states:
+            population = state.diag()
+            for idx, prob in enumerate(population):
+                populations[rf"$|{idx}\rangle$"].append(prob)
+
+        figure = plt.figure()
+        figure.suptitle(f"Population dynamics of {label}")
+
+        qv.plot_population_dynamics(
+            self.control.times,
+            populations,
+            figure=figure,
+        )
 
 
 @dataclass
