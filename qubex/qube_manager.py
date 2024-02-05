@@ -552,12 +552,12 @@ class QubeManager:
     def _create_readout_waveforms(self, qubits: list[QubitKey]):
         """Creates readout waveforms for the given qubits."""
         readout_amplitude = self.params.readout_amplitude
-        tau = 50
+        risetime = 50
         return {
             qubit: FlatTop(
-                width=self.readout_window - tau,
+                duration=self.readout_window,
                 amplitude=readout_amplitude[qubit],
-                tau=tau,
+                tau=risetime,
             ).values
             for qubit in qubits
         }

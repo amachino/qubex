@@ -409,8 +409,8 @@ class FlatTop(Pulse):
 
     Parameters
     ----------
-    width : int
-        Effective duration of the pulse in ns.
+    duration : int
+        Duration of the pulse in ns.
     amplitude : float
         Amplitude of the pulse.
     tau : int, optional
@@ -426,8 +426,6 @@ class FlatTop(Pulse):
 
     Notes
     -----
-    Note that the width of the pulse is the effective duration of the pulse.
-    The actual duration of the pulse is `width + tau`.
     |        ________________________
     |       /                        \
     |      /                          \
@@ -436,8 +434,6 @@ class FlatTop(Pulse):
     |___                                 _______
     |   <---->                      <---->
     |     tau                        tau
-    |      <-------------------------->
-    |                 width           
     |   <-------------------------------->
     |                duration
     | 
@@ -445,26 +441,26 @@ class FlatTop(Pulse):
 
     def __init__(
         self,
-        width: int,
+        duration: int,
         amplitude: float,
         tau: int = 0,
         **kwargs,
     ):
         values = np.array([])
-        if width != 0:
-            values = self._calc_values(width, amplitude, tau)
+        if duration != 0:
+            values = self._calc_values(duration, amplitude, tau)
         super().__init__(values, **kwargs)
 
     def _calc_values(
         self,
-        width: int,
+        duration: int,
         amplitude: float,
         tau: int,
     ) -> npt.NDArray[np.complex128]:
-        flattime = width - tau
+        flattime = duration - 2 * tau
 
         if flattime < 0:
-            raise ValueError("width must be greater than tau.")
+            raise ValueError("duration must be greater than `2 * tau`.")
 
         length_rise = self._ns_to_samples(tau)
         length_flat = self._ns_to_samples(flattime)
