@@ -413,7 +413,7 @@ class FlatTop(Pulse):
         Duration of the pulse in ns.
     amplitude : float
         Amplitude of the pulse.
-    tau : int, optional
+    tau : int
         Rise and fall time of the pulse in ns.
     
     Examples
@@ -443,7 +443,7 @@ class FlatTop(Pulse):
         self,
         duration: int,
         amplitude: float,
-        tau: int = 0,
+        tau: int,
         **kwargs,
     ):
         values = np.array([])
