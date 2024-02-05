@@ -88,7 +88,7 @@ class Result:
 class Control:
     target: str
     frequency: float
-    waveform: npt.NDArray
+    waveform: list | npt.NDArray
     sampling_period: float = SAMPLING_PERIOD
 
     @property
@@ -105,6 +105,17 @@ class Control:
             0.0,
             (length - 1) * self.sampling_period,
             length,
+        )
+
+    def plot(self):
+        durations = [self.sampling_period * 1e-9] * len(self.waveform)
+        values = np.array(self.waveform, dtype=np.complex128)
+        qv.plot_controls(
+            controls={
+                self.target: {"durations": durations, "values": values},
+            },
+            polar=False,
+            figure=plt.figure(),
         )
 
 
