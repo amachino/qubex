@@ -19,7 +19,7 @@ from qubecalib.setupqube import run
 
 from .configs import Configs
 from .consts import MIN_SAMPLE, SAMPLING_PERIOD, T_CONTROL, T_MARGIN, T_READOUT
-from .pulse import Rect, Waveform
+from .pulse import FlatTop, Waveform
 from .singleshot import singleshot
 from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
 
@@ -554,8 +554,8 @@ class QubeManager:
         readout_amplitude = self.params.readout_amplitude
         tau = 50
         return {
-            qubit: Rect(
-                duration=self.readout_window - tau,
+            qubit: FlatTop(
+                width=self.readout_window - tau,
                 amplitude=readout_amplitude[qubit],
                 tau=tau,
             ).values

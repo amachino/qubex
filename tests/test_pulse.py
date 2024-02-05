@@ -1,13 +1,13 @@
 # pylint: disable=all
-import pytest
 import numpy as np
+import pytest
 
 
 def test_rect():
     from qubex.pulse import Rect
 
     rect = Rect(
-        width=10,
+        duration=10,
         amplitude=0.1,
     )
     assert rect.values.shape == (5,)
@@ -16,6 +16,6 @@ def test_rect():
 
     with pytest.raises(ValueError):
         Rect(
-            width=11,
+            duration=11,
             amplitude=0.1,
         )
