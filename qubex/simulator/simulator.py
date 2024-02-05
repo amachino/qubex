@@ -93,17 +93,14 @@ class Control:
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
-        # duplicate the last value to use as a step function
-        arr = np.array(self.waveform, dtype=np.complex128)
-        arr = np.append(arr, arr[-1])
-        return arr
+        return np.array(self.waveform, dtype=np.complex128)
 
     @property
     def times(self) -> npt.NDArray[np.float64]:
         length = len(self.values)
         return np.linspace(
             0.0,
-            (length - 1) * self.sampling_period,
+            length * self.sampling_period,
             length,
         )
 
