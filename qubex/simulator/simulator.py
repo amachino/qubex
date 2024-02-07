@@ -13,6 +13,7 @@ import qutip as qt  # type: ignore
 from .system import StateAlias, System
 
 SAMPLING_PERIOD: float = 2.0  # ns
+STEPS_PER_SAMPLE: int = 4
 
 
 @dataclass
@@ -21,17 +22,19 @@ class Control:
     frequency: float
     waveform: list | npt.NDArray
     sampling_period: float = SAMPLING_PERIOD
+    steps_per_sample: int = STEPS_PER_SAMPLE
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
-        return np.array(self.waveform, dtype=np.complex128)
+        waveform = np.array(self.waveform, dtype=np.complex128)
+        return np.repeat(waveform, self.steps_per_sample)
 
     @property
     def times(self) -> npt.NDArray[np.float64]:
         length = len(self.values)
         return np.linspace(
             0.0,
-            length * self.sampling_period,
+            length * self.sampling_period / self.steps_per_sample,
             length,
         )
 
