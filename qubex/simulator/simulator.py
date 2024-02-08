@@ -113,7 +113,7 @@ class Result:
         figure = plt.figure()
         figure.suptitle(f"Population dynamics of {label}")
         qv.plot_population_dynamics(
-            self.control.times,
+            self.control.times * 1e-9,
             populations,
             figure=figure,
         )
