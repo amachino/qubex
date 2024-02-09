@@ -106,6 +106,7 @@ class Result:
         populations = defaultdict(list)
         for state in states:
             population = state.diag()
+            population = np.clip(population, 0, 1)
             for idx, prob in enumerate(population):
                 basis = self.system.basis_labels[idx] if label is None else str(idx)
                 populations[rf"$|{basis}\rangle$"].append(prob)
