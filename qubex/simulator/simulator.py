@@ -106,6 +106,7 @@ class Result:
         populations = defaultdict(list)
         for state in states:
             population = state.diag()
+            population = np.clip(population, 0, 1)
             for idx, prob in enumerate(population):
                 basis = self.system.basis_labels[idx] if label is None else str(idx)
                 populations[rf"$|{basis}\rangle$"].append(prob)
@@ -113,7 +114,7 @@ class Result:
         figure = plt.figure()
         figure.suptitle(f"Population dynamics of {label}")
         qv.plot_population_dynamics(
-            self.control.times,
+            self.control.times * 1e-9,
             populations,
             figure=figure,
         )
@@ -147,8 +148,8 @@ class Simulator:
             static_hamiltonian -= 2 * np.pi * control.frequency * ad * a
 
             if transmon.label == control.target:
-                dynamic_hamiltonian.append([0.5 * a, control.values])
-                dynamic_hamiltonian.append([0.5 * ad, np.conj(control.values)])
+                dynamic_hamiltonian.append([0.5 * ad, control.values])
+                dynamic_hamiltonian.append([0.5 * a, np.conj(control.values)])
 
             decay_operator = np.sqrt(transmon.decay_rate) * a
             dephasing_operator = np.sqrt(transmon.dephasing_rate) * ad * a
