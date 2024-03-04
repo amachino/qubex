@@ -51,6 +51,10 @@ class System:
     def basis_labels(self) -> list[str]:
         return ["".join(str(i) for i in basis) for basis in self.basis_indices]
 
+    @property
+    def identity(self) -> qt.Qobj:
+        return qt.tensor([qt.qeye(transmon.dimension) for transmon in self.transmons])
+
     def state(
         self,
         alias: StateAlias | dict[str, StateAlias],
