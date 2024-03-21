@@ -20,7 +20,7 @@ from .configs import Configs
 from .consts import T_CONTROL, T_READOUT
 from .experiment_record import ExperimentRecord
 from .pulse import Rect, Waveform
-from .qube_manager import QubeManager
+from .qube_manager import DEFAULT_INTERVAL, DEFAULT_REPEATS, DEFAULT_SHOTS, QubeManager
 from .typing import (
     FloatArray,
     IntArray,
@@ -227,8 +227,8 @@ class Experiment:
     def singleshot(
         self,
         waveforms: QubitDict[Waveform | IQArray | list[complex]],
-        shots: int = 1024,
-        interval: int = 150_000,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
     ) -> QubitDict[IQArray]:
         """
         Conducts a singleshot experiment.
@@ -274,8 +274,8 @@ class Experiment:
     def measure(
         self,
         waveforms: QubitDict[Waveform | IQArray | list[complex]],
-        repeats: int = 10_000,
-        interval: int = 150_000,
+        repeats: int = DEFAULT_REPEATS,
+        interval: int = DEFAULT_INTERVAL,
     ) -> QubitDict[IQValue]:
         """
         Measures the quantum state of the qubits.
@@ -322,6 +322,8 @@ class Experiment:
         self,
         time_range: IntArray,
         amplitudes: QubitDict[float],
+        repeats: int = DEFAULT_REPEATS,
+        interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> QubitDict[SweepResult]:
         """
@@ -369,7 +371,11 @@ class Experiment:
                 for qubit in qubits
             }
 
-            measured_values = self.measure(waveforms)
+            measured_values = self.measure(
+                waveforms=waveforms,
+                repeats=repeats,
+                interval=interval,
+            )
 
             for qubit, value in measured_values.items():
                 signals[qubit].append(value)
@@ -400,6 +406,8 @@ class Experiment:
         sweep_range: NDArray,
         parametric_waveforms: QubitDict[ParametricWaveform],
         pulse_count=1,
+        repeats: int = DEFAULT_REPEATS,
+        interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> QubitDict[SweepResult]:
         """
@@ -432,7 +440,11 @@ class Experiment:
                 for qubit, waveform in parametric_waveforms.items()
             }
 
-            measured_values = self.measure(waveforms)
+            measured_values = self.measure(
+                waveforms=waveforms,
+                repeats=repeats,
+                interval=interval,
+            )
 
             for qubit, value in measured_values.items():
                 signals[qubit].append(value)
@@ -461,6 +473,8 @@ class Experiment:
     def rabi_check(
         self,
         time_range=np.arange(0, 201, 10),
+        repeats: int = DEFAULT_REPEATS,
+        interval: int = DEFAULT_INTERVAL,
     ) -> QubitDict[SweepResult]:
         """
         Conducts a Rabi experiment with the default HPI amplitude.
@@ -479,6 +493,8 @@ class Experiment:
         result = self.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
+            repeats=repeats,
+            interval=interval,
         )
         return result
 
@@ -486,6 +502,8 @@ class Experiment:
         self,
         waveforms: QubitDict[Waveform],
         n: int,
+        repeats: int = DEFAULT_REPEATS,
+        interval: int = DEFAULT_INTERVAL,
     ) -> QubitDict[SweepResult]:
         """
         Repeats the given pulse n times.
@@ -510,6 +528,8 @@ class Experiment:
             sweep_range=np.arange(n + 1),
             parametric_waveforms=parametric_waveforms,
             pulse_count=1,
+            repeats=repeats,
+            interval=interval,
         )
         return result
 
