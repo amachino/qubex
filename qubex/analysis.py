@@ -141,6 +141,7 @@ def fit_rabi(
     plt.title(f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)")
     plt.xlabel("Time (ns)")
     plt.ylabel("Amplitude (arb. units)")
+    plt.grid(color="gray", linestyle="--", alpha=0.2)
     plt.legend()
     plt.show()
 

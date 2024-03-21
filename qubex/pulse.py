@@ -170,7 +170,7 @@ class Waveform(ABC):
         if savefig is not None:
             plt.savefig(savefig, dpi=300)
         else:
-            ax.grid()
+            ax.grid(color="gray", linestyle="--", alpha=0.2)
         plt.show()
 
     def plot_polar(
@@ -207,8 +207,8 @@ class Waveform(ABC):
         if savefig is not None:
             plt.savefig(savefig, dpi=300)
         else:
-            ax[0].grid()
-            ax[1].grid()
+            ax[0].grid(color="gray", linestyle="--", alpha=0.2)
+            ax[1].grid(color="gray", linestyle="--", alpha=0.2)
         plt.show()
 
 

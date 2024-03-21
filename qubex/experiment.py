@@ -224,6 +224,14 @@ class Experiment:
         """Sets the control frequency of the qubit."""
         self.qube_manager.set_control_frequency(qubit, frequency)
 
+    def _get_readout_qubits(self, qubits: list[QubitKey]) -> list[QubitKey]:
+        """Returns the readout qubits from the given qubits."""
+        readout_qubits = []
+        for qubit in qubits:
+            if qubit[:3] in self.qubits:
+                readout_qubits.append(qubit[:3])
+        return list(set(readout_qubits))
+
     def singleshot(
         self,
         waveforms: QubitDict[Waveform | IQArray | list[complex]],
@@ -263,8 +271,9 @@ class Experiment:
         {"Q01": (0.0005+0.0005j), "Q02": (0.0005+0.0005j)}
         """
         qubits = list(waveforms.keys())
+        readout_qubits = self._get_readout_qubits(qubits)
         result = self.qube_manager.singleshot(
-            readout_qubits=qubits,
+            readout_qubits=readout_qubits,
             control_waveforms=waveforms,
             shots=shots,
             interval=interval,
@@ -310,8 +319,9 @@ class Experiment:
         {"Q01": (0.0005+0.0005j), "Q02": (0.0005+0.0005j)}
         """
         qubits = list(waveforms.keys())
+        readout_qubits = self._get_readout_qubits(qubits)
         result = self.qube_manager.measure(
-            readout_qubits=qubits,
+            readout_qubits=readout_qubits,
             control_waveforms=waveforms,
             repeats=repeats,
             interval=interval,
@@ -359,7 +369,7 @@ class Experiment:
         """
         qubits = list(amplitudes.keys())
         control_qubits = qubits
-        readout_qubits = qubits
+        readout_qubits = self._get_readout_qubits(qubits)
         signals: QubitDict[list[IQValue]] = defaultdict(list)
 
         for index, duration in enumerate(time_range):
@@ -431,7 +441,7 @@ class Experiment:
         """
         qubits = list(parametric_waveforms.keys())
         control_qubits = qubits
-        readout_qubits = qubits
+        readout_qubits = self._get_readout_qubits(qubits)
         signals: QubitDict[list[IQValue]] = defaultdict(list)
 
         for index, param in enumerate(sweep_range):
@@ -561,15 +571,15 @@ class Experiment:
             qubit: fit_and_rotate(values) for qubit, values in signals.items()
         }
 
-        ctrl_waveforms = self.qube_manager.get_control_waveforms(control_qubits)
-        ctrl_times = self.qube_manager.get_control_times(control_qubits)
-        rotx_waveforms = self.qube_manager.get_readout_tx_waveforms(readout_qubits)
-        rotx_times = self.qube_manager.get_readout_tx_times(readout_qubits)
+        # ctrl_waveforms = self.qube_manager.get_control_waveforms(control_qubits)
+        # ctrl_times = self.qube_manager.get_control_times(control_qubits)
+        # rotx_waveforms = self.qube_manager.get_readout_tx_waveforms(readout_qubits)
+        # rotx_times = self.qube_manager.get_readout_tx_times(readout_qubits)
         rorx_waveforms = self.qube_manager.get_readout_rx_waveforms(readout_qubits)
         rorx_times = self.qube_manager.get_readout_rx_times(readout_qubits)
         readout_range = self.qube_manager.readout_range
-        control_duration = self.qube_manager.control_window
-        readout_duration = self.qube_manager.readout_window
+        # control_duration = self.qube_manager.control_window
+        # readout_duration = self.qube_manager.readout_window
 
         clear_output(True)
         show_measurement_results(
@@ -581,16 +591,16 @@ class Experiment:
             signals_rotated=signals_rotated,
             readout_range=readout_range,
         )
-        show_pulse_sequences(
-            control_qubits=control_qubits,
-            control_waveforms=ctrl_waveforms,
-            control_times=ctrl_times,
-            control_duration=control_duration,
-            readout_qubits=readout_qubits,
-            readout_waveforms=rotx_waveforms,
-            readout_times=rotx_times,
-            readout_duration=readout_duration,
-        )
+        # show_pulse_sequences(
+        #     control_qubits=control_qubits,
+        #     control_waveforms=ctrl_waveforms,
+        #     control_times=ctrl_times,
+        #     control_duration=control_duration,
+        #     readout_qubits=readout_qubits,
+        #     readout_waveforms=rotx_waveforms,
+        #     readout_times=rotx_times,
+        #     readout_duration=readout_duration,
+        # )
 
     def normalize(
         self,
