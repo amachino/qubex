@@ -487,21 +487,21 @@ def get_angle(
     float
         Angle in radians of the linear fit to the data points.
     """
-    points = np.array(signals)
-
-    if len(points) < 2:
+    iq_complex = np.array(signals)
+    if len(iq_complex) < 2:
         return 0.0
-
-    fit_params = np.polyfit(points.real, points.imag, 1)
-    gradient, intercept = fit_params
-
+    iq_vector = np.column_stack([iq_complex.real, iq_complex.imag])
+    pca = PCA(n_components=1).fit(iq_vector)
+    first_component = pca.components_[0]
+    gradient = first_component[1] / first_component[0]
+    mean = np.mean(iq_vector, axis=0)
+    intercept = mean[1] - gradient * mean[0]
     theta = np.arctan(gradient)
     angle = theta
     if intercept > 0:
         angle += np.pi / 2
     else:
         angle -= np.pi / 2
-
     return angle
 
 
