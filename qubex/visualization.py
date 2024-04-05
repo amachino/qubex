@@ -130,7 +130,7 @@ def show_measurement_results(
 ):
     """
     Shows the measurement results.
-    
+
     Parameters
     ----------
     qubits : list[QubitKey]
@@ -193,14 +193,14 @@ def show_measurement_results(
         ax[qubit][0].set_xlim(0, 2.0)
         ax[qubit][0].set_title("Detected readout pulse waveform " + qubit)
         ax[qubit][0].legend()
-        ax[qubit][0].grid()
+        ax[qubit][0].grid(color="gray", linestyle="--", alpha=0.2)
 
         ax[qubit][1].plot(sweep_range, np.real(signals[qubit]), "o-", label="I")
         ax[qubit][1].plot(sweep_range, np.imag(signals[qubit]), "o-", label="Q")
         ax[qubit][1].set_xlabel("Sweep index")
         ax[qubit][1].set_title("Detected signal " + qubit)
         ax[qubit][1].legend()
-        ax[qubit][1].grid()
+        ax[qubit][1].grid(color="gray", linestyle="--", alpha=0.2)
 
         ax[qubit][2].plot(
             np.real(mov_avg_readout_iq), np.imag(mov_avg_readout_iq), lw=0.2
@@ -241,5 +241,5 @@ def show_measurement_results(
             color="red",
         )
         ax[qubit][2].legend()
-        ax[qubit][2].grid()
+        ax[qubit][2].grid(color="gray", linestyle="--", alpha=0.2)
     plt.show()

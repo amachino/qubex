@@ -32,7 +32,7 @@ CONTROL_EF: Final = "_ef"
 READOUT_DELAY: Final[int] = 7 * 128  # [ns]
 
 DEFAULT_SHOTS: Final[int] = 1024
-DEFAULT_REPEATS: Final[int] = 10_000
+DEFAULT_REPEATS: Final[int] = 1024
 DEFAULT_INTERVAL: Final[int] = 150_000  # [ns]
 
 
