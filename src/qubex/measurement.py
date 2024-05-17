@@ -105,7 +105,7 @@ def target_to_qubit(target: str) -> str:
 class MeasurementResult:
     """Dataclass for measurement results."""
 
-    data: dict[str, npt.NDArray[np.complex64]]
+    data: dict[str, complex]
 
 
 class Measurement:
@@ -131,8 +131,8 @@ class Measurement:
         >>> from qubex import Measurement
         >>> meas = Measurement("64Q")
         """
-        self.config: Final = Config(config_dir=config_dir)
-        config_path: Final = self.config.get_system_settings_path(chip_id)
+        config = Config(config_dir=config_dir)
+        config_path: Final = config.get_system_settings_path(chip_id)
         self.backend: Final = QubeCalibWrapper(config_path)
 
     @property
@@ -199,7 +199,7 @@ class Measurement:
             interval=interval,
         )
 
-        data: dict[str, npt.NDArray[np.complex64]] = {
+        data: dict[str, complex] = {
             target_to_qubit(target): iqs[0].squeeze().mean()
             for target, iqs in raw_result.data.items()
         }
