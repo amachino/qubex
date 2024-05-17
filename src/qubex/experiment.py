@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Final
+from typing import Callable, Final
 
 import numpy as np
 from numpy.typing import NDArray
@@ -19,7 +19,6 @@ from .measurement import (
     MeasurementResult,
 )
 from .pulse import Rect, Waveform
-from .typing import ParametricWaveform
 
 
 @dataclass
@@ -231,7 +230,7 @@ class Experiment:
     def sweep_parameter(
         self,
         sweep_range: NDArray,
-        parametric_waveforms: dict[str, ParametricWaveform],
+        parametric_waveforms: dict[str, Callable[..., Waveform]],
         pulse_count=1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -244,7 +243,7 @@ class Experiment:
         ----------
         sweep_range : NDArray
             Sweep range of the experiment.
-        parametric_waveforms : dict[str, ParametricWaveform]
+        parametric_waveforms : dict[str, Callable[..., Waveform]]
             Parametric waveforms to apply to the qubits.
         pulse_count : int, optional
             Number of pulses to apply. Defaults to 1.

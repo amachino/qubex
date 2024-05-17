@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
-import numpy as np
 import numpy.typing as npt
 from qubecalib.neopulse import (
     Arbit,
@@ -131,8 +130,7 @@ class Measurement:
         >>> from qubex import Measurement
         >>> meas = Measurement("64Q")
         """
-        config = Config(config_dir=config_dir)
-        config_path: Final = config.get_system_settings_path(chip_id)
+        config_path = Config(config_dir).get_system_settings_path(chip_id)
         self.backend: Final = QubeCalibWrapper(config_path)
 
     @property

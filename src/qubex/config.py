@@ -70,8 +70,8 @@ class Config:
 
     def __init__(
         self,
-        *,
         config_dir: str = CONFIG_DIR,
+        *,
         chip_file: str = CHIP_FILE,
         box_file: str = BOX_FILE,
         wiring_file: str = WIRING_FILE,
@@ -280,7 +280,7 @@ class Config:
         return [
             Qubit(
                 label=label,
-                frequency=props.resonator_frequency[label],
+                frequency=props.qubit_frequency[label],
                 anharmonicity=props.anharmonicity[label],
             )
             for label in qubit_labels
