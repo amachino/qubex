@@ -1,0 +1,1964 @@
+{
+    "Q2A": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "in",
+                "lo_freq": 12000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "1": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "3": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "4": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "5": {
+                "direction": "in",
+                "lo_freq": 12000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "7": {
+                "direction": "in",
+                "lo_freq": 12000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    },
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "9": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "10": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "12": {
+                "direction": "in",
+                "lo_freq": 12000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            }
+        }
+    },
+    "O7B": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "L"
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1804687500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10000000000,
+                "sideband": "L"
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1898437500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10000000000,
+                "sideband": "L"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "L"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "L"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1664062500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9000000000,
+                "sideband": "L"
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1804687500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10000000000,
+                "sideband": "L"
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1781250000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10500000000,
+                "sideband": "L"
+            }
+        }
+    },
+    "O10B": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "L"
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "L"
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1687500000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9500000000,
+                "sideband": "L"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1546875000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9500000000,
+                "sideband": "L"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10000000000,
+                "sideband": "L"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10000000000,
+                "sideband": "L"
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10000000000,
+                "sideband": "L"
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10000000000,
+                "sideband": "L"
+            }
+        }
+    },
+    "O13B": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 8000000000,
+                "sideband": "U"
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 8000000000,
+                "sideband": "U"
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 8000000000,
+                "sideband": "U"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            }
+        }
+    },
+    "O15A": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11000000000,
+                "sideband": "L"
+            },
+            "1": {
+                "direction": "in",
+                "lo_freq": 11000000000,
+                "cnco_freq": 1500000000.0,
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L"
+            },
+            "12": {
+                "direction": "in",
+                "lo_freq": 11000000000,
+                "cnco_freq": 1500000000.0,
+                "runits": {
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    },
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11000000000,
+                "sideband": "L"
+            }
+        }
+    },
+    "R19A": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1921875000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            },
+            "1": {
+                "direction": "in",
+                "lo_freq": 8500000000,
+                "cnco_freq": 1921875000.0,
+                "rfswitch": "open",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11500000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "4": {
+                "direction": "in",
+                "lo_freq": 11500000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "open",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1710937500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1875000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1804687500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1617187500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "9": {
+                "direction": "in",
+                "lo_freq": 11500000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "open",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11500000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "12": {
+                "direction": "in",
+                "lo_freq": 8500000000,
+                "cnco_freq": 1875000000.0,
+                "rfswitch": "open",
+                "runits": {
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    },
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1875000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            }
+        }
+    },
+    "R20A": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 11000000000,
+                "sideband": "U",
+                "rfswitch": "block"
+            },
+            "1": {
+                "direction": "in",
+                "lo_freq": 11000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 11000000000,
+                "sideband": "U",
+                "rfswitch": "block"
+            },
+            "4": {
+                "direction": "in",
+                "lo_freq": 11000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 11500000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 11500000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 11500000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 11500000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "9": {
+                "direction": "in",
+                "lo_freq": 11000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 11000000000,
+                "sideband": "U",
+                "rfswitch": "block"
+            },
+            "12": {
+                "direction": "in",
+                "lo_freq": 11000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    },
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 11000000000,
+                "sideband": "U",
+                "rfswitch": "block"
+            }
+        }
+    },
+    "R21B": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1875000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 10500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1546875000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 10000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "4": {
+                "direction": "in",
+                "lo_freq": 10000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 8500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1523437500.0,
+                "fullscale_current": 39990,
+                "lo_freq": 9500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1921875000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 10000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1640625000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 8000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "9": {
+                "direction": "in",
+                "lo_freq": 10000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1546875000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 10000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1546875000.0,
+                "fullscale_current": 39990,
+                "lo_freq": 10000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            }
+        }
+    },
+    "R28A": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1851562500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            },
+            "1": {
+                "direction": "in",
+                "lo_freq": 8500000000,
+                "cnco_freq": 1851562500.0,
+                "rfswitch": "open",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "4": {
+                "direction": "in",
+                "lo_freq": 11000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1804687500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1570312500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1710937500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "9": {
+                "direction": "in",
+                "lo_freq": 11000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11000000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "12": {
+                "direction": "in",
+                "lo_freq": 8500000000,
+                "cnco_freq": 1968750000.0,
+                "rfswitch": "open",
+                "runits": {
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    },
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1968750000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            }
+        }
+    },
+    "R31A": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1992187500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            },
+            "1": {
+                "direction": "in",
+                "lo_freq": 8500000000,
+                "cnco_freq": 1992187500.0,
+                "rfswitch": "open",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            },
+            "4": {
+                "direction": "in",
+                "lo_freq": 12000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "open",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "5": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 234375000.0
+                    },
+                    "1": {
+                        "fnco_freq": -257812500.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 2671875000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "6": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "7": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": -257812500.0
+                    },
+                    "1": {
+                        "fnco_freq": 234375000.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 2671875000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 304687500.0
+                    },
+                    "1": {
+                        "fnco_freq": -304687500.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 2718750000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11000000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "9": {
+                "direction": "in",
+                "lo_freq": 12000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "open",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            },
+            "12": {
+                "direction": "in",
+                "lo_freq": 12000000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "open",
+                "runits": {
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    },
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "13": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 12000000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            }
+        }
+    },
+    "Q73A": {
+        "mxfes": {
+            "0": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            },
+            "1": {
+                "channel_interporation_rate": 4,
+                "main_interporation_rate": 6
+            }
+        },
+        "ports": {
+            "0": {
+                "direction": "in",
+                "lo_freq": 8500000000,
+                "cnco_freq": 1851562500.0,
+                "rfswitch": "open",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "1": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1851562500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            },
+            "2": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1781250000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "3": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11500000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "4": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1687500000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "5": {
+                "direction": "in",
+                "lo_freq": 11500000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "7": {
+                "direction": "in",
+                "lo_freq": 8500000000,
+                "cnco_freq": 1851562500.0,
+                "rfswitch": "open",
+                "runits": {
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    },
+                    "3": {
+                        "fnco_freq": 0.0
+                    },
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            },
+            "8": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1851562500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 8500000000,
+                "sideband": "U",
+                "rfswitch": "pass"
+            },
+            "9": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1710937500.0,
+                "fullscale_current": 40527,
+                "lo_freq": 10500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "10": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1500000000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 11500000000,
+                "sideband": "L",
+                "rfswitch": "block"
+            },
+            "11": {
+                "direction": "out",
+                "channels": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    },
+                    "1": {
+                        "fnco_freq": 0.0
+                    },
+                    "2": {
+                        "fnco_freq": 0.0
+                    }
+                },
+                "cnco_freq": 1734375000.0,
+                "fullscale_current": 40527,
+                "lo_freq": 9500000000,
+                "sideband": "L",
+                "rfswitch": "pass"
+            },
+            "12": {
+                "direction": "in",
+                "lo_freq": 11500000000,
+                "cnco_freq": 1500000000.0,
+                "rfswitch": "loop",
+                "runits": {
+                    "0": {
+                        "fnco_freq": 0.0
+                    }
+                }
+            }
+        }
+    }
+}
