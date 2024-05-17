@@ -1,268 +1,37 @@
-"""
-Config module provides classes and functions to configure the QubeX system.
-"""
-
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 
 import yaml
 from qubecalib import QubeCalib
+from rich.console import Console
+from rich.prompt import Confirm
 
+from .hardware import Box, BoxType, CtrlPort, Port, PortType, ReadInPort, ReadOutPort
 
-class BoxType(Enum):
-    QUEL1_A = "quel1-a"
-    QUEL1_B = "quel1-b"
-    QUBE_RIKEN_A = "qube-riken-a"
-    QUBE_RIKEN_B = "qube-riken-b"
-    QUBE_OU_A = "qube-ou-a"
-    QUBE_OU_B = "qube-ou-b"
-
-
-class PortType(Enum):
-    NOT_AVAILABLE = "N/A"
-    READ0_IN = "READ0.IN"
-    READ0_OUT = "READ0.OUT"
-    READ1_IN = "READ1.IN"
-    READ1_OUT = "READ1.OUT"
-    CTRL0 = "CTRL0"
-    CTRL1 = "CTRL1"
-    CTRL2 = "CTRL2"
-    CTRL3 = "CTRL3"
-    CTRL4 = "CTRL4"
-    CTRL5 = "CTRL5"
-    CTRL6 = "CTRL6"
-    CTRL7 = "CTRL7"
-    PUMP0 = "PUMP0"
-    PUMP1 = "PUMP1"
-    MONITOR0_IN = "MONITOR0.IN"
-    MONITOR0_OUT = "MONITOR0.OUT"
-    MONITOR1_IN = "MONITOR1.IN"
-    MONITOR1_OUT = "MONITOR1.OUT"
-
-
-PORT_MAPPING = {
-    BoxType.QUEL1_A: {
-        0: PortType.READ0_IN,
-        1: PortType.READ0_OUT,
-        2: PortType.CTRL0,
-        3: PortType.PUMP0,
-        4: PortType.CTRL1,
-        5: PortType.MONITOR0_IN,
-        6: PortType.MONITOR0_OUT,
-        7: PortType.READ1_IN,
-        8: PortType.READ1_OUT,
-        9: PortType.CTRL2,
-        10: PortType.PUMP1,
-        11: PortType.CTRL3,
-        12: PortType.MONITOR1_IN,
-        13: PortType.MONITOR1_OUT,
-    },
-    BoxType.QUEL1_B: {
-        0: PortType.NOT_AVAILABLE,
-        1: PortType.CTRL0,
-        2: PortType.CTRL1,
-        3: PortType.CTRL2,
-        4: PortType.CTRL3,
-        5: PortType.MONITOR0_IN,
-        6: PortType.MONITOR0_OUT,
-        7: PortType.NOT_AVAILABLE,
-        8: PortType.CTRL4,
-        9: PortType.CTRL5,
-        10: PortType.CTRL6,
-        11: PortType.CTRL7,
-        12: PortType.MONITOR1_IN,
-        13: PortType.MONITOR1_OUT,
-    },
-    BoxType.QUBE_RIKEN_A: {
-        0: PortType.READ0_OUT,
-        1: PortType.READ0_IN,
-        2: PortType.PUMP0,
-        3: PortType.MONITOR0_OUT,
-        4: PortType.MONITOR0_IN,
-        5: PortType.CTRL0,
-        6: PortType.CTRL1,
-        7: PortType.CTRL2,
-        8: PortType.CTRL3,
-        9: PortType.MONITOR1_IN,
-        10: PortType.MONITOR1_OUT,
-        11: PortType.PUMP1,
-        12: PortType.READ1_IN,
-        13: PortType.READ1_OUT,
-    },
-    BoxType.QUBE_RIKEN_B: {
-        0: PortType.CTRL0,
-        1: PortType.NOT_AVAILABLE,
-        2: PortType.CTRL1,
-        3: PortType.MONITOR0_OUT,
-        4: PortType.MONITOR0_IN,
-        5: PortType.CTRL2,
-        6: PortType.CTRL3,
-        7: PortType.CTRL4,
-        8: PortType.CTRL5,
-        9: PortType.MONITOR1_IN,
-        10: PortType.MONITOR1_OUT,
-        11: PortType.CTRL6,
-        12: PortType.NOT_AVAILABLE,
-        13: PortType.CTRL7,
-    },
-    BoxType.QUBE_OU_A: {
-        0: PortType.READ0_OUT,
-        1: PortType.READ0_IN,
-        2: PortType.PUMP0,
-        3: PortType.NOT_AVAILABLE,
-        4: PortType.NOT_AVAILABLE,
-        5: PortType.CTRL0,
-        6: PortType.CTRL1,
-        7: PortType.CTRL2,
-        8: PortType.CTRL3,
-        9: PortType.NOT_AVAILABLE,
-        10: PortType.NOT_AVAILABLE,
-        11: PortType.PUMP1,
-        12: PortType.READ1_IN,
-        13: PortType.READ1_OUT,
-    },
-    BoxType.QUBE_OU_B: {
-        0: PortType.CTRL0,
-        1: PortType.NOT_AVAILABLE,
-        2: PortType.CTRL1,
-        3: PortType.NOT_AVAILABLE,
-        4: PortType.NOT_AVAILABLE,
-        5: PortType.CTRL2,
-        6: PortType.CTRL3,
-        7: PortType.CTRL4,
-        8: PortType.CTRL5,
-        9: PortType.NOT_AVAILABLE,
-        10: PortType.NOT_AVAILABLE,
-        11: PortType.CTRL6,
-        12: PortType.NOT_AVAILABLE,
-        13: PortType.CTRL7,
-    },
-}
-
-NUMBER_OF_CHANNELS = {
-    BoxType.QUEL1_A: {
-        2: 3,
-        4: 3,
-        9: 3,
-        11: 3,
-    },
-    BoxType.QUEL1_B: {
-        1: 1,
-        2: 3,
-        3: 1,
-        4: 3,
-        8: 1,
-        9: 3,
-        10: 1,
-        11: 3,
-    },
-    BoxType.QUBE_RIKEN_A: {
-        5: 3,
-        6: 3,
-        7: 3,
-        8: 3,
-    },
-    BoxType.QUBE_RIKEN_B: {
-        0: 1,
-        2: 1,
-        5: 3,
-        6: 3,
-        7: 3,
-        8: 3,
-        11: 1,
-        13: 1,
-    },
-    BoxType.QUBE_OU_A: {
-        5: 3,
-        6: 3,
-        7: 3,
-        8: 3,
-    },
-    BoxType.QUBE_OU_B: {
-        0: 1,
-        2: 1,
-        5: 3,
-        6: 3,
-        7: 3,
-        8: 3,
-        11: 1,
-        13: 1,
-    },
-}
-
-READOUT_PAIRS = {
-    BoxType.QUEL1_A: {
-        0: 1,
-        7: 8,
-    },
-    BoxType.QUEL1_B: {},
-    BoxType.QUBE_RIKEN_A: {
-        1: 0,
-        12: 13,
-    },
-    BoxType.QUBE_RIKEN_B: {},
-    BoxType.QUBE_OU_A: {
-        1: 0,
-        12: 13,
-    },
-    BoxType.QUBE_OU_B: {},
-}
+console = Console()
 
 
 @dataclass
-class Box:
+class Chip:
     id: str
     name: str
-    type: BoxType
-    address: str
-    adapter: str
+    n_qubits: int
 
 
 @dataclass
-class Port:
-    number: int
-    box: Box
-
-    @property
-    def type(self) -> PortType:
-        return PORT_MAPPING[self.box.type][self.number]
-
-    @property
-    def name(self) -> str:
-        return f"{self.box.id}.{self.type.value}"
+class Qubit:
+    label: str
+    frequency: float
+    anharmonicity: float
 
 
 @dataclass
-class ReadInPort(Port):
-    number: int
-    box: Box
-    read_out: ReadOutPort
-
-
-@dataclass
-class ReadOutPort(Port):
-    number: int
-    box: Box
-    mux: int
-
-    @property
-    def read_qubits(self) -> list[str]:
-        return [f"Q{4 * self.mux + i:02d}" for i in range(4)]
-
-
-@dataclass
-class CtrlPort(Port):
-    number: int
-    box: Box
-    ctrl_qubit: str
-
-    @property
-    def n_channel(self) -> int:
-        return NUMBER_OF_CHANNELS[self.box.type][self.number]
+class Resonator:
+    label: str
+    frequency: float
 
 
 @dataclass
@@ -280,35 +49,46 @@ class Params:
     readout_vatt: dict[int, int]
 
 
+N_RUNITS = 4
+N_PER_MUX = 4
+
+CONFIG_DIR = "config"
+BUILD_DIR = "build"
+CHIP_FILE = "chip.yaml"
+BOX_FILE = "box.yaml"
+WIRING_FILE = "wiring.yaml"
+PROPS_FILE = "props.yaml"
+PARAMS_FILE = "params.yaml"
+SYSTEM_SETTINGS_FILE = "system_settings.json"
+BOX_SETTINGS_FILE = "box_settings.json"
+
+
 class Config:
     """
     Config class provides methods to configure the QubeX system.
     """
 
-    N_RUNITS = 4
-    N_PER_MUX = 4
-
     def __init__(
         self,
-        package_id: str,
         *,
-        config_dir: str = "./config",
-        box_file: str = "box.yaml",
-        wiring_file: str = "wiring.yaml",
-        props_file: str = "props.yaml",
-        params_file: str = "params.yaml",
-        system_settings_file: str = "system_settings.json",
-        box_settings_file: str = "box_settings.json",
+        config_dir: str = CONFIG_DIR,
+        chip_file: str = CHIP_FILE,
+        box_file: str = BOX_FILE,
+        wiring_file: str = WIRING_FILE,
+        props_file: str = PROPS_FILE,
+        params_file: str = PARAMS_FILE,
+        system_settings_file: str = SYSTEM_SETTINGS_FILE,
+        box_settings_file: str = BOX_SETTINGS_FILE,
     ):
         """
         Initializes the Config object.
 
         Parameters
         ----------
-        package_id : str
-            The package ID of a quantum chip (e.g., "64Q").
         config_dir : str, optional
             The directory where the configuration files are stored, by default "./config".
+        chip_file : str, optional
+            The name of the chip configuration file, by default "chip.yaml".
         box_file : str, optional
             The name of the box configuration file, by default "box.yaml".
         wiring_file : str, optional
@@ -321,64 +101,214 @@ class Config:
             The name of the system settings file, by default "system_settings.json".
         box_settings_file : str, optional
             The name of the box settings file, by default "box_settings.json".
+
+        Examples
+        --------
+        >>> config = Config()
         """
-        self._package_id = package_id
         self._config_dir = config_dir
         self._system_settings_file = system_settings_file
         self._box_settings_file = box_settings_file
+        self._chip_dict = self._load_config_file(chip_file)
         self._box_dict = self._load_config_file(box_file)
         self._wiring_dict = self._load_config_file(wiring_file)
         self._props_dict = self._load_config_file(props_file)
         self._params_dict = self._load_config_file(params_file)
 
-    @property
-    def system_settings_path(self) -> Path:
-        return Path(self._config_dir) / self._system_settings_file
+    def get_system_settings_path(self, chip_id: str) -> Path:
+        """
+        Returns the path to the system settings file for the given chip ID.
 
-    @property
-    def box_settings_path(self) -> Path:
-        return Path(self._config_dir) / self._box_settings_file
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        Path
+            The path to the system settings file.
+
+        Examples
+        --------
+        >>> config = Config()
+        >>> config.get_system_settings_path("64Q")
+        PosixPath('config/build/64Q/system_settings.json')
+        """
+        return Path(self._config_dir) / BUILD_DIR / chip_id / self._system_settings_file
+
+    def get_box_settings_path(self, chip_id: str) -> Path:
+        """
+        Returns the path to the box settings file for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        Path
+            The path to the box settings file.
+
+        Examples
+        --------
+        >>> config = Config()
+        >>> config.get_box_settings_path("64Q")
+        PosixPath('config/build/64Q/box_settings.json')
+        """
+        return Path(self._config_dir) / BUILD_DIR / chip_id / self._box_settings_file
 
     def _load_config_file(self, file_name) -> dict:
         path = Path(self._config_dir) / file_name
-        with open(path, "r") as file:
-            result = yaml.safe_load(file)
+        try:
+            with open(path, "r") as file:
+                result = yaml.safe_load(file)
+        except FileNotFoundError:
+            console.print(
+                f"Configuration file not found: {path}",
+                style="red bold",
+            )
         return result
 
-    @property
-    def props(self) -> Props:
+    def get_props(self, chip_id: str) -> Props:
         """
         Returns the properties of the quantum chip.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
 
         Returns
         -------
         Props
             The properties of the quantum chip.
         """
-        props = self._props_dict[self._package_id]
+        try:
+            props = self._props_dict[chip_id]
+        except KeyError:
+            console.print(
+                f"Properties not found for chip ID: {chip_id}",
+                style="red bold",
+            )
+            raise
         return Props(
             resonator_frequency=props["resonator_frequency"],
             qubit_frequency=props["qubit_frequency"],
             anharmonicity=props["anharmonicity"],
         )
 
-    @property
-    def params(self) -> Params:
+    def get_params(self, chip_id: str) -> Params:
         """
         Returns the parameters of the quantum chip.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
 
         Returns
         -------
         Params
             The parameters of the quantum chip.
         """
-        params = self._params_dict[self._package_id]
+        try:
+            params = self._params_dict[chip_id]
+        except KeyError:
+            console.print(
+                f"Parameters not found for chip ID: {chip_id}",
+                style="red bold",
+            )
+            raise
         return Params(
             control_amplitude=params["control_amplitude"],
             readout_amplitude=params["readout_amplitude"],
             control_vatt=params["control_vatt"],
             readout_vatt=params["readout_vatt"],
         )
+
+    def get_chip(self, id: str) -> Chip:
+        """
+        Returns the Chip object for the given ID.
+
+        Parameters
+        ----------
+        id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        Chip
+            The Chip object for the given ID.
+        """
+        chip_info = self._chip_dict[id]
+        return Chip(
+            id=id,
+            name=chip_info["name"],
+            n_qubits=chip_info["n_qubits"],
+        )
+
+    def get_all_chips(self) -> list[Chip]:
+        """
+        Returns a list of all Chip objects.
+
+        Returns
+        -------
+        list[Chip]
+            A list of all Chip objects.
+        """
+        return [self.get_chip(id) for id in self._chip_dict.keys()]
+
+    def get_qubits(self, chip_id: str) -> list[Qubit]:
+        """
+        Returns a list of Qubit objects for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        list[Qubit]
+            A list of Qubit objects for the given chip ID.
+        """
+        chip = self.get_chip(chip_id)
+        qubit_labels = [f"Q{i:02d}" for i in range(chip.n_qubits)]
+        props = self.get_props(chip_id)
+        return [
+            Qubit(
+                label=label,
+                frequency=props.resonator_frequency[label],
+                anharmonicity=props.anharmonicity[label],
+            )
+            for label in qubit_labels
+        ]
+
+    def get_resonators(self, chip_id: str) -> list[Resonator]:
+        """
+        Returns a list of Resonator objects for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        list[Resonator]
+            A list of Resonator objects for the given chip ID.
+        """
+        qubits = self.get_qubits(chip_id)
+        props = self.get_props(chip_id)
+        return [
+            Resonator(
+                label=f"R{qubit.label}",
+                frequency=props.resonator_frequency[qubit.label],
+            )
+            for qubit in qubits
+        ]
 
     def get_box(self, id: str) -> Box:
         """
@@ -403,16 +333,34 @@ class Config:
             adapter=box_info["adapter"],
         )
 
-    def get_boxes(self) -> list[Box]:
+    def get_all_boxes(self) -> list[Box]:
         """
-        Returns an available list of Box objects.
+        Returns a list of all Box objects.
 
         Returns
         -------
         list[Box]
-            A list of Box objects.
+            A list of all Box objects.
         """
         return [self.get_box(id) for id in self._box_dict.keys()]
+
+    def get_boxes(self, chip_id: str) -> list[Box]:
+        """
+        Returns a list of Box objects for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        list[Box]
+            A list of Box objects for the given chip ID.
+        """
+        ports = self.get_port_configuration(chip_id)
+        box_set = set([port.box.id for port in ports])
+        return [self.get_box(box_id) for box_id in box_set]
 
     def get_port(self, box: Box, port_number: int) -> Port:
         """
@@ -485,18 +433,30 @@ class Config:
         list[str]
             A list of qubit names for the given multiplexer.
         """
-        return [f"Q{4 * mux + i:02d}" for i in range(self.N_PER_MUX)]
+        return [f"Q{4 * mux + i:02d}" for i in range(N_PER_MUX)]
 
-    def get_port_configuration(self) -> list[Port]:
+    def get_port_configuration(self, chip_id: str) -> list[Port]:
         """
-        Returns a list of Port objects based on the wiring configuration.
+        Returns a list of Port objects based on the wiring configuration for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
 
         Returns
         -------
         list[Port]
             A list of Port objects based on the wiring configuration.
         """
-        wiring_list = self._wiring_dict[self._package_id]
+        try:
+            wiring_list = self._wiring_dict[chip_id]
+        except KeyError:
+            console.print(
+                f"Wiring configuration not found for chip ID: {chip_id}",
+                style="red bold",
+            )
+            raise
         ports: list[Port] = []
         for wiring in wiring_list:
             mux = wiring["mux"]
@@ -527,14 +487,26 @@ class Config:
             ports.extend(ctrl_ports)
         return ports
 
-    def configure_system_settings(self):
+    def configure_system_settings(self, chip_id: str):
         """
-        Configures and saves the system settings to a JSON file.
+        Configures the system settings for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Examples
+        --------
+        >>> config = Config()
+        >>> config.configure_system_settings("64Q")
         """
         qc = QubeCalib()
 
+        boxes = self.get_boxes(chip_id)
+        props = self.get_props(chip_id)
+
         # define boxes, ports, and channels
-        boxes = self.get_boxes()
         for box in boxes:
             # define box
             qc.define_box(
@@ -555,7 +527,7 @@ class Config:
                 )
 
         # define channels
-        ports = self.get_port_configuration()
+        ports = self.get_port_configuration(chip_id)
         for port in ports:
             if isinstance(port, ReadOutPort):
                 qc.define_channel(
@@ -565,7 +537,7 @@ class Config:
                 )
             elif isinstance(port, ReadInPort):
                 read_qubits = port.read_out.read_qubits
-                for runit_index in range(self.N_RUNITS):
+                for runit_index in range(N_RUNITS):
                     qc.define_channel(
                         channel_name=f"{port.name}{runit_index}",
                         port_name=port.name,
@@ -589,7 +561,7 @@ class Config:
             if isinstance(port, ReadOutPort):
                 qubits = port.read_qubits
                 for qubit in qubits:
-                    target_frequency = self.props.resonator_frequency[qubit]
+                    target_frequency = props.resonator_frequency[qubit]
                     qc.define_target(
                         target_name=f"R{qubit}",
                         channel_name=f"{port.name}0",
@@ -598,7 +570,7 @@ class Config:
             elif isinstance(port, ReadInPort):
                 qubits = port.read_out.read_qubits
                 for idx, qubit in enumerate(qubits):
-                    target_frequency = self.props.resonator_frequency[qubit]
+                    target_frequency = props.resonator_frequency[qubit]
                     qc.define_target(
                         target_name=f"R{qubit}",
                         channel_name=f"{port.name}{idx}",
@@ -607,45 +579,109 @@ class Config:
             elif isinstance(port, CtrlPort):
                 qubit = port.ctrl_qubit
                 target_name = qubit
-                target_frequency = self.props.qubit_frequency[qubit]
+                target_frequency = props.qubit_frequency[qubit]
                 qc.define_target(
                     target_name=target_name,
-                    channel_name=f"{port.name}.CH{idx}",
+                    channel_name=f"{port.name}.CH0",
+                    target_frequency=target_frequency,
+                )
+                qc.define_target(
+                    target_name=target_name,
+                    channel_name=f"{port.name}.CH1",
+                    target_frequency=target_frequency,
+                )
+                qc.define_target(
+                    target_name=target_name,
+                    channel_name=f"{port.name}.CH2",
                     target_frequency=target_frequency,
                 )
 
         # save the system settings to a JSON file
-        with open(self.system_settings_path, "w") as f:
+        system_settings_path = self.get_system_settings_path(chip_id)
+        system_settings_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(system_settings_path, "w") as f:
             f.write(qc.system_config_database.asjson())
-        print(f"System setting saved to {self.system_settings_path}")
+        console.print(
+            f"System setting saved to {system_settings_path}",
+            style="green",
+        )
 
     def configure_box_settings(
         self,
+        chip_id: str,
         *,
-        box_list: list[str] | None = None,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
         loopback: bool = False,
     ):
         """
-        Configures the box with the given ID.
+        Configures the box settings for the given chip ID.
 
         Parameters
         ----------
-        box_list : list[str] | None, optional
-            The list of box IDs to configure, by default None.
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        include : list[str] | None, optional
+            The list of box IDs to include, by default None.
+        exclude : list[str] | None, optional
+            The list of box IDs to exclude, by default None.
         loopback : bool, optional
             Whether to enable loopback mode, by default False.
+
+        Examples
+        --------
+        >>> config = Config()
+        >>> config.configure_box_settings("64Q")
+
+        >>> config.configure_box_settings(
+        ...     chip_id="64Q",
+        ...     include=["Q2A", "Q73A"],
+        ...     loopback=True,
+        ... )
+
+        >>> config.configure_box_settings(
+        ...     chip_id="64Q",
+        ...     exclude=["Q2A", "Q73A"],
+        ...     loopback=True,
+        ... )
         """
-        qc = QubeCalib(self._system_settings_file)
-        boxes = (
-            self.get_boxes()
-            if box_list is None
-            else [self.get_box(id) for id in box_list]
+
+        try:
+            system_settings_path = self.get_system_settings_path(chip_id)
+            qc = QubeCalib(str(system_settings_path))
+        except FileNotFoundError:
+            console.print(
+                f"System settings file not found for chip ID: {chip_id}",
+                style="red bold",
+            )
+            return
+        boxes = self.get_boxes(chip_id)
+        if include is not None:
+            boxes = [box for box in boxes if box.id in include]
+        if exclude is not None:
+            boxes = [box for box in boxes if box.id not in exclude]
+
+        box_list_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
+        confirmed = Confirm.ask(
+            f"""
+We are going to configure the following boxes:
+
+[bold green]{box_list_str}
+
+[bold italic yellow]This operation will overwrite the existing box settings. Do you want to continue?
+"""
         )
-        ports = self.get_port_configuration()
-        read_frequencies = self.props.resonator_frequency
-        ctrl_frequencies = self.props.qubit_frequency
-        readout_vatt = self.params.readout_vatt
-        control_vatt = self.params.control_vatt
+        if not confirmed:
+            console.print("Operation cancelled.", style="red bold")
+            return
+
+        ports = self.get_port_configuration(chip_id)
+        props = self.get_props(chip_id)
+        params = self.get_params(chip_id)
+        read_frequencies = props.resonator_frequency
+        ctrl_frequencies = props.qubit_frequency
+        readout_vatt = params.readout_vatt
+        control_vatt = params.control_vatt
 
         for box in boxes:
             quel1_box = qc.create_box(box.id)
@@ -684,7 +720,7 @@ class Config:
                         lo_freq=lo,
                         cnco_locked_with=port.read_out.number,
                     )
-                    for idx in range(self.N_RUNITS):
+                    for idx in range(N_RUNITS):
                         quel1_box.config_runit(
                             port=port.number,
                             runit=idx,
@@ -734,7 +770,9 @@ class Config:
                     )
 
         # save the box settings
-        qc.store_all_box_configs(self.box_settings_path)
+        box_settings_path = self.get_box_settings_path(chip_id)
+        box_settings_path.mkdir(parents=True, exist_ok=True)
+        qc.store_all_box_configs(box_settings_path)
 
 
 class ConfigUtils:

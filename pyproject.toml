@@ -11,7 +11,8 @@ description = "QuBE experiments tools"
 readme = "README.md"
 dependencies = [
     "jupyter ~= 1.0",
-    "tqdm ~= 4.0",
+    "rich ~= 13.0",
+    "pyyaml ~= 6.0",
     "pydantic ~= 2.0",
     "matplotlib ~= 3.0",
     "numpy ~= 1.0",
@@ -19,7 +20,7 @@ dependencies = [
     "scikit-learn ~= 1.0",
     "qutip ~= 4.0",
     "qctrl-visualizer ~= 7.0",
-    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@beta/3.0",
+    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.0.0",
 ]
 
 [tool.setuptools.dynamic]
