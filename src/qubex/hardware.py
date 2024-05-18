@@ -204,7 +204,7 @@ READOUT_PAIRS = {
 }
 
 
-@dataclass
+@dataclass(frozen=True)
 class Box:
     id: str
     name: str
@@ -213,7 +213,7 @@ class Box:
     adapter: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Port:
     number: int
     box: Box
@@ -227,14 +227,14 @@ class Port:
         return f"{self.box.id}.{self.type.value}"
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReadInPort(Port):
     number: int
     box: Box
     read_out: ReadOutPort
 
 
-@dataclass
+@dataclass(frozen=True)
 class ReadOutPort(Port):
     number: int
     box: Box
@@ -245,7 +245,7 @@ class ReadOutPort(Port):
         return [f"Q{4 * self.mux + i:02d}" for i in range(4)]
 
 
-@dataclass
+@dataclass(frozen=True)
 class CtrlPort(Port):
     number: int
     box: Box

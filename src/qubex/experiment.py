@@ -7,6 +7,8 @@ from typing import Callable, Final
 
 import numpy as np
 from numpy.typing import NDArray
+from rich.console import Console
+from rich.table import Table
 
 from .analysis import fit_damped_rabi, fit_rabi
 from .config import Config, Params, Qubit, Resonator
@@ -20,6 +22,8 @@ from .measurement import (
     MeasurementResult,
 )
 from .pulse import Rect, Waveform
+
+console = Console()
 
 DEFAULT_DATA_DIR = "data"
 
@@ -133,6 +137,11 @@ class Experiment:
         )
 
     @property
+    def chip_id(self) -> str:
+        """Get the chip ID."""
+        return self._chip_id
+
+    @property
     def qubits(self) -> list[Qubit]:
         """Get the list of qubits."""
         return self._config.get_qubits(self._chip_id)
@@ -164,6 +173,41 @@ class Experiment:
     def ports(self) -> list[Port]:
         """Get the list of ports."""
         return self._config.get_port_details(self._chip_id)
+
+    def print_wiring_info(self) -> None:
+        """Print the wiring information of the chip."""
+
+        table = Table(
+            show_header=True,
+            header_style="bold",
+            title=f"WIRING INFO ({self._chip_id})",
+        )
+        table.add_column("QUBIT", justify="center", width=7)
+        table.add_column("CTRL", justify="center", width=11)
+        table.add_column("READ.OUT", justify="center", width=11)
+        table.add_column("READ.IN", justify="center", width=11)
+
+        for qubit in self.qubits:
+            ports = self._config.get_ports_by_qubit(self._chip_id, qubit.label)
+            ctrl_port = ports[0]
+            read_out_port = ports[1]
+            read_in_port = ports[2]
+            if ctrl_port is None or read_out_port is None or read_in_port is None:
+                table.add_row(qubit.label, "-", "-", "-")
+                continue
+            ctrl_box = ctrl_port.box
+            read_out_box = read_out_port.box
+            read_in_box = read_in_port.box
+            ctrl = f"[green]{ctrl_box.id}[/green]-[cyan]{ctrl_port.number}[/cyan]"
+            read_out = (
+                f"[green]{read_out_box.id}[/green]-[cyan]{read_out_port.number}[/cyan]"
+            )
+            read_in = (
+                f"[green]{read_in_box.id}[/green]-[cyan]{read_in_port.number}[/cyan]"
+            )
+            table.add_row(qubit.label, ctrl, read_out, read_in)
+
+        console.print(table)
 
     def measure(
         self,

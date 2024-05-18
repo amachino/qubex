@@ -676,6 +676,92 @@ class Config:
             ports.extend(ctrl_ports)
         return ports
 
+    def get_port_details_by_qubits(self, chip_id: str, qubits: list[str]) -> list[Port]:
+        """
+        Returns a list of Port objects for the given chip ID and qubits.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        qubits : list[str]
+            A list of qubit labels.
+
+        Returns
+        -------
+        list[Port]
+            A list of Port objects for the given chip ID and qubits.
+        """
+        ports = self.get_port_details(chip_id)
+        port_set: set[Port] = set()
+        for qubit in qubits:
+            for port in ports:
+                if isinstance(port, ReadOutPort):
+                    if qubit in port.read_qubits:
+                        port_set.add(port)
+                elif isinstance(port, ReadInPort):
+                    if qubit in port.read_out.read_qubits:
+                        port_set.add(port)
+                elif isinstance(port, CtrlPort):
+                    if qubit == port.ctrl_qubit:
+                        port_set.add(port)
+        return list(port_set)
+
+    def get_boxes_by_qubits(self, chip_id: str, qubits: list[str]) -> list[Box]:
+        """
+        Returns a list of Box objects for the given chip ID and qubits.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        qubits : list[str]
+            A list of qubit labels.
+
+        Returns
+        -------
+        list[Box]
+            A list of Box objects for the given chip ID and qubits.
+        """
+        ports = self.get_port_details_by_qubits(chip_id, qubits)
+        box_set: set[Box] = set()
+        for port in ports:
+            box_set.add(port.box)
+        return list(box_set)
+
+    def get_ports_by_qubit(
+        self,
+        chip_id: str,
+        qubit: str,
+    ) -> tuple[CtrlPort | None, ReadOutPort | None, ReadInPort | None]:
+        """
+        Returns the Port objects for the given chip ID and qubit.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        qubit : str
+            The qubit label.
+
+        Returns
+        -------
+        tuple[CtrlPort | None, ReadOutPort | None, ReadInPort | None]
+            The Port objects for the given chip ID and qubit.
+        """
+        ports = self.get_port_details(chip_id)
+        ctrl_port = None
+        read_out_port = None
+        read_in_port = None
+        for port in ports:
+            if isinstance(port, CtrlPort) and port.ctrl_qubit == qubit:
+                ctrl_port = port
+            elif isinstance(port, ReadOutPort) and qubit in port.read_qubits:
+                read_out_port = port
+            elif isinstance(port, ReadInPort) and qubit in port.read_out.read_qubits:
+                read_in_port = port
+        return ctrl_port, read_out_port, read_in_port
+
     def configure_system_settings(self, chip_id: str):
         """
         Configures the system settings for the given chip ID.
