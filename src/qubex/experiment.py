@@ -9,7 +9,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .analysis import fit_damped_rabi, fit_rabi
-from .config import Config, Params, Qubit
+from .config import Config, Params, Qubit, Resonator
+from .hardware import Box, Port
 from .measurement import (
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
@@ -19,6 +20,8 @@ from .measurement import (
     MeasurementResult,
 )
 from .pulse import Rect, Waveform
+
+DEFAULT_DATA_DIR = "data"
 
 
 @dataclass
@@ -116,31 +119,55 @@ class Experiment:
         self,
         *,
         chip_id: str,
-        config_dir: str = DEFAULT_CONFIG_DIR,
         control_window: int = DEFAULT_CONTROL_WINDOW,
-        data_dir="./data",
+        data_dir: str = DEFAULT_DATA_DIR,
+        config_dir: str = DEFAULT_CONFIG_DIR,
     ):
         self._chip_id: Final = chip_id
+        self._control_window: Final = control_window
+        self._config: Final = Config(config_dir)
         self._data_dir: Final = data_dir
         self._measurement: Final = Measurement(
-            chip_id=chip_id,
+            chip_id,
             config_dir=config_dir,
         )
-        self.config: Final = Config(config_dir=config_dir)
 
     @property
     def qubits(self) -> list[Qubit]:
         """Get the list of qubits."""
-        return self.config.get_qubits(self._chip_id)
+        return self._config.get_qubits(self._chip_id)
+
+    @property
+    def resonators(self) -> list[Resonator]:
+        """Get the list of resonators."""
+        return self._config.get_resonators(self._chip_id)
+
+    @property
+    def targets(self) -> dict[str, float]:
+        target_settings = self._measurement.backend.target_settings
+        return {
+            target: settings["frequency"]
+            for target, settings in target_settings.items()
+        }
 
     @property
     def params(self) -> Params:
         """Get the system parameters."""
-        return self.config.get_params(self._chip_id)
+        return self._config.get_params(self._chip_id)
+
+    @property
+    def boxes(self) -> list[Box]:
+        """Get the list of boxes."""
+        return self._config.get_boxes(self._chip_id)
+
+    @property
+    def ports(self) -> list[Port]:
+        """Get the list of ports."""
+        return self._config.get_port_details(self._chip_id)
 
     def measure(
         self,
-        waveforms: dict[str, list | NDArray],
+        waveforms: dict[str, NDArray[np.complex128]],
         *,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -211,7 +238,7 @@ class Experiment:
             ).data
 
             for qubit, value in measured_values.items():
-                signals[qubit].append(value)
+                signals[qubit].append(value.mean())
 
             # if plot:
 
@@ -270,7 +297,7 @@ class Experiment:
             ).data
 
             for qubit, value in measured_values.items():
-                signals[qubit].append(value)
+                signals[qubit].append(value.mean())
 
             # if plot:
 
@@ -351,7 +378,7 @@ class Experiment:
 
     def normalize(
         self,
-        iq_value: NDArray,
+        iq_value: complex,
         rabi_params: RabiParams,
     ) -> float:
         """
@@ -359,7 +386,7 @@ class Experiment:
 
         Parameters
         ----------
-        iq_value : NDArray
+        iq_value : complex
             Measured IQ value.
         rabi_params : RabiParams
             Parameters of the Rabi oscillation.

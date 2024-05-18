@@ -44,6 +44,7 @@ class QubeCalibWrapper:
                 f"Configuration file {config_path} not found.",
                 style="bold red",
             )
+            raise
 
     @property
     def system_config(self) -> dict[str, dict]:

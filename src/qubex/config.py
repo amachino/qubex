@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import yaml
@@ -49,8 +50,20 @@ class Params:
     readout_vatt: dict[int, int]
 
 
-N_RUNITS = 4
-N_PER_MUX = 4
+class TargetType(Enum):
+    CTRL_GE = "CTRL_GE"
+    CTRL_EF = "CTRL_EF"
+    CTRL_CR = "CTRL_CR"
+    READ = "READ"
+
+
+@dataclass
+class Target:
+    label: str
+    frequency: float
+    type: TargetType
+    qubit: str
+
 
 CONFIG_DIR = "config"
 BUILD_DIR = "build"
@@ -260,6 +273,29 @@ class Config:
         """
         return [self.get_chip(id) for id in self._chip_dict.keys()]
 
+    def get_qubit(self, chip_id: str, label: str) -> Qubit:
+        """
+        Returns the Qubit object for the given chip ID and label.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        label : str
+            The qubit label (e.g., "Q00").
+
+        Returns
+        -------
+        Qubit
+            The Qubit object for the given chip ID and label.
+        """
+        props = self.get_props(chip_id)
+        return Qubit(
+            label=label,
+            frequency=props.qubit_frequency[label],
+            anharmonicity=props.anharmonicity[label],
+        )
+
     def get_qubits(self, chip_id: str) -> list[Qubit]:
         """
         Returns a list of Qubit objects for the given chip ID.
@@ -286,6 +322,28 @@ class Config:
             for label in qubit_labels
         ]
 
+    def get_resonator(self, chip_id: str, label: str) -> Resonator:
+        """
+        Returns the Resonator object for the given chip ID and label.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        label : str
+            The qubit label (e.g., "Q00").
+
+        Returns
+        -------
+        Resonator
+            The Resonator object for the given chip ID and label.
+        """
+        props = self.get_props(chip_id)
+        return Resonator(
+            label=f"R{label}",
+            frequency=props.resonator_frequency[label],
+        )
+
     def get_resonators(self, chip_id: str) -> list[Resonator]:
         """
         Returns a list of Resonator objects for the given chip ID.
@@ -300,8 +358,8 @@ class Config:
         list[Resonator]
             A list of Resonator objects for the given chip ID.
         """
-        qubits = self.get_qubits(chip_id)
         props = self.get_props(chip_id)
+        qubits = self.get_qubits(chip_id)
         return [
             Resonator(
                 label=f"R{qubit.label}",
@@ -309,6 +367,137 @@ class Config:
             )
             for qubit in qubits
         ]
+
+    def get_read_target(self, chip_id: str, label: str) -> Target:
+        """
+        Returns the readout Target object for the given chip ID and qubit label.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        label : str
+            The qubit label (e.g., "Q00").
+
+        Returns
+        -------
+        Target
+            The readout Target object for the given chip ID and qubit label.
+        """
+        resonator = self.get_resonator(chip_id, label)
+        return Target(
+            label=resonator.label,
+            frequency=resonator.frequency,
+            type=TargetType.READ,
+            qubit=label,
+        )
+
+    def get_ctrl_ge_target(self, chip_id: str, label: str) -> Target:
+        """
+        Returns the control (ge) Target object for the given chip ID and qubit label.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        label : str
+            The qubit label (e.g., "Q00").
+
+        Returns
+        -------
+        Target
+            The control (ge) Target object for the given chip ID and qubit label.
+        """
+        qubit = self.get_qubit(chip_id, label)
+        return Target(
+            label=label,
+            frequency=qubit.frequency,
+            type=TargetType.CTRL_GE,
+            qubit=label,
+        )
+
+    def get_ctrl_ef_target(self, chip_id: str, label: str) -> Target:
+        """
+        Returns the control (ef) Target object for the given chip ID and qubit label.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        label : str
+            The qubit label (e.g., "Q00").
+
+        Returns
+        -------
+        Target
+            The control (ef) Target object for the given chip ID and qubit label.
+        """
+        qubit = self.get_qubit(chip_id, label)
+        return Target(
+            label=f"{label}-ef",
+            frequency=qubit.frequency + qubit.anharmonicity,
+            type=TargetType.CTRL_EF,
+            qubit=label,
+        )
+
+    def get_ctrl_cr_targets(self, chip_id: str, label: str) -> list[Target]:
+        """
+        Returns a list of control (CR) Target objects for the given chip ID and qubit label.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        label : str
+            The qubit label (e.g., "Q00").
+
+        Returns
+        -------
+        list[Target]
+            A list of control (CR) Target objects for the given chip ID and qubit label.
+        """
+        target_qubits = self.get_cr_target_qubits(chip_id, label)
+        return [
+            Target(
+                label=f"{label}-CR",
+                # label=f"{label}-{target_qubit.label}",
+                frequency=target_qubit.frequency,
+                type=TargetType.CTRL_CR,
+                qubit=label,
+            )
+            for target_qubit in target_qubits
+        ]
+
+    def get_cr_target_qubits(self, chip_id: str, label: str) -> list[Qubit]:
+        """
+        Returns a list of target qubits for the cross-resonance control qubit.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+        label : str
+            The cross-resonance control qubit label (e.g., "Q00").
+
+        Returns
+        -------
+        list[Qubit]
+            A list of target qubits for the cross-resonance control qubit.
+        """
+        qubits = self.get_qubits(chip_id)
+        control = self.get_qubit(chip_id, label)
+        control_index = qubits.index(control)
+        mux_number = control_index // 4
+        control_index_in_mux = control_index % 4
+        edges = {
+            0: (1, 2),
+            1: (3, 0),
+            2: (0, 3),
+            3: (2, 1),
+        }
+        target_indices = [4 * mux_number + edge for edge in edges[control_index_in_mux]]
+        target_qubits = [qubits[i] for i in target_indices]
+        return target_qubits
 
     def get_box(self, id: str) -> Box:
         """
@@ -358,7 +547,7 @@ class Config:
         list[Box]
             A list of Box objects for the given chip ID.
         """
-        ports = self.get_port_configuration(chip_id)
+        ports = self.get_port_details(chip_id)
         box_set = set([port.box.id for port in ports])
         return [self.get_box(box_id) for box_id in box_set]
 
@@ -433,11 +622,11 @@ class Config:
         list[str]
             A list of qubit names for the given multiplexer.
         """
-        return [f"Q{4 * mux + i:02d}" for i in range(N_PER_MUX)]
+        return [f"Q{4 * mux + i:02d}" for i in range(4)]
 
-    def get_port_configuration(self, chip_id: str) -> list[Port]:
+    def get_port_details(self, chip_id: str) -> list[Port]:
         """
-        Returns a list of Port objects based on the wiring configuration for the given chip ID.
+        Returns a list of Port objects for the given chip ID.
 
         Parameters
         ----------
@@ -447,7 +636,7 @@ class Config:
         Returns
         -------
         list[Port]
-            A list of Port objects based on the wiring configuration.
+            A list of Port objects for the given chip ID.
         """
         try:
             wiring_list = self._wiring_dict[chip_id]
@@ -504,7 +693,6 @@ class Config:
         qc = QubeCalib()
 
         boxes = self.get_boxes(chip_id)
-        props = self.get_props(chip_id)
 
         # define boxes, ports, and channels
         for box in boxes:
@@ -527,7 +715,7 @@ class Config:
                 )
 
         # define channels
-        ports = self.get_port_configuration(chip_id)
+        ports = self.get_port_details(chip_id)
         for port in ports:
             if isinstance(port, ReadOutPort):
                 qc.define_channel(
@@ -536,17 +724,11 @@ class Config:
                     channel_number=0,
                 )
             elif isinstance(port, ReadInPort):
-                read_qubits = port.read_out.read_qubits
-                for runit_index in range(N_RUNITS):
+                for runit_index in range(4):
                     qc.define_channel(
                         channel_name=f"{port.name}{runit_index}",
                         port_name=port.name,
                         channel_number=runit_index,
-                    )
-                    qc.define_target(
-                        target_name=f"R{read_qubits[runit_index]}",
-                        channel_name=f"{port.name}{runit_index}",
-                        target_frequency=0.0,
                     )
             elif isinstance(port, CtrlPort):
                 for channel_index in range(port.n_channel):
@@ -559,52 +741,48 @@ class Config:
         # define targets
         for port in ports:
             if isinstance(port, ReadOutPort):
-                qubits = port.read_qubits
-                for qubit in qubits:
-                    target_frequency = props.resonator_frequency[qubit]
+                for qubit in port.read_qubits:
+                    target = self.get_read_target(chip_id, qubit)
                     qc.define_target(
-                        target_name=f"R{qubit}",
+                        target_name=target.label,
                         channel_name=f"{port.name}0",
-                        target_frequency=target_frequency,
+                        target_frequency=target.frequency,
                     )
             elif isinstance(port, ReadInPort):
-                qubits = port.read_out.read_qubits
-                for idx, qubit in enumerate(qubits):
-                    target_frequency = props.resonator_frequency[qubit]
+                for idx, qubit in enumerate(port.read_out.read_qubits):
+                    target = self.get_read_target(chip_id, qubit)
                     qc.define_target(
-                        target_name=f"R{qubit}",
+                        target_name=target.label,
                         channel_name=f"{port.name}{idx}",
-                        target_frequency=target_frequency,
+                        target_frequency=target.frequency,
                     )
             elif isinstance(port, CtrlPort):
                 qubit = port.ctrl_qubit
-                target_name = qubit
-                target_frequency = props.qubit_frequency[qubit]
+                target_ge = self.get_ctrl_ge_target(chip_id, qubit)
                 qc.define_target(
-                    target_name=target_name,
+                    target_name=target_ge.label,
                     channel_name=f"{port.name}.CH0",
-                    target_frequency=target_frequency,
+                    target_frequency=target_ge.frequency,
                 )
-                qc.define_target(
-                    target_name=target_name,
-                    channel_name=f"{port.name}.CH1",
-                    target_frequency=target_frequency,
-                )
-                qc.define_target(
-                    target_name=target_name,
-                    channel_name=f"{port.name}.CH2",
-                    target_frequency=target_frequency,
-                )
+                if port.n_channel == 3:
+                    target_ef = self.get_ctrl_ef_target(chip_id, qubit)
+                    target_cr = self.get_ctrl_cr_targets(chip_id, qubit)[0]
+                    qc.define_target(
+                        target_name=target_ef.label,
+                        channel_name=f"{port.name}.CH1",
+                        target_frequency=target_ef.frequency,
+                    )
+                    qc.define_target(
+                        target_name=target_cr.label,
+                        channel_name=f"{port.name}.CH2",
+                        target_frequency=target_cr.frequency,
+                    )
 
         # save the system settings to a JSON file
         system_settings_path = self.get_system_settings_path(chip_id)
         system_settings_path.parent.mkdir(parents=True, exist_ok=True)
         with open(system_settings_path, "w") as f:
             f.write(qc.system_config_database.asjson())
-        console.print(
-            f"System setting saved to {system_settings_path}",
-            style="green",
-        )
 
     def configure_box_settings(
         self,
@@ -675,7 +853,7 @@ We are going to configure the following boxes:
             console.print("Operation cancelled.", style="red bold")
             return
 
-        ports = self.get_port_configuration(chip_id)
+        ports = self.get_port_details(chip_id)
         props = self.get_props(chip_id)
         params = self.get_params(chip_id)
         read_frequencies = props.resonator_frequency
@@ -720,7 +898,7 @@ We are going to configure the following boxes:
                         lo_freq=lo,
                         cnco_locked_with=port.read_out.number,
                     )
-                    for idx in range(N_RUNITS):
+                    for idx in range(4):
                         quel1_box.config_runit(
                             port=port.number,
                             runit=idx,

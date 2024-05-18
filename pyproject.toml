@@ -27,3 +27,6 @@ version = { attr = "qubex.__version__" }
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+
+[tool.mypy]
+ignore_missing_imports = true

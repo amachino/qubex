@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
+import numpy as np
 import numpy.typing as npt
 from qubecalib.neopulse import (
     Arbit,
@@ -26,85 +27,11 @@ DEFAULT_CAPTURE_WINDOW = 1024  # ns
 DEFAULT_READOUT_DURATION = 768  # ns
 
 
-class TargetType(Enum):
-    """Enum for target types."""
-
-    CTRL_GE = ""
-    CTRL_EF = "_ef"
-    CTRL_CR = "_CR"
-    READ = "R"
-
-
-def qubit_to_target(qubit: str, target_type: TargetType) -> str:
-    """
-    Convert qubit to target.
-
-    Parameters
-    ----------
-    qubit : str
-        The qubit name.
-    target_type : TargetType
-        The target type.
-
-    Returns
-    -------
-    str
-        The target name.
-
-    Examples
-    --------
-    >>> qubit_to_target("Q00", TargetType.CTRL_GE)
-    'Q00'
-    >>> qubit_to_target("Q00", TargetType.CTRL_EF)
-    'Q00_ef'
-    >>> qubit_to_target("Q00", TargetType.CTRL_CR)
-    'Q00_CR'
-    >>> qubit_to_target("Q00", TargetType.READ)
-    'RQ00'
-    """
-    result = ""
-    if target_type == TargetType.READ:
-        result = f"R{qubit}"
-    else:
-        result = f"{qubit}{target_type.value}"
-    return result
-
-
-def target_to_qubit(target: str) -> str:
-    """
-    Convert target to qubit.
-
-    Parameters
-    ----------
-    target : str
-        The target name.
-
-    Returns
-    -------
-    str
-        The qubit name.
-
-    Examples
-    --------
-    >>> target_to_qubit("Q00")
-    'Q00'
-    >>> target_to_qubit("Q00_ef")
-    'Q00'
-    >>> target_to_qubit("Q00_CR")
-    'Q00'
-    >>> target_to_qubit("RQ00")
-    'Q00'
-    """
-    if target.startswith("R"):
-        return target[1:]
-    return target.split("_")[0]
-
-
 @dataclass
 class MeasurementResult:
     """Dataclass for measurement results."""
 
-    data: dict[str, complex]
+    data: dict[str, npt.NDArray[np.complex64]]
 
 
 class Measurement:
@@ -130,17 +57,14 @@ class Measurement:
         >>> from qubex import Measurement
         >>> meas = Measurement("64Q")
         """
-        config_path = Config(config_dir).get_system_settings_path(chip_id)
+        config = Config(config_dir)
+        config.configure_system_settings(chip_id)
+        config_path = config.get_system_settings_path(chip_id)
         self.backend: Final = QubeCalibWrapper(config_path)
-
-    @property
-    def targets(self) -> list[str]:
-        """Get the list of targets."""
-        return list(self.backend.target_settings.keys())
 
     def measure(
         self,
-        waveforms: dict[str, list | npt.NDArray],
+        waveforms: dict[str, npt.NDArray[np.complex128]],
         *,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -153,7 +77,7 @@ class Measurement:
 
         Parameters
         ----------
-        waveforms : dict[str, list | npt.NDArray]
+        waveforms : dict[str, npt.NDArray[np.complex128]]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays with the sampling period of 2 ns.
         shots : int, optional
@@ -187,7 +111,7 @@ class Measurement:
                     Arbit(waveform).target(target)
             with Flushleft():
                 for target in waveforms.keys():
-                    read_target = qubit_to_target(target, TargetType.READ)
+                    read_target = f"R{target}"
                     readout_pulse.target(read_target)
                     capture.target(read_target)
 
@@ -197,8 +121,8 @@ class Measurement:
             interval=interval,
         )
 
-        data: dict[str, complex] = {
-            target_to_qubit(target): iqs[0].squeeze().mean()
+        data: dict[str, npt.NDArray[np.complex64]] = {
+            target[1:]: np.array(iqs[0], dtype=np.complex64)
             for target, iqs in raw_result.data.items()
         }
 
