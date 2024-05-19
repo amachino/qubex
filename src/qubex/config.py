@@ -10,7 +10,16 @@ from qubecalib import QubeCalib
 from rich.console import Console
 from rich.prompt import Confirm
 
-from .hardware import Box, BoxType, CtrlPort, Port, PortType, ReadInPort, ReadOutPort
+from .hardware import (
+    PORT_MAPPING,
+    Box,
+    BoxType,
+    CtrlPort,
+    Port,
+    PortType,
+    ReadInPort,
+    ReadOutPort,
+)
 
 console = Console()
 
@@ -762,6 +771,23 @@ class Config:
                 read_in_port = port
         return ctrl_port, read_out_port, read_in_port
 
+    def get_port_map(self, box_id: str) -> dict[int, PortType]:
+        """
+        Returns a dictionary of port mappings for the given box ID.
+
+        Parameters
+        ----------
+        box_id : str
+            The box ID (e.g., "Q73A").
+
+        Returns
+        -------
+        dict[int, PortType]
+            A dictionary of port mappings for the given box ID.
+        """
+        box = self.get_box(box_id)
+        return PORT_MAPPING[box.type]
+
     def configure_system_settings(self, chip_id: str):
         """
         Configures the system settings for the given chip ID.
@@ -777,6 +803,9 @@ class Config:
         >>> config.configure_system_settings("64Q")
         """
         qc = QubeCalib()
+
+        # define clock master
+        qc.define_clockmaster(ipaddr="10.3.0.255", reset=True)
 
         boxes = self.get_boxes(chip_id)
 
@@ -928,15 +957,15 @@ class Config:
         box_list_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
         confirmed = Confirm.ask(
             f"""
-We are going to configure the following boxes:
+You are going to configure the following boxes:
 
-[bold green]{box_list_str}
+[bold bright_green]{box_list_str}
 
-[bold italic yellow]This operation will overwrite the existing box settings. Do you want to continue?
+[bold italic bright_yellow]This operation will overwrite the existing device settings. Do you want to continue?
 """
         )
         if not confirmed:
-            console.print("Operation cancelled.", style="red bold")
+            console.print("Operation cancelled.", style="bright_red bold")
             return
 
         ports = self.get_port_details(chip_id)
@@ -1035,8 +1064,13 @@ We are going to configure the following boxes:
 
         # save the box settings
         box_settings_path = self.get_box_settings_path(chip_id)
-        box_settings_path.mkdir(parents=True, exist_ok=True)
+        box_settings_path.parent.mkdir(parents=True, exist_ok=True)
         qc.store_all_box_configs(box_settings_path)
+
+        console.print(
+            f"Box settings have been configured and saved to {box_settings_path}",
+            style="bright_green bold",
+        )
 
 
 class ConfigUtils:

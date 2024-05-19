@@ -16,7 +16,7 @@ from qubecalib.neopulse import (
 )
 
 from .config import Config
-from .qube_calib_wrapper import QubeCalibWrapper
+from .qube_backend import QubeBackend
 
 DEFAULT_CONFIG_DIR = "./config"
 DEFAULT_SHOTS = 3000
@@ -59,7 +59,33 @@ class Measurement:
         config = Config(config_dir)
         config.configure_system_settings(chip_id)
         config_path = config.get_system_settings_path(chip_id)
-        self.backend: Final = QubeCalibWrapper(config_path)
+        self._backend: Final = QubeBackend(config_path)
+
+    def connect(self) -> None:
+        """Connect to the backend."""
+        available_boxes = self._backend.available_boxes
+        self._backend.linkup_boxes(available_boxes)
+        self._backend.sync_clocks(available_boxes)
+
+    def dump_box_config(self, box_id: str) -> dict:
+        """
+        Dump the configuration of the box.
+
+        Parameters
+        ----------
+        box_id : str
+            The box ID.
+
+        Returns
+        -------
+        dict
+            The configuration of the box.
+
+        Examples
+        --------
+        >>> config = meas.dump_box_config("Q73A")
+        """
+        return self._backend.dump_box(box_id)
 
     def measure(
         self,
@@ -114,7 +140,7 @@ class Measurement:
                     readout_pulse.target(read_target)
                     capture.target(read_target)
 
-        raw_result = self.backend.execute_sequence(
+        raw_result = self._backend.execute_sequence(
             sequence=sequence,
             repeats=shots,
             interval=interval,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Callable, Final
+from typing import Callable, Final, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -137,6 +137,16 @@ class Experiment:
         )
 
     @property
+    def available_boxes(self) -> list[str]:
+        """Get the list of available boxes."""
+        return [box.id for box in self.boxes]
+
+    @property
+    def available_qubits(self) -> list[str]:
+        """Get the list of available qubits."""
+        return [qubit.label for qubit in self.qubits]
+
+    @property
     def chip_id(self) -> str:
         """Get the chip ID."""
         return self._chip_id
@@ -153,7 +163,7 @@ class Experiment:
 
     @property
     def targets(self) -> dict[str, float]:
-        target_settings = self._measurement.backend.target_settings
+        target_settings = self._measurement._backend.target_settings
         return {
             target: settings["frequency"]
             for target, settings in target_settings.items()
@@ -174,8 +184,41 @@ class Experiment:
         """Get the list of ports."""
         return self._config.get_port_details(self._chip_id)
 
+    def connect(self) -> None:
+        """Connect to the backend."""
+        self._measurement.connect()
+
+    def dump_box(self, box_id: str) -> dict:
+        """Dump the information of a box."""
+        return self._measurement.dump_box_config(box_id)
+
+    def configure_boxes(self, box_list: Optional[list[str]] = None) -> None:
+        """
+        Configure the boxes.
+
+        Parameters
+        ----------
+        box_list : Optional[list[str]], optional
+            List of boxes to configure. Defaults to None.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> exp = Experiment(chip_id="64Q")
+        >>> exp.configure_boxes()
+        """
+        self._config.configure_box_settings(self._chip_id, include=box_list)
+
     def print_wiring_info(self) -> None:
-        """Print the wiring information of the chip."""
+        """
+        Print the wiring information of the chip.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> exp = Experiment(chip_id="64Q")
+        >>> exp.print_wiring_info()
+        """
 
         table = Table(
             show_header=True,
@@ -208,6 +251,71 @@ class Experiment:
             table.add_row(qubit.label, ctrl, read_out, read_in)
 
         console.print(table)
+
+    def print_box_info(self, box_id: str) -> None:
+        """
+        Print the information of a box.
+
+        Parameters
+        ----------
+        box_id : str
+            Identifier of the box.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> exp = Experiment(chip_id="64Q")
+        >>> exp.print_box_info("Q73A")
+        """
+        if box_id not in self.available_boxes:
+            console.print(
+                f"Box {box_id} not in available boxes: {self.available_boxes}"
+            )
+            return
+
+        table1 = Table(
+            show_header=True,
+            header_style="bold",
+            title=f"BOX INFO ({box_id})",
+        )
+        table2 = Table(
+            show_header=True,
+            header_style="bold",
+        )
+        table1.add_column("PORT", justify="right")
+        table1.add_column("TYPE", justify="right")
+        table1.add_column("SSB", justify="right")
+        table1.add_column("LO", justify="right")
+        table1.add_column("CNCO", justify="right")
+        table1.add_column("FSC", justify="right")
+        table2.add_column("PORT", justify="right")
+        table2.add_column("TYPE", justify="right")
+        table2.add_column("FNCO-0", justify="right")
+        table2.add_column("FNCO-1", justify="right")
+        table2.add_column("FNCO-2", justify="right")
+        table2.add_column("FNCO-3", justify="right")
+
+        port_map = self._config.get_port_map(box_id)
+        ssb_map = {"U": "[cyan]USB[/cyan]", "L": "[green]LSB[/green]"}
+
+        ports = self.dump_box(box_id)["ports"]
+        for number, port in ports.items():
+            direction = port["direction"]
+            lo = int(port["lo_freq"])
+            cnco = int(port["cnco_freq"])
+            type = port_map[number].value
+            if direction == "in":
+                ssb = ""
+                fsc = ""
+                fncos = [str(int(ch["fnco_freq"])) for ch in port["runits"].values()]
+            elif direction == "out":
+                ssb = ssb_map[port["sideband"]]
+                fsc = port["fullscale_current"]
+                fncos = [str(int(ch["fnco_freq"])) for ch in port["channels"].values()]
+            table1.add_row(str(number), type, ssb, str(lo), str(cnco), str(fsc))
+            table2.add_row(str(number), type, *fncos)
+        console.print(table1)
+        console.print(table2)
 
     def measure(
         self,

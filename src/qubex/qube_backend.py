@@ -13,7 +13,7 @@ console = Console()
 
 
 @dataclass
-class QubeCalibResult:
+class QubeBackendResult:
     """Dataclass for measurement results."""
 
     status: dict
@@ -21,11 +21,11 @@ class QubeCalibResult:
     config: dict
 
 
-class QubeCalibWrapper:
+class QubeBackend:
 
     def __init__(self, config_path: str | Path):
         """
-        Initialize the QubeCalibWrapper.
+        Initialize the QubeBackend.
 
         Parameters
         ----------
@@ -34,8 +34,8 @@ class QubeCalibWrapper:
 
         Examples
         --------
-        >>> from qubex.qube_calib_wrapper import QubeCalibWrapper
-        >>> qcw = QubeCalibWrapper("./system_settings.json")
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
         """
         try:
             self.qubecalib: Final = QubeCalib(str(config_path))
@@ -106,9 +106,9 @@ class QubeCalibWrapper:
 
         Examples
         --------
-        >>> from qubex.qube_calib_wrapper import QubeCalibWrapper
-        >>> qcw = QubeCalibWrapper("./system_settings.json")
-        >>> qcw.link_status("Q73A")
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.link_status("Q73A")
         {0: True, 1: True}
         """
         self._check_box_availabilty(box_name)
@@ -140,9 +140,9 @@ class QubeCalibWrapper:
 
         Examples
         --------
-        >>> from qubex.qube_calib_wrapper import QubeCalibWrapper
-        >>> qcw = QubeCalibWrapper("./system_settings.json")
-        >>> box = qcw.linkup("Q73A")
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> box = backend.linkup("Q73A")
         """
         # check if the box is available
         self._check_box_availabilty(box_name)
@@ -162,9 +162,9 @@ class QubeCalibWrapper:
         # return the box
         return box
 
-    def linkup_all(self) -> dict[str, Quel1Box]:
+    def linkup_boxes(self, box_list: list[str]) -> dict[str, Quel1Box]:
         """
-        Linkup all available boxes.
+        Linkup all the boxes in the list.
 
         Returns
         -------
@@ -173,18 +173,117 @@ class QubeCalibWrapper:
 
         Examples
         --------
-        >>> from qubex.qube_calib_wrapper import QubeCalibWrapper
-        >>> qcw = QubeCalibWrapper("./system_settings.json")
-        >>> boxes = qcw.linkup_all()
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.linkup_boxes(["Q73A", "U10B"])
         """
         boxes = {}
-        for box_name in self.available_boxes:
+        for box_name in box_list:
             try:
                 boxes[box_name] = self.linkup(box_name)
-                console.print(box_name, "Linked up", style="bold green")
+                console.print(
+                    f"{box_name:5}", ":", "Linked up", style="bold green", end="\n"
+                )
             except Exception as e:
-                console.print(box_name, "Error", e, style="bold red")
+                console.print(
+                    f"{box_name:5}", ":", "Error", e, style="bold red", end="\n"
+                )
         return boxes
+
+    def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
+        """
+        Read the clocks of the boxes.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box names.
+
+        Returns
+        -------
+        list[tuple[bool, int, int]]
+            List of clocks.
+
+        Examples
+        --------
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.read_clocks(["Q73A", "U10B"])
+        """
+        result = list(self.qubecalib.read_clock(*box_list))
+        return result
+
+    def check_clocks(self, box_list: list[str]) -> bool:
+        """
+        Check the clock of the boxes.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box names.
+
+        Returns
+        -------
+        bool
+            True if the clocks are synchronized, False otherwise.
+
+        Examples
+        --------
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.check_clocks(["Q73A", "U10B"])
+        """
+
+        result = self.qubecalib.read_clock(*box_list)
+        timestamps: list[str] = []
+        accuracy = -8
+        for _, clock, sysref_latch in result:
+            timestamps.append(str(clock)[:accuracy])
+            timestamps.append(str(sysref_latch)[:accuracy])
+        timestamps = list(set(timestamps))
+        synchronized = len(timestamps) == 1
+        return synchronized
+
+    def resync_clocks(self, box_list: list[str]) -> bool:
+        """
+        Resync the clock of the boxes.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box names.
+
+        Examples
+        --------
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.resync_clocks(["Q73A", "U10B"])
+        """
+        self.qubecalib.resync(*box_list)
+        return self.check_clocks(box_list)
+
+    def sync_clocks(self, box_list: list[str]) -> bool:
+        """
+        Sync the clocks of the boxes if not synchronized.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box names.
+
+        Examples
+        --------
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.sync_clocks(["Q73A", "U10B"])
+        """
+        synchronized = self.check_clocks(box_list)
+        if not synchronized:
+            synchronized = self.resync_clocks(box_list)
+            if not synchronized:
+                console.print("Failed to synchronize clocks.", style="bold red")
+        console.print("All clocks are synchronized.", style="bold green")
+        return synchronized
 
     def dump_box(self, box_name: str) -> dict:
         """
@@ -207,9 +306,9 @@ class QubeCalibWrapper:
 
         Examples
         --------
-        >>> from qubex.qube_calib_wrapper import QubeCalibWrapper
-        >>> qcw = QubeCalibWrapper("./system_settings.json")
-        >>> qcw.dump_box("Q73A")
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.dump_box("Q73A")
         """
         self._check_box_availabilty(box_name)
         box = self.linkup(box_name)
@@ -227,10 +326,10 @@ class QubeCalibWrapper:
 
         Examples
         --------
-        >>> qcw = QubeCalibWrapper("./system_settings.json")
+        >>> backend = QubeBackend("./system_settings.json")
         >>> with Sequence() as sequence:
         ...     ...
-        >>> qcw.add_sequence(sequence)
+        >>> backend.add_sequence(sequence)
         """
         self.qubecalib.add_sequence(sequence)
 
@@ -260,16 +359,16 @@ class QubeCalibWrapper:
 
         Yields
         ------
-        QubeCalibResult
+        QubeBackendResult
             Measurement result.
 
         Examples
         --------
-        >>> qcw = QubeCalibWrapper("./system_settings.json")
+        >>> backend = QubeBackend("./system_settings.json")
         >>> with Sequence() as sequence:
         ...     ...
-        >>> qcw.add_sequence(sequence)
-        >>> for result in qcw.execute(repeats=100, interval=1024):
+        >>> backend.add_sequence(sequence)
+        >>> for result in backend.execute(repeats=100, interval=1024):
         ...     print(result)
         """
         for status, data, config in self.qubecalib.step_execute(
@@ -279,7 +378,7 @@ class QubeCalibWrapper:
             dsp_demodulation=True,
             software_demodulation=False,
         ):
-            result = QubeCalibResult(
+            result = QubeBackendResult(
                 status=status,
                 data=data,
                 config=config,
@@ -292,7 +391,7 @@ class QubeCalibWrapper:
         *,
         repeats: int,
         interval: int,
-    ) -> QubeCalibResult:
+    ) -> QubeBackendResult:
         """
         Execute a single sequence and return the measurement result.
 
@@ -307,15 +406,15 @@ class QubeCalibWrapper:
 
         Returns
         -------
-        QubeCalibResult
+        QubeBackendResult
             Measurement result.
 
         Examples
         --------
-        >>> qcw = QubeCalibWrapper("./system_settings.json")
+        >>> backend = QubeBackend("./system_settings.json")
         >>> with Sequence() as sequence:
         ...     ...
-        >>> result = qcw.execute_sequence(sequence, repeats=100, interval=1024)
+        >>> result = backend.execute_sequence(sequence, repeats=100, interval=1024)
         """
         self.clear_command_queue()
         self.add_sequence(sequence)
