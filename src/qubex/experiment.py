@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from IPython.display import clear_output
 from numpy.typing import NDArray
+from qubecalib import QubeCalib
 from rich.console import Console
 from rich.table import Table
 
@@ -592,6 +593,10 @@ class ExperimentTools:
 
     def __init__(self, experiment: Experiment):
         self._exp = experiment
+
+    def get_qubecalib(self) -> QubeCalib:
+        """Get the QubeCalib instance."""
+        return self._exp._measurement._backend.qubecalib
 
     def dump_box(self, box_id: str) -> dict:
         """Dump the information of a box."""
