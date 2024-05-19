@@ -5,17 +5,15 @@ import numpy as np
 from matplotlib import gridspec
 from numpy.typing import NDArray
 
-from .typing import IntArray, IQArray, IQLike, QubitDict, QubitKey
-
 
 def show_pulse_sequences(
-    control_qubits: list[QubitKey],
-    control_waveforms: QubitDict[IQArray],
-    control_times: QubitDict[IntArray],
+    control_qubits: list[str],
+    control_waveforms: dict[str, NDArray[np.complex128]],
+    control_times: dict[str, NDArray[np.int64]],
     control_duration: int,
-    readout_qubits: list[QubitKey],
-    readout_waveforms: QubitDict[IQArray],
-    readout_times: QubitDict[IntArray],
+    readout_qubits: list[str],
+    readout_waveforms: dict[str, NDArray[np.complex128]],
+    readout_times: dict[str, NDArray[np.int64]],
     readout_duration: int,
 ):
     """
@@ -23,19 +21,19 @@ def show_pulse_sequences(
 
     Parameters
     ----------
-    control_qubits : list[QubitKey]
+    control_qubits : list[str]
         The list of control qubits.
-    control_waveforms : QubitDict[IQArray]
+    control_waveforms : dict[str, NDArray[np.complex128]]
         The dictionary of control waveforms.
-    control_times : QubitDict[IntArray]
+    control_times : dict[str, NDArray[np.int64]]
         The dictionary of control times.
     control_duration : int
         The duration of the control pulses.
-    readout_qubits : list[QubitKey]
+    readout_qubits : list[str]
         The list of readout qubits.
-    readout_waveforms : QubitDict[IQArray]
+    readout_waveforms : dict[str, NDArray[np.complex128]]
         The dictionary of readout waveforms.
-    readout_times : QubitDict[IntArray]
+    readout_times : dict[str, NDArray[np.int64]]
         The dictionary of readout times.
     readout_duration : int
         The duration of the readout pulses.
@@ -120,12 +118,12 @@ def show_pulse_sequences(
 
 
 def show_measurement_results(
-    qubits: list[QubitKey],
-    waveforms: QubitDict[IQArray],
-    times: QubitDict[IntArray],
+    qubits: list[str],
+    waveforms: dict[str, NDArray[np.complex128]],
+    times: dict[str, NDArray[np.int64]],
     sweep_range: NDArray,
-    signals: QubitDict[list[IQLike]],
-    signals_rotated: QubitDict[IQArray],
+    signals: dict[str, list[complex]],
+    signals_rotated: dict[str, NDArray[np.complex128]],
     readout_range: slice,
 ):
     """
@@ -133,17 +131,17 @@ def show_measurement_results(
 
     Parameters
     ----------
-    qubits : list[QubitKey]
+    qubits : list[str]
         The list of qubits.
-    waveforms : QubitDict[IQArray]
+    waveforms : dict[str, NDArray[np.complex128]]
         The dictionary of waveforms.
-    times : QubitDict[IntArray]
+    times : dict[str, NDArray[np.int64]]
         The dictionary of times.
     sweep_range : NDArray
         The sweep range.
     signals : QubitDict[list[IQValue]]
         The dictionary of signals.
-    signals_rotated : QubitDict[IQArray]
+    signals_rotated : dict[str, NDArray[np.complex128]]
         The dictionary of signals after rotation.
     readout_range : slice
         The slice of the readout range.

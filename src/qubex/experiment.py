@@ -3,9 +3,11 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Callable, Final, Literal, Optional
+from typing import Callable, Final, Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
+from IPython.display import clear_output
 from numpy.typing import NDArray
 from rich.console import Console
 from rich.table import Table
@@ -18,7 +20,6 @@ from .measurement import (
     DEFAULT_CONTROL_WINDOW,
     DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
-    MeasLevel,
     MeasResult,
     Measurement,
 )
@@ -187,18 +188,35 @@ class Experiment:
         self,
         sequence: dict[str, NDArray[np.complex128]],
         *,
-        meas_level: Literal["raw", "kerneled"] = "kerneled",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
     ) -> MeasResult:
+        """
+        Measures the signals using the given sequence.
+
+        Parameters
+        ----------
+        sequence : dict[str, NDArray[np.complex128]]
+            Sequence of the experiment.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        control_window : int, optional
+            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+
+        Returns
+        -------
+        MeasResult
+            Result of the experiment.
+        """
         waveforms = {
             qubit: np.array(waveform, dtype=np.complex128)
             for qubit, waveform in sequence.items()
         }
         result = self._measurement.measure(
             waveforms=waveforms,
-            meas_level=MeasLevel(meas_level),
             shots=shots,
             interval=interval,
             control_window=control_window,
@@ -209,11 +227,29 @@ class Experiment:
         self,
         sequences: list[dict[str, NDArray[np.complex128]]],
         *,
-        meas_level: Literal["raw", "kerneled"] = "kerneled",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
     ):
+        """
+        Measures the signals using the given sequences.
+
+        Parameters
+        ----------
+        sequences : list[dict[str, NDArray[np.complex128]]]
+            List of sequences to measure.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        control_window : int, optional
+            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+
+        Yields
+        ------
+        MeasResult
+            Result of the experiment.
+        """
         waveforms_list = [
             {
                 qubit: np.array(waveform, dtype=np.complex128)
@@ -223,7 +259,6 @@ class Experiment:
         ]
         return self._measurement.measure_batch(
             waveforms_list=waveforms_list,
-            meas_level=MeasLevel(meas_level),
             shots=shots,
             interval=interval,
             control_window=control_window,
@@ -239,29 +274,57 @@ class Experiment:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         plot: bool = True,
     ) -> dict[str, SweepResult]:
+        """
+        Conducts a Rabi experiment.
+
+        Parameters
+        ----------
+        time_range : list[int] | NDArray[np.int64]
+            Time range of the experiment.
+        amplitudes : dict[str, float]
+            Amplitudes of the control pulses.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        control_window : int, optional
+            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict[str, SweepResult]
+            Result of the experiment.
+        """
+        qubits = list(amplitudes.keys())
         time_range = np.array(time_range, dtype=np.int64)
         waveforms_list = [
             {
                 qubit: Rect(
                     duration=T,
-                    amplitude=amplitude,
+                    amplitude=amplitudes[qubit],
                 ).values
-                for qubit, amplitude in amplitudes.items()
+                for qubit in qubits
             }
             for T in time_range
         ]
-        iter = self._measurement.measure_batch(
+        generator = self._measurement.measure_batch(
             waveforms_list=waveforms_list,
-            meas_level=MeasLevel.KERNELED,
             shots=shots,
             interval=interval,
             control_window=control_window,
         )
         signals = defaultdict(list)
-        for index, result in enumerate(iter):
+        for index, result in enumerate(generator):
             print(f"{index+1}/{len(time_range)}")
-            for qubit, data in result.meas_data.items():
+            clear_output(wait=True)
+            for qubit, data in result.kerneled.items():
                 signals[qubit].append(data)
+        if plot:
+            for qubit in qubits:
+                iq = signals[qubit]
+                plt.scatter(np.real(iq), np.imag(iq))
         results = {
             qubit: SweepResult(
                 qubit=qubit,
@@ -276,7 +339,7 @@ class Experiment:
         self,
         *,
         sweep_range: NDArray,
-        parametric_sequence: dict[str, Callable[..., Waveform]],
+        sequence: dict[str, Callable[..., Waveform]],
         pulse_count=1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -290,7 +353,7 @@ class Experiment:
         ----------
         sweep_range : NDArray
             Range of the sweep.
-        parametric_sequence : dict[str, Callable[..., Waveform]]
+        sequence : dict[str, Callable[..., Waveform]]
             Parametric sequence to sweep.
         pulse_count : int, optional
             Number of pulses to apply. Defaults to 1.
@@ -308,26 +371,30 @@ class Experiment:
         dict[str, SweepResult]
             Result of the experiment.
         """
-
-        waveforms_list = [
+        qubits = list(sequence.keys())
+        sequences = [
             {
-                qubit: waveform(param).values
-                for qubit, waveform in parametric_sequence.items()
+                qubit: sequence[qubit](param).repeated(pulse_count).values
+                for qubit in qubits
             }
             for param in sweep_range
         ]
-        iter = self._measure_batch(
-            sequences=waveforms_list,
-            meas_level="kerneled",
+        generator = self._measure_batch(
+            sequences=sequences,
             shots=shots,
             interval=interval,
             control_window=control_window,
         )
         signals = defaultdict(list)
-        for index, result in enumerate(iter):
+        for index, result in enumerate(generator):
             print(f"{index+1}/{len(sweep_range)}")
-            for qubit, data in result.meas_data.items():
+            clear_output(wait=True)
+            for qubit, data in result.kerneled.items():
                 signals[qubit].append(data)
+        if plot:
+            for qubit in qubits:
+                iq = signals[qubit]
+                plt.scatter(np.real(iq), np.imag(iq))
         results = {
             qubit: SweepResult(
                 qubit=qubit,
@@ -340,6 +407,8 @@ class Experiment:
 
     def rabi_check(
         self,
+        qubits: list[str],
+        *,
         time_range=np.arange(0, 201, 10),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -349,15 +418,22 @@ class Experiment:
 
         Parameters
         ----------
+        quibits : list[str]
+            List of qubits to check the Rabi oscillation.
         time_range : NDArray, optional
             Time range of the experiment. Defaults to np.arange(0, 201, 10).
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
         -------
         dict[str, SweepResult]
             Result of the experiment.
         """
-        amplitudes = self.params.control_amplitude
+        ampl = self.params.control_amplitude
+        amplitudes = {qubit: ampl[qubit] for qubit in qubits}
         result = self.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -368,7 +444,8 @@ class Experiment:
 
     def repeat_pulse(
         self,
-        waveforms: dict[str, Waveform],
+        pulses: dict[str, Waveform],
+        *,
         n: int,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -378,23 +455,27 @@ class Experiment:
 
         Parameters
         ----------
-        waveforms : dict[str, Waveform]
-            Waveforms to apply to the qubits.
+        pulses : dict[str, Waveform]
+            Pulses to repeat.
         n : int
             Number of times to repeat the pulse.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
         -------
         dict[str, SweepResult]
             Result of the experiment.
         """
-        parametric_sequence = {
-            qubit: lambda param, w=waveform: w.repeated(int(param))
-            for qubit, waveform in waveforms.items()
+        sequence = {
+            qubit: lambda param, p=pulse: p.repeated(int(param))
+            for qubit, pulse in pulses.items()
         }
         result = self.sweep_parameter(
             sweep_range=np.arange(n + 1),
-            parametric_sequence=parametric_sequence,
+            sequence=sequence,
             pulse_count=1,
             shots=shots,
             interval=interval,

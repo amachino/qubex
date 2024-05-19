@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import Final
 
 import numpy as np
@@ -25,20 +24,15 @@ DEFAULT_CONFIG_DIR = "./config"
 DEFAULT_SHOTS = 3000
 DEFAULT_INTERVAL = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW = 1024  # ns
-DEFAULT_CAPTURE_WINDOW = 1024  # ns
-DEFAULT_READOUT_DURATION = 768  # ns
-
-
-class MeasLevel(Enum):
-    RAW = "raw"
-    KERNELED = "kerneled"
-    CLASSIFIED = "classified"
+DEFAULT_CAPTURE_WINDOW = 3 * 1024  # ns
+DEFAULT_READOUT_DURATION = 1024  # ns
 
 
 @dataclass
 class MeasResult:
-    meas_level: MeasLevel
-    meas_data: dict[str, npt.NDArray]
+    raw: dict[str, npt.NDArray]
+    kerneled: dict[str, complex]
+    classified: dict[str, str]
 
 
 class Measurement:
@@ -108,7 +102,6 @@ class Measurement:
         self,
         waveforms: dict[str, npt.NDArray[np.complex128]],
         *,
-        meas_level: MeasLevel = MeasLevel.KERNELED,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
@@ -157,17 +150,12 @@ class Measurement:
             repeats=shots,
             interval=interval,
         )
-        result = self._create_measure_result(
-            meas_level=meas_level,
-            backend_result=backend_result,
-        )
-        return result
+        return self._create_measure_result(backend_result)
 
     def measure_batch(
         self,
         waveforms_list: list[dict[str, npt.NDArray[np.complex128]]],
         *,
-        meas_level: MeasLevel = MeasLevel.KERNELED,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
@@ -212,11 +200,7 @@ class Measurement:
             interval=interval,
         )
         for backend_result in backend_results:
-            backend_result = self._create_measure_result(
-                meas_level=meas_level,
-                backend_result=backend_result,
-            )
-            yield backend_result
+            yield self._create_measure_result(backend_result)
 
     def _create_sequence(
         self,
@@ -246,28 +230,23 @@ class Measurement:
 
     def _create_measure_result(
         self,
-        *,
-        meas_level: MeasLevel,
         backend_result: QubeBackendResult,
     ) -> MeasResult:
-        label_slice = slice(1, None)
+        label_slice = slice(1, None)  # Remove the prefix "R"
         capture_index = 0
 
-        if meas_level == MeasLevel.RAW:
-            meas_data = {
-                target[label_slice]: iqs[capture_index]
-                for target, iqs in backend_result.data.items()
-            }
-        elif meas_level == MeasLevel.KERNELED:
-            meas_data = {
-                target[label_slice]: iqs[capture_index].mean()
-                for target, iqs in backend_result.data.items()
-            }
-        elif meas_level == MeasLevel.CLASSIFIED:
-            raise NotImplementedError(f"MeasLevel {meas_level} is not supported.")
+        raw_data = {
+            target[label_slice]: iqs[capture_index]
+            for target, iqs in backend_result.data.items()
+        }
+        kerneled_data = {
+            target[label_slice]: iqs[capture_index].mean()
+            for target, iqs in backend_result.data.items()
+        }
 
         result = MeasResult(
-            meas_level=meas_level,
-            meas_data=meas_data,
+            raw=raw_data,
+            kerneled=kerneled_data,
+            classified={},
         )
         return result
