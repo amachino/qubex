@@ -79,7 +79,7 @@ def func_damped_cos(
 
 def fit_rabi(
     times: npt.NDArray[np.int64],
-    signals: npt.NDArray[np.complex128],
+    signals: npt.NDArray[np.complex64],
     wave_count: float = 2.5,
 ) -> tuple[float, float, npt.NDArray[np.float64]]:
     """
@@ -150,9 +150,9 @@ def fit_rabi(
 
 def fit_damped_rabi(
     times: npt.NDArray[np.int64],
-    signals: npt.NDArray[np.complex128],
+    signals: npt.NDArray[np.complex64],
     wave_count: float = 2.5,
-) -> tuple[float, float, npt.NDArray[np.float64]]:
+) -> tuple[float, float, npt.NDArray[np.float32]]:
     """
     Fit damped Rabi oscillation data to a damped cosine function and plot.
 

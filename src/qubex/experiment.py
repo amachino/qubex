@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Callable, Final, Optional
+from typing import Callable, Final, Literal, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -18,8 +18,9 @@ from .measurement import (
     DEFAULT_CONTROL_WINDOW,
     DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
+    MeasLevel,
+    MeasResult,
     Measurement,
-    MeasurementResult,
 )
 from .pulse import Rect, Waveform
 
@@ -113,8 +114,6 @@ class Experiment:
     ----------
     chip_id : str
         Identifier of the quantum chip.
-    control_window : int, optional
-        Duration of the control window in nanoseconds. Defaults to DEFAULT_CONTROL_WINDOW.
     data_dir : str, optional
         Path to the directory where the experiment data is stored. Defaults to "./data".
     """
@@ -123,18 +122,17 @@ class Experiment:
         self,
         *,
         chip_id: str,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
         data_dir: str = DEFAULT_DATA_DIR,
         config_dir: str = DEFAULT_CONFIG_DIR,
     ):
         self._chip_id: Final = chip_id
-        self._control_window: Final = control_window
         self._config: Final = Config(config_dir)
         self._data_dir: Final = data_dir
         self._measurement: Final = Measurement(
             chip_id,
             config_dir=config_dir,
         )
+        self.tools = ExperimentTools(self)
 
     @property
     def available_boxes(self) -> list[str]:
@@ -145,6 +143,11 @@ class Experiment:
     def available_qubits(self) -> list[str]:
         """Get the list of available qubits."""
         return [qubit.label for qubit in self.qubits]
+
+    @property
+    def targets(self) -> dict[str, float]:
+        """Get the list of target frequencies."""
+        return self._measurement.targets
 
     @property
     def chip_id(self) -> str:
@@ -160,14 +163,6 @@ class Experiment:
     def resonators(self) -> list[Resonator]:
         """Get the list of resonators."""
         return self._config.get_resonators(self._chip_id)
-
-    @property
-    def targets(self) -> dict[str, float]:
-        target_settings = self._measurement._backend.target_settings
-        return {
-            target: settings["frequency"]
-            for target, settings in target_settings.items()
-        }
 
     @property
     def params(self) -> Params:
@@ -188,215 +183,86 @@ class Experiment:
         """Connect to the backend."""
         self._measurement.connect()
 
-    def dump_box(self, box_id: str) -> dict:
-        """Dump the information of a box."""
-        return self._measurement.dump_box_config(box_id)
-
-    def configure_boxes(self, box_list: Optional[list[str]] = None) -> None:
-        """
-        Configure the boxes.
-
-        Parameters
-        ----------
-        box_list : Optional[list[str]], optional
-            List of boxes to configure. Defaults to None.
-
-        Examples
-        --------
-        >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.configure_boxes()
-        """
-        self._config.configure_box_settings(self._chip_id, include=box_list)
-
-    def print_wiring_info(self) -> None:
-        """
-        Print the wiring information of the chip.
-
-        Examples
-        --------
-        >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.print_wiring_info()
-        """
-
-        table = Table(
-            show_header=True,
-            header_style="bold",
-            title=f"WIRING INFO ({self._chip_id})",
-        )
-        table.add_column("QUBIT", justify="center", width=7)
-        table.add_column("CTRL", justify="center", width=11)
-        table.add_column("READ.OUT", justify="center", width=11)
-        table.add_column("READ.IN", justify="center", width=11)
-
-        for qubit in self.qubits:
-            ports = self._config.get_ports_by_qubit(self._chip_id, qubit.label)
-            ctrl_port = ports[0]
-            read_out_port = ports[1]
-            read_in_port = ports[2]
-            if ctrl_port is None or read_out_port is None or read_in_port is None:
-                table.add_row(qubit.label, "-", "-", "-")
-                continue
-            ctrl_box = ctrl_port.box
-            read_out_box = read_out_port.box
-            read_in_box = read_in_port.box
-            ctrl = f"[green]{ctrl_box.id}[/green]-[cyan]{ctrl_port.number}[/cyan]"
-            read_out = (
-                f"[green]{read_out_box.id}[/green]-[cyan]{read_out_port.number}[/cyan]"
-            )
-            read_in = (
-                f"[green]{read_in_box.id}[/green]-[cyan]{read_in_port.number}[/cyan]"
-            )
-            table.add_row(qubit.label, ctrl, read_out, read_in)
-
-        console.print(table)
-
-    def print_box_info(self, box_id: str) -> None:
-        """
-        Print the information of a box.
-
-        Parameters
-        ----------
-        box_id : str
-            Identifier of the box.
-
-        Examples
-        --------
-        >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.print_box_info("Q73A")
-        """
-        if box_id not in self.available_boxes:
-            console.print(
-                f"Box {box_id} not in available boxes: {self.available_boxes}"
-            )
-            return
-
-        table1 = Table(
-            show_header=True,
-            header_style="bold",
-            title=f"BOX INFO ({box_id})",
-        )
-        table2 = Table(
-            show_header=True,
-            header_style="bold",
-        )
-        table1.add_column("PORT", justify="right")
-        table1.add_column("TYPE", justify="right")
-        table1.add_column("SSB", justify="right")
-        table1.add_column("LO", justify="right")
-        table1.add_column("CNCO", justify="right")
-        table1.add_column("FSC", justify="right")
-        table2.add_column("PORT", justify="right")
-        table2.add_column("TYPE", justify="right")
-        table2.add_column("FNCO-0", justify="right")
-        table2.add_column("FNCO-1", justify="right")
-        table2.add_column("FNCO-2", justify="right")
-        table2.add_column("FNCO-3", justify="right")
-
-        port_map = self._config.get_port_map(box_id)
-        ssb_map = {"U": "[cyan]USB[/cyan]", "L": "[green]LSB[/green]"}
-
-        ports = self.dump_box(box_id)["ports"]
-        for number, port in ports.items():
-            direction = port["direction"]
-            lo = int(port["lo_freq"])
-            cnco = int(port["cnco_freq"])
-            type = port_map[number].value
-            if direction == "in":
-                ssb = ""
-                fsc = ""
-                fncos = [str(int(ch["fnco_freq"])) for ch in port["runits"].values()]
-            elif direction == "out":
-                ssb = ssb_map[port["sideband"]]
-                fsc = port["fullscale_current"]
-                fncos = [str(int(ch["fnco_freq"])) for ch in port["channels"].values()]
-            table1.add_row(str(number), type, ssb, str(lo), str(cnco), str(fsc))
-            table2.add_row(str(number), type, *fncos)
-        console.print(table1)
-        console.print(table2)
-
     def measure(
         self,
-        waveforms: dict[str, NDArray[np.complex128]],
+        sequence: dict[str, NDArray[np.complex128]],
         *,
+        meas_level: Literal["raw", "kerneled"] = "kerneled",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> MeasurementResult:
+        control_window: int = DEFAULT_CONTROL_WINDOW,
+    ) -> MeasResult:
+        waveforms = {
+            qubit: np.array(waveform, dtype=np.complex128)
+            for qubit, waveform in sequence.items()
+        }
         result = self._measurement.measure(
             waveforms=waveforms,
+            meas_level=MeasLevel(meas_level),
             shots=shots,
             interval=interval,
+            control_window=control_window,
         )
         return result
+
+    def _measure_batch(
+        self,
+        sequences: list[dict[str, NDArray[np.complex128]]],
+        *,
+        meas_level: Literal["raw", "kerneled"] = "kerneled",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        control_window: int = DEFAULT_CONTROL_WINDOW,
+    ):
+        waveforms_list = [
+            {
+                qubit: np.array(waveform, dtype=np.complex128)
+                for qubit, waveform in sequence.items()
+            }
+            for sequence in sequences
+        ]
+        return self._measurement.measure_batch(
+            waveforms_list=waveforms_list,
+            meas_level=MeasLevel(meas_level),
+            shots=shots,
+            interval=interval,
+            control_window=control_window,
+        )
 
     def rabi_experiment(
         self,
         *,
-        time_range: NDArray,
+        time_range: list[int] | NDArray[np.int64],
         amplitudes: dict[str, float],
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        control_window: int = DEFAULT_CONTROL_WINDOW,
         plot: bool = True,
     ) -> dict[str, SweepResult]:
-        """
-        Conducts a Rabi experiment.
-
-        Parameters
-        ----------
-        time_range : NDArray
-            Time range of the experiment.
-        amplitudes : dict[str, float],
-            Amplitudes of the control pulses.
-        plot : bool, optional
-            Whether to plot the results. Defaults to True.
-
-        Returns
-        -------
-        dict[str, SweepResult]
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> from qubex import Experiment
-        >>> exp = Experiment(config_file="config.json")
-        >>> exp.connect()
-        >>> exp.rabi_experiment(
-        ...     time_range=np.arange(0, 201, 10),
-        ...     amplitudes={
-        ...         "Q01": 0.5,
-        ...         "Q02": 0.5,
-        ...     },
-        ... )
-        {"Q01": SweepResult(...), "Q02": SweepResult(...)}
-        """
-        qubits = list(amplitudes.keys())
-        signals: dict[str, list[complex]] = defaultdict(list)
-
-        for index, duration in enumerate(time_range):
-            waveforms = {
+        time_range = np.array(time_range, dtype=np.int64)
+        waveforms_list = [
+            {
                 qubit: Rect(
-                    duration=duration,
-                    amplitude=amplitudes[qubit],
+                    duration=T,
+                    amplitude=amplitude,
                 ).values
-                for qubit in qubits
+                for qubit, amplitude in amplitudes.items()
             }
-
-            measured_values = self.measure(
-                waveforms=waveforms,
-                shots=shots,
-                interval=interval,
-            ).data
-
-            for qubit, value in measured_values.items():
-                signals[qubit].append(value.mean())
-
-            # if plot:
-
-            print(f"{index+1}/{len(time_range)} : {duration} ns")
-
-        result = {
+            for T in time_range
+        ]
+        iter = self._measurement.measure_batch(
+            waveforms_list=waveforms_list,
+            meas_level=MeasLevel.KERNELED,
+            shots=shots,
+            interval=interval,
+            control_window=control_window,
+        )
+        signals = defaultdict(list)
+        for index, result in enumerate(iter):
+            print(f"{index+1}/{len(time_range)}")
+            for qubit, data in result.meas_data.items():
+                signals[qubit].append(data)
+        results = {
             qubit: SweepResult(
                 qubit=qubit,
                 sweep_range=time_range,
@@ -404,58 +270,65 @@ class Experiment:
             )
             for qubit, values in signals.items()
         }
-        return result
+        return results
 
     def sweep_parameter(
         self,
+        *,
         sweep_range: NDArray,
-        parametric_waveforms: dict[str, Callable[..., Waveform]],
+        parametric_sequence: dict[str, Callable[..., Waveform]],
         pulse_count=1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        control_window: int = DEFAULT_CONTROL_WINDOW,
         plot: bool = True,
     ) -> dict[str, SweepResult]:
         """
-        Conducts a sweep experiment.
+        Sweeps a parameter and measures the signals.
 
         Parameters
         ----------
         sweep_range : NDArray
-            Sweep range of the experiment.
-        parametric_waveforms : dict[str, Callable[..., Waveform]]
-            Parametric waveforms to apply to the qubits.
+            Range of the sweep.
+        parametric_sequence : dict[str, Callable[..., Waveform]]
+            Parametric sequence to sweep.
         pulse_count : int, optional
             Number of pulses to apply. Defaults to 1.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        control_window : int, optional
+            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
         plot : bool, optional
-            Whether to plot the results. Defaults to True.
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
         dict[str, SweepResult]
             Result of the experiment.
         """
-        signals: dict[str, list[complex]] = defaultdict(list)
 
-        for index, param in enumerate(sweep_range):
-            waveforms = {
-                qubit: waveform(param).repeated(pulse_count).values
-                for qubit, waveform in parametric_waveforms.items()
+        waveforms_list = [
+            {
+                qubit: waveform(param).values
+                for qubit, waveform in parametric_sequence.items()
             }
-
-            measured_values = self.measure(
-                waveforms=waveforms,
-                shots=shots,
-                interval=interval,
-            ).data
-
-            for qubit, value in measured_values.items():
-                signals[qubit].append(value.mean())
-
-            # if plot:
-
+            for param in sweep_range
+        ]
+        iter = self._measure_batch(
+            sequences=waveforms_list,
+            meas_level="kerneled",
+            shots=shots,
+            interval=interval,
+            control_window=control_window,
+        )
+        signals = defaultdict(list)
+        for index, result in enumerate(iter):
             print(f"{index+1}/{len(sweep_range)}")
-
-        result = {
+            for qubit, data in result.meas_data.items():
+                signals[qubit].append(data)
+        results = {
             qubit: SweepResult(
                 qubit=qubit,
                 sweep_range=sweep_range,
@@ -463,7 +336,7 @@ class Experiment:
             )
             for qubit, values in signals.items()
         }
-        return result
+        return results
 
     def rabi_check(
         self,
@@ -472,7 +345,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, SweepResult]:
         """
-        Conducts a Rabi experiment with the default HPI amplitude.
+        Conducts a Rabi experiment with the default amplitude.
 
         Parameters
         ----------
@@ -515,13 +388,13 @@ class Experiment:
         dict[str, SweepResult]
             Result of the experiment.
         """
-        parametric_waveforms = {
+        parametric_sequence = {
             qubit: lambda param, w=waveform: w.repeated(int(param))
             for qubit, waveform in waveforms.items()
         }
         result = self.sweep_parameter(
             sweep_range=np.arange(n + 1),
-            parametric_waveforms=parametric_waveforms,
+            parametric_sequence=parametric_sequence,
             pulse_count=1,
             shots=shots,
             interval=interval,
@@ -632,3 +505,140 @@ class Experiment:
             offset=popt[4],
         )
         return rabi_params
+
+
+class ExperimentTools:
+
+    def __init__(self, experiment: Experiment):
+        self._exp = experiment
+
+    def dump_box(self, box_id: str) -> dict:
+        """Dump the information of a box."""
+        return self._exp._measurement.dump_box_config(box_id)
+
+    def configure_boxes(self, box_list: Optional[list[str]] = None) -> None:
+        """
+        Configure the boxes.
+
+        Parameters
+        ----------
+        box_list : Optional[list[str]], optional
+            List of boxes to configure. Defaults to None.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> exp = Experiment(chip_id="64Q")
+        >>> exp.tools.configure_boxes()
+        """
+        self._exp._config.configure_box_settings(self._exp._chip_id, include=box_list)
+
+    def print_wiring_info(self):
+        """
+        Print the wiring information of the chip.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> exp = Experiment(chip_id="64Q")
+        >>> exp.tools.print_wiring_info()
+        """
+
+        table = Table(
+            show_header=True,
+            header_style="bold",
+            title=f"WIRING INFO ({self._exp._chip_id})",
+        )
+        table.add_column("QUBIT", justify="center", width=7)
+        table.add_column("CTRL", justify="center", width=11)
+        table.add_column("READ.OUT", justify="center", width=11)
+        table.add_column("READ.IN", justify="center", width=11)
+
+        for qubit in self._exp.qubits:
+            ports = self._exp._config.get_ports_by_qubit(
+                self._exp._chip_id, qubit.label
+            )
+            ctrl_port = ports[0]
+            read_out_port = ports[1]
+            read_in_port = ports[2]
+            if ctrl_port is None or read_out_port is None or read_in_port is None:
+                table.add_row(qubit.label, "-", "-", "-")
+                continue
+            ctrl_box = ctrl_port.box
+            read_out_box = read_out_port.box
+            read_in_box = read_in_port.box
+            ctrl = f"[green]{ctrl_box.id}[/green]-[cyan]{ctrl_port.number}[/cyan]"
+            read_out = (
+                f"[green]{read_out_box.id}[/green]-[cyan]{read_out_port.number}[/cyan]"
+            )
+            read_in = (
+                f"[green]{read_in_box.id}[/green]-[cyan]{read_in_port.number}[/cyan]"
+            )
+            table.add_row(qubit.label, ctrl, read_out, read_in)
+
+        console.print(table)
+
+    def print_box_info(self, box_id: str) -> None:
+        """
+        Print the information of a box.
+
+        Parameters
+        ----------
+        box_id : str
+            Identifier of the box.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> exp = Experiment(chip_id="64Q")
+        >>> exp.tools.print_box_info("Q73A")
+        """
+        if box_id not in self._exp.available_boxes:
+            console.print(
+                f"Box {box_id} not in available boxes: {self._exp.available_boxes}"
+            )
+            return
+
+        table1 = Table(
+            show_header=True,
+            header_style="bold",
+            title=f"BOX INFO ({box_id})",
+        )
+        table2 = Table(
+            show_header=True,
+            header_style="bold",
+        )
+        table1.add_column("PORT", justify="right")
+        table1.add_column("TYPE", justify="right")
+        table1.add_column("SSB", justify="right")
+        table1.add_column("LO", justify="right")
+        table1.add_column("CNCO", justify="right")
+        table1.add_column("FSC", justify="right")
+        table2.add_column("PORT", justify="right")
+        table2.add_column("TYPE", justify="right")
+        table2.add_column("FNCO-0", justify="right")
+        table2.add_column("FNCO-1", justify="right")
+        table2.add_column("FNCO-2", justify="right")
+        table2.add_column("FNCO-3", justify="right")
+
+        port_map = self._exp._config.get_port_map(box_id)
+        ssb_map = {"U": "[cyan]USB[/cyan]", "L": "[green]LSB[/green]"}
+
+        ports = self.dump_box(box_id)["ports"]
+        for number, port in ports.items():
+            direction = port["direction"]
+            lo = int(port["lo_freq"])
+            cnco = int(port["cnco_freq"])
+            type = port_map[number].value
+            if direction == "in":
+                ssb = ""
+                fsc = ""
+                fncos = [str(int(ch["fnco_freq"])) for ch in port["runits"].values()]
+            elif direction == "out":
+                ssb = ssb_map[port["sideband"]]
+                fsc = port["fullscale_current"]
+                fncos = [str(int(ch["fnco_freq"])) for ch in port["channels"].values()]
+            table1.add_row(str(number), type, ssb, str(lo), str(cnco), str(fsc))
+            table2.add_row(str(number), type, *fncos)
+        console.print(table1)
+        console.print(table2)

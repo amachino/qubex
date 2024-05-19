@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib import gridspec
 from numpy.typing import NDArray
 
-from .typing import IntArray, IQArray, IQValue, QubitDict, QubitKey
+from .typing import IntArray, IQArray, IQLike, QubitDict, QubitKey
 
 
 def show_pulse_sequences(
@@ -124,7 +124,7 @@ def show_measurement_results(
     waveforms: QubitDict[IQArray],
     times: QubitDict[IntArray],
     sweep_range: NDArray,
-    signals: QubitDict[list[IQValue]],
+    signals: QubitDict[list[IQLike]],
     signals_rotated: QubitDict[IQArray],
     readout_range: slice,
 ):
