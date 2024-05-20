@@ -32,6 +32,7 @@ class Waveform(ABC):
 
     def __init__(
         self,
+        *,
         scale: float = 1.0,
         time_offset: int = 0,
         phase_offset: float = 0.0,
@@ -96,18 +97,48 @@ class Waveform(ABC):
     def repeated(self, n: int) -> "Waveform":
         """Returns a copy of the waveform repeated n times."""
 
-    def _ns_to_samples(self, duration: int) -> int:
-        """Converts a duration in ns to a length in samples."""
+    def _number_of_samples(
+        self,
+        duration: int,
+    ) -> int:
+        """
+        Returns the number of samples in the waveform.
+
+        Parameters
+        ----------
+        duration : int
+            Duration of the waveform in ns.
+        """
+        dt = self.SAMPLING_PERIOD
         if duration < 0:
             raise ValueError("Duration must be positive.")
-        if duration % self.SAMPLING_PERIOD != 0:
+        if duration % dt != 0:
             raise ValueError(
-                f"Duration must be a multiple of the sampling period ({self.SAMPLING_PERIOD} ns)."
+                f"Duration must be a multiple of the sampling period ({dt} ns)."
             )
-        return duration // self.SAMPLING_PERIOD
+        return duration // dt
+
+    def _sampling_points(
+        self,
+        duration: int,
+    ) -> npt.NDArray[np.float64]:
+        """
+        Returns the sampling points of the waveform.
+
+        Parameters
+        ----------
+        duration : int
+            Duration of the waveform in ns.
+        """
+        dt = self.SAMPLING_PERIOD
+        N = self._number_of_samples(duration)
+        # Sampling points are at the center of each time interval
+        sampling_points = np.linspace(dt / 2, duration - dt / 2, N)
+        return sampling_points
 
     def plot(
         self,
+        *,
         polar=False,
         savefig: Optional[str] = None,
         title="",
@@ -138,6 +169,7 @@ class Waveform(ABC):
 
     def plot_xy(
         self,
+        *,
         savefig: Optional[str] = None,
         title="",
         xlabel="Time (ns)",
@@ -175,6 +207,7 @@ class Waveform(ABC):
 
     def plot_polar(
         self,
+        *,
         savefig: Optional[str] = None,
         title="",
         xlabel="Time (ns)",
@@ -231,11 +264,16 @@ class Pulse(Waveform):
     def __init__(
         self,
         values: npt.ArrayLike,
+        *,
         scale: float = 1.0,
         time_offset: int = 0,
         phase_offset: float = 0.0,
     ):
-        super().__init__(scale, time_offset, phase_offset)
+        super().__init__(
+            scale=scale,
+            time_offset=time_offset,
+            phase_offset=phase_offset,
+        )
         self._values = np.array(values)
 
     @property
@@ -293,11 +331,16 @@ class PulseSequence(Waveform):
     def __init__(
         self,
         waveforms: Optional[Sequence[Waveform]] = None,
+        *,
         scale: float = 1.0,
         time_offset: int = 0,
         phase_offset: float = 0.0,
     ):
-        super().__init__(scale, time_offset, phase_offset)
+        super().__init__(
+            scale=scale,
+            time_offset=time_offset,
+            phase_offset=phase_offset,
+        )
         if waveforms is None:
             waveforms = []
         self.waveforms = waveforms
@@ -358,8 +401,8 @@ class Blank(Pulse):
         self,
         duration: int,
     ):
-        length = self._ns_to_samples(duration)
-        real = np.zeros(length, dtype=complex)
+        N = self._number_of_samples(duration)
+        real = np.zeros(N, dtype=complex)
         imag = 0
         values = real + 1j * imag
         super().__init__(values)
@@ -383,6 +426,7 @@ class Rect(Pulse):
 
     def __init__(
         self,
+        *,
         duration: int,
         amplitude: float,
     ):
@@ -396,8 +440,8 @@ class Rect(Pulse):
         duration: int,
         amplitude: float,
     ) -> npt.NDArray[np.complex128]:
-        length = self._ns_to_samples(duration)
-        real = amplitude * np.ones(length)
+        N = self._number_of_samples(duration)
+        real = amplitude * np.ones(N)
         imag = 0
         values = real + 1j * imag
         return values
@@ -441,6 +485,7 @@ class FlatTop(Pulse):
 
     def __init__(
         self,
+        *,
         duration: int,
         amplitude: float,
         tau: int,
@@ -462,11 +507,8 @@ class FlatTop(Pulse):
         if flattime < 0:
             raise ValueError("duration must be greater than `2 * tau`.")
 
-        length_rise = self._ns_to_samples(tau)
-        length_flat = self._ns_to_samples(flattime)
-
-        t_rise = np.linspace(0, tau, length_rise)
-        t_flat = np.linspace(0, flattime, length_flat)
+        t_rise = self._sampling_points(tau)
+        t_flat = self._sampling_points(flattime)
 
         v_rise = 0.5 * amplitude * (1 - np.cos(np.pi * t_rise / tau))
         v_flat = amplitude * np.ones_like(t_flat)
@@ -497,6 +539,7 @@ class Gauss(Pulse):
 
     def __init__(
         self,
+        *,
         duration: int,
         amplitude: float,
         sigma: float,
@@ -516,8 +559,7 @@ class Gauss(Pulse):
         if sigma == 0:
             raise ValueError("Sigma cannot be zero.")
 
-        length = self._ns_to_samples(duration)
-        t = np.linspace(0, duration, length)
+        t = self._sampling_points(duration)
         mu = duration * 0.5
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
         imag = 0
@@ -549,6 +591,7 @@ class Drag(Pulse):
 
     def __init__(
         self,
+        *,
         duration: int,
         amplitude: float,
         beta: float,
@@ -565,8 +608,7 @@ class Drag(Pulse):
         amplitude: float,
         beta: float,
     ) -> npt.NDArray[np.complex128]:
-        length = self._ns_to_samples(duration)
-        t = np.linspace(0, duration, length)
+        t = self._sampling_points(duration)
         sigma = duration * 0.5
         offset = -np.exp(-0.5)
         factor = amplitude / (1 + offset)
@@ -607,6 +649,7 @@ class DragGauss(Pulse):
 
     def __init__(
         self,
+        *,
         duration: int,
         amplitude: float,
         sigma: float,
@@ -628,8 +671,7 @@ class DragGauss(Pulse):
         if sigma == 0:
             raise ValueError("Sigma cannot be zero.")
 
-        length = self._ns_to_samples(duration)
-        t = np.linspace(0, duration, length)
+        t = self._sampling_points(duration)
         mu = duration * 0.5
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
         imag = (mu - t) / (sigma**2) * real
@@ -661,6 +703,7 @@ class DragCos(Pulse):
 
     def __init__(
         self,
+        *,
         duration: int,
         amplitude: float,
         beta: float,
@@ -677,8 +720,7 @@ class DragCos(Pulse):
         amplitude: float,
         beta: float,
     ) -> npt.NDArray[np.complex128]:
-        length = self._ns_to_samples(duration)
-        t = np.linspace(0, duration, length)
+        t = self._sampling_points(duration)
         real = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
         imag = 2 * np.pi / duration * amplitude * np.sin(2 * np.pi * t / duration) * 0.5
         values = real + beta * 1j * imag
