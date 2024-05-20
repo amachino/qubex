@@ -9,6 +9,7 @@ requires-python = ">=3.9"
 authors = [{ name = "amachino" }]
 description = "QuBE experiments tools"
 readme = "README.md"
+license = { file = "LICENSE" }
 dependencies = [
     "jupyter ~= 1.0",
     "rich ~= 13.0",
