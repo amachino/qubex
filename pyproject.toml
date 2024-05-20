@@ -14,6 +14,7 @@ dependencies = [
     "jupyter ~= 1.0",
     "rich ~= 13.0",
     "pyyaml ~= 6.0",
+    "plotly ~= 5.0",
     "matplotlib ~= 3.0",
     "numpy ~= 1.0",
     "scipy ~= 1.0",

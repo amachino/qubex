@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Final, Optional
 
 import numpy as np
+import plotly.graph_objects as go
 from numpy.typing import NDArray
 from qubecalib import QubeCalib
 from rich.console import Console
@@ -44,23 +45,23 @@ class RabiParams:
         Phase shift of the I/Q signal.
     fluctuation : float
         Fluctuation of the I/Q signal.
-    amplitude : float
+    A : float
         Amplitude of the Rabi oscillation.
     omega : float
         Angular frequency of the Rabi oscillation.
     phi : float
-        Phase of the Rabi oscillation.
-    offset : float
-        Offset of the Rabi oscillation.
+        Phase offset of the Rabi oscillation.
+    C : float
+        Vertical offset of the Rabi oscillation.
     """
 
     qubit: str
     phase_shift: float
     fluctuation: float
-    amplitude: float
+    A: float
     omega: float
     phi: float
-    offset: float
+    C: float
 
 
 @dataclass
@@ -90,8 +91,30 @@ class SweepResult:
 
     def normalized(self, rabi_params: RabiParams) -> NDArray:
         values = self.data * np.exp(-1j * rabi_params.phase_shift)
-        values_normalized = -(values.imag - rabi_params.offset) / rabi_params.amplitude
+        values_normalized = -(values.imag - rabi_params.C) / rabi_params.A
         return values_normalized
+
+    def plot(self, rabi_params: RabiParams):
+        values = self.normalized(rabi_params)
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=self.sweep_range,
+                y=values,
+                mode="lines+markers",
+                name="Rabi oscillation",
+                marker_color="#636EFA",
+                marker_size=10,
+                line_color="black",
+            )
+        )
+        fig.update_layout(
+            title=f"Rabi oscillation of {self.qubit}",
+            xaxis_title="Sweep index",
+            yaxis_title="Normalized value",
+            width=800,
+        )
+        fig.show()
 
 
 class Experiment:
@@ -465,6 +488,7 @@ class Experiment:
 
     def normalize(
         self,
+        *,
         iq_value: complex,
         rabi_params: RabiParams,
     ) -> float:
@@ -485,13 +509,14 @@ class Experiment:
         """
         iq_value = iq_value * np.exp(-1j * rabi_params.phase_shift)
         value = iq_value.imag
-        value = -(value - rabi_params.offset) / rabi_params.amplitude
+        value = -(value - rabi_params.C) / rabi_params.A
         return value
 
     def fit_rabi(
         self,
+        *,
         data: SweepResult,
-        wave_count=2.5,
+        wave_count: float,
     ) -> RabiParams:
         """
         Fits the measured data to a Rabi oscillation.
@@ -501,7 +526,7 @@ class Experiment:
         data : SweepResult
             Measured data.
         wave_count : float, optional
-            Number of waves to fit. Defaults to 2.5.
+            Number of waves to fit.
 
         Returns
         -------
@@ -521,17 +546,18 @@ class Experiment:
             qubit=data.qubit,
             phase_shift=phase_shift,
             fluctuation=fluctuation,
-            amplitude=popt[0],
+            A=popt[0],
             omega=popt[1],
             phi=popt[2],
-            offset=popt[3],
+            C=popt[3],
         )
         return rabi_params
 
     def fit_damped_rabi(
         self,
+        *,
         data: SweepResult,
-        wave_count=2.5,
+        wave_count: float,
     ) -> RabiParams:
         """
         Fits the measured data to a damped Rabi oscillation.
@@ -541,7 +567,7 @@ class Experiment:
         data : SweepResult
             Measured data.
         wave_count : float, optional
-            Number of waves to fit. Defaults to 2.5.
+            Number of waves to fit.
 
         Returns
         -------
@@ -561,10 +587,10 @@ class Experiment:
             qubit=data.qubit,
             phase_shift=phase_shift,
             fluctuation=fluctuation,
-            amplitude=popt[0],
+            A=popt[0],
             omega=popt[2],
             phi=popt[3],
-            offset=popt[4],
+            C=popt[4],
         )
         return rabi_params
 
