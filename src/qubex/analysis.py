@@ -8,78 +8,70 @@ Data analysis functions for quantum experiments.
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+import plotly.graph_objects as go
 from scipy.optimize import curve_fit, minimize  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
 
 
 def func_cos(
     t: npt.NDArray[np.float64],
-    ampl: float,
+    A: float,
     omega: float,
     phi: float,
-    offset: float,
+    C: float,
 ) -> npt.NDArray[np.float64]:
     """
-    Calculate the cosine function with amplitude, frequency, phase, and offset.
+    Calculate a cosine function with given parameters.
 
     Parameters
     ----------
     t : npt.NDArray[np.float64]
-        The time points at which to evaluate the cosine function.
-    ampl : float
-        Amplitude of the cosine wave.
+        Time points for the function evaluation.
+    A : float
+        Amplitude of the cosine function.
     omega : float
-        Angular frequency of the cosine wave.
+        Angular frequency of the cosine function.
     phi : float
-        Phase shift of the cosine wave.
-    offset : float
-        Vertical offset of the cosine wave.
-
-    Returns
-    -------
-    npt.NDArray[np.float64]
-        The evaluated cosine function values at each time point.
+        Phase offset of the cosine function.
+    C : float
+        Vertical offset of the cosine function.
     """
-    return ampl * np.cos(omega * t + phi) + offset
+    return A * np.cos(omega * t + phi) + C
 
 
 def func_damped_cos(
     t: npt.NDArray[np.float64],
     tau: float,
-    ampl: float,
+    A: float,
     omega: float,
     phi: float,
-    offset: float,
+    C: float,
 ) -> npt.NDArray[np.float64]:
     """
-    Calculate a damped cosine function with specified parameters.
+    Calculate a damped cosine function with given parameters.
 
     Parameters
     ----------
     t : npt.NDArray[np.float64]
         Time points for the function evaluation.
     tau : float
-        Time constant of the exponential decay.
-    ampl : float
-        Amplitude of the cosine wave.
+        Time constant of the exponential damping.
+    A : float
+        Amplitude of the cosine function.
     omega : float
-        Angular frequency of the cosine wave.
+        Angular frequency of the cosine function.
     phi : float
-        Phase shift of the cosine wave.
-    offset : float
-        Vertical offset of the cosine wave.
-
-    Returns
-    -------
-    npt.NDArray[np.float64]
-        Evaluated damped cosine function values.
+        Phase offset of the cosine function.
+    C : float
+        Vertical offset of the cosine function.
     """
-    return ampl * np.exp(-t / tau) * np.cos(omega * t + phi) + offset
+    return A * np.exp(-t / tau) * np.cos(omega * t + phi) + C
 
 
 def fit_rabi(
+    *,
     times: npt.NDArray[np.int64],
-    signals: npt.NDArray[np.complex128],
+    signals: npt.NDArray[np.complex64],
     wave_count: float = 2.5,
 ) -> tuple[float, float, npt.NDArray[np.float64]]:
     """
@@ -111,11 +103,11 @@ def fit_rabi(
 
     # Estimate the initial parameters
     omega0 = 2 * np.pi / (x[-1] - x[0])
-    ampl_est = (np.max(y) - np.min(y)) / 2
+    A_est = (np.max(y) - np.min(y)) / 2
     omega_est = wave_count * omega0
-    phase_est = np.pi
-    offset_est = (np.max(y) + np.min(y)) / 2
-    p0 = (ampl_est, omega_est, phase_est, offset_est)
+    phi_est = np.pi
+    C_est = (np.max(y) + np.min(y)) / 2
+    p0 = (A_est, omega_est, phi_est, C_est)
 
     bounds = (
         (0, 0, 0, -np.inf),
@@ -135,24 +127,45 @@ def fit_rabi(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_cos(x_fine, *popt)
 
-    plt.figure(figsize=(8, 4))
-    plt.errorbar(x, y, yerr=fluctuation, label="Data", fmt="o", color="C0")
-    plt.plot(x_fine, y_fine, label="Fit", color="C0")
-    plt.title(f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)")
-    plt.xlabel("Time (ns)")
-    plt.ylabel("Amplitude (arb. units)")
-    plt.grid(color="gray", linestyle="--", alpha=0.2)
-    plt.legend()
-    plt.show()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+            marker_color="black",
+            marker_line_width=2,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+            marker_color="#636EFA",
+            marker_size=10,
+        )
+    )
+    fig.update_layout(
+        title=f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)",
+        xaxis_title="Time (ns)",
+        yaxis_title="Amplitude (arb. units)",
+        width=800,
+        showlegend=True,
+    )
+    fig.show()
 
     return phase_shift, fluctuation, popt
 
 
 def fit_damped_rabi(
+    *,
     times: npt.NDArray[np.int64],
-    signals: npt.NDArray[np.complex128],
+    signals: npt.NDArray[np.complex64],
     wave_count: float = 2.5,
-) -> tuple[float, float, npt.NDArray[np.float64]]:
+) -> tuple[float, float, npt.NDArray[np.float32]]:
     """
     Fit damped Rabi oscillation data to a damped cosine function and plot.
 
@@ -182,12 +195,12 @@ def fit_damped_rabi(
 
     # Estimate the initial parameters
     omega0 = 2 * np.pi / (x[-1] - x[0])
-    ampl_est = (np.max(y) - np.min(y)) / 2
+    A_est = (np.max(y) - np.min(y)) / 2
     tau_est = 10_000
     omega_est = wave_count * omega0
-    phase_est = np.pi
-    offset_est = (np.max(y) + np.min(y)) / 2
-    p0 = (ampl_est, tau_est, omega_est, phase_est, offset_est)
+    phi_est = np.pi
+    C_est = (np.max(y) + np.min(y)) / 2
+    p0 = (A_est, tau_est, omega_est, phi_est, C_est)
 
     bounds = (
         (0, 0, 0, 0, -np.inf),
@@ -207,19 +220,41 @@ def fit_damped_rabi(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
 
-    plt.figure(figsize=(8, 4))
-    plt.errorbar(x, y, yerr=fluctuation, label="Data", fmt="o", color="C0")
-    plt.plot(x_fine, y_fine, label="Fit", color="C0")
-    plt.title(f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)")
-    plt.xlabel("Time (ns)")
-    plt.ylabel("Amplitude (arb. units)")
-    plt.legend()
-    plt.show()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+            marker_color="black",
+            marker_size=10,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+            marker_color="black",
+            marker_line_width=2,
+        )
+    )
+    fig.update_layout(
+        title=f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)",
+        xaxis_title="Time (ns)",
+        yaxis_title="Amplitude (arb. units)",
+        width=800,
+        showlegend=True,
+    )
+    fig.show()
 
     return phase_shift, fluctuation, popt
 
 
 def fit_ramsey(
+    *,
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
     p0=None,
@@ -267,21 +302,43 @@ def fit_ramsey(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
 
-    plt.scatter(x, y, label="Data")
-    plt.plot(x_fine, y_fine, label="Fit")
-    plt.xlabel("Time (ns)")
-    plt.ylabel("Amplitude (arb. units)")
-    plt.legend()
-    plt.show()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+            marker_color="black",
+            marker_size=10,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+            marker_color="black",
+            marker_line_width=2,
+        )
+    )
+    fig.update_layout(
+        title="Decay Fit",
+        xaxis_title="Time (ns)",
+        yaxis_title="Amplitude (arb. units)",
+        showlegend=True,
+    )
+    fig.show()
 
     return popt, pcov
 
 
-def func_decay(
+def func_exp_decay(
     t: npt.NDArray[np.float64],
-    ampl: float,
+    A: float,
     tau: float,
-    offset: float,
+    C: float,
 ) -> npt.NDArray[np.float64]:
     """
     Calculate an exponential decay function with given parameters.
@@ -290,22 +347,17 @@ def func_decay(
     ----------
     t : npt.NDArray[np.float64]
         Time points for the function evaluation.
-    ampl : float
+    A : float
         Amplitude of the exponential decay.
     tau : float
         Time constant of the exponential decay.
-    offset : float
-        Vertical offset of the decay curve.
-
-    Returns
-    -------
-    npt.NDArray[np.float64]
-        Evaluated exponential decay function values.
+    C : float
+        Vertical offset of the exponential decay.
     """
-    return ampl * np.exp(-t / tau) + offset
+    return A * np.exp(-t / tau) + C
 
 
-def fit_decay(
+def fit_exp_decay(
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
     p0=None,
@@ -343,22 +395,41 @@ def fit_decay(
             (np.inf, np.inf, np.inf),
         )
 
-    popt, pcov = curve_fit(func_decay, x, y, p0=p0, bounds=bounds)
+    popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
     print(f"Fitted function: {popt[0]:.3f} * exp(-t/{popt[1]:.3f}) + {popt[2]:.3f}")
     print(f"Decay time: {popt[1] / 1e3:.3f} us")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = func_decay(x_fine, *popt)
+    y_fine = func_exp_decay(x_fine, *popt)
 
-    plt.figure(figsize=(8, 4))
-    plt.scatter(x, y, label="Data")
-    plt.plot(x_fine, y_fine, label="Fit")
-    plt.title(f"Decay time: {popt[1] / 1e3:.3f} us")
-    plt.xlabel("Time (ns)")
-    plt.ylabel("Amplitude (arb. units)")
-    plt.semilogx()
-    plt.legend()
-    plt.show()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+            marker_color="black",
+            marker_size=10,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+            marker_color="black",
+            marker_line_width=2,
+        )
+    )
+    fig.update_layout(
+        title=f"Decay time: {popt[1] / 1e3:.3f} us",
+        xaxis_title="Time (ns)",
+        yaxis_title="Amplitude (arb. units)",
+        showlegend=True,
+    )
+    fig.show()
 
     return popt, pcov
 
@@ -414,12 +485,44 @@ def fit_cos_and_find_minimum(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = cos_func(x_fine, *popt)
 
-    plt.scatter(x, y, label="Data")
-    plt.plot(x_fine, y_fine, label="Fit")
-    plt.scatter(min_x, min_y, color="red", label="Minimum")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+            marker_color="black",
+            marker_size=10,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+            marker_color="black",
+            marker_line_width=2,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[min_x],
+            y=[min_y],
+            mode="markers",
+            name="Minimum",
+            marker_color="red",
+            marker_size=10,
+        )
+    )
+    fig.update_layout(
+        title="Fit and Minimum",
+        xaxis_title="Time (ns)",
+        yaxis_title="Amplitude (arb. units)",
+        showlegend=True,
+    )
+    fig.show()
 
     print(f"Minimum: ({min_x}, {min_y})")
 

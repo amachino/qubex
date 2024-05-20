@@ -134,8 +134,7 @@ class TabuchiDD(Pulse):
         phi=0.0,
         **kwargs,
     ):
-        length = self._ns_to_samples(duration)
-        self.t = np.linspace(0, duration, length)
+        self.t = self._sampling_points(duration)
         self.T = duration  # [ns]
         values = np.array([])  # [MHz]
         if duration != 0:
