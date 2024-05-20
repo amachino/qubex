@@ -9,9 +9,10 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import Final, Optional, Sequence
 
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 
 class Waveform(ABC):
@@ -140,7 +141,6 @@ class Waveform(ABC):
         self,
         *,
         polar=False,
-        savefig: Optional[str] = None,
         title="",
     ):
         """
@@ -151,26 +151,17 @@ class Waveform(ABC):
         polar : bool, optional
             If True, plots the waveform in the polar domain, otherwise in the
             time domain.
-        savefig : str, optional
-            If provided, saves the figure to the given path.
         title : str, optional
             Title of the plot.
         """
         if polar:
-            self.plot_polar(
-                title=title,
-                savefig=savefig,
-            )
+            self.plot_polar(title=title)
         else:
-            self.plot_xy(
-                title=title,
-                savefig=savefig,
-            )
+            self.plot_xy(title=title)
 
     def plot_xy(
         self,
         *,
-        savefig: Optional[str] = None,
         title="",
         xlabel="Time (ns)",
         ylabel="Amplitude (arb. units)",
@@ -180,8 +171,6 @@ class Waveform(ABC):
 
         Parameters
         ----------
-        savefig : str, optional
-            If provided, saves the figure to the given path.
         title : str, optional
             Title of the plot.
         xlabel : str, optional
@@ -189,26 +178,41 @@ class Waveform(ABC):
         ylabel : str, optional
             Label of the y-axis.
         """
-        _, ax = plt.subplots(figsize=(6, 2))
-        ax.set_title(title)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
-        ax.step(times, real, label="I", where="post")
-        ax.step(times, imag, label="Q", where="post")
-        ax.legend()
-        if savefig is not None:
-            plt.savefig(savefig, dpi=300)
-        else:
-            ax.grid(color="gray", linestyle="--", alpha=0.2)
-        plt.show()
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=real,
+                mode="lines",
+                name="I",
+                line_shape="hv",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=imag,
+                mode="lines",
+                name="Q",
+                line_shape="hv",
+            )
+        )
+        fig.update_layout(
+            title=title,
+            xaxis_title=xlabel,
+            yaxis_title=ylabel,
+            width=800,
+            template="plotly_white",
+        )
+        fig.show()
 
     def plot_polar(
         self,
         *,
-        savefig: Optional[str] = None,
         title="",
         xlabel="Time (ns)",
         ylabel="Amplitude (arb. units)",
@@ -218,8 +222,6 @@ class Waveform(ABC):
 
         Parameters
         ----------
-        savefig : str, optional
-            If provided, saves the figure to the given path.
         title : str, optional
             Title of the plot.
         xlabel : str, optional
@@ -227,22 +229,46 @@ class Waveform(ABC):
         ylabel : str, optional
             Label of the y-axis.
         """
-        fig, ax = plt.subplots(2, 1, sharex=True, figsize=(6, 4))
-        fig.suptitle(title)
-        ax[0].set_ylabel(ylabel)
-        ax[1].set_ylabel("Phase (rad)")
-        ax[1].set_xlabel(xlabel)
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         ampl = np.append(self.ampl, self.ampl[-1])
         phase = np.append(self.phase, self.phase[-1])
-        ax[0].step(times, ampl, where="post")
-        ax[1].step(times, phase, where="post")
-        if savefig is not None:
-            plt.savefig(savefig, dpi=300)
-        else:
-            ax[0].grid(color="gray", linestyle="--", alpha=0.2)
-            ax[1].grid(color="gray", linestyle="--", alpha=0.2)
-        plt.show()
+
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            subplot_titles=(title, ""),
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=ampl,
+                mode="lines",
+                name="Amplitude",
+                line_shape="hv",
+            ),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=phase,
+                mode="lines",
+                name="Phase",
+                line_shape="hv",
+            ),
+            row=2,
+            col=1,
+        )
+        fig.update_xaxes(title_text=xlabel, row=2, col=1)
+        fig.update_yaxes(title_text=ylabel, row=1, col=1)
+        fig.update_yaxes(title_text="Phase (rad)", row=2, col=1)
+        fig.update_layout(
+            width=800,
+            template="plotly_white",
+        )
+        fig.show()
 
 
 class Pulse(Waveform):
