@@ -181,13 +181,9 @@ class QubeBackend:
         for box_name in box_list:
             try:
                 boxes[box_name] = self.linkup(box_name)
-                console.print(
-                    f"{box_name:5}", ":", "Linked up", style="bold green", end="\n"
-                )
+                print(f"{box_name:5}", ":", "Linked up")
             except Exception as e:
-                console.print(
-                    f"{box_name:5}", ":", "Error", e, style="bold red", end="\n"
-                )
+                print(f"{box_name:5}", ":", "Error", e)
         return boxes
 
     def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:

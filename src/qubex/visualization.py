@@ -2,8 +2,35 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.graph_objs as go
+from IPython.display import clear_output, display
 from matplotlib import gridspec
 from numpy.typing import NDArray
+from plotly.subplots import make_subplots
+
+
+def scatter_iq_data(data: dict[str, list[complex]]):
+    fig = make_subplots(rows=1, cols=1)
+    fig.update_layout(
+        xaxis=dict(scaleanchor="y", scaleratio=1),
+        yaxis=dict(scaleanchor="x", scaleratio=1),
+        width=500,
+        height=500,
+        scattermode="group",
+    )
+    fig.update_xaxes(dtick=1)
+    fig.update_yaxes(dtick=1)
+
+    for qubit, iq in data.items():
+        scatter = go.Scatter(
+            x=np.real(iq),
+            y=np.imag(iq),
+            mode="markers",
+            name=qubit,
+        )
+        fig.add_trace(scatter)
+    clear_output(wait=True)
+    display(fig)
 
 
 def show_pulse_sequences(

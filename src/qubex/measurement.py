@@ -240,7 +240,7 @@ class Measurement:
             for target, iqs in backend_result.data.items()
         }
         kerneled_data = {
-            target[label_slice]: iqs[capture_index].mean()
+            target[label_slice]: iqs[capture_index].mean() * 2 ** (-32)
             for target, iqs in backend_result.data.items()
         }
 

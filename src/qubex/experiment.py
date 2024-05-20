@@ -5,9 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Callable, Final, Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
-from IPython.display import clear_output
 from numpy.typing import NDArray
 from qubecalib import QubeCalib
 from rich.console import Console
@@ -25,20 +23,18 @@ from .measurement import (
     Measurement,
 )
 from .pulse import Rect, Waveform
+from .visualization import scatter_iq_data
 
 console = Console()
 
 DEFAULT_DATA_DIR = "data"
+MIN_DURATION = 128
 
 
 @dataclass
 class RabiParams:
     """
     Data class representing the parameters of Rabi oscillation.
-
-    This class is used to store the parameters of Rabi oscillation, which is
-    obtained by fitting the measured data. The parameters are used to normalize
-    the measured data.
 
     Attributes
     ----------
@@ -72,45 +68,35 @@ class SweepResult:
     """
     Data class representing the result of a sweep experiment.
 
-    This class is used to store the result of a sweep experiment. The result
-    includes the sweep range, the measured signals, and the time when the
-    experiment is conducted.
-
     Attributes
     ----------
     qubit : str
         Identifier of the qubit.
     sweep_range : NDArray
         Sweep range of the experiment.
-    signals : NDArray
-        Measured signals.
+    data : NDArray
+        Measured data.
     created_at : str
         Time when the experiment is conducted.
     """
 
     qubit: str
     sweep_range: NDArray
-    signals: NDArray
+    data: NDArray
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def rotated(self, rabi_params: RabiParams) -> NDArray:
-        """Returns the measured signals after rotating them by the phase shift."""
-        return self.signals * np.exp(-1j * rabi_params.phase_shift)
+        return self.data * np.exp(-1j * rabi_params.phase_shift)
 
     def normalized(self, rabi_params: RabiParams) -> NDArray:
-        """Returns the normalized measured signals."""
-        values = self.signals * np.exp(-1j * rabi_params.phase_shift)
+        values = self.data * np.exp(-1j * rabi_params.phase_shift)
         values_normalized = -(values.imag - rabi_params.offset) / rabi_params.amplitude
         return values_normalized
 
 
 class Experiment:
     """
-    Manages and conducts a variety of quantum experiments using QuBE devices.
-
-    This class serves as a central point for setting up, executing, and analyzing
-    quantum experiments. It supports various types of experiments like Rabi
-    experiment and Ramsey experiment.
+    Class representing an experiment.
 
     Parameters
     ----------
@@ -134,7 +120,7 @@ class Experiment:
             chip_id,
             config_dir=config_dir,
         )
-        self.tools = ExperimentTools(self)
+        self.tool = ExperimentTool(self)
 
     @property
     def available_boxes(self) -> list[str]:
@@ -272,7 +258,6 @@ class Experiment:
         amplitudes: dict[str, float],
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
         plot: bool = True,
     ) -> dict[str, SweepResult]:
         """
@@ -288,8 +273,6 @@ class Experiment:
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
-            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -300,6 +283,7 @@ class Experiment:
         """
         qubits = list(amplitudes.keys())
         time_range = np.array(time_range, dtype=np.int64)
+        control_window = MIN_DURATION * (max(time_range) // MIN_DURATION + 1)
         waveforms_list = [
             {
                 qubit: Rect(
@@ -316,21 +300,18 @@ class Experiment:
             interval=interval,
             control_window=control_window,
         )
+
         signals = defaultdict(list)
-        for index, result in enumerate(generator):
-            print(f"{index+1}/{len(time_range)}")
-            clear_output(wait=True)
+        for result in generator:
             for qubit, data in result.kerneled.items():
                 signals[qubit].append(data)
-        if plot:
-            for qubit in qubits:
-                iq = signals[qubit]
-                plt.scatter(np.real(iq), np.imag(iq))
+            if plot:
+                scatter_iq_data(signals)
         results = {
             qubit: SweepResult(
                 qubit=qubit,
                 sweep_range=time_range,
-                signals=np.array(values),
+                data=np.array(values),
             )
             for qubit, values in signals.items()
         }
@@ -339,7 +320,7 @@ class Experiment:
     def sweep_parameter(
         self,
         *,
-        sweep_range: NDArray,
+        param_range: NDArray,
         sequence: dict[str, Callable[..., Waveform]],
         pulse_count=1,
         shots: int = DEFAULT_SHOTS,
@@ -352,8 +333,8 @@ class Experiment:
 
         Parameters
         ----------
-        sweep_range : NDArray
-            Range of the sweep.
+        param_range : NDArray
+            Range of the parameter to sweep.
         sequence : dict[str, Callable[..., Waveform]]
             Parametric sequence to sweep.
         pulse_count : int, optional
@@ -378,7 +359,7 @@ class Experiment:
                 qubit: sequence[qubit](param).repeated(pulse_count).values
                 for qubit in qubits
             }
-            for param in sweep_range
+            for param in param_range
         ]
         generator = self._measure_batch(
             sequences=sequences,
@@ -387,20 +368,16 @@ class Experiment:
             control_window=control_window,
         )
         signals = defaultdict(list)
-        for index, result in enumerate(generator):
-            print(f"{index+1}/{len(sweep_range)}")
-            clear_output(wait=True)
+        for result in generator:
             for qubit, data in result.kerneled.items():
                 signals[qubit].append(data)
-        if plot:
-            for qubit in qubits:
-                iq = signals[qubit]
-                plt.scatter(np.real(iq), np.imag(iq))
+            if plot:
+                scatter_iq_data(signals)
         results = {
             qubit: SweepResult(
                 qubit=qubit,
-                sweep_range=sweep_range,
-                signals=np.array(values),
+                sweep_range=param_range,
+                data=np.array(values),
             )
             for qubit, values in signals.items()
         }
@@ -443,40 +420,43 @@ class Experiment:
         )
         return result
 
-    def repeat_pulse(
+    def repeat_sequence(
         self,
-        pulses: dict[str, Waveform],
         *,
+        sequence: dict[str, Waveform],
         n: int,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
     ) -> dict[str, SweepResult]:
         """
-        Repeats the given pulse n times.
+        Repeats the pulse sequence n times.
 
         Parameters
         ----------
-        pulses : dict[str, Waveform]
-            Pulses to repeat.
+        sequence : dict[str, Waveform]
+            Pulse sequence to repeat.
         n : int
             Number of times to repeat the pulse.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
         dict[str, SweepResult]
             Result of the experiment.
         """
-        sequence = {
+        repeated_sequence = {
             qubit: lambda param, p=pulse: p.repeated(int(param))
-            for qubit, pulse in pulses.items()
+            for qubit, pulse in sequence.items()
         }
         result = self.sweep_parameter(
-            sweep_range=np.arange(n + 1),
-            sequence=sequence,
+            param_range=np.arange(n + 1),
+            sequence=repeated_sequence,
             pulse_count=1,
             shots=shots,
             interval=interval,
@@ -529,7 +509,7 @@ class Experiment:
             Parameters of the Rabi oscillation.
         """
         times = data.sweep_range
-        signals = data.signals
+        signals = data.data
 
         phase_shift, fluctuation, popt = fit_rabi(
             times=times,
@@ -569,7 +549,7 @@ class Experiment:
             Parameters of the Rabi oscillation.
         """
         times = data.sweep_range
-        signals = data.signals
+        signals = data.data
 
         phase_shift, fluctuation, popt = fit_damped_rabi(
             times=times,
@@ -589,7 +569,7 @@ class Experiment:
         return rabi_params
 
 
-class ExperimentTools:
+class ExperimentTool:
 
     def __init__(self, experiment: Experiment):
         self._exp = experiment
@@ -642,7 +622,8 @@ class ExperimentTools:
 
         for qubit in self._exp.qubits:
             ports = self._exp._config.get_ports_by_qubit(
-                self._exp._chip_id, qubit.label
+                chip_id=self._exp._chip_id,
+                qubit=qubit.label,
             )
             ctrl_port = ports[0]
             read_out_port = ports[1]
@@ -653,13 +634,9 @@ class ExperimentTools:
             ctrl_box = ctrl_port.box
             read_out_box = read_out_port.box
             read_in_box = read_in_port.box
-            ctrl = f"[green]{ctrl_box.id}[/green]-[cyan]{ctrl_port.number}[/cyan]"
-            read_out = (
-                f"[green]{read_out_box.id}[/green]-[cyan]{read_out_port.number}[/cyan]"
-            )
-            read_in = (
-                f"[green]{read_in_box.id}[/green]-[cyan]{read_in_port.number}[/cyan]"
-            )
+            ctrl = f"{ctrl_box.id}-{ctrl_port.number}"
+            read_out = f"{read_out_box.id}-{read_out_port.number}"
+            read_in = f"{read_in_box.id}-{read_in_port.number}"
             table.add_row(qubit.label, ctrl, read_out, read_in)
 
         console.print(table)
