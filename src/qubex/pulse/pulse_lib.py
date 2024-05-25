@@ -1,5 +1,4 @@
 import numpy as np
-import numpy.typing as npt
 
 from .pulse import Pulse
 
@@ -26,6 +25,7 @@ class Blank(Pulse):
         real = np.zeros(N, dtype=np.float64)
         imag = 0
         values = real + 1j * imag
+
         super().__init__(values)
 
 
@@ -50,22 +50,14 @@ class Rect(Pulse):
         *,
         duration: float,
         amplitude: float,
+        **kwargs,
     ):
-        values = np.array([])
-        if duration != 0:
-            values = self._calc_values(duration, amplitude)
-        super().__init__(values)
-
-    def _calc_values(
-        self,
-        duration: float,
-        amplitude: float,
-    ) -> npt.NDArray[np.complex128]:
         N = self._number_of_samples(duration)
         real = amplitude * np.ones(N)
         imag = 0
         values = real + 1j * imag
-        return values
+
+        super().__init__(values, **kwargs)
 
 
 class FlatTop(Pulse):
@@ -78,7 +70,7 @@ class FlatTop(Pulse):
         Duration of the pulse in ns.
     amplitude : float
         Amplitude of the pulse.
-    tau : int
+    tau : float
         Rise and fall time of the pulse in ns.
     
     Examples
@@ -109,20 +101,9 @@ class FlatTop(Pulse):
         *,
         duration: float,
         amplitude: float,
-        tau: int,
+        tau: float,
         **kwargs,
     ):
-        values = np.array([])
-        if duration != 0:
-            values = self._calc_values(duration, amplitude, tau)
-        super().__init__(values, **kwargs)
-
-    def _calc_values(
-        self,
-        duration: float,
-        amplitude: float,
-        tau: int,
-    ) -> npt.NDArray[np.complex128]:
         flattime = duration - 2 * tau
 
         if flattime < 0:
@@ -137,7 +118,7 @@ class FlatTop(Pulse):
 
         values = np.concatenate((v_rise, v_flat, v_fall)).astype(np.complex128)
 
-        return values
+        super().__init__(values, **kwargs)
 
 
 class Gauss(Pulse):
@@ -166,17 +147,6 @@ class Gauss(Pulse):
         sigma: float,
         **kwargs,
     ):
-        values = np.array([])
-        if duration != 0:
-            values = self._calc_values(duration, amplitude, sigma)
-        super().__init__(values, **kwargs)
-
-    def _calc_values(
-        self,
-        duration: float,
-        amplitude: float,
-        sigma: float,
-    ) -> npt.NDArray[np.complex128]:
         if sigma == 0:
             raise ValueError("Sigma cannot be zero.")
 
@@ -185,7 +155,8 @@ class Gauss(Pulse):
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
         imag = 0
         values = real + 1j * imag
-        return values
+
+        super().__init__(values, **kwargs)
 
 
 class Drag(Pulse):
@@ -218,17 +189,6 @@ class Drag(Pulse):
         beta: float,
         **kwargs,
     ):
-        values = np.array([])
-        if duration != 0:
-            values = self._calc_values(duration, amplitude, beta)
-        super().__init__(values, **kwargs)
-
-    def _calc_values(
-        self,
-        duration: float,
-        amplitude: float,
-        beta: float,
-    ) -> npt.NDArray[np.complex128]:
         t = self._sampling_points(duration)
         sigma = duration * 0.5
         offset = -np.exp(-0.5)
@@ -240,7 +200,8 @@ class Drag(Pulse):
             * (factor * (np.exp(-((t - sigma) ** 2) / (2 * sigma**2))))
         )
         values = real + beta * 1j * imag
-        return values
+
+        super().__init__(values, **kwargs)
 
 
 class DragGauss(Pulse):
@@ -277,18 +238,6 @@ class DragGauss(Pulse):
         beta: float,
         **kwargs,
     ):
-        values = np.array([])
-        if duration != 0:
-            values = self._calc_values(duration, amplitude, sigma, beta)
-        super().__init__(values, **kwargs)
-
-    def _calc_values(
-        self,
-        duration: float,
-        amplitude: float,
-        sigma: float,
-        beta: float,
-    ) -> npt.NDArray[np.complex128]:
         if sigma == 0:
             raise ValueError("Sigma cannot be zero.")
 
@@ -297,7 +246,8 @@ class DragGauss(Pulse):
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
         imag = (mu - t) / (sigma**2) * real
         values = real + beta * 1j * imag
-        return values
+
+        super().__init__(values, **kwargs)
 
 
 class DragCos(Pulse):
@@ -330,19 +280,20 @@ class DragCos(Pulse):
         beta: float,
         **kwargs,
     ):
-        values = np.array([])
-        if duration != 0:
-            values = self._calc_values(duration, amplitude, beta)
-        super().__init__(values, **kwargs)
-
-    def _calc_values(
-        self,
-        duration: float,
-        amplitude: float,
-        beta: float,
-    ) -> npt.NDArray[np.complex128]:
         t = self._sampling_points(duration)
-        real = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
-        imag = 2 * np.pi / duration * amplitude * np.sin(2 * np.pi * t / duration) * 0.5
-        values = real + beta * 1j * imag
-        return values
+
+        if duration == 0:
+            values = np.array([], dtype=np.complex128)
+        else:
+            real = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
+            imag = (
+                2
+                * np.pi
+                / duration
+                * amplitude
+                * np.sin(2 * np.pi * t / duration)
+                * 0.5
+            )
+            values = real + beta * 1j * imag
+
+        super().__init__(values, **kwargs)

@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from qubex.pulse import Pulse, Rect
 
-dt = Rect.SAMPLING_PERIOD
+dt = Pulse.SAMPLING_PERIOD
 
 
 def test_inheritance():
@@ -21,6 +21,13 @@ def test_init():
     pulse = Rect(duration=5 * dt, amplitude=0.1)
     assert pulse.duration == 5 * dt
     assert (pulse.values == [0.1, 0.1, 0.1, 0.1, 0.1]).all()
+
+
+def test_zero_duration():
+    """Rect should be initialized with zero duration."""
+    pulse = Rect(duration=0, amplitude=0.1)
+    assert pulse.duration == 0
+    assert (pulse.values == np.array([], dtype=np.complex128)).all()
 
 
 def test_invalid_duration():
