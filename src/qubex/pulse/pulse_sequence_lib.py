@@ -1,10 +1,9 @@
-"""
-Provides classes for dynamical decoupling pulse sequences.
-"""
-
 import numpy as np
 
-from .pulse import Blank, Pulse, PulseSequence, Waveform
+from .pulse import Pulse
+from .pulse_lib import Blank
+from .pulse_sequence import PulseSequence
+from .waveform import Waveform
 
 
 class CPMG(PulseSequence):
