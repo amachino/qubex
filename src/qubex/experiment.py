@@ -9,6 +9,7 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 from rich.console import Console
+from rich.table import Table
 
 from .analysis import fit_damped_rabi, fit_rabi
 from .config import Config, Params, Qubit, Resonator, Target
@@ -148,6 +149,18 @@ class Experiment:
             config_dir=config_dir,
         )
         self.system: Final = self._config.get_quantum_system(chip_id)
+        self.print_resources()
+
+    def print_resources(self):
+        console.print("The following resources will be used:\n")
+        table = Table(header_style="bold")
+        table.add_column("ID", justify="left")
+        table.add_column("NAME", justify="left")
+        table.add_column("ADDRESS", justify="left")
+        table.add_column("ADAPTER", justify="left")
+        for box in self.boxes.values():
+            table.add_row(box.id, box.name, box.address, box.adapter)
+        console.print(table)
 
     @property
     def chip_id(self) -> str:
