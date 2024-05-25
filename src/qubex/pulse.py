@@ -7,7 +7,7 @@ of amplitude and phase.
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from typing import Final, Literal, Optional, Sequence
+from typing import Final, Literal, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -123,11 +123,16 @@ class Waveform(ABC):
         dt = self.SAMPLING_PERIOD
         if duration < 0:
             raise ValueError("Duration must be positive.")
-        if duration % dt != 0:
+
+        # Tolerance for floating point comparison
+        tolerance = 1e-9
+        frac = duration / dt
+        N = round(frac)
+        if abs(frac - N) > tolerance:
             raise ValueError(
                 f"Duration must be a multiple of the sampling period ({dt} ns)."
             )
-        return int(duration // dt)
+        return N
 
     def _sampling_points(
         self,
@@ -387,7 +392,7 @@ class PulseSequence(Waveform):
 
     Parameters
     ----------
-    waveforms : Sequence[Waveform], optional
+    waveforms : Sequence[Waveform]
         Waveforms of the pulse sequence.
     scale : float, optional
         Scaling factor of the pulse sequence.
@@ -407,7 +412,7 @@ class PulseSequence(Waveform):
 
     def __init__(
         self,
-        waveforms: Optional[Sequence[Waveform]] = None,
+        waveforms: Sequence[Waveform],
         *,
         scale: float = 1.0,
         detuning: float = 0.0,
@@ -418,7 +423,7 @@ class PulseSequence(Waveform):
             detuning=detuning,
             phase_shift=phase_shift,
         )
-        self._waveforms: list[Waveform] = [] if waveforms is None else list(waveforms)
+        self._waveforms: list[Waveform] = list(waveforms)
 
     @property
     def length(self) -> int:
