@@ -7,7 +7,7 @@ of amplitude and phase.
 
 from abc import ABC, abstractmethod
 from copy import deepcopy
-from typing import Final, Optional, Sequence
+from typing import Final, Literal, Optional, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -85,6 +85,12 @@ class Waveform(ABC):
     @abstractmethod
     def copy(self) -> "Waveform":
         """Returns a copy of the waveform."""
+
+    @abstractmethod
+    def padded(
+        self, total_duration: float, pad_side: Literal["right", "left"] = "right"
+    ) -> "Waveform":
+        """Returns a copy of the waveform with zero padding."""
 
     @abstractmethod
     def scaled(self, scale: float) -> "Waveform":
@@ -324,6 +330,32 @@ class Pulse(Waveform):
         """Returns a copy of the pulse."""
         return deepcopy(self)
 
+    def padded(
+        self,
+        total_duration: float,
+        pad_side: Literal["right", "left"] = "right",
+    ) -> "Pulse":
+        """
+        Returns a copy of the pulse with zero padding.
+
+        Parameters
+        ----------
+        total_duration : float
+            Total duration of the pulse in ns.
+        pad_side : {"right", "left"}, optional
+            Side of the zero padding.
+        """
+        N = self._number_of_samples(total_duration)
+        if pad_side == "right":
+            values = np.pad(self._values, (0, N - self.length), mode="constant")
+        elif pad_side == "left":
+            values = np.pad(self._values, (N - self.length, 0), mode="constant")
+        else:
+            raise ValueError("pad_side must be either 'right' or 'left'.")
+        new_pulse = deepcopy(self)
+        new_pulse._values = values
+        return new_pulse
+
     def scaled(self, scale: float) -> "Pulse":
         """Returns a copy of the pulse scaled by the given factor."""
         new_pulse = deepcopy(self)
@@ -342,11 +374,11 @@ class Pulse(Waveform):
         new_pulse._phase_shift += phase
         return new_pulse
 
-    def repeated(self, n: int) -> "PulseSequence":
-        """Returns a pulse sequence of n copies of the pulse."""
+    def repeated(self, n: int) -> "Pulse":
+        """Returns a copy of the pulse repeated n times."""
         new_pulse = deepcopy(self)
-        sequence = PulseSequence([new_pulse] * n)
-        return sequence
+        new_pulse._values = np.tile(self._values, n)
+        return new_pulse
 
 
 class PulseSequence(Waveform):
@@ -386,21 +418,19 @@ class PulseSequence(Waveform):
             detuning=detuning,
             phase_shift=phase_shift,
         )
-        if waveforms is None:
-            waveforms = []
-        self.waveforms = waveforms
+        self._waveforms: list[Waveform] = [] if waveforms is None else list(waveforms)
 
     @property
     def length(self) -> int:
         """Returns the total length of the pulse sequence in samples."""
-        return sum([w.length for w in self.waveforms])
+        return sum([w.length for w in self._waveforms])
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
         """Returns the concatenated values of the pulse sequence."""
-        if len(self.waveforms) == 0:
+        if len(self._waveforms) == 0:
             return np.array([])
-        concat_values = np.concatenate([w.values for w in self.waveforms])
+        concat_values = np.concatenate([w.values for w in self._waveforms])
         values = (
             concat_values
             * self._scale
@@ -411,6 +441,32 @@ class PulseSequence(Waveform):
     def copy(self) -> "PulseSequence":
         """Returns a copy of the pulse sequence."""
         return deepcopy(self)
+
+    def padded(
+        self,
+        total_duration: float,
+        pad_side: Literal["right", "left"] = "right",
+    ) -> "PulseSequence":
+        """
+        Returns a copy of the pulse sequence with zero padding.
+
+        Parameters
+        ----------
+        total_duration : float
+            Total duration of the pulse sequence in ns.
+        pad_side : {"right", "left"}, optional
+            Side of the zero padding.
+        """
+        new_sequence = deepcopy(self)
+        blank = Blank(duration=total_duration - new_sequence.duration)
+        if pad_side == "right":
+            new_waveforms = new_sequence._waveforms + [blank]
+        elif pad_side == "left":
+            new_waveforms = [blank] + new_sequence._waveforms
+        else:
+            raise ValueError("pad_side must be either 'right' or 'left'.")
+        new_sequence._waveforms = new_waveforms
+        return new_sequence
 
     def scaled(self, scale: float) -> "PulseSequence":
         """Returns a copy of the pulse sequence scaled by the given factor."""
@@ -433,13 +489,13 @@ class PulseSequence(Waveform):
     def repeated(self, n: int) -> "PulseSequence":
         """Returns a copy of the pulse sequence repeated n times."""
         new_sequence = deepcopy(self)
-        new_sequence.waveforms = list(new_sequence.waveforms) * n
+        new_sequence._waveforms = list(new_sequence._waveforms) * n
         return new_sequence
 
     def reversed(self) -> "PulseSequence":
         """Returns a copy of the pulse sequence with the order of the waveforms reversed."""
         new_sequence = deepcopy(self)
-        new_sequence.waveforms = list(reversed(new_sequence.waveforms))
+        new_sequence._waveforms = list(reversed(new_sequence._waveforms))
         return new_sequence
 
 
