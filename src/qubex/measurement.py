@@ -72,31 +72,21 @@ class Measurement:
             for target, settings in target_settings.items()
         }
 
-    def connect(self) -> None:
-        """Connect to the backend."""
-        available_boxes = self._backend.available_boxes
-        self._backend.linkup_boxes(available_boxes)
-        self._backend.sync_clocks(available_boxes)
-
-    def dump_box_config(self, box_id: str) -> dict:
+    def connect(self, box_list: list[str]):
         """
-        Dump the configuration of the box.
+        Connect to the boxes.
 
         Parameters
         ----------
-        box_id : str
-            The box ID.
-
-        Returns
-        -------
-        dict
-            The configuration of the box.
+        box_list : list[str]
+            The list of box IDs.
 
         Examples
         --------
-        >>> config = meas.dump_box_config("Q73A")
+        >>> meas.connect(["Q73A", "U10B"])
         """
-        return self._backend.dump_box(box_id)
+        self._backend.linkup_boxes(box_list)
+        self._backend.sync_clocks(box_list)
 
     def measure(
         self,

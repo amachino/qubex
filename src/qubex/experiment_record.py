@@ -1,15 +1,10 @@
-"""
-This module contains the ExperimentRecord class, which is used to manage
-experiment records.
-"""
-
 import datetime
 import os
 import pickle
 from dataclasses import dataclass
 from typing import Any, Final
 
-DATA_PATH: Final[str] = "./data"
+DEFAULT_DATA_DIR: Final[str] = "data"
 
 
 @dataclass
@@ -43,7 +38,7 @@ class ExperimentRecord:
     description: str = ""
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def save(self, data_path=DATA_PATH):
+    def save(self, data_path=DEFAULT_DATA_DIR):
         """
         Save the experiment record to a pickle file.
 
@@ -103,7 +98,7 @@ class ExperimentRecord:
         return record
 
     @staticmethod
-    def load(name: str, data_path=DATA_PATH) -> "ExperimentRecord":
+    def load(name: str, data_path=DEFAULT_DATA_DIR) -> "ExperimentRecord":
         """
         Load an experiment record from a pickle file.
 

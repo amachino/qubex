@@ -20,28 +20,9 @@ from .hardware import (
     ReadInPort,
     ReadOutPort,
 )
+from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
 
 console = Console()
-
-
-@dataclass
-class Chip:
-    id: str
-    name: str
-    n_qubits: int
-
-
-@dataclass
-class Qubit:
-    label: str
-    frequency: float
-    anharmonicity: float
-
-
-@dataclass
-class Resonator:
-    label: str
-    frequency: float
 
 
 @dataclass
@@ -250,6 +231,29 @@ class Config:
             readout_vatt=params["readout_vatt"],
         )
 
+    def get_quantum_system(self, chip_id: str) -> QuantumSystem:
+        """
+        Returns the QuantumSystem object for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        QuantumSystem
+            The QuantumSystem object for the given chip ID.
+        """
+        chip = self.get_chip(chip_id)
+        qubits = self.get_qubits(chip_id)
+        resonators = self.get_resonators(chip_id)
+        return QuantumSystem(
+            chip=chip,
+            qubits=qubits,
+            resonators=resonators,
+        )
+
     def get_chip(self, id: str) -> Chip:
         """
         Returns the Chip object for the given ID.
@@ -351,6 +355,7 @@ class Config:
         return Resonator(
             label=f"R{label}",
             frequency=props.resonator_frequency[label],
+            qubit=label,
         )
 
     def get_resonators(self, chip_id: str) -> list[Resonator]:
@@ -373,9 +378,33 @@ class Config:
             Resonator(
                 label=f"R{qubit.label}",
                 frequency=props.resonator_frequency[qubit.label],
+                qubit=qubit.label,
             )
             for qubit in qubits
         ]
+
+    def get_all_targets(self, chip_id: str) -> list[Target]:
+        """
+        Returns a list of all Target objects for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        list[Target]
+            A list of all Target objects for the given chip ID.
+        """
+        qubits = self.get_qubits(chip_id)
+        targets = []
+        for qubit in qubits:
+            targets.append(self.get_read_target(chip_id, qubit.label))
+            targets.append(self.get_ctrl_ge_target(chip_id, qubit.label))
+            targets.append(self.get_ctrl_ef_target(chip_id, qubit.label))
+            targets.extend(self.get_ctrl_cr_targets(chip_id, qubit.label))
+        return targets
 
     def get_read_target(self, chip_id: str, label: str) -> Target:
         """

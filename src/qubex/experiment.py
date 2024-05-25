@@ -3,18 +3,17 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Callable, Final, Optional
+from typing import Callable, Final
 
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
-from qubecalib import QubeCalib
 from rich.console import Console
-from rich.table import Table
 
 from .analysis import fit_damped_rabi, fit_rabi
-from .config import Config, Params, Qubit, Resonator
-from .hardware import Box, Port
+from .config import Config, Params, Qubit, Resonator, Target
+from .experiment_tool import ExperimentTool
+from .hardware import Box
 from .measurement import (
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
@@ -28,7 +27,6 @@ from .visualization import scatter_iq_data
 
 console = Console()
 
-DEFAULT_DATA_DIR = "data"
 MIN_DURATION = 128
 
 
@@ -125,6 +123,8 @@ class Experiment:
     ----------
     chip_id : str
         Identifier of the quantum chip.
+    qubits : list[str]
+        List of qubits to use in the experiment.
     data_dir : str, optional
         Path to the directory where the experiment data is stored. Defaults to "./data".
     """
@@ -133,32 +133,21 @@ class Experiment:
         self,
         *,
         chip_id: str,
-        data_dir: str = DEFAULT_DATA_DIR,
+        qubits: list[str],
         config_dir: str = DEFAULT_CONFIG_DIR,
     ):
         self._chip_id: Final = chip_id
+        self._qubits: Final = qubits
         self._config: Final = Config(config_dir)
-        self._data_dir: Final = data_dir
         self._measurement: Final = Measurement(
-            chip_id,
+            chip_id=chip_id,
             config_dir=config_dir,
         )
-        self.tool = ExperimentTool(self)
-
-    @property
-    def available_boxes(self) -> list[str]:
-        """Get the list of available boxes."""
-        return [box.id for box in self.boxes]
-
-    @property
-    def available_qubits(self) -> list[str]:
-        """Get the list of available qubits."""
-        return [qubit.label for qubit in self.qubits]
-
-    @property
-    def targets(self) -> dict[str, float]:
-        """Get the list of target frequencies."""
-        return self._measurement.targets
+        self.tool: Final = ExperimentTool(
+            chip_id=chip_id,
+            config_dir=config_dir,
+        )
+        self.system: Final = self._config.get_quantum_system(chip_id)
 
     @property
     def chip_id(self) -> str:
@@ -166,14 +155,11 @@ class Experiment:
         return self._chip_id
 
     @property
-    def qubits(self) -> list[Qubit]:
-        """Get the list of qubits."""
-        return self._config.get_qubits(self._chip_id)
-
-    @property
-    def resonators(self) -> list[Resonator]:
-        """Get the list of resonators."""
-        return self._config.get_resonators(self._chip_id)
+    def qubits(self) -> dict[str, Qubit]:
+        all_qubits = self._config.get_qubits(self._chip_id)
+        return {
+            qubit.label: qubit for qubit in all_qubits if qubit.label in self._qubits
+        }
 
     @property
     def params(self) -> Params:
@@ -181,18 +167,29 @@ class Experiment:
         return self._config.get_params(self._chip_id)
 
     @property
-    def boxes(self) -> list[Box]:
-        """Get the list of boxes."""
-        return self._config.get_boxes(self._chip_id)
+    def resonators(self) -> dict[str, Resonator]:
+        all_resonators = self._config.get_resonators(self._chip_id)
+        return {
+            resonator.qubit: resonator
+            for resonator in all_resonators
+            if resonator.qubit in self._qubits
+        }
 
     @property
-    def ports(self) -> list[Port]:
-        """Get the list of ports."""
-        return self._config.get_port_details(self._chip_id)
+    def targets(self) -> dict[str, Target]:
+        all_targets = self._config.get_all_targets(self._chip_id)
+        targets = [target for target in all_targets if target.qubit in self._qubits]
+        return {target.label: target for target in targets}
+
+    @property
+    def boxes(self) -> dict[str, Box]:
+        boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
+        return {box.id: box for box in boxes}
 
     def connect(self) -> None:
         """Connect to the backend."""
-        self._measurement.connect()
+        box_list = list(self.boxes.keys())
+        self._measurement.connect(box_list)
 
     def measure(
         self,
@@ -419,7 +416,7 @@ class Experiment:
 
         Parameters
         ----------
-        quibits : list[str]
+        qubits : list[str]
             List of qubits to check the Rabi oscillation.
         time_range : NDArray, optional
             Time range of the experiment. Defaults to np.arange(0, 201, 10).
@@ -593,141 +590,3 @@ class Experiment:
             C=popt[4],
         )
         return rabi_params
-
-
-class ExperimentTool:
-
-    def __init__(self, experiment: Experiment):
-        self._exp = experiment
-
-    def get_qubecalib(self) -> QubeCalib:
-        """Get the QubeCalib instance."""
-        return self._exp._measurement._backend.qubecalib
-
-    def dump_box(self, box_id: str) -> dict:
-        """Dump the information of a box."""
-        return self._exp._measurement.dump_box_config(box_id)
-
-    def configure_boxes(self, box_list: Optional[list[str]] = None) -> None:
-        """
-        Configure the boxes.
-
-        Parameters
-        ----------
-        box_list : Optional[list[str]], optional
-            List of boxes to configure. Defaults to None.
-
-        Examples
-        --------
-        >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.tools.configure_boxes()
-        """
-        self._exp._config.configure_box_settings(self._exp._chip_id, include=box_list)
-
-    def print_wiring_info(self):
-        """
-        Print the wiring information of the chip.
-
-        Examples
-        --------
-        >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.tools.print_wiring_info()
-        """
-
-        table = Table(
-            show_header=True,
-            header_style="bold",
-            title=f"WIRING INFO ({self._exp._chip_id})",
-        )
-        table.add_column("QUBIT", justify="center", width=7)
-        table.add_column("CTRL", justify="center", width=11)
-        table.add_column("READ.OUT", justify="center", width=11)
-        table.add_column("READ.IN", justify="center", width=11)
-
-        for qubit in self._exp.qubits:
-            ports = self._exp._config.get_ports_by_qubit(
-                chip_id=self._exp._chip_id,
-                qubit=qubit.label,
-            )
-            ctrl_port = ports[0]
-            read_out_port = ports[1]
-            read_in_port = ports[2]
-            if ctrl_port is None or read_out_port is None or read_in_port is None:
-                table.add_row(qubit.label, "-", "-", "-")
-                continue
-            ctrl_box = ctrl_port.box
-            read_out_box = read_out_port.box
-            read_in_box = read_in_port.box
-            ctrl = f"{ctrl_box.id}-{ctrl_port.number}"
-            read_out = f"{read_out_box.id}-{read_out_port.number}"
-            read_in = f"{read_in_box.id}-{read_in_port.number}"
-            table.add_row(qubit.label, ctrl, read_out, read_in)
-
-        console.print(table)
-
-    def print_box_info(self, box_id: str) -> None:
-        """
-        Print the information of a box.
-
-        Parameters
-        ----------
-        box_id : str
-            Identifier of the box.
-
-        Examples
-        --------
-        >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.tools.print_box_info("Q73A")
-        """
-        if box_id not in self._exp.available_boxes:
-            console.print(
-                f"Box {box_id} not in available boxes: {self._exp.available_boxes}"
-            )
-            return
-
-        table1 = Table(
-            show_header=True,
-            header_style="bold",
-            title=f"BOX INFO ({box_id})",
-        )
-        table2 = Table(
-            show_header=True,
-            header_style="bold",
-        )
-        table1.add_column("PORT", justify="right")
-        table1.add_column("TYPE", justify="right")
-        table1.add_column("SSB", justify="right")
-        table1.add_column("LO", justify="right")
-        table1.add_column("CNCO", justify="right")
-        table1.add_column("FSC", justify="right")
-        table2.add_column("PORT", justify="right")
-        table2.add_column("TYPE", justify="right")
-        table2.add_column("FNCO-0", justify="right")
-        table2.add_column("FNCO-1", justify="right")
-        table2.add_column("FNCO-2", justify="right")
-        table2.add_column("FNCO-3", justify="right")
-
-        port_map = self._exp._config.get_port_map(box_id)
-        ssb_map = {"U": "[cyan]USB[/cyan]", "L": "[green]LSB[/green]"}
-
-        ports = self.dump_box(box_id)["ports"]
-        for number, port in ports.items():
-            direction = port["direction"]
-            lo = int(port["lo_freq"])
-            cnco = int(port["cnco_freq"])
-            type = port_map[number].value
-            if direction == "in":
-                ssb = ""
-                fsc = ""
-                fncos = [str(int(ch["fnco_freq"])) for ch in port["runits"].values()]
-            elif direction == "out":
-                ssb = ssb_map[port["sideband"]]
-                fsc = port["fullscale_current"]
-                fncos = [str(int(ch["fnco_freq"])) for ch in port["channels"].values()]
-            table1.add_row(str(number), type, ssb, str(lo), str(cnco), str(fsc))
-            table2.add_row(str(number), type, *fncos)
-        console.print(table1)
-        console.print(table2)
