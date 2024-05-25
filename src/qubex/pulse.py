@@ -23,44 +23,44 @@ class Waveform(ABC):
     ----------
     scale : float, optional
         Scaling factor of the waveform.
-    time_offset : int, optional
-        Time offset of the waveform in ns.
-    phase_offset : float, optional
-        Phase offset of the waveform in rad.
+    detuning : float, optional
+        Detuning of the waveform in GHz.
+    phase_shift : float, optional
+        Phase shift of the waveform in rad.
     """
 
-    SAMPLING_PERIOD: Final[int] = 2  # ns
+    SAMPLING_PERIOD: Final[float] = 2.0  # ns
 
     def __init__(
         self,
         *,
         scale: float = 1.0,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        detuning: float = 0.0,
+        phase_shift: float = 0.0,
     ):
-        self.scale = scale
-        self.time_offset = time_offset
-        self.phase_offset = phase_offset
+        self._scale = scale
+        self._detuning = detuning
+        self._phase_shift = phase_shift
+
+    @property
+    @abstractmethod
+    def length(self) -> int:
+        """Returns the length of the waveform in samples."""
 
     @property
     @abstractmethod
     def values(self) -> npt.NDArray[np.complex128]:
-        """Returns the values of the waveform."""
+        """Returns the I/Q values of the waveform."""
 
     @property
-    def length(self) -> int:
-        """Returns the length of the waveform in samples."""
-        return len(self.values)
-
-    @property
-    def duration(self) -> int:
+    def duration(self) -> float:
         """Returns the duration of the waveform in ns."""
         return self.length * self.SAMPLING_PERIOD
 
     @property
-    def times(self) -> npt.NDArray[np.int64]:
+    def times(self) -> npt.NDArray[np.float64]:
         """Returns the time array of the waveform in ns."""
-        return np.arange(self.length) * self.SAMPLING_PERIOD + self.time_offset
+        return np.arange(self.length) * self.SAMPLING_PERIOD
 
     @property
     def real(self) -> npt.NDArray[np.float64]:
@@ -73,14 +73,14 @@ class Waveform(ABC):
         return np.imag(self.values)
 
     @property
-    def ampl(self) -> npt.NDArray[np.float64]:
+    def abs(self) -> npt.NDArray[np.float64]:
         """Returns the amplitude of the waveform."""
         return np.abs(self.values)
 
     @property
-    def phase(self) -> npt.NDArray[np.float64]:
+    def angle(self) -> npt.NDArray[np.float64]:
         """Returns the phase of the waveform."""
-        return np.angle(self.values)
+        return np.where(self.abs == 0, 0, np.angle(self.values))
 
     @abstractmethod
     def copy(self) -> "Waveform":
@@ -89,6 +89,10 @@ class Waveform(ABC):
     @abstractmethod
     def scaled(self, scale: float) -> "Waveform":
         """Returns a copy of the waveform scaled by the given factor."""
+
+    @abstractmethod
+    def detuned(self, detuning: float) -> "Waveform":
+        """Returns a copy of the waveform detuned by the given frequency."""
 
     @abstractmethod
     def shifted(self, phase: float) -> "Waveform":
@@ -100,14 +104,14 @@ class Waveform(ABC):
 
     def _number_of_samples(
         self,
-        duration: int,
+        duration: float,
     ) -> int:
         """
         Returns the number of samples in the waveform.
 
         Parameters
         ----------
-        duration : int
+        duration : float
             Duration of the waveform in ns.
         """
         dt = self.SAMPLING_PERIOD
@@ -117,18 +121,18 @@ class Waveform(ABC):
             raise ValueError(
                 f"Duration must be a multiple of the sampling period ({dt} ns)."
             )
-        return duration // dt
+        return int(duration // dt)
 
     def _sampling_points(
         self,
-        duration: int,
+        duration: float,
     ) -> npt.NDArray[np.float64]:
         """
         Returns the sampling points of the waveform.
 
         Parameters
         ----------
-        duration : int
+        duration : float
             Duration of the waveform in ns.
         """
         dt = self.SAMPLING_PERIOD
@@ -149,8 +153,7 @@ class Waveform(ABC):
         Parameters
         ----------
         polar : bool, optional
-            If True, plots the waveform in the polar domain, otherwise in the
-            time domain.
+            If True, the waveform is plotted with amplitude and phase.
         title : str, optional
             Title of the plot.
         """
@@ -167,7 +170,7 @@ class Waveform(ABC):
         ylabel="Amplitude (arb. units)",
     ):
         """
-        Plots the waveform in the time domain.
+        Plots the waveform with I/Q values.
 
         Parameters
         ----------
@@ -215,10 +218,11 @@ class Waveform(ABC):
         *,
         title="",
         xlabel="Time (ns)",
-        ylabel="Amplitude (arb. units)",
+        ylabel_1="Amplitude (arb. units)",
+        ylabel_2="Phase (rad)",
     ):
         """
-        Plots the waveform in the polar domain.
+        Plots the waveform with amplitude and phase.
 
         Parameters
         ----------
@@ -230,8 +234,8 @@ class Waveform(ABC):
             Label of the y-axis.
         """
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
-        ampl = np.append(self.ampl, self.ampl[-1])
-        phase = np.append(self.phase, self.phase[-1])
+        ampl = np.append(self.abs, self.abs[-1])
+        phase = np.append(self.angle, self.angle[-1])
 
         fig = make_subplots(
             rows=2,
@@ -262,8 +266,8 @@ class Waveform(ABC):
             col=1,
         )
         fig.update_xaxes(title_text=xlabel, row=2, col=1)
-        fig.update_yaxes(title_text=ylabel, row=1, col=1)
-        fig.update_yaxes(title_text="Phase (rad)", row=2, col=1)
+        fig.update_yaxes(title_text=ylabel_1, row=1, col=1)
+        fig.update_yaxes(title_text=ylabel_2, row=2, col=1)
         fig.update_layout(
             width=800,
             template="plotly_white",
@@ -278,13 +282,13 @@ class Pulse(Waveform):
     Parameters
     ----------
     values : ArrayLike
-        Values of the pulse.
+        I/Q values of the pulse.
     scale : float, optional
         Scaling factor of the pulse.
-    time_offset : int, optional
-        Time offset of the pulse in ns.
-    phase_offset : float, optional
-        Phase offset of the pulse in rad.
+    detuning : float, optional
+        Detuning of the pulse in GHz.
+    phase_shift : float, optional
+        Phase shift of the pulse in rad.
     """
 
     def __init__(
@@ -292,20 +296,29 @@ class Pulse(Waveform):
         values: npt.ArrayLike,
         *,
         scale: float = 1.0,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        detuning: float = 0.0,
+        phase_shift: float = 0.0,
     ):
         super().__init__(
             scale=scale,
-            time_offset=time_offset,
-            phase_offset=phase_offset,
+            detuning=detuning,
+            phase_shift=phase_shift,
         )
-        self._values = np.array(values)
+        self._values = np.array(values, dtype=np.complex128)
+
+    @property
+    def length(self) -> int:
+        """Returns the length of the pulse in samples."""
+        return len(self._values)
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
-        """Returns the values of the pulse."""
-        return self._values * self.scale * np.exp(1j * self.phase_offset)
+        """Returns the I/Q values of the pulse."""
+        return (
+            self._values
+            * self._scale
+            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase_shift))
+        )
 
     def copy(self) -> "Pulse":
         """Returns a copy of the pulse."""
@@ -314,13 +327,19 @@ class Pulse(Waveform):
     def scaled(self, scale: float) -> "Pulse":
         """Returns a copy of the pulse scaled by the given factor."""
         new_pulse = deepcopy(self)
-        new_pulse.scale *= scale
+        new_pulse._scale *= scale
+        return new_pulse
+
+    def detuned(self, detuning: float) -> "Pulse":
+        """Returns a copy of the pulse detuned by the given frequency."""
+        new_pulse = deepcopy(self)
+        new_pulse._detuning += detuning
         return new_pulse
 
     def shifted(self, phase: float) -> "Pulse":
         """Returns a copy of the pulse shifted by the given phase."""
         new_pulse = deepcopy(self)
-        new_pulse.phase_offset += phase
+        new_pulse._phase_shift += phase
         return new_pulse
 
     def repeated(self, n: int) -> "PulseSequence":
@@ -340,10 +359,10 @@ class PulseSequence(Waveform):
         Waveforms of the pulse sequence.
     scale : float, optional
         Scaling factor of the pulse sequence.
-    time_offset : int, optional
-        Time offset of the pulse sequence in ns.
-    phase_offset : float, optional
-        Phase offset of the pulse sequence in rad.
+    detuning : float, optional
+        Detuning of the pulse sequence in GHz.
+    phase_shift : float, optional
+        Phase shift of the pulse sequence in rad.
 
     Examples
     --------
@@ -359,17 +378,22 @@ class PulseSequence(Waveform):
         waveforms: Optional[Sequence[Waveform]] = None,
         *,
         scale: float = 1.0,
-        time_offset: int = 0,
-        phase_offset: float = 0.0,
+        detuning: float = 0.0,
+        phase_shift: float = 0.0,
     ):
         super().__init__(
             scale=scale,
-            time_offset=time_offset,
-            phase_offset=phase_offset,
+            detuning=detuning,
+            phase_shift=phase_shift,
         )
         if waveforms is None:
             waveforms = []
         self.waveforms = waveforms
+
+    @property
+    def length(self) -> int:
+        """Returns the total length of the pulse sequence in samples."""
+        return sum([w.length for w in self.waveforms])
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
@@ -377,7 +401,11 @@ class PulseSequence(Waveform):
         if len(self.waveforms) == 0:
             return np.array([])
         concat_values = np.concatenate([w.values for w in self.waveforms])
-        values = concat_values * self.scale * np.exp(1j * self.phase_offset)
+        values = (
+            concat_values
+            * self._scale
+            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase_shift))
+        )
         return values
 
     def copy(self) -> "PulseSequence":
@@ -387,13 +415,19 @@ class PulseSequence(Waveform):
     def scaled(self, scale: float) -> "PulseSequence":
         """Returns a copy of the pulse sequence scaled by the given factor."""
         new_sequence = deepcopy(self)
-        new_sequence.scale *= scale
+        new_sequence._scale *= scale
+        return new_sequence
+
+    def detuned(self, detuning: float) -> "PulseSequence":
+        """Returns a copy of the pulse sequence detuned by the given frequency."""
+        new_sequence = deepcopy(self)
+        new_sequence._detuning += detuning
         return new_sequence
 
     def shifted(self, phase: float) -> "PulseSequence":
         """Returns a copy of the pulse sequence shifted by the given phase."""
         new_sequence = deepcopy(self)
-        new_sequence.phase_offset += phase
+        new_sequence._phase_shift += phase
         return new_sequence
 
     def repeated(self, n: int) -> "PulseSequence":
@@ -415,7 +449,7 @@ class Blank(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         Duration of the blank pulse in ns.
 
     Examples
@@ -425,10 +459,10 @@ class Blank(Pulse):
 
     def __init__(
         self,
-        duration: int,
+        duration: float,
     ):
         N = self._number_of_samples(duration)
-        real = np.zeros(N, dtype=complex)
+        real = np.zeros(N, dtype=np.float64)
         imag = 0
         values = real + 1j * imag
         super().__init__(values)
@@ -440,7 +474,7 @@ class Rect(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         Duration of the rectangular pulse in ns.
     amplitude : float
         Amplitude of the rectangular pulse.
@@ -453,7 +487,7 @@ class Rect(Pulse):
     def __init__(
         self,
         *,
-        duration: int,
+        duration: float,
         amplitude: float,
     ):
         values = np.array([])
@@ -463,7 +497,7 @@ class Rect(Pulse):
 
     def _calc_values(
         self,
-        duration: int,
+        duration: float,
         amplitude: float,
     ) -> npt.NDArray[np.complex128]:
         N = self._number_of_samples(duration)
@@ -479,7 +513,7 @@ class FlatTop(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         Duration of the pulse in ns.
     amplitude : float
         Amplitude of the pulse.
@@ -489,7 +523,7 @@ class FlatTop(Pulse):
     Examples
     --------
     >>> pulse = FlatTop(
-    ...     width=100,
+    ...     duration=100,
     ...     amplitude=1.0,
     ...     tau=10,
     ... )
@@ -512,7 +546,7 @@ class FlatTop(Pulse):
     def __init__(
         self,
         *,
-        duration: int,
+        duration: float,
         amplitude: float,
         tau: int,
         **kwargs,
@@ -524,7 +558,7 @@ class FlatTop(Pulse):
 
     def _calc_values(
         self,
-        duration: int,
+        duration: float,
         amplitude: float,
         tau: int,
     ) -> npt.NDArray[np.complex128]:
@@ -551,7 +585,7 @@ class Gauss(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         Duration of the Gaussian pulse in ns.
     amplitude : float
         Amplitude of the Gaussian pulse.
@@ -566,7 +600,7 @@ class Gauss(Pulse):
     def __init__(
         self,
         *,
-        duration: int,
+        duration: float,
         amplitude: float,
         sigma: float,
         **kwargs,
@@ -578,7 +612,7 @@ class Gauss(Pulse):
 
     def _calc_values(
         self,
-        duration: int,
+        duration: float,
         amplitude: float,
         sigma: float,
     ) -> npt.NDArray[np.complex128]:
@@ -599,7 +633,7 @@ class Drag(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         Duration of the DRAG pulse in ns.
     amplitude : float
         Amplitude of the DRAG pulse.
@@ -618,7 +652,7 @@ class Drag(Pulse):
     def __init__(
         self,
         *,
-        duration: int,
+        duration: float,
         amplitude: float,
         beta: float,
         **kwargs,
@@ -630,7 +664,7 @@ class Drag(Pulse):
 
     def _calc_values(
         self,
-        duration: int,
+        duration: float,
         amplitude: float,
         beta: float,
     ) -> npt.NDArray[np.complex128]:
@@ -654,7 +688,7 @@ class DragGauss(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         Duration of the DRAG Gaussian pulse in ns.
     amplitude : float
         Amplitude of the DRAG Gaussian pulse.
@@ -676,7 +710,7 @@ class DragGauss(Pulse):
     def __init__(
         self,
         *,
-        duration: int,
+        duration: float,
         amplitude: float,
         sigma: float,
         beta: float,
@@ -689,7 +723,7 @@ class DragGauss(Pulse):
 
     def _calc_values(
         self,
-        duration: int,
+        duration: float,
         amplitude: float,
         sigma: float,
         beta: float,
@@ -711,7 +745,7 @@ class DragCos(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         Duration of the DRAG cosine pulse in ns.
     amplitude : float
         Amplitude of the DRAG cosine pulse.
@@ -730,7 +764,7 @@ class DragCos(Pulse):
     def __init__(
         self,
         *,
-        duration: int,
+        duration: float,
         amplitude: float,
         beta: float,
         **kwargs,
@@ -742,7 +776,7 @@ class DragCos(Pulse):
 
     def _calc_values(
         self,
-        duration: int,
+        duration: float,
         amplitude: float,
         beta: float,
     ) -> npt.NDArray[np.complex128]:
