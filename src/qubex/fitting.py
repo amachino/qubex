@@ -22,8 +22,8 @@ class RabiParam:
 
     Attributes
     ----------
-    qubit : str
-        Identifier of the qubit.
+    target : str
+        Identifier of the target.
     amplitude : float
         Amplitude of the Rabi oscillation.
     frequency : float
@@ -38,7 +38,7 @@ class RabiParam:
         Angle of the Rabi oscillation.
     """
 
-    qubit: str
+    target: str
     amplitude: float
     frequency: float
     phase: float
@@ -127,7 +127,7 @@ def func_exp_decay(
 
 def fit_rabi(
     *,
-    qubit: str,
+    target: str,
     times: npt.NDArray[np.int64],
     data: npt.NDArray[np.complex64],
     wave_count: float | None = None,
@@ -138,8 +138,8 @@ def fit_rabi(
 
     Parameters
     ----------
-    qubit : str
-        Identifier of the qubit.
+    target : str
+        Identifier of the target.
     times : npt.NDArray[np.int64]
         Array of time points for the Rabi oscillations.
     data : npt.NDArray[np.complex128]
@@ -164,7 +164,6 @@ def fit_rabi(
 
     # Estimate the initial parameters
     wave_count_est = estimate_wave_count(x, y) if wave_count is None else wave_count
-    print(f"Estimated wave count: {wave_count_est:.3g}")
     amplitude_est = (np.max(y) - np.min(y)) / 2
     omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
     phase_est = 0.0
@@ -231,7 +230,7 @@ def fit_rabi(
         ),
     )
     fig.update_layout(
-        title=f"Rabi oscillation ({frequency * 1e3:.3g} MHz)",
+        title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
         width=600,
@@ -241,7 +240,7 @@ def fit_rabi(
     fig.show()
 
     return RabiParam(
-        qubit=qubit,
+        target=target,
         amplitude=amplitude,
         frequency=frequency,
         phase=phase,

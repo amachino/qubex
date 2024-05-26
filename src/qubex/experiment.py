@@ -40,8 +40,8 @@ class SweepResult:
 
     Attributes
     ----------
-    qubit : str
-        Identifier of the qubit.
+    target : str
+        Target of the experiment.
     sweep_range : NDArray
         Sweep range of the experiment.
     data : NDArray
@@ -50,7 +50,7 @@ class SweepResult:
         Time when the experiment is conducted.
     """
 
-    qubit: str
+    target: str
     sweep_range: NDArray
     data: NDArray
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -76,7 +76,7 @@ class SweepResult:
             )
         )
         fig.update_layout(
-            title=f"Rabi oscillation of {self.qubit}",
+            title=f"Rabi oscillation of {self.target}",
             xaxis_title="Sweep value",
             yaxis_title="Normalized value",
             width=600,
@@ -203,8 +203,8 @@ class Experiment:
             Result of the experiment.
         """
         waveforms = {
-            qubit: np.array(waveform, dtype=np.complex128)
-            for qubit, waveform in sequence.items()
+            target: np.array(waveform, dtype=np.complex128)
+            for target, waveform in sequence.items()
         }
         result = self._measurement.measure(
             waveforms=waveforms,
@@ -213,11 +213,11 @@ class Experiment:
             control_window=control_window,
         )
         if plot:
-            for qubit, data in result.raw.items():
+            for target, data in result.raw.items():
                 viz.plot_waveform(
                     data,
                     sampling_period=8,  # TODO: set dynamically
-                    title=f"Raw signal of {qubit}",
+                    title=f"Raw signal of {target}",
                     xlabel="Capture time (ns)",
                     ylabel="Amplitude (arb. unit)",
                 )
@@ -252,8 +252,8 @@ class Experiment:
         """
         waveforms_list = [
             {
-                qubit: np.array(waveform, dtype=np.complex128)
-                for qubit, waveform in sequence.items()
+                target: np.array(waveform, dtype=np.complex128)
+                for target, waveform in sequence.items()
             }
             for sequence in sequences
         ]
@@ -294,16 +294,16 @@ class Experiment:
         dict[str, SweepResult]
             Result of the experiment.
         """
-        qubits = list(amplitudes.keys())
+        targets = list(amplitudes.keys())
         time_range = np.array(time_range, dtype=np.int64)
         control_window = MIN_DURATION * (max(time_range) // MIN_DURATION + 1)
         waveforms_list = [
             {
-                qubit: Rect(
+                target: Rect(
                     duration=T,
-                    amplitude=amplitudes[qubit],
+                    amplitude=amplitudes[target],
                 ).values
-                for qubit in qubits
+                for target in targets
             }
             for T in time_range
         ]
@@ -316,18 +316,18 @@ class Experiment:
 
         signals = defaultdict(list)
         for result in generator:
-            for qubit, data in result.kerneled.items():
-                signals[qubit].append(data)
+            for target, data in result.kerneled.items():
+                signals[target].append(data)
             if plot:
                 clear_output(wait=True)
                 viz.scatter_iq_data(signals)
         results = {
-            qubit: SweepResult(
-                qubit=qubit,
+            target: SweepResult(
+                target=target,
                 sweep_range=time_range,
                 data=np.array(values),
             )
-            for qubit, values in signals.items()
+            for target, values in signals.items()
         }
         return results
 
@@ -367,11 +367,11 @@ class Experiment:
         dict[str, SweepResult]
             Result of the experiment.
         """
-        qubits = list(sequence.keys())
+        targets = list(sequence.keys())
         sequences = [
             {
-                qubit: sequence[qubit](param).repeated(pulse_count).values
-                for qubit in qubits
+                target: sequence[target](param).repeated(pulse_count).values
+                for target in targets
             }
             for param in param_range
         ]
@@ -383,25 +383,25 @@ class Experiment:
         )
         signals = defaultdict(list)
         for result in generator:
-            for qubit, data in result.kerneled.items():
-                signals[qubit].append(data)
+            for target, data in result.kerneled.items():
+                signals[target].append(data)
             if plot:
                 viz.scatter_iq_data(signals)
         results = {
-            qubit: SweepResult(
-                qubit=qubit,
+            target: SweepResult(
+                target=target,
                 sweep_range=param_range,
                 data=np.array(values),
             )
-            for qubit, values in signals.items()
+            for target, values in signals.items()
         }
         return results
 
     def rabi_check(
         self,
-        qubits: list[str],
+        targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 201, 10),
+        time_range: NDArray = np.arange(0, 101, 4),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, SweepResult]:
@@ -410,8 +410,8 @@ class Experiment:
 
         Parameters
         ----------
-        qubits : list[str]
-            List of qubits to check the Rabi oscillation.
+        targets : list[str]
+            List of targets to check the Rabi oscillation.
         time_range : NDArray, optional
             Time range of the experiment. Defaults to np.arange(0, 201, 10).
         shots : int, optional
@@ -425,7 +425,7 @@ class Experiment:
             Result of the experiment.
         """
         ampl = self.params.control_amplitude
-        amplitudes = {qubit: ampl[qubit] for qubit in qubits}
+        amplitudes = {target: ampl[target] for target in targets}
         result = self.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -465,8 +465,8 @@ class Experiment:
             Result of the experiment.
         """
         repeated_sequence = {
-            qubit: lambda param, p=pulse: p.repeated(int(param))
-            for qubit, pulse in sequence.items()
+            target: lambda param, p=pulse: p.repeated(int(param))
+            for target, pulse in sequence.items()
         }
         result = self.sweep_parameter(
             param_range=np.arange(n + 1),
@@ -503,58 +503,96 @@ class Experiment:
 
     def fit_rabi(
         self,
-        sweep_result: SweepResult,
+        result: dict[str, SweepResult],
         wave_count: Optional[float] = None,
-    ) -> RabiParam:
+    ) -> dict[str, RabiParam]:
         """
         Fits the measured data to a Rabi oscillation.
 
         Parameters
         ----------
-        sweep_result : SweepResult
+        result : SweepResult
             Result of the Rabi experiment.
         wave_count : float, optional
             Number of waves in sweep_result. Defaults to None.
 
         Returns
         -------
-        RabiParam
+        dict[str, RabiParam]
             Parameters of the Rabi oscillation.
         """
-        rabi_param = fit.fit_rabi(
-            qubit=sweep_result.qubit,
-            times=sweep_result.sweep_range,
-            data=sweep_result.data,
-            wave_count=wave_count,
-            is_damped=False,
-        )
-        return rabi_param
+        rabi_params = {
+            target: fit.fit_rabi(
+                target=result[target].target,
+                times=result[target].sweep_range,
+                data=result[target].data,
+                wave_count=wave_count,
+            )
+            for target in result
+        }
+        return rabi_params
 
     def fit_damped_rabi(
         self,
-        sweep_result: SweepResult,
+        result: dict[str, SweepResult],
         wave_count: Optional[float] = None,
-    ) -> RabiParam:
+    ) -> dict[str, RabiParam]:
         """
         Fits the measured data to a damped Rabi oscillation.
 
         Parameters
         ----------
-        sweep_result : SweepResult
+        result : dict[str, SweepResult]
             Result of the Rabi experiment.
         wave_count : float, optional
             Number of waves in sweep_result. Defaults to None.
 
         Returns
         -------
-        RabiParam
+        dict[str, RabiParam]
             Parameters of the Rabi oscillation.
         """
-        rabi_param = fit.fit_rabi(
-            qubit=sweep_result.qubit,
-            times=sweep_result.sweep_range,
-            data=sweep_result.data,
-            wave_count=wave_count,
-            is_damped=True,
-        )
-        return rabi_param
+        rabi_params = {
+            target: fit.fit_rabi(
+                target=result[target].target,
+                times=result[target].sweep_range,
+                data=result[target].data,
+                wave_count=wave_count,
+                is_damped=True,
+            )
+            for target in result
+        }
+        return rabi_params
+
+    def calc_control_amplitudes(
+        self,
+        rabi_params: dict[str, RabiParam],
+        rabi_rate: float = 25e-3,
+    ) -> dict[str, float]:
+        """
+        Calculates the control amplitudes for the Rabi rate.
+
+        Parameters
+        ----------
+        rabi_params : dict[str, RabiParam]
+            Parameters of the Rabi oscillation.
+        rabi_rate : float, optional
+            Rabi rate of the experiment. Defaults to 25 MHz.
+
+        Returns
+        -------
+        dict[str, float]
+            Control amplitudes for the Rabi rate.
+        """
+        current_amplitudes = self.params.control_amplitude
+        amplitudes = {
+            target: current_amplitudes[target]
+            * rabi_rate
+            / rabi_params[target].frequency
+            for target in rabi_params
+        }
+
+        for target, amplitude in amplitudes.items():
+            print(f"{target}: {amplitude:.6f}")
+
+        return amplitudes
