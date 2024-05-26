@@ -16,6 +16,7 @@ from . import fitting as fit
 from . import visualization as viz
 from .config import Config, Params, Qubit, Resonator, Target
 from .experiment_tool import ExperimentTool
+from .fitting import RabiParam
 from .hardware import Box
 from .measurement import (
     DEFAULT_CONFIG_DIR,
@@ -30,38 +31,6 @@ from .pulse import Rect, Waveform
 console = Console()
 
 MIN_DURATION = 128
-
-
-@dataclass
-class RabiParams:
-    """
-    Data class representing the parameters of Rabi oscillation.
-
-    Attributes
-    ----------
-    qubit : str
-        Identifier of the qubit.
-    phase_shift : float
-        Phase shift of the I/Q signal.
-    fluctuation : float
-        Fluctuation of the I/Q signal.
-    A : float
-        Amplitude of the Rabi oscillation.
-    omega : float
-        Angular frequency of the Rabi oscillation.
-    phi : float
-        Phase offset of the Rabi oscillation.
-    C : float
-        Vertical offset of the Rabi oscillation.
-    """
-
-    qubit: str
-    phase_shift: float
-    fluctuation: float
-    A: float
-    omega: float
-    phi: float
-    C: float
 
 
 @dataclass
@@ -86,15 +55,15 @@ class SweepResult:
     data: NDArray
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def rotated(self, rabi_params: RabiParams) -> NDArray:
-        return self.data * np.exp(-1j * rabi_params.phase_shift)
+    def rotated(self, param: RabiParam) -> NDArray:
+        return self.data * np.exp(-1j * param.argument)
 
-    def normalized(self, rabi_params: RabiParams) -> NDArray:
-        values = self.data * np.exp(-1j * rabi_params.phase_shift)
-        values_normalized = -(values.imag - rabi_params.C) / rabi_params.A
+    def normalized(self, param: RabiParam) -> NDArray:
+        values = self.data * np.exp(-1j * param.argument)
+        values_normalized = (values.real - param.offset) / param.amplitude
         return values_normalized
 
-    def plot(self, rabi_params: RabiParams):
+    def plot(self, rabi_params: RabiParam):
         values = self.normalized(rabi_params)
         fig = go.Figure()
         fig.add_trace(
@@ -112,7 +81,7 @@ class SweepResult:
             title=f"Rabi oscillation of {self.qubit}",
             xaxis_title="Sweep index",
             yaxis_title="Normalized value",
-            width=800,
+            width=600,
         )
         fig.show()
 
@@ -512,18 +481,17 @@ class Experiment:
 
     def normalize(
         self,
-        *,
-        iq_value: complex,
-        rabi_params: RabiParams,
+        value: complex,
+        param: RabiParam,
     ) -> float:
         """
-        Normalizes the measured IQ value.
+        Normalizes the measured I/Q value.
 
         Parameters
         ----------
-        iq_value : complex
-            Measured IQ value.
-        rabi_params : RabiParams
+        value : complex
+            Measured I/Q value.
+        param : RabiParam
             Parameters of the Rabi oscillation.
 
         Returns
@@ -531,88 +499,60 @@ class Experiment:
         float
             Normalized value.
         """
-        iq_value = iq_value * np.exp(-1j * rabi_params.phase_shift)
-        value = iq_value.imag
-        value = -(value - rabi_params.C) / rabi_params.A
-        return value
+        value_rotated = value * np.exp(-1j * param.argument)
+        value_normalized = (value_rotated.real - param.offset) / param.amplitude
+        return value_normalized
 
     def fit_rabi(
         self,
-        data: SweepResult,
-        wave_count: float,
-    ) -> RabiParams:
+        sweep_result: SweepResult,
+        wave_count: float = 2.5,
+    ) -> RabiParam:
         """
         Fits the measured data to a Rabi oscillation.
 
         Parameters
         ----------
-        data : SweepResult
-            Measured data.
+        sweep_result : SweepResult
+            Result of the Rabi experiment.
         wave_count : float, optional
-            Number of waves to fit.
+            Number of waves in sweep_result. Defaults to 2.5.
 
         Returns
         -------
-        RabiParams
+        RabiParam
             Parameters of the Rabi oscillation.
         """
-        times = data.sweep_range
-        signals = data.data
-
-        phase_shift, fluctuation, popt = fit.fit_rabi(
-            times=times,
-            signals=signals,
+        rabi_param = fit.fit_rabi(
+            qubit=sweep_result.qubit,
+            times=sweep_result.sweep_range,
+            data=sweep_result.data,
             wave_count=wave_count,
         )
-
-        rabi_params = RabiParams(
-            qubit=data.qubit,
-            phase_shift=phase_shift,
-            fluctuation=fluctuation,
-            A=popt[0],
-            omega=popt[1],
-            phi=popt[2],
-            C=popt[3],
-        )
-        return rabi_params
+        return rabi_param
 
     def fit_damped_rabi(
         self,
-        *,
-        data: SweepResult,
+        sweep_result: SweepResult,
         wave_count: float,
-    ) -> RabiParams:
+    ) -> RabiParam:
         """
         Fits the measured data to a damped Rabi oscillation.
 
         Parameters
         ----------
-        data : SweepResult
-            Measured data.
+        sweep_result : SweepResult
         wave_count : float, optional
-            Number of waves to fit.
 
         Returns
         -------
-        RabiParams
+        RabiParam
             Parameters of the Rabi oscillation.
         """
-        times = data.sweep_range
-        signals = data.data
-
-        phase_shift, fluctuation, popt = fit.fit_damped_rabi(
-            times=times,
-            signals=signals,
+        rabi_param = fit.fit_damped_rabi(
+            qubit=sweep_result.qubit,
+            times=sweep_result.sweep_range,
+            data=sweep_result.data,
             wave_count=wave_count,
         )
-
-        rabi_params = RabiParams(
-            qubit=data.qubit,
-            phase_shift=phase_shift,
-            fluctuation=fluctuation,
-            A=popt[0],
-            omega=popt[2],
-            phi=popt[3],
-            C=popt[4],
-        )
-        return rabi_params
+        return rabi_param

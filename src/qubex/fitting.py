@@ -1,4 +1,4 @@
-# pylint: disable=unbalanced-tuple-unpacking
+from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,6 +6,43 @@ import numpy.typing as npt
 import plotly.graph_objects as go
 from scipy.optimize import curve_fit, minimize  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
+
+
+@dataclass
+class RabiParam:
+    """
+    Data class representing the parameters of Rabi oscillation.
+
+    ```
+    iq = rabi * exp(i * argument) + noise
+    rabi = amplitude * cos(2π * frequency * time + phase) + offset
+    ```
+
+    Attributes
+    ----------
+    qubit : str
+        Identifier of the qubit.
+    argument : float
+        Phase shift of the Rabi oscillation.
+    noise : float
+        Fluctuation of the Rabi oscillation.
+    amplitude : float
+        Amplitude of the Rabi oscillation.
+    frequency : float
+        Frequency of the Rabi oscillation.
+    phase : float
+        Initial phase of the Rabi oscillation.
+    offset : float
+        Vertical offset of the Rabi oscillation.
+    """
+
+    qubit: str
+    argument: float
+    noise: float
+    amplitude: float
+    frequency: float
+    phase: float
+    offset: float
 
 
 def func_cos(
@@ -36,11 +73,11 @@ def func_cos(
 
 def func_damped_cos(
     t: npt.NDArray[np.float64],
-    tau: float,
     A: float,
     omega: float,
     phi: float,
     C: float,
+    tau: float,
 ) -> npt.NDArray[np.float64]:
     """
     Calculate a damped cosine function with given parameters.
@@ -49,8 +86,6 @@ def func_damped_cos(
     ----------
     t : npt.NDArray[np.float64]
         Time points for the function evaluation.
-    tau : float
-        Time constant of the exponential damping.
     A : float
         Amplitude of the cosine function.
     omega : float
@@ -59,50 +94,75 @@ def func_damped_cos(
         Phase offset of the cosine function.
     C : float
         Vertical offset of the cosine function.
+    tau : float
+        Time constant of the exponential damping.
     """
     return A * np.exp(-t / tau) * np.cos(omega * t + phi) + C
 
 
+def func_exp_decay(
+    t: npt.NDArray[np.float64],
+    A: float,
+    tau: float,
+    C: float,
+) -> npt.NDArray[np.float64]:
+    """
+    Calculate an exponential decay function with given parameters.
+
+    Parameters
+    ----------
+    t : npt.NDArray[np.float64]
+        Time points for the function evaluation.
+    A : float
+        Amplitude of the exponential decay.
+    tau : float
+        Time constant of the exponential decay.
+    C : float
+        Vertical offset of the exponential decay.
+    """
+    return A * np.exp(-t / tau) + C
+
+
 def fit_rabi(
-    *,
+    qubit: str,
     times: npt.NDArray[np.int64],
-    signals: npt.NDArray[np.complex64],
+    data: npt.NDArray[np.complex64],
     wave_count: float = 2.5,
-) -> tuple[float, float, npt.NDArray[np.float64]]:
+) -> RabiParam:
     """
     Fit Rabi oscillation data to a cosine function and plot the results.
 
     Parameters
     ----------
+    qubit : str
+        Identifier of the qubit.
     times : npt.NDArray[np.int64]
         Array of time points for the Rabi oscillations.
-    signals : npt.NDArray[np.complex128]
+    data : npt.NDArray[np.complex128]
         Complex signal data corresponding to the Rabi oscillations.
     wave_count : float, optional
         Initial estimate for the number of wave cycles over the time span.
 
     Returns
     -------
-    tuple[float, float, npt.NDArray[np.float64]]
-        Phase shift, fluctuation of data, and optimized parameters of fit.
+    RabiParam
+        Data class containing the parameters of the Rabi oscillation.
     """
-    # Rotate the data to the vertical (Q) axis
-    phase_shift = get_angle(signals=signals)
-    points = rotate(signals=signals, angle=phase_shift)
-    fluctuation = float(np.std(points.real))
-    print(f"Phase shift: {phase_shift:.3f} rad, {phase_shift * 180 / np.pi:.3f} deg")
-    print(f"Fluctuation: {fluctuation:.3f}")
+    # Rotate the data to the horizontal (I) axis
+    argument = get_angle(data)
+    rotated = rotate(data, -argument)
+    noise = float(np.std(rotated.imag))
 
     x = times
-    y = points.imag
+    y = rotated.real
 
     # Estimate the initial parameters
-    omega0 = 2 * np.pi / (x[-1] - x[0])
-    A_est = (np.max(y) - np.min(y)) / 2
-    omega_est = wave_count * omega0
-    phi_est = np.pi
-    C_est = (np.max(y) + np.min(y)) / 2
-    p0 = (A_est, omega_est, phi_est, C_est)
+    amplitude_est = (np.max(y) - np.min(y)) / 2
+    omega_est = 2 * np.pi * wave_count / np.abs(x[-1] - x[0])
+    phase_est = np.pi
+    offset_est = (np.max(y) + np.min(y)) / 2
+
+    p0 = (amplitude_est, omega_est, phase_est, offset_est)
 
     bounds = (
         (0, 0, 0, -np.inf),
@@ -111,13 +171,18 @@ def fit_rabi(
 
     popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
 
-    rabi_freq = popt[1] / (2 * np.pi)
+    amplitude = popt[0]
+    omega = popt[1]
+    phase = popt[2]
+    offset = popt[3]
+    frequency = omega / (2 * np.pi)
 
     print(
-        f"Fitted function: {popt[0]:.3f} * cos({popt[1]:.3f} * t + {popt[2]:.3f}) + {popt[3]:.3f}"
+        f"Fitted function: {amplitude:.3g} * cos({omega:.3g} * t + {phase:.3g}) + {offset:.3g} ± {noise:.3g}"
     )
-    print(f"Rabi frequency: {rabi_freq * 1e3:.3f} MHz")
-    print(f"Rabi period: {1 / rabi_freq:.3f} ns")
+    print(f"Phase shift: {argument:.3g} rad, {argument * 180 / np.pi:.3g} deg")
+    print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
+    print(f"Rabi period: {1 / frequency:.3g} ns")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_cos(x_fine, *popt)
@@ -139,12 +204,12 @@ def fit_rabi(
             y=y,
             mode="markers",
             name="Data",
-            marker_color="#636EFA",
-            marker_size=10,
-        )
+            error_y=dict(type="constant", value=noise),
+            marker=dict(color="#636EFA", size=5),
+        ),
     )
     fig.update_layout(
-        title=f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)",
+        title=f"Rabi oscillation ({frequency * 1e3:.3g} MHz)",
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
         width=600,
@@ -153,15 +218,23 @@ def fit_rabi(
     )
     fig.show()
 
-    return phase_shift, fluctuation, popt
+    return RabiParam(
+        qubit=qubit,
+        argument=argument,
+        noise=noise,
+        amplitude=amplitude,
+        frequency=frequency,
+        phase=phase,
+        offset=offset,
+    )
 
 
 def fit_damped_rabi(
-    *,
+    qubit: str,
     times: npt.NDArray[np.int64],
-    signals: npt.NDArray[np.complex64],
+    data: npt.NDArray[np.complex64],
     wave_count: float = 2.5,
-) -> tuple[float, float, npt.NDArray[np.float32]]:
+) -> RabiParam:
     """
     Fit damped Rabi oscillation data to a damped cosine function and plot.
 
@@ -169,64 +242,58 @@ def fit_damped_rabi(
     ----------
     times : npt.NDArray[np.int64]
         Array of time points for the Rabi oscillations.
-    signals : npt.NDArray[np.complex128]
+    data : npt.NDArray[np.complex128]
         Complex signal data corresponding to the Rabi oscillations.
     wave_count : float, optional
         Estimate for the number of wave cycles over the time span.
 
     Returns
     -------
-    tuple[float, float, npt.NDArray[np.float64]]
-        Phase shift, fluctuation of data, and optimized fit parameters.
+    RabiParam
+        Data class containing the parameters of the Rabi oscillation.
     """
-    # Rotate the data to the vertical (Q) axis
-    phase_shift = get_angle(signals=signals)
-    points = rotate(signals=signals, angle=phase_shift)
-    fluctuation = float(np.std(points.real))
-    print(f"Phase shift: {phase_shift:.3f} rad, {phase_shift * 180 / np.pi:.3f} deg")
-    print(f"Fluctuation: {fluctuation:.3f}")
+    # Rotate the data to the horizontal (I) axis
+    argument = get_angle(data)
+    rotated = rotate(data, -argument)
+    noise = float(np.std(rotated.imag))
 
     x = times
-    y = points.imag
+    y = rotated.real
 
     # Estimate the initial parameters
-    omega0 = 2 * np.pi / (x[-1] - x[0])
-    A_est = (np.max(y) - np.min(y)) / 2
+    amplitude_est = (np.max(y) - np.min(y)) / 2
+    omega_est = 2 * np.pi * wave_count / np.abs(x[-1] - x[0])
+    phase_est = np.pi
+    offset_est = (np.max(y) + np.min(y)) / 2
     tau_est = 10_000
-    omega_est = wave_count * omega0
-    phi_est = np.pi
-    C_est = (np.max(y) + np.min(y)) / 2
-    p0 = (A_est, tau_est, omega_est, phi_est, C_est)
+
+    p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
 
     bounds = (
-        (0, 0, 0, 0, -np.inf),
-        (np.inf, np.inf, np.inf, np.pi, np.inf),
+        (0, 0, 0, -np.inf, 0),
+        (np.inf, np.inf, np.pi, np.inf, np.inf),
     )
 
     popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
 
-    rabi_freq = popt[2] / (2 * np.pi)
+    amplitude = popt[0]
+    omega = popt[1]
+    phase = popt[2]
+    offset = popt[3]
+    tau = popt[4]
+    frequency = omega / (2 * np.pi)
 
     print(
-        f"Fitted function: {popt[0]:.3f} * exp(-t/{popt[1]:.3f}) * cos({popt[2]:.3f} * t + {popt[3]:.3f}) + {popt[4]:.3f}"
+        f"Fitted function: {amplitude:.3g} * exp(-t/{tau:.3g}) * cos({omega:.3g} * t + {phase:.3g}) + {offset:.3g} ± {noise:.3g}"
     )
-    print(f"Rabi frequency: {rabi_freq * 1e3:.3f} MHz")
-    print(f"Rabi period: {1 / rabi_freq:.3f} ns")
+    print(f"Phase shift: {argument:.3g} rad, {argument * 180 / np.pi:.3g} deg")
+    print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
+    print(f"Rabi period: {1 / frequency:.3g} ns")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
 
     fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x,
-            y=y,
-            mode="markers",
-            name="Data",
-            marker_color="black",
-            marker_size=10,
-        )
-    )
     fig.add_trace(
         go.Scatter(
             x=x_fine,
@@ -237,16 +304,35 @@ def fit_damped_rabi(
             marker_line_width=2,
         )
     )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+            error_y=dict(type="constant", value=noise),
+            marker=dict(color="#636EFA", size=5),
+        )
+    )
     fig.update_layout(
-        title=f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)",
+        title=f"Damped Rabi oscillation ({frequency * 1e3:.3g} MHz)",
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
-        width=800,
+        width=600,
+        height=300,
         showlegend=True,
     )
     fig.show()
 
-    return phase_shift, fluctuation, popt
+    return RabiParam(
+        qubit=qubit,
+        argument=argument,
+        noise=noise,
+        amplitude=amplitude,
+        frequency=frequency,
+        phase=phase,
+        offset=offset,
+    )
 
 
 def fit_ramsey(
@@ -292,7 +378,7 @@ def fit_ramsey(
 
     popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
     print(
-        f"Fitted function: {popt[0]:.3f} * exp(-t/{popt[1]:.3f}) * cos({popt[2]:.3f} * t + {popt[3]:.3f}) + {popt[4]:.3f}"
+        f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[1]:.3g}) * cos({popt[2]:.3g} * t + {popt[3]:.3g}) + {popt[4]:.3g}"
     )
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
@@ -328,29 +414,6 @@ def fit_ramsey(
     fig.show()
 
     return popt, pcov
-
-
-def func_exp_decay(
-    t: npt.NDArray[np.float64],
-    A: float,
-    tau: float,
-    C: float,
-) -> npt.NDArray[np.float64]:
-    """
-    Calculate an exponential decay function with given parameters.
-
-    Parameters
-    ----------
-    t : npt.NDArray[np.float64]
-        Time points for the function evaluation.
-    A : float
-        Amplitude of the exponential decay.
-    tau : float
-        Time constant of the exponential decay.
-    C : float
-        Vertical offset of the exponential decay.
-    """
-    return A * np.exp(-t / tau) + C
 
 
 def fit_exp_decay(
@@ -392,8 +455,8 @@ def fit_exp_decay(
         )
 
     popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
-    print(f"Fitted function: {popt[0]:.3f} * exp(-t/{popt[1]:.3f}) + {popt[2]:.3f}")
-    print(f"Decay time: {popt[1] / 1e3:.3f} us")
+    print(f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[1]:.3g}) + {popt[2]:.3g}")
+    print(f"Decay time: {popt[1] / 1e3:.3g} us")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
@@ -420,7 +483,7 @@ def fit_exp_decay(
         )
     )
     fig.update_layout(
-        title=f"Decay time: {popt[1] / 1e3:.3f} us",
+        title=f"Decay time: {popt[1] / 1e3:.3g} us",
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
         showlegend=True,
@@ -466,7 +529,7 @@ def fit_cos_and_find_minimum(
 
     popt, _ = curve_fit(cos_func, x, y, p0=p0)
     print(
-        f"Fitted function: {popt[0]:.3f} * cos({popt[1]:.3f} * t + {popt[2]:.3f}) + {popt[3]:.3f}"
+        f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
     )
 
     result = minimize(
@@ -523,113 +586,6 @@ def fit_cos_and_find_minimum(
     print(f"Minimum: ({min_x}, {min_y})")
 
     return min_x, min_y
-
-
-def fit_and_rotate(
-    data: npt.ArrayLike,
-) -> npt.NDArray[np.complex128]:
-    """
-    Rotate complex data points based on the angle determined by linear fit.
-
-    Parameters
-    ----------
-    data : npt.ArrayLike
-        Array of complex data points to be rotated.
-
-    Returns
-    -------
-    npt.NDArray[np.complex128]
-        Rotated complex data points.
-    """
-    points = np.array(data)
-    angle = get_angle(points)
-    rotated_points = rotate(points, angle)
-    return rotated_points
-
-
-def rotate(
-    signals: npt.ArrayLike,
-    angle: float,
-) -> npt.NDArray[np.complex128]:
-    """
-    Rotate complex data points by a specified angle.
-
-    Parameters
-    ----------
-    signals : npt.ArrayLike
-        Array of complex data points to be rotated.
-    angle : float
-        Angle in radians by which to rotate the data points.
-
-    Returns
-    -------
-    npt.NDArray[np.complex128]
-        Rotated complex data points.
-    """
-    points = np.array(signals)
-    rotated_points = points * np.exp(-1j * angle)
-    return rotated_points
-
-
-def get_angle(
-    signals: npt.ArrayLike,
-) -> float:
-    """
-    Determine the angle of a linear fit to the complex data points.
-
-    Parameters
-    ----------
-    signals : npt.ArrayLike
-        Array of complex data points to be rotated.
-
-    Returns
-    -------
-    float
-        Angle in radians of the linear fit to the data points.
-    """
-    iq_complex = np.array(signals)
-    if len(iq_complex) < 2:
-        return 0.0
-    iq_vector = np.column_stack([iq_complex.real, iq_complex.imag])
-    pca = PCA(n_components=1).fit(iq_vector)
-    first_component = pca.components_[0]
-    gradient = first_component[1] / first_component[0]
-    mean = np.mean(iq_vector, axis=0)
-    intercept = mean[1] - gradient * mean[0]
-    theta = np.arctan(gradient)
-    angle = theta
-    if intercept > 0:
-        angle += np.pi / 2
-    else:
-        angle -= np.pi / 2
-    return angle
-
-
-def principal_components(
-    iq_complex: npt.ArrayLike,
-    pca=None,
-) -> tuple[npt.NDArray[np.float64], PCA]:
-    """
-    Perform PCA on complex IQ data and return the principal components.
-
-    Parameters
-    ----------
-    iq_complex : npt.ArrayLike
-        Array of complex IQ data.
-    pca : PCA, optional
-        Predefined PCA object, if available.
-
-    Returns
-    -------
-    tuple[npt.NDArray[np.float64], PCA]
-        Principal component values and the PCA object used.
-    """
-    iq_complex = np.array(iq_complex)
-    iq_vector = np.column_stack([np.real(iq_complex), np.imag(iq_complex)])
-    if pca is None:
-        pca = PCA(n_components=1)
-    results = pca.fit_transform(iq_vector).squeeze()
-    return results, pca
 
 
 def fit_chevron(
@@ -715,3 +671,54 @@ def fit_chevron(
     plt.ylabel("Rabi frequency (MHz)")
     plt.legend()
     plt.show()
+
+
+def rotate(
+    data: npt.ArrayLike,
+    angle: float,
+) -> npt.NDArray[np.complex128]:
+    """
+    Rotate complex data points by a specified angle.
+
+    Parameters
+    ----------
+    data : npt.ArrayLike
+        Array of complex data points to be rotated.
+    angle : float
+        Angle in radians by which to rotate the data points.
+
+    Returns
+    -------
+    npt.NDArray[np.complex128]
+        Rotated complex data points.
+    """
+    points = np.array(data)
+    rotated_points = points * np.exp(1j * angle)
+    return rotated_points
+
+
+def get_angle(
+    data: npt.ArrayLike,
+) -> float:
+    """
+    Determine the angle of a linear fit to the complex data points.
+
+    Parameters
+    ----------
+    data : npt.ArrayLike
+        Array of complex data points to be rotated.
+
+    Returns
+    -------
+    float
+        Angle in radians of the linear fit to the data points.
+    """
+    data_complex = np.array(data, dtype=np.complex128)
+    if len(data_complex) < 2:
+        return 0.0
+    data_vector = np.column_stack([data_complex.real, data_complex.imag])
+    pca = PCA(n_components=1).fit(data_vector)
+    first_component = pca.components_[0]
+    gradient = first_component[1] / first_component[0]
+    angle = np.arctan(gradient)
+    return angle + np.pi
