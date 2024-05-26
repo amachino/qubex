@@ -14,18 +14,13 @@ class RabiParam:
     Data class representing the parameters of Rabi oscillation.
 
     ```
-    iq = rabi * exp(i * argument) + noise
-    rabi = amplitude * cos(2π * frequency * time + phase) + offset
+    rabi = amplitude * cos(2π * frequency * time + phase) + offset) + noise
     ```
 
     Attributes
     ----------
     qubit : str
         Identifier of the qubit.
-    argument : float
-        Phase shift of the Rabi oscillation.
-    noise : float
-        Fluctuation of the Rabi oscillation.
     amplitude : float
         Amplitude of the Rabi oscillation.
     frequency : float
@@ -34,15 +29,19 @@ class RabiParam:
         Initial phase of the Rabi oscillation.
     offset : float
         Vertical offset of the Rabi oscillation.
+    noise : float
+        Fluctuation of the Rabi oscillation.
+    angle : float
+        Angle of the Rabi oscillation.
     """
 
     qubit: str
-    argument: float
-    noise: float
     amplitude: float
     frequency: float
     phase: float
     offset: float
+    noise: float
+    angle: float
 
 
 def func_cos(
@@ -148,13 +147,13 @@ def fit_rabi(
     RabiParam
         Data class containing the parameters of the Rabi oscillation.
     """
-    # Rotate the data to the horizontal (I) axis
-    argument = get_angle(data)
-    rotated = rotate(data, -argument)
-    noise = float(np.std(rotated.imag))
+    # Rotate the data to the vertical (Q) axis
+    angle = get_angle(data)
+    rotated = rotate(data, -angle)
+    noise = float(np.std(rotated.real))
 
     x = times
-    y = rotated.real
+    y = rotated.imag
 
     # Estimate the initial parameters
     amplitude_est = (np.max(y) - np.min(y)) / 2
@@ -180,7 +179,7 @@ def fit_rabi(
     print(
         f"Fitted function: {amplitude:.3g} * cos({omega:.3g} * t + {phase:.3g}) + {offset:.3g} ± {noise:.3g}"
     )
-    print(f"Phase shift: {argument:.3g} rad, {argument * 180 / np.pi:.3g} deg")
+    print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
     print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
     print(f"Rabi period: {1 / frequency:.3g} ns")
 
@@ -220,12 +219,12 @@ def fit_rabi(
 
     return RabiParam(
         qubit=qubit,
-        argument=argument,
-        noise=noise,
         amplitude=amplitude,
         frequency=frequency,
         phase=phase,
         offset=offset,
+        noise=noise,
+        angle=angle,
     )
 
 
@@ -252,13 +251,13 @@ def fit_damped_rabi(
     RabiParam
         Data class containing the parameters of the Rabi oscillation.
     """
-    # Rotate the data to the horizontal (I) axis
-    argument = get_angle(data)
-    rotated = rotate(data, -argument)
-    noise = float(np.std(rotated.imag))
+    # Rotate the data to the vertical (Q) axis
+    angle = get_angle(data)
+    rotated = rotate(data, -angle)
+    noise = float(np.std(rotated.real))
 
     x = times
-    y = rotated.real
+    y = rotated.imag
 
     # Estimate the initial parameters
     amplitude_est = (np.max(y) - np.min(y)) / 2
@@ -286,7 +285,7 @@ def fit_damped_rabi(
     print(
         f"Fitted function: {amplitude:.3g} * exp(-t/{tau:.3g}) * cos({omega:.3g} * t + {phase:.3g}) + {offset:.3g} ± {noise:.3g}"
     )
-    print(f"Phase shift: {argument:.3g} rad, {argument * 180 / np.pi:.3g} deg")
+    print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
     print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
     print(f"Rabi period: {1 / frequency:.3g} ns")
 
@@ -326,12 +325,12 @@ def fit_damped_rabi(
 
     return RabiParam(
         qubit=qubit,
-        argument=argument,
-        noise=noise,
         amplitude=amplitude,
         frequency=frequency,
         phase=phase,
         offset=offset,
+        noise=noise,
+        angle=angle,
     )
 
 
@@ -720,5 +719,11 @@ def get_angle(
     pca = PCA(n_components=1).fit(data_vector)
     first_component = pca.components_[0]
     gradient = first_component[1] / first_component[0]
+    mean = np.mean(data_vector, axis=0)
+    intercept = mean[1] - gradient * mean[0]
     angle = np.arctan(gradient)
-    return angle + np.pi
+    if intercept > 0:
+        angle += np.pi / 2
+    else:
+        angle -= np.pi / 2
+    return angle

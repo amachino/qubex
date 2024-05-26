@@ -56,11 +56,11 @@ class SweepResult:
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def rotated(self, param: RabiParam) -> NDArray:
-        return self.data * np.exp(-1j * param.argument)
+        return self.data * np.exp(-1j * param.angle)
 
     def normalized(self, param: RabiParam) -> NDArray:
-        values = self.data * np.exp(-1j * param.argument)
-        values_normalized = (values.real - param.offset) / param.amplitude
+        values = self.data * np.exp(-1j * param.angle)
+        values_normalized = (values.imag - param.offset) / param.amplitude
         return values_normalized
 
     def plot(self, rabi_params: RabiParam):
@@ -71,10 +71,8 @@ class SweepResult:
                 x=self.sweep_range,
                 y=values,
                 mode="lines+markers",
-                name="Rabi oscillation",
-                marker_color="#636EFA",
-                marker_size=10,
-                line_color="black",
+                marker=dict(symbol="circle", size=8, color="#636EFA"),
+                line=dict(width=1, color="grey", dash="dash"),
             )
         )
         fig.update_layout(
@@ -499,8 +497,8 @@ class Experiment:
         float
             Normalized value.
         """
-        value_rotated = value * np.exp(-1j * param.argument)
-        value_normalized = (value_rotated.real - param.offset) / param.amplitude
+        value_rotated = value * np.exp(-1j * param.angle)
+        value_normalized = (value_rotated.imag - param.offset) / param.amplitude
         return value_normalized
 
     def fit_rabi(
