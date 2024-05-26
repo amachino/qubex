@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
+from scipy.fft import fft, fftfreq
 from scipy.optimize import curve_fit, minimize  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
 
@@ -123,10 +126,12 @@ def func_exp_decay(
 
 
 def fit_rabi(
+    *,
     qubit: str,
     times: npt.NDArray[np.int64],
     data: npt.NDArray[np.complex64],
-    wave_count: float = 2.5,
+    wave_count: float | None = None,
+    is_damped: bool = False,
 ) -> RabiParam:
     """
     Fit Rabi oscillation data to a cosine function and plot the results.
@@ -141,6 +146,8 @@ def fit_rabi(
         Complex signal data corresponding to the Rabi oscillations.
     wave_count : float, optional
         Initial estimate for the number of wave cycles over the time span.
+    is_damped : bool, optional
+        Whether to fit the data to a damped cosine function.
 
     Returns
     -------
@@ -156,19 +163,36 @@ def fit_rabi(
     y = rotated.imag
 
     # Estimate the initial parameters
+    wave_count_est = estimate_wave_count(x, y) if wave_count is None else wave_count
+    print(f"Estimated wave count: {wave_count_est:.3g}")
     amplitude_est = (np.max(y) - np.min(y)) / 2
-    omega_est = 2 * np.pi * wave_count / np.abs(x[-1] - x[0])
-    phase_est = np.pi
+    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
+    phase_est = 0.0
     offset_est = (np.max(y) + np.min(y)) / 2
 
-    p0 = (amplitude_est, omega_est, phase_est, offset_est)
-
-    bounds = (
-        (0, 0, 0, -np.inf),
-        (np.inf, np.inf, np.pi, np.inf),
-    )
-
-    popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+    p0: tuple
+    bounds: tuple
+    if is_damped:
+        tau_est = 10_000
+        p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
+        bounds = (
+            (0, 0, 0, -np.inf, 0),
+            (np.inf, np.inf, np.pi, np.inf, np.inf),
+        )
+        popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+        print(
+            f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[4]:.3g}) * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
+        )
+    else:
+        p0 = (amplitude_est, omega_est, phase_est, offset_est)
+        bounds = (
+            (0, 0, 0, -np.inf),
+            (np.inf, np.inf, np.pi, np.inf),
+        )
+        popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+        print(
+            f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
+        )
 
     amplitude = popt[0]
     omega = popt[1]
@@ -176,15 +200,14 @@ def fit_rabi(
     offset = popt[3]
     frequency = omega / (2 * np.pi)
 
-    print(
-        f"Fitted function: {amplitude:.3g} * cos({omega:.3g} * t + {phase:.3g}) + {offset:.3g} ± {noise:.3g}"
-    )
     print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
     print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
     print(f"Rabi period: {1 / frequency:.3g} ns")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = func_cos(x_fine, *popt)
+    y_fine = (
+        func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
+    )
 
     fig = go.Figure()
     fig.add_trace(
@@ -209,112 +232,6 @@ def fit_rabi(
     )
     fig.update_layout(
         title=f"Rabi oscillation ({frequency * 1e3:.3g} MHz)",
-        xaxis_title="Time (ns)",
-        yaxis_title="Amplitude (arb. units)",
-        width=600,
-        height=300,
-        showlegend=True,
-    )
-    fig.show()
-
-    return RabiParam(
-        qubit=qubit,
-        amplitude=amplitude,
-        frequency=frequency,
-        phase=phase,
-        offset=offset,
-        noise=noise,
-        angle=angle,
-    )
-
-
-def fit_damped_rabi(
-    qubit: str,
-    times: npt.NDArray[np.int64],
-    data: npt.NDArray[np.complex64],
-    wave_count: float = 2.5,
-) -> RabiParam:
-    """
-    Fit damped Rabi oscillation data to a damped cosine function and plot.
-
-    Parameters
-    ----------
-    times : npt.NDArray[np.int64]
-        Array of time points for the Rabi oscillations.
-    data : npt.NDArray[np.complex128]
-        Complex signal data corresponding to the Rabi oscillations.
-    wave_count : float, optional
-        Estimate for the number of wave cycles over the time span.
-
-    Returns
-    -------
-    RabiParam
-        Data class containing the parameters of the Rabi oscillation.
-    """
-    # Rotate the data to the vertical (Q) axis
-    angle = get_angle(data)
-    rotated = rotate(data, -angle)
-    noise = float(np.std(rotated.real))
-
-    x = times
-    y = rotated.imag
-
-    # Estimate the initial parameters
-    amplitude_est = (np.max(y) - np.min(y)) / 2
-    omega_est = 2 * np.pi * wave_count / np.abs(x[-1] - x[0])
-    phase_est = np.pi
-    offset_est = (np.max(y) + np.min(y)) / 2
-    tau_est = 10_000
-
-    p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
-
-    bounds = (
-        (0, 0, 0, -np.inf, 0),
-        (np.inf, np.inf, np.pi, np.inf, np.inf),
-    )
-
-    popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
-
-    amplitude = popt[0]
-    omega = popt[1]
-    phase = popt[2]
-    offset = popt[3]
-    tau = popt[4]
-    frequency = omega / (2 * np.pi)
-
-    print(
-        f"Fitted function: {amplitude:.3g} * exp(-t/{tau:.3g}) * cos({omega:.3g} * t + {phase:.3g}) + {offset:.3g} ± {noise:.3g}"
-    )
-    print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
-    print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
-    print(f"Rabi period: {1 / frequency:.3g} ns")
-
-    x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = func_damped_cos(x_fine, *popt)
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
-            marker_color="black",
-            marker_line_width=2,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x,
-            y=y,
-            mode="markers",
-            name="Data",
-            error_y=dict(type="constant", value=noise),
-            marker=dict(color="#636EFA", size=5),
-        )
-    )
-    fig.update_layout(
-        title=f"Damped Rabi oscillation ({frequency * 1e3:.3g} MHz)",
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
         width=600,
@@ -727,3 +644,14 @@ def get_angle(
     else:
         angle -= np.pi / 2
     return angle
+
+
+def estimate_wave_count(times, data) -> float:
+    N = len(times)
+    dt = times[1] - times[0]
+    F = np.array(fft(data))
+    f = np.array(fftfreq(N, dt)[1 : N // 2])
+    i = np.argmax(np.abs(F[1 : N // 2]))
+    dominant_freq = np.abs(f[i])
+    wave_count_est = dominant_freq * (times[-1] - times[0])
+    return wave_count_est

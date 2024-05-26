@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Callable, Final
+from typing import Callable, Final, Optional
 
 import numpy as np
 import plotly.graph_objects as go
@@ -77,7 +77,7 @@ class SweepResult:
         )
         fig.update_layout(
             title=f"Rabi oscillation of {self.qubit}",
-            xaxis_title="Sweep index",
+            xaxis_title="Sweep value",
             yaxis_title="Normalized value",
             width=600,
         )
@@ -504,7 +504,7 @@ class Experiment:
     def fit_rabi(
         self,
         sweep_result: SweepResult,
-        wave_count: float = 2.5,
+        wave_count: Optional[float] = None,
     ) -> RabiParam:
         """
         Fits the measured data to a Rabi oscillation.
@@ -514,7 +514,7 @@ class Experiment:
         sweep_result : SweepResult
             Result of the Rabi experiment.
         wave_count : float, optional
-            Number of waves in sweep_result. Defaults to 2.5.
+            Number of waves in sweep_result. Defaults to None.
 
         Returns
         -------
@@ -526,13 +526,14 @@ class Experiment:
             times=sweep_result.sweep_range,
             data=sweep_result.data,
             wave_count=wave_count,
+            is_damped=False,
         )
         return rabi_param
 
     def fit_damped_rabi(
         self,
         sweep_result: SweepResult,
-        wave_count: float,
+        wave_count: Optional[float] = None,
     ) -> RabiParam:
         """
         Fits the measured data to a damped Rabi oscillation.
@@ -540,17 +541,20 @@ class Experiment:
         Parameters
         ----------
         sweep_result : SweepResult
+            Result of the Rabi experiment.
         wave_count : float, optional
+            Number of waves in sweep_result. Defaults to None.
 
         Returns
         -------
         RabiParam
             Parameters of the Rabi oscillation.
         """
-        rabi_param = fit.fit_damped_rabi(
+        rabi_param = fit.fit_rabi(
             qubit=sweep_result.qubit,
             times=sweep_result.sweep_range,
             data=sweep_result.data,
             wave_count=wave_count,
+            is_damped=True,
         )
         return rabi_param
