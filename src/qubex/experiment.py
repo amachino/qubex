@@ -7,11 +7,13 @@ from typing import Callable, Final
 
 import numpy as np
 import plotly.graph_objects as go
+from IPython.display import clear_output
 from numpy.typing import NDArray
 from rich.console import Console
 from rich.table import Table
 
-from .analysis import fit_damped_rabi, fit_rabi
+from . import fitting as fit
+from . import visualization as viz
 from .config import Config, Params, Qubit, Resonator, Target
 from .experiment_tool import ExperimentTool
 from .hardware import Box
@@ -20,11 +22,10 @@ from .measurement import (
     DEFAULT_CONTROL_WINDOW,
     DEFAULT_INTERVAL,
     DEFAULT_SHOTS,
-    MeasResult,
     Measurement,
+    MeasureResult,
 )
 from .pulse import Rect, Waveform
-from .visualization import scatter_iq_data
 
 console = Console()
 
@@ -211,7 +212,8 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
-    ) -> MeasResult:
+        plot: bool = False,
+    ) -> MeasureResult:
         """
         Measures the signals using the given sequence.
 
@@ -225,10 +227,12 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         control_window : int, optional
             Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
 
         Returns
         -------
-        MeasResult
+        MeasureResult
             Result of the experiment.
         """
         waveforms = {
@@ -241,6 +245,15 @@ class Experiment:
             interval=interval,
             control_window=control_window,
         )
+        if plot:
+            for qubit, data in result.raw.items():
+                viz.plot_waveform(
+                    data,
+                    sampling_period=8,  # TODO: set dynamically
+                    title=f"Raw signal of {qubit}",
+                    xlabel="Capture time (ns)",
+                    ylabel="Amplitude (arb. unit)",
+                )
         return result
 
     def _measure_batch(
@@ -267,7 +280,7 @@ class Experiment:
 
         Yields
         ------
-        MeasResult
+        MeasureResult
             Result of the experiment.
         """
         waveforms_list = [
@@ -287,7 +300,7 @@ class Experiment:
     def rabi_experiment(
         self,
         *,
-        time_range: list[int] | NDArray[np.int64],
+        time_range: NDArray,
         amplitudes: dict[str, float],
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -298,7 +311,7 @@ class Experiment:
 
         Parameters
         ----------
-        time_range : list[int] | NDArray[np.int64]
+        time_range : NDArray
             Time range of the experiment.
         amplitudes : dict[str, float]
             Amplitudes of the control pulses.
@@ -339,7 +352,8 @@ class Experiment:
             for qubit, data in result.kerneled.items():
                 signals[qubit].append(data)
             if plot:
-                scatter_iq_data(signals)
+                clear_output(wait=True)
+                viz.scatter_iq_data(signals)
         results = {
             qubit: SweepResult(
                 qubit=qubit,
@@ -405,7 +419,7 @@ class Experiment:
             for qubit, data in result.kerneled.items():
                 signals[qubit].append(data)
             if plot:
-                scatter_iq_data(signals)
+                viz.scatter_iq_data(signals)
         results = {
             qubit: SweepResult(
                 qubit=qubit,
@@ -420,7 +434,7 @@ class Experiment:
         self,
         qubits: list[str],
         *,
-        time_range=np.arange(0, 201, 10),
+        time_range: NDArray = np.arange(0, 201, 10),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, SweepResult]:
@@ -524,7 +538,6 @@ class Experiment:
 
     def fit_rabi(
         self,
-        *,
         data: SweepResult,
         wave_count: float,
     ) -> RabiParams:
@@ -546,7 +559,7 @@ class Experiment:
         times = data.sweep_range
         signals = data.data
 
-        phase_shift, fluctuation, popt = fit_rabi(
+        phase_shift, fluctuation, popt = fit.fit_rabi(
             times=times,
             signals=signals,
             wave_count=wave_count,
@@ -587,7 +600,7 @@ class Experiment:
         times = data.sweep_range
         signals = data.data
 
-        phase_shift, fluctuation, popt = fit_damped_rabi(
+        phase_shift, fluctuation, popt = fit.fit_damped_rabi(
             times=times,
             signals=signals,
             wave_count=wave_count,

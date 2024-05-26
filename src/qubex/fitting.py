@@ -1,10 +1,5 @@
-"""
-Data analysis functions for quantum experiments.
-"""
-
 # pylint: disable=unbalanced-tuple-unpacking
 
-# Don't include custom modules in analysis.py
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
@@ -152,7 +147,8 @@ def fit_rabi(
         title=f"Rabi oscillation ({rabi_freq * 1e3:.3f} MHz)",
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
-        width=800,
+        width=600,
+        height=300,
         showlegend=True,
     )
     fig.show()

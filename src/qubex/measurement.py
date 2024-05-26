@@ -24,12 +24,12 @@ DEFAULT_CONFIG_DIR = "./config"
 DEFAULT_SHOTS = 3000
 DEFAULT_INTERVAL = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW = 1024  # ns
-DEFAULT_CAPTURE_WINDOW = 3 * 1024  # ns
-DEFAULT_READOUT_DURATION = 1024  # ns
+DEFAULT_CAPTURE_WINDOW = 1024  # ns
+DEFAULT_READOUT_DURATION = 512  # ns
 
 
 @dataclass
-class MeasResult:
+class MeasureResult:
     raw: dict[str, npt.NDArray]
     kerneled: dict[str, complex]
     classified: dict[str, str]
@@ -62,6 +62,7 @@ class Measurement:
         config.configure_system_settings(chip_id)
         config_path = config.get_system_settings_path(chip_id)
         self._backend: Final = QubeBackend(config_path)
+        self._params: Final = config.get_params(chip_id)
 
     @property
     def targets(self) -> dict[str, float]:
@@ -97,7 +98,7 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-    ) -> MeasResult:
+    ) -> MeasureResult:
         """
         Measure with the given control waveforms.
 
@@ -200,11 +201,7 @@ class Measurement:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> Sequence:
-        readout_pulse = RaisedCosFlatTop(
-            duration=readout_duration,
-            amplitude=0.1,
-            rise_time=64,
-        )
+        readout_amplitude = self._params.readout_amplitude
         capture = Capture(duration=capture_window)
         with Sequence() as sequence:
             with Flushright():
@@ -214,19 +211,23 @@ class Measurement:
             with Flushleft():
                 for target in waveforms.keys():
                     read_target = f"R{target}"
-                    readout_pulse.target(read_target)
+                    RaisedCosFlatTop(
+                        duration=readout_duration,
+                        amplitude=readout_amplitude[target],
+                        rise_time=32,
+                    ).target(read_target)
                     capture.target(read_target)
         return sequence
 
     def _create_measure_result(
         self,
         backend_result: QubeBackendResult,
-    ) -> MeasResult:
+    ) -> MeasureResult:
         label_slice = slice(1, None)  # Remove the prefix "R"
         capture_index = 0
 
         raw_data = {
-            target[label_slice]: iqs[capture_index]
+            target[label_slice]: iqs[capture_index].squeeze()
             for target, iqs in backend_result.data.items()
         }
         kerneled_data = {
@@ -234,7 +235,7 @@ class Measurement:
             for target, iqs in backend_result.data.items()
         }
 
-        result = MeasResult(
+        result = MeasureResult(
             raw=raw_data,
             kerneled=kerneled_data,
             classified={},

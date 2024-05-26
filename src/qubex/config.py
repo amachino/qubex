@@ -860,12 +860,14 @@ class Config:
 
         # define channels
         ports = self.get_port_details(chip_id)
+        DEFAULT_CAPTURE_DELAY = 7  # TODO: get from the configuration
         for port in ports:
             if isinstance(port, ReadOutPort):
                 qc.define_channel(
                     channel_name=f"{port.name}0",
                     port_name=port.name,
                     channel_number=0,
+                    ndelay_or_nwait=DEFAULT_CAPTURE_DELAY,
                 )
             elif isinstance(port, ReadInPort):
                 for runit_index in range(4):
@@ -873,6 +875,7 @@ class Config:
                         channel_name=f"{port.name}{runit_index}",
                         port_name=port.name,
                         channel_number=runit_index,
+                        ndelay_or_nwait=DEFAULT_CAPTURE_DELAY,
                     )
             elif isinstance(port, CtrlPort):
                 for channel_index in range(port.n_channel):

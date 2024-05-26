@@ -148,7 +148,7 @@ class Waveform(ABC):
         self,
         *,
         polar=False,
-        title="",
+        title=None,
     ):
         """
         Plots the waveform.
@@ -160,6 +160,8 @@ class Waveform(ABC):
         title : str, optional
             Title of the plot.
         """
+        if title is None:
+            title = f"Waveform ({self.duration} ns)"
         if polar:
             self.plot_polar(title=title)
         else:
@@ -168,7 +170,7 @@ class Waveform(ABC):
     def plot_xy(
         self,
         *,
-        title="",
+        title=None,
         xlabel="Time (ns)",
         ylabel="Amplitude (arb. units)",
     ):
@@ -211,7 +213,8 @@ class Waveform(ABC):
             title=title,
             xaxis_title=xlabel,
             yaxis_title=ylabel,
-            width=800,
+            width=600,
+            height=300,
             template="plotly_white",
         )
         fig.show()
@@ -272,7 +275,7 @@ class Waveform(ABC):
         fig.update_yaxes(title_text=ylabel_1, row=1, col=1)
         fig.update_yaxes(title_text=ylabel_2, row=2, col=1)
         fig.update_layout(
-            width=800,
+            width=600,
             template="plotly_white",
         )
         fig.show()
