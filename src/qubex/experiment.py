@@ -264,6 +264,89 @@ class Experiment:
             control_window=control_window,
         )
 
+    def check_noise(
+        self,
+        targets: list[str],
+        duration: int = 2048,
+    ):
+        """
+        Checks the noise level of the system.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the noise.
+        duration : int, optional
+            Duration of the noise measurement. Defaults to 2048.
+        """
+        result = self._measurement.measure_noise(targets, duration)
+        for target, data in result.raw.items():
+            viz.plot_waveform(
+                np.array(data, dtype=np.complex64) * 2 ** (-32),
+                title=f"Readout noise of {target}",
+                sampling_period=8,
+            )
+
+    def check_waveform(
+        self,
+        targets: list[str],
+    ):
+        """
+        Checks the readout waveforms of the given targets.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the waveforms.
+        """
+        result = self.measure(sequence={target: np.array([]) for target in targets})
+        for target, data in result.raw.items():
+            viz.plot_waveform(
+                data,
+                title=f"Readout waveform of {target}",
+                sampling_period=8,
+            )
+
+    def check_rabi(
+        self,
+        targets: list[str],
+        *,
+        time_range: NDArray = np.arange(0, 101, 4),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> dict[str, RabiParam]:
+        """
+        Conducts a Rabi experiment with the default amplitude.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the Rabi oscillation.
+        time_range : NDArray, optional
+            Time range of the experiment. Defaults to np.arange(0, 201, 10).
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        dict[str, RabiParam]
+            Parameters of the Rabi oscillation.
+        """
+        ampl = self.params.control_amplitude
+        amplitudes = {target: ampl[target] for target in targets}
+        result = self.rabi_experiment(
+            amplitudes=amplitudes,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+        )
+
+        rabi_params = self.fit_rabi(result)
+
+        return rabi_params
+
     def rabi_experiment(
         self,
         *,
@@ -396,43 +479,6 @@ class Experiment:
             for target, values in signals.items()
         }
         return results
-
-    def rabi_check(
-        self,
-        targets: list[str],
-        *,
-        time_range: NDArray = np.arange(0, 101, 4),
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-    ) -> dict[str, SweepResult]:
-        """
-        Conducts a Rabi experiment with the default amplitude.
-
-        Parameters
-        ----------
-        targets : list[str]
-            List of targets to check the Rabi oscillation.
-        time_range : NDArray, optional
-            Time range of the experiment. Defaults to np.arange(0, 201, 10).
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-
-        Returns
-        -------
-        dict[str, SweepResult]
-            Result of the experiment.
-        """
-        ampl = self.params.control_amplitude
-        amplitudes = {target: ampl[target] for target in targets}
-        result = self.rabi_experiment(
-            amplitudes=amplitudes,
-            time_range=time_range,
-            shots=shots,
-            interval=interval,
-        )
-        return result
 
     def repeat_sequence(
         self,
@@ -592,7 +638,10 @@ class Experiment:
             for target in rabi_params
         }
 
+        print(f"control_amplitude for {rabi_rate * 1e3} MHz\n")
         for target, amplitude in amplitudes.items():
             print(f"{target}: {amplitude:.6f}")
+
+        print(f"\n{1/rabi_rate/4} ns rect pulse will be π/2 pulse")
 
         return amplitudes

@@ -44,7 +44,7 @@ class Measurement:
         config_dir: str = DEFAULT_CONFIG_DIR,
     ):
         """
-        Initialize the MeasurementService.
+        Initialize the Measurement.
 
         Parameters
         ----------
@@ -89,6 +89,42 @@ class Measurement:
         self._backend.linkup_boxes(box_list)
         self._backend.sync_clocks(box_list)
 
+    def measure_noise(
+        self,
+        targets: list[str],
+        duration: int,
+    ) -> MeasureResult:
+        """
+        Measure the readout noise.
+
+        Parameters
+        ----------
+        targets : list[str]
+            The list of target names.
+        duration : int, optional
+            The duration in ns.
+
+        Returns
+        -------
+        MeasureResult
+            The measurement results.
+
+        Examples
+        --------
+        >>> result = meas.measure_noise()
+        """
+        capture = Capture(duration=duration)
+        with Sequence() as sequence:
+            with Flushleft():
+                for target in targets:
+                    capture.target(f"R{target}")
+        backend_result = self._backend.execute_sequence(
+            sequence=sequence,
+            repeats=1,
+            interval=DEFAULT_INTERVAL,
+        )
+        return self._create_measure_result(backend_result)
+
     def measure(
         self,
         waveforms: dict[str, npt.NDArray[np.complex128]],
@@ -120,7 +156,7 @@ class Measurement:
 
         Returns
         -------
-        MeasurementResult
+        MeasureResult
             The measurement results.
 
         Examples
@@ -174,7 +210,7 @@ class Measurement:
 
         Yields
         ------
-        MeasurementResult
+        MeasureResult
             The measurement results.
         """
         self._backend.clear_command_queue()

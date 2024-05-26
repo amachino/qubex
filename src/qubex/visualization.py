@@ -16,7 +16,7 @@ def plot_waveform(
             x=np.arange(len(data)) * sampling_period,
             y=np.real(data),
             mode="lines",
-            name="Real",
+            name="I",
         )
     )
     fig.add_trace(
@@ -24,7 +24,7 @@ def plot_waveform(
             x=np.arange(len(data)) * sampling_period,
             y=np.imag(data),
             mode="lines",
-            name="Imag",
+            name="Q",
         )
     )
     fig.update_layout(
