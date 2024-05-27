@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from IPython.display import clear_output
 from numpy.typing import ArrayLike, NDArray
 from rich.console import Console
+from rich.prompt import Confirm
 from rich.table import Table
 
 from . import fitting as fit
@@ -32,6 +33,31 @@ from .typing import TargetMap
 console = Console()
 
 MIN_DURATION = 128
+
+
+@dataclass
+class ExperimentResult:
+    """
+    Data class representing the result of an experiment.
+
+    Attributes
+    ----------
+    data: dict[str, SweepResult]
+        Result of the experiment.
+    rabi_params: dict[str, RabiParam]
+        Parameters of the Rabi oscillation.
+    """
+
+    data: dict[str, SweepResult]
+    rabi_params: dict[str, RabiParam] | None = None
+
+    def plot(self):
+        rabi_params = self.rabi_params
+        for target in self.data:
+            if rabi_params is None:
+                self.data[target].plot()
+            else:
+                self.data[target].plot(rabi_params[target])
 
 
 @dataclass
@@ -152,10 +178,10 @@ class Experiment:
         self._rabi_params: Optional[dict[str, RabiParam]] = None
 
     @property
-    def rabi_params(self) -> dict[str, RabiParam]:
+    def rabi_params(self) -> dict[str, RabiParam] | None:
         """Get the Rabi parameters."""
         if self._rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
+            console.print("Rabi parameters are not stored.")
         return self._rabi_params
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
@@ -167,6 +193,10 @@ class Experiment:
         rabi_params : dict[str, RabiParam]
             Parameters of the Rabi oscillation.
         """
+        if self._rabi_params is not None:
+            overwrite = Confirm.ask("Overwrite the existing Rabi parameters?")
+            if not overwrite:
+                return
         self._rabi_params = rabi_params
         console.print("Rabi parameters are stored.")
 
@@ -378,7 +408,7 @@ class Experiment:
         time_range: NDArray = np.arange(0, 101, 4),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> dict[str, SweepResult]:
+    ) -> ExperimentResult:
         """
         Conducts a Rabi experiment with the default amplitude.
 
@@ -395,7 +425,7 @@ class Experiment:
 
         Returns
         -------
-        dict[str, SweepResult]
+        ExperimentResult
             Result of the experiment.
         """
         ampl = self.params.control_amplitude
@@ -405,7 +435,6 @@ class Experiment:
             time_range=time_range,
             shots=shots,
             interval=interval,
-            plot=True,
             store_params=True,
         )
         return result
@@ -419,7 +448,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
-    ) -> dict[str, SweepResult]:
+    ) -> ExperimentResult:
         """
         Conducts a Rabi experiment.
 
@@ -440,7 +469,7 @@ class Experiment:
 
         Returns
         -------
-        dict[str, SweepResult]
+        ExperimentResult
             Result of the experiment.
         """
         targets = list(amplitudes.keys())
@@ -470,7 +499,7 @@ class Experiment:
             if plot:
                 clear_output(wait=True)
                 viz.scatter_iq_data(signals)
-        result = {
+        data = {
             target: SweepResult(
                 target=target,
                 sweep_range=time_range,
@@ -478,12 +507,10 @@ class Experiment:
             )
             for target, values in signals.items()
         }
-        rabi_params = self.fit_rabi(result)
+        rabi_params = self.fit_rabi(data)
         if store_params:
             self.store_rabi_params(rabi_params)
-        if plot:
-            for target in result:
-                result[target].plot(self.rabi_params[target])
+        result = ExperimentResult(data=data, rabi_params=rabi_params)
         return result
 
     def sweep_parameter(
@@ -496,7 +523,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
         plot: bool = True,
-    ) -> dict[str, SweepResult]:
+    ) -> ExperimentResult:
         """
         Sweeps a parameter and measures the signals.
 
@@ -519,7 +546,7 @@ class Experiment:
 
         Returns
         -------
-        dict[str, SweepResult]
+        ExperimentResult
             Result of the experiment.
         """
         targets = list(sequence.keys())
@@ -543,7 +570,7 @@ class Experiment:
             if plot:
                 clear_output(wait=True)
                 viz.scatter_iq_data(signals)
-        results = {
+        data = {
             target: SweepResult(
                 target=target,
                 sweep_range=param_range,
@@ -551,10 +578,8 @@ class Experiment:
             )
             for target, values in signals.items()
         }
-        if plot:
-            for target in results:
-                results[target].plot(self.rabi_params[target])
-        return results
+        result = ExperimentResult(data=data, rabi_params=self.rabi_params)
+        return result
 
     def repeat_sequence(
         self,
@@ -564,7 +589,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> dict[str, SweepResult]:
+    ) -> ExperimentResult:
         """
         Repeats the pulse sequence n times.
 
@@ -583,7 +608,7 @@ class Experiment:
 
         Returns
         -------
-        dict[str, SweepResult]
+        ExperimentResult
             Result of the experiment.
         """
         repeated_sequence = {
@@ -717,6 +742,10 @@ class Experiment:
         """
         current_amplitudes = self.params.control_amplitude
         rabi_params = rabi_params or self.rabi_params
+
+        if rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
         amplitudes = {
             target: current_amplitudes[target]
             * rabi_rate

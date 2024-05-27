@@ -157,6 +157,8 @@ def fit_rabi(
     RabiParam
         Data class containing the parameters of the Rabi oscillation.
     """
+    print(f"Target: {target}")
+
     # Rotate the data to the vertical (Q) axis
     angle = get_angle(data)
     rotated = rotate(data, -angle)
@@ -172,29 +174,33 @@ def fit_rabi(
     phase_est = 0.0
     offset_est = (np.max(y) + np.min(y)) / 2
 
-    p0: tuple
-    bounds: tuple
-    if is_damped:
-        tau_est = 10_000
-        p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
-        bounds = (
-            (0, 0, 0, -np.inf, 0),
-            (np.inf, np.inf, np.pi, np.inf, np.inf),
-        )
-        popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
-        print(
-            f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[4]:.3g}) * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
-        )
-    else:
-        p0 = (amplitude_est, omega_est, phase_est, offset_est)
-        bounds = (
-            (0, 0, 0, -np.inf),
-            (np.inf, np.inf, np.pi, np.inf),
-        )
-        popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
-        print(
-            f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
-        )
+    try:
+        p0: tuple
+        bounds: tuple
+        if is_damped:
+            tau_est = 10_000
+            p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
+            bounds = (
+                (0, 0, 0, -np.inf, 0),
+                (np.inf, np.inf, np.pi, np.inf, np.inf),
+            )
+            popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+            print(
+                f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[4]:.3g}) * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
+            )
+        else:
+            p0 = (amplitude_est, omega_est, phase_est, offset_est)
+            bounds = (
+                (0, 0, 0, -np.inf),
+                (np.inf, np.inf, np.pi, np.inf),
+            )
+            popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+            print(
+                f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
+            )
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return RabiParam(target, 0.0, 0.0, 0.0, 0.0, noise, angle)
 
     amplitude = popt[0]
     omega = popt[1]
