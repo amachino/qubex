@@ -73,9 +73,9 @@ class Measurement:
             for target, settings in target_settings.items()
         }
 
-    def connect(self, box_list: list[str]):
+    def linkup(self, box_list: list[str]):
         """
-        Connect to the boxes.
+        Link up the boxes and synchronize the clocks.
 
         Parameters
         ----------
@@ -84,7 +84,7 @@ class Measurement:
 
         Examples
         --------
-        >>> meas.connect(["Q73A", "U10B"])
+        >>> meas.linkup(["Q73A", "U10B"])
         """
         self._backend.linkup_boxes(box_list)
         self._backend.sync_clocks(box_list)

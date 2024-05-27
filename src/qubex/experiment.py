@@ -248,10 +248,10 @@ class Experiment:
         boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
         return {box.id: box for box in boxes}
 
-    def connect(self) -> None:
-        """Connect to the backend."""
+    def linkup(self) -> None:
+        """Links up the measurement system."""
         box_list = list(self.boxes.keys())
-        self._measurement.connect(box_list)
+        self._measurement.linkup(box_list)
 
     def measure(
         self,
@@ -760,3 +760,48 @@ class Experiment:
         print(f"\n{1/rabi_rate/4} ns rect pulse → π/2 pulse")
 
         return amplitudes
+
+    def calibrate_control_amplitudes(
+        self,
+        amplitude_range: NDArray,
+        time_range: NDArray = np.arange(0, 101, 20),
+    ) -> ExperimentResult:
+        """
+        Coarsely calibrate the control amplitude by measuring Rabi oscillations using square pulses with variable amplitude or length.
+        Repeat for different square-pulse settings to produce a coarse map between control amplitude and Rabi rate.
+
+        Parameters
+        ----------
+        amplitude_range : NDArray
+            Range of the control amplitude to sweep.
+
+        Returns
+        -------
+        ExperimentResult
+            Result of the experiment.
+        """
+
+        rabi_rates = defaultdict(list)
+
+        for amplitude in amplitude_range:
+            result = self.rabi_experiment(
+                time_range=time_range,
+                amplitudes={target: amplitude for target in self.qubits},
+            )
+            rabi_params = result.rabi_params
+            if rabi_params is None:
+                continue
+            for target, param in rabi_params.items():
+                rabi_rate = 1 / param.frequency
+                rabi_rates[target].append(rabi_rate)
+
+        data = {
+            target: SweepResult(
+                target=target,
+                sweep_range=amplitude_range,
+                data=np.array(values, dtype=np.float64),
+            )
+            for target, values in rabi_rates.items()
+        }
+        result = ExperimentResult(data=data)
+        return result
