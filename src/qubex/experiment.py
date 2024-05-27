@@ -64,25 +64,55 @@ class SweepResult:
         values_normalized = (values.imag - param.offset) / param.amplitude
         return values_normalized
 
-    def plot(self, rabi_params: RabiParam):
-        values = self.normalized(rabi_params)
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=self.sweep_range,
-                y=values,
-                mode="lines+markers",
-                marker=dict(symbol="circle", size=8, color="#636EFA"),
-                line=dict(width=1, color="grey", dash="dash"),
+    def plot(self, param: Optional[RabiParam] = None):
+        if param is None:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    x=self.sweep_range,
+                    y=self.data.real,
+                    name="I",
+                    mode="lines+markers",
+                    marker=dict(symbol="circle", size=8, color="#636EFA"),
+                    line=dict(width=1, color="grey", dash="dash"),
+                )
             )
-        )
-        fig.update_layout(
-            title=f"Rabi oscillation of {self.target}",
-            xaxis_title="Sweep value",
-            yaxis_title="Normalized value",
-            width=600,
-        )
-        fig.show()
+            fig.add_trace(
+                go.Scatter(
+                    x=self.sweep_range,
+                    y=self.data.imag,
+                    name="Q",
+                    mode="lines+markers",
+                    marker=dict(symbol="circle", size=8, color="#EF553B"),
+                    line=dict(width=1, color="grey", dash="dash"),
+                )
+            )
+            fig.update_layout(
+                title=f"Rabi oscillation of {self.target}",
+                xaxis_title="Sweep value",
+                yaxis_title="Amplitude (arb. unit)",
+                width=600,
+            )
+            fig.show()
+        else:
+            values = self.normalized(param)
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    x=self.sweep_range,
+                    y=values,
+                    mode="lines+markers",
+                    marker=dict(symbol="circle", size=8, color="#636EFA"),
+                    line=dict(width=1, color="grey", dash="dash"),
+                )
+            )
+            fig.update_layout(
+                title=f"Rabi oscillation of {self.target}",
+                xaxis_title="Sweep value",
+                yaxis_title="Normalized value",
+                width=600,
+            )
+            fig.show()
 
 
 class Experiment:
@@ -119,6 +149,26 @@ class Experiment:
         )
         self.system: Final = self._config.get_quantum_system(chip_id)
         self.print_resources()
+        self._rabi_params: Optional[dict[str, RabiParam]] = None
+
+    @property
+    def rabi_params(self) -> dict[str, RabiParam]:
+        """Get the Rabi parameters."""
+        if self._rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+        return self._rabi_params
+
+    def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
+        """
+        Stores the Rabi parameters.
+
+        Parameters
+        ----------
+        rabi_params : dict[str, RabiParam]
+            Parameters of the Rabi oscillation.
+        """
+        self._rabi_params = rabi_params
+        console.print("Rabi parameters are stored.")
 
     def print_resources(self):
         console.print("The following resources will be used:\n")
@@ -269,7 +319,7 @@ class Experiment:
         self,
         targets: list[str],
         duration: int = 10240,
-    ):
+    ) -> MeasureResult:
         """
         Checks the noise level of the system.
 
@@ -279,6 +329,11 @@ class Experiment:
             List of targets to check the noise.
         duration : int, optional
             Duration of the noise measurement. Defaults to 2048.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
         """
         result = self._measurement.measure_noise(targets, duration)
         for target, data in result.raw.items():
@@ -288,11 +343,12 @@ class Experiment:
                 xlabel="Capture time (μs)",
                 sampling_period=8e-3,
             )
+        return result
 
     def check_waveform(
         self,
         targets: list[str],
-    ):
+    ) -> MeasureResult:
         """
         Checks the readout waveforms of the given targets.
 
@@ -300,6 +356,11 @@ class Experiment:
         ----------
         targets : list[str]
             List of targets to check the waveforms.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
         """
         result = self.measure(sequence={target: np.array([]) for target in targets})
         for target, data in result.raw.items():
@@ -308,6 +369,7 @@ class Experiment:
                 title=f"Readout waveform of {target}",
                 sampling_period=8,
             )
+        return result
 
     def check_rabi(
         self,
@@ -316,7 +378,7 @@ class Experiment:
         time_range: NDArray = np.arange(0, 101, 4),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> dict[str, RabiParam]:
+    ) -> dict[str, SweepResult]:
         """
         Conducts a Rabi experiment with the default amplitude.
 
@@ -333,8 +395,8 @@ class Experiment:
 
         Returns
         -------
-        dict[str, RabiParam]
-            Parameters of the Rabi oscillation.
+        dict[str, SweepResult]
+            Result of the experiment.
         """
         ampl = self.params.control_amplitude
         amplitudes = {target: ampl[target] for target in targets}
@@ -343,11 +405,10 @@ class Experiment:
             time_range=time_range,
             shots=shots,
             interval=interval,
+            plot=True,
+            store_params=True,
         )
-
-        rabi_params = self.fit_rabi(result)
-
-        return rabi_params
+        return result
 
     def rabi_experiment(
         self,
@@ -357,6 +418,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        store_params: bool = False,
     ) -> dict[str, SweepResult]:
         """
         Conducts a Rabi experiment.
@@ -373,6 +435,8 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        store_params : bool, optional
+            Whether to store the Rabi parameters. Defaults to False.
 
         Returns
         -------
@@ -406,7 +470,7 @@ class Experiment:
             if plot:
                 clear_output(wait=True)
                 viz.scatter_iq_data(signals)
-        results = {
+        result = {
             target: SweepResult(
                 target=target,
                 sweep_range=time_range,
@@ -414,7 +478,13 @@ class Experiment:
             )
             for target, values in signals.items()
         }
-        return results
+        rabi_params = self.fit_rabi(result)
+        if store_params:
+            self.store_rabi_params(rabi_params)
+        if plot:
+            for target in result:
+                result[target].plot(self.rabi_params[target])
+        return result
 
     def sweep_parameter(
         self,
@@ -481,6 +551,9 @@ class Experiment:
             )
             for target, values in signals.items()
         }
+        if plot:
+            for target in results:
+                results[target].plot(self.rabi_params[target])
         return results
 
     def repeat_sequence(
@@ -555,6 +628,7 @@ class Experiment:
         self,
         result: dict[str, SweepResult],
         wave_count: Optional[float] = None,
+        plot: bool = True,
     ) -> dict[str, RabiParam]:
         """
         Fits the measured data to a Rabi oscillation.
@@ -565,6 +639,8 @@ class Experiment:
             Result of the Rabi experiment.
         wave_count : float, optional
             Number of waves in sweep_result. Defaults to None.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
@@ -577,6 +653,7 @@ class Experiment:
                 times=result[target].sweep_range,
                 data=result[target].data,
                 wave_count=wave_count,
+                plot=plot,
             )
             for target in result
         }
@@ -586,6 +663,7 @@ class Experiment:
         self,
         result: dict[str, SweepResult],
         wave_count: Optional[float] = None,
+        plot: bool = True,
     ) -> dict[str, RabiParam]:
         """
         Fits the measured data to a damped Rabi oscillation.
@@ -596,6 +674,8 @@ class Experiment:
             Result of the Rabi experiment.
         wave_count : float, optional
             Number of waves in sweep_result. Defaults to None.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
@@ -608,6 +688,7 @@ class Experiment:
                 times=result[target].sweep_range,
                 data=result[target].data,
                 wave_count=wave_count,
+                plot=plot,
                 is_damped=True,
             )
             for target in result
@@ -616,16 +697,16 @@ class Experiment:
 
     def calc_control_amplitudes(
         self,
-        rabi_params: dict[str, RabiParam],
         rabi_rate: float = 25e-3,
+        rabi_params: dict[str, RabiParam] | None = None,
     ) -> dict[str, float]:
         """
         Calculates the control amplitudes for the Rabi rate.
 
         Parameters
         ----------
-        rabi_params : dict[str, RabiParam]
-            Parameters of the Rabi oscillation.
+        rabi_params : dict[str, RabiParam], optional
+            Parameters of the Rabi oscillation. Defaults to None.
         rabi_rate : float, optional
             Rabi rate of the experiment. Defaults to 25 MHz.
 
@@ -635,6 +716,7 @@ class Experiment:
             Control amplitudes for the Rabi rate.
         """
         current_amplitudes = self.params.control_amplitude
+        rabi_params = rabi_params or self.rabi_params
         amplitudes = {
             target: current_amplitudes[target]
             * rabi_rate

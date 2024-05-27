@@ -131,6 +131,7 @@ def fit_rabi(
     times: npt.NDArray[np.int64],
     data: npt.NDArray[np.complex64],
     wave_count: float | None = None,
+    plot: bool = True,
     is_damped: bool = False,
 ) -> RabiParam:
     """
@@ -146,6 +147,8 @@ def fit_rabi(
         Complex signal data corresponding to the Rabi oscillations.
     wave_count : float, optional
         Initial estimate for the number of wave cycles over the time span.
+    plot : bool, optional
+        Whether to plot the data and the fit.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
 
@@ -203,41 +206,42 @@ def fit_rabi(
     print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
     print(f"Rabi period: {1 / frequency:.3g} ns")
 
-    x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = (
-        func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
-    )
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
-            marker_color="black",
-            marker_line_width=2,
+    if plot:
+        x_fine = np.linspace(np.min(x), np.max(x), 1000)
+        y_fine = (
+            func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
         )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x,
-            y=y,
-            mode="markers",
-            name="Data",
-            error_y=dict(type="constant", value=noise),
-            marker=dict(color="#636EFA", size=5),
-        ),
-    )
-    fig.update_layout(
-        title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
-        xaxis_title="Time (ns)",
-        yaxis_title="Amplitude (arb. units)",
-        width=600,
-        height=300,
-        showlegend=True,
-    )
-    fig.show()
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=y_fine,
+                mode="lines",
+                name="Fit",
+                marker_color="black",
+                marker_line_width=2,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=y,
+                mode="markers",
+                name="Data",
+                error_y=dict(type="constant", value=noise),
+                marker=dict(color="#636EFA", size=5),
+            ),
+        )
+        fig.update_layout(
+            title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
+            xaxis_title="Time (ns)",
+            yaxis_title="Amplitude (arb. units)",
+            width=600,
+            height=300,
+            showlegend=True,
+        )
+        fig.show()
 
     return RabiParam(
         target=target,
