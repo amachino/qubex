@@ -35,7 +35,40 @@ class TargetResult:
         self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def plot(self, *args, **kwargs):
-        pass
+        raise NotImplementedError
+
+
+T = TypeVar("T", bound=TargetResult)
+
+
+class ExperimentResult(Generic[T]):
+    """
+    Data class representing the result of an experiment.
+
+    Attributes
+    ----------
+    data: TargetMap[TargetResult]
+        Result of the experiment.
+    rabi_params: TargetMap[RabiParam]
+        Parameters of the Rabi oscillation.
+    """
+
+    def __init__(
+        self,
+        data: TargetMap[T],
+        rabi_params: TargetMap[RabiParam] | None = None,
+    ):
+        self.data = data
+        self.rabi_params = rabi_params
+        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def plot(self):
+        rabi_params = self.rabi_params
+        for target in self.data:
+            if rabi_params is None:
+                self.data[target].plot()
+            else:
+                self.data[target].plot(rabi_params[target])
 
 
 class SweepResult(TargetResult):
@@ -120,9 +153,9 @@ class SweepResult(TargetResult):
             fig.show()
 
 
-class AmplitudeCalibrationResult(TargetResult):
+class AmplitudeRabiRelation(TargetResult):
     """
-    Data class representing the result of an amplitude calibration experiment.
+    The relation between the control amplitude and the Rabi rate.
 
     Attributes
     ----------
@@ -165,34 +198,61 @@ class AmplitudeCalibrationResult(TargetResult):
         fig.show()
 
 
-T = TypeVar("T", bound=TargetResult)
-
-
-class ExperimentResult(Generic[T]):
+class PhaseShiftData(TargetResult):
     """
-    Data class representing the result of an experiment.
+    Data class representing the result of a phase shift experiment.
 
     Attributes
     ----------
-    data: TargetMap[TargetResult]
-        Result of the experiment.
-    rabi_params: TargetMap[RabiParam]
-        Parameters of the Rabi oscillation.
+    target : str
+        Target of the experiment.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    data : NDArray
+        Measured data.
+    created_at : str
+        Time when the experiment is conducted.
     """
 
     def __init__(
         self,
-        data: TargetMap[T],
-        rabi_params: TargetMap[RabiParam] | None = None,
+        target: str,
+        sweep_range: NDArray,
+        data: NDArray,
     ):
-        self.data = data
-        self.rabi_params = rabi_params
-        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        super().__init__(target, data)
+        self.sweep_range = sweep_range
+
+    @property
+    def phases(self) -> NDArray[np.float64]:
+        return np.angle(self.data)
+
+    @property
+    def phase_diffs(self) -> NDArray[np.float64]:
+        delta_phases = np.diff(self.phases)
+        delta_phases[delta_phases < 0] += 2 * np.pi
+        return delta_phases
+
+    @property
+    def phase_shift(self) -> float:
+        """Return the average phase shift per chunk."""
+        return np.mean(self.phase_diffs).astype(float)
 
     def plot(self):
-        rabi_params = self.rabi_params
-        for target in self.data:
-            if rabi_params is None:
-                self.data[target].plot()
-            else:
-                self.data[target].plot(rabi_params[target])
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=self.sweep_range,
+                y=self.phases,
+                mode="lines+markers",
+                marker=dict(symbol="circle", size=8, color="#636EFA"),
+                line=dict(width=1, color="grey", dash="dash"),
+            )
+        )
+        fig.update_layout(
+            title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/chunk",
+            xaxis_title="Control window (ns)",
+            yaxis_title="Phase (rad)",
+            width=600,
+        )
+        fig.show()

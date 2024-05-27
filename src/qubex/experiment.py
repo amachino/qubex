@@ -13,7 +13,12 @@ from rich.table import Table
 from . import fitting as fit
 from . import visualization as viz
 from .config import Config, Params, Qubit, Resonator, Target
-from .experiment_result import AmplitudeCalibrationResult, ExperimentResult, SweepResult
+from .experiment_result import (
+    AmplitudeRabiRelation,
+    ExperimentResult,
+    PhaseShiftData,
+    SweepResult,
+)
 from .experiment_tool import ExperimentTool
 from .fitting import RabiParam
 from .hardware import Box
@@ -331,6 +336,87 @@ class Experiment:
             store_params=True,
         )
         return result
+
+    def check_amplitude(
+        self,
+        amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
+        time_range: NDArray = np.arange(0, 201, 8),
+    ) -> ExperimentResult[AmplitudeRabiRelation]:
+        """
+        Checks the relation between the control amplitude and the Rabi rate.
+
+        Parameters
+        ----------
+        amplitude_range : NDArray
+            Range of the control amplitude to sweep.
+
+        Returns
+        -------
+        ExperimentResult[AmplitudeRabiRelation]
+            Result of the experiment.
+        """
+
+        rabi_rates: dict[str, list[float]] = defaultdict(list)
+        for amplitude in amplitude_range:
+            if amplitude <= 0:
+                continue
+            result = self.rabi_experiment(
+                time_range=time_range,
+                amplitudes={target: amplitude for target in self.qubits},
+            )
+            rabi_params = result.rabi_params
+            if rabi_params is None:
+                continue
+            for target, param in rabi_params.items():
+                rabi_rate = param.frequency
+                rabi_rates[target].append(rabi_rate)
+
+        data = {
+            target: AmplitudeRabiRelation(
+                target=target,
+                sweep_range=amplitude_range,
+                data=np.array(values, dtype=np.float64),
+            )
+            for target, values in rabi_rates.items()
+        }
+        return ExperimentResult(data=data)
+
+    def check_phase(
+        self,
+        time_range: NDArray = np.arange(0, 1024, 128),
+    ) -> ExperimentResult[PhaseShiftData]:
+        """
+        Checks the phase shift of the system.
+
+        Parameters
+        ----------
+        time_range : NDArray, optional
+            Time range of the experiment.
+
+        Returns
+        -------
+        ExperimentResult[PhaseShiftData]
+            Result of the experiment.
+        """
+        results = defaultdict(list)
+        for window in time_range:
+            result = self.measure(
+                sequence={target: [] for target in self.qubits},
+                control_window=window,
+            )
+            for qubit, value in result.kerneled.items():
+                results[qubit].append(value)
+            clear_output(wait=True)
+            viz.scatter_iq_data(results)
+        data = {
+            qubit: PhaseShiftData(
+                target=qubit,
+                sweep_range=time_range,
+                data=np.array(values),
+            )
+            for qubit, values in results.items()
+        }
+        return ExperimentResult(data=data)
 
     def rabi_experiment(
         self,
@@ -653,47 +739,3 @@ class Experiment:
         print(f"\n{1/rabi_rate/4} ns rect pulse → π/2 pulse")
 
         return amplitudes
-
-    def calibrate_control_amplitudes(
-        self,
-        amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
-        time_range: NDArray = np.arange(0, 201, 8),
-    ) -> ExperimentResult[AmplitudeCalibrationResult]:
-        """
-        Calibrates the control amplitudes for the Rabi rate.
-
-        Parameters
-        ----------
-        amplitude_range : NDArray
-            Range of the control amplitude to sweep.
-
-        Returns
-        -------
-        ExperimentResult[AmplitudeCalibrationResult]
-            Result of the experiment.
-        """
-
-        rabi_rates: dict[str, list[float]] = defaultdict(list)
-        for amplitude in amplitude_range:
-            if amplitude <= 0:
-                continue
-            result = self.rabi_experiment(
-                time_range=time_range,
-                amplitudes={target: amplitude for target in self.qubits},
-            )
-            rabi_params = result.rabi_params
-            if rabi_params is None:
-                continue
-            for target, param in rabi_params.items():
-                rabi_rate = param.frequency
-                rabi_rates[target].append(rabi_rate)
-
-        data = {
-            target: AmplitudeCalibrationResult(
-                target=target,
-                sweep_range=amplitude_range,
-                data=np.array(values, dtype=np.float64),
-            )
-            for target, values in rabi_rates.items()
-        }
-        return ExperimentResult(data=data)
