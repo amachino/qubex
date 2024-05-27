@@ -57,10 +57,12 @@ class Experiment:
         *,
         chip_id: str,
         qubits: list[str],
+        control_window: int = DEFAULT_CONTROL_WINDOW,
         config_dir: str = DEFAULT_CONFIG_DIR,
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
+        self._control_window: Final = control_window
         self._config: Final = Config(config_dir)
         self._measurement: Final = Measurement(
             chip_id=chip_id,
@@ -421,8 +423,8 @@ class Experiment:
     def rabi_experiment(
         self,
         *,
-        time_range: NDArray,
         amplitudes: dict[str, float],
+        time_range: NDArray,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -433,10 +435,10 @@ class Experiment:
 
         Parameters
         ----------
-        time_range : NDArray
-            Time range of the experiment.
         amplitudes : dict[str, float]
             Amplitudes of the control pulses.
+        time_range : NDArray
+            Time range of the experiment.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -453,7 +455,6 @@ class Experiment:
         """
         targets = list(amplitudes.keys())
         time_range = np.array(time_range, dtype=np.int64)
-        control_window = MIN_DURATION * (max(time_range) // MIN_DURATION + 1)
         waveforms_list = [
             {
                 target: Rect(
@@ -468,7 +469,7 @@ class Experiment:
             waveforms_list=waveforms_list,
             shots=shots,
             interval=interval,
-            control_window=control_window,
+            control_window=self._control_window,
         )
 
         signals = defaultdict(list)
@@ -482,6 +483,7 @@ class Experiment:
             target: SweepResult(
                 target=target,
                 sweep_range=time_range,
+                sweep_value_label="Duration (ns)",
                 data=np.array(values),
             )
             for target, values in signals.items()
@@ -495,12 +497,12 @@ class Experiment:
     def sweep_parameter(
         self,
         *,
-        param_range: NDArray,
         sequence: dict[str, Callable[..., Waveform]],
+        sweep_range: NDArray,
+        sweep_value_label: str = "Sweep value",
         pulse_count=1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
         plot: bool = True,
     ) -> ExperimentResult[SweepResult]:
         """
@@ -508,18 +510,18 @@ class Experiment:
 
         Parameters
         ----------
-        param_range : NDArray
-            Range of the parameter to sweep.
         sequence : dict[str, Callable[..., Waveform]]
             Parametric sequence to sweep.
+        sweep_range : NDArray
+            Range of the parameter to sweep.
+        sweep_value_label : str
+            Label of the sweep value.
         pulse_count : int, optional
             Number of pulses to apply. Defaults to 1.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
-            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -534,13 +536,13 @@ class Experiment:
                 target: sequence[target](param).repeated(pulse_count).values
                 for target in targets
             }
-            for param in param_range
+            for param in sweep_range
         ]
         generator = self._measure_batch(
             sequences=sequences,
             shots=shots,
             interval=interval,
-            control_window=control_window,
+            control_window=self._control_window,
         )
         signals = defaultdict(list)
         for result in generator:
@@ -552,7 +554,8 @@ class Experiment:
         data = {
             target: SweepResult(
                 target=target,
-                sweep_range=param_range,
+                sweep_range=sweep_range,
+                sweep_value_label=sweep_value_label,
                 data=np.array(values),
             )
             for target, values in signals.items()
@@ -595,7 +598,8 @@ class Experiment:
             for target, pulse in sequence.items()
         }
         result = self.sweep_parameter(
-            param_range=np.arange(n + 1),
+            sweep_range=np.arange(n + 1),
+            sweep_value_label="Number of repetitions",
             sequence=repeated_sequence,
             pulse_count=1,
             shots=shots,

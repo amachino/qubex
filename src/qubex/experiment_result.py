@@ -81,6 +81,8 @@ class SweepResult(TargetResult):
         Target of the experiment.
     sweep_range : NDArray
         Sweep range of the experiment.
+    sweep_value_label : str
+        Label of the sweep value.
     data : NDArray
         Measured data.
     created_at : str
@@ -91,10 +93,12 @@ class SweepResult(TargetResult):
         self,
         target: str,
         sweep_range: NDArray,
+        sweep_value_label: str,
         data: NDArray,
     ):
         super().__init__(target, data)
         self.sweep_range = sweep_range
+        self.sweep_value_label = sweep_value_label
 
     def rotated(self, param: RabiParam) -> NDArray:
         return self.data * np.exp(-1j * param.angle)
@@ -127,7 +131,7 @@ class SweepResult(TargetResult):
             )
             fig.update_layout(
                 title=self.target,
-                xaxis_title="Sweep value",
+                xaxis_title=self.sweep_value_label,
                 yaxis_title="Measured value",
                 width=600,
             )
@@ -146,7 +150,7 @@ class SweepResult(TargetResult):
             )
             fig.update_layout(
                 title=self.target,
-                xaxis_title="Sweep value",
+                xaxis_title=self.sweep_value_label,
                 yaxis_title="Normalized value",
                 width=600,
             )
