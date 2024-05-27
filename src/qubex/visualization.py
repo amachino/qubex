@@ -5,7 +5,7 @@ from numpy.typing import NDArray
 
 def plot_waveform(
     data: NDArray[np.complex128],
-    sampling_period: int = 2,
+    sampling_period: float = 2.0,
     title: str = "",
     xlabel: str = "Time (ns)",
     ylabel: str = "Amplitude (arb. unit)",

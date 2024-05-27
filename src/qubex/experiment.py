@@ -3,12 +3,12 @@ from __future__ import annotations
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Callable, Final, Optional
+from typing import Callable, Final, Optional, Sequence
 
 import numpy as np
 import plotly.graph_objects as go
 from IPython.display import clear_output
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 from rich.console import Console
 from rich.table import Table
 
@@ -27,6 +27,7 @@ from .measurement import (
     MeasureResult,
 )
 from .pulse import Rect, Waveform
+from .typing import TargetMap
 
 console = Console()
 
@@ -174,7 +175,7 @@ class Experiment:
 
     def measure(
         self,
-        sequence: dict[str, NDArray[np.complex128]],
+        sequence: TargetMap[ArrayLike],
         *,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -186,7 +187,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : dict[str, NDArray[np.complex128]]
+        sequence : TargetMap[ArrayLike]
             Sequence of the experiment.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -225,7 +226,7 @@ class Experiment:
 
     def _measure_batch(
         self,
-        sequences: list[dict[str, NDArray[np.complex128]]],
+        sequences: Sequence[TargetMap[ArrayLike]],
         *,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -236,8 +237,8 @@ class Experiment:
 
         Parameters
         ----------
-        sequences : list[dict[str, NDArray[np.complex128]]]
-            List of sequences to measure.
+        sequences : Sequence[TargetMap[ArrayLike]]
+            Sequences of the experiment.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -267,7 +268,7 @@ class Experiment:
     def check_noise(
         self,
         targets: list[str],
-        duration: int = 2048,
+        duration: int = 10240,
     ):
         """
         Checks the noise level of the system.
@@ -284,7 +285,8 @@ class Experiment:
             viz.plot_waveform(
                 np.array(data, dtype=np.complex64) * 2 ** (-32),
                 title=f"Readout noise of {target}",
-                sampling_period=8,
+                xlabel="Capture time (μs)",
+                sampling_period=8e-3,
             )
 
     def check_waveform(
@@ -469,6 +471,7 @@ class Experiment:
             for target, data in result.kerneled.items():
                 signals[target].append(data)
             if plot:
+                clear_output(wait=True)
                 viz.scatter_iq_data(signals)
         results = {
             target: SweepResult(
@@ -483,7 +486,7 @@ class Experiment:
     def repeat_sequence(
         self,
         *,
-        sequence: dict[str, Waveform],
+        sequence: TargetMap[Waveform],
         n: int,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -520,6 +523,7 @@ class Experiment:
             pulse_count=1,
             shots=shots,
             interval=interval,
+            plot=plot,
         )
         return result
 
@@ -642,6 +646,6 @@ class Experiment:
         for target, amplitude in amplitudes.items():
             print(f"{target}: {amplitude:.6f}")
 
-        print(f"\n{1/rabi_rate/4} ns rect pulse will be π/2 pulse")
+        print(f"\n{1/rabi_rate/4} ns rect pulse → π/2 pulse")
 
         return amplitudes
