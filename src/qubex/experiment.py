@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import datetime
 from collections import defaultdict
-from dataclasses import dataclass
 from typing import Callable, Final, Optional, Sequence
 
 import numpy as np
-import plotly.graph_objects as go
 from IPython.display import clear_output
 from numpy.typing import ArrayLike, NDArray
 from rich.console import Console
@@ -16,6 +13,7 @@ from rich.table import Table
 from . import fitting as fit
 from . import visualization as viz
 from .config import Config, Params, Qubit, Resonator, Target
+from .experiment_result import AmplitudeCalibrationResult, ExperimentResult, SweepResult
 from .experiment_tool import ExperimentTool
 from .fitting import RabiParam
 from .hardware import Box
@@ -33,112 +31,6 @@ from .typing import TargetMap
 console = Console()
 
 MIN_DURATION = 128
-
-
-@dataclass
-class ExperimentResult:
-    """
-    Data class representing the result of an experiment.
-
-    Attributes
-    ----------
-    data: dict[str, SweepResult]
-        Result of the experiment.
-    rabi_params: dict[str, RabiParam]
-        Parameters of the Rabi oscillation.
-    """
-
-    data: dict[str, SweepResult]
-    rabi_params: dict[str, RabiParam] | None = None
-
-    def plot(self):
-        rabi_params = self.rabi_params
-        for target in self.data:
-            if rabi_params is None:
-                self.data[target].plot()
-            else:
-                self.data[target].plot(rabi_params[target])
-
-
-@dataclass
-class SweepResult:
-    """
-    Data class representing the result of a sweep experiment.
-
-    Attributes
-    ----------
-    target : str
-        Target of the experiment.
-    sweep_range : NDArray
-        Sweep range of the experiment.
-    data : NDArray
-        Measured data.
-    created_at : str
-        Time when the experiment is conducted.
-    """
-
-    target: str
-    sweep_range: NDArray
-    data: NDArray
-    created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    def rotated(self, param: RabiParam) -> NDArray:
-        return self.data * np.exp(-1j * param.angle)
-
-    def normalized(self, param: RabiParam) -> NDArray:
-        values = self.data * np.exp(-1j * param.angle)
-        values_normalized = (values.imag - param.offset) / param.amplitude
-        return values_normalized
-
-    def plot(self, param: Optional[RabiParam] = None):
-        if param is None:
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    x=self.sweep_range,
-                    y=self.data.real,
-                    name="I",
-                    mode="lines+markers",
-                    marker=dict(symbol="circle", size=8, color="#636EFA"),
-                    line=dict(width=1, color="grey", dash="dash"),
-                )
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=self.sweep_range,
-                    y=self.data.imag,
-                    name="Q",
-                    mode="lines+markers",
-                    marker=dict(symbol="circle", size=8, color="#EF553B"),
-                    line=dict(width=1, color="grey", dash="dash"),
-                )
-            )
-            fig.update_layout(
-                title=f"Rabi oscillation of {self.target}",
-                xaxis_title="Sweep value",
-                yaxis_title="Amplitude (arb. unit)",
-                width=600,
-            )
-            fig.show()
-        else:
-            values = self.normalized(param)
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    x=self.sweep_range,
-                    y=values,
-                    mode="lines+markers",
-                    marker=dict(symbol="circle", size=8, color="#636EFA"),
-                    line=dict(width=1, color="grey", dash="dash"),
-                )
-            )
-            fig.update_layout(
-                title=f"Rabi oscillation of {self.target}",
-                xaxis_title="Sweep value",
-                yaxis_title="Normalized value",
-                width=600,
-            )
-            fig.show()
 
 
 class Experiment:
@@ -178,10 +70,11 @@ class Experiment:
         self._rabi_params: Optional[dict[str, RabiParam]] = None
 
     @property
-    def rabi_params(self) -> dict[str, RabiParam] | None:
+    def rabi_params(self) -> dict[str, RabiParam]:
         """Get the Rabi parameters."""
         if self._rabi_params is None:
             console.print("Rabi parameters are not stored.")
+            return {}
         return self._rabi_params
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
@@ -405,10 +298,10 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 101, 4),
+        time_range: NDArray = np.arange(0, 201, 4),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult:
+    ) -> ExperimentResult[SweepResult]:
         """
         Conducts a Rabi experiment with the default amplitude.
 
@@ -417,7 +310,7 @@ class Experiment:
         targets : list[str]
             List of targets to check the Rabi oscillation.
         time_range : NDArray, optional
-            Time range of the experiment. Defaults to np.arange(0, 201, 10).
+            Time range of the experiment.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -425,7 +318,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult
+        ExperimentResult[SweepResult]
             Result of the experiment.
         """
         ampl = self.params.control_amplitude
@@ -448,7 +341,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
-    ) -> ExperimentResult:
+    ) -> ExperimentResult[SweepResult]:
         """
         Conducts a Rabi experiment.
 
@@ -469,7 +362,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult
+        ExperimentResult[SweepResult]
             Result of the experiment.
         """
         targets = list(amplitudes.keys())
@@ -523,7 +416,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
         plot: bool = True,
-    ) -> ExperimentResult:
+    ) -> ExperimentResult[SweepResult]:
         """
         Sweeps a parameter and measures the signals.
 
@@ -546,7 +439,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult
+        ExperimentResult[SweepResult]
             Result of the experiment.
         """
         targets = list(sequence.keys())
@@ -589,7 +482,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> ExperimentResult:
+    ) -> ExperimentResult[SweepResult]:
         """
         Repeats the pulse sequence n times.
 
@@ -608,7 +501,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult
+        ExperimentResult[SweepResult]
             Result of the experiment.
         """
         repeated_sequence = {
@@ -763,12 +656,11 @@ class Experiment:
 
     def calibrate_control_amplitudes(
         self,
-        amplitude_range: NDArray,
-        time_range: NDArray = np.arange(0, 101, 20),
-    ) -> ExperimentResult:
+        amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
+        time_range: NDArray = np.arange(0, 201, 8),
+    ) -> ExperimentResult[AmplitudeCalibrationResult]:
         """
-        Coarsely calibrate the control amplitude by measuring Rabi oscillations using square pulses with variable amplitude or length.
-        Repeat for different square-pulse settings to produce a coarse map between control amplitude and Rabi rate.
+        Calibrates the control amplitudes for the Rabi rate.
 
         Parameters
         ----------
@@ -777,13 +669,14 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult
+        ExperimentResult[AmplitudeCalibrationResult]
             Result of the experiment.
         """
 
-        rabi_rates = defaultdict(list)
-
+        rabi_rates: dict[str, list[float]] = defaultdict(list)
         for amplitude in amplitude_range:
+            if amplitude <= 0:
+                continue
             result = self.rabi_experiment(
                 time_range=time_range,
                 amplitudes={target: amplitude for target in self.qubits},
@@ -792,16 +685,15 @@ class Experiment:
             if rabi_params is None:
                 continue
             for target, param in rabi_params.items():
-                rabi_rate = 1 / param.frequency
+                rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
 
         data = {
-            target: SweepResult(
+            target: AmplitudeCalibrationResult(
                 target=target,
                 sweep_range=amplitude_range,
                 data=np.array(values, dtype=np.float64),
             )
             for target, values in rabi_rates.items()
         }
-        result = ExperimentResult(data=data)
-        return result
+        return ExperimentResult(data=data)
