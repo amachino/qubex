@@ -12,16 +12,16 @@ readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
     "jupyter ~= 1.0",
-    "rich ~= 13.0",
-    "pyyaml ~= 6.0",
-    "plotly ~= 5.0",
     "matplotlib ~= 3.0",
     "numpy ~= 1.0",
-    "scipy ~= 1.0",
-    "scikit-learn ~= 1.0",
-    "qutip ~= 4.0",
+    "plotly ~= 5.0",
+    "pyyaml ~= 6.0",
     "qctrl-visualizer ~= 7.0",
     "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.0.0",
+    "qutip ~= 4.0",
+    "rich ~= 13.0",
+    "scikit-learn ~= 1.0",
+    "scipy ~= 1.0",
 ]
 
 [tool.setuptools.dynamic]
