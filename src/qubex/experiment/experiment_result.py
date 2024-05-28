@@ -7,8 +7,8 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 
-from .fitting import RabiParam
-from .typing import TargetMap
+from ..fitting import RabiParam
+from ..typing import TargetMap
 
 
 class TargetResult:

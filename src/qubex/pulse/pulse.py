@@ -105,3 +105,29 @@ class Pulse(Waveform):
         new_pulse = deepcopy(self)
         new_pulse._values = np.tile(self._values, n)
         return new_pulse
+
+
+class Blank(Pulse):
+    """
+    A class to represent a blank pulse.
+
+    Parameters
+    ----------
+    duration : float
+        Duration of the blank pulse in ns.
+
+    Examples
+    --------
+    >>> pulse = Blank(duration=100)
+    """
+
+    def __init__(
+        self,
+        duration: float,
+    ):
+        N = self._number_of_samples(duration)
+        real = np.zeros(N, dtype=np.float64)
+        imag = 0
+        values = real + 1j * imag
+
+        super().__init__(values)

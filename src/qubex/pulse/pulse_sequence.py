@@ -4,7 +4,7 @@ from typing import Literal, Sequence
 import numpy as np
 import numpy.typing as npt
 
-from .pulse_lib import Blank
+from .pulse import Blank
 from .waveform import Waveform
 
 

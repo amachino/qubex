@@ -6,9 +6,9 @@ from qubecalib import QubeCalib
 from rich.console import Console
 from rich.table import Table
 
-from .config import Config
-from .measurement import DEFAULT_CONFIG_DIR
-from .qube_backend import QubeBackend
+from ..config import Config
+from ..measurement import DEFAULT_CONFIG_DIR
+from ..qube_backend import QubeBackend
 
 console = Console()
 

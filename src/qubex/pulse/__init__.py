@@ -1,7 +1,6 @@
-from .pulse import Pulse
-from .pulse_lib import Blank, Drag, DragCos, DragGauss, FlatTop, Gauss, Rect
+from .library import CPMG, Drag, DragCos, DragGauss, FlatTop, Gauss, Rect
+from .pulse import Blank, Pulse
 from .pulse_sequence import PulseSequence
-from .pulse_sequence_lib import CPMG
 from .waveform import Waveform
 
 __all__ = [
