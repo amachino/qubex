@@ -342,6 +342,9 @@ class QubeBackend:
         *,
         repeats: int,
         interval: int,
+        integral_mode: str = "integral",
+        dsp_demodulation: bool = True,
+        software_demodulation: bool = False,
     ):
         """
         Execute the queue and yield measurement results.
@@ -352,6 +355,12 @@ class QubeBackend:
             Number of repeats of each sequence.
         interval : int
             Interval between sequences.
+        integral_mode : {"integral", "single"}, optional
+            Integral mode.
+        dsp_demodulation : bool, optional
+            Enable DSP demodulation.
+        software_demodulation : bool, optional
+            Enable software demodulation.
 
         Yields
         ------
@@ -370,9 +379,9 @@ class QubeBackend:
         for status, data, config in self.qubecalib.step_execute(
             repeats=repeats,
             interval=interval,
-            integral_mode="integral",
-            dsp_demodulation=True,
-            software_demodulation=False,
+            integral_mode=integral_mode,
+            dsp_demodulation=dsp_demodulation,
+            software_demodulation=software_demodulation,
         ):
             result = QubeBackendResult(
                 status=status,
@@ -387,6 +396,9 @@ class QubeBackend:
         *,
         repeats: int,
         interval: int,
+        integral_mode: str = "integral",
+        dsp_demodulation: bool = True,
+        software_demodulation: bool = False,
     ) -> QubeBackendResult:
         """
         Execute a single sequence and return the measurement result.
@@ -399,6 +411,12 @@ class QubeBackend:
             Number of repeats of the sequence.
         interval : int
             Interval between sequences.
+        integral_mode : {"integral", "single"}, optional
+            Integral mode.
+        dsp_demodulation : bool, optional
+            Enable DSP demodulation.
+        software_demodulation : bool, optional
+            Enable software demodulation.
 
         Returns
         -------
@@ -414,4 +432,12 @@ class QubeBackend:
         """
         self.clear_command_queue()
         self.add_sequence(sequence)
-        return next(self.execute(repeats=repeats, interval=interval))
+        return next(
+            self.execute(
+                repeats=repeats,
+                interval=interval,
+                integral_mode=integral_mode,
+                dsp_demodulation=dsp_demodulation,
+                software_demodulation=software_demodulation,
+            )
+        )

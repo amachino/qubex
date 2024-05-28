@@ -157,7 +157,7 @@ class SweepResult(TargetResult):
             fig.show()
 
 
-class AmplitudeRabiRelation(TargetResult):
+class AmplRabiRelation(TargetResult):
     """
     The relation between the control amplitude and the Rabi rate.
 
@@ -202,9 +202,56 @@ class AmplitudeRabiRelation(TargetResult):
         fig.show()
 
 
-class PhaseShiftData(TargetResult):
+class FreqRabiRelation(TargetResult):
     """
-    Data class representing the result of a phase shift experiment.
+    The relation between the control frequency and the Rabi rate.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    data : NDArray
+        Measured data.
+    created_at : str
+        Time when the experiment is conducted.
+    """
+
+    def __init__(
+        self,
+        target: str,
+        sweep_range: NDArray,
+        frequency_range: NDArray,
+        data: NDArray,
+    ):
+        super().__init__(target, data)
+        self.sweep_range = sweep_range
+        self.frequency_range = frequency_range
+
+    def plot(self):
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=self.frequency_range,
+                y=self.data * 1e3,
+                mode="lines+markers",
+                marker=dict(symbol="circle", size=8, color="#636EFA"),
+                line=dict(width=1, color="grey", dash="dash"),
+            )
+        )
+        fig.update_layout(
+            title="Relation between control frequency and Rabi rate",
+            xaxis_title="Control frequency (GHz)",
+            yaxis_title="Rabi rate (MHz)",
+            width=600,
+        )
+        fig.show()
+
+
+class TimePhaseRelation(TargetResult):
+    """
+    The relation between the control window and the phase shift.
 
     Attributes
     ----------

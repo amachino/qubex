@@ -5,7 +5,7 @@ from typing import Callable, Final, Optional, Sequence
 
 import numpy as np
 from IPython.display import clear_output
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
@@ -14,10 +14,11 @@ from . import fitting as fit
 from . import visualization as viz
 from .config import Config, Params, Qubit, Resonator, Target
 from .experiment_result import (
-    AmplitudeRabiRelation,
+    AmplRabiRelation,
     ExperimentResult,
-    PhaseShiftData,
+    FreqRabiRelation,
     SweepResult,
+    TimePhaseRelation,
 )
 from .experiment_tool import ExperimentTool
 from .fitting import RabiParam
@@ -31,7 +32,7 @@ from .measurement import (
     MeasureResult,
 )
 from .pulse import Rect, Waveform
-from .typing import TargetMap
+from .typing import IQArray, TargetMap
 
 console = Console()
 
@@ -155,7 +156,7 @@ class Experiment:
 
     def measure(
         self,
-        sequence: TargetMap[ArrayLike],
+        sequence: TargetMap[IQArray],
         *,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -167,7 +168,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : TargetMap[ArrayLike]
+        sequence : TargetMap[IQArray]
             Sequence of the experiment.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -194,9 +195,9 @@ class Experiment:
             control_window=control_window,
         )
         if plot:
-            for target, data in result.raw.items():
+            for target, data in result.data.items():
                 viz.plot_waveform(
-                    data,
+                    data.raw,
                     sampling_period=8,  # TODO: set dynamically
                     title=f"Raw signal of {target}",
                     xlabel="Capture time (ns)",
@@ -206,7 +207,7 @@ class Experiment:
 
     def _measure_batch(
         self,
-        sequences: Sequence[TargetMap[ArrayLike]],
+        sequences: Sequence[TargetMap[IQArray]],
         *,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -217,7 +218,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequences : Sequence[TargetMap[ArrayLike]]
+        sequences : Sequence[TargetMap[IQArray]]
             Sequences of the experiment.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -266,9 +267,9 @@ class Experiment:
             Result of the experiment.
         """
         result = self._measurement.measure_noise(targets, duration)
-        for target, data in result.raw.items():
+        for target, data in result.data.items():
             viz.plot_waveform(
-                np.array(data, dtype=np.complex64) * 2 ** (-32),
+                np.array(data.raw, dtype=np.complex64) * 2 ** (-32),
                 title=f"Readout noise of {target}",
                 xlabel="Capture time (μs)",
                 sampling_period=8e-3,
@@ -293,9 +294,9 @@ class Experiment:
             Result of the experiment.
         """
         result = self.measure(sequence={target: np.array([]) for target in targets})
-        for target, data in result.raw.items():
+        for target, data in result.data.items():
             viz.plot_waveform(
-                data,
+                data.raw,
                 title=f"Readout waveform of {target}",
                 sampling_period=8,
             )
@@ -339,22 +340,83 @@ class Experiment:
         )
         return result
 
+    def check_frequency(
+        self,
+        targets: list[str],
+        *,
+        detuning_range: NDArray = np.linspace(-0.01, 0.01, 11),
+        time_range: NDArray = np.arange(0, 101, 4),
+    ) -> ExperimentResult[FreqRabiRelation]:
+        """
+        Checks the relation between the control frequency and the Rabi rate.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the Rabi oscillation.
+        detuning_range : NDArray
+            Range of the detuning to sweep.
+        time_range : NDArray
+            Time range of the experiment.
+
+        Returns
+        -------
+        ExperimentResult[FreqRabiRelation]
+            Result of the experiment.
+        """
+        ampl = self.params.control_amplitude
+        amplitudes = {target: ampl[target] for target in targets}
+        rabi_rates: dict[str, list[float]] = defaultdict(list)
+        for detuning in detuning_range:
+            result = self.rabi_experiment(
+                time_range=time_range,
+                amplitudes=amplitudes,
+                detuning=detuning,
+                plot=False,
+            )
+            clear_output(wait=True)
+            rabi_params = result.rabi_params
+            if rabi_params is None:
+                raise SystemError("Rabi parameters are not stored.")
+            for target, param in rabi_params.items():
+                rabi_rate = param.frequency
+                rabi_rates[target].append(rabi_rate)
+
+        frequencies = {
+            target: detuning_range + self.qubits[target].frequency for target in targets
+        }
+
+        data = {
+            target: FreqRabiRelation(
+                target=target,
+                sweep_range=detuning_range,
+                frequency_range=frequencies[target],
+                data=np.array(values, dtype=np.float64),
+            )
+            for target, values in rabi_rates.items()
+        }
+        return ExperimentResult(data=data)
+
     def check_amplitude(
         self,
+        targets: list[str],
+        *,
         amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
         time_range: NDArray = np.arange(0, 201, 8),
-    ) -> ExperimentResult[AmplitudeRabiRelation]:
+    ) -> ExperimentResult[AmplRabiRelation]:
         """
         Checks the relation between the control amplitude and the Rabi rate.
 
         Parameters
         ----------
+        targets : list[str]
+            List of targets to check the Rabi oscillation.
         amplitude_range : NDArray
             Range of the control amplitude to sweep.
 
         Returns
         -------
-        ExperimentResult[AmplitudeRabiRelation]
+        ExperimentResult[AmplRabiRelation]
             Result of the experiment.
         """
 
@@ -364,17 +426,19 @@ class Experiment:
                 continue
             result = self.rabi_experiment(
                 time_range=time_range,
-                amplitudes={target: amplitude for target in self.qubits},
+                amplitudes={target: amplitude for target in targets},
+                plot=False,
             )
+            clear_output(wait=True)
             rabi_params = result.rabi_params
             if rabi_params is None:
-                continue
+                raise SystemError("Rabi parameters are not stored.")
             for target, param in rabi_params.items():
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
 
         data = {
-            target: AmplitudeRabiRelation(
+            target: AmplRabiRelation(
                 target=target,
                 sweep_range=amplitude_range,
                 data=np.array(values, dtype=np.float64),
@@ -385,13 +449,17 @@ class Experiment:
 
     def check_phase(
         self,
+        targets: list[str],
+        *,
         time_range: NDArray = np.arange(0, 1024, 128),
-    ) -> ExperimentResult[PhaseShiftData]:
+    ) -> ExperimentResult[TimePhaseRelation]:
         """
         Checks the phase shift of the system.
 
         Parameters
         ----------
+        targets : list[str]
+            List of targets to check the phase shift.
         time_range : NDArray, optional
             Time range of the experiment.
 
@@ -403,15 +471,16 @@ class Experiment:
         results = defaultdict(list)
         for window in time_range:
             result = self.measure(
-                sequence={target: [] for target in self.qubits},
+                sequence={target: [] for target in targets},
                 control_window=window,
             )
-            for qubit, value in result.kerneled.items():
-                results[qubit].append(value)
+            for qubit, value in result.data.items():
+                iq = complex(value.kerneled)
+                results[qubit].append(iq)
             clear_output(wait=True)
             viz.scatter_iq_data(results)
         data = {
-            qubit: PhaseShiftData(
+            qubit: TimePhaseRelation(
                 target=qubit,
                 sweep_range=time_range,
                 data=np.array(values),
@@ -425,6 +494,7 @@ class Experiment:
         *,
         amplitudes: dict[str, float],
         time_range: NDArray,
+        detuning: float = 0.0,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -439,6 +509,8 @@ class Experiment:
             Amplitudes of the control pulses.
         time_range : NDArray
             Time range of the experiment.
+        detuning : float, optional
+            Detuning of the control frequency. Defaults to 0.0.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -460,7 +532,9 @@ class Experiment:
                 target: Rect(
                     duration=T,
                     amplitude=amplitudes[target],
-                ).values
+                )
+                .detuned(detuning)
+                .values
                 for target in targets
             }
             for T in time_range
@@ -474,8 +548,8 @@ class Experiment:
 
         signals = defaultdict(list)
         for result in generator:
-            for target, data in result.kerneled.items():
-                signals[target].append(data)
+            for target, data in result.data.items():
+                signals[target].append(data.kerneled)
             if plot:
                 clear_output(wait=True)
                 viz.scatter_iq_data(signals)
@@ -546,8 +620,8 @@ class Experiment:
         )
         signals = defaultdict(list)
         for result in generator:
-            for target, data in result.kerneled.items():
-                signals[target].append(data)
+            for target, data in result.data.items():
+                signals[target].append(data.kerneled)
             if plot:
                 clear_output(wait=True)
                 viz.scatter_iq_data(signals)

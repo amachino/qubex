@@ -1,24 +1,25 @@
 from __future__ import annotations
 
+import typing
 from dataclasses import dataclass
-from typing import Final
+from enum import Enum
+from typing import Final, Literal
 
 import numpy as np
-import numpy.typing as npt
+from numpy.typing import ArrayLike, NDArray
 from qubecalib.neopulse import (
     Arbit,
     Capture,
     Flushleft,
     Flushright,
     RaisedCosFlatTop,
+    Sequence,
     padding,
-)
-from qubecalib.neopulse import (
-    Sequence as Sequence,
 )
 
 from .config import Config
 from .qube_backend import QubeBackend, QubeBackendResult
+from .typing import IQArray, TargetMap
 
 DEFAULT_CONFIG_DIR = "./config"
 DEFAULT_SHOTS = 3000
@@ -28,11 +29,29 @@ DEFAULT_CAPTURE_WINDOW = 1024  # ns
 DEFAULT_READOUT_DURATION = 512  # ns
 
 
+class MeasureMode(Enum):
+    SINGLE = "single"
+    AVG = "avg"
+
+    @property
+    def integral_mode(self) -> str:
+        return {
+            MeasureMode.SINGLE: "single",
+            MeasureMode.AVG: "integral",
+        }[self]
+
+
+@dataclass
+class MeasureData:
+    raw: NDArray
+    kerneled: NDArray
+    classified: NDArray
+
+
 @dataclass
 class MeasureResult:
-    raw: dict[str, npt.NDArray]
-    kerneled: dict[str, complex]
-    classified: dict[str, str]
+    mode: MeasureMode
+    data: dict[str, MeasureData]
 
 
 class Measurement:
@@ -122,13 +141,15 @@ class Measurement:
             sequence=sequence,
             repeats=1,
             interval=DEFAULT_INTERVAL,
+            integral_mode="single",
         )
-        return self._create_measure_result(backend_result)
+        return self._create_measure_result(backend_result, MeasureMode.SINGLE)
 
     def measure(
         self,
-        waveforms: dict[str, npt.NDArray[np.complex128]],
+        waveforms: TargetMap[ArrayLike],
         *,
+        mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
@@ -140,9 +161,13 @@ class Measurement:
 
         Parameters
         ----------
-        waveforms : dict[str, npt.NDArray[np.complex128]]
+        waveforms : TargetMap[ArrayLike]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays with the sampling period of 2 ns.
+        mode : Literal["single", "avg"], optional
+            The measurement mode, by default "single".
+            - "single": Measure once.
+            - "avg": Measure multiple times and average the results.
         shots : int, optional
             The number of shots, by default DEFAULT_SHOTS.
         interval : int, optional
@@ -166,6 +191,7 @@ class Measurement:
         ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ... })
         """
+        measure_mode = MeasureMode(mode)
         sequence = self._create_sequence(
             waveforms=waveforms,
             control_window=control_window,
@@ -176,13 +202,15 @@ class Measurement:
             sequence=sequence,
             repeats=shots,
             interval=interval,
+            integral_mode=measure_mode.integral_mode,
         )
-        return self._create_measure_result(backend_result)
+        return self._create_measure_result(backend_result, measure_mode)
 
     def measure_batch(
         self,
-        waveforms_list: list[dict[str, npt.NDArray[np.complex128]]],
+        waveforms_list: typing.Sequence[TargetMap[IQArray]],
         *,
+        mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
@@ -194,9 +222,13 @@ class Measurement:
 
         Parameters
         ----------
-        waveforms_list : list[dict[str, npt.NDArray[np.complex128]]]
+        waveforms_list : Sequence[TargetMap[IQArray]]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays with the sampling period of 2 ns.
+        mode : Literal["single", "avg"], optional
+            The measurement mode, by default "single".
+            - "single": Measure once.
+            - "avg": Measure multiple times and average the results.
         shots : int, optional
             The number of shots, by default DEFAULT_SHOTS.
         interval : int, optional
@@ -213,6 +245,7 @@ class Measurement:
         MeasureResult
             The measurement results.
         """
+        measure_mode = MeasureMode(mode)
         self._backend.clear_command_queue()
         for waveforms in waveforms_list:
             sequence = self._create_sequence(
@@ -225,14 +258,15 @@ class Measurement:
         backend_results = self._backend.execute(
             repeats=shots,
             interval=interval,
+            integral_mode=measure_mode.integral_mode,
         )
         for backend_result in backend_results:
-            yield self._create_measure_result(backend_result)
+            yield self._create_measure_result(backend_result, measure_mode)
 
     def _create_sequence(
         self,
         *,
-        waveforms: dict[str, npt.NDArray[np.complex128]],
+        waveforms: TargetMap[ArrayLike],
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
@@ -243,7 +277,7 @@ class Measurement:
             with Flushright():
                 padding(control_window)
                 for target, waveform in waveforms.items():
-                    Arbit(waveform).target(target)
+                    Arbit(np.array(waveform)).target(target)
             with Flushleft():
                 for target in waveforms.keys():
                     read_target = f"R{target}"
@@ -258,22 +292,35 @@ class Measurement:
     def _create_measure_result(
         self,
         backend_result: QubeBackendResult,
+        measure_mode: MeasureMode,
     ) -> MeasureResult:
         label_slice = slice(1, None)  # Remove the prefix "R"
         capture_index = 0
 
-        raw_data = {
-            target[label_slice]: iqs[capture_index].squeeze()
-            for target, iqs in backend_result.data.items()
-        }
-        kerneled_data = {
-            target[label_slice]: iqs[capture_index].mean() * 2 ** (-32)
-            for target, iqs in backend_result.data.items()
-        }
+        measure_data = {}
+        for target, iqs in backend_result.data.items():
+            qubit = target[label_slice]
 
-        result = MeasureResult(
-            raw=raw_data,
-            kerneled=kerneled_data,
-            classified={},
+            if measure_mode == MeasureMode.SINGLE:
+                # iqs: ndarray[duration, shots]
+                raw = iqs[capture_index].T.squeeze()
+                kerneled = np.mean(iqs[capture_index], axis=0) * 2 ** (-32)
+                classified_data = np.array([])
+            elif measure_mode == MeasureMode.AVG:
+                # iqs: ndarray[duration, 1]
+                raw = iqs[capture_index].squeeze()
+                kerneled = np.mean(iqs) * 2 ** (-32)
+                classified_data = np.array([])
+            else:
+                raise ValueError(f"Invalid measure mode: {measure_mode}")
+
+            measure_data[qubit] = MeasureData(
+                raw=raw,
+                kerneled=kerneled,
+                classified=classified_data,
+            )
+
+        return MeasureResult(
+            mode=measure_mode,
+            data=measure_data,
         )
-        return result
