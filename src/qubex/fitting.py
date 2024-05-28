@@ -7,8 +7,8 @@ import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
 from scipy.fft import fft, fftfreq
-from scipy.optimize import curve_fit, minimize  # type: ignore
-from sklearn.decomposition import PCA  # type: ignore
+from scipy.optimize import curve_fit, minimize
+from sklearn.decomposition import PCA
 
 
 @dataclass

@@ -17,12 +17,13 @@ from qubecalib.neopulse import (
     padding,
 )
 
+from . import visualization as viz
 from .config import Config
 from .qube_backend import QubeBackend, QubeBackendResult
 from .typing import IQArray, TargetMap
 
 DEFAULT_CONFIG_DIR = "./config"
-DEFAULT_SHOTS = 3000
+DEFAULT_SHOTS = 1024
 DEFAULT_INTERVAL = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW = 1024  # ns
 DEFAULT_CAPTURE_WINDOW = 1024  # ns
@@ -52,6 +53,20 @@ class MeasureData:
 class MeasureResult:
     mode: MeasureMode
     data: dict[str, MeasureData]
+
+    def plot(self):
+        if self.mode == MeasureMode.SINGLE:
+            data = {qubit: data.kerneled for qubit, data in self.data.items()}
+            viz.scatter_iq_data(data=data)
+        elif self.mode == MeasureMode.AVG:
+            for qubit, data in self.data.items():
+                viz.plot_waveform(
+                    data=data.raw,
+                    sampling_period=8,
+                    title=f"Readout waveform of {qubit}",
+                    xlabel="Capture time (ns)",
+                    ylabel="Amplitude (arb. unit)",
+                )
 
 
 class Measurement:

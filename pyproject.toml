@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "qubex"
 dynamic = ["version"]
 requires-python = ">=3.9"
-authors = [{ name = "amachino" }]
-description = "QuBE experiments tools"
+authors = [{ name = "Akinori MACHINO" }]
+description = "Quantum Experiment Tools using QuBE"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
@@ -32,3 +32,6 @@ addopts = "--import-mode=importlib"
 
 [tool.mypy]
 ignore_missing_imports = true
+
+[tool.ruff.lint]
+ignore = ["E731"]

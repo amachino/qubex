@@ -215,7 +215,6 @@ class Waveform(ABC):
             yaxis_title=ylabel,
             width=600,
             height=300,
-            template="plotly_white",
         )
         fig.show()
 
@@ -276,6 +275,5 @@ class Waveform(ABC):
         fig.update_yaxes(title_text=ylabel_2, row=2, col=1)
         fig.update_layout(
             width=600,
-            template="plotly_white",
         )
         fig.show()

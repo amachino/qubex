@@ -3,8 +3,8 @@ from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import qutip as qt  # type: ignore
-from scipy.optimize import OptimizeResult, minimize  # type: ignore
+import qutip as qt
+from scipy.optimize import OptimizeResult, minimize
 
 from .system import System
 
