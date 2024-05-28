@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable, Final, Literal, Optional, Sequence
+from typing import Final, Literal, Optional, Sequence
 
 import numpy as np
 from IPython.display import clear_output
@@ -32,7 +32,7 @@ from .measurement import (
     MeasureResult,
 )
 from .pulse import Rect, Waveform
-from .typing import IQArray, TargetMap
+from .typing import IQArray, ParametricWaveform, TargetMap
 
 console = Console()
 
@@ -386,51 +386,30 @@ class Experiment:
         """
         targets = list(amplitudes.keys())
         time_range = np.array(time_range, dtype=np.int64)
-        waveforms_list = [
-            {
-                target: Rect(
-                    duration=T,
-                    amplitude=amplitudes[target],
-                )
-                .detuned(detuning)
-                .values
-                for target in targets
-            }
-            for T in time_range
-        ]
-        generator = self._measurement.measure_batch(
-            waveforms_list=waveforms_list,
+        sequence = {
+            target: lambda T: Rect(duration=T, amplitude=amplitudes[target]).detuned(
+                detuning
+            )
+            for target in targets
+        }
+        result = self.sweep_parameter(
+            sequence=sequence,
+            sweep_range=time_range,
+            sweep_value_label="Time (ns)",
             shots=shots,
             interval=interval,
-            control_window=self._control_window,
+            plot=plot,
         )
-
-        signals = defaultdict(list)
-        for result in generator:
-            for target, data in result.data.items():
-                signals[target].append(data.kerneled)
-            if plot:
-                clear_output(wait=True)
-                viz.scatter_iq_data(signals)
-        data = {
-            target: SweepResult(
-                target=target,
-                sweep_range=time_range,
-                sweep_value_label="Duration (ns)",
-                data=np.array(values),
-            )
-            for target, values in signals.items()
-        }
-        rabi_params = self.fit_rabi(data)
+        rabi_params = self.fit_rabi(result.data)
         if store_params:
             self.store_rabi_params(rabi_params)
-        result = ExperimentResult(data=data, rabi_params=rabi_params)
+        result.rabi_params = rabi_params
         return result
 
     def sweep_parameter(
         self,
         *,
-        sequence: dict[str, Callable[..., Waveform]],
+        sequence: TargetMap[ParametricWaveform],
         sweep_range: NDArray,
         sweep_value_label: str = "Sweep value",
         pulse_count=1,
@@ -443,7 +422,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : dict[str, Callable[..., Waveform]]
+        sequence : TargetMap[ParametricWaveform]
             Parametric sequence to sweep.
         sweep_range : NDArray
             Range of the parameter to sweep.
@@ -716,7 +695,7 @@ class Experiment:
 
     def fit_rabi(
         self,
-        result: dict[str, SweepResult],
+        result: TargetMap[SweepResult],
         wave_count: Optional[float] = None,
         plot: bool = True,
     ) -> dict[str, RabiParam]:
@@ -751,7 +730,7 @@ class Experiment:
 
     def fit_damped_rabi(
         self,
-        result: dict[str, SweepResult],
+        result: TargetMap[SweepResult],
         wave_count: Optional[float] = None,
         plot: bool = True,
     ) -> dict[str, RabiParam]:
