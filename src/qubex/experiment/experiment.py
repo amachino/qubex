@@ -199,14 +199,7 @@ class Experiment:
             control_window=control_window,
         )
         if plot:
-            for target, data in result.data.items():
-                viz.plot_waveform(
-                    data.raw,
-                    sampling_period=8,  # TODO: set dynamically
-                    title=f"Raw signal of {target}",
-                    xlabel="Capture time (ns)",
-                    ylabel="Amplitude (arb. unit)",
-                )
+            result.plot()
         return result
 
     def _measure_batch(
@@ -301,13 +294,8 @@ class Experiment:
         MeasureResult
             Result of the experiment.
         """
-        result = self.measure(sequence={target: np.array([]) for target in targets})
-        for target, data in result.data.items():
-            viz.plot_waveform(
-                data.raw,
-                title=f"Readout waveform of {target}",
-                sampling_period=8,
-            )
+        result = self.measure(sequence={target: np.zeros(0) for target in targets})
+        result.plot()
         return result
 
     def check_rabi(

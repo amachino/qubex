@@ -134,6 +134,7 @@ class SweepResult(TargetResult):
                 xaxis_title=self.sweep_value_label,
                 yaxis_title="Measured value",
                 width=600,
+                height=300,
             )
             fig.show()
         else:
@@ -153,6 +154,7 @@ class SweepResult(TargetResult):
                 xaxis_title=self.sweep_value_label,
                 yaxis_title="Normalized value",
                 width=600,
+                height=300,
             )
             fig.show()
 
@@ -198,6 +200,7 @@ class AmplRabiRelation(TargetResult):
             xaxis_title="Control amplitude (arb. unit)",
             yaxis_title="Rabi rate (MHz)",
             width=600,
+            height=300,
         )
         fig.show()
 
@@ -245,6 +248,7 @@ class FreqRabiRelation(TargetResult):
             xaxis_title="Control frequency (GHz)",
             yaxis_title="Rabi rate (MHz)",
             width=600,
+            height=300,
         )
         fig.show()
 
@@ -305,5 +309,6 @@ class TimePhaseRelation(TargetResult):
             xaxis_title="Control window (ns)",
             yaxis_title="Phase (rad)",
             width=600,
+            height=300,
         )
         fig.show()
