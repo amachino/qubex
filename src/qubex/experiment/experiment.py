@@ -81,7 +81,6 @@ class Experiment:
     def rabi_params(self) -> dict[str, RabiParam]:
         """Get the Rabi parameters."""
         if self._rabi_params is None:
-            console.print("Rabi parameters are not stored.")
             return {}
         return self._rabi_params
 
@@ -400,7 +399,7 @@ class Experiment:
         sequence: TargetMap[ParametricWaveform],
         sweep_range: NDArray,
         sweep_value_label: str = "Sweep value",
-        pulse_count=1,
+        repetitions: int = 1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -416,8 +415,8 @@ class Experiment:
             Range of the parameter to sweep.
         sweep_value_label : str
             Label of the sweep value.
-        pulse_count : int, optional
-            Number of pulses to apply. Defaults to 1.
+        repetitions : int, optional
+            Number of repetitions. Defaults to 1.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -433,7 +432,7 @@ class Experiment:
         targets = list(sequence.keys())
         sequences = [
             {
-                target: sequence[target](param).repeated(pulse_count).values
+                target: sequence[target](param).repeated(repetitions).values
                 for target in targets
             }
             for param in sweep_range
@@ -467,7 +466,7 @@ class Experiment:
         self,
         *,
         sequence: TargetMap[Waveform],
-        n: int,
+        repetitions: int,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -479,8 +478,8 @@ class Experiment:
         ----------
         sequence : dict[str, Waveform]
             Pulse sequence to repeat.
-        n : int
-            Number of times to repeat the pulse.
+        repetitions : int
+            Number of repetitions.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -498,10 +497,10 @@ class Experiment:
             for target, pulse in sequence.items()
         }
         result = self.sweep_parameter(
-            sweep_range=np.arange(n + 1),
+            sweep_range=np.arange(repetitions + 1),
             sweep_value_label="Number of repetitions",
             sequence=repeated_sequence,
-            pulse_count=1,
+            repetitions=1,
             shots=shots,
             interval=interval,
             plot=plot,
@@ -545,7 +544,7 @@ class Experiment:
             clear_output(wait=True)
             rabi_params = result.rabi_params
             if rabi_params is None:
-                raise SystemError("Rabi parameters are not stored.")
+                raise ValueError("Rabi parameters are not stored.")
             for target, param in rabi_params.items():
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
@@ -570,7 +569,7 @@ class Experiment:
         targets: list[str],
         *,
         amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
-        time_range: NDArray = np.arange(0, 201, 8),
+        time_range: NDArray = np.arange(0, 201, 4),
     ) -> ExperimentResult[AmplRabiRelation]:
         """
         Obtains the relation between the control amplitude and the Rabi frequency.
@@ -600,7 +599,7 @@ class Experiment:
             clear_output(wait=True)
             rabi_params = result.rabi_params
             if rabi_params is None:
-                raise SystemError("Rabi parameters are not stored.")
+                raise ValueError("Rabi parameters are not stored.")
             for target, param in rabi_params.items():
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)

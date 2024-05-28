@@ -196,7 +196,7 @@ class AmplRabiRelation(TargetResult):
             )
         )
         fig.update_layout(
-            title="Relation between control amplitude and Rabi rate",
+            title=f"Relation between control amplitude and Rabi rate : {self.target}",
             xaxis_title="Control amplitude (arb. unit)",
             yaxis_title="Rabi rate (MHz)",
             width=600,
@@ -244,7 +244,7 @@ class FreqRabiRelation(TargetResult):
             )
         )
         fig.update_layout(
-            title="Relation between control frequency and Rabi rate",
+            title=f"Relation between control frequency and Rabi rate : {self.target}",
             xaxis_title="Control frequency (GHz)",
             yaxis_title="Rabi rate (MHz)",
             width=600,
