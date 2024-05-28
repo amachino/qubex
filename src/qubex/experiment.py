@@ -318,7 +318,7 @@ class Experiment:
         targets : list[str]
             List of targets to check the Rabi oscillation.
         time_range : NDArray, optional
-            Time range of the experiment.
+            Time range of the experiment in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -339,155 +339,6 @@ class Experiment:
             store_params=True,
         )
         return result
-
-    def check_frequency(
-        self,
-        targets: list[str],
-        *,
-        detuning_range: NDArray = np.linspace(-0.01, 0.01, 11),
-        time_range: NDArray = np.arange(0, 101, 4),
-    ) -> ExperimentResult[FreqRabiRelation]:
-        """
-        Checks the relation between the control frequency and the Rabi rate.
-
-        Parameters
-        ----------
-        targets : list[str]
-            List of targets to check the Rabi oscillation.
-        detuning_range : NDArray
-            Range of the detuning to sweep.
-        time_range : NDArray
-            Time range of the experiment.
-
-        Returns
-        -------
-        ExperimentResult[FreqRabiRelation]
-            Result of the experiment.
-        """
-        ampl = self.params.control_amplitude
-        amplitudes = {target: ampl[target] for target in targets}
-        rabi_rates: dict[str, list[float]] = defaultdict(list)
-        for detuning in detuning_range:
-            result = self.rabi_experiment(
-                time_range=time_range,
-                amplitudes=amplitudes,
-                detuning=detuning,
-                plot=False,
-            )
-            clear_output(wait=True)
-            rabi_params = result.rabi_params
-            if rabi_params is None:
-                raise SystemError("Rabi parameters are not stored.")
-            for target, param in rabi_params.items():
-                rabi_rate = param.frequency
-                rabi_rates[target].append(rabi_rate)
-
-        frequencies = {
-            target: detuning_range + self.qubits[target].frequency for target in targets
-        }
-
-        data = {
-            target: FreqRabiRelation(
-                target=target,
-                sweep_range=detuning_range,
-                frequency_range=frequencies[target],
-                data=np.array(values, dtype=np.float64),
-            )
-            for target, values in rabi_rates.items()
-        }
-        return ExperimentResult(data=data)
-
-    def check_amplitude(
-        self,
-        targets: list[str],
-        *,
-        amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
-        time_range: NDArray = np.arange(0, 201, 8),
-    ) -> ExperimentResult[AmplRabiRelation]:
-        """
-        Checks the relation between the control amplitude and the Rabi rate.
-
-        Parameters
-        ----------
-        targets : list[str]
-            List of targets to check the Rabi oscillation.
-        amplitude_range : NDArray
-            Range of the control amplitude to sweep.
-
-        Returns
-        -------
-        ExperimentResult[AmplRabiRelation]
-            Result of the experiment.
-        """
-
-        rabi_rates: dict[str, list[float]] = defaultdict(list)
-        for amplitude in amplitude_range:
-            if amplitude <= 0:
-                continue
-            result = self.rabi_experiment(
-                time_range=time_range,
-                amplitudes={target: amplitude for target in targets},
-                plot=False,
-            )
-            clear_output(wait=True)
-            rabi_params = result.rabi_params
-            if rabi_params is None:
-                raise SystemError("Rabi parameters are not stored.")
-            for target, param in rabi_params.items():
-                rabi_rate = param.frequency
-                rabi_rates[target].append(rabi_rate)
-
-        data = {
-            target: AmplRabiRelation(
-                target=target,
-                sweep_range=amplitude_range,
-                data=np.array(values, dtype=np.float64),
-            )
-            for target, values in rabi_rates.items()
-        }
-        return ExperimentResult(data=data)
-
-    def check_phase(
-        self,
-        targets: list[str],
-        *,
-        time_range: NDArray = np.arange(0, 1024, 128),
-    ) -> ExperimentResult[TimePhaseRelation]:
-        """
-        Checks the phase shift of the system.
-
-        Parameters
-        ----------
-        targets : list[str]
-            List of targets to check the phase shift.
-        time_range : NDArray, optional
-            Time range of the experiment.
-
-        Returns
-        -------
-        ExperimentResult[PhaseShiftData]
-            Result of the experiment.
-        """
-        results = defaultdict(list)
-        for window in time_range:
-            result = self.measure(
-                sequence={target: [] for target in targets},
-                control_window=window,
-            )
-            for qubit, value in result.data.items():
-                iq = complex(value.kerneled)
-                results[qubit].append(iq)
-            clear_output(wait=True)
-            viz.scatter_iq_data(results)
-        data = {
-            qubit: TimePhaseRelation(
-                target=qubit,
-                sweep_range=time_range,
-                data=np.array(values),
-            )
-            for qubit, values in results.items()
-        }
-        return ExperimentResult(data=data)
 
     def rabi_experiment(
         self,
@@ -681,6 +532,155 @@ class Experiment:
             plot=plot,
         )
         return result
+
+    def obtain_freq_rabi_relation(
+        self,
+        targets: list[str],
+        *,
+        detuning_range: NDArray = np.linspace(-0.01, 0.01, 11),
+        time_range: NDArray = np.arange(0, 101, 4),
+    ) -> ExperimentResult[FreqRabiRelation]:
+        """
+        Obtains the relation between the detuning and the Rabi frequency.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the Rabi oscillation.
+        detuning_range : NDArray
+            Range of the detuning to sweep in GHz.
+        time_range : NDArray
+            Time range of the experiment in ns.
+
+        Returns
+        -------
+        ExperimentResult[FreqRabiRelation]
+            Result of the experiment.
+        """
+        ampl = self.params.control_amplitude
+        amplitudes = {target: ampl[target] for target in targets}
+        rabi_rates: dict[str, list[float]] = defaultdict(list)
+        for detuning in detuning_range:
+            result = self.rabi_experiment(
+                time_range=time_range,
+                amplitudes=amplitudes,
+                detuning=detuning,
+                plot=False,
+            )
+            clear_output(wait=True)
+            rabi_params = result.rabi_params
+            if rabi_params is None:
+                raise SystemError("Rabi parameters are not stored.")
+            for target, param in rabi_params.items():
+                rabi_rate = param.frequency
+                rabi_rates[target].append(rabi_rate)
+
+        frequencies = {
+            target: detuning_range + self.qubits[target].frequency for target in targets
+        }
+
+        data = {
+            target: FreqRabiRelation(
+                target=target,
+                sweep_range=detuning_range,
+                frequency_range=frequencies[target],
+                data=np.array(values, dtype=np.float64),
+            )
+            for target, values in rabi_rates.items()
+        }
+        return ExperimentResult(data=data)
+
+    def obtain_ampl_rabi_relation(
+        self,
+        targets: list[str],
+        *,
+        amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
+        time_range: NDArray = np.arange(0, 201, 8),
+    ) -> ExperimentResult[AmplRabiRelation]:
+        """
+        Obtains the relation between the control amplitude and the Rabi frequency.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the Rabi oscillation.
+        amplitude_range : NDArray
+            Range of the control amplitude to sweep.
+
+        Returns
+        -------
+        ExperimentResult[AmplRabiRelation]
+            Result of the experiment.
+        """
+
+        rabi_rates: dict[str, list[float]] = defaultdict(list)
+        for amplitude in amplitude_range:
+            if amplitude <= 0:
+                continue
+            result = self.rabi_experiment(
+                time_range=time_range,
+                amplitudes={target: amplitude for target in targets},
+                plot=False,
+            )
+            clear_output(wait=True)
+            rabi_params = result.rabi_params
+            if rabi_params is None:
+                raise SystemError("Rabi parameters are not stored.")
+            for target, param in rabi_params.items():
+                rabi_rate = param.frequency
+                rabi_rates[target].append(rabi_rate)
+
+        data = {
+            target: AmplRabiRelation(
+                target=target,
+                sweep_range=amplitude_range,
+                data=np.array(values, dtype=np.float64),
+            )
+            for target, values in rabi_rates.items()
+        }
+        return ExperimentResult(data=data)
+
+    def obtain_time_phase_relation(
+        self,
+        targets: list[str],
+        *,
+        time_range: NDArray = np.arange(0, 1024, 128),
+    ) -> ExperimentResult[TimePhaseRelation]:
+        """
+        Obtains the relation between the control window and the phase shift.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the phase shift.
+        time_range : NDArray, optional
+            The control window range to sweep in ns.
+
+        Returns
+        -------
+        ExperimentResult[PhaseShiftData]
+            Result of the experiment.
+        """
+        results = defaultdict(list)
+        for window in time_range:
+            result = self.measure(
+                sequence={target: [] for target in targets},
+                control_window=window,
+            )
+            for qubit, value in result.data.items():
+                iq = complex(value.kerneled)
+                results[qubit].append(iq)
+            clear_output(wait=True)
+            viz.scatter_iq_data(results)
+        data = {
+            qubit: TimePhaseRelation(
+                target=qubit,
+                sweep_range=time_range,
+                data=np.array(values),
+            )
+            for qubit, values in results.items()
+        }
+        return ExperimentResult(data=data)
 
     def normalize(
         self,
