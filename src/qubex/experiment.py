@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable, Final, Optional, Sequence
+from typing import Callable, Final, Literal, Optional, Sequence
 
 import numpy as np
 from IPython.display import clear_output
@@ -158,6 +158,7 @@ class Experiment:
         self,
         sequence: TargetMap[IQArray],
         *,
+        mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
@@ -170,6 +171,8 @@ class Experiment:
         ----------
         sequence : TargetMap[IQArray]
             Sequence of the experiment.
+        mode : Literal["single", "avg"], optional
+            Measurement mode. Defaults to "avg".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -190,6 +193,7 @@ class Experiment:
         }
         result = self._measurement.measure(
             waveforms=waveforms,
+            mode=mode,
             shots=shots,
             interval=interval,
             control_window=control_window,
@@ -209,6 +213,7 @@ class Experiment:
         self,
         sequences: Sequence[TargetMap[IQArray]],
         *,
+        mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
@@ -220,6 +225,8 @@ class Experiment:
         ----------
         sequences : Sequence[TargetMap[IQArray]]
             Sequences of the experiment.
+        mode : Literal["single", "avg"], optional
+            Measurement mode. Defaults to "avg".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -241,6 +248,7 @@ class Experiment:
         ]
         return self._measurement.measure_batch(
             waveforms_list=waveforms_list,
+            mode=mode,
             shots=shots,
             interval=interval,
             control_window=control_window,
@@ -664,7 +672,7 @@ class Experiment:
         results = defaultdict(list)
         for window in time_range:
             result = self.measure(
-                sequence={target: [] for target in targets},
+                sequence={target: np.zeros(0) for target in targets},
                 control_window=window,
             )
             for qubit, value in result.data.items():

@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Final, Literal
 
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 from qubecalib.neopulse import (
     Arbit,
     Capture,
@@ -147,7 +147,7 @@ class Measurement:
 
     def measure(
         self,
-        waveforms: TargetMap[ArrayLike],
+        waveforms: TargetMap[IQArray],
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
@@ -161,7 +161,7 @@ class Measurement:
 
         Parameters
         ----------
-        waveforms : TargetMap[ArrayLike]
+        waveforms : TargetMap[IQArray]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays with the sampling period of 2 ns.
         mode : Literal["single", "avg"], optional
@@ -266,7 +266,7 @@ class Measurement:
     def _create_sequence(
         self,
         *,
-        waveforms: TargetMap[ArrayLike],
+        waveforms: TargetMap[IQArray],
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
