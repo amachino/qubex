@@ -233,7 +233,6 @@ def fit_rabi(
                 y=y,
                 mode="markers",
                 name="Data",
-                marker_color="black",
                 error_y=dict(type="constant", value=noise),
             ),
         )
@@ -319,7 +318,6 @@ def fit_ramsey(
             y=y,
             mode="markers",
             name="Data",
-            marker_color="black",
         )
     )
     fig.update_layout(
@@ -392,7 +390,6 @@ def fit_exp_decay(
             y=y,
             mode="markers",
             name="Data",
-            marker_color="black",
         )
     )
     fig.update_layout(
@@ -471,7 +468,6 @@ def fit_cos_and_find_minimum(
             y=y,
             mode="markers",
             name="Data",
-            marker_color="black",
         )
     )
     fig.add_trace(

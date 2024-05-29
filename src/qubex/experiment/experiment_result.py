@@ -115,14 +115,12 @@ class SweepResult(TargetResult):
                 go.Scatter(
                     x=self.sweep_range,
                     y=self.data.real,
-                    mode="lines+markers",
                 )
             )
             fig.add_trace(
                 go.Scatter(
                     x=self.sweep_range,
                     y=self.data.imag,
-                    mode="lines+markers",
                 )
             )
             fig.update_layout(
@@ -138,8 +136,6 @@ class SweepResult(TargetResult):
                 go.Scatter(
                     x=self.sweep_range,
                     y=values,
-                    mode="lines+markers",
-                    marker_color="black",
                 )
             )
             fig.update_layout(
@@ -181,8 +177,6 @@ class AmplRabiRelation(TargetResult):
             go.Scatter(
                 x=self.sweep_range,
                 y=self.data * 1e3,
-                mode="lines+markers",
-                marker_color="black",
             )
         )
         fig.update_layout(
@@ -226,8 +220,6 @@ class FreqRabiRelation(TargetResult):
             go.Scatter(
                 x=self.frequency_range,
                 y=self.data * 1e3,
-                mode="lines+markers",
-                marker_color="black",
             )
         )
         fig.update_layout(
@@ -284,8 +276,6 @@ class TimePhaseRelation(TargetResult):
             go.Scatter(
                 x=self.sweep_range,
                 y=self.phases,
-                mode="lines+markers",
-                marker_color="black",
             )
         )
         fig.update_layout(

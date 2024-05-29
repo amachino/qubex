@@ -48,6 +48,15 @@ pio.templates["qubex"] = go.layout.Template(
         width=WIDTH,
         height=HEIGHT,
         margin=dict(l=MARGIN_L, r=MARGIN_R, b=MARGIN_B, t=MARGIN_T),
+        colorway=[
+            "#0C5DA5",
+            "#00B945",
+            "#FF9500",
+            "#FF2C00",
+            "#845B97",
+            "#474747",
+            "#9e9e9e",
+        ],
         plot_bgcolor="white",
         paper_bgcolor="white",
     ),
@@ -56,7 +65,6 @@ pio.templates["qubex"] = go.layout.Template(
             go.Scatter(
                 mode="markers",
                 marker=dict(size=6),
-                line=dict(width=1, color="black", dash="dot"),
             )
         ]
     ),
