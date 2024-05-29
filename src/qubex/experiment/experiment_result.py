@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
@@ -12,6 +13,7 @@ from ..fitting import RabiParam
 from ..typing import TargetMap
 
 
+@dataclass
 class TargetData:
     """
     Data class representing some data of a target.
@@ -22,18 +24,10 @@ class TargetData:
         Target of the experiment.
     data : NDArray
         Measured data.
-    created_at : str
-        Time when the experiment is conducted.
     """
 
-    def __init__(
-        self,
-        target: str,
-        data: NDArray,
-    ):
-        self.target = target
-        self.data = data
-        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    target: str
+    data: NDArray
 
     def plot(self, *args, **kwargs):
         raise NotImplementedError
@@ -45,6 +39,7 @@ class TargetData:
 T = TypeVar("T", bound=TargetData)
 
 
+@dataclass
 class ExperimentResult(Generic[T]):
     """
     Data class representing the result of an experiment.
@@ -55,16 +50,15 @@ class ExperimentResult(Generic[T]):
         Result of the experiment.
     rabi_params: TargetMap[RabiParam]
         Parameters of the Rabi oscillation.
+    created_at: str
+        Time when the experiment is conducted.
     """
 
-    def __init__(
-        self,
-        data: TargetMap[T],
-        rabi_params: TargetMap[RabiParam] | None = None,
-    ):
-        self.data = data
-        self.rabi_params = rabi_params
-        self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    data: TargetMap[T]
+    rabi_params: TargetMap[RabiParam] | None = None
+    created_at: str = field(
+        default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
 
     def plot(
         self,
@@ -78,6 +72,7 @@ class ExperimentResult(Generic[T]):
         return {target: self.data[target].fit() for target in self.data}
 
 
+@dataclass
 class RabiData(TargetData):
     """
     Data class representing the result of a Rabi oscillation experiment.
@@ -92,23 +87,10 @@ class RabiData(TargetData):
         Time range of the experiment.
     rabi_param : RabiParam
         Parameters of the Rabi oscillation.
-    created_at : str
-        Time when the experiment is conducted.
     """
 
-    def __init__(
-        self,
-        target: str,
-        data: NDArray,
-        time_range: NDArray,
-        rabi_param: RabiParam,
-    ):
-        super().__init__(
-            target=target,
-            data=data,
-        )
-        self.time_range = time_range
-        self.rabi_param = rabi_param
+    time_range: NDArray
+    rabi_param: RabiParam
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
@@ -180,6 +162,7 @@ class RabiData(TargetData):
         )
 
 
+@dataclass
 class SweepData(TargetData):
     """
     Data class representing the result of a sweep experiment.
@@ -196,22 +179,11 @@ class SweepData(TargetData):
         Label of the sweep value.
     rabi_param : RabiParam, optional
         Parameters of the Rabi oscillation.
-    created_at : str
-        Time when the experiment is conducted.
     """
 
-    def __init__(
-        self,
-        target: str,
-        data: NDArray,
-        sweep_range: NDArray,
-        sweep_value_label: str,
-        rabi_param: RabiParam | None = None,
-    ):
-        super().__init__(target, data)
-        self.sweep_range = sweep_range
-        self.sweep_value_label = sweep_value_label
-        self.rabi_param = rabi_param
+    sweep_range: NDArray
+    sweep_value_label: str
+    rabi_param: RabiParam | None = None
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
@@ -283,6 +255,7 @@ class SweepData(TargetData):
             fig.show()
 
 
+@dataclass
 class AmplRabiData(TargetData):
     """
     The relation between the drive amplitude and the Rabi rate.
@@ -295,18 +268,9 @@ class AmplRabiData(TargetData):
         Measured data.
     sweep_range : NDArray
         Sweep range of the experiment.
-    created_at : str
-        Time when the experiment is conducted.
     """
 
-    def __init__(
-        self,
-        target: str,
-        data: NDArray,
-        sweep_range: NDArray,
-    ):
-        super().__init__(target, data)
-        self.sweep_range = sweep_range
+    sweep_range: NDArray
 
     def plot(self):
         fig = go.Figure()
@@ -336,20 +300,12 @@ class FreqRabiData(TargetData):
         Measured data.
     sweep_range : NDArray
         Sweep range of the experiment.
-    created_at : str
-        Time when the experiment is conducted.
+    frequency_range : NDArray
+        Frequency range of the experiment.
     """
 
-    def __init__(
-        self,
-        target: str,
-        data: NDArray,
-        sweep_range: NDArray,
-        frequency_range: NDArray,
-    ):
-        super().__init__(target, data)
-        self.sweep_range = sweep_range
-        self.frequency_range = frequency_range
+    sweep_range: NDArray
+    frequency_range: NDArray
 
     def plot(self):
         fig = go.Figure()
@@ -379,18 +335,9 @@ class TimePhaseData(TargetData):
         Measured data.
     sweep_range : NDArray
         Sweep range of the experiment.
-    created_at : str
-        Time when the experiment is conducted.
     """
 
-    def __init__(
-        self,
-        data: NDArray,
-        target: str,
-        sweep_range: NDArray,
-    ):
-        super().__init__(target, data)
-        self.sweep_range = sweep_range
+    sweep_range: NDArray
 
     @property
     def phases(self) -> NDArray[np.float64]:
