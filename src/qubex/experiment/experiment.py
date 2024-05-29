@@ -389,14 +389,22 @@ class Experiment:
             interval=interval,
             plot=plot,
         )
-        rabi_params = self.fit_rabi(sweep_results.data)
+        rabi_params = {
+            target: fit.fit_rabi(
+                target=data.target,
+                times=data.sweep_range,
+                data=data.data,
+                plot=plot,
+            )
+            for target, data in sweep_results.data.items()
+        }
         if store_params:
             self.store_rabi_params(rabi_params)
         rabi_results = {
             target: RabiResult(
                 target=target,
                 data=sweep_results.data[target].data,
-                sweep_range=time_range,
+                time_range=time_range,
                 rabi_param=rabi_params[target],
             )
             for target in targets
@@ -553,7 +561,6 @@ class Experiment:
                 time_range=time_range,
                 amplitudes=amplitudes,
                 detuning=detuning,
-                plot=False,
             )
             clear_output(wait=True)
             rabi_params = result.rabi_params
@@ -608,7 +615,6 @@ class Experiment:
             result = self.rabi_experiment(
                 time_range=time_range,
                 amplitudes={target: amplitude for target in targets},
-                plot=False,
             )
             clear_output(wait=True)
             rabi_params = result.rabi_params
@@ -617,7 +623,6 @@ class Experiment:
             for target, param in rabi_params.items():
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
-
         data = {
             target: AmplRabiRelation(
                 target=target,
@@ -693,77 +698,6 @@ class Experiment:
         value_rotated = value * np.exp(-1j * param.angle)
         value_normalized = (value_rotated.imag - param.offset) / param.amplitude
         return value_normalized
-
-    def fit_rabi(
-        self,
-        result: TargetMap[SweepResult],
-        wave_count: Optional[float] = None,
-        plot: bool = True,
-    ) -> dict[str, RabiParam]:
-        """
-        Fits the measured data to a Rabi oscillation.
-
-        Parameters
-        ----------
-        result : SweepResult
-            Result of the Rabi experiment.
-        wave_count : float, optional
-            Number of waves in sweep_result. Defaults to None.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict[str, RabiParam]
-            Parameters of the Rabi oscillation.
-        """
-        rabi_params = {
-            target: fit.fit_rabi(
-                target=result[target].target,
-                times=result[target].sweep_range,
-                data=result[target].data,
-                wave_count=wave_count,
-                plot=plot,
-            )
-            for target in result
-        }
-        return rabi_params
-
-    def fit_damped_rabi(
-        self,
-        result: TargetMap[SweepResult],
-        wave_count: Optional[float] = None,
-        plot: bool = True,
-    ) -> dict[str, RabiParam]:
-        """
-        Fits the measured data to a damped Rabi oscillation.
-
-        Parameters
-        ----------
-        result : dict[str, SweepResult]
-            Result of the Rabi experiment.
-        wave_count : float, optional
-            Number of waves in sweep_result. Defaults to None.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict[str, RabiParam]
-            Parameters of the Rabi oscillation.
-        """
-        rabi_params = {
-            target: fit.fit_rabi(
-                target=result[target].target,
-                times=result[target].sweep_range,
-                data=result[target].data,
-                wave_count=wave_count,
-                plot=plot,
-                is_damped=True,
-            )
-            for target in result
-        }
-        return rabi_params
 
     def calc_control_amplitudes(
         self,

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, Optional, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 
+from .. import fitting
 from ..fitting import RabiParam
 from ..typing import TargetMap
 
@@ -37,6 +38,9 @@ class TargetResult:
     def plot(self, *args, **kwargs):
         raise NotImplementedError
 
+    def fit(self, *args, **kwargs):
+        raise NotImplementedError
+
 
 T = TypeVar("T", bound=TargetResult)
 
@@ -62,13 +66,120 @@ class ExperimentResult(Generic[T]):
         self.rabi_params = rabi_params
         self.created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    def plot(self):
-        rabi_params = self.rabi_params
+    def plot(
+        self,
+        *args,
+        **kwargs,
+    ):
         for target in self.data:
-            if rabi_params is None:
-                self.data[target].plot()
-            else:
-                self.data[target].plot(rabi_param=rabi_params[target])
+            rabi_param = self.rabi_params[target] if self.rabi_params else None
+            self.data[target].plot(*args, rabi_param=rabi_param, **kwargs)
+
+    def fit(self) -> TargetMap[Any]:
+        return {target: self.data[target].fit() for target in self.data}
+
+
+class RabiResult(TargetResult):
+    """
+    Data class representing the result of a Rabi oscillation experiment.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    time_range : NDArray
+        Time range of the experiment.
+    rabi_param : RabiParam
+        Parameters of the Rabi oscillation.
+    created_at : str
+        Time when the experiment is conducted.
+    """
+
+    def __init__(
+        self,
+        target: str,
+        data: NDArray,
+        time_range: NDArray,
+        rabi_param: RabiParam,
+    ):
+        super().__init__(
+            target=target,
+            data=data,
+        )
+        self.time_range = time_range
+        self.rabi_param = rabi_param
+
+    @property
+    def rotated(self) -> NDArray:
+        param = self.rabi_param
+        return self.data * np.exp(-1j * param.angle)
+
+    @property
+    def normalized(self) -> NDArray:
+        param = self.rabi_param
+        values = self.data * np.exp(-1j * param.angle)
+        values_normalized = (values.imag - param.offset) / param.amplitude
+        return values_normalized
+
+    def plot(
+        self,
+        *,
+        normalize: bool,
+        **kwargs,
+    ):
+        if normalize:
+            values = self.normalized
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    mode="markers+lines",
+                    x=self.time_range,
+                    y=values,
+                    error_y=dict(
+                        type="constant",
+                        value=self.rabi_param.noise / self.rabi_param.amplitude,
+                    ),
+                )
+            )
+            fig.update_layout(
+                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                xaxis_title="Drive time (ns)",
+                yaxis_title="Normalized value",
+            )
+            fig.show()
+        else:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    mode="markers+lines",
+                    x=self.time_range,
+                    y=self.data.real,
+                    name="I",
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    mode="markers+lines",
+                    x=self.time_range,
+                    y=self.data.imag,
+                    name="Q",
+                )
+            )
+            fig.update_layout(
+                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                xaxis_title="Drive time (ns)",
+                yaxis_title="Measured value",
+            )
+            fig.show()
+
+    def fit(self) -> RabiParam:
+        return fitting.fit_rabi(
+            target=self.target,
+            times=self.time_range,
+            data=self.data,
+        )
 
 
 class SweepResult(TargetResult):
@@ -108,11 +219,39 @@ class SweepResult(TargetResult):
         values_normalized = (values.imag - param.offset) / param.amplitude
         return values_normalized
 
-    def plot(self, rabi_param: Optional[RabiParam] = None):
-        if rabi_param is None:
+    def plot(
+        self,
+        *,
+        normalize: bool,
+        rabi_param: Optional[RabiParam] = None,
+    ):
+        if normalize:
+            if rabi_param is None:
+                raise ValueError("rabi_param must be provided for normalization.")
+            values = self.normalized(rabi_param)
             fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
+                    mode="markers+lines",
+                    x=self.sweep_range,
+                    y=values,
+                    error_y=dict(
+                        type="constant",
+                        value=rabi_param.noise / rabi_param.amplitude,
+                    ),
+                )
+            )
+            fig.update_layout(
+                title=f"Measured value : {self.target}",
+                xaxis_title=self.sweep_value_label,
+                yaxis_title="Normalized value",
+            )
+            fig.show()
+        else:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    mode="markers+lines",
                     x=self.sweep_range,
                     y=self.data.real,
                     name="I",
@@ -120,6 +259,7 @@ class SweepResult(TargetResult):
             )
             fig.add_trace(
                 go.Scatter(
+                    mode="markers+lines",
                     x=self.sweep_range,
                     y=self.data.imag,
                     name="Q",
@@ -131,83 +271,11 @@ class SweepResult(TargetResult):
                 yaxis_title="Measured value",
             )
             fig.show()
-        else:
-            values = self.normalized(rabi_param)
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    x=self.sweep_range,
-                    y=values,
-                )
-            )
-            fig.update_layout(
-                title=f"Measured value : {self.target}",
-                xaxis_title=self.sweep_value_label,
-                yaxis_title="Normalized value",
-            )
-            fig.show()
-
-
-class RabiResult(SweepResult):
-    """
-    Data class representing the result of a Rabi oscillation experiment.
-
-    Attributes
-    ----------
-    target : str
-        Target of the experiment.
-    data : NDArray
-        Measured data.
-    sweep_range : NDArray
-        Sweep range of the experiment.
-    sweep_value_label : str
-        Label of the sweep value.
-    rabi_param : RabiParam
-        Parameters of the Rabi oscillation.
-    created_at : str
-        Time when the experiment is conducted.
-    """
-
-    def __init__(
-        self,
-        target: str,
-        data: NDArray,
-        sweep_range: NDArray,
-        rabi_param: RabiParam,
-    ):
-        super().__init__(
-            target=target,
-            data=data,
-            sweep_range=sweep_range,
-            sweep_value_label="Drive duration (ns)",
-        )
-        self.sweep_range = sweep_range
-        self.rabi_param = rabi_param
-
-    def plot(self, *args, **kwargs):
-        values = self.normalized(self.rabi_param)
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=self.sweep_range,
-                y=values,
-                error_y=dict(
-                    type="constant",
-                    value=self.rabi_param.noise / self.rabi_param.amplitude,
-                ),
-            )
-        )
-        fig.update_layout(
-            title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
-            xaxis_title=self.sweep_value_label,
-            yaxis_title="Normalized value",
-        )
-        fig.show()
 
 
 class AmplRabiRelation(TargetResult):
     """
-    The relation between the control amplitude and the Rabi rate.
+    The relation between the drive amplitude and the Rabi rate.
 
     Attributes
     ----------
@@ -239,8 +307,8 @@ class AmplRabiRelation(TargetResult):
             )
         )
         fig.update_layout(
-            title=f"Relation between control amplitude and Rabi rate : {self.target}",
-            xaxis_title="Control amplitude (arb. units)",
+            title=f"Relation between drive amplitude and Rabi rate : {self.target}",
+            xaxis_title="Drive amplitude (arb. units)",
             yaxis_title="Rabi rate (MHz)",
         )
         fig.show()
@@ -248,7 +316,7 @@ class AmplRabiRelation(TargetResult):
 
 class FreqRabiRelation(TargetResult):
     """
-    The relation between the control frequency and the Rabi rate.
+    The relation between the drive frequency and the Rabi rate.
 
     Attributes
     ----------
@@ -282,8 +350,8 @@ class FreqRabiRelation(TargetResult):
             )
         )
         fig.update_layout(
-            title=f"Relation between control frequency and Rabi rate : {self.target}",
-            xaxis_title="Control frequency (GHz)",
+            title=f"Relation between drive frequency and Rabi rate : {self.target}",
+            xaxis_title="Drive frequency (GHz)",
             yaxis_title="Rabi rate (MHz)",
         )
         fig.show()

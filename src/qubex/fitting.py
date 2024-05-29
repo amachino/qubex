@@ -238,7 +238,7 @@ def fit_rabi(
         )
         fig.update_layout(
             title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
-            xaxis_title="Time (ns)",
+            xaxis_title="Drive time (ns)",
             yaxis_title="Amplitude (arb. units)",
         )
         fig.show()
