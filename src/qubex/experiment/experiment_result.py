@@ -116,8 +116,6 @@ class SweepResult(TargetResult):
                     x=self.sweep_range,
                     y=self.data.real,
                     mode="lines+markers",
-                    marker=dict(symbol="circle", size=8, color="#636EFA"),
-                    line=dict(width=1, color="grey", dash="dash"),
                 )
             )
             fig.add_trace(
@@ -125,16 +123,12 @@ class SweepResult(TargetResult):
                     x=self.sweep_range,
                     y=self.data.imag,
                     mode="lines+markers",
-                    marker=dict(symbol="circle", size=8, color="#EF553B"),
-                    line=dict(width=1, color="grey", dash="dash"),
                 )
             )
             fig.update_layout(
-                title=self.target,
+                title=f"Measured value : {self.target}",
                 xaxis_title=self.sweep_value_label,
                 yaxis_title="Measured value",
-                width=600,
-                height=300,
             )
             fig.show()
         else:
@@ -145,16 +139,13 @@ class SweepResult(TargetResult):
                     x=self.sweep_range,
                     y=values,
                     mode="lines+markers",
-                    marker=dict(symbol="circle", size=8, color="#636EFA"),
-                    line=dict(width=1, color="grey", dash="dash"),
+                    marker_color="black",
                 )
             )
             fig.update_layout(
-                title=self.target,
+                title=f"Measured value : {self.target}",
                 xaxis_title=self.sweep_value_label,
                 yaxis_title="Normalized value",
-                width=600,
-                height=300,
             )
             fig.show()
 
@@ -191,16 +182,13 @@ class AmplRabiRelation(TargetResult):
                 x=self.sweep_range,
                 y=self.data * 1e3,
                 mode="lines+markers",
-                marker=dict(symbol="circle", size=8, color="#636EFA"),
-                line=dict(width=1, color="grey", dash="dash"),
+                marker_color="black",
             )
         )
         fig.update_layout(
             title=f"Relation between control amplitude and Rabi rate : {self.target}",
-            xaxis_title="Control amplitude (arb. unit)",
+            xaxis_title="Control amplitude (arb. units)",
             yaxis_title="Rabi rate (MHz)",
-            width=600,
-            height=300,
         )
         fig.show()
 
@@ -239,16 +227,13 @@ class FreqRabiRelation(TargetResult):
                 x=self.frequency_range,
                 y=self.data * 1e3,
                 mode="lines+markers",
-                marker=dict(symbol="circle", size=8, color="#636EFA"),
-                line=dict(width=1, color="grey", dash="dash"),
+                marker_color="black",
             )
         )
         fig.update_layout(
             title=f"Relation between control frequency and Rabi rate : {self.target}",
             xaxis_title="Control frequency (GHz)",
             yaxis_title="Rabi rate (MHz)",
-            width=600,
-            height=300,
         )
         fig.show()
 
@@ -300,15 +285,12 @@ class TimePhaseRelation(TargetResult):
                 x=self.sweep_range,
                 y=self.phases,
                 mode="lines+markers",
-                marker=dict(symbol="circle", size=8, color="#636EFA"),
-                line=dict(width=1, color="grey", dash="dash"),
+                marker_color="black",
             )
         )
         fig.update_layout(
             title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/chunk",
             xaxis_title="Control window (ns)",
             yaxis_title="Phase (rad)",
-            width=600,
-            height=300,
         )
         fig.show()

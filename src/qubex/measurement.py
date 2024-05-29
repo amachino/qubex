@@ -65,12 +65,11 @@ class MeasureResult:
                     sampling_period=8,
                     title=f"Readout waveform of {qubit}",
                     xlabel="Capture time (ns)",
-                    ylabel="Amplitude (arb. unit)",
+                    ylabel="Amplitude (arb. units)",
                 )
 
 
 class Measurement:
-
     def __init__(
         self,
         chip_id: str,

@@ -213,8 +213,6 @@ class Waveform(ABC):
             title=title,
             xaxis_title=xlabel,
             yaxis_title=ylabel,
-            width=600,
-            height=300,
         )
         fig.show()
 

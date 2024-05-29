@@ -225,8 +225,6 @@ def fit_rabi(
                 y=y_fine,
                 mode="lines",
                 name="Fit",
-                marker_color="black",
-                marker_line_width=2,
             )
         )
         fig.add_trace(
@@ -235,17 +233,14 @@ def fit_rabi(
                 y=y,
                 mode="markers",
                 name="Data",
+                marker_color="black",
                 error_y=dict(type="constant", value=noise),
-                marker=dict(color="#636EFA", size=5),
             ),
         )
         fig.update_layout(
             title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
             xaxis_title="Time (ns)",
             yaxis_title="Amplitude (arb. units)",
-            width=600,
-            height=300,
-            showlegend=True,
         )
         fig.show()
 
@@ -312,29 +307,25 @@ def fit_ramsey(
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
             x=x,
             y=y,
             mode="markers",
             name="Data",
             marker_color="black",
-            marker_size=10,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
-            marker_color="black",
-            marker_line_width=2,
         )
     )
     fig.update_layout(
         title="Decay Fit",
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
-        showlegend=True,
     )
     fig.show()
 
@@ -389,29 +380,25 @@ def fit_exp_decay(
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
             x=x,
             y=y,
             mode="markers",
             name="Data",
             marker_color="black",
-            marker_size=10,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
-            marker_color="black",
-            marker_line_width=2,
         )
     )
     fig.update_layout(
         title=f"Decay time: {popt[1] / 1e3:.3g} us",
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
-        showlegend=True,
     )
     fig.show()
 
@@ -472,22 +459,19 @@ def fit_cos_and_find_minimum(
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
             x=x,
             y=y,
             mode="markers",
             name="Data",
             marker_color="black",
-            marker_size=10,
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
-            marker_color="black",
-            marker_line_width=2,
         )
     )
     fig.add_trace(
@@ -504,7 +488,6 @@ def fit_cos_and_find_minimum(
         title="Fit and Minimum",
         xaxis_title="Time (ns)",
         yaxis_title="Amplitude (arb. units)",
-        showlegend=True,
     )
     fig.show()
 

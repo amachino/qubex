@@ -10,7 +10,7 @@ def plot_waveform(
     sampling_period: float = 2.0,
     title: str = "Waveform",
     xlabel: str = "Time (ns)",
-    ylabel: str = "Amplitude (arb. unit)",
+    ylabel: str = "Amplitude (arb. units)",
 ):
     fig = go.Figure()
     fig.add_trace(
@@ -33,8 +33,6 @@ def plot_waveform(
         title=title,
         xaxis_title=xlabel,
         yaxis_title=ylabel,
-        width=600,
-        height=300,
     )
     fig.show()
 
@@ -42,10 +40,9 @@ def plot_waveform(
 def scatter_iq_data(
     data: TargetMap[IQArray],
     title: str = "I/Q plane",
-    xlabel: str = "I",
-    ylabel: str = "Q",
+    xlabel: str = "I (arb. units)",
+    ylabel: str = "Q (arb. units)",
 ) -> None:
-
     fig = go.Figure()
     for qubit, iq in data.items():
         scatter = go.Scatter(
@@ -59,8 +56,9 @@ def scatter_iq_data(
         title=title,
         xaxis_title=xlabel,
         yaxis_title=ylabel,
-        width=400,
+        width=500,
         height=400,
+        margin=dict(l=120, r=120),
         yaxis=dict(scaleanchor="x", scaleratio=1),
     )
     fig.show()
