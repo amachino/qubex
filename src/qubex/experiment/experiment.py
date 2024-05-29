@@ -23,7 +23,7 @@ from ..measurement import (
     Measurement,
     MeasureResult,
 )
-from ..pulse import Rect, Waveform
+from ..pulse import FlatTop, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from .experiment_result import (
     AmplRabiRelation,
@@ -774,7 +774,7 @@ class Experiment:
         current_amplitudes = self.params.control_amplitude
         rabi_params = rabi_params or self.rabi_params
 
-        if rabi_params is None:
+        if self._rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
         amplitudes = {
@@ -791,3 +791,43 @@ class Experiment:
         print(f"\n{1/rabi_rate/4} ns rect pulse → π/2 pulse")
 
         return amplitudes
+
+    def calibrate_hpi_pulse(
+        self,
+        target: str,
+    ) -> ExperimentResult[SweepResult]:
+        """
+        Calibrates the π/2 pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate the π/2 pulse.
+
+        Returns
+        -------
+        ExperimentResult[SweepResult]
+            Result of the experiment.
+        """
+        rabi_params = self.rabi_params
+        if rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+        ampl = self.calc_control_amplitudes(rabi_rate=12.5e-3)[target]
+        ampl_min = ampl * 0.0
+        ampl_max = ampl * 2.0
+        ampl_range = np.linspace(ampl_min, ampl_max, 20)
+        result = self.sweep_parameter(
+            sequence={
+                target: lambda x: FlatTop(
+                    duration=30,
+                    amplitude=x,
+                    tau=10,
+                )
+            },
+            sweep_range=ampl_range,
+            sweep_value_label="Control amplitude",
+            repetitions=4,
+            shots=DEFAULT_SHOTS,
+            interval=DEFAULT_INTERVAL,
+        )
+        return result
