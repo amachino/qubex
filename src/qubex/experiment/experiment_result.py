@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 import numpy as np
 import plotly.graph_objects as go
@@ -12,9 +12,9 @@ from ..fitting import RabiParam
 from ..typing import TargetMap
 
 
-class TargetResult:
+class TargetData:
     """
-    Data class representing the result of an experiment for a target.
+    Data class representing some data of a target.
 
     Attributes
     ----------
@@ -42,7 +42,7 @@ class TargetResult:
         raise NotImplementedError
 
 
-T = TypeVar("T", bound=TargetResult)
+T = TypeVar("T", bound=TargetData)
 
 
 class ExperimentResult(Generic[T]):
@@ -51,7 +51,7 @@ class ExperimentResult(Generic[T]):
 
     Attributes
     ----------
-    data: TargetMap[TargetResult]
+    data: TargetMap[TargetData]
         Result of the experiment.
     rabi_params: TargetMap[RabiParam]
         Parameters of the Rabi oscillation.
@@ -72,14 +72,13 @@ class ExperimentResult(Generic[T]):
         **kwargs,
     ):
         for target in self.data:
-            rabi_param = self.rabi_params[target] if self.rabi_params else None
-            self.data[target].plot(*args, rabi_param=rabi_param, **kwargs)
+            self.data[target].plot(*args, **kwargs)
 
     def fit(self) -> TargetMap[Any]:
         return {target: self.data[target].fit() for target in self.data}
 
 
-class RabiResult(TargetResult):
+class RabiData(TargetData):
     """
     Data class representing the result of a Rabi oscillation experiment.
 
@@ -112,12 +111,12 @@ class RabiResult(TargetResult):
         self.rabi_param = rabi_param
 
     @property
-    def rotated(self) -> NDArray:
+    def rotated(self) -> NDArray[np.complex128]:
         param = self.rabi_param
         return self.data * np.exp(-1j * param.angle)
 
     @property
-    def normalized(self) -> NDArray:
+    def normalized(self) -> NDArray[np.float64]:
         param = self.rabi_param
         values = self.data * np.exp(-1j * param.angle)
         values_normalized = (values.imag - param.offset) / param.amplitude
@@ -126,8 +125,7 @@ class RabiResult(TargetResult):
     def plot(
         self,
         *,
-        normalize: bool,
-        **kwargs,
+        normalize: bool = False,
     ):
         if normalize:
             values = self.normalized
@@ -182,7 +180,7 @@ class RabiResult(TargetResult):
         )
 
 
-class SweepResult(TargetResult):
+class SweepData(TargetData):
     """
     Data class representing the result of a sweep experiment.
 
@@ -196,6 +194,8 @@ class SweepResult(TargetResult):
         Sweep range of the experiment.
     sweep_value_label : str
         Label of the sweep value.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
     created_at : str
         Time when the experiment is conducted.
     """
@@ -206,15 +206,25 @@ class SweepResult(TargetResult):
         data: NDArray,
         sweep_range: NDArray,
         sweep_value_label: str,
+        rabi_param: RabiParam | None = None,
     ):
         super().__init__(target, data)
         self.sweep_range = sweep_range
         self.sweep_value_label = sweep_value_label
+        self.rabi_param = rabi_param
 
-    def rotated(self, param: RabiParam) -> NDArray:
+    @property
+    def rotated(self) -> NDArray[np.complex128]:
+        param = self.rabi_param
+        if param is None:
+            raise ValueError("rabi_param must be provided for rotation.")
         return self.data * np.exp(-1j * param.angle)
 
-    def normalized(self, param: RabiParam) -> NDArray:
+    @property
+    def normalized(self) -> NDArray[np.float64]:
+        param = self.rabi_param
+        if param is None:
+            raise ValueError("rabi_param must be provided for rotation.")
         values = self.data * np.exp(-1j * param.angle)
         values_normalized = (values.imag - param.offset) / param.amplitude
         return values_normalized
@@ -222,13 +232,13 @@ class SweepResult(TargetResult):
     def plot(
         self,
         *,
-        normalize: bool,
-        rabi_param: Optional[RabiParam] = None,
+        normalize: bool = False,
     ):
         if normalize:
-            if rabi_param is None:
-                raise ValueError("rabi_param must be provided for normalization.")
-            values = self.normalized(rabi_param)
+            param = self.rabi_param
+            if param is None:
+                raise ValueError("rabi_param must be provided for rotation.")
+            values = self.normalized
             fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
@@ -237,7 +247,7 @@ class SweepResult(TargetResult):
                     y=values,
                     error_y=dict(
                         type="constant",
-                        value=rabi_param.noise / rabi_param.amplitude,
+                        value=param.noise / param.amplitude,
                     ),
                 )
             )
@@ -273,7 +283,7 @@ class SweepResult(TargetResult):
             fig.show()
 
 
-class AmplRabiRelation(TargetResult):
+class AmplRabiData(TargetData):
     """
     The relation between the drive amplitude and the Rabi rate.
 
@@ -298,7 +308,7 @@ class AmplRabiRelation(TargetResult):
         super().__init__(target, data)
         self.sweep_range = sweep_range
 
-    def plot(self, *args, **kwargs):
+    def plot(self):
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -307,14 +317,14 @@ class AmplRabiRelation(TargetResult):
             )
         )
         fig.update_layout(
-            title=f"Relation between drive amplitude and Rabi rate : {self.target}",
+            title=f"Drive amplitude and Rabi rate : {self.target}",
             xaxis_title="Drive amplitude (arb. units)",
             yaxis_title="Rabi rate (MHz)",
         )
         fig.show()
 
 
-class FreqRabiRelation(TargetResult):
+class FreqRabiData(TargetData):
     """
     The relation between the drive frequency and the Rabi rate.
 
@@ -341,7 +351,7 @@ class FreqRabiRelation(TargetResult):
         self.sweep_range = sweep_range
         self.frequency_range = frequency_range
 
-    def plot(self, *args, **kwargs):
+    def plot(self):
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -350,14 +360,14 @@ class FreqRabiRelation(TargetResult):
             )
         )
         fig.update_layout(
-            title=f"Relation between drive frequency and Rabi rate : {self.target}",
+            title=f"Drive frequency and Rabi rate : {self.target}",
             xaxis_title="Drive frequency (GHz)",
             yaxis_title="Rabi rate (MHz)",
         )
         fig.show()
 
 
-class TimePhaseRelation(TargetResult):
+class TimePhaseData(TargetData):
     """
     The relation between the control window and the phase shift.
 
@@ -397,7 +407,7 @@ class TimePhaseRelation(TargetResult):
         """Return the average phase shift per chunk."""
         return np.mean(self.phase_diffs).astype(float)
 
-    def plot(self, *args, **kwargs):
+    def plot(self):
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(

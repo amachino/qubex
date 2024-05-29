@@ -26,12 +26,12 @@ from ..measurement import (
 from ..pulse import FlatTop, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from .experiment_result import (
-    AmplRabiRelation,
+    AmplRabiData,
     ExperimentResult,
-    FreqRabiRelation,
-    RabiResult,
-    SweepResult,
-    TimePhaseRelation,
+    FreqRabiData,
+    RabiData,
+    SweepData,
+    TimePhaseData,
 )
 from .experiment_tool import ExperimentTool
 
@@ -305,7 +305,7 @@ class Experiment:
         time_range: NDArray = np.arange(0, 201, 4),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[RabiResult]:
+    ) -> ExperimentResult[RabiData]:
         """
         Conducts a Rabi experiment with the default amplitude.
 
@@ -322,7 +322,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[RabiResult]
+        ExperimentResult[RabiData]
             Result of the experiment.
         """
         ampl = self.params.control_amplitude
@@ -346,7 +346,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
-    ) -> ExperimentResult[RabiResult]:
+    ) -> ExperimentResult[RabiData]:
         """
         Conducts a Rabi experiment.
 
@@ -369,7 +369,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[RabiResult]
+        ExperimentResult[RabiData]
             Result of the experiment.
         """
         targets = list(amplitudes.keys())
@@ -381,7 +381,7 @@ class Experiment:
             ).detuned(detuning)
             for target in targets
         }
-        sweep_results = self.sweep_parameter(
+        sweep_data = self.sweep_parameter(
             sequence=sequence,
             sweep_range=time_range,
             sweep_value_label="Time (ns)",
@@ -396,21 +396,21 @@ class Experiment:
                 data=data.data,
                 plot=plot,
             )
-            for target, data in sweep_results.data.items()
+            for target, data in sweep_data.data.items()
         }
         if store_params:
             self.store_rabi_params(rabi_params)
-        rabi_results = {
-            target: RabiResult(
+        rabi_data = {
+            target: RabiData(
                 target=target,
-                data=sweep_results.data[target].data,
+                data=sweep_data.data[target].data,
                 time_range=time_range,
                 rabi_param=rabi_params[target],
             )
             for target in targets
         }
         result = ExperimentResult(
-            data=rabi_results,
+            data=rabi_data,
             rabi_params=rabi_params,
         )
         return result
@@ -425,7 +425,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> ExperimentResult[SweepResult]:
+    ) -> ExperimentResult[SweepData]:
         """
         Sweeps a parameter and measures the signals.
 
@@ -448,7 +448,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[SweepResult]
+        ExperimentResult[SweepData]
             Result of the experiment.
         """
         targets = list(sequence.keys())
@@ -473,11 +473,12 @@ class Experiment:
                 clear_output(wait=True)
                 viz.scatter_iq_data(signals)
         data = {
-            target: SweepResult(
+            target: SweepData(
                 target=target,
                 data=np.array(values),
                 sweep_range=sweep_range,
                 sweep_value_label=sweep_value_label,
+                rabi_param=self.rabi_params.get(target),
             )
             for target, values in signals.items()
         }
@@ -492,7 +493,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> ExperimentResult[SweepResult]:
+    ) -> ExperimentResult[SweepData]:
         """
         Repeats the pulse sequence n times.
 
@@ -511,7 +512,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[SweepResult]
+        ExperimentResult[SweepData]
             Result of the experiment.
         """
         repeated_sequence = {
@@ -535,7 +536,7 @@ class Experiment:
         *,
         detuning_range: NDArray = np.linspace(-0.01, 0.01, 11),
         time_range: NDArray = np.arange(0, 101, 4),
-    ) -> ExperimentResult[FreqRabiRelation]:
+    ) -> ExperimentResult[FreqRabiData]:
         """
         Obtains the relation between the detuning and the Rabi frequency.
 
@@ -575,7 +576,7 @@ class Experiment:
         }
 
         data = {
-            target: FreqRabiRelation(
+            target: FreqRabiData(
                 target=target,
                 sweep_range=detuning_range,
                 frequency_range=frequencies[target],
@@ -591,7 +592,7 @@ class Experiment:
         *,
         amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
         time_range: NDArray = np.arange(0, 201, 4),
-    ) -> ExperimentResult[AmplRabiRelation]:
+    ) -> ExperimentResult[AmplRabiData]:
         """
         Obtains the relation between the control amplitude and the Rabi frequency.
 
@@ -624,7 +625,7 @@ class Experiment:
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
         data = {
-            target: AmplRabiRelation(
+            target: AmplRabiData(
                 target=target,
                 sweep_range=amplitude_range,
                 data=np.array(values, dtype=np.float64),
@@ -638,7 +639,7 @@ class Experiment:
         targets: list[str],
         *,
         time_range: NDArray = np.arange(0, 1024, 128),
-    ) -> ExperimentResult[TimePhaseRelation]:
+    ) -> ExperimentResult[TimePhaseData]:
         """
         Obtains the relation between the control window and the phase shift.
 
@@ -654,7 +655,7 @@ class Experiment:
         ExperimentResult[PhaseShiftData]
             Result of the experiment.
         """
-        results = defaultdict(list)
+        iq_data = defaultdict(list)
         for window in time_range:
             result = self.measure(
                 sequence={target: np.zeros(0) for target in targets},
@@ -662,16 +663,16 @@ class Experiment:
             )
             for qubit, value in result.data.items():
                 iq = complex(value.kerneled)
-                results[qubit].append(iq)
+                iq_data[qubit].append(iq)
             clear_output(wait=True)
-            viz.scatter_iq_data(results)
+            viz.scatter_iq_data(iq_data)
         data = {
-            qubit: TimePhaseRelation(
+            qubit: TimePhaseData(
                 target=qubit,
                 sweep_range=time_range,
                 data=np.array(values),
             )
-            for qubit, values in results.items()
+            for qubit, values in iq_data.items()
         }
         return ExperimentResult(data=data)
 
@@ -743,7 +744,7 @@ class Experiment:
     def calibrate_hpi_pulse(
         self,
         target: str,
-    ) -> ExperimentResult[SweepResult]:
+    ) -> ExperimentResult[SweepData]:
         """
         Calibrates the π/2 pulse.
 
@@ -754,7 +755,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[SweepResult]
+        ExperimentResult[SweepData]
             Result of the experiment.
         """
         rabi_params = self.rabi_params
