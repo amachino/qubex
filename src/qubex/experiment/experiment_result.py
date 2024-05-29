@@ -68,7 +68,7 @@ class ExperimentResult(Generic[T]):
             if rabi_params is None:
                 self.data[target].plot()
             else:
-                self.data[target].plot(rabi_params[target])
+                self.data[target].plot(rabi_param=rabi_params[target])
 
 
 class SweepResult(TargetResult):
@@ -79,12 +79,12 @@ class SweepResult(TargetResult):
     ----------
     target : str
         Target of the experiment.
+    data : NDArray
+        Measured data.
     sweep_range : NDArray
         Sweep range of the experiment.
     sweep_value_label : str
         Label of the sweep value.
-    data : NDArray
-        Measured data.
     created_at : str
         Time when the experiment is conducted.
     """
@@ -92,9 +92,9 @@ class SweepResult(TargetResult):
     def __init__(
         self,
         target: str,
+        data: NDArray,
         sweep_range: NDArray,
         sweep_value_label: str,
-        data: NDArray,
     ):
         super().__init__(target, data)
         self.sweep_range = sweep_range
@@ -108,29 +108,31 @@ class SweepResult(TargetResult):
         values_normalized = (values.imag - param.offset) / param.amplitude
         return values_normalized
 
-    def plot(self, param: Optional[RabiParam] = None):
-        if param is None:
+    def plot(self, rabi_param: Optional[RabiParam] = None):
+        if rabi_param is None:
             fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     x=self.sweep_range,
                     y=self.data.real,
+                    name="I",
                 )
             )
             fig.add_trace(
                 go.Scatter(
                     x=self.sweep_range,
                     y=self.data.imag,
+                    name="Q",
                 )
             )
             fig.update_layout(
-                title=f"Measured value : {self.target}",
+                title=f"Measured I/Q value : {self.target}",
                 xaxis_title=self.sweep_value_label,
                 yaxis_title="Measured value",
             )
             fig.show()
         else:
-            values = self.normalized(param)
+            values = self.normalized(rabi_param)
             fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
@@ -146,6 +148,63 @@ class SweepResult(TargetResult):
             fig.show()
 
 
+class RabiResult(SweepResult):
+    """
+    Data class representing the result of a Rabi oscillation experiment.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    sweep_value_label : str
+        Label of the sweep value.
+    rabi_param : RabiParam
+        Parameters of the Rabi oscillation.
+    created_at : str
+        Time when the experiment is conducted.
+    """
+
+    def __init__(
+        self,
+        target: str,
+        data: NDArray,
+        sweep_range: NDArray,
+        rabi_param: RabiParam,
+    ):
+        super().__init__(
+            target=target,
+            data=data,
+            sweep_range=sweep_range,
+            sweep_value_label="Drive duration (ns)",
+        )
+        self.sweep_range = sweep_range
+        self.rabi_param = rabi_param
+
+    def plot(self, *args, **kwargs):
+        values = self.normalized(self.rabi_param)
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=self.sweep_range,
+                y=values,
+                error_y=dict(
+                    type="constant",
+                    value=self.rabi_param.noise / self.rabi_param.amplitude,
+                ),
+            )
+        )
+        fig.update_layout(
+            title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+            xaxis_title=self.sweep_value_label,
+            yaxis_title="Normalized value",
+        )
+        fig.show()
+
+
 class AmplRabiRelation(TargetResult):
     """
     The relation between the control amplitude and the Rabi rate.
@@ -154,10 +213,10 @@ class AmplRabiRelation(TargetResult):
     ----------
     target : str
         Target of the experiment.
-    sweep_range : NDArray
-        Sweep range of the experiment.
     data : NDArray
         Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
     created_at : str
         Time when the experiment is conducted.
     """
@@ -165,13 +224,13 @@ class AmplRabiRelation(TargetResult):
     def __init__(
         self,
         target: str,
-        sweep_range: NDArray,
         data: NDArray,
+        sweep_range: NDArray,
     ):
         super().__init__(target, data)
         self.sweep_range = sweep_range
 
-    def plot(self):
+    def plot(self, *args, **kwargs):
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -195,10 +254,10 @@ class FreqRabiRelation(TargetResult):
     ----------
     target : str
         Target of the experiment.
-    sweep_range : NDArray
-        Sweep range of the experiment.
     data : NDArray
         Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
     created_at : str
         Time when the experiment is conducted.
     """
@@ -206,15 +265,15 @@ class FreqRabiRelation(TargetResult):
     def __init__(
         self,
         target: str,
+        data: NDArray,
         sweep_range: NDArray,
         frequency_range: NDArray,
-        data: NDArray,
     ):
         super().__init__(target, data)
         self.sweep_range = sweep_range
         self.frequency_range = frequency_range
 
-    def plot(self):
+    def plot(self, *args, **kwargs):
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -238,19 +297,19 @@ class TimePhaseRelation(TargetResult):
     ----------
     target : str
         Target of the experiment.
-    sweep_range : NDArray
-        Sweep range of the experiment.
     data : NDArray
         Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
     created_at : str
         Time when the experiment is conducted.
     """
 
     def __init__(
         self,
+        data: NDArray,
         target: str,
         sweep_range: NDArray,
-        data: NDArray,
     ):
         super().__init__(target, data)
         self.sweep_range = sweep_range
@@ -270,7 +329,7 @@ class TimePhaseRelation(TargetResult):
         """Return the average phase shift per chunk."""
         return np.mean(self.phase_diffs).astype(float)
 
-    def plot(self):
+    def plot(self, *args, **kwargs):
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(

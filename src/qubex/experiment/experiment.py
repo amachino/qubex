@@ -29,6 +29,7 @@ from .experiment_result import (
     AmplRabiRelation,
     ExperimentResult,
     FreqRabiRelation,
+    RabiResult,
     SweepResult,
     TimePhaseRelation,
 )
@@ -304,7 +305,7 @@ class Experiment:
         time_range: NDArray = np.arange(0, 201, 4),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[SweepResult]:
+    ) -> ExperimentResult[RabiResult]:
         """
         Conducts a Rabi experiment with the default amplitude.
 
@@ -321,7 +322,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[SweepResult]
+        ExperimentResult[RabiResult]
             Result of the experiment.
         """
         ampl = self.params.control_amplitude
@@ -345,7 +346,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
-    ) -> ExperimentResult[SweepResult]:
+    ) -> ExperimentResult[RabiResult]:
         """
         Conducts a Rabi experiment.
 
@@ -368,18 +369,19 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[SweepResult]
+        ExperimentResult[RabiResult]
             Result of the experiment.
         """
         targets = list(amplitudes.keys())
         time_range = np.array(time_range, dtype=np.float64)
         sequence = {
-            target: lambda T: Rect(duration=T, amplitude=amplitudes[target]).detuned(
-                detuning
-            )
+            target: lambda T: Rect(
+                duration=T,
+                amplitude=amplitudes[target],
+            ).detuned(detuning)
             for target in targets
         }
-        result = self.sweep_parameter(
+        sweep_results = self.sweep_parameter(
             sequence=sequence,
             sweep_range=time_range,
             sweep_value_label="Time (ns)",
@@ -387,10 +389,22 @@ class Experiment:
             interval=interval,
             plot=plot,
         )
-        rabi_params = self.fit_rabi(result.data)
+        rabi_params = self.fit_rabi(sweep_results.data)
         if store_params:
             self.store_rabi_params(rabi_params)
-        result.rabi_params = rabi_params
+        rabi_results = {
+            target: RabiResult(
+                target=target,
+                data=sweep_results.data[target].data,
+                sweep_range=time_range,
+                rabi_param=rabi_params[target],
+            )
+            for target in targets
+        }
+        result = ExperimentResult(
+            data=rabi_results,
+            rabi_params=rabi_params,
+        )
         return result
 
     def sweep_parameter(
@@ -453,9 +467,9 @@ class Experiment:
         data = {
             target: SweepResult(
                 target=target,
+                data=np.array(values),
                 sweep_range=sweep_range,
                 sweep_value_label=sweep_value_label,
-                data=np.array(values),
             )
             for target, values in signals.items()
         }
