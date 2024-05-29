@@ -128,7 +128,7 @@ def func_exp_decay(
 def fit_rabi(
     *,
     target: str,
-    times: npt.NDArray[np.int64],
+    times: npt.NDArray[np.float64],
     data: npt.NDArray[np.complex64],
     wave_count: float | None = None,
     plot: bool = True,
@@ -141,7 +141,7 @@ def fit_rabi(
     ----------
     target : str
         Identifier of the target.
-    times : npt.NDArray[np.int64]
+    times : npt.NDArray[np.float64]
         Array of time points for the Rabi oscillations.
     data : npt.NDArray[np.complex128]
         Complex signal data corresponding to the Rabi oscillations.
@@ -495,7 +495,7 @@ def fit_cos_and_find_minimum(
 def fit_chevron(
     center_frequency: float,
     freq_range: npt.NDArray[np.float64],
-    time_range: npt.NDArray[np.int64],
+    time_range: npt.NDArray[np.float64],
     signals: list[npt.NDArray[np.float64]],
 ):
     """
@@ -507,7 +507,7 @@ def fit_chevron(
         Central frequency around which the Chevron patterns are analyzed.
     freq_range : npt.NDArray[np.float64]
         Frequency range for the Chevron analysis.
-    time_range : npt.NDArray[np.int64]
+    time_range : npt.NDArray[np.float64]
         Time range for the Chevron analysis.
     signals : list[npt.NDArray[np.float64]]
         Signal data for different frequencies in the Chevron analysis.

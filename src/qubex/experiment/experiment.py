@@ -372,7 +372,7 @@ class Experiment:
             Result of the experiment.
         """
         targets = list(amplitudes.keys())
-        time_range = np.array(time_range, dtype=np.int64)
+        time_range = np.array(time_range, dtype=np.float64)
         sequence = {
             target: lambda T: Rect(duration=T, amplitude=amplitudes[target]).detuned(
                 detuning
