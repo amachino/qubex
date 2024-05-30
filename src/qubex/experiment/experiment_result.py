@@ -11,6 +11,7 @@ from numpy.typing import NDArray
 from .. import fitting
 from ..fitting import RabiParam
 from ..typing import TargetMap
+from .experiment_record import ExperimentRecord
 
 
 @dataclass
@@ -70,6 +71,17 @@ class ExperimentResult(Generic[T]):
 
     def fit(self) -> TargetMap[Any]:
         return {target: self.data[target].fit() for target in self.data}
+
+    def save(
+        self,
+        name: str = "ExperimentResult",
+        description: str = "",
+    ) -> ExperimentRecord[ExperimentResult[T]]:
+        return ExperimentRecord.create(
+            data=self,
+            name=name,
+            description=description,
+        )
 
 
 @dataclass

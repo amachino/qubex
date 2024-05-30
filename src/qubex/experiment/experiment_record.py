@@ -1,27 +1,34 @@
 import datetime
 import os
-import pickle
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, TypeVar, Generic
+
+import jsonpickle
+import jsonpickle.ext.numpy as jsonpickle_numpy
+
+jsonpickle_numpy.register_handlers()
+
 
 DEFAULT_DATA_DIR: Final[str] = "data"
 
+T = TypeVar("T")
+
 
 @dataclass
-class ExperimentRecord:
+class ExperimentRecord(Generic[T]):
     """
-    A dataclass to represent and manage an experiment's record.
+    A dataclass to store the results of an experiment.
 
     Attributes
     ----------
-    data : Any
-        The data associated with the experiment.
+    data : T
+        The data to be saved in the record.
     name : str
         The name of the experiment.
     description : str, optional
         A description of the experiment.
     created_at : str
-        Timestamp of record creation in 'YYYY-MM-DD HH:MM:SS' format.
+        The date and time when the record was created.
 
     Methods
     -------
@@ -33,7 +40,7 @@ class ExperimentRecord:
         Loads an ExperimentRecord instance from a file.
     """
 
-    data: Any
+    data: T
     name: str
     description: str = ""
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -55,7 +62,7 @@ class ExperimentRecord:
         if not os.path.exists(data_path):
             os.makedirs(data_path)
 
-        extension = ".pkl"
+        extension = ".json"
         counter = 1
         current_date = datetime.datetime.now().strftime("%Y%m%d")
         file_path = os.path.join(
@@ -70,8 +77,9 @@ class ExperimentRecord:
             )
             counter += 1
 
-        with open(file_path, "wb") as f:
-            pickle.dump(self, f)
+        with open(file_path, "w") as f:
+            encoded = jsonpickle.encode(self, unpicklable=True)
+            f.write(encoded)  # type: ignore
         print(f"Data saved to {file_path}")
 
     @staticmethod
@@ -100,12 +108,12 @@ class ExperimentRecord:
     @staticmethod
     def load(name: str, data_path=DEFAULT_DATA_DIR) -> "ExperimentRecord":
         """
-        Load an experiment record from a pickle file.
+        Load an experiment record from a file.
 
         Parameters
         ----------
         name : str
-            Name of the file to load, excluding the '.pkl' extension.
+            Name of the experiment record to load.
         data_path : str, optional
             Path to the directory where the record is saved.
 
@@ -119,9 +127,11 @@ class ExperimentRecord:
         FileNotFoundError
             If the specified file does not exist.
         """
-        if not name.endswith(".pkl"):
-            name = name + ".pkl"
+        if not name.endswith(".json"):
+            name = name + ".json"
         path = os.path.join(data_path, name)
-        with open(path, "rb") as f:
-            data = pickle.load(f)
+        with open(path, "r") as f:
+            data = jsonpickle.decode(f.read())
+            if not isinstance(data, ExperimentRecord):
+                raise TypeError(f"Expected ExperimentRecord, got {type(data)}")
         return data
