@@ -300,6 +300,7 @@ class AmplRabiData(TargetData):
         fig.show()
 
 
+@dataclass
 class FreqRabiData(TargetData):
     """
     The relation between the drive frequency and the Rabi rate.
@@ -335,6 +336,7 @@ class FreqRabiData(TargetData):
         fig.show()
 
 
+@dataclass
 class TimePhaseData(TargetData):
     """
     The relation between the control window and the phase shift.
