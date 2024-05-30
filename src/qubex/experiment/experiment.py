@@ -551,7 +551,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[FreqRabiRelation]
+        ExperimentResult[FreqRabiData]
             Result of the experiment.
         """
         ampl = self.params.control_amplitude
@@ -605,7 +605,7 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[AmplRabiRelation]
+        ExperimentResult[AmplRabiData]
             Result of the experiment.
         """
 
