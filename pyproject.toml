@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [tool.setuptools.dynamic]
-version = { attr = "qubex.__version__" }
+version = { attr = "qubex.version.get_version" }
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
