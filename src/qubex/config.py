@@ -172,6 +172,7 @@ class Config:
                 f"Configuration file not found: {path}",
                 style="red bold",
             )
+            raise
         return result
 
     def get_props(self, chip_id: str) -> Props:
