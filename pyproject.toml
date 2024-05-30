@@ -1,14 +1,38 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "qubex"
-version = "0.5.2"
+dynamic = ["version"]
 requires-python = ">=3.9"
+authors = [{ name = "Akinori MACHINO" }]
+description = "Quantum Experiment Tools using QuBE"
+readme = "README.md"
+license = { file = "LICENSE" }
 dependencies = [
-    "jupyter",
-    "matplotlib",
-    "numpy",
-    "scipy",
-    "scikit-learn",
-    "qutip",
-    "pydantic",
-    "qctrl-visualizer",
+    "jsonpickle ~= 3.0",
+    "jupyter ~= 1.0",
+    "matplotlib ~= 3.0",
+    "numpy ~= 1.0",
+    "plotly ~= 5.0",
+    "pyyaml ~= 6.0",
+    "qctrl-visualizer ~= 7.0",
+    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.0.0",
+    "qutip ~= 4.0",
+    "rich ~= 13.0",
+    "scikit-learn ~= 1.0",
+    "scipy ~= 1.0",
 ]
+
+[tool.setuptools.dynamic]
+version = { attr = "qubex.version.get_version" }
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.ruff.lint]
+ignore = ["E731"]
