@@ -11,5 +11,5 @@
 ## Installation
 
 ```bash
-pip install git+https://github.com/amachino/qubex.git@develop
+pip install git+https://github.com/amachino/qubex.git
 ```
