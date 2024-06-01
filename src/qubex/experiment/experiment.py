@@ -149,9 +149,17 @@ class Experiment:
         boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
         return {box.id: box for box in boxes}
 
-    def linkup(self) -> None:
+    @property
+    def box_list(self) -> list[str]:
+        return list(self.boxes.keys())
+
+    def linkup(
+        self,
+        box_list: Optional[list[str]] = None,
+    ) -> None:
         """Links up the measurement system."""
-        box_list = list(self.boxes.keys())
+        if box_list is None:
+            box_list = self.box_list
         self._measurement.linkup(box_list)
 
     def measure(
