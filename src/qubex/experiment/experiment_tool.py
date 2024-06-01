@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Final, Optional
+from typing import Final
 
 from qubecalib import QubeCalib
 from rich.console import Console
@@ -14,7 +14,6 @@ console = Console()
 
 
 class ExperimentTool:
-
     def __init__(
         self,
         chip_id: str,
@@ -35,23 +34,21 @@ class ExperimentTool:
         """Dump the information of a box."""
         return self._backend.dump_box(box_id)
 
-    def configure_boxes(self, box_list: Optional[list[str]] = None) -> None:
+    def configure_box(self, box_id: str) -> None:
         """
-        Configure the boxes.
+        Configure the box.
 
         Parameters
         ----------
-        box_list : Optional[list[str]], optional
-            List of boxes to configure. Defaults to None.
 
         Examples
         --------
         >>> from qubex import Experiment
         >>> exp = Experiment(chip_id="64Q")
-        >>> exp.tools.configure_boxes()
+        >>> exp.tools.configure_box("Q73A")
         """
         chip_id = self._system.chip.id
-        self._config.configure_box_settings(chip_id, include=box_list)
+        self._config.configure_box_settings(chip_id, include=[box_id])
 
     def print_wiring_info(self):
         """

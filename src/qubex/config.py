@@ -22,6 +22,9 @@ from .hardware import (
 )
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
 
+MIN_LO_STEP = 500_000_000
+MIN_NCO_STEP = 23_437_500
+
 console = Console()
 
 
@@ -1002,10 +1005,7 @@ You are going to configure the following boxes:
             return
 
         ports = self.get_port_details(chip_id)
-        props = self.get_props(chip_id)
         params = self.get_params(chip_id)
-        read_frequencies = props.resonator_frequency
-        ctrl_frequencies = props.qubit_frequency
         readout_vatt = params.readout_vatt
         control_vatt = params.control_vatt
 
@@ -1016,86 +1016,142 @@ You are going to configure the following boxes:
                     continue
 
                 if isinstance(port, ReadOutPort):
-                    lo, nco = ConfigUtils.find_read_lo_nco(
-                        frequencies=read_frequencies,
-                        qubits=port.read_qubits,
-                    )
-                    quel1_box.config_port(
-                        port=port.number,
-                        lo_freq=lo,
-                        cnco_freq=nco,
-                        sideband="U",
-                        vatt=readout_vatt[port.mux],
-                    )
-                    quel1_box.config_channel(
-                        port=port.number,
-                        channel=0,
-                        fnco_freq=0,
-                    )
                     quel1_box.config_rfswitch(
                         port=port.number,
                         rfswitch="block" if loopback else "pass",
                     )
-                elif isinstance(port, ReadInPort):
-                    lo, nco = ConfigUtils.find_read_lo_nco(
-                        frequencies=read_frequencies,
-                        qubits=port.read_out.read_qubits,
-                    )
-                    quel1_box.config_port(
-                        port=port.number,
-                        lo_freq=lo,
-                        cnco_locked_with=port.read_out.number,
-                    )
-                    for idx in range(4):
-                        quel1_box.config_runit(
+                    try:
+                        lo, nco = self.find_read_lo_nco(
+                            chip_id=chip_id,
+                            qubits=port.read_qubits,
+                        )
+                        quel1_box.config_port(
                             port=port.number,
-                            runit=idx,
+                            lo_freq=lo,
+                            cnco_freq=nco,
+                            sideband="U",
+                            vatt=readout_vatt[port.mux],
+                        )
+                        quel1_box.config_channel(
+                            port=port.number,
+                            channel=0,
                             fnco_freq=0,
                         )
+                    except ValueError as e:
+                        console.print(
+                            f"{port.name}: {e}",
+                            style="red bold",
+                        )
+                        console.print(
+                            f"lo = {lo}, nco = {nco}",
+                        )
+                        continue
+                elif isinstance(port, ReadInPort):
                     quel1_box.config_rfswitch(
                         port=port.number,
                         rfswitch="loop" if loopback else "open",
                     )
+                    lo, nco = self.find_read_lo_nco(
+                        chip_id=chip_id,
+                        qubits=port.read_out.read_qubits,
+                    )
+                    try:
+                        quel1_box.config_port(
+                            port=port.number,
+                            lo_freq=lo,
+                            cnco_locked_with=port.read_out.number,
+                        )
+                        for idx in range(4):
+                            quel1_box.config_runit(
+                                port=port.number,
+                                runit=idx,
+                                fnco_freq=0,
+                            )
+                    except ValueError as e:
+                        console.print(
+                            f"{port.name}: {e}",
+                            style="red bold",
+                        )
+                        console.print(
+                            f"lo = {lo}, nco = {nco}",
+                        )
+                        continue
                 elif isinstance(port, CtrlPort):
-                    lo, nco = ConfigUtils.find_ctrl_lo_nco(
-                        frequencies=ctrl_frequencies,
-                        qubit=port.ctrl_qubit,
-                    )
-                    quel1_box.config_port(
-                        port=port.number,
-                        lo_freq=lo,
-                        cnco_freq=nco,
-                        sideband="L",
-                        vatt=control_vatt[port.ctrl_qubit],
-                    )
-                    if port.n_channel == 1:
-                        quel1_box.config_channel(
-                            port=port.number,
-                            channel=0,
-                            fnco_freq=0,
-                        )
-                    elif port.n_channel == 3:
-                        quel1_box.config_channel(
-                            port=port.number,
-                            channel=0,
-                            fnco_freq=0,
-                        )
-                        quel1_box.config_channel(
-                            port=port.number,
-                            channel=1,
-                            fnco_freq=0,
-                        )
-                        quel1_box.config_channel(
-                            port=port.number,
-                            channel=2,
-                            fnco_freq=0,
-                        )
                     quel1_box.config_rfswitch(
                         port=port.number,
                         rfswitch="block" if loopback else "pass",
                     )
+                    lo, cnco, fnco = self.find_ctrl_lo_nco(
+                        chip_id=chip_id,
+                        qubit=port.ctrl_qubit,
+                    )
+                    try:
+                        quel1_box.config_port(
+                            port=port.number,
+                            lo_freq=lo,
+                            cnco_freq=cnco,
+                            sideband="L",
+                            vatt=control_vatt[port.ctrl_qubit],
+                        )
+                        if port.n_channel == 1:
+                            quel1_box.config_channel(
+                                port=port.number,
+                                channel=0,
+                                fnco_freq=fnco[0],
+                            )
+                        elif port.n_channel == 3:
+                            quel1_box.config_channel(
+                                port=port.number,
+                                channel=0,
+                                fnco_freq=fnco[0],
+                            )
+                            quel1_box.config_channel(
+                                port=port.number,
+                                channel=1,
+                                fnco_freq=fnco[1],
+                            )
+                            quel1_box.config_channel(
+                                port=port.number,
+                                channel=2,
+                                fnco_freq=fnco[2],
+                            )
+                    except ValueError as e:
+                        console.print(
+                            f"{port.name}: {e}",
+                            style="red bold",
+                        )
+                        console.print(
+                            f"lo = {lo}, cnco = {cnco}, fnco = {fnco}",
+                        )
+                        continue
 
-        # save the box settings
+    def save_box_settings(
+        self,
+        *,
+        chip_id: str,
+    ):
+        """
+        Saves the box settings for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Examples
+        --------
+        >>> config = Config()
+        >>> config.save_box_settings("64Q")
+        """
+        try:
+            system_settings_path = self.get_system_settings_path(chip_id)
+            qc = QubeCalib(str(system_settings_path))
+        except FileNotFoundError:
+            console.print(
+                f"System settings file not found for chip ID: {chip_id}",
+                style="red bold",
+            )
+            return
         box_settings_path = self.get_box_settings_path(chip_id)
         box_settings_path.parent.mkdir(parents=True, exist_ok=True)
         qc.store_all_box_configs(box_settings_path)
@@ -1105,12 +1161,6 @@ You are going to configure the following boxes:
             style="bright_green bold",
         )
 
-
-class ConfigUtils:
-    """
-    ConfigUtils class provides utility methods for configuring the QubeX system.
-    """
-
     @staticmethod
     def find_lo_nco_pair(
         target_frequency: float,
@@ -1118,10 +1168,10 @@ class ConfigUtils:
         *,
         lo_min: int = 8_000_000_000,
         lo_max: int = 10_500_000_000,
-        lo_step: int = 500_000_000,
+        lo_step: int = MIN_LO_STEP,
         nco_min: int = 1_500_000_000,
-        nco_max: int = 1_992_187_500,
-        nco_step: int = 23_437_500,
+        nco_max: int = 2_000_000_000,
+        nco_step: int = MIN_NCO_STEP,
     ) -> tuple[int, int]:
         """
         Finds the pair (lo, nco) such that the value of lo ± nco is closest to the target_frequency.
@@ -1130,7 +1180,7 @@ class ConfigUtils:
         Parameters
         ----------
         target_frequency : float
-            The target frequency in GHz.
+            The target frequency in Hz.
         ssb : str
             The sideband (either 'LSB' or 'USB').
         lo_min : int, optional
@@ -1142,7 +1192,7 @@ class ConfigUtils:
         nco_min : int, optional
             The minimum value of nco, by default 1_500_000_000.
         nco_max : int, optional
-            The maximum value of nco, by default 1_992_187_500.
+            The maximum value of nco, by default 2_000_000_000.
         nco_step : int, optional
             The step value of nco, by default 23_437_500.
 
@@ -1152,8 +1202,6 @@ class ConfigUtils:
             The pair (lo, nco) that results in the closest value to target_frequency.
         """
 
-        target_value = target_frequency * 1e9
-
         # Initialize the minimum difference to infinity to ensure any real difference is smaller.
         min_diff = float("inf")
         best_lo = None
@@ -1162,7 +1210,7 @@ class ConfigUtils:
         # Iterate over possible values of lo from lo_min to lo_max, in steps of lo_step.
         for lo in range(lo_min, lo_max + 1, lo_step):
             # Iterate over possible values of nco from nco_min to nco_max, in steps of nco_step.
-            for nco in range(nco_min, nco_max + 1, nco_step):
+            for nco in range(nco_min, nco_max, nco_step):
                 # Calculate the current value based on ssb.
                 if ssb == "LSB":
                     current_value = lo - nco
@@ -1172,7 +1220,7 @@ class ConfigUtils:
                     raise ValueError("ssb must be 'LSB' or 'USB'")
 
                 # Calculate the absolute difference from the target_frequency.
-                current_diff = abs(current_value - target_value)
+                current_diff = abs(current_value - target_frequency)
 
                 # If this is the smallest difference we've found, update our best estimates.
                 if current_diff < min_diff:
@@ -1186,18 +1234,18 @@ class ConfigUtils:
         # Return the pair (lo, nco) that results in the closest value to target_frequency.
         return best_lo, best_nco
 
-    @staticmethod
     def find_read_lo_nco(
-        frequencies: dict[str, float],
+        self,
+        chip_id: str,
         qubits: list[str],
     ) -> tuple[int, int]:
         """
-        Finds the lo and nco values for the read frequencies.
+        Finds the lo and nco values for the readout multiplexers.
 
         Parameters
         ----------
-        frequencies : dict[str, float]
-            The readout frequencies.
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
         qubits : list[str]
             The readout qubits.
 
@@ -1207,31 +1255,39 @@ class ConfigUtils:
             The pair (lo, nco) for the read frequencies.
         """
         default_value = 0.0
-        frequencies = defaultdict(lambda: default_value, frequencies)
+        props = self.get_props(chip_id)
+        frequencies = defaultdict(lambda: default_value, props.resonator_frequency)
         values = [frequencies[qubit] for qubit in qubits]
         median_value = (max(values) + min(values)) / 2
-        return ConfigUtils.find_lo_nco_pair(median_value, ssb="USB")
+        return self.find_lo_nco_pair(median_value * 1e9, ssb="USB")
 
-    @staticmethod
     def find_ctrl_lo_nco(
-        frequencies: dict[str, float],
+        self,
+        chip_id: str,
         qubit: str,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, tuple[int, int, int]]:
         """
-        Finds the lo and nco values for the control frequencies.
+        Finds the lo, cnco and (fnco0, fnco1, fnco2) values for the qubit.
 
         Parameters
         ----------
-        frequencies : dict[str, float]
-            The control frequencies.
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
         qubit : str
             The control qubit.
 
         Returns
         -------
-        tuple[int, int]
-            The pair (lo, nco) for the control frequencies.
+        tuple[int, int, tuple[int, int, int]]
+            The pair (lo, cnco) and the tuple (fnco0, fnco1, fnco2) for the control qubit.
         """
-        default_value = 0.0
-        frequencies = defaultdict(lambda: default_value, frequencies)
-        return ConfigUtils.find_lo_nco_pair(frequencies[qubit], ssb="LSB")
+        f_ge = self.get_ctrl_ge_target(chip_id, qubit).frequency * 1e9
+        f_ef = self.get_ctrl_ef_target(chip_id, qubit).frequency * 1e9
+        f_cr = self.get_ctrl_cr_targets(chip_id, qubit)[0].frequency * 1e9
+        f_med = (max(f_ge, f_ef, f_cr) + min(f_ge, f_ef, f_cr)) / 2
+        lo, cnco = self.find_lo_nco_pair(f_med, ssb="LSB")
+        f0 = lo - cnco
+        fnco = [
+            -round((f - f0) / MIN_NCO_STEP) * MIN_NCO_STEP for f in [f_ge, f_ef, f_cr]
+        ]
+        return lo, cnco, (fnco[0], fnco[1], fnco[2])
