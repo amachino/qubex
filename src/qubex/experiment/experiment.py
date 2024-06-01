@@ -50,8 +50,18 @@ class Experiment:
         Identifier of the quantum chip.
     qubits : list[str]
         List of qubits to use in the experiment.
-    data_dir : str, optional
-        Path to the directory where the experiment data is stored. Defaults to "./data".
+    control_window : int, optional
+        Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+    config_dir : str, optional
+        Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
+
+    Examples
+    --------
+    >>> from qubex import Experiment
+    >>> experiment = Experiment(
+    ...     chip_id="64Q",
+    ...     qubits=["Q00", "Q01"],
+    ... )
     """
 
     def __init__(
