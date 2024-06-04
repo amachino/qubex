@@ -22,6 +22,8 @@ from .hardware import (
 )
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
 
+CLOCK_MASTER_ADDRESS = "10.3.0.255"
+
 MIN_LO_STEP = 500_000_000
 MIN_NCO_STEP = 23_437_500
 
@@ -41,6 +43,7 @@ class Params:
     readout_amplitude: dict[str, float]
     control_vatt: dict[str, int]
     readout_vatt: dict[int, int]
+    capture_delay: dict[int, int]
 
 
 class TargetType(Enum):
@@ -233,6 +236,7 @@ class Config:
             readout_amplitude=params["readout_amplitude"],
             control_vatt=params["control_vatt"],
             readout_vatt=params["readout_vatt"],
+            capture_delay=params["capture_delay"],
         )
 
     def get_quantum_system(self, chip_id: str) -> QuantumSystem:
@@ -838,7 +842,7 @@ class Config:
         qc = QubeCalib()
 
         # define clock master
-        qc.define_clockmaster(ipaddr="10.3.0.255", reset=True)
+        qc.define_clockmaster(ipaddr=CLOCK_MASTER_ADDRESS, reset=True)
 
         boxes = self.get_boxes(chip_id)
 
@@ -864,14 +868,14 @@ class Config:
 
         # define channels
         ports = self.get_port_details(chip_id)
-        DEFAULT_CAPTURE_DELAY = 7  # TODO: get from the configuration
+        capture_delay = self.get_params(chip_id).capture_delay
         for port in ports:
             if isinstance(port, ReadOutPort):
                 qc.define_channel(
                     channel_name=f"{port.name}0",
                     port_name=port.name,
                     channel_number=0,
-                    ndelay_or_nwait=DEFAULT_CAPTURE_DELAY,
+                    ndelay_or_nwait=capture_delay[port.mux],
                 )
             elif isinstance(port, ReadInPort):
                 for runit_index in range(4):
@@ -879,7 +883,7 @@ class Config:
                         channel_name=f"{port.name}{runit_index}",
                         port_name=port.name,
                         channel_number=runit_index,
-                        ndelay_or_nwait=DEFAULT_CAPTURE_DELAY,
+                        ndelay_or_nwait=capture_delay[port.read_out.mux],
                     )
             elif isinstance(port, CtrlPort):
                 for channel_index in range(port.n_channel):
