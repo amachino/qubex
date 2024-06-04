@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import contextmanager
 from typing import Final, Literal, Optional, Sequence
 
 import numpy as np
@@ -123,6 +124,11 @@ class Experiment:
         console.print(table)
 
     @property
+    def params(self) -> Params:
+        """Get the system parameters."""
+        return self._config.get_params(self._chip_id)
+
+    @property
     def chip_id(self) -> str:
         """Get the chip ID."""
         return self._chip_id
@@ -133,11 +139,6 @@ class Experiment:
         return {
             qubit.label: qubit for qubit in all_qubits if qubit.label in self._qubits
         }
-
-    @property
-    def params(self) -> Params:
-        """Get the system parameters."""
-        return self._config.get_params(self._chip_id)
 
     @property
     def resonators(self) -> dict[str, Resonator]:
@@ -171,6 +172,24 @@ class Experiment:
         if box_list is None:
             box_list = self.box_list
         self._measurement.linkup(box_list)
+
+    @contextmanager
+    def modified_frequencies(self, frequencies: dict[str, float]):
+        """
+        Temporarily modifies the frequencies of the qubits.
+
+        Parameters
+        ----------
+        frequencies : dict[str, float]
+            Frequencies of the qubits.
+
+        Examples
+        --------
+        >>> with ex.modified_frequencies({"Q00": 5.0}):
+        ...     # Do something
+        """
+        with self._measurement.modified_frequencies(frequencies):
+            yield
 
     def measure(
         self,

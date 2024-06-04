@@ -22,7 +22,6 @@ class QubeBackendResult:
 
 
 class QubeBackend:
-
     def __init__(self, config_path: str | Path):
         """
         Initialize the QubeBackend.
@@ -441,3 +440,38 @@ class QubeBackend:
                 software_demodulation=software_demodulation,
             )
         )
+
+    def modify_target_frequency(self, target: str, frequency: float):
+        """
+        Modify the target frequency.
+
+        Parameters
+        ----------
+        target : str
+            Name of the target.
+        frequency : float
+            Modified frequency in GHz.
+
+        Examples
+        --------
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.modify_target_frequency("Q00", 10.0)
+        """
+        self.qubecalib.modify_target_frequency(target, frequency)
+
+    def modify_target_frequencies(self, frequencies: dict[str, float]):
+        """
+        Modify the target frequencies.
+
+        Parameters
+        ----------
+        frequencies : dict[str, float]
+            Dictionary of target frequencies.
+
+        Examples
+        --------
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.modify_target_frequencies({"Q00": 10.0, "Q01": 10.0})
+        """
+        for target, frequency in frequencies.items():
+            self.modify_target_frequency(target, frequency)
