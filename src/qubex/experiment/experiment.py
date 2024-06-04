@@ -399,7 +399,7 @@ class Experiment:
             ).detuned(detuning)
             for target in targets
         }
-        sweep_data = self.sweep_parameter(
+        sweep_result = self.sweep_parameter(
             sequence=sequence,
             sweep_range=time_range,
             sweep_value_label="Time (ns)",
@@ -414,14 +414,14 @@ class Experiment:
                 data=data.data,
                 plot=plot,
             )
-            for target, data in sweep_data.data.items()
+            for target, data in sweep_result.data.items()
         }
         if store_params:
             self.store_rabi_params(rabi_params)
         rabi_data = {
             target: RabiData(
                 target=target,
-                data=sweep_data.data[target].data,
+                data=sweep_result.data[target].data,
                 time_range=time_range,
                 rabi_param=rabi_params[target],
             )

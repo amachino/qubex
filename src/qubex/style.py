@@ -1,8 +1,15 @@
-import plotly.colors as colors
 import plotly.graph_objects as go
 import plotly.io as pio
 
-COLORS = colors.DEFAULT_PLOTLY_COLORS
+COLORS = [
+    "#0C5DA5",
+    "#00B945",
+    "#FF9500",
+    "#FF2C00",
+    "#845B97",
+    "#474747",
+    "#9e9e9e",
+]
 FONT_FAMILY = "Times New Roman"
 WIDTH = 600
 HEIGHT = 300
@@ -17,8 +24,13 @@ LEGEND_FONT_SIZE = 14
 
 pio.templates["qubex"] = go.layout.Template(
     layout=go.Layout(
-        font=dict(family=FONT_FAMILY),
-        title=dict(font=dict(size=TITLE_FONT_SIZE), x=0.5),
+        font=dict(
+            family=FONT_FAMILY,
+        ),
+        title=dict(
+            font=dict(size=TITLE_FONT_SIZE),
+            x=0.5,
+        ),
         xaxis=dict(
             mirror=True,
             showline=True,
@@ -43,20 +55,23 @@ pio.templates["qubex"] = go.layout.Template(
             titlefont=dict(size=AXIS_TITLEFONT_SIZE),
             domain=[0.0, 1.0],
         ),
-        legend=dict(font=dict(size=LEGEND_FONT_SIZE)),
+        legend=dict(
+            font=dict(size=LEGEND_FONT_SIZE),
+        ),
+        modebar=dict(
+            add=[],
+            remove=[],
+        ),
         autosize=False,
         width=WIDTH,
         height=HEIGHT,
-        margin=dict(l=MARGIN_L, r=MARGIN_R, b=MARGIN_B, t=MARGIN_T),
-        colorway=[
-            "#0C5DA5",
-            "#00B945",
-            "#FF9500",
-            "#FF2C00",
-            "#845B97",
-            "#474747",
-            "#9e9e9e",
-        ],
+        margin=dict(
+            l=MARGIN_L,
+            r=MARGIN_R,
+            b=MARGIN_B,
+            t=MARGIN_T,
+        ),
+        colorway=COLORS,
         plot_bgcolor="white",
         paper_bgcolor="white",
     ),
