@@ -83,7 +83,11 @@ class ExperimentRecord(Generic[T]):
         print(f"Data saved to {file_path}")
 
     @staticmethod
-    def create(data: Any, name: str, description: str = "") -> "ExperimentRecord":
+    def create(
+        data: Any,
+        name: str,
+        description: str = "",
+    ) -> "ExperimentRecord":
         """
         Create and save a new experiment record.
 
@@ -106,7 +110,7 @@ class ExperimentRecord(Generic[T]):
         return record
 
     @staticmethod
-    def load(name: str, data_path=DEFAULT_DATA_DIR) -> "ExperimentRecord":
+    def load(name: str, data_dir=DEFAULT_DATA_DIR) -> "ExperimentRecord":
         """
         Load an experiment record from a file.
 
@@ -114,7 +118,7 @@ class ExperimentRecord(Generic[T]):
         ----------
         name : str
             Name of the experiment record to load.
-        data_path : str, optional
+        data_dir : str, optional
             Path to the directory where the record is saved.
 
         Returns
@@ -129,7 +133,7 @@ class ExperimentRecord(Generic[T]):
         """
         if not name.endswith(".json"):
             name = name + ".json"
-        path = os.path.join(data_path, name)
+        path = os.path.join(data_dir, name)
         with open(path, "r") as f:
             data = jsonpickle.decode(f.read())
             if not isinstance(data, ExperimentRecord):

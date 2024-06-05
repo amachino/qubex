@@ -26,6 +26,7 @@ from ..measurement import (
 )
 from ..pulse import FlatTop, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
+from .experiment_record import DEFAULT_DATA_DIR, ExperimentRecord
 from .experiment_result import (
     AmplRabiData,
     ExperimentResult,
@@ -55,6 +56,8 @@ class Experiment:
         Control window. Defaults to DEFAULT_CONTROL_WINDOW.
     config_dir : str, optional
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
+    dara_dir : str, optional
+        Directory of the data files. Defaults to DEFAULT_DATA_DIR.
 
     Examples
     --------
@@ -72,12 +75,14 @@ class Experiment:
         qubits: list[str],
         control_window: int = DEFAULT_CONTROL_WINDOW,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        dara_dir: str = DEFAULT_DATA_DIR,
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
         self._control_window: Final = control_window
         self._rabi_params: Optional[dict[str, RabiParam]] = None
         self._config: Final = Config(config_dir)
+        self._data_dir: Final = dara_dir
         self._measurement: Final = Measurement(
             chip_id=chip_id,
             config_dir=config_dir,
@@ -189,6 +194,33 @@ class Experiment:
         """
         with self._measurement.modified_frequencies(frequencies):
             yield
+
+    def load_record(
+        self,
+        name: str,
+    ) -> ExperimentRecord:
+        """
+        Load an experiment record from a file.
+
+        Parameters
+        ----------
+        name : str
+            Name of the experiment record to load.
+
+        Returns
+        -------
+        ExperimentRecord
+            The loaded ExperimentRecord instance.
+
+        Raises
+        ------
+        FileNotFoundError
+        """
+        record = ExperimentRecord.load(name, self._data_dir)
+        print(f"ExperimentRecord `{name}` is loaded.\n")
+        print(f"description: {record.description}")
+        print(f"created_at: {record.created_at}")
+        return record
 
     def measure(
         self,
