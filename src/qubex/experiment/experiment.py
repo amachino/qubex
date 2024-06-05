@@ -534,7 +534,8 @@ class Experiment:
             control_window=self._control_window,
         )
         signals = defaultdict(list)
-        plotter = IQPlotter()
+        if plot:
+            plotter = IQPlotter()
         for result in generator:
             for target, data in result.data.items():
                 signals[target].append(data.kerneled)
