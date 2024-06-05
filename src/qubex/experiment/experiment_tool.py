@@ -44,8 +44,8 @@ class ExperimentTool:
         Examples
         --------
         >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.tools.configure_box("Q73A")
+        >>> ex = Experiment(chip_id="64Q")
+        >>> ex.tool.configure_box("Q73A")
         """
         chip_id = self._system.chip.id
         self._config.configure_box_settings(chip_id, include=[box_id])
@@ -57,8 +57,8 @@ class ExperimentTool:
         Examples
         --------
         >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.tools.print_wiring_info()
+        >>> ex = Experiment(chip_id="64Q")
+        >>> ex.tool.print_wiring_info()
         """
 
         table = Table(
@@ -104,8 +104,8 @@ class ExperimentTool:
         Examples
         --------
         >>> from qubex import Experiment
-        >>> exp = Experiment(chip_id="64Q")
-        >>> exp.tools.print_box_info("Q73A")
+        >>> ex = Experiment(chip_id="64Q")
+        >>> ex.tool.print_box_info("Q73A")
         """
         box_ids = [box.id for box in self._config.get_all_boxes()]
         if box_id not in box_ids:
