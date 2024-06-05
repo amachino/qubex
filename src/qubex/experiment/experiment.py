@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import contextmanager
 from typing import Final, Literal, Optional, Sequence
 
 import numpy as np
@@ -50,8 +51,18 @@ class Experiment:
         Identifier of the quantum chip.
     qubits : list[str]
         List of qubits to use in the experiment.
-    data_dir : str, optional
-        Path to the directory where the experiment data is stored. Defaults to "./data".
+    control_window : int, optional
+        Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+    config_dir : str, optional
+        Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
+
+    Examples
+    --------
+    >>> from qubex import Experiment
+    >>> experiment = Experiment(
+    ...     chip_id="64Q",
+    ...     qubits=["Q00", "Q01"],
+    ... )
     """
 
     def __init__(
@@ -65,6 +76,7 @@ class Experiment:
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
         self._control_window: Final = control_window
+        self._rabi_params: Optional[dict[str, RabiParam]] = None
         self._config: Final = Config(config_dir)
         self._measurement: Final = Measurement(
             chip_id=chip_id,
@@ -76,7 +88,6 @@ class Experiment:
         )
         self.system: Final = self._config.get_quantum_system(chip_id)
         self.print_resources()
-        self._rabi_params: Optional[dict[str, RabiParam]] = None
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
@@ -113,6 +124,11 @@ class Experiment:
         console.print(table)
 
     @property
+    def params(self) -> Params:
+        """Get the system parameters."""
+        return self._config.get_params(self._chip_id)
+
+    @property
     def chip_id(self) -> str:
         """Get the chip ID."""
         return self._chip_id
@@ -125,11 +141,6 @@ class Experiment:
         }
 
     @property
-    def params(self) -> Params:
-        """Get the system parameters."""
-        return self._config.get_params(self._chip_id)
-
-    @property
     def resonators(self) -> dict[str, Resonator]:
         all_resonators = self._config.get_resonators(self._chip_id)
         return {
@@ -140,9 +151,8 @@ class Experiment:
 
     @property
     def targets(self) -> dict[str, Target]:
-        all_targets = self._config.get_all_targets(self._chip_id)
-        targets = [target for target in all_targets if target.qubit in self._qubits]
-        return {target.label: target for target in targets}
+        """Get the targets."""
+        return self._measurement.targets
 
     @property
     def boxes(self) -> dict[str, Box]:
@@ -161,6 +171,24 @@ class Experiment:
         if box_list is None:
             box_list = self.box_list
         self._measurement.linkup(box_list)
+
+    @contextmanager
+    def modified_frequencies(self, frequencies: dict[str, float]):
+        """
+        Temporarily modifies the frequencies of the qubits.
+
+        Parameters
+        ----------
+        frequencies : dict[str, float]
+            Modified frequencies in GHz.
+
+        Examples
+        --------
+        >>> with ex.modified_frequencies({"Q00": 5.0}):
+        ...     # Do something
+        """
+        with self._measurement.modified_frequencies(frequencies):
+            yield
 
     def measure(
         self,
@@ -389,7 +417,7 @@ class Experiment:
             ).detuned(detuning)
             for target in targets
         }
-        sweep_data = self.sweep_parameter(
+        sweep_result = self.sweep_parameter(
             sequence=sequence,
             sweep_range=time_range,
             sweep_value_label="Time (ns)",
@@ -404,14 +432,14 @@ class Experiment:
                 data=data.data,
                 plot=plot,
             )
-            for target, data in sweep_data.data.items()
+            for target, data in sweep_result.data.items()
         }
         if store_params:
             self.store_rabi_params(rabi_params)
         rabi_data = {
             target: RabiData(
                 target=target,
-                data=sweep_data.data[target].data,
+                data=sweep_result.data[target].data,
                 time_range=time_range,
                 rabi_param=rabi_params[target],
             )

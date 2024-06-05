@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from typing import Final, Literal
@@ -18,7 +19,7 @@ from qubecalib.neopulse import (
 )
 
 from . import visualization as viz
-from .config import Config
+from .config import Config, Target
 from .qube_backend import QubeBackend, QubeBackendResult
 from .typing import IQArray, TargetMap
 
@@ -98,12 +99,12 @@ class Measurement:
         self._params: Final = config.get_params(chip_id)
 
     @property
-    def targets(self) -> dict[str, float]:
-        """Return the list of target names."""
+    def targets(self) -> dict[str, Target]:
+        """Get the targets."""
         target_settings = self._backend.target_settings
         return {
-            target: settings["frequency"]
-            for target, settings in target_settings.items()
+            target: Target.from_label(target, setting["frequency"])
+            for target, setting in target_settings.items()
         }
 
     def linkup(self, box_list: list[str]):
@@ -338,3 +339,30 @@ class Measurement:
             mode=measure_mode,
             data=measure_data,
         )
+
+    @contextmanager
+    def modified_frequencies(self, target_frequencies: dict[str, float]):
+        """
+        Temporarily modify the target frequencies.
+
+        Parameters
+        ----------
+        target_frequencies : dict[str, float]
+            The target frequencies to be modified.
+
+        Examples
+        --------
+        >>> with meas.modified_frequencies({"Q00": 5.0}):
+        ...     result = meas.measure({
+        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...     })
+        """
+        original_frequencies = {
+            label: target.frequency for label, target in self.targets.items()
+        }
+        self._backend.modify_target_frequencies(target_frequencies)
+        try:
+            yield
+        finally:
+            self._backend.modify_target_frequencies(original_frequencies)

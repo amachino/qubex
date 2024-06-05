@@ -126,6 +126,7 @@ class ExperimentTool:
         table1.add_column("SSB", justify="right")
         table1.add_column("LO", justify="right")
         table1.add_column("CNCO", justify="right")
+        table1.add_column("VATT", justify="right")
         table1.add_column("FSC", justify="right")
         table2.add_column("PORT", justify="right")
         table2.add_column("TYPE", justify="right")
@@ -145,13 +146,27 @@ class ExperimentTool:
             type = port_map[number].value
             if direction == "in":
                 ssb = ""
+                vatt = ""
                 fsc = ""
                 fncos = [str(int(ch["fnco_freq"])) for ch in port["runits"].values()]
             elif direction == "out":
                 ssb = ssb_map[port["sideband"]]
+                vatt = port.get("vatt", "")
                 fsc = port["fullscale_current"]
                 fncos = [str(int(ch["fnco_freq"])) for ch in port["channels"].values()]
-            table1.add_row(str(number), type, ssb, str(lo), str(cnco), str(fsc))
-            table2.add_row(str(number), type, *fncos)
+            table1.add_row(
+                str(number),
+                type,
+                ssb,
+                str(lo),
+                str(cnco),
+                str(vatt),
+                str(fsc),
+            )
+            table2.add_row(
+                str(number),
+                type,
+                *fncos,
+            )
         console.print(table1)
         console.print(table2)
