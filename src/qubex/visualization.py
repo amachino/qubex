@@ -1,5 +1,6 @@
 import numpy as np
 import plotly.graph_objs as go
+from IPython.display import display
 from numpy.typing import NDArray
 
 from .typing import IQArray, TargetMap
@@ -62,3 +63,32 @@ def scatter_iq_data(
         yaxis=dict(scaleanchor="x", scaleratio=1),
     )
     fig.show()
+
+
+class IQPlotter:
+    def __init__(self):
+        self._num_scatters = None
+        self._widget = go.FigureWidget()
+        self._widget.update_layout(
+            title="I/Q plane",
+            xaxis_title="In-phase (arb. units)",
+            yaxis_title="Quadrature (arb. units)",
+            width=500,
+            height=400,
+            margin=dict(l=120, r=120),
+            yaxis=dict(scaleanchor="x", scaleratio=1),
+            showlegend=True,
+        )
+        display(self._widget)
+
+    def update(self, data: TargetMap[IQArray]):
+        if self._num_scatters is None:
+            for qubit in data:
+                self._widget.add_scatter(name=qubit, mode="markers")
+            self._num_scatters = len(data)
+        if len(data) != self._num_scatters:
+            raise ValueError("Number of scatters does not match")
+        for idx, qubit in enumerate(data):
+            scatter: go.Scatter = self._widget.data[idx]  # type: ignore
+            scatter.x = np.real(data[qubit])
+            scatter.y = np.imag(data[qubit])

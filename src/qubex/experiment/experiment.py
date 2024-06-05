@@ -12,7 +12,6 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from .. import fitting as fit
-from .. import visualization as viz
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..fitting import RabiParam
 from ..hardware import Box
@@ -26,6 +25,7 @@ from ..measurement import (
 )
 from ..pulse import FlatTop, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
+from ..visualization import IQPlotter, plot_waveform
 from .experiment_record import DEFAULT_DATA_DIR, ExperimentRecord
 from .experiment_result import (
     AmplRabiData,
@@ -337,7 +337,7 @@ class Experiment:
         """
         result = self._measurement.measure_noise(targets, duration)
         for target, data in result.data.items():
-            viz.plot_waveform(
+            plot_waveform(
                 np.array(data.raw, dtype=np.complex64) * 2 ** (-32),
                 title=f"Readout noise of {target}",
                 xlabel="Capture time (μs)",
@@ -534,12 +534,12 @@ class Experiment:
             control_window=self._control_window,
         )
         signals = defaultdict(list)
+        plotter = IQPlotter()
         for result in generator:
             for target, data in result.data.items():
                 signals[target].append(data.kerneled)
             if plot:
-                clear_output(wait=True)
-                viz.scatter_iq_data(signals)
+                plotter.update(signals)
         data = {
             target: SweepData(
                 target=target,
@@ -724,6 +724,7 @@ class Experiment:
             Result of the experiment.
         """
         iq_data = defaultdict(list)
+        plotter = IQPlotter()
         for window in time_range:
             result = self.measure(
                 sequence={target: np.zeros(0) for target in targets},
@@ -732,8 +733,7 @@ class Experiment:
             for qubit, value in result.data.items():
                 iq = complex(value.kerneled)
                 iq_data[qubit].append(iq)
-            clear_output(wait=True)
-            viz.scatter_iq_data(iq_data)
+            plotter.update(iq_data)
         data = {
             qubit: TimePhaseData(
                 target=qubit,
