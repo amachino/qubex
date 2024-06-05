@@ -60,6 +60,34 @@ class Target:
     type: TargetType
     qubit: str
 
+    @classmethod
+    def from_label(
+        cls,
+        label: str,
+        frequency: float = 0.0,
+    ) -> Target:
+        parts = label.split("-")
+        if len(parts) == 1:
+            if parts[0].startswith("R"):
+                qubit = parts[0][1:]
+                type = TargetType.READ
+            else:
+                qubit = parts[0]
+                type = TargetType.CTRL_GE
+        else:
+            qubit = parts[0]
+            if parts[1] == "ef":
+                type = TargetType.CTRL_EF
+            else:
+                type = TargetType.CTRL_CR
+
+        return cls(
+            label=label,
+            frequency=frequency,
+            type=type,
+            qubit=qubit,
+        )
+
 
 CONFIG_DIR = "config"
 BUILD_DIR = "build"

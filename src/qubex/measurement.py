@@ -19,7 +19,7 @@ from qubecalib.neopulse import (
 )
 
 from . import visualization as viz
-from .config import Config
+from .config import Config, Target
 from .qube_backend import QubeBackend, QubeBackendResult
 from .typing import IQArray, TargetMap
 
@@ -99,12 +99,12 @@ class Measurement:
         self._params: Final = config.get_params(chip_id)
 
     @property
-    def targets(self) -> dict[str, float]:
-        """Return the list of target names."""
+    def targets(self) -> dict[str, Target]:
+        """Get the targets."""
         target_settings = self._backend.target_settings
         return {
-            target: settings["frequency"]
-            for target, settings in target_settings.items()
+            target: Target.from_label(target, setting["frequency"])
+            for target, setting in target_settings.items()
         }
 
     def linkup(self, box_list: list[str]):
@@ -358,7 +358,9 @@ class Measurement:
         ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ...     })
         """
-        original_frequencies = self.targets
+        original_frequencies = {
+            label: target.frequency for label, target in self.targets.items()
+        }
         self._backend.modify_target_frequencies(target_frequencies)
         try:
             yield

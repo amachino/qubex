@@ -76,6 +76,7 @@ class Experiment:
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
         self._control_window: Final = control_window
+        self._rabi_params: Optional[dict[str, RabiParam]] = None
         self._config: Final = Config(config_dir)
         self._measurement: Final = Measurement(
             chip_id=chip_id,
@@ -87,7 +88,6 @@ class Experiment:
         )
         self.system: Final = self._config.get_quantum_system(chip_id)
         self.print_resources()
-        self._rabi_params: Optional[dict[str, RabiParam]] = None
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
@@ -151,9 +151,8 @@ class Experiment:
 
     @property
     def targets(self) -> dict[str, Target]:
-        all_targets = self._config.get_all_targets(self._chip_id)
-        targets = [target for target in all_targets if target.qubit in self._qubits]
-        return {target.label: target for target in targets}
+        """Get the targets."""
+        return self._measurement.targets
 
     @property
     def boxes(self) -> dict[str, Box]:
@@ -181,7 +180,7 @@ class Experiment:
         Parameters
         ----------
         frequencies : dict[str, float]
-            Frequencies of the qubits.
+            Modified frequencies in GHz.
 
         Examples
         --------
