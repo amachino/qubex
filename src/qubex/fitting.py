@@ -481,27 +481,28 @@ def fit_exp_decay(
     return popt, pcov
 
 
-def fit_cos_and_find_minimum(
-    x: npt.NDArray[np.float64],
-    y: npt.NDArray[np.float64],
+def fit_ampl_calib_data(
+    target: str,
+    amplitude: npt.NDArray[np.float64],
+    data: npt.NDArray[np.float64],
     p0=None,
 ) -> tuple[float, float]:
     """
-    Fit data to a cosine function and find the minimum of the fit.
+    Fit amplitude calibration data to a cosine function and plot the results.
 
     Parameters
     ----------
-    x : npt.NDArray[np.float64]
-        Time points for the decay data.
-    y : npt.NDArray[np.float64]
-        Amplitude data for the decay.
+    amplitude : npt.NDArray[np.float64]
+        Amplitude range for the calibration data.
+    data : npt.NDArray[np.float64]
+        Measured values for the calibration data.
     p0 : optional
         Initial guess for the fitting parameters.
 
     Returns
     -------
     tuple[float, float]
-        Time and amplitude of the minimum of the fit.
+        Minimum amplitude and value of the fitted cosine function.
     """
 
     def cos_func(t, ampl, omega, phi, offset):
@@ -509,27 +510,27 @@ def fit_cos_and_find_minimum(
 
     if p0 is None:
         p0 = (
-            np.abs(np.max(y) - np.min(y)) / 2,
-            2 * np.pi / (x[-1] - x[0]),
-            0,
-            (np.max(y) + np.min(y)) / 2,
+            np.abs(np.max(data) - np.min(data)) / 2,
+            2 * np.pi / (amplitude[-1] - amplitude[0]),
+            np.pi,
+            (np.max(data) + np.min(data)) / 2,
         )
 
-    popt, _ = curve_fit(cos_func, x, y, p0=p0)
+    popt, _ = curve_fit(cos_func, amplitude, data, p0=p0)
     print(
         f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
     )
 
     result = minimize(
         cos_func,
-        x0=np.mean(x),
+        x0=np.mean(amplitude),
         args=tuple(popt),
-        bounds=[(np.min(x), np.max(x))],
+        bounds=[(np.min(amplitude), np.max(amplitude))],
     )
     min_x = result.x[0]
     min_y = cos_func(min_x, *popt)
 
-    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    x_fine = np.linspace(np.min(amplitude), np.max(amplitude), 1000)
     y_fine = cos_func(x_fine, *popt)
 
     fig = go.Figure()
@@ -543,30 +544,27 @@ def fit_cos_and_find_minimum(
     )
     fig.add_trace(
         go.Scatter(
-            x=x,
-            y=y,
+            x=amplitude,
+            y=data,
             mode="markers",
             name="Data",
         )
     )
-    fig.add_trace(
-        go.Scatter(
-            x=[min_x],
-            y=[min_y],
-            mode="markers",
-            name="Minimum",
-            marker_color="red",
-            marker_size=10,
-        )
+    fig.add_annotation(
+        x=min_x,
+        y=min_y,
+        text=f"min: {min_x:.6g}",
+        showarrow=True,
+        arrowhead=1,
     )
     fig.update_layout(
-        title="Fit and Minimum",
-        xaxis_title="Time (ns)",
-        yaxis_title="Amplitude (arb. units)",
+        title=f"Amplitude calibration of {target}",
+        xaxis_title="Amplitude (arb. units)",
+        yaxis_title="Measured value (arb. units)",
     )
     fig.show()
 
-    print(f"Minimum: ({min_x}, {min_y})")
+    print(f"Calibrated amplitude: {min_x:.6g}")
 
     return min_x, min_y
 

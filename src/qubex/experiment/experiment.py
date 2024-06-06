@@ -28,6 +28,7 @@ from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..visualization import IQPlotter, plot_waveform
 from .experiment_record import DEFAULT_DATA_DIR, ExperimentRecord
 from .experiment_result import (
+    AmplCalibData,
     AmplRabiData,
     ExperimentResult,
     FreqRabiData,
@@ -157,7 +158,12 @@ class Experiment:
     @property
     def targets(self) -> dict[str, Target]:
         """Get the targets."""
-        return self._measurement.targets
+        all_targets = self._measurement.targets
+        targets = {}
+        for target in all_targets:
+            if all_targets[target].qubit in self._qubits:
+                targets[target] = all_targets[target]
+        return targets
 
     @property
     def boxes(self) -> dict[str, Box]:
@@ -167,6 +173,44 @@ class Experiment:
     @property
     def box_list(self) -> list[str]:
         return list(self.boxes.keys())
+
+    @property
+    def hpi_pulse(self) -> TargetMap[Waveform]:
+        """
+        Get the default π/2 pulse.
+
+        Returns
+        -------
+        TargetMap[Waveform]
+            π/2 pulse.
+        """
+        return {
+            target: FlatTop(
+                duration=30,
+                amplitude=self.params.control_amplitude[target],
+                tau=10,
+            )
+            for target in self.qubits
+        }
+
+    @property
+    def pi_pulse(self) -> TargetMap[Waveform]:
+        """
+        Get the default π pulse.
+
+        Returns
+        -------
+        TargetMap[Waveform]
+            π pulse.
+        """
+        return {
+            target: FlatTop(
+                duration=30,
+                amplitude=self.params.control_amplitude[target],
+                tau=10,
+            ).repeated(2)
+            for target in self.qubits
+        }
 
     def linkup(
         self,
@@ -504,13 +548,13 @@ class Experiment:
         targets = list(amplitudes.keys())
         time_range = np.array(time_range, dtype=np.float64)
 
-        sequence = {
-            target: lambda T: Rect(
+        def rabi_sequence(target: str) -> ParametricWaveform:
+            return lambda T: Rect(
                 duration=T,
                 amplitude=amplitudes[target],
             )
-            for target in targets
-        }
+
+        sequence = {target: rabi_sequence(target) for target in targets}
 
         detuned_frequencies = {
             target: self.targets[target].frequency + detuning for target in amplitudes
@@ -747,9 +791,9 @@ class Experiment:
         data = {
             target: FreqRabiData(
                 target=target,
+                data=np.array(values, dtype=np.float64),
                 sweep_range=detuning_range,
                 frequency_range=frequencies[target],
-                data=np.array(values, dtype=np.float64),
             )
             for target, values in rabi_rates.items()
         }
@@ -815,8 +859,8 @@ class Experiment:
         data = {
             target: AmplRabiData(
                 target=target,
-                sweep_range=amplitude_range,
                 data=np.array(values, dtype=np.float64),
+                sweep_range=amplitude_range,
             )
             for target, values in rabi_rates.items()
         }
@@ -869,8 +913,8 @@ class Experiment:
         data = {
             qubit: TimePhaseData(
                 target=qubit,
-                sweep_range=time_range,
                 data=np.array(values),
+                sweep_range=time_range,
             )
             for qubit, values in iq_data.items()
         }
@@ -944,7 +988,7 @@ class Experiment:
     def calibrate_hpi_pulse(
         self,
         target: str,
-    ) -> ExperimentResult[SweepData]:
+    ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π/2 pulse.
 
@@ -962,10 +1006,10 @@ class Experiment:
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
         ampl = self.calc_control_amplitudes(rabi_rate=12.5e-3)[target]
-        ampl_min = ampl * 0.0
-        ampl_max = ampl * 2.0
+        ampl_min = ampl * 0.5
+        ampl_max = ampl * 1.5
         ampl_range = np.linspace(ampl_min, ampl_max, 20)
-        result = self.sweep_parameter(
+        sweep_result = self.sweep_parameter(
             sequence={
                 target: lambda x: FlatTop(
                     duration=30,
@@ -979,4 +1023,13 @@ class Experiment:
             shots=DEFAULT_SHOTS,
             interval=DEFAULT_INTERVAL,
         )
-        return result
+        data = {
+            target: AmplCalibData(
+                target=target,
+                data=data.normalized,
+                sweep_range=data.sweep_range,
+            )
+            for target, data in sweep_result.data.items()
+        }
+
+        return ExperimentResult(data=data)
