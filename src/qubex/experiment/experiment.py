@@ -946,8 +946,9 @@ class Experiment:
 
     def calc_control_amplitudes(
         self,
-        rabi_rate: float = 25e-3,
+        rabi_rate: float = 12.5e-3,
         rabi_params: dict[str, RabiParam] | None = None,
+        print_result: bool = True,
     ) -> dict[str, float]:
         """
         Calculates the control amplitudes for the Rabi rate.
@@ -957,7 +958,9 @@ class Experiment:
         rabi_params : dict[str, RabiParam], optional
             Parameters of the Rabi oscillation. Defaults to None.
         rabi_rate : float, optional
-            Rabi rate of the experiment. Defaults to 25 MHz.
+            Rabi rate of the experiment. Defaults to 12.5 MHz.
+        print_result : bool, optional
+            Whether to print the result. Defaults to True.
 
         Returns
         -------
@@ -977,17 +980,18 @@ class Experiment:
             for target in rabi_params
         }
 
-        print(f"control_amplitude for {rabi_rate * 1e3} MHz\n")
-        for target, amplitude in amplitudes.items():
-            print(f"{target}: {amplitude:.6f}")
+        if print_result:
+            print(f"control_amplitude for {rabi_rate * 1e3} MHz\n")
+            for target, amplitude in amplitudes.items():
+                print(f"{target}: {amplitude:.6f}")
 
-        print(f"\n{1/rabi_rate/4} ns rect pulse → π/2 pulse")
+            print(f"\n{1/rabi_rate/4} ns rect pulse → π/2 pulse")
 
         return amplitudes
 
     def calibrate_hpi_pulse(
         self,
-        target: str,
+        targets: list[str],
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π/2 pulse.
@@ -1005,31 +1009,39 @@ class Experiment:
         rabi_params = self.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
-        ampl = self.calc_control_amplitudes(rabi_rate=12.5e-3)[target]
-        ampl_min = ampl * 0.5
-        ampl_max = ampl * 1.5
-        ampl_range = np.linspace(ampl_min, ampl_max, 20)
-        sweep_result = self.sweep_parameter(
-            sequence={
-                target: lambda x: FlatTop(
-                    duration=30,
-                    amplitude=x,
-                    tau=10,
-                )
-            },
-            sweep_range=ampl_range,
-            sweep_value_label="Control amplitude",
-            repetitions=4,
-            shots=DEFAULT_SHOTS,
-            interval=DEFAULT_INTERVAL,
-        )
-        data = {
-            target: AmplCalibData(
+
+        def calibrate(target: str) -> AmplCalibData:
+            rabi_rate = 12.5e-3
+            ampl = self.calc_control_amplitudes(
+                rabi_rate=rabi_rate,
+                print_result=False,
+            )[target]
+            ampl_min = ampl * 0.5
+            ampl_max = ampl * 1.5
+            ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            result = self.sweep_parameter(
+                sequence={
+                    target: lambda x: FlatTop(
+                        duration=30,
+                        amplitude=x,
+                        tau=10,
+                    )
+                },
+                sweep_range=ampl_range,
+                sweep_value_label="Control amplitude",
+                repetitions=4,
+                shots=DEFAULT_SHOTS,
+                interval=DEFAULT_INTERVAL,
+            ).data[target]
+            return AmplCalibData(
                 target=target,
-                data=data.normalized,
-                sweep_range=data.sweep_range,
+                data=result.normalized,
+                sweep_range=result.sweep_range,
             )
-            for target, data in sweep_result.data.items()
-        }
+
+        data = {}
+        for target in targets:
+            data[target] = calibrate(target)
+            clear_output(wait=True)
 
         return ExperimentResult(data=data)
