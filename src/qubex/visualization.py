@@ -79,10 +79,10 @@ class IQPlotter:
             yaxis=dict(scaleanchor="x", scaleratio=1),
             showlegend=True,
         )
-        display(self._widget)
 
     def update(self, data: TargetMap[IQArray]):
         if self._num_scatters is None:
+            display(self._widget)
             for qubit in data:
                 self._widget.add_scatter(name=qubit, mode="markers")
             self._num_scatters = len(data)

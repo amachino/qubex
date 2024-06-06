@@ -335,6 +335,13 @@ class FreqRabiData(TargetData):
         )
         fig.show()
 
+    def fit(self) -> tuple[float, float]:
+        return fitting.fit_detuned_rabi(
+            target=self.target,
+            control_frequencies=self.frequency_range,
+            rabi_frequencies=self.data,
+        )
+
 
 @dataclass
 class TimePhaseData(TargetData):
@@ -382,3 +389,43 @@ class TimePhaseData(TargetData):
             yaxis_title="Phase (rad)",
         )
         fig.show()
+
+
+@dataclass
+class AmplCalibData(TargetData):
+    """
+    The relation between the control amplitude and the measured value.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    """
+
+    sweep_range: NDArray
+
+    def plot(self):
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=self.sweep_range,
+                y=self.data,
+            )
+        )
+        fig.update_layout(
+            title=f"Amplitude calibration : {self.target}",
+            xaxis_title="Control amplitude (arb. units)",
+            yaxis_title="Measured value (arb. units)",
+        )
+        fig.show()
+
+    def fit(self) -> tuple[float, float]:
+        return fitting.fit_ampl_calib_data(
+            target=self.target,
+            amplitude=self.sweep_range,
+            data=-self.data,
+        )
