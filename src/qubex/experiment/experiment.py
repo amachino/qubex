@@ -503,21 +503,27 @@ class Experiment:
         """
         targets = list(amplitudes.keys())
         time_range = np.array(time_range, dtype=np.float64)
+
         sequence = {
             target: lambda T: Rect(
                 duration=T,
                 amplitude=amplitudes[target],
-            ).detuned(detuning)
+            )
             for target in targets
         }
-        sweep_result = self.sweep_parameter(
-            sequence=sequence,
-            sweep_range=time_range,
-            sweep_value_label="Time (ns)",
-            shots=shots,
-            interval=interval,
-            plot=plot,
-        )
+
+        detuned_frequencies = {
+            target: self.targets[target].frequency + detuning for target in amplitudes
+        }
+        with self.modified_frequencies(detuned_frequencies):
+            sweep_result = self.sweep_parameter(
+                sequence=sequence,
+                sweep_range=time_range,
+                sweep_value_label="Time (ns)",
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
         rabi_params = {
             target: fit.fit_rabi(
                 target=data.target,
@@ -680,7 +686,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        detuning_range: NDArray = np.linspace(-0.01, 0.01, 11),
+        detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
         time_range: NDArray = np.arange(0, 101, 4),
         plot: bool = True,
     ) -> ExperimentResult[FreqRabiData]:

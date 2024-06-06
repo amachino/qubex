@@ -254,6 +254,85 @@ def fit_rabi(
     )
 
 
+def fit_detuned_rabi(
+    *,
+    target: str,
+    control_frequencies: npt.NDArray[np.float64],
+    rabi_frequencies: npt.NDArray[np.float64],
+    plot: bool = True,
+) -> tuple[float, float]:
+    """
+    Fit detuned Rabi oscillation data to a cosine function and plot the results.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    control_frequencies : npt.NDArray[np.float64]
+        Array of control frequencies for the Rabi oscillations in GHz.
+    rabi_frequencies : npt.NDArray[np.float64]
+        Rabi frequencies corresponding to the control frequencies in GHz.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+
+    Returns
+    -------
+    tuple[float, float]
+        Resonance frequency and Rabi frequency of the detuned Rabi oscillation.
+    """
+
+    def func(f_control, f_resonance, f_rabi):
+        return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
+
+    popt, _ = curve_fit(func, control_frequencies, rabi_frequencies)
+
+    f_resonance = popt[0]
+    f_rabi = popt[1]
+
+    x = control_frequencies
+    y = rabi_frequencies * 1e3
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func(x_fine, *popt) * 1e3
+
+    if plot:
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=y,
+                mode="markers",
+                name="Data",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=y_fine,
+                mode="lines",
+                name="fit",
+            )
+        )
+        fig.add_annotation(
+            x=f_resonance,
+            y=np.abs(f_rabi * 1e3),
+            text=f"min: {f_resonance:.6f} GHz",
+            showarrow=True,
+            arrowhead=1,
+        )
+        fig.update_layout(
+            title=f"Detuned Rabi oscillation of {target}",
+            xaxis_title="Control frequency (GHz)",
+            yaxis_title="Rabi frequency (MHz)",
+        )
+        fig.show()
+
+    print(f"Resonance frequency: {f_resonance:.6f} GHz")
+
+    return f_resonance, f_rabi
+
+
 def fit_ramsey(
     *,
     x: npt.NDArray[np.float64],
