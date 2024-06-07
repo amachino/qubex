@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import sys
 from collections import defaultdict
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Final, Literal, Optional, Sequence
 
 import numpy as np
@@ -25,8 +27,9 @@ from ..measurement import (
 )
 from ..pulse import FlatTop, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
+from ..version import get_version
 from ..visualization import IQPlotter, plot_waveform
-from .experiment_record import DEFAULT_DATA_DIR, ExperimentRecord
+from .experiment_record import ExperimentRecord
 from .experiment_result import (
     AmplCalibData,
     AmplRabiData,
@@ -57,8 +60,6 @@ class Experiment:
         Control window. Defaults to DEFAULT_CONTROL_WINDOW.
     config_dir : str, optional
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
-    dara_dir : str, optional
-        Directory of the data files. Defaults to DEFAULT_DATA_DIR.
 
     Examples
     --------
@@ -76,14 +77,12 @@ class Experiment:
         qubits: list[str],
         control_window: int = DEFAULT_CONTROL_WINDOW,
         config_dir: str = DEFAULT_CONFIG_DIR,
-        dara_dir: str = DEFAULT_DATA_DIR,
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
         self._control_window: Final = control_window
         self._rabi_params: Optional[dict[str, RabiParam]] = None
         self._config: Final = Config(config_dir)
-        self._data_dir: Final = dara_dir
         self._measurement: Final = Measurement(
             chip_id=chip_id,
             config_dir=config_dir,
@@ -93,41 +92,7 @@ class Experiment:
             config_dir=config_dir,
         )
         self.system: Final = self._config.get_quantum_system(chip_id)
-        self.print_resources()
-
-    @property
-    def rabi_params(self) -> dict[str, RabiParam]:
-        """Get the Rabi parameters."""
-        if self._rabi_params is None:
-            return {}
-        return self._rabi_params
-
-    def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
-        """
-        Stores the Rabi parameters.
-
-        Parameters
-        ----------
-        rabi_params : dict[str, RabiParam]
-            Parameters of the Rabi oscillation.
-        """
-        if self._rabi_params is not None:
-            overwrite = Confirm.ask("Overwrite the existing Rabi parameters?")
-            if not overwrite:
-                return
-        self._rabi_params = rabi_params
-        console.print("Rabi parameters are stored.")
-
-    def print_resources(self):
-        console.print("The following resources will be used:\n")
-        table = Table(header_style="bold")
-        table.add_column("ID", justify="left")
-        table.add_column("NAME", justify="left")
-        table.add_column("ADDRESS", justify="left")
-        table.add_column("ADAPTER", justify="left")
-        for box in self.boxes.values():
-            table.add_row(box.id, box.name, box.address, box.adapter)
-        console.print(table)
+        self.print_environment()
 
     @property
     def params(self) -> Params:
@@ -212,6 +177,50 @@ class Experiment:
             for target in self.qubits
         }
 
+    @property
+    def rabi_params(self) -> dict[str, RabiParam]:
+        """Get the Rabi parameters."""
+        if self._rabi_params is None:
+            return {}
+        return self._rabi_params
+
+    def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
+        """
+        Stores the Rabi parameters.
+
+        Parameters
+        ----------
+        rabi_params : dict[str, RabiParam]
+            Parameters of the Rabi oscillation.
+        """
+        if self._rabi_params is not None:
+            overwrite = Confirm.ask("Overwrite the existing Rabi parameters?")
+            if not overwrite:
+                return
+        self._rabi_params = rabi_params
+        console.print("Rabi parameters are stored.")
+
+    def print_environment(self):
+        print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        print("python:", sys.version.split()[0])
+        print("venv:", sys.prefix)
+        print("qubex:", get_version())
+        print("config_dir:", self._config.config_path)
+        print("chip_id:", self.chip_id)
+        print("qubits:", ", ".join(self.qubits))
+        print("boxes:", ", ".join(self.boxes))
+        print("control_window:", self._control_window)
+
+    def print_resources(self):
+        table = Table(header_style="bold")
+        table.add_column("ID", justify="left")
+        table.add_column("NAME", justify="left")
+        table.add_column("ADDRESS", justify="left")
+        table.add_column("ADAPTER", justify="left")
+        for box in self.boxes.values():
+            table.add_row(box.id, box.name, box.address, box.adapter)
+        console.print(table)
+
     def linkup(
         self,
         box_list: Optional[list[str]] = None,
@@ -275,7 +284,7 @@ class Experiment:
         --------
         >>> record = experiment.load_record("some_record.json")
         """
-        record = ExperimentRecord.load(name, self._data_dir)
+        record = ExperimentRecord.load(name)
         print(f"ExperimentRecord `{name}` is loaded.\n")
         print(f"description: {record.description}")
         print(f"created_at: {record.created_at}")
