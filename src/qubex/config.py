@@ -152,6 +152,11 @@ class Config:
         self._props_dict = self._load_config_file(props_file)
         self._params_dict = self._load_config_file(params_file)
 
+    @property
+    def config_path(self) -> Path:
+        """Returns the absolute path to the configuration directory."""
+        return Path(self._config_dir).resolve()
+
     def get_system_settings_path(self, chip_id: str) -> Path:
         """
         Returns the path to the system settings file for the given chip ID.
