@@ -205,10 +205,10 @@ class Experiment:
     def print_environment(self):
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         print("python:", sys.version.split()[0])
-        print("venv:", sys.prefix)
+        print("env:", sys.prefix)
         print("qubex:", get_version())
-        print("config_dir:", self._config.config_path)
-        print("chip_id:", self._chip_id)
+        print("config:", self._config.config_path)
+        print("chip:", self._chip_id)
         print("qubits:", ", ".join(self.qubits))
         print("boxes:", ", ".join(self.boxes))
         print("control_window:", self._control_window, "ns")
