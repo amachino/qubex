@@ -16,7 +16,6 @@ from rich.table import Table
 from .. import fitting as fit
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..fitting import RabiParam
-from ..hardware import Box
 from ..measurement import (
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
@@ -137,13 +136,9 @@ class Experiment:
         return targets
 
     @property
-    def boxes(self) -> dict[str, Box]:
-        boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
-        return {box.id: box for box in boxes}
-
-    @property
     def box_list(self) -> list[str]:
-        return list(self.boxes.keys())
+        boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
+        return [box.id for box in boxes]
 
     @property
     def hpi_pulse(self) -> TargetMap[Waveform]:
@@ -213,17 +208,20 @@ class Experiment:
         print("qubex:", get_version())
         print("config:", self._config.config_path)
         print("chip:", self._chip_id)
-        print("qubits:", ", ".join(self.qubits))
-        print("boxes:", ", ".join(self.boxes))
+        print("qubits:", self._qubits)
         print("control_window:", self._control_window, "ns")
+        print("")
+        print("Following devices will be used:")
+        self.print_boxes()
 
-    def print_resources(self):
+    def print_boxes(self):
+        boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
         table = Table(header_style="bold")
         table.add_column("ID", justify="left")
         table.add_column("NAME", justify="left")
         table.add_column("ADDRESS", justify="left")
         table.add_column("ADAPTER", justify="left")
-        for box in self.boxes.values():
+        for box in boxes:
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
 

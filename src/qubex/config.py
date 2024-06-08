@@ -1044,6 +1044,7 @@ You are going to configure the following boxes:
 
         for box in boxes:
             quel1_box = qc.create_box(box.id, reconnect=False)
+            quel1_box.reconnect()
             for port in ports:
                 if port.box.id != box.id:
                     continue
@@ -1117,6 +1118,7 @@ You are going to configure the following boxes:
                     lo, cnco, fncos = self.find_ctrl_lo_nco(
                         chip_id=chip_id,
                         qubit=port.ctrl_qubit,
+                        n_channel=port.n_channel,
                     )
                     try:
                         quel1_box.config_port(
@@ -1200,12 +1202,12 @@ You are going to configure the following boxes:
         qubits: list[str],
         *,
         lo_min: int = 8_000_000_000,
-        lo_max: int = 10_000_000_000,
+        lo_max: int = 11_000_000_000,
         lo_step: int = 500_000_000,
         nco_step: int = 23_437_500,
-        cnco: int = 2_250_000_000,
-        fnco_min: int = -750_000_000,
-        fnco_max: int = +750_000_000,
+        cnco: int = 1_500_000_000,
+        fnco_min: int = -234_375_000,
+        fnco_max: int = +234_375_000,
     ) -> tuple[int, int, int]:
         """
         Finds the (lo, cnco, fnco) values for the readout qubits.
@@ -1216,6 +1218,20 @@ You are going to configure the following boxes:
             The quantum chip ID (e.g., "64Q").
         qubits : list[str]
             The readout qubits.
+        lo_min : int, optional
+            The minimum LO frequency, by default 8_000_000_000.
+        lo_max : int, optional
+            The maximum LO frequency, by default 11_000_000_000.
+        lo_step : int, optional
+            The LO frequency step, by default 500_000_000.
+        nco_step : int, optional
+            The NCO frequency step, by default 23_437_500.
+        cnco : int, optional
+            The CNCO frequency, by default 2_250_000_000.
+        fnco_min : int, optional
+            The minimum FNCO frequency, by default -750_000_000.
+        fnco_max : int, optional
+            The maximum FNCO frequency, by default +750_000_000.
 
         Returns
         -------
@@ -1249,14 +1265,16 @@ You are going to configure the following boxes:
         self,
         chip_id: str,
         qubit: str,
+        n_channel: int,
         *,
         lo_min: int = 8_000_000_000,
-        lo_max: int = 10_000_000_000,
+        lo_max: int = 11_000_000_000,
         lo_step: int = 500_000_000,
         nco_step: int = 23_437_500,
         cnco: int = 2_250_000_000,
         fnco_min: int = -750_000_000,
         fnco_max: int = +750_000_000,
+        max_diff: int = 2_000_000_000,
     ) -> tuple[int, int, tuple[int, int, int]]:
         """
         Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
@@ -1267,20 +1285,65 @@ You are going to configure the following boxes:
             The quantum chip ID (e.g., "64Q").
         qubit : str
             The control qubit.
+        n_channel : int
+            The number of channels.
+        lo_min : int, optional
+            The minimum LO frequency, by default 8_000_000_000.
+        lo_max : int, optional
+            The maximum LO frequency, by default 11_000_000_000.
+        lo_step : int, optional
+            The LO frequency step, by default 500_000_000.
+        nco_step : int, optional
+            The NCO frequency step, by default 23_437_500.
+        cnco : int, optional
+            The CNCO frequency, by default 2_250_000_000.
+        fnco_min : int, optional
+            The minimum FNCO frequency, by default -750_000_000.
+        fnco_max : int, optional
+            The maximum FNCO frequency, by default +750_000_000.
+        max_diff : int, optional
+            The maximum difference between CR and ge frequencies, by default 1_500_000_000.
 
         Returns
         -------
         tuple[int, int, tuple[int, int, int]]
             The tuple (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) for the control qubit.
         """
+
+        target_ge = f"{qubit}-ge"
+        target_ef = f"{qubit}-ef"
+        target_cr = f"{qubit}-CR"
+
         f_ge = self.get_ctrl_ge_target(chip_id, qubit).frequency * 1e9
         f_ef = self.get_ctrl_ef_target(chip_id, qubit).frequency * 1e9
         f_cr = self.get_ctrl_cr_targets(chip_id, qubit)[0].frequency * 1e9
-        f_med = (max(f_ge, f_ef, f_cr) + min(f_ge, f_ef, f_cr)) / 2
+
+        if n_channel == 1:
+            f_med = f_ge
+        elif n_channel == 3:
+            freq = {
+                target_ge: f_ge,
+                target_ef: f_ef,
+                target_cr: f_cr,
+            }
+            target_max, f_max = max(freq.items(), key=lambda item: item[1])
+            target_min, f_min = min(freq.items(), key=lambda item: item[1])
+
+            if f_max - f_min > max_diff:
+                console.print(
+                    f"Warning: {target_max} ({f_max * 1e-9:.3f} GHz) is too far from {target_min} ({f_min * 1e-9:.3f} GHz). Ignored {target_cr}.",
+                    style="yellow bold",
+                )
+                freq[target_cr] = f_ge
+                f_max = f_ge
+                f_min = f_ef
+
+            f_med = (f_max + f_min) / 2
+        else:
+            raise ValueError("Invalid number of channels: ", n_channel)
 
         min_diff = float("inf")
         best_lo = None
-
         for lo in range(lo_min, lo_max + 1, lo_step):
             current_value = lo - cnco
             current_diff = abs(current_value - f_med)
@@ -1288,7 +1351,7 @@ You are going to configure the following boxes:
                 min_diff = current_diff
                 best_lo = lo
         if best_lo is None:
-            raise ValueError("No valid lo value found for: ", f_ge, f_ef, f_cr)
+            raise ValueError("No valid lo value found for: ", freq)
 
         def find_fnco(target_frequency: float):
             min_diff = float("inf")
@@ -1300,10 +1363,15 @@ You are going to configure the following boxes:
                     min_diff = current_diff
                     best_fnco = fnco
             if best_fnco is None:
-                raise ValueError("No valid fnco value found for: ", f_ge, f_ef, f_cr)
+                raise ValueError("No valid fnco value found for: ", freq)
             return best_fnco
 
         fnco_ge = find_fnco(f_ge)
+
+        if n_channel == 1:
+            return best_lo, cnco, (fnco_ge, 0, 0)
+
         fnco_ef = find_fnco(f_ef)
         fnco_cr = find_fnco(f_cr)
+
         return best_lo, cnco, (fnco_ge, fnco_ef, fnco_cr)

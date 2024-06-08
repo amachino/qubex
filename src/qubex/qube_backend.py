@@ -338,6 +338,7 @@ class QubeBackend:
         """
         self._check_box_availabilty(box_name)
         box = self.qubecalib.create_box(box_name, reconnect=False)
+        box.reconnect()
         box_config = box.dump_box()
         return box_config
 

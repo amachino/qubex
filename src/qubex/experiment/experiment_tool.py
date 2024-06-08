@@ -34,7 +34,9 @@ class ExperimentTool:
 
     def get_quel1_box(self, box_id: str) -> Quel1Box:
         """Get the Quel1Box instance."""
-        return self._backend.qubecalib.create_box(box_id, reconnect=False)
+        box = self._backend.qubecalib.create_box(box_id, reconnect=False)
+        box.reconnect()
+        return box
 
     def dump_box(self, box_id: str) -> dict:
         """Dump the information of a box."""
@@ -54,6 +56,23 @@ class ExperimentTool:
         >>> ex.tool.configure_box("Q73A")
         """
         self._config.configure_box_settings(self._chip_id, include=[box_id])
+
+    def configure_boxes(self, box_list: list[str]) -> None:
+        """
+        Configure the boxes.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box identifiers.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> ex = Experiment(chip_id="64Q")
+        >>> ex.tool.configure_boxes(["Q73A", "Q73B"])
+        """
+        self._config.configure_box_settings(self._chip_id, include=box_list)
 
     def print_wiring_info(self):
         """
