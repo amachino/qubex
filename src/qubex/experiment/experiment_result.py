@@ -221,7 +221,8 @@ class SweepData(TargetData):
         if normalize:
             param = self.rabi_param
             if param is None:
-                raise ValueError("rabi_param must be provided for rotation.")
+                print("rabi_param must be provided for normalization.")
+                return
             values = self.normalized
             fig = go.Figure()
             fig.add_trace(

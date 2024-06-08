@@ -88,11 +88,16 @@ class Experiment:
             config_dir=config_dir,
         )
         self.tool: Final = ExperimentTool(
-            chip_id=chip_id,
-            config_dir=config_dir,
+            chip_id=self._chip_id,
+            qubits=self._qubits,
+            config=self._config,
+            measurement=self._measurement,
         )
-        self.system: Final = self._config.get_quantum_system(chip_id)
         self.print_environment()
+
+    @property
+    def system(self):
+        return self._config.get_quantum_system(self._chip_id)
 
     @property
     def params(self) -> Params:
@@ -100,25 +105,22 @@ class Experiment:
         return self._config.get_params(self._chip_id)
 
     @property
-    def chip_id(self) -> str:
-        """Get the chip ID."""
-        return self._chip_id
-
-    @property
     def qubits(self) -> dict[str, Qubit]:
         all_qubits = self._config.get_qubits(self._chip_id)
-        return {
-            qubit.label: qubit for qubit in all_qubits if qubit.label in self._qubits
-        }
+        qubits = {}
+        for qubit in all_qubits:
+            if qubit.label in self._qubits:
+                qubits[qubit.label] = qubit
+        return qubits
 
     @property
     def resonators(self) -> dict[str, Resonator]:
         all_resonators = self._config.get_resonators(self._chip_id)
-        return {
-            resonator.qubit: resonator
-            for resonator in all_resonators
-            if resonator.qubit in self._qubits
-        }
+        resonators = {}
+        for resonator in all_resonators:
+            if resonator.qubit in self._qubits:
+                resonators[resonator.qubit] = resonator
+        return resonators
 
     @property
     def targets(self) -> dict[str, Target]:
@@ -206,7 +208,7 @@ class Experiment:
         print("venv:", sys.prefix)
         print("qubex:", get_version())
         print("config_dir:", self._config.config_path)
-        print("chip_id:", self.chip_id)
+        print("chip_id:", self._chip_id)
         print("qubits:", ", ".join(self.qubits))
         print("boxes:", ", ".join(self.boxes))
         print("control_window:", self._control_window, "ns")
@@ -237,6 +239,7 @@ class Experiment:
 
     def linkup(
         self,
+        box_list: Optional[list[str]] = None,
     ) -> None:
         """
         Links up the measurement system.
