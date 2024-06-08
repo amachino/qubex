@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Final
 
 from qubecalib import QubeCalib
+from quel_ic_config import Quel1Box
 from rich.console import Console
 from rich.table import Table
 
 from ..config import Config
-from ..measurement import DEFAULT_CONFIG_DIR
-from ..qube_backend import QubeBackend
+from ..measurement import Measurement
 
 console = Console()
 
@@ -17,18 +17,24 @@ class ExperimentTool:
     def __init__(
         self,
         chip_id: str,
-        config_dir: str = DEFAULT_CONFIG_DIR,
+        qubits: list[str],
+        config: Config,
+        measurement: Measurement,
     ):
-        config = Config(config_dir)
-        config.configure_system_settings(chip_id)
-        config_path = config.get_system_settings_path(chip_id)
+        self._chip_id: Final = chip_id
+        self._qubits: Final = qubits
         self._config: Final = config
+        self._measurement: Final = measurement
+        self._backend: Final = measurement._backend
         self._system: Final = config.get_quantum_system(chip_id)
-        self._backend: Final = QubeBackend(config_path)
 
     def get_qubecalib(self) -> QubeCalib:
         """Get the QubeCalib instance."""
         return self._backend.qubecalib
+
+    def get_quel1_box(self, box_id: str) -> Quel1Box:
+        """Get the Quel1Box instance."""
+        return self._backend.qubecalib.create_box(box_id, reconnect=False)
 
     def dump_box(self, box_id: str) -> dict:
         """Dump the information of a box."""
@@ -47,8 +53,7 @@ class ExperimentTool:
         >>> ex = Experiment(chip_id="64Q")
         >>> ex.tool.configure_box("Q73A")
         """
-        chip_id = self._system.chip.id
-        self._config.configure_box_settings(chip_id, include=[box_id])
+        self._config.configure_box_settings(self._chip_id, include=[box_id])
 
     def print_wiring_info(self):
         """

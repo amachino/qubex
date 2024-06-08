@@ -1,3 +1,11 @@
+"""
+Measurement module.
+
+This module provides measurement functionalities using the QubeBackend.
+The Measurement class provides methods to send control waveforms and measure
+the readout signals.
+"""
+
 from __future__ import annotations
 
 import typing
@@ -54,6 +62,7 @@ class MeasureData:
 class MeasureResult:
     mode: MeasureMode
     data: dict[str, MeasureData]
+    config: dict
 
     def plot(self):
         if self.mode == MeasureMode.SINGLE:
@@ -107,6 +116,57 @@ class Measurement:
             for target, setting in target_settings.items()
         }
 
+    def check_link_status(self, box_list: list[str]) -> dict:
+        """
+        Check the link status of the boxes.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            The list of box IDs.
+
+        Returns
+        -------
+        dict
+            The link status of the boxes.
+
+        Examples
+        --------
+        >>> meas.check_link_status(["Q73A", "U10B"])
+        """
+        link_statuses = {box: self._backend.link_status(box) for box in box_list}
+        is_linkedup = all([all(status.values()) for status in link_statuses.values()])
+        return {
+            "status": is_linkedup,
+            "links": link_statuses,
+        }
+
+    def check_clock_status(self, box_list: list[str]) -> dict:
+        """
+        Check the clock status of the boxes.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            The list of box IDs.
+
+        Returns
+        -------
+        dict
+            The clock status of the boxes.
+
+        Examples
+        --------
+        >>> meas.check_clock_status(["Q73A", "U10B"])
+        """
+        clocks = self._backend.read_clocks(box_list)
+        clock_statuses = {box: clock for box, clock in zip(box_list, clocks)}
+        is_synced = self._backend.check_clocks(box_list)
+        return {
+            "status": is_synced,
+            "clocks": clock_statuses,
+        }
+
     def linkup(self, box_list: list[str]):
         """
         Link up the boxes and synchronize the clocks.
@@ -121,6 +181,22 @@ class Measurement:
         >>> meas.linkup(["Q73A", "U10B"])
         """
         self._backend.linkup_boxes(box_list)
+        self._backend.sync_clocks(box_list)
+
+    def relinkup(self, box_list: list[str]):
+        """
+        Relink up the boxes and synchronize the clocks.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            The list of box IDs.
+
+        Examples
+        --------
+        >>> meas.relinkup(["Q73A", "U10B"])
+        """
+        self._backend.relinkup_boxes(box_list)
         self._backend.sync_clocks(box_list)
 
     def measure_noise(
@@ -338,6 +414,7 @@ class Measurement:
         return MeasureResult(
             mode=measure_mode,
             data=measure_data,
+            config=backend_result.config,
         )
 
     @contextmanager

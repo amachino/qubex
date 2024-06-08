@@ -88,11 +88,16 @@ class Experiment:
             config_dir=config_dir,
         )
         self.tool: Final = ExperimentTool(
-            chip_id=chip_id,
-            config_dir=config_dir,
+            chip_id=self._chip_id,
+            qubits=self._qubits,
+            config=self._config,
+            measurement=self._measurement,
         )
-        self.system: Final = self._config.get_quantum_system(chip_id)
         self.print_environment()
+
+    @property
+    def system(self):
+        return self._config.get_quantum_system(self._chip_id)
 
     @property
     def params(self) -> Params:
@@ -101,24 +106,25 @@ class Experiment:
 
     @property
     def chip_id(self) -> str:
-        """Get the chip ID."""
         return self._chip_id
 
     @property
     def qubits(self) -> dict[str, Qubit]:
         all_qubits = self._config.get_qubits(self._chip_id)
-        return {
-            qubit.label: qubit for qubit in all_qubits if qubit.label in self._qubits
-        }
+        qubits = {}
+        for qubit in all_qubits:
+            if qubit.label in self._qubits:
+                qubits[qubit.label] = qubit
+        return qubits
 
     @property
     def resonators(self) -> dict[str, Resonator]:
         all_resonators = self._config.get_resonators(self._chip_id)
-        return {
-            resonator.qubit: resonator
-            for resonator in all_resonators
-            if resonator.qubit in self._qubits
-        }
+        resonators = {}
+        for resonator in all_resonators:
+            if resonator.qubit in self._qubits:
+                resonators[resonator.qubit] = resonator
+        return resonators
 
     @property
     def targets(self) -> dict[str, Target]:
@@ -203,13 +209,13 @@ class Experiment:
     def print_environment(self):
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         print("python:", sys.version.split()[0])
-        print("venv:", sys.prefix)
+        print("env:", sys.prefix)
         print("qubex:", get_version())
-        print("config_dir:", self._config.config_path)
-        print("chip_id:", self.chip_id)
+        print("config:", self._config.config_path)
+        print("chip:", self._chip_id)
         print("qubits:", ", ".join(self.qubits))
         print("boxes:", ", ".join(self.boxes))
-        print("control_window:", self._control_window)
+        print("control_window:", self._control_window, "ns")
 
     def print_resources(self):
         table = Table(header_style="bold")
@@ -221,12 +227,26 @@ class Experiment:
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
 
+    def check_status(self):
+        link_status = self._measurement.check_link_status(self.box_list)
+        clock_status = self._measurement.check_clock_status(self.box_list)
+        if link_status["status"]:
+            console.print("Link status: OK", style="green")
+        else:
+            console.print("Link status: NG", style="red")
+        console.print(link_status["links"])
+        if clock_status["status"]:
+            console.print("Clock status: OK", style="green")
+        else:
+            console.print("Clock status: NG", style="red")
+        console.print(clock_status["clocks"])
+
     def linkup(
         self,
         box_list: Optional[list[str]] = None,
     ) -> None:
         """
-        Links up the measurement system.
+        Link up the measurement system.
 
         Parameters
         ----------
@@ -240,6 +260,27 @@ class Experiment:
         if box_list is None:
             box_list = self.box_list
         self._measurement.linkup(box_list)
+
+    def relinkup(
+        self,
+        box_list: Optional[list[str]] = None,
+    ) -> None:
+        """
+        Relink up the measurement system.
+
+        Parameters
+        ----------
+        box_list : Optional[list[str]], optional
+            List of the box IDs to link up. Defaults to None.
+
+        Examples
+        --------
+        >>> experiment.relinkup()
+        """
+        if box_list is None:
+            box_list = self.box_list
+        self._measurement.relinkup(box_list)
+        self.check_status()
 
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float]):
