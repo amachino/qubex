@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -23,9 +22,6 @@ from .hardware import (
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
 
 CLOCK_MASTER_ADDRESS = "10.3.0.255"
-
-MIN_LO_STEP = 500_000_000
-MIN_NCO_STEP = 23_437_500
 
 console = Console()
 
@@ -1058,21 +1054,21 @@ You are going to configure the following boxes:
                         rfswitch="block" if loopback else "pass",
                     )
                     try:
-                        lo, nco = self.find_read_lo_nco(
+                        lo, cnco, fnco = self.find_read_lo_nco(
                             chip_id=chip_id,
                             qubits=port.read_qubits,
                         )
                         quel1_box.config_port(
                             port=port.number,
                             lo_freq=lo,
-                            cnco_freq=nco,
+                            cnco_freq=cnco,
                             sideband="U",
                             vatt=readout_vatt[port.mux],
                         )
                         quel1_box.config_channel(
                             port=port.number,
                             channel=0,
-                            fnco_freq=0,
+                            fnco_freq=fnco,
                         )
                     except ValueError as e:
                         console.print(
@@ -1080,7 +1076,7 @@ You are going to configure the following boxes:
                             style="red bold",
                         )
                         console.print(
-                            f"lo = {lo}, nco = {nco}",
+                            f"lo = {lo}, cnco = {cnco}, fnco = {fnco}",
                         )
                         continue
                 elif isinstance(port, ReadInPort):
@@ -1088,7 +1084,7 @@ You are going to configure the following boxes:
                         port=port.number,
                         rfswitch="loop" if loopback else "open",
                     )
-                    lo, nco = self.find_read_lo_nco(
+                    lo, cnco, fnco = self.find_read_lo_nco(
                         chip_id=chip_id,
                         qubits=port.read_out.read_qubits,
                     )
@@ -1102,7 +1098,7 @@ You are going to configure the following boxes:
                             quel1_box.config_runit(
                                 port=port.number,
                                 runit=idx,
-                                fnco_freq=0,
+                                fnco_freq=fnco,
                             )
                     except ValueError as e:
                         console.print(
@@ -1110,7 +1106,7 @@ You are going to configure the following boxes:
                             style="red bold",
                         )
                         console.print(
-                            f"lo = {lo}, nco = {nco}",
+                            f"lo = {lo}, cnco = {cnco}, fnco = {fnco}",
                         )
                         continue
                 elif isinstance(port, CtrlPort):
@@ -1118,7 +1114,7 @@ You are going to configure the following boxes:
                         port=port.number,
                         rfswitch="block" if loopback else "pass",
                     )
-                    lo, cnco, fnco = self.find_ctrl_lo_nco(
+                    lo, cnco, fncos = self.find_ctrl_lo_nco(
                         chip_id=chip_id,
                         qubit=port.ctrl_qubit,
                     )
@@ -1134,23 +1130,23 @@ You are going to configure the following boxes:
                             quel1_box.config_channel(
                                 port=port.number,
                                 channel=0,
-                                fnco_freq=fnco[0],
+                                fnco_freq=fncos[0],
                             )
                         elif port.n_channel == 3:
                             quel1_box.config_channel(
                                 port=port.number,
                                 channel=0,
-                                fnco_freq=fnco[0],
+                                fnco_freq=fncos[0],
                             )
                             quel1_box.config_channel(
                                 port=port.number,
                                 channel=1,
-                                fnco_freq=fnco[1],
+                                fnco_freq=fncos[1],
                             )
                             quel1_box.config_channel(
                                 port=port.number,
                                 channel=2,
-                                fnco_freq=fnco[2],
+                                fnco_freq=fncos[2],
                             )
                     except ValueError as e:
                         console.print(
@@ -1158,7 +1154,7 @@ You are going to configure the following boxes:
                             style="red bold",
                         )
                         console.print(
-                            f"lo = {lo}, cnco = {cnco}, fnco = {fnco}",
+                            f"lo = {lo}, cnco = {cnco}, fncos = {fncos}",
                         )
                         continue
 
@@ -1198,86 +1194,21 @@ You are going to configure the following boxes:
             style="bright_green bold",
         )
 
-    @staticmethod
-    def find_lo_nco_pair(
-        target_frequency: float,
-        ssb: str,
-        *,
-        lo_min: int = 8_000_000_000,
-        lo_max: int = 10_500_000_000,
-        lo_step: int = MIN_LO_STEP,
-        nco_min: int = 1_500_000_000,
-        nco_max: int = 2_000_000_000,
-        nco_step: int = MIN_NCO_STEP,
-    ) -> tuple[int, int]:
-        """
-        Finds the pair (lo, nco) such that the value of lo ± nco is closest to the target_frequency.
-        The operation depends on the value of 'ssb'. If 'ssb' is 'LSB', it uses lo - nco. If 'ssb' is 'USB', it uses lo + nco.
-
-        Parameters
-        ----------
-        target_frequency : float
-            The target frequency in Hz.
-        ssb : str
-            The sideband (either 'LSB' or 'USB').
-        lo_min : int, optional
-            The minimum value of lo, by default 8_000_000_000.
-        lo_max : int, optional
-            The maximum value of lo, by default 10_500_000_000.
-        lo_step : int, optional
-            The step value of lo, by default 500_000_000.
-        nco_min : int, optional
-            The minimum value of nco, by default 1_500_000_000.
-        nco_max : int, optional
-            The maximum value of nco, by default 2_000_000_000.
-        nco_step : int, optional
-            The step value of nco, by default 23_437_500.
-
-        Returns
-        -------
-        tuple[int, int]
-            The pair (lo, nco) that results in the closest value to target_frequency.
-        """
-
-        # Initialize the minimum difference to infinity to ensure any real difference is smaller.
-        min_diff = float("inf")
-        best_lo = None
-        best_nco = None
-
-        # Iterate over possible values of lo from lo_min to lo_max, in steps of lo_step.
-        for lo in range(lo_min, lo_max + 1, lo_step):
-            # Iterate over possible values of nco from nco_min to nco_max, in steps of nco_step.
-            for nco in range(nco_min, nco_max, nco_step):
-                # Calculate the current value based on ssb.
-                if ssb == "LSB":
-                    current_value = lo - nco
-                elif ssb == "USB":
-                    current_value = lo + nco
-                else:
-                    raise ValueError("ssb must be 'LSB' or 'USB'")
-
-                # Calculate the absolute difference from the target_frequency.
-                current_diff = abs(current_value - target_frequency)
-
-                # If this is the smallest difference we've found, update our best estimates.
-                if current_diff < min_diff:
-                    min_diff = current_diff
-                    best_lo = lo
-                    best_nco = nco
-
-        if best_lo is None or best_nco is None:
-            raise ValueError("No valid (lo, nco) pair found.")
-
-        # Return the pair (lo, nco) that results in the closest value to target_frequency.
-        return best_lo, best_nco
-
     def find_read_lo_nco(
         self,
         chip_id: str,
         qubits: list[str],
-    ) -> tuple[int, int]:
+        *,
+        lo_min: int = 8_000_000_000,
+        lo_max: int = 10_000_000_000,
+        lo_step: int = 500_000_000,
+        nco_step: int = 23_437_500,
+        cnco: int = 2_250_000_000,
+        fnco_min: int = -750_000_000,
+        fnco_max: int = +750_000_000,
+    ) -> tuple[int, int, int]:
         """
-        Finds the lo and nco values for the readout multiplexers.
+        Finds the (lo, cnco, fnco) values for the readout qubits.
 
         Parameters
         ----------
@@ -1288,23 +1219,47 @@ You are going to configure the following boxes:
 
         Returns
         -------
-        tuple[int, int]
-            The pair (lo, nco) for the read frequencies.
+        tuple[int, int, int]
+            The tuple (lo, cnco, fnco) for the readout qubits.
         """
-        default_value = 0.0
-        props = self.get_props(chip_id)
-        frequencies = defaultdict(lambda: default_value, props.resonator_frequency)
-        values = [frequencies[qubit] for qubit in qubits]
-        median_value = (max(values) + min(values)) / 2
-        return self.find_lo_nco_pair(median_value * 1e9, ssb="USB")
+        default_frequency = 10.0
+        frequencies = self.get_props(chip_id).resonator_frequency
+        mux_frequencies = [
+            frequencies.get(qubit, default_frequency) * 1e9 for qubit in qubits
+        ]
+        target_frequency = (max(mux_frequencies) + min(mux_frequencies)) / 2
+
+        min_diff = float("inf")
+        best_lo = None
+        best_fnco = None
+
+        for lo in range(lo_min, lo_max + 1, lo_step):
+            for fnco in range(fnco_min, fnco_max + 1, nco_step):
+                current_value = lo + cnco + fnco
+                current_diff = abs(current_value - target_frequency)
+                if current_diff < min_diff:
+                    min_diff = current_diff
+                    best_lo = lo
+                    best_fnco = fnco
+        if best_lo is None or best_fnco is None:
+            raise ValueError("No valid (lo, fnco) pair found.")
+        return best_lo, cnco, best_fnco
 
     def find_ctrl_lo_nco(
         self,
         chip_id: str,
         qubit: str,
+        *,
+        lo_min: int = 8_000_000_000,
+        lo_max: int = 10_000_000_000,
+        lo_step: int = 500_000_000,
+        nco_step: int = 23_437_500,
+        cnco: int = 2_250_000_000,
+        fnco_min: int = -750_000_000,
+        fnco_max: int = +750_000_000,
     ) -> tuple[int, int, tuple[int, int, int]]:
         """
-        Finds the lo, cnco and (fnco0, fnco1, fnco2) values for the qubit.
+        Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
 
         Parameters
         ----------
@@ -1316,15 +1271,39 @@ You are going to configure the following boxes:
         Returns
         -------
         tuple[int, int, tuple[int, int, int]]
-            The pair (lo, cnco) and the tuple (fnco0, fnco1, fnco2) for the control qubit.
+            The tuple (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) for the control qubit.
         """
         f_ge = self.get_ctrl_ge_target(chip_id, qubit).frequency * 1e9
         f_ef = self.get_ctrl_ef_target(chip_id, qubit).frequency * 1e9
         f_cr = self.get_ctrl_cr_targets(chip_id, qubit)[0].frequency * 1e9
         f_med = (max(f_ge, f_ef, f_cr) + min(f_ge, f_ef, f_cr)) / 2
-        lo, cnco = self.find_lo_nco_pair(f_med, ssb="LSB")
-        f0 = lo - cnco
-        fnco = [
-            -round((f - f0) / MIN_NCO_STEP) * MIN_NCO_STEP for f in [f_ge, f_ef, f_cr]
-        ]
-        return lo, cnco, (fnco[0], fnco[1], fnco[2])
+
+        min_diff = float("inf")
+        best_lo = None
+
+        for lo in range(lo_min, lo_max + 1, lo_step):
+            current_value = lo - cnco
+            current_diff = abs(current_value - f_med)
+            if current_diff < min_diff:
+                min_diff = current_diff
+                best_lo = lo
+        if best_lo is None:
+            raise ValueError("No valid lo value found for: ", f_ge, f_ef, f_cr)
+
+        def find_fnco(target_frequency: float):
+            min_diff = float("inf")
+            best_fnco = None
+            for fnco in range(fnco_min, fnco_max + 1, nco_step):
+                current_value = abs(best_lo - cnco - fnco)
+                current_diff = abs(current_value - target_frequency)
+                if current_diff < min_diff:
+                    min_diff = current_diff
+                    best_fnco = fnco
+            if best_fnco is None:
+                raise ValueError("No valid fnco value found for: ", f_ge, f_ef, f_cr)
+            return best_fnco
+
+        fnco_ge = find_fnco(f_ge)
+        fnco_ef = find_fnco(f_ef)
+        fnco_cr = find_fnco(f_cr)
+        return best_lo, cnco, (fnco_ge, fnco_ef, fnco_cr)

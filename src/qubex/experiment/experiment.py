@@ -105,6 +105,10 @@ class Experiment:
         return self._config.get_params(self._chip_id)
 
     @property
+    def chip_id(self) -> str:
+        return self._chip_id
+
+    @property
     def qubits(self) -> dict[str, Qubit]:
         all_qubits = self._config.get_qubits(self._chip_id)
         qubits = {}
@@ -223,7 +227,7 @@ class Experiment:
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
 
-    def print_status(self):
+    def check_status(self):
         link_status = self._measurement.check_link_status(self.box_list)
         clock_status = self._measurement.check_clock_status(self.box_list)
         if link_status["status"]:
@@ -242,7 +246,7 @@ class Experiment:
         box_list: Optional[list[str]] = None,
     ) -> None:
         """
-        Links up the measurement system.
+        Link up the measurement system.
 
         Parameters
         ----------
@@ -256,6 +260,27 @@ class Experiment:
         if box_list is None:
             box_list = self.box_list
         self._measurement.linkup(box_list)
+
+    def relinkup(
+        self,
+        box_list: Optional[list[str]] = None,
+    ) -> None:
+        """
+        Relink up the measurement system.
+
+        Parameters
+        ----------
+        box_list : Optional[list[str]], optional
+            List of the box IDs to link up. Defaults to None.
+
+        Examples
+        --------
+        >>> experiment.relinkup()
+        """
+        if box_list is None:
+            box_list = self.box_list
+        self._measurement.relinkup(box_list)
+        self.check_status()
 
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float]):

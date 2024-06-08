@@ -183,6 +183,22 @@ class Measurement:
         self._backend.linkup_boxes(box_list)
         self._backend.sync_clocks(box_list)
 
+    def relinkup(self, box_list: list[str]):
+        """
+        Relink up the boxes and synchronize the clocks.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            The list of box IDs.
+
+        Examples
+        --------
+        >>> meas.relinkup(["Q73A", "U10B"])
+        """
+        self._backend.relinkup_boxes(box_list)
+        self._backend.sync_clocks(box_list)
+
     def measure_noise(
         self,
         targets: list[str],

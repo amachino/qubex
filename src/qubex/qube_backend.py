@@ -185,6 +185,38 @@ class QubeBackend:
                 print(f"{box_name:5}", ":", "Error", e)
         return boxes
 
+    def relinkup(self, box_name: str, noise_threshold: int = 500):
+        """
+        Relinkup a box.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box to relinkup.
+
+        Examples
+        --------
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.relinkup("Q73A")
+        """
+        box = self.qubecalib.create_box(box_name, reconnect=False)
+        box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
+        box.reconnect()
+
+    def relinkup_boxes(self, box_list: list[str]):
+        """
+        Relinkup all the boxes in the list.
+
+        Examples
+        --------
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.relinkup_boxes(["Q73A", "U10B"])
+        """
+        for box_name in box_list:
+            self.relinkup(box_name)
+
     def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
         """
         Read the clocks of the boxes.
@@ -277,7 +309,6 @@ class QubeBackend:
             synchronized = self.resync_clocks(box_list)
             if not synchronized:
                 console.print("Failed to synchronize clocks.", style="bold red")
-        console.print("All clocks are synchronized.", style="bold green")
         return synchronized
 
     def dump_box(self, box_name: str) -> dict:
@@ -306,7 +337,7 @@ class QubeBackend:
         >>> backend.dump_box("Q73A")
         """
         self._check_box_availabilty(box_name)
-        box = self.linkup(box_name)
+        box = self.qubecalib.create_box(box_name, reconnect=False)
         box_config = box.dump_box()
         return box_config
 
