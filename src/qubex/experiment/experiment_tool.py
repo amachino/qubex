@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Final
 
 from qubecalib import QubeCalib
+from quel_ic_config import Quel1Box
 from rich.console import Console
 from rich.table import Table
 
@@ -30,6 +31,10 @@ class ExperimentTool:
     def get_qubecalib(self) -> QubeCalib:
         """Get the QubeCalib instance."""
         return self._backend.qubecalib
+
+    def get_quel1_box(self, box_id: str) -> Quel1Box:
+        """Get the Quel1Box instance."""
+        return self._backend.qubecalib.create_box(box_id, reconnect=False)
 
     def dump_box(self, box_id: str) -> dict:
         """Dump the information of a box."""

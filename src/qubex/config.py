@@ -1047,7 +1047,7 @@ You are going to configure the following boxes:
         control_vatt = params.control_vatt
 
         for box in boxes:
-            quel1_box = qc.create_box(box.id)
+            quel1_box = qc.create_box(box.id, reconnect=False)
             for port in ports:
                 if port.box.id != box.id:
                     continue
