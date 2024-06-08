@@ -373,7 +373,7 @@ class TimePhaseData(TargetData):
 
     @property
     def phase_shift(self) -> float:
-        """Return the average phase shift per chunk."""
+        """Return the average phase shift per 128 ns."""
         return np.mean(self.phase_diffs).astype(float)
 
     def plot(self):
@@ -385,7 +385,7 @@ class TimePhaseData(TargetData):
             )
         )
         fig.update_layout(
-            title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/chunk",
+            title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/128ns",
             xaxis_title="Control window (ns)",
             yaxis_title="Phase (rad)",
         )
