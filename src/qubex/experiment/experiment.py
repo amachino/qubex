@@ -209,7 +209,7 @@ class Experiment:
         print("chip_id:", self.chip_id)
         print("qubits:", ", ".join(self.qubits))
         print("boxes:", ", ".join(self.boxes))
-        print("control_window:", self._control_window)
+        print("control_window:", self._control_window, "ns")
 
     def print_resources(self):
         table = Table(header_style="bold")
@@ -221,9 +221,22 @@ class Experiment:
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
 
+    def print_status(self):
+        link_status = self._measurement.check_link_status(self.box_list)
+        clock_status = self._measurement.check_clock_status(self.box_list)
+        if link_status["status"]:
+            console.print("Link status: OK", style="green")
+        else:
+            console.print("Link status: NG", style="red")
+        console.print(link_status["links"])
+        if clock_status["status"]:
+            console.print("Clock status: OK", style="green")
+        else:
+            console.print("Clock status: NG", style="red")
+        console.print(clock_status["clocks"])
+
     def linkup(
         self,
-        box_list: Optional[list[str]] = None,
     ) -> None:
         """
         Links up the measurement system.
