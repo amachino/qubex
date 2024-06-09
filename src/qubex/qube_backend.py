@@ -114,6 +114,30 @@ class QubeBackend:
         box = self.qubecalib.create_box(box_name, reconnect=False)
         return box.link_status()
 
+    def reconnect(self, box_name: str):
+        """
+        Reconnect a box.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box to reconnect.
+
+        Raises
+        ------
+        ValueError
+            If the box is not in the available boxes.
+
+        Examples
+        --------
+        >>> from qubex.qube_backend import QubeBackend
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> backend.reconnect("Q73A")
+        """
+        self._check_box_availabilty(box_name)
+        box = self.qubecalib.create_box(box_name, reconnect=False)
+        box.reconnect()
+
     def linkup(
         self,
         box_name: str,
