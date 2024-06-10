@@ -16,3 +16,7 @@ pip install git+https://github.com/amachino/qubex.git
 ```bash
 pip install git+https://github.com/amachino/qubex.git[backend]
 ```
+
+## Usage
+
+See the [examples](https://github.com/amachino/qubex/tree/main/docs/examples) folder for usage examples.

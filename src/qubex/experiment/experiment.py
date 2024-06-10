@@ -258,6 +258,7 @@ class Experiment:
         if box_list is None:
             box_list = self.box_list
         self._measurement.linkup(box_list)
+        self.check_status()
 
     def relinkup(
         self,
