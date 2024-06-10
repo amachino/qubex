@@ -69,12 +69,12 @@ class PulseAPI:
         control_window: int = 1024,
     ) -> MeasureResult:
         """
-        Measure the waveforms.
+        Measure the qubits using the control waveforms.
 
         Parameters
         ----------
         waveforms: dict[str, list | npt.NDArray | Waveform]
-            The waveforms to measure.
+            The control waveforms for each qubit.
         frequencies: dict[str, float], optional
             The frequencies of the qubits.
         mode: Literal["single", "avg"], optional
@@ -92,11 +92,11 @@ class PulseAPI:
             The measurement result.
         """
 
-        normalized_waveforms = {}
+        control_waveforms = {}
         for qubit, waveform in waveforms.items():
             if isinstance(waveform, Waveform):
                 waveform = waveform.values
-            normalized_waveforms[qubit] = {
+            control_waveforms[qubit] = {
                 "I": np.real(waveform).tolist(),
                 "Q": np.imag(waveform).tolist(),
             }
@@ -106,7 +106,7 @@ class PulseAPI:
             "/api/measure",
             json={
                 "chip_id": self.chip_id,
-                "waveforms": normalized_waveforms,
+                "waveforms": control_waveforms,
                 "frequencies": frequencies,
                 "mode": mode,
                 "shots": shots,
