@@ -52,8 +52,7 @@ class PulseAPI:
         waveforms: dict[str, list | npt.NDArray | Waveform],
         *,
         frequencies: Optional[dict[str, float]] = None,
-        meas_mode: Literal["single", "avg"] = "avg",
-        meas_level: int = 1,
+        mode: Literal["single", "avg"] = "avg",
         shots: int = 1024,
         interval: int = 100 * 1024,
         control_window: int = 1024,
@@ -67,10 +66,8 @@ class PulseAPI:
             The waveforms to measure.
         frequencies: dict[str, float], optional
             The frequencies of the qubits.
-        meas_mode: Literal["single", "avg"], optional
+        mode: Literal["single", "avg"], optional
             The measurement mode.
-        meas_level: int, optional
-            The measurement level.
         shots: int, optional
             The number of shots.
         interval: int, optional
@@ -99,8 +96,7 @@ class PulseAPI:
             json={
                 "waveforms": normalized_waveforms,
                 "frequencies": frequencies,
-                "meas_mode": meas_mode,
-                "meas_level": meas_level,
+                "mode": mode,
                 "shots": shots,
                 "interval": interval,
                 "control_window": control_window,
