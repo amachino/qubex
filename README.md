@@ -14,7 +14,7 @@ pip install git+https://github.com/amachino/qubex.git
 ### Client and backend
 
 ```bash
-pip install git+https://github.com/amachino/qubex.git[backend]
+pip install "git+https://github.com/amachino/qubex.git@v1.0.0#egg=qubex[backend]"
 ```
 
 ## Usage
