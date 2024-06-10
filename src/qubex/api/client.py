@@ -35,10 +35,19 @@ class PulseAPI:
             The base URL of the API.
         """
         self.chip_id = chip_id
-        self.api_key = api_key or os.getenv("PULSE_API_KEY") or ""
+        self.api_key = self._get_api_key(api_key)
         self.api_base_url = api_base_url or API_BASE_URL
         self.headers = {"X-API-Key": self.api_key}
         self.client = httpx.Client()
+
+    @staticmethod
+    def _get_api_key(api_key: str | None) -> str:
+        """Get the API key."""
+        if api_key is None:
+            api_key = os.getenv("PULSE_API_KEY")
+        if api_key is None:
+            raise ValueError("API key is required.")
+        return api_key
 
     @property
     def targets(self) -> dict:
@@ -129,7 +138,7 @@ class PulseAPI:
         endpoint: str,
         params=None,
         json=None,
-    ):
+    ) -> dict:
         """Make an HTTP request to the API."""
         response = self.client.request(
             method=method,
@@ -139,6 +148,10 @@ class PulseAPI:
             headers=self.headers,
             timeout=60,
         )
+        status_code = response.status_code
+        if status_code == 401:
+            print("Unauthorized. Please check your API key.")
+            return {"error": {"message": "Unauthorized"}}
         response.raise_for_status()
         json = response.json()
         if "error" in json:
