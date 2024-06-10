@@ -10,12 +10,9 @@ from __future__ import annotations
 
 import typing
 from contextlib import contextmanager
-from dataclasses import dataclass
-from enum import Enum
 from typing import Final, Literal
 
 import numpy as np
-from numpy.typing import NDArray
 from qubecalib.neopulse import (
     Arbit,
     Capture,
@@ -26,8 +23,8 @@ from qubecalib.neopulse import (
     padding,
 )
 
-from . import visualization as viz
 from .config import Config, Target
+from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .qube_backend import QubeBackend, QubeBackendResult
 from .typing import IQArray, TargetMap
 
@@ -37,46 +34,6 @@ DEFAULT_INTERVAL = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW = 1024  # ns
 DEFAULT_CAPTURE_WINDOW = 1024  # ns
 DEFAULT_READOUT_DURATION = 512  # ns
-
-
-class MeasureMode(Enum):
-    SINGLE = "single"
-    AVG = "avg"
-
-    @property
-    def integral_mode(self) -> str:
-        return {
-            MeasureMode.SINGLE: "single",
-            MeasureMode.AVG: "integral",
-        }[self]
-
-
-@dataclass
-class MeasureData:
-    raw: NDArray
-    kerneled: NDArray
-    classified: NDArray
-
-
-@dataclass
-class MeasureResult:
-    mode: MeasureMode
-    data: dict[str, MeasureData]
-    config: dict
-
-    def plot(self):
-        if self.mode == MeasureMode.SINGLE:
-            data = {qubit: data.kerneled for qubit, data in self.data.items()}
-            viz.scatter_iq_data(data=data)
-        elif self.mode == MeasureMode.AVG:
-            for qubit, data in self.data.items():
-                viz.plot_waveform(
-                    data=data.raw,
-                    sampling_period=8,
-                    title=f"Readout waveform of {qubit}",
-                    xlabel="Capture time (ns)",
-                    ylabel="Amplitude (arb. units)",
-                )
 
 
 class Measurement:
