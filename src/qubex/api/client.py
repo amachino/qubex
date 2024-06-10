@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import os
 from typing import Literal, Optional
 
 import httpx
 import numpy as np
 import numpy.typing as npt
+
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
 from qubex.pulse import Waveform
+
+API_BASE_URL = "https://qiqb.ngrok.dev"
 
 
 class PulseAPI:
@@ -14,8 +18,8 @@ class PulseAPI:
         self,
         *,
         chip_id: str,
-        api_key: str,
-        api_base_url: str,
+        api_key: str | None = None,
+        api_base_url: str | None = None,
     ):
         """
         Pulse API Client
@@ -31,8 +35,8 @@ class PulseAPI:
             The base URL of the API.
         """
         self.chip_id = chip_id
-        self.api_key = api_key
-        self.api_base_url = api_base_url
+        self.api_key = api_key or os.getenv("PULSE_API_KEY") or ""
+        self.api_base_url = api_base_url or API_BASE_URL
         self.headers = {"X-API-Key": self.api_key}
         self.client = httpx.Client()
 
