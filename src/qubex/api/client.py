@@ -29,30 +29,25 @@ class PulseAPI:
         self.api_key = api_key
         self.api_base_url = api_base_url
         self.headers = {"X-API-Key": self.api_key}
-        self.client = httpx.AsyncClient()
+        self.client = httpx.Client()
 
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.close()
-
-    async def config(self) -> dict:
+    @property
+    def config(self) -> dict:
         """Get the current configuration."""
-        return await self._request(
+        return self._request(
             "GET",
             "/api/config",
         )
 
-    async def configure(self, chip_id: str) -> dict:
+    def configure(self, chip_id: str) -> dict:
         """Configure the device."""
-        return await self._request(
+        return self._request(
             "POST",
             "/api/configure",
             json={"chip_id": chip_id},
         )
 
-    async def measure(
+    def measure(
         self,
         waveforms: dict[str, list | npt.NDArray | Waveform],
         *,
@@ -98,7 +93,7 @@ class PulseAPI:
                 "Q": np.imag(waveform).tolist(),
             }
 
-        response = await self._request(
+        response = self._request(
             "POST",
             "/api/measure",
             json={
@@ -129,14 +124,14 @@ class PulseAPI:
             config=response["config"],
         )
 
-    async def _request(
+    def _request(
         self,
         method: str,
         endpoint: str,
         json=None,
     ):
         """Make an HTTP request to the API."""
-        response = await self.client.request(
+        response = self.client.request(
             method=method,
             url=self.api_base_url + endpoint,
             json=json,
@@ -148,7 +143,3 @@ class PulseAPI:
         if "error" in json:
             raise RuntimeError(json["error"]["message"])
         return json["result"]
-
-    async def close(self):
-        """Close the HTTP client session."""
-        await self.client.aclose()
