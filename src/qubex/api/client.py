@@ -12,6 +12,8 @@ from qubex.pulse import Waveform
 class PulseAPI:
     def __init__(
         self,
+        *,
+        chip_id: str,
         api_key: str,
         api_base_url: str,
     ):
@@ -21,30 +23,26 @@ class PulseAPI:
 
         Parameters
         ----------
+        chip_id: str
+            The quantum chip ID.
         api_key: str
             The API key to use.
         api_base_url: str
             The base URL of the API.
         """
+        self.chip_id = chip_id
         self.api_key = api_key
         self.api_base_url = api_base_url
         self.headers = {"X-API-Key": self.api_key}
         self.client = httpx.Client()
 
     @property
-    def config(self) -> dict:
-        """Get the current configuration."""
+    def targets(self) -> dict:
+        """Get the available targets."""
         return self._request(
             "GET",
-            "/api/config",
-        )
-
-    def configure(self, chip_id: str) -> dict:
-        """Configure the device."""
-        return self._request(
-            "POST",
-            "/api/configure",
-            json={"chip_id": chip_id},
+            "/api/targets",
+            params={"chip_id": self.chip_id},
         )
 
     def measure(
@@ -124,12 +122,14 @@ class PulseAPI:
         self,
         method: str,
         endpoint: str,
+        params=None,
         json=None,
     ):
         """Make an HTTP request to the API."""
         response = self.client.request(
             method=method,
             url=self.api_base_url + endpoint,
+            params=params,
             json=json,
             headers=self.headers,
             timeout=60,
