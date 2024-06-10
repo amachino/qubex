@@ -11,6 +11,7 @@ description = "Quantum Experiment Tools using QuBE"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
+    "httpx ~= 0.0",
     "jsonpickle ~= 3.0",
     "jupyter ~= 1.0",
     "matplotlib ~= 3.0",
@@ -27,6 +28,9 @@ dependencies = [
 
 [tool.setuptools.dynamic]
 version = { attr = "qubex.version.get_version" }
+
+[tool.setuptools.package-data]
+qubex = ["py.typed"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"

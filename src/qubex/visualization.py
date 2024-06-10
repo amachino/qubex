@@ -41,8 +41,8 @@ def plot_waveform(
 def scatter_iq_data(
     data: TargetMap[IQArray],
     title: str = "I/Q plane",
-    xlabel: str = "I (arb. units)",
-    ylabel: str = "Q (arb. units)",
+    xlabel: str = "In-phase (arb. units)",
+    ylabel: str = "Quadrature (arb. units)",
 ) -> None:
     fig = go.Figure()
     for qubit, iq in data.items():

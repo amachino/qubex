@@ -101,11 +101,17 @@ class Measurement:
         >>> from qubex import Measurement
         >>> meas = Measurement("64Q")
         """
+        self._chip_id: Final = chip_id
         config = Config(config_dir)
         config.configure_system_settings(chip_id)
         config_path = config.get_system_settings_path(chip_id)
         self._backend: Final = QubeBackend(config_path)
         self._params: Final = config.get_params(chip_id)
+
+    @property
+    def chip_id(self) -> str:
+        """Get the chip ID."""
+        return self._chip_id
 
     @property
     def targets(self) -> dict[str, Target]:
