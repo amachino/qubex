@@ -8,7 +8,7 @@
 ### Client only
 
 ```bash
-pip install git+https://github.com/amachino/qubex.git
+pip install git+https://github.com/amachino/qubex.git@v1.0.0
 ```
 
 ### Client and backend
@@ -16,6 +16,8 @@ pip install git+https://github.com/amachino/qubex.git
 ```bash
 pip install "git+https://github.com/amachino/qubex.git@v1.0.0#egg=qubex[backend]"
 ```
+
+Check available versions on the [release page](https://github.com/amachino/qubex/releases).
 
 ## Usage
 
