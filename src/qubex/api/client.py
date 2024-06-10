@@ -92,6 +92,7 @@ class PulseAPI:
             "POST",
             "/api/measure",
             json={
+                "chip_id": self.chip_id,
                 "waveforms": normalized_waveforms,
                 "frequencies": frequencies,
                 "mode": mode,
