@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from typing import Final
 
 from qubecalib import QubeCalib
@@ -31,6 +32,16 @@ class ExperimentTool:
     def get_qubecalib(self) -> QubeCalib:
         """Get the QubeCalib instance."""
         return self._backend.qubecalib
+
+    def reboot_fpga(self, box_id: str) -> None:
+        """Reboot the FPGA."""
+        # Run the following commands in the terminal.
+        # $ source /tools/Xilinx/Vivado/2020.1/settings64.sh
+        # $ quel_reboot_fpga --port 3121 --adapter xxx
+        box = self._config.get_box(box_id)
+        adapter = box.adapter
+        reboot_command = f"quel_reboot_fpga --port 3121 --adapter {adapter}"
+        subprocess.run(reboot_command, shell=True)
 
     def get_quel1_box(self, box_id: str) -> Quel1Box:
         """Get the Quel1Box instance."""
