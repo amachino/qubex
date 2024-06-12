@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from qubecalib import QubeCalib
+from qubecalib import QubeCalib, Sequencer
 from qubecalib.neopulse import Sequence
 from quel_ic_config import Quel1Box
 from rich.console import Console
@@ -383,6 +383,23 @@ class QubeBackend:
         >>> backend.add_sequence(sequence)
         """
         self.qubecalib.add_sequence(sequence)
+
+    def add_sequencer(self, sequencer: Sequencer):
+        """
+        Add a sequencer to the queue.
+
+        Parameters
+        ----------
+        sequencer : Sequencer
+            The sequencer to add to the queue.
+
+        Examples
+        --------
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> sequencer = Sequencer(...)
+        >>> backend.add_sequencer(sequencer)
+        """
+        self.qubecalib._executor.add_command(sequencer)
 
     def show_command_queue(self):
         """Show the current command queue."""

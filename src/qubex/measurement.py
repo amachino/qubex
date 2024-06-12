@@ -13,11 +13,18 @@ from contextlib import contextmanager
 from typing import Final, Literal
 
 import numpy as np
+import numpy.typing as npt
+from qubecalib import Sequencer
 from qubecalib.neopulse import (
     Arbit,
+    CapSampledSequence,
+    CapSampledSubSequence,
     Capture,
+    CaptureSlots,
     Flushleft,
     Flushright,
+    GenSampledSequence,
+    GenSampledSubSequence,
     RaisedCosFlatTop,
     Sequence,
     padding,
@@ -25,6 +32,7 @@ from qubecalib.neopulse import (
 
 from .config import Config, Target
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
+from .pulse import FlatTop
 from .qube_backend import QubeBackend, QubeBackendResult
 from .typing import IQArray, TargetMap
 
@@ -327,21 +335,147 @@ class Measurement:
     ) -> Sequence:
         readout_amplitude = self._params.readout_amplitude
         capture = Capture(duration=capture_window)
+        qubits = {target.split("-")[0] for target in waveforms.keys()}
         with Sequence() as sequence:
             with Flushright():
                 padding(control_window)
                 for target, waveform in waveforms.items():
                     Arbit(np.array(waveform)).target(target)
             with Flushleft():
-                for target in waveforms.keys():
-                    read_target = f"R{target}"
+                for qubit in qubits:
+                    read_target = f"R{qubit}"
                     RaisedCosFlatTop(
                         duration=readout_duration,
-                        amplitude=readout_amplitude[target],
+                        amplitude=readout_amplitude[qubit],
                         rise_time=32,
                     ).target(read_target)
                     capture.target(read_target)
         return sequence
+
+    @staticmethod
+    def _get_waveform_length(waveforms: TargetMap[IQArray]) -> int:
+        """
+        Get the length of the waveforms.
+
+        Parameters
+        ----------
+        waveforms : TargetMap[IQArray]
+            The control waveforms for each target.
+
+        Returns
+        -------
+        int
+            The length of the waveforms.
+        """
+        length_set = {len(waveform) for waveform in waveforms.values()}
+        if len(length_set) != 1:
+            raise ValueError("The lengths of the waveforms are not the same.")
+        return length_set.pop()
+
+    def _readout_pulse(self, qubit: str, duration: int) -> FlatTop:
+        readout_amplitude = self._params.readout_amplitude
+        return FlatTop(
+            duration=duration,
+            amplitude=readout_amplitude[qubit],
+            tau=32,
+        )
+
+    def _create_sequencer(
+        self,
+        *,
+        waveforms: TargetMap[IQArray],
+        control_window: int = DEFAULT_CONTROL_WINDOW,
+        capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        readout_duration: int = DEFAULT_READOUT_DURATION,
+    ):
+        qubits = {target.split("-")[0] for target in waveforms.keys()}
+        waveform_length = self._get_waveform_length(waveforms)
+        control_length = control_window // 2
+        capture_length = capture_window // 2
+        readout_length = readout_duration // 2
+
+        # zero padding (control)
+        # [0, 0, ..., 0, waveform, 0, 0, ..., 0, 0, 0, 0]
+        # |<-- control_length -->|<-- capture_length -->|
+        padded_control_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
+        for target, waveform in waveforms.items():
+            total_length = control_length + capture_length
+            padded_waveform = np.zeros(total_length, dtype=np.complex128)
+            left_padding = control_length - waveform_length
+            control_slice = slice(left_padding, left_padding + waveform_length)
+            padded_waveform[control_slice] = waveform
+            padded_control_waveforms[target] = padded_waveform
+
+        # zero padding (readout)
+        # [0, 0, ..., 0, 0, 0, 0, readout, 0, 0, 0, 0, 0]
+        # |<-- control_length -->|<-- capture_length -->|
+        padded_readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
+        for qubit in qubits:
+            readout_pulse = self._readout_pulse(qubit, readout_duration)
+            total_length = control_length + capture_length
+            padded_waveform = np.zeros(total_length, dtype=np.complex128)
+            readout_slice = slice(control_length, control_length + readout_length)
+            padded_waveform[readout_slice] = readout_pulse.values
+            padded_readout_waveforms[f"R{qubit}"] = padded_waveform
+
+        # create dict of GenSampledSequence and CapSampledSequence
+        gen_sequences: dict[str, GenSampledSequence] = {}
+        cap_sequences: dict[str, CapSampledSequence] = {}
+        for target, waveform in padded_control_waveforms.items():
+            # add GenSampledSequence (control)
+            gen_sequences[target] = GenSampledSequence(
+                target_name=target,
+                prev_blank=0,
+                post_blank=None,
+                sub_sequences=[
+                    GenSampledSubSequence(
+                        real=np.real(waveform),
+                        imag=np.imag(waveform),
+                        post_blank=None,
+                        repeats=1,
+                    )
+                ],
+            )
+        for target, waveform in padded_readout_waveforms.items():
+            # add GenSampledSequence (readout)
+            gen_sequences[target] = GenSampledSequence(
+                target_name=target,
+                prev_blank=0,
+                post_blank=None,
+                sub_sequences=[
+                    GenSampledSubSequence(
+                        real=np.real(waveform),
+                        imag=np.imag(waveform),
+                        post_blank=None,
+                        repeats=1,
+                    )
+                ],
+            )
+            # add CapSampledSequence
+            cap_sequences[target] = CapSampledSequence(
+                target_name=target,
+                prev_blank=0,
+                post_blank=None,
+                repeats=None,
+                sub_sequences=[
+                    CapSampledSubSequence(
+                        capture_slots=[
+                            CaptureSlots(
+                                duration=capture_length,
+                                post_blank=None,
+                            )
+                        ],
+                        prev_blank=waveform_length,
+                        post_blank=None,
+                        repeats=None,
+                    )
+                ],
+            )
+        return Sequencer(
+            gen_sampled_sequence=gen_sequences,
+            cap_sampled_sequence=cap_sequences,
+            resource_map={},
+        )
 
     def _create_measure_result(
         self,
