@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -410,16 +411,25 @@ def fit_ramsey(
 
 
 def fit_exp_decay(
+    *,
+    target: str,
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
     p0=None,
     bounds=None,
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    title: str = "Decay time",
+    xaxis_title: str = "Time (ns)",
+    yaxis_title: str = "Amplitude (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "log",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> float:
     """
     Fit decay data to an exponential decay function and plot the results.
 
     Parameters
     ----------
+    target : str
+        Identifier of the target.
     x : npt.NDArray[np.float64]
         Time points for the decay data.
     y : npt.NDArray[np.float64]
@@ -431,8 +441,8 @@ def fit_exp_decay(
 
     Returns
     -------
-    tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        Optimized fit parameters and covariance of the fit.
+    float
+        Decay time of the exponential decay in nanoseconds.
     """
     if p0 is None:
         p0 = (
@@ -447,9 +457,12 @@ def fit_exp_decay(
             (np.inf, np.inf, np.inf),
         )
 
-    popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
-    print(f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[1]:.3g}) + {popt[2]:.3g}")
-    print(f"Decay time: {popt[1] / 1e3:.3g} us")
+    popt, _ = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
+    A = popt[0]
+    tau = popt[1]
+    C = popt[2]
+    print(f"Fitted function: {A:.3g} * exp(-t/{tau:.3g}) + {C:.3g}")
+    print(f"Decay time: {tau * 1e-3:.3g} us")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
@@ -472,13 +485,15 @@ def fit_exp_decay(
         )
     )
     fig.update_layout(
-        title=f"Decay time: {popt[1] / 1e3:.3g} us",
-        xaxis_title="Time (ns)",
-        yaxis_title="Amplitude (arb. units)",
+        title=f"{title} = {tau * 1e-3:.3g} us : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
     )
     fig.show()
 
-    return popt, pcov
+    return tau
 
 
 def fit_ampl_calib_data(

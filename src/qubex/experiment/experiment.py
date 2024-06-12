@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from .. import fitting as fit
+from .. import fitting
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..fitting import RabiParam
 from ..measurement import (
@@ -24,7 +24,7 @@ from ..measurement import (
     Measurement,
     MeasureResult,
 )
-from ..pulse import FlatTop, Rect, Waveform
+from ..pulse import Blank, FlatTop, PulseSequence, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..version import get_package_version
 from ..visualization import IQPlotter, plot_waveform
@@ -36,6 +36,7 @@ from .experiment_result import (
     FreqRabiData,
     RabiData,
     SweepData,
+    T1Data,
     TimePhaseData,
 )
 from .experiment_tool import ExperimentTool
@@ -620,10 +621,9 @@ class Experiment:
                 shots=shots,
                 interval=interval,
                 plot=plot,
-                xaxis_title="Time (ns)",
             )
         rabi_params = {
-            target: fit.fit_rabi(
+            target: fitting.fit_rabi(
                 target=data.target,
                 times=data.sweep_range,
                 data=data.data,
@@ -787,12 +787,12 @@ class Experiment:
         }
         result = self.sweep_parameter(
             sweep_range=np.arange(repetitions + 1),
-            xaxis_title="Number of repetitions",
             sequence=repeated_sequence,
             repetitions=1,
             shots=shots,
             interval=interval,
             plot=plot,
+            xaxis_title="Number of repetitions",
         )
         return result
 
@@ -1101,7 +1101,6 @@ class Experiment:
                 repetitions=4,
                 shots=DEFAULT_SHOTS,
                 interval=DEFAULT_INTERVAL,
-                xaxis_title="Control amplitude",
             ).data[target]
             return AmplCalibData(
                 target=target,
@@ -1113,5 +1112,87 @@ class Experiment:
         for target in targets:
             data[target] = calibrate(target)
             clear_output(wait=True)
+
+        return ExperimentResult(data=data)
+
+    def t1_experiment(
+        self,
+        qubits: list[str],
+        *,
+        time_range: NDArray = 2 ** np.arange(1, 18),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[T1Data]:
+        """
+        Conducts a T1 experiment.
+
+        Parameters
+        ----------
+        qubits : list[str]
+            List of qubits to check the T1 decay.
+        time_range : NDArray
+            Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[T1Data]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = experiment.t1_experiment(
+        ...     target="Q00",
+        ...     time_range=2 ** np.arange(1, 18),
+        ...     shots=1024,
+        ... )
+        """
+
+        t1_sequence = {
+            qubit: lambda T: PulseSequence(
+                [
+                    self.pi_pulse[qubit],
+                    Blank(T),
+                ]
+            )
+            for qubit in qubits
+        }
+
+        sweep_result = self.sweep_parameter(
+            sequence=t1_sequence,
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            title="T1 decay",
+            xaxis_title="Time (ns)",
+            yaxis_title="Measured value",
+            xaxis_type="log",
+        )
+
+        t1_value = {
+            qubit: fitting.fit_exp_decay(
+                target=qubit,
+                x=data.sweep_range,
+                y=0.5 * (1 - data.normalized),
+                title="T1",
+                xaxis_title="Time (ns)",
+                yaxis_title="Population",
+                xaxis_type="log",
+                yaxis_type="linear",
+            )
+            for qubit, data in sweep_result.data.items()
+        }
+
+        data = {
+            qubit: T1Data.new(data, t1_value[qubit])
+            for qubit, data in sweep_result.data.items()
+        }
 
         return ExperimentResult(data=data)

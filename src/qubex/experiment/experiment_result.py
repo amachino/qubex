@@ -287,6 +287,64 @@ class SweepData(TargetData):
 
 
 @dataclass
+class T1Data(SweepData):
+    """
+    Data class representing the result of a T1 experiment.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
+    """
+
+    t1: float = np.nan
+
+    @classmethod
+    def new(cls, sweep_data: SweepData, t1: float) -> T1Data:
+        return cls(
+            target=sweep_data.target,
+            data=sweep_data.data,
+            sweep_range=sweep_data.sweep_range,
+            rabi_param=sweep_data.rabi_param,
+            title=sweep_data.title,
+            xaxis_title=sweep_data.xaxis_title,
+            yaxis_title=sweep_data.yaxis_title,
+            xaxis_type=sweep_data.xaxis_type,
+            yaxis_type=sweep_data.yaxis_type,
+            t1=t1,
+        )
+
+    def fit(self) -> float:
+        tau = fitting.fit_exp_decay(
+            target=self.target,
+            x=self.sweep_range,
+            y=0.5 * (1 - self.normalized),
+            title="T1",
+            xaxis_title="Time (ns)",
+            yaxis_title="Population",
+            xaxis_type="log",
+            yaxis_type="linear",
+        )
+        return tau
+
+
+@dataclass
 class AmplRabiData(TargetData):
     """
     The relation between the drive amplitude and the Rabi rate.
