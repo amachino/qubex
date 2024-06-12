@@ -650,8 +650,8 @@ class Experiment:
 
     def sweep_parameter(
         self,
-        *,
         sequence: TargetMap[ParametricWaveform],
+        *,
         sweep_range: NDArray,
         sweep_value_label: str = "Sweep value",
         repetitions: int = 1,
@@ -730,8 +730,8 @@ class Experiment:
 
     def repeat_sequence(
         self,
-        *,
         sequence: TargetMap[Waveform],
+        *,
         repetitions: int,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
