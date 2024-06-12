@@ -617,10 +617,10 @@ class Experiment:
             sweep_result = self.sweep_parameter(
                 sequence=sequence,
                 sweep_range=time_range,
-                sweep_value_label="Time (ns)",
                 shots=shots,
                 interval=interval,
                 plot=plot,
+                xaxis_title="Time (ns)",
             )
         rabi_params = {
             target: fit.fit_rabi(
@@ -653,11 +653,15 @@ class Experiment:
         sequence: TargetMap[ParametricWaveform],
         *,
         sweep_range: NDArray,
-        sweep_value_label: str = "Sweep value",
         repetitions: int = 1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        title: str = "Sweep result",
+        xaxis_title: str = "Sweep value",
+        yaxis_title: str = "Measured value",
+        xaxis_type: Literal["linear", "log"] = "linear",
+        yaxis_type: Literal["linear", "log"] = "linear",
     ) -> ExperimentResult[SweepData]:
         """
         Sweeps a parameter and measures the signals.
@@ -668,8 +672,6 @@ class Experiment:
             Parametric sequence to sweep.
         sweep_range : NDArray
             Range of the parameter to sweep.
-        sweep_value_label : str
-            Label of the sweep value.
         repetitions : int, optional
             Number of repetitions. Defaults to 1.
         shots : int, optional
@@ -678,6 +680,16 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        title : str, optional
+            Title of the plot. Defaults to "Sweep result".
+        xaxis_title : str, optional
+            Title of the x-axis. Defaults to "Sweep value".
+        yaxis_title : str, optional
+            Title of the y-axis. Defaults to "Measured value".
+        xaxis_type : Literal["linear", "log"], optional
+            Type of the x-axis. Defaults to "linear".
+        yaxis_type : Literal["linear", "log"], optional
+            Type of the y-axis. Defaults to "linear".
 
         Returns
         -------
@@ -720,8 +732,12 @@ class Experiment:
                 target=target,
                 data=np.array(values),
                 sweep_range=sweep_range,
-                sweep_value_label=sweep_value_label,
                 rabi_param=self.rabi_params.get(target),
+                title=title,
+                xaxis_title=xaxis_title,
+                yaxis_title=yaxis_title,
+                xaxis_type=xaxis_type,
+                yaxis_type=yaxis_type,
             )
             for target, values in signals.items()
         }
@@ -771,7 +787,7 @@ class Experiment:
         }
         result = self.sweep_parameter(
             sweep_range=np.arange(repetitions + 1),
-            sweep_value_label="Number of repetitions",
+            xaxis_title="Number of repetitions",
             sequence=repeated_sequence,
             repetitions=1,
             shots=shots,
@@ -1082,10 +1098,10 @@ class Experiment:
                     )
                 },
                 sweep_range=ampl_range,
-                sweep_value_label="Control amplitude",
                 repetitions=4,
                 shots=DEFAULT_SHOTS,
                 interval=DEFAULT_INTERVAL,
+                xaxis_title="Control amplitude",
             ).data[target]
             return AmplCalibData(
                 target=target,

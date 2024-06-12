@@ -187,15 +187,27 @@ class SweepData(TargetData):
         Measured data.
     sweep_range : NDArray
         Sweep range of the experiment.
-    sweep_value_label : str
-        Label of the sweep value.
     rabi_param : RabiParam, optional
         Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
     """
 
     sweep_range: NDArray
-    sweep_value_label: str
     rabi_param: RabiParam | None = None
+    title: str = "Sweep result"
+    xaxis_title: str = "Sweep value"
+    yaxis_title: str = "Measured value"
+    xaxis_type: str = "linear"
+    yaxis_type: str = "linear"
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
@@ -217,6 +229,8 @@ class SweepData(TargetData):
         self,
         *,
         normalize: bool = False,
+        xaxis_type: str | None = None,
+        yaxis_type: str | None = None,
     ):
         if normalize:
             param = self.rabi_param
@@ -237,9 +251,11 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                title=f"Measured value : {self.target}",
-                xaxis_title=self.sweep_value_label,
-                yaxis_title="Normalized value",
+                title=f"{self.title} : {self.target}",
+                xaxis_title=self.xaxis_title,
+                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
+                yaxis_title=self.yaxis_title,
+                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()
         else:
@@ -261,9 +277,11 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                title=f"Measured I/Q value : {self.target}",
-                xaxis_title=self.sweep_value_label,
-                yaxis_title="Measured value",
+                title=f"{self.title} : {self.target}",
+                xaxis_title=self.xaxis_title,
+                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
+                yaxis_title=self.yaxis_title,
+                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()
 
