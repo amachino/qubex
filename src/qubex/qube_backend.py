@@ -534,6 +534,58 @@ class QubeBackend:
             )
         )
 
+    def execute_sequencer(
+        self,
+        sequencer: Sequencer,
+        *,
+        repeats: int,
+        interval: int,
+        integral_mode: str = "integral",
+        dsp_demodulation: bool = True,
+        software_demodulation: bool = False,
+    ) -> QubeBackendResult:
+        """
+        Execute a single sequence and return the measurement result.
+
+        Parameters
+        ----------
+        sequencer : Sequencer
+            The sequencer to execute.
+        repeats : int
+            Number of repeats of the sequence.
+        interval : int
+            Interval between sequences.
+        integral_mode : {"integral", "single"}, optional
+            Integral mode.
+        dsp_demodulation : bool, optional
+            Enable DSP demodulation.
+        software_demodulation : bool, optional
+            Enable software demodulation.
+
+        Returns
+        -------
+        QubeBackendResult
+            Measurement result.
+
+        Examples
+        --------
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> with Sequence() as sequence:
+        ...     ...
+        >>> result = backend.execute_sequence(sequence, repeats=100, interval=1024)
+        """
+        self.clear_command_queue()
+        self.add_sequencer(sequencer)
+        return next(
+            self.execute(
+                repeats=repeats,
+                interval=interval,
+                integral_mode=integral_mode,
+                dsp_demodulation=dsp_demodulation,
+                software_demodulation=software_demodulation,
+            )
+        )
+
     def modify_target_frequency(self, target: str, frequency: float):
         """
         Modify the target frequency.

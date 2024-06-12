@@ -170,6 +170,33 @@ class Measurement:
         self._backend.relinkup_boxes(box_list)
         self._backend.sync_clocks(box_list)
 
+    @contextmanager
+    def modified_frequencies(self, target_frequencies: dict[str, float]):
+        """
+        Temporarily modify the target frequencies.
+
+        Parameters
+        ----------
+        target_frequencies : dict[str, float]
+            The target frequencies to be modified.
+
+        Examples
+        --------
+        >>> with meas.modified_frequencies({"Q00": 5.0}):
+        ...     result = meas.measure({
+        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...     })
+        """
+        original_frequencies = {
+            label: target.frequency for label, target in self.targets.items()
+        }
+        self._backend.modify_target_frequencies(target_frequencies)
+        try:
+            yield
+        finally:
+            self._backend.modify_target_frequencies(original_frequencies)
+
     def measure_noise(
         self,
         targets: list[str],
@@ -254,14 +281,14 @@ class Measurement:
         ... })
         """
         measure_mode = MeasureMode(mode)
-        sequence = self._create_sequence(
+        sequencer = self._create_sequencer(
             waveforms=waveforms,
             control_window=control_window,
             capture_window=capture_window,
             readout_duration=readout_duration,
         )
-        backend_result = self._backend.execute_sequence(
-            sequence=sequence,
+        backend_result = self._backend.execute_sequencer(
+            sequencer=sequencer,
             repeats=shots,
             interval=interval,
             integral_mode=measure_mode.integral_mode,
@@ -310,13 +337,13 @@ class Measurement:
         measure_mode = MeasureMode(mode)
         self._backend.clear_command_queue()
         for waveforms in waveforms_list:
-            sequence = self._create_sequence(
+            sequencer = self._create_sequencer(
                 waveforms=waveforms,
                 control_window=control_window,
                 capture_window=capture_window,
                 readout_duration=readout_duration,
             )
-            self._backend.add_sequence(sequence)
+            self._backend.add_sequencer(sequencer)
         backend_results = self._backend.execute(
             repeats=shots,
             interval=interval,
@@ -465,7 +492,7 @@ class Measurement:
                                 post_blank=None,
                             )
                         ],
-                        prev_blank=waveform_length,
+                        prev_blank=control_length,
                         post_blank=None,
                         repeats=None,
                     )
@@ -519,30 +546,3 @@ class Measurement:
             data=measure_data,
             config=backend_result.config,
         )
-
-    @contextmanager
-    def modified_frequencies(self, target_frequencies: dict[str, float]):
-        """
-        Temporarily modify the target frequencies.
-
-        Parameters
-        ----------
-        target_frequencies : dict[str, float]
-            The target frequencies to be modified.
-
-        Examples
-        --------
-        >>> with meas.modified_frequencies({"Q00": 5.0}):
-        ...     result = meas.measure({
-        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
-        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
-        ...     })
-        """
-        original_frequencies = {
-            label: target.frequency for label, target in self.targets.items()
-        }
-        self._backend.modify_target_frequencies(target_frequencies)
-        try:
-            yield
-        finally:
-            self._backend.modify_target_frequencies(original_frequencies)
