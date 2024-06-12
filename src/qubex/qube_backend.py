@@ -84,6 +84,26 @@ class QubeBackend:
                 f"Box {box_name} not in available boxes: {self.available_boxes}"
             )
 
+    def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
+        db = self.qubecalib.system_config_database
+        result = {}
+        for target in targets:
+            if target not in db._target_settings:
+                raise ValueError(f"Target {target} not in available targets.")
+
+            channels = db.get_channels_by_target(target)
+            bpc_list = [db.get_channel(channel) for channel in channels]
+            result[target] = [
+                {
+                    "box": db._box_settings[box_name],
+                    "port": db._port_settings[port_name],
+                    "channel_number": channel_number,
+                    "target": db._target_settings[target],
+                }
+                for box_name, port_name, channel_number in bpc_list
+            ]
+        return result
+
     def link_status(self, box_name: str) -> dict[int, bool]:
         """
         Get the link status of a box.

@@ -395,33 +395,33 @@ class Measurement:
         readout_length = readout_duration // 2
 
         # zero padding (control)
-        # [0, 0, ..., 0, waveform, 0, 0, ..., 0, 0, 0, 0]
-        # |<-- control_length -->|<-- capture_length -->|
-        padded_control_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
+        # [0, 0, ..., 0, control, 0, 0, ..., 0, 0, 0, 0]
+        # |<-- control_length --><-- capture_length -->|
+        control_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for target, waveform in waveforms.items():
             total_length = control_length + capture_length
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             left_padding = control_length - waveform_length
             control_slice = slice(left_padding, left_padding + waveform_length)
             padded_waveform[control_slice] = waveform
-            padded_control_waveforms[target] = padded_waveform
+            control_waveforms[target] = padded_waveform
 
         # zero padding (readout)
-        # [0, 0, ..., 0, 0, 0, 0, readout, 0, 0, 0, 0, 0]
-        # |<-- control_length -->|<-- capture_length -->|
-        padded_readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
+        # [0, 0, ..., 0, 0, 0, 0, readout, 0, ..., 0, 0]
+        # |<-- control_length --><-- capture_length -->|
+        readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for qubit in qubits:
             readout_pulse = self._readout_pulse(qubit, readout_duration)
             total_length = control_length + capture_length
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_slice = slice(control_length, control_length + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
-            padded_readout_waveforms[f"R{qubit}"] = padded_waveform
+            readout_waveforms[f"R{qubit}"] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
         gen_sequences: dict[str, GenSampledSequence] = {}
         cap_sequences: dict[str, CapSampledSequence] = {}
-        for target, waveform in padded_control_waveforms.items():
+        for target, waveform in control_waveforms.items():
             # add GenSampledSequence (control)
             gen_sequences[target] = GenSampledSequence(
                 target_name=target,
@@ -436,7 +436,7 @@ class Measurement:
                     )
                 ],
             )
-        for target, waveform in padded_readout_waveforms.items():
+        for target, waveform in readout_waveforms.items():
             # add GenSampledSequence (readout)
             gen_sequences[target] = GenSampledSequence(
                 target_name=target,
@@ -471,10 +471,16 @@ class Measurement:
                     )
                 ],
             )
+
+        # create resource map
+        all_targets = list(control_waveforms.keys()) + list(readout_waveforms.keys())
+        resource_map = self._backend.get_resource_map(all_targets)
+
+        # return Sequencer
         return Sequencer(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
-            resource_map={},
+            resource_map=resource_map,  # type: ignore
         )
 
     def _create_measure_result(
