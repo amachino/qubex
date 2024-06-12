@@ -26,7 +26,7 @@ from ..measurement import (
 )
 from ..pulse import FlatTop, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
-from ..version import get_version
+from ..version import get_package_version
 from ..visualization import IQPlotter, plot_waveform
 from .experiment_record import ExperimentRecord
 from .experiment_result import (
@@ -201,11 +201,16 @@ class Experiment:
         self._rabi_params = rabi_params
         console.print("Rabi parameters are stored.")
 
-    def print_environment(self):
+    def print_environment(self, verbose: bool = False):
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         print("python:", sys.version.split()[0])
         print("env:", sys.prefix)
-        print("qubex:", get_version())
+        if verbose:
+            print("numpy:", get_package_version("numpy"))
+            print("quel_ic_config:", get_package_version("quel_ic_config"))
+            print("quel_clock_master:", get_package_version("quel_clock_master"))
+            print("qubecalib:", get_package_version("qubecalib"))
+        print("qubex:", get_package_version("qubex"))
         print("config:", self._config.config_path)
         print("chip:", self._chip_id)
         print("qubits:", self._qubits)
