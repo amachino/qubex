@@ -1154,18 +1154,19 @@ class Experiment:
         ... )
         """
 
-        t1_sequence = {
-            qubit: lambda T: PulseSequence(
+        # wrap the lambda function with a function to scope the qubit variable
+        def t1_sequence(qubit: str) -> ParametricWaveform:
+            return lambda T: PulseSequence(
                 [
                     self.pi_pulse[qubit],
                     Blank(T),
                 ]
             )
-            for qubit in qubits
-        }
+
+        t1_sequences = {qubit: t1_sequence(qubit) for qubit in qubits}
 
         sweep_result = self.sweep_parameter(
-            sequence=t1_sequence,
+            sequence=t1_sequences,
             sweep_range=time_range,
             shots=shots,
             interval=interval,
