@@ -340,6 +340,7 @@ class Experiment:
         self,
         sequence: TargetMap[IQArray],
         *,
+        frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -353,6 +354,8 @@ class Experiment:
         ----------
         sequence : TargetMap[IQArray]
             Sequence of the experiment.
+        frequencies : Optional[dict[str, float]]
+            Frequencies of the qubits.
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
@@ -384,13 +387,23 @@ class Experiment:
             target: np.array(waveform, dtype=np.complex128)
             for target, waveform in sequence.items()
         }
-        result = self._measurement.measure(
-            waveforms=waveforms,
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            control_window=control_window,
-        )
+        if frequencies is None:
+            result = self._measurement.measure(
+                waveforms=waveforms,
+                mode=mode,
+                shots=shots,
+                interval=interval,
+                control_window=control_window,
+            )
+        else:
+            with self.modified_frequencies(frequencies):
+                result = self._measurement.measure(
+                    waveforms=waveforms,
+                    mode=mode,
+                    shots=shots,
+                    interval=interval,
+                    control_window=control_window,
+                )
         if plot:
             result.plot()
         return result
@@ -399,6 +412,7 @@ class Experiment:
         self,
         sequences: Sequence[TargetMap[IQArray]],
         *,
+        frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -411,6 +425,8 @@ class Experiment:
         ----------
         sequences : Sequence[TargetMap[IQArray]]
             Sequences of the experiment.
+        frequencies : Optional[dict[str, float]]
+            Frequencies of the qubits.
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
@@ -432,13 +448,23 @@ class Experiment:
             }
             for sequence in sequences
         ]
-        return self._measurement.measure_batch(
-            waveforms_list=waveforms_list,
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            control_window=control_window,
-        )
+        if frequencies is None:
+            return self._measurement.measure_batch(
+                waveforms_list=waveforms_list,
+                mode=mode,
+                shots=shots,
+                interval=interval,
+                control_window=control_window,
+            )
+        else:
+            with self.modified_frequencies(frequencies):
+                return self._measurement.measure_batch(
+                    waveforms_list=waveforms_list,
+                    mode=mode,
+                    shots=shots,
+                    interval=interval,
+                    control_window=control_window,
+                )
 
     def check_noise(
         self,
@@ -614,14 +640,14 @@ class Experiment:
         detuned_frequencies = {
             target: self.targets[target].frequency + detuning for target in amplitudes
         }
-        with self.modified_frequencies(detuned_frequencies):
-            sweep_result = self.sweep_parameter(
-                sequence=sequence,
-                sweep_range=time_range,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-            )
+        sweep_result = self.sweep_parameter(
+            sequence=sequence,
+            sweep_range=time_range,
+            frequencies=detuned_frequencies,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
         rabi_params = {
             target: fitting.fit_rabi(
                 target=data.target,
@@ -654,6 +680,7 @@ class Experiment:
         *,
         sweep_range: NDArray,
         repetitions: int = 1,
+        frequencies: Optional[dict[str, float]] = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -674,6 +701,8 @@ class Experiment:
             Range of the parameter to sweep.
         repetitions : int, optional
             Number of repetitions. Defaults to 1.
+        frequencies : Optional[dict[str, float]]
+            Frequencies of the qubits.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -716,6 +745,7 @@ class Experiment:
         ]
         generator = self._measure_batch(
             sequences=sequences,
+            frequencies=frequencies,
             shots=shots,
             interval=interval,
             control_window=self._control_window,
