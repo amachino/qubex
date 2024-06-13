@@ -37,6 +37,7 @@ from .experiment_result import (
     RabiData,
     SweepData,
     T1Data,
+    T2Data,
     TimePhaseData,
 )
 from .experiment_tool import ExperimentTool
@@ -1223,6 +1224,92 @@ class Experiment:
 
         data = {
             qubit: T1Data.new(data, t1_value[qubit])
+            for qubit, data in sweep_result.data.items()
+        }
+
+        return ExperimentResult(data=data)
+
+    def t2_experiment(
+        self,
+        qubits: list[str],
+        *,
+        time_range: NDArray = np.arange(0, 10000, 100),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[T2Data]:
+        """
+        Conducts a T2 experiment.
+
+        Parameters
+        ----------
+        qubits : list[str]
+            List of qubits to check the T2 decay.
+        time_range : NDArray
+            Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[T2Data]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = experiment.t2_experiment(
+        ...     target="Q00",
+        ...     time_range=np.arange(0, 10000, 100),
+        ...     shots=1024,
+        ... )
+        """
+
+        # wrap the lambda function with a function to scope the qubit variable
+        def t2_sequence(qubit: str) -> ParametricWaveform:
+            hpi = self.hpi_pulse[qubit]
+            return lambda T: PulseSequence(
+                [
+                    hpi,
+                    Blank(T),
+                    hpi.shifted(np.pi),
+                ]
+            )
+
+        t2_sequences = {qubit: t2_sequence(qubit) for qubit in qubits}
+
+        sweep_result = self.sweep_parameter(
+            sequence=t2_sequences,
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            title="T2 decay",
+            xaxis_title="Time (μs)",
+            yaxis_title="Measured value",
+            xaxis_type="linear",
+            yaxis_type="linear",
+        )
+
+        t2_value = {
+            qubit: fitting.fit_ramsey(
+                target=qubit,
+                x=data.sweep_range,
+                y=data.normalized,
+                title="T2",
+                xaxis_title="Time (μs)",
+                yaxis_title="Measured value",
+                xaxis_type="linear",
+                yaxis_type="linear",
+            )
+            for qubit, data in sweep_result.data.items()
+        }
+
+        data = {
+            qubit: T2Data.new(data, t2_value[qubit])
             for qubit, data in sweep_result.data.items()
         }
 
