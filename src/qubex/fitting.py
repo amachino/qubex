@@ -336,16 +336,24 @@ def fit_detuned_rabi(
 
 def fit_ramsey(
     *,
+    target: str,
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
     p0=None,
     bounds=None,
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    title: str = "T2*",
+    xaxis_title: str = "Time (μs)",
+    yaxis_title: str = "Amplitude (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> float:
     """
     Fit Ramsey fringes using a damped cosine function and plot the results.
 
     Parameters
     ----------
+    target : str
+        Identifier of the target.
     x : npt.NDArray[np.float64]
         Array of time points for the Ramsey fringes.
     y : npt.NDArray[np.float64]
@@ -357,27 +365,35 @@ def fit_ramsey(
 
     Returns
     -------
-    tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        Optimized fit parameters and covariance of the fit.
+    float
+        Decay time of the Ramsey fringes in nanoseconds.
     """
+    wave_count_est = estimate_wave_count(x, y)
+    amplitude_est = (np.max(y) - np.min(y)) / 2
+    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
+    phase_est = 0.0
+    offset_est = (np.max(y) + np.min(y)) / 2
+    tau_est = 10_000
+
     if p0 is None:
-        p0 = (
-            np.abs(np.max(y) - np.min(y)) / 2,
-            10_000,
-            10 * 2 * np.pi / (x[-1] - x[0]),
-            np.pi,
-            (np.max(y) + np.min(y)) / 2,
-        )
+        p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
 
     if bounds is None:
         bounds = (
-            (0, 0, 0, 0, -np.inf),
-            (np.inf, np.inf, np.inf, np.pi, np.inf),
+            (0, 0, 0, -np.inf, 0),
+            (np.inf, np.inf, np.pi, np.inf, np.inf),
         )
 
-    popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+    popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+
+    A = popt[0]
+    tau = popt[1]
+    omega = popt[2]
+    phi = popt[3]
+    C = popt[4]
+
     print(
-        f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[1]:.3g}) * cos({popt[2]:.3g} * t + {popt[3]:.3g}) + {popt[4]:.3g}"
+        f"Fitted function: {A:.3g} * exp(-t/{tau:.3g}) * cos({omega:.3g} * t + {phi:.3g}) + {C:.3g}"
     )
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
@@ -386,7 +402,7 @@ def fit_ramsey(
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=x_fine,
+            x=x_fine * 1e-3,
             y=y_fine,
             mode="lines",
             name="Fit",
@@ -394,20 +410,22 @@ def fit_ramsey(
     )
     fig.add_trace(
         go.Scatter(
-            x=x,
+            x=x * 1e-3,
             y=y,
             mode="markers",
             name="Data",
         )
     )
     fig.update_layout(
-        title="Decay Fit",
-        xaxis_title="Time (ns)",
-        yaxis_title="Amplitude (arb. units)",
+        title=f"{title} = {tau*1e3:.3g} μs : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
     )
     fig.show()
 
-    return popt, pcov
+    return tau
 
 
 def fit_exp_decay(
@@ -462,7 +480,7 @@ def fit_exp_decay(
     tau = popt[1]
     C = popt[2]
     print(f"Fitted function: {A:.3g} * exp(-t/{tau:.3g}) + {C:.3g}")
-    print(f"Decay time: {tau * 1e-3:.3g} us")
+    print(f"Decay time: {tau * 1e-3:.3g} μs")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
@@ -485,7 +503,7 @@ def fit_exp_decay(
         )
     )
     fig.update_layout(
-        title=f"{title} = {tau * 1e-3:.3g} us : {target}",
+        title=f"{title} = {tau * 1e-3:.3g} μs : {target}",
         xaxis_title=xaxis_title,
         yaxis_title=yaxis_title,
         xaxis_type=xaxis_type,
