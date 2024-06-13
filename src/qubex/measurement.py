@@ -282,7 +282,7 @@ class Measurement:
         ... })
         """
         backend_interval = (
-            (interval + control_window + capture_window) // INTERVAL_STEP + 1
+            (control_window + capture_window + interval) // INTERVAL_STEP + 1
         ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
@@ -340,7 +340,7 @@ class Measurement:
             The measurement results.
         """
         backend_interval = (
-            (interval + control_window + capture_window) // INTERVAL_STEP + 1
+            (control_window + capture_window + interval) // INTERVAL_STEP + 1
         ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
