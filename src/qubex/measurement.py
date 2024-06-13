@@ -42,6 +42,7 @@ DEFAULT_INTERVAL = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW = 1024  # ns
 DEFAULT_CAPTURE_WINDOW = 1024  # ns
 DEFAULT_READOUT_DURATION = 512  # ns
+INTERVAL_STEP = 102400  # ns
 
 
 class Measurement:
@@ -280,6 +281,10 @@ class Measurement:
         ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ... })
         """
+        backend_interval = (
+            (interval + control_window + capture_window) // INTERVAL_STEP + 1
+        ) * INTERVAL_STEP
+
         measure_mode = MeasureMode(mode)
         sequencer = self._create_sequencer(
             waveforms=waveforms,
@@ -290,7 +295,7 @@ class Measurement:
         backend_result = self._backend.execute_sequencer(
             sequencer=sequencer,
             repeats=shots,
-            interval=interval,
+            interval=backend_interval,
             integral_mode=measure_mode.integral_mode,
         )
         return self._create_measure_result(backend_result, measure_mode)
@@ -334,6 +339,10 @@ class Measurement:
         MeasureResult
             The measurement results.
         """
+        backend_interval = (
+            (interval + control_window + capture_window) // INTERVAL_STEP + 1
+        ) * INTERVAL_STEP
+
         measure_mode = MeasureMode(mode)
         self._backend.clear_command_queue()
         for waveforms in waveforms_list:
@@ -346,7 +355,7 @@ class Measurement:
             self._backend.add_sequencer(sequencer)
         backend_results = self._backend.execute(
             repeats=shots,
-            interval=interval,
+            interval=backend_interval,
             integral_mode=measure_mode.integral_mode,
         )
         for backend_result in backend_results:
