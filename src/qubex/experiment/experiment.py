@@ -1207,7 +1207,7 @@ class Experiment:
         self,
         qubits: list[str],
         *,
-        time_range: NDArray = 2 ** np.arange(1, 17),
+        time_range: NDArray = 2 ** np.arange(1, 18),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1295,7 +1295,27 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[T2EchoData]:
-        """ """
+        """
+        Conducts a T2 echo experiment.
+
+        Parameters
+        ----------
+        qubits : list[str]
+            List of qubits to check the T2 echo decay.
+        time_range : NDArray
+            Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[T2EchoData]
+            Result of the experiment.
+        """
 
         # wrap the lambda function with a function to scope the qubit variable
         def t2echo_sequence(qubit: str) -> ParametricWaveform:
@@ -1333,7 +1353,7 @@ class Experiment:
                 y=0.5 * (1 - data.normalized),
                 title="T2 echo",
                 xaxis_title="Time (μs)",
-                yaxis_title="Measured value",
+                yaxis_title="Population",
                 xaxis_type="log",
                 yaxis_type="linear",
             )
@@ -1351,7 +1371,8 @@ class Experiment:
         self,
         qubits: list[str],
         *,
-        time_range: NDArray = np.arange(0, 10000, 100),
+        time_range: NDArray = np.arange(0, 10000, 200),
+        detuning: float = 0.0,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1362,9 +1383,11 @@ class Experiment:
         Parameters
         ----------
         qubits : list[str]
-            List of qubits to check the T2 decay.
+            List of qubits to check the T2* decay.
         time_range : NDArray
             Time range of the experiment in ns.
+        detuning : float, optional
+            Detuning of the control frequency. Defaults to 0.0.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1399,9 +1422,14 @@ class Experiment:
 
         t2star_sequences = {qubit: t2star_sequence(qubit) for qubit in qubits}
 
+        detuned_frequencies = {
+            qubit: self.qubits[qubit].frequency + detuning for qubit in qubits
+        }
+
         sweep_result = self.sweep_parameter(
             sequence=t2star_sequences,
             sweep_range=time_range,
+            frequencies=detuned_frequencies,
             shots=shots,
             interval=interval,
             plot=plot,
@@ -1419,7 +1447,7 @@ class Experiment:
                 y=data.normalized,
                 title="T2*",
                 xaxis_title="Time (μs)",
-                yaxis_title="Measured value",
+                yaxis_title="Population",
                 xaxis_type="linear",
                 yaxis_type="linear",
             )
