@@ -37,7 +37,8 @@ from .experiment_result import (
     RabiData,
     SweepData,
     T1Data,
-    T2Data,
+    T2EchoData,
+    T2StarData,
     TimePhaseData,
 )
 from .experiment_tool import ExperimentTool
@@ -1146,11 +1147,67 @@ class Experiment:
 
         return ExperimentResult(data=data)
 
+    def calibrate_pi_pulse(
+        self,
+        targets: list[str],
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the π pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate the π pulse.
+
+        Returns
+        -------
+        ExperimentResult[SweepData]
+            Result of the experiment.
+        """
+        rabi_params = self.rabi_params
+        if rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        def calibrate(target: str) -> AmplCalibData:
+            rabi_rate = 25.0e-3
+            ampl = self.calc_control_amplitudes(
+                rabi_rate=rabi_rate,
+                print_result=False,
+            )[target]
+            ampl_min = ampl * 0.5
+            ampl_max = ampl * 1.5
+            ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            result = self.sweep_parameter(
+                sequence={
+                    target: lambda x: FlatTop(
+                        duration=30,
+                        amplitude=x,
+                        tau=10,
+                    )
+                },
+                sweep_range=ampl_range,
+                repetitions=2,
+                shots=DEFAULT_SHOTS,
+                interval=DEFAULT_INTERVAL,
+            ).data[target]
+            return AmplCalibData(
+                target=target,
+                data=result.normalized,
+                sweep_range=result.sweep_range,
+            )
+
+        data = {}
+        for target in targets:
+            data[target] = calibrate(target)
+            clear_output(wait=True)
+
+        return ExperimentResult(data=data)
+
     def t1_experiment(
         self,
         qubits: list[str],
         *,
-        time_range: NDArray = 2 ** np.arange(1, 18),
+        time_range: NDArray = 2 ** np.arange(1, 17),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1203,7 +1260,7 @@ class Experiment:
             interval=interval,
             plot=plot,
             title="T1 decay",
-            xaxis_title="Time (ns)",
+            xaxis_title="Time (μs)",
             yaxis_title="Measured value",
             xaxis_type="log",
         )
@@ -1214,7 +1271,7 @@ class Experiment:
                 x=data.sweep_range,
                 y=0.5 * (1 - data.normalized),
                 title="T1",
-                xaxis_title="Time (ns)",
+                xaxis_title="Time (μs)",
                 yaxis_title="Population",
                 xaxis_type="log",
                 yaxis_type="linear",
@@ -1229,7 +1286,68 @@ class Experiment:
 
         return ExperimentResult(data=data)
 
-    def t2_experiment(
+    def t2echo_experiment(
+        self,
+        qubits: list[str],
+        *,
+        time_range: NDArray = 100 * 2 ** np.arange(11),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[T2EchoData]:
+        """ """
+
+        # wrap the lambda function with a function to scope the qubit variable
+        def t2echo_sequence(qubit: str) -> ParametricWaveform:
+            hpi = self.hpi_pulse[qubit]
+            pi = self.pi_pulse[qubit]
+            return lambda T: PulseSequence(
+                [
+                    hpi,
+                    Blank((T - pi.duration) // 2),
+                    self.pi_pulse[qubit],
+                    Blank((T - pi.duration) // 2),
+                    hpi.shifted(np.pi),
+                ]
+            )
+
+        t2echo_sequences = {qubit: t2echo_sequence(qubit) for qubit in qubits}
+
+        sweep_result = self.sweep_parameter(
+            sequence=t2echo_sequences,
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            title="T2 echo",
+            xaxis_title="Time (μs)",
+            yaxis_title="Measured value",
+            xaxis_type="log",
+            yaxis_type="linear",
+        )
+
+        t2echo_value = {
+            qubit: fitting.fit_exp_decay(
+                target=qubit,
+                x=data.sweep_range,
+                y=0.5 * (1 - data.normalized),
+                title="T2 echo",
+                xaxis_title="Time (μs)",
+                yaxis_title="Measured value",
+                xaxis_type="log",
+                yaxis_type="linear",
+            )
+            for qubit, data in sweep_result.data.items()
+        }
+
+        data = {
+            qubit: T2EchoData.new(data, t2echo_value[qubit])
+            for qubit, data in sweep_result.data.items()
+        }
+
+        return ExperimentResult(data=data)
+
+    def t2star_experiment(
         self,
         qubits: list[str],
         *,
@@ -1237,9 +1355,9 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> ExperimentResult[T2Data]:
+    ) -> ExperimentResult[T2StarData]:
         """
-        Conducts a T2 experiment.
+        Conducts a T2* experiment.
 
         Parameters
         ----------
@@ -1256,12 +1374,12 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[T2Data]
+        ExperimentResult[T2StarData]
             Result of the experiment.
 
         Examples
         --------
-        >>> result = experiment.t2_experiment(
+        >>> result = experiment.t2star_experiment(
         ...     target="Q00",
         ...     time_range=np.arange(0, 10000, 100),
         ...     shots=1024,
@@ -1269,7 +1387,7 @@ class Experiment:
         """
 
         # wrap the lambda function with a function to scope the qubit variable
-        def t2_sequence(qubit: str) -> ParametricWaveform:
+        def t2star_sequence(qubit: str) -> ParametricWaveform:
             hpi = self.hpi_pulse[qubit]
             return lambda T: PulseSequence(
                 [
@@ -1279,27 +1397,27 @@ class Experiment:
                 ]
             )
 
-        t2_sequences = {qubit: t2_sequence(qubit) for qubit in qubits}
+        t2star_sequences = {qubit: t2star_sequence(qubit) for qubit in qubits}
 
         sweep_result = self.sweep_parameter(
-            sequence=t2_sequences,
+            sequence=t2star_sequences,
             sweep_range=time_range,
             shots=shots,
             interval=interval,
             plot=plot,
-            title="T2 decay",
+            title="T2*",
             xaxis_title="Time (μs)",
             yaxis_title="Measured value",
             xaxis_type="linear",
             yaxis_type="linear",
         )
 
-        t2_value = {
+        t2star_value = {
             qubit: fitting.fit_ramsey(
                 target=qubit,
                 x=data.sweep_range,
                 y=data.normalized,
-                title="T2",
+                title="T2*",
                 xaxis_title="Time (μs)",
                 yaxis_title="Measured value",
                 xaxis_type="linear",
@@ -1309,7 +1427,7 @@ class Experiment:
         }
 
         data = {
-            qubit: T2Data.new(data, t2_value[qubit])
+            qubit: T2StarData.new(data, t2star_value[qubit])
             for qubit, data in sweep_result.data.items()
         }
 

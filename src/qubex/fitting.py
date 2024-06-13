@@ -436,7 +436,7 @@ def fit_exp_decay(
     p0=None,
     bounds=None,
     title: str = "Decay time",
-    xaxis_title: str = "Time (ns)",
+    xaxis_title: str = "Time (μs)",
     yaxis_title: str = "Amplitude (arb. units)",
     xaxis_type: Literal["linear", "log"] = "log",
     yaxis_type: Literal["linear", "log"] = "linear",
@@ -460,7 +460,7 @@ def fit_exp_decay(
     Returns
     -------
     float
-        Decay time of the exponential decay in nanoseconds.
+        Decay time of the exponential decay in microseconds.
     """
     if p0 is None:
         p0 = (
@@ -488,7 +488,7 @@ def fit_exp_decay(
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=x_fine,
+            x=x_fine * 1e-3,
             y=y_fine,
             mode="lines",
             name="Fit",
@@ -496,7 +496,7 @@ def fit_exp_decay(
     )
     fig.add_trace(
         go.Scatter(
-            x=x,
+            x=x * 1e-3,
             y=y,
             mode="markers",
             name="Data",

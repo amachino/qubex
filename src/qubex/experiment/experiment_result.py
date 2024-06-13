@@ -345,9 +345,9 @@ class T1Data(SweepData):
 
 
 @dataclass
-class T2Data(SweepData):
+class T2EchoData(SweepData):
     """
-    Data class representing the result of a T2 experiment.
+    Data class representing the result of a T2 echo experiment.
 
     Attributes
     ----------
@@ -369,12 +369,14 @@ class T2Data(SweepData):
         Type of the x-axis.
     yaxis_type : str, optional
         Type of the y-axis.
+    t2echo : float, optional
+        T2 echo time.
     """
 
-    t2: float = np.nan
+    t2echo: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, t2: float) -> T2Data:
+    def new(cls, sweep_data: SweepData, t2echo: float) -> T2EchoData:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -385,7 +387,67 @@ class T2Data(SweepData):
             yaxis_title=sweep_data.yaxis_title,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
-            t2=t2,
+            t2echo=t2echo,
+        )
+
+    def fit(self) -> float:
+        tau = fitting.fit_exp_decay(
+            target=self.target,
+            x=self.sweep_range,
+            y=0.5 * (1 - self.normalized),
+            title="T2 echo",
+            xaxis_title="Time (ns)",
+            yaxis_title="Population",
+            xaxis_type="log",
+            yaxis_type="linear",
+        )
+        return tau
+
+
+@dataclass
+class T2StarData(SweepData):
+    """
+    Data class representing the result of a T2* experiment.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
+    t2star : float, optional
+        T2* time.
+    """
+
+    t2star: float = np.nan
+
+    @classmethod
+    def new(cls, sweep_data: SweepData, t2star: float) -> T2StarData:
+        return cls(
+            target=sweep_data.target,
+            data=sweep_data.data,
+            sweep_range=sweep_data.sweep_range,
+            rabi_param=sweep_data.rabi_param,
+            title=sweep_data.title,
+            xaxis_title=sweep_data.xaxis_title,
+            yaxis_title=sweep_data.yaxis_title,
+            xaxis_type=sweep_data.xaxis_type,
+            yaxis_type=sweep_data.yaxis_type,
+            t2star=t2star,
         )
 
     def fit(self) -> float:
