@@ -379,26 +379,6 @@ class Measurement:
                     capture.target(read_target)
         return sequence
 
-    @staticmethod
-    def _get_waveform_length(waveforms: TargetMap[IQArray]) -> int:
-        """
-        Get the length of the waveforms.
-
-        Parameters
-        ----------
-        waveforms : TargetMap[IQArray]
-            The control waveforms for each target.
-
-        Returns
-        -------
-        int
-            The length of the waveforms.
-        """
-        length_set = {len(waveform) for waveform in waveforms.values()}
-        if len(length_set) != 1:
-            raise ValueError("The lengths of the waveforms are not the same.")
-        return length_set.pop()
-
     def _readout_pulse(self, qubit: str, duration: int) -> FlatTop:
         readout_amplitude = self._params.readout_amplitude
         return FlatTop(
@@ -416,7 +396,10 @@ class Measurement:
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ):
         qubits = {target.split("-")[0] for target in waveforms.keys()}
-        waveform_length = self._get_waveform_length(waveforms)
+        max_waveform_length = max(len(waveform) for waveform in waveforms.values())
+        if max_waveform_length > control_window:
+            raise ValueError("The waveform length exceeds the control window.")
+
         control_length = control_window // 2
         capture_length = capture_window // 2
         readout_length = readout_duration // 2
@@ -426,6 +409,7 @@ class Measurement:
         # |<-- control_length --><-- capture_length -->|
         control_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for target, waveform in waveforms.items():
+            waveform_length = len(waveform)
             total_length = control_length + capture_length
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             left_padding = control_length - waveform_length
