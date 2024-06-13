@@ -28,6 +28,7 @@ from ..pulse import Blank, FlatTop, PulseSequence, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..version import get_package_version
 from ..visualization import IQPlotter, plot_waveform
+from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import (
     AmplCalibData,
@@ -95,6 +96,7 @@ class Experiment:
             config=self._config,
             measurement=self._measurement,
         )
+        self.note: Final = ExperimentNote()
         self.print_environment()
 
     @property
