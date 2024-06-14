@@ -270,27 +270,6 @@ class Experiment:
         self._measurement.linkup(box_list)
         self.check_status()
 
-    def relinkup(
-        self,
-        box_list: Optional[list[str]] = None,
-    ) -> None:
-        """
-        Relink up the measurement system.
-
-        Parameters
-        ----------
-        box_list : Optional[list[str]], optional
-            List of the box IDs to link up. Defaults to None.
-
-        Examples
-        --------
-        >>> ex.relinkup()
-        """
-        if box_list is None:
-            box_list = self.box_list
-        self._measurement.relinkup(box_list)
-        self.check_status()
-
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float] | None):
         """

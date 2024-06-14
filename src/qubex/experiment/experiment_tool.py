@@ -6,6 +6,7 @@ from typing import Final
 from qubecalib import QubeCalib
 from quel_ic_config import Quel1Box
 from rich.console import Console
+from rich.prompt import Confirm
 from rich.table import Table
 
 from ..config import Config
@@ -66,7 +67,7 @@ class ExperimentTool:
         >>> ex = Experiment(chip_id="64Q")
         >>> ex.tool.configure_box("Q73A")
         """
-        self._config.configure_box_settings(self._chip_id, include=[box_id])
+        self.configure_boxes([box_id])
 
     def configure_boxes(self, box_list: list[str]) -> None:
         """
@@ -84,6 +85,56 @@ class ExperimentTool:
         >>> ex.tool.configure_boxes(["Q73A", "Q73B"])
         """
         self._config.configure_box_settings(self._chip_id, include=box_list)
+
+    def relinkup_box(self, box_id: str) -> None:
+        """
+        Relink up the box.
+
+        Parameters
+        ----------
+        box_id : str
+            Identifier of the box.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> ex = Experiment(chip_id="64Q")
+        >>> ex.tool.relinkup_box("Q73A")
+        """
+        self.relinkup_boxes([box_id])
+
+    def relinkup_boxes(
+        self,
+        box_list: list[str],
+    ) -> None:
+        """
+        Relink up the boxes.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box identifiers.
+
+        Examples
+        --------
+        >>> ex.tool.relinkup()
+        """
+        confirmed = Confirm.ask(
+            f"""
+You are going to relinkup the following boxes:
+
+[bold bright_green]{box_list}
+
+[bold italic bright_yellow]This operation will reset LO/NCO settings. Do you want to continue?
+"""
+        )
+        if not confirmed:
+            console.print("Operation cancelled.", style="bright_red bold")
+            return
+
+        print("Relinking up the boxes...")
+        self._measurement.relinkup(box_list)
+        print("Operation completed.")
 
     def print_wiring_info(self):
         """
