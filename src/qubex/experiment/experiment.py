@@ -292,7 +292,7 @@ class Experiment:
         self.check_status()
 
     @contextmanager
-    def modified_frequencies(self, frequencies: dict[str, float]):
+    def modified_frequencies(self, frequencies: dict[str, float] | None):
         """
         Temporarily modifies the frequencies of the qubits.
 
@@ -306,8 +306,11 @@ class Experiment:
         >>> with ex.modified_frequencies({"Q00": 5.0}):
         ...     # Do something
         """
-        with self._measurement.modified_frequencies(frequencies):
+        if frequencies is None:
             yield
+        else:
+            with self._measurement.modified_frequencies(frequencies):
+                yield
 
     def load_record(
         self,
@@ -416,7 +419,6 @@ class Experiment:
         self,
         sequences: Sequence[TargetMap[IQArray]],
         *,
-        frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -429,8 +431,6 @@ class Experiment:
         ----------
         sequences : Sequence[TargetMap[IQArray]]
             Sequences of the experiment.
-        frequencies : Optional[dict[str, float]]
-            Frequencies of the qubits.
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
@@ -452,23 +452,13 @@ class Experiment:
             }
             for sequence in sequences
         ]
-        if frequencies is None:
-            return self._measurement.measure_batch(
-                waveforms_list=waveforms_list,
-                mode=mode,
-                shots=shots,
-                interval=interval,
-                control_window=control_window,
-            )
-        else:
-            with self.modified_frequencies(frequencies):
-                return self._measurement.measure_batch(
-                    waveforms_list=waveforms_list,
-                    mode=mode,
-                    shots=shots,
-                    interval=interval,
-                    control_window=control_window,
-                )
+        return self._measurement.measure_batch(
+            waveforms_list=waveforms_list,
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            control_window=control_window,
+        )
 
     def check_noise(
         self,
@@ -749,18 +739,18 @@ class Experiment:
         ]
         generator = self._measure_batch(
             sequences=sequences,
-            frequencies=frequencies,
             shots=shots,
             interval=interval,
             control_window=self._control_window,
         )
         signals = defaultdict(list)
         plotter = IQPlotter()
-        for result in generator:
-            for target, data in result.data.items():
-                signals[target].append(data.kerneled)
-            if plot:
-                plotter.update(signals)
+        with self.modified_frequencies(frequencies):
+            for result in generator:
+                for target, data in result.data.items():
+                    signals[target].append(data.kerneled)
+                if plot:
+                    plotter.update(signals)
         data = {
             target: SweepData(
                 target=target,
