@@ -24,7 +24,7 @@ from ..measurement import (
     Measurement,
     MeasureResult,
 )
-from ..pulse import Blank, FlatTop, PulseSequence, Rect, Waveform
+from ..pulse import CPMG, Blank, FlatTop, PulseSequence, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..version import get_package_version
 from ..visualization import IQPlotter, plot_waveform
@@ -1282,7 +1282,9 @@ class Experiment:
         self,
         qubits: list[str],
         *,
-        time_range: NDArray = 100 * 2 ** np.arange(11),
+        time_range: NDArray = 200 * 2 ** np.arange(10),
+        n_cpmg: int = 1,
+        pi_cpmg: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1296,6 +1298,10 @@ class Experiment:
             List of qubits to check the T2 decay.
         time_range : NDArray
             Time range of the experiment in ns.
+        n_cpmg : int, optional
+            Number of CPMG pulses. Defaults to 1.
+        pi_cpmg : Waveform, optional
+            π pulse for the CPMG sequence. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1312,16 +1318,32 @@ class Experiment:
         # wrap the lambda function with a function to scope the qubit variable
         def t2_sequence(qubit: str) -> ParametricWaveform:
             hpi = self.hpi_pulse[qubit]
-            pi = self.pi_pulse[qubit]
-            return lambda T: PulseSequence(
-                [
-                    hpi,
-                    Blank((T - pi.duration) // 2),
-                    self.pi_pulse[qubit],
-                    Blank((T - pi.duration) // 2),
-                    hpi.shifted(np.pi),
-                ]
-            )
+            pi = pi_cpmg or self.pi_pulse[qubit]
+
+            def waveform(T: int) -> Waveform:
+                if T == 0:
+                    return PulseSequence(
+                        [
+                            hpi,
+                            hpi.shifted(np.pi),
+                        ]
+                    )
+                return PulseSequence(
+                    [
+                        hpi,
+                        # Blank((T - pi.duration) // 2),
+                        # pi,
+                        # Blank((T - pi.duration) // 2),
+                        CPMG(
+                            tau=(T - pi.duration * n_cpmg) // (2 * n_cpmg),
+                            pi=pi,
+                            n=n_cpmg,
+                        ),
+                        hpi.shifted(np.pi),
+                    ]
+                )
+
+            return waveform
 
         sweep_result = self.sweep_parameter(
             sequence={qubit: t2_sequence(qubit) for qubit in qubits},
