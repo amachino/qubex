@@ -39,7 +39,7 @@ from .experiment_result import (
     RamseyData,
     SweepData,
     T1Data,
-    T2EchoData,
+    T2Data,
     TimePhaseData,
 )
 from .experiment_tool import ExperimentTool
@@ -1278,7 +1278,7 @@ class Experiment:
 
         return ExperimentResult(data=data)
 
-    def t2echo_experiment(
+    def t2_experiment(
         self,
         qubits: list[str],
         *,
@@ -1286,14 +1286,14 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> ExperimentResult[T2EchoData]:
+    ) -> ExperimentResult[T2Data]:
         """
-        Conducts a T2 echo experiment.
+        Conducts a T2 experiment.
 
         Parameters
         ----------
         qubits : list[str]
-            List of qubits to check the T2 echo decay.
+            List of qubits to check the T2 decay.
         time_range : NDArray
             Time range of the experiment in ns.
         shots : int, optional
@@ -1305,12 +1305,12 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[T2EchoData]
+        ExperimentResult[T2Data]
             Result of the experiment.
         """
 
         # wrap the lambda function with a function to scope the qubit variable
-        def t2echo_sequence(qubit: str) -> ParametricWaveform:
+        def t2_sequence(qubit: str) -> ParametricWaveform:
             hpi = self.hpi_pulse[qubit]
             pi = self.pi_pulse[qubit]
             return lambda T: PulseSequence(
@@ -1323,37 +1323,28 @@ class Experiment:
                 ]
             )
 
-        t2echo_sequences = {qubit: t2echo_sequence(qubit) for qubit in qubits}
-
         sweep_result = self.sweep_parameter(
-            sequence=t2echo_sequences,
+            sequence={qubit: t2_sequence(qubit) for qubit in qubits},
             sweep_range=time_range,
             shots=shots,
             interval=interval,
             plot=plot,
-            title="T2 echo",
-            xaxis_title="Time (μs)",
-            yaxis_title="Measured value",
-            xaxis_type="log",
-            yaxis_type="linear",
         )
 
-        t2echo_value = {
+        fit_result = {
             qubit: fitting.fit_exp_decay(
                 target=qubit,
                 x=data.sweep_range,
                 y=0.5 * (1 - data.normalized),
-                title="T2 echo",
+                title="T2",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
-                xaxis_type="log",
-                yaxis_type="linear",
             )
             for qubit, data in sweep_result.data.items()
         }
 
         data = {
-            qubit: T2EchoData.new(data, t2echo_value[qubit])
+            qubit: T2Data.new(data, t2=fit_result[qubit])
             for qubit, data in sweep_result.data.items()
         }
 
@@ -1437,7 +1428,7 @@ class Experiment:
         data = {
             qubit: RamseyData.new(
                 sweep_data=data,
-                t2star=fit_result[qubit][0],
+                t2=fit_result[qubit][0],
                 ramsey_freq=fit_result[qubit][1],
             )
             for qubit, data in sweep_result.data.items()

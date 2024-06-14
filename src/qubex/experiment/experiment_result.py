@@ -345,9 +345,9 @@ class T1Data(SweepData):
 
 
 @dataclass
-class T2EchoData(SweepData):
+class T2Data(SweepData):
     """
-    Data class representing the result of a T2 echo experiment.
+    Data class representing the result of a T2 experiment.
 
     Attributes
     ----------
@@ -369,14 +369,14 @@ class T2EchoData(SweepData):
         Type of the x-axis.
     yaxis_type : str, optional
         Type of the y-axis.
-    t2echo : float, optional
+    t2 : float, optional
         T2 echo time.
     """
 
-    t2echo: float = np.nan
+    t2: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, t2echo: float) -> T2EchoData:
+    def new(cls, sweep_data: SweepData, t2: float) -> T2Data:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -387,7 +387,7 @@ class T2EchoData(SweepData):
             yaxis_title=sweep_data.yaxis_title,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
-            t2echo=t2echo,
+            t2=t2,
         )
 
     def fit(self) -> float:
@@ -395,11 +395,9 @@ class T2EchoData(SweepData):
             target=self.target,
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
-            title="T2 echo",
-            xaxis_title="Time (ns)",
+            title="T2",
+            xaxis_title="Time (μs)",
             yaxis_title="Population",
-            xaxis_type="log",
-            yaxis_type="linear",
         )
         return tau
 
@@ -429,20 +427,20 @@ class RamseyData(SweepData):
         Type of the x-axis.
     yaxis_type : str, optional
         Type of the y-axis.
-    t2star : float, optional
+    t2 : float, optional
         T2* time.
     ramsey_freq : float, optional
         Ramsey frequency.
     """
 
-    t2star: float = np.nan
+    t2: float = np.nan
     ramsey_freq: float = np.nan
 
     @classmethod
     def new(
         cls,
         sweep_data: SweepData,
-        t2star: float,
+        t2: float,
         ramsey_freq: float,
     ) -> RamseyData:
         return cls(
@@ -455,17 +453,17 @@ class RamseyData(SweepData):
             yaxis_title=sweep_data.yaxis_title,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
-            t2star=t2star,
+            t2=t2,
             ramsey_freq=ramsey_freq,
         )
 
     def fit(self) -> tuple[float, float]:
-        t2star, ramsey_freq = fitting.fit_ramsey(
+        t2, ramsey_freq = fitting.fit_ramsey(
             target=self.target,
             x=self.sweep_range,
             y=self.normalized,
         )
-        return t2star, ramsey_freq
+        return t2, ramsey_freq
 
 
 @dataclass

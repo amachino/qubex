@@ -513,8 +513,16 @@ def fit_exp_decay(
             name="Data",
         )
     )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"τ = {tau * 1e-3:.3g} μs",
+        showarrow=False,
+    )
     fig.update_layout(
-        title=f"{title} = {tau * 1e-3:.3g} μs : {target}",
+        title=f"{title} : {target}",
         xaxis_title=xaxis_title,
         yaxis_title=yaxis_title,
         xaxis_type=xaxis_type,
