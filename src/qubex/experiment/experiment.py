@@ -847,8 +847,11 @@ class Experiment:
                 time_range=time_range,
                 amplitudes=amplitudes,
                 detuning=detuning,
-                plot=plot,
+                plot=False,
             )
+            clear_output()
+            if plot:
+                result.fit()
             clear_output(wait=True)
             rabi_params = result.rabi_params
             if rabi_params is None:
@@ -870,6 +873,7 @@ class Experiment:
             )
             for target, values in rabi_rates.items()
         }
+
         return ExperimentResult(data=data)
 
     def obtain_ampl_rabi_relation(
