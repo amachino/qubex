@@ -287,6 +287,76 @@ class SweepData(TargetData):
 
 
 @dataclass
+class AmplCalibData(SweepData):
+    """
+    The relation between the control amplitude and the measured value.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
+    calib_value : float, optional
+        Calibrated value.
+    """
+
+    sweep_range: NDArray
+    calib_value: float | None = None
+
+    @classmethod
+    def new(cls, sweep_data: SweepData, calib_value: float) -> AmplCalibData:
+        return cls(
+            target=sweep_data.target,
+            data=sweep_data.normalized,
+            sweep_range=sweep_data.sweep_range,
+            rabi_param=sweep_data.rabi_param,
+            title=sweep_data.title,
+            xaxis_title=sweep_data.xaxis_title,
+            yaxis_title=sweep_data.yaxis_title,
+            xaxis_type=sweep_data.xaxis_type,
+            yaxis_type=sweep_data.yaxis_type,
+            calib_value=calib_value,
+        )
+
+    def plot(self):
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=self.sweep_range,
+                y=self.data,
+            )
+        )
+        fig.update_layout(
+            title=f"Amplitude calibration : {self.target}",
+            xaxis_title="Control amplitude (arb. units)",
+            yaxis_title="Measured value (arb. units)",
+        )
+        fig.show()
+
+    def fit(self) -> float:
+        return fitting.fit_ampl_calib_data(
+            target=self.target,
+            amplitude_range=self.sweep_range,
+            data=-self.normalized,
+        )
+
+
+@dataclass
 class T1Data(SweepData):
     """
     Data class representing the result of a T1 experiment.
@@ -311,6 +381,8 @@ class T1Data(SweepData):
         Type of the x-axis.
     yaxis_type : str, optional
         Type of the y-axis.
+    t1 : float, optional
+        T1 time.
     """
 
     t1: float = np.nan
@@ -588,43 +660,3 @@ class TimePhaseData(TargetData):
             yaxis_title="Phase (rad)",
         )
         fig.show()
-
-
-@dataclass
-class AmplCalibData(TargetData):
-    """
-    The relation between the control amplitude and the measured value.
-
-    Attributes
-    ----------
-    target : str
-        Target of the experiment.
-    data : NDArray
-        Measured data.
-    sweep_range : NDArray
-        Sweep range of the experiment.
-    """
-
-    sweep_range: NDArray
-
-    def plot(self):
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=self.sweep_range,
-                y=self.data,
-            )
-        )
-        fig.update_layout(
-            title=f"Amplitude calibration : {self.target}",
-            xaxis_title="Control amplitude (arb. units)",
-            yaxis_title="Measured value (arb. units)",
-        )
-        fig.show()
-
-    def fit(self) -> tuple[float, float]:
-        return fitting.fit_ampl_calib_data(
-            target=self.target,
-            amplitude=self.sweep_range,
-            data=-self.data,
-        )

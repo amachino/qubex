@@ -1083,6 +1083,74 @@ class Experiment:
 
         return amplitudes
 
+    def calibrate_default_pulse(
+        self,
+        targets: list[str],
+        pulse_type: Literal["pi", "hpi"],
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the default pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        rabi_params = self.rabi_params
+        if rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        def calibrate(target: str) -> AmplCalibData:
+            if pulse_type == "hpi":
+                rabi_rate = 12.5e-3
+            elif pulse_type == "pi":
+                rabi_rate = 25e-3
+            else:
+                raise ValueError("Invalid pulse type.")
+            ampl = self.calc_control_amplitudes(
+                rabi_rate=rabi_rate,
+                print_result=False,
+            )[target]
+            ampl_min = ampl * 0.5
+            ampl_max = ampl * 1.5
+            ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            sweep_data = self.sweep_parameter(
+                sequence={
+                    target: lambda x: FlatTop(
+                        duration=30,
+                        amplitude=x,
+                        tau=10,
+                    )
+                },
+                sweep_range=ampl_range,
+                repetitions=2 if pulse_type == "pi" else 4,
+                shots=DEFAULT_SHOTS,
+                interval=DEFAULT_INTERVAL,
+            ).data[target]
+
+            calib_value = fitting.fit_ampl_calib_data(
+                target=target,
+                amplitude_range=ampl_range,
+                data=-sweep_data.normalized,
+            )
+
+            return AmplCalibData.new(
+                sweep_data=sweep_data,
+                calib_value=calib_value,
+            )
+
+        data = {}
+        for target in targets:
+            data[target] = calibrate(target)
+            clear_output(wait=True)
+
+        return ExperimentResult(data=data)
+
     def calibrate_hpi_pulse(
         self,
         targets: list[str],
@@ -1093,51 +1161,14 @@ class Experiment:
         Parameters
         ----------
         target : str
-            Target qubit to calibrate the π/2 pulse.
+            Target qubit to calibrate.
 
         Returns
         -------
-        ExperimentResult[SweepData]
+        ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
-        rabi_params = self.rabi_params
-        if rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
-
-        def calibrate(target: str) -> AmplCalibData:
-            rabi_rate = 12.5e-3
-            ampl = self.calc_control_amplitudes(
-                rabi_rate=rabi_rate,
-                print_result=False,
-            )[target]
-            ampl_min = ampl * 0.5
-            ampl_max = ampl * 1.5
-            ampl_range = np.linspace(ampl_min, ampl_max, 20)
-            result = self.sweep_parameter(
-                sequence={
-                    target: lambda x: FlatTop(
-                        duration=30,
-                        amplitude=x,
-                        tau=10,
-                    )
-                },
-                sweep_range=ampl_range,
-                repetitions=4,
-                shots=DEFAULT_SHOTS,
-                interval=DEFAULT_INTERVAL,
-            ).data[target]
-            return AmplCalibData(
-                target=target,
-                data=result.normalized,
-                sweep_range=result.sweep_range,
-            )
-
-        data = {}
-        for target in targets:
-            data[target] = calibrate(target)
-            clear_output(wait=True)
-
-        return ExperimentResult(data=data)
+        return self.calibrate_default_pulse(targets, "hpi")
 
     def calibrate_pi_pulse(
         self,
@@ -1149,51 +1180,14 @@ class Experiment:
         Parameters
         ----------
         target : str
-            Target qubit to calibrate the π pulse.
+            Target qubit to calibrate.
 
         Returns
         -------
-        ExperimentResult[SweepData]
+        ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
-        rabi_params = self.rabi_params
-        if rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
-
-        def calibrate(target: str) -> AmplCalibData:
-            rabi_rate = 25.0e-3
-            ampl = self.calc_control_amplitudes(
-                rabi_rate=rabi_rate,
-                print_result=False,
-            )[target]
-            ampl_min = ampl * 0.5
-            ampl_max = ampl * 1.5
-            ampl_range = np.linspace(ampl_min, ampl_max, 20)
-            result = self.sweep_parameter(
-                sequence={
-                    target: lambda x: FlatTop(
-                        duration=30,
-                        amplitude=x,
-                        tau=10,
-                    )
-                },
-                sweep_range=ampl_range,
-                repetitions=2,
-                shots=DEFAULT_SHOTS,
-                interval=DEFAULT_INTERVAL,
-            ).data[target]
-            return AmplCalibData(
-                target=target,
-                data=result.normalized,
-                sweep_range=result.sweep_range,
-            )
-
-        data = {}
-        for target in targets:
-            data[target] = calibrate(target)
-            clear_output(wait=True)
-
-        return ExperimentResult(data=data)
+        return self.calibrate_default_pulse(targets, "pi")
 
     def t1_experiment(
         self,

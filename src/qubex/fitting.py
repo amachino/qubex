@@ -535,16 +535,18 @@ def fit_exp_decay(
 
 def fit_ampl_calib_data(
     target: str,
-    amplitude: npt.NDArray[np.float64],
+    amplitude_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],
     p0=None,
-) -> tuple[float, float]:
+) -> float:
     """
     Fit amplitude calibration data to a cosine function and plot the results.
 
     Parameters
     ----------
-    amplitude : npt.NDArray[np.float64]
+    target : str
+        Identifier of the target.
+    amplitude_range : npt.NDArray[np.float64]
         Amplitude range for the calibration data.
     data : npt.NDArray[np.float64]
         Measured values for the calibration data.
@@ -553,8 +555,8 @@ def fit_ampl_calib_data(
 
     Returns
     -------
-    tuple[float, float]
-        Minimum amplitude and value of the fitted cosine function.
+    float
+        Calibrated amplitude of the target.
     """
 
     def cos_func(t, ampl, omega, phi, offset):
@@ -563,26 +565,26 @@ def fit_ampl_calib_data(
     if p0 is None:
         p0 = (
             np.abs(np.max(data) - np.min(data)) / 2,
-            2 * np.pi / (amplitude[-1] - amplitude[0]),
+            2 * np.pi / (amplitude_range[-1] - amplitude_range[0]),
             np.pi,
             (np.max(data) + np.min(data)) / 2,
         )
 
-    popt, _ = curve_fit(cos_func, amplitude, data, p0=p0)
+    popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
     print(
         f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
     )
 
     result = minimize(
         cos_func,
-        x0=np.mean(amplitude),
+        x0=np.mean(amplitude_range),
         args=tuple(popt),
-        bounds=[(np.min(amplitude), np.max(amplitude))],
+        bounds=[(np.min(amplitude_range), np.max(amplitude_range))],
     )
     min_x = result.x[0]
     min_y = cos_func(min_x, *popt)
 
-    x_fine = np.linspace(np.min(amplitude), np.max(amplitude), 1000)
+    x_fine = np.linspace(np.min(amplitude_range), np.max(amplitude_range), 1000)
     y_fine = cos_func(x_fine, *popt)
 
     fig = go.Figure()
@@ -596,7 +598,7 @@ def fit_ampl_calib_data(
     )
     fig.add_trace(
         go.Scatter(
-            x=amplitude,
+            x=amplitude_range,
             y=data,
             mode="markers",
             name="Data",
@@ -618,7 +620,7 @@ def fit_ampl_calib_data(
 
     print(f"Calibrated amplitude: {min_x:.6g}")
 
-    return min_x, min_y
+    return min_x
 
 
 def fit_chevron(
