@@ -533,7 +533,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 201, 4),
+        time_range: NDArray = np.arange(0, 201, 8),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1014,30 +1014,6 @@ class Experiment:
         }
         return ExperimentResult(data=data)
 
-    def normalize(
-        self,
-        value: complex,
-        param: RabiParam,
-    ) -> float:
-        """
-        Normalizes the measured I/Q value.
-
-        Parameters
-        ----------
-        value : complex
-            Measured I/Q value.
-        param : RabiParam
-            Parameters of the Rabi oscillation.
-
-        Returns
-        -------
-        float
-            Normalized value.
-        """
-        value_rotated = value * np.exp(-1j * param.angle)
-        value_normalized = (value_rotated.imag - param.offset) / param.amplitude
-        return value_normalized
-
     def calc_control_amplitudes(
         self,
         rabi_rate: float = 12.5e-3,
@@ -1131,12 +1107,14 @@ class Experiment:
                 repetitions=2 if pulse_type == "pi" else 4,
                 shots=DEFAULT_SHOTS,
                 interval=DEFAULT_INTERVAL,
+                plot=False,
             ).data[target]
 
             calib_value = fitting.fit_ampl_calib_data(
                 target=target,
                 amplitude_range=ampl_range,
                 data=-sweep_data.normalized,
+                title=f"{pulse_type} pulse calibration",
             )
 
             return AmplCalibData.new(
@@ -1144,10 +1122,15 @@ class Experiment:
                 calib_value=calib_value,
             )
 
-        data = {}
-        for target in targets:
+        data: dict[str, AmplCalibData] = {}
+        for idx, target in enumerate(targets):
+            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
             data[target] = calibrate(target)
-            clear_output(wait=True)
+            print("")
+
+        print(f"Calibration results for {pulse_type} pulse:")
+        for target, calib_data in data.items():
+            print(f"{target}: {calib_data.calib_value:.6f}")
 
         return ExperimentResult(data=data)
 

@@ -48,6 +48,33 @@ class RabiParam:
     angle: float
 
 
+def normalize(
+    values: npt.NDArray,
+    param: RabiParam,
+) -> npt.NDArray:
+    """
+    Normalizes the measured I/Q value.
+
+    Parameters
+    ----------
+    values : npt.NDArray
+        Measured I/Q value.
+    param : RabiParam
+        Parameters of the Rabi oscillation.
+
+    Returns
+    -------
+    npt.NDArray
+        Normalized I/Q value.
+    """
+    values_rotated = values * np.exp(-1j * param.angle)
+    values_normalized = (np.imag(values_rotated) - param.offset) / param.amplitude
+    # initial_value = values_normalized[0]
+    # if initial_value < 0:
+    #     values_normalized = -values_normalized
+    return values_normalized
+
+
 def func_cos(
     t: npt.NDArray[np.float64],
     A: float,
@@ -362,6 +389,16 @@ def fit_ramsey(
         Initial guess for the fitting parameters.
     bounds : optional
         Bounds for the fitting parameters.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Label for the x-axis.
+    yaxis_title : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
 
     Returns
     -------
@@ -467,6 +504,16 @@ def fit_exp_decay(
         Initial guess for the fitting parameters.
     bounds : optional
         Bounds for the fitting parameters.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Label for the x-axis.
+    yaxis_title : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
 
     Returns
     -------
@@ -538,6 +585,11 @@ def fit_ampl_calib_data(
     amplitude_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],
     p0=None,
+    title: str = "Amplitude calibration",
+    xaxis_title: str = "Amplitude (arb. units)",
+    yaxis_title: str = "Measured value (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
 ) -> float:
     """
     Fit amplitude calibration data to a cosine function and plot the results.
@@ -612,9 +664,11 @@ def fit_ampl_calib_data(
         arrowhead=1,
     )
     fig.update_layout(
-        title=f"Amplitude calibration of {target}",
-        xaxis_title="Amplitude (arb. units)",
-        yaxis_title="Measured value (arb. units)",
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
     )
     fig.show()
 
@@ -762,6 +816,7 @@ def get_angle(
         angle += np.pi / 2
     else:
         angle -= np.pi / 2
+    print(f"Angle: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
     return angle
 
 
