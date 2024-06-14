@@ -9,8 +9,8 @@ class CPMG(PulseSequence):
 
     Parameters
     ----------
-    tau : int
-        The inter-pulse spacing in nanoseconds.
+    tau : float
+        The half of the inter-pulse spacing in nanoseconds.
     pi : Waveform
         The pi pulse waveform.
     n : int, optional
@@ -21,7 +21,7 @@ class CPMG(PulseSequence):
     Attributes
     ----------
     tau : int
-        The inter-pulse spacing used in the sequence.
+        The half of the inter-pulse spacing in nanoseconds.
     pi : Waveform
         The pi pulse waveform used in the sequence.
     n : int
@@ -30,33 +30,29 @@ class CPMG(PulseSequence):
     Raises
     ------
     ValueError
-        If `tau` is not a multiple of twice the sampling period.
-
-    Notes
-    -----
-    The CPMG sequence typically consists of a series of pi pulses separated
-    by a delay `tau`. It's often used in NMR and quantum computing for
-    refocusing and decoherence studies.
+        If `tau` is not a multiple of the sampling period.
     """
 
     def __init__(
         self,
-        tau: int,
+        tau: float,
         pi: Waveform,
         n: int = 2,
         **kwargs,
     ):
-        if tau % (2 * self.SAMPLING_PERIOD) != 0:
+        if tau % self.SAMPLING_PERIOD != 0:
             raise ValueError(
-                f"Tau must be a multiple of twice the sampling period ({2 * self.SAMPLING_PERIOD} ns)."
+                f"Tau must be a multiple of the sampling period ({self.SAMPLING_PERIOD} ns)."
             )
+        if n < 1:
+            raise ValueError("The number of pi pulses must be greater than 0.")
         waveforms: list[Waveform] = []
         if tau > 0:
             self.tau = tau
             self.pi = pi
             self.n = n
-            waveforms = [Blank(tau // 2)]
+            waveforms = [Blank(tau)]
             for _ in range(n - 1):
-                waveforms += [pi, Blank(tau)]
-            waveforms += [pi, Blank(tau // 2)]
+                waveforms += [pi, Blank(2 * tau)]
+            waveforms += [pi, Blank(tau)]
         super().__init__(waveforms, **kwargs)

@@ -106,15 +106,13 @@ class RabiData(TargetData):
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
-        param = self.rabi_param
-        return self.data * np.exp(-1j * param.angle)
+        angle = self.rabi_param.angle
+        return fitting.rotate(self.data, -angle)
 
     @property
     def normalized(self) -> NDArray[np.float64]:
         param = self.rabi_param
-        values = self.data * np.exp(-1j * param.angle)
-        values_normalized = (values.imag - param.offset) / param.amplitude
-        return values_normalized
+        return fitting.normalize(self.data, param)
 
     def plot(
         self,
@@ -187,15 +185,27 @@ class SweepData(TargetData):
         Measured data.
     sweep_range : NDArray
         Sweep range of the experiment.
-    sweep_value_label : str
-        Label of the sweep value.
     rabi_param : RabiParam, optional
         Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
     """
 
     sweep_range: NDArray
-    sweep_value_label: str
     rabi_param: RabiParam | None = None
+    title: str = "Sweep result"
+    xaxis_title: str = "Sweep value"
+    yaxis_title: str = "Measured value"
+    xaxis_type: str = "linear"
+    yaxis_type: str = "linear"
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
@@ -217,6 +227,8 @@ class SweepData(TargetData):
         self,
         *,
         normalize: bool = False,
+        xaxis_type: str | None = None,
+        yaxis_type: str | None = None,
     ):
         if normalize:
             param = self.rabi_param
@@ -237,9 +249,11 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                title=f"Measured value : {self.target}",
-                xaxis_title=self.sweep_value_label,
-                yaxis_title="Normalized value",
+                title=f"{self.title} : {self.target}",
+                xaxis_title=self.xaxis_title,
+                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
+                yaxis_title=self.yaxis_title,
+                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()
         else:
@@ -261,11 +275,250 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                title=f"Measured I/Q value : {self.target}",
-                xaxis_title=self.sweep_value_label,
-                yaxis_title="Measured value",
+                title=f"{self.title} : {self.target}",
+                xaxis_title=self.xaxis_title,
+                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
+                yaxis_title=self.yaxis_title,
+                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()
+
+
+@dataclass
+class AmplCalibData(SweepData):
+    """
+    The relation between the control amplitude and the measured value.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
+    calib_value : float, optional
+        Calibrated value.
+    """
+
+    sweep_range: NDArray
+    calib_value: float | None = None
+
+    @classmethod
+    def new(cls, sweep_data: SweepData, calib_value: float) -> AmplCalibData:
+        return cls(
+            target=sweep_data.target,
+            data=sweep_data.data,
+            sweep_range=sweep_data.sweep_range,
+            rabi_param=sweep_data.rabi_param,
+            title=sweep_data.title,
+            xaxis_title=sweep_data.xaxis_title,
+            yaxis_title=sweep_data.yaxis_title,
+            xaxis_type=sweep_data.xaxis_type,
+            yaxis_type=sweep_data.yaxis_type,
+            calib_value=calib_value,
+        )
+
+    def fit(self) -> float:
+        return fitting.fit_ampl_calib_data(
+            target=self.target,
+            amplitude_range=self.sweep_range,
+            data=-self.normalized,
+        )
+
+
+@dataclass
+class T1Data(SweepData):
+    """
+    Data class representing the result of a T1 experiment.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
+    t1 : float, optional
+        T1 time.
+    """
+
+    t1: float = np.nan
+
+    @classmethod
+    def new(cls, sweep_data: SweepData, t1: float) -> T1Data:
+        return cls(
+            target=sweep_data.target,
+            data=sweep_data.data,
+            sweep_range=sweep_data.sweep_range,
+            rabi_param=sweep_data.rabi_param,
+            title=sweep_data.title,
+            xaxis_title=sweep_data.xaxis_title,
+            yaxis_title=sweep_data.yaxis_title,
+            xaxis_type=sweep_data.xaxis_type,
+            yaxis_type=sweep_data.yaxis_type,
+            t1=t1,
+        )
+
+    def fit(self) -> float:
+        tau = fitting.fit_exp_decay(
+            target=self.target,
+            x=self.sweep_range,
+            y=0.5 * (1 - self.normalized),
+            title="T1",
+            xaxis_title="Time (ns)",
+            yaxis_title="Population",
+            xaxis_type="log",
+            yaxis_type="linear",
+        )
+        return tau
+
+
+@dataclass
+class T2Data(SweepData):
+    """
+    Data class representing the result of a T2 experiment.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
+    t2 : float, optional
+        T2 echo time.
+    """
+
+    t2: float = np.nan
+
+    @classmethod
+    def new(cls, sweep_data: SweepData, t2: float) -> T2Data:
+        return cls(
+            target=sweep_data.target,
+            data=sweep_data.data,
+            sweep_range=sweep_data.sweep_range,
+            rabi_param=sweep_data.rabi_param,
+            title=sweep_data.title,
+            xaxis_title=sweep_data.xaxis_title,
+            yaxis_title=sweep_data.yaxis_title,
+            xaxis_type=sweep_data.xaxis_type,
+            yaxis_type=sweep_data.yaxis_type,
+            t2=t2,
+        )
+
+    def fit(self) -> float:
+        tau = fitting.fit_exp_decay(
+            target=self.target,
+            x=self.sweep_range,
+            y=0.5 * (1 - self.normalized),
+            title="T2",
+            xaxis_title="Time (μs)",
+            yaxis_title="Population",
+        )
+        return tau
+
+
+@dataclass
+class RamseyData(SweepData):
+    """
+    Data class representing the result of a Ramsey experiment.
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
+    t2 : float, optional
+        T2* time.
+    ramsey_freq : float, optional
+        Ramsey frequency.
+    """
+
+    t2: float = np.nan
+    ramsey_freq: float = np.nan
+
+    @classmethod
+    def new(
+        cls,
+        sweep_data: SweepData,
+        t2: float,
+        ramsey_freq: float,
+    ) -> RamseyData:
+        return cls(
+            target=sweep_data.target,
+            data=sweep_data.data,
+            sweep_range=sweep_data.sweep_range,
+            rabi_param=sweep_data.rabi_param,
+            title=sweep_data.title,
+            xaxis_title=sweep_data.xaxis_title,
+            yaxis_title=sweep_data.yaxis_title,
+            xaxis_type=sweep_data.xaxis_type,
+            yaxis_type=sweep_data.yaxis_type,
+            t2=t2,
+            ramsey_freq=ramsey_freq,
+        )
+
+    def fit(self) -> tuple[float, float]:
+        t2, ramsey_freq = fitting.fit_ramsey(
+            target=self.target,
+            x=self.sweep_range,
+            y=self.normalized,
+        )
+        return t2, ramsey_freq
 
 
 @dataclass
@@ -390,43 +643,3 @@ class TimePhaseData(TargetData):
             yaxis_title="Phase (rad)",
         )
         fig.show()
-
-
-@dataclass
-class AmplCalibData(TargetData):
-    """
-    The relation between the control amplitude and the measured value.
-
-    Attributes
-    ----------
-    target : str
-        Target of the experiment.
-    data : NDArray
-        Measured data.
-    sweep_range : NDArray
-        Sweep range of the experiment.
-    """
-
-    sweep_range: NDArray
-
-    def plot(self):
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=self.sweep_range,
-                y=self.data,
-            )
-        )
-        fig.update_layout(
-            title=f"Amplitude calibration : {self.target}",
-            xaxis_title="Control amplitude (arb. units)",
-            yaxis_title="Measured value (arb. units)",
-        )
-        fig.show()
-
-    def fit(self) -> tuple[float, float]:
-        return fitting.fit_ampl_calib_data(
-            target=self.target,
-            amplitude=self.sweep_range,
-            data=-self.data,
-        )

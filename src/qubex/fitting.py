@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -45,6 +46,33 @@ class RabiParam:
     offset: float
     noise: float
     angle: float
+
+
+def normalize(
+    values: npt.NDArray,
+    param: RabiParam,
+) -> npt.NDArray:
+    """
+    Normalizes the measured I/Q value.
+
+    Parameters
+    ----------
+    values : npt.NDArray
+        Measured I/Q value.
+    param : RabiParam
+        Parameters of the Rabi oscillation.
+
+    Returns
+    -------
+    npt.NDArray
+        Normalized I/Q value.
+    """
+    values_rotated = values * np.exp(-1j * param.angle)
+    values_normalized = (np.imag(values_rotated) - param.offset) / param.amplitude
+    # initial_value = values_normalized[0]
+    # if initial_value < 0:
+    #     values_normalized = -values_normalized
+    return values_normalized
 
 
 def func_cos(
@@ -335,49 +363,78 @@ def fit_detuned_rabi(
 
 def fit_ramsey(
     *,
+    target: str,
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
     p0=None,
     bounds=None,
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    title: str = "Ramsey fringe",
+    xaxis_title: str = "Time (μs)",
+    yaxis_title: str = "Amplitude (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> tuple[float, float]:
     """
-    Fit Ramsey fringes using a damped cosine function and plot the results.
+    Fit Ramsey fringe using a damped cosine function and plot the results.
 
     Parameters
     ----------
+    target : str
+        Identifier of the target.
     x : npt.NDArray[np.float64]
-        Array of time points for the Ramsey fringes.
+        Array of time points for the Ramsey fringe.
     y : npt.NDArray[np.float64]
-        Amplitude data for the Ramsey fringes.
+        Amplitude data for the Ramsey fringe.
     p0 : optional
         Initial guess for the fitting parameters.
     bounds : optional
         Bounds for the fitting parameters.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Label for the x-axis.
+    yaxis_title : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
 
     Returns
     -------
-    tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        Optimized fit parameters and covariance of the fit.
+    tuple[float, float]
+        Decay time and frequency of the Ramsey fringe.
     """
+    wave_count_est = estimate_wave_count(x, y)
+    amplitude_est = (np.max(y) - np.min(y)) / 2
+    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
+    phase_est = 0.0
+    offset_est = 0.0
+    tau_est = 10_000
+
     if p0 is None:
-        p0 = (
-            np.abs(np.max(y) - np.min(y)) / 2,
-            10_000,
-            10 * 2 * np.pi / (x[-1] - x[0]),
-            np.pi,
-            (np.max(y) + np.min(y)) / 2,
-        )
+        p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
 
     if bounds is None:
         bounds = (
-            (0, 0, 0, 0, -np.inf),
-            (np.inf, np.inf, np.inf, np.pi, np.inf),
+            (0, omega_est * 0.9, 0, -np.inf, 0),
+            (np.inf, omega_est * 1.1, np.pi, np.inf, np.inf),
         )
 
-    popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+    popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+
+    A = popt[0]
+    omega = popt[1]
+    phi = popt[2]
+    C = popt[3]
+    tau = popt[4]
+    f = omega / (2 * np.pi)
+
     print(
-        f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[1]:.3g}) * cos({popt[2]:.3g} * t + {popt[3]:.3g}) + {popt[4]:.3g}"
+        f"Fitted function: {A:.3g} * exp(-t/{tau:.3g}) * cos({omega:.3g} * t + {phi:.3g}) + {C:.3g}"
     )
+    print(f"Decay time: {tau * 1e-3:.3g} μs")
+    print(f"Frequency: {f * 1e3:.3g} MHz")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
@@ -385,7 +442,7 @@ def fit_ramsey(
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=x_fine,
+            x=x_fine * 1e-3,
             y=y_fine,
             mode="lines",
             name="Fit",
@@ -393,33 +450,52 @@ def fit_ramsey(
     )
     fig.add_trace(
         go.Scatter(
-            x=x,
+            x=x * 1e-3,
             y=y,
             mode="markers",
             name="Data",
         )
     )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"τ = {tau * 1e-3:.3g} μs, f = {f * 1e3:.3g} MHz",
+        showarrow=False,
+    )
     fig.update_layout(
-        title="Decay Fit",
-        xaxis_title="Time (ns)",
-        yaxis_title="Amplitude (arb. units)",
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
     )
     fig.show()
 
-    return popt, pcov
+    return tau, f
 
 
 def fit_exp_decay(
+    *,
+    target: str,
     x: npt.NDArray[np.float64],
     y: npt.NDArray[np.float64],
     p0=None,
     bounds=None,
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    title: str = "Decay time",
+    xaxis_title: str = "Time (μs)",
+    yaxis_title: str = "Amplitude (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "log",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> float:
     """
     Fit decay data to an exponential decay function and plot the results.
 
     Parameters
     ----------
+    target : str
+        Identifier of the target.
     x : npt.NDArray[np.float64]
         Time points for the decay data.
     y : npt.NDArray[np.float64]
@@ -428,11 +504,21 @@ def fit_exp_decay(
         Initial guess for the fitting parameters.
     bounds : optional
         Bounds for the fitting parameters.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Label for the x-axis.
+    yaxis_title : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
 
     Returns
     -------
-    tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]
-        Optimized fit parameters and covariance of the fit.
+    float
+        Decay time of the exponential decay in microseconds.
     """
     if p0 is None:
         p0 = (
@@ -447,9 +533,12 @@ def fit_exp_decay(
             (np.inf, np.inf, np.inf),
         )
 
-    popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
-    print(f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[1]:.3g}) + {popt[2]:.3g}")
-    print(f"Decay time: {popt[1] / 1e3:.3g} us")
+    popt, _ = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
+    A = popt[0]
+    tau = popt[1]
+    C = popt[2]
+    print(f"Fitted function: {A:.3g} * exp(-t/{tau:.3g}) + {C:.3g}")
+    print(f"Decay time: {tau * 1e-3:.3g} μs")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
@@ -457,7 +546,7 @@ def fit_exp_decay(
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=x_fine,
+            x=x_fine * 1e-3,
             y=y_fine,
             mode="lines",
             name="Fit",
@@ -465,34 +554,51 @@ def fit_exp_decay(
     )
     fig.add_trace(
         go.Scatter(
-            x=x,
+            x=x * 1e-3,
             y=y,
             mode="markers",
             name="Data",
         )
     )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"τ = {tau * 1e-3:.3g} μs",
+        showarrow=False,
+    )
     fig.update_layout(
-        title=f"Decay time: {popt[1] / 1e3:.3g} us",
-        xaxis_title="Time (ns)",
-        yaxis_title="Amplitude (arb. units)",
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
     )
     fig.show()
 
-    return popt, pcov
+    return tau
 
 
 def fit_ampl_calib_data(
     target: str,
-    amplitude: npt.NDArray[np.float64],
+    amplitude_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],
     p0=None,
-) -> tuple[float, float]:
+    title: str = "Amplitude calibration",
+    xaxis_title: str = "Amplitude (arb. units)",
+    yaxis_title: str = "Measured value (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> float:
     """
     Fit amplitude calibration data to a cosine function and plot the results.
 
     Parameters
     ----------
-    amplitude : npt.NDArray[np.float64]
+    target : str
+        Identifier of the target.
+    amplitude_range : npt.NDArray[np.float64]
         Amplitude range for the calibration data.
     data : npt.NDArray[np.float64]
         Measured values for the calibration data.
@@ -501,8 +607,8 @@ def fit_ampl_calib_data(
 
     Returns
     -------
-    tuple[float, float]
-        Minimum amplitude and value of the fitted cosine function.
+    float
+        Calibrated amplitude of the target.
     """
 
     def cos_func(t, ampl, omega, phi, offset):
@@ -511,26 +617,26 @@ def fit_ampl_calib_data(
     if p0 is None:
         p0 = (
             np.abs(np.max(data) - np.min(data)) / 2,
-            2 * np.pi / (amplitude[-1] - amplitude[0]),
+            2 * np.pi / (amplitude_range[-1] - amplitude_range[0]),
             np.pi,
             (np.max(data) + np.min(data)) / 2,
         )
 
-    popt, _ = curve_fit(cos_func, amplitude, data, p0=p0)
+    popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
     print(
         f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
     )
 
     result = minimize(
         cos_func,
-        x0=np.mean(amplitude),
+        x0=np.mean(amplitude_range),
         args=tuple(popt),
-        bounds=[(np.min(amplitude), np.max(amplitude))],
+        bounds=[(np.min(amplitude_range), np.max(amplitude_range))],
     )
     min_x = result.x[0]
     min_y = cos_func(min_x, *popt)
 
-    x_fine = np.linspace(np.min(amplitude), np.max(amplitude), 1000)
+    x_fine = np.linspace(np.min(amplitude_range), np.max(amplitude_range), 1000)
     y_fine = cos_func(x_fine, *popt)
 
     fig = go.Figure()
@@ -544,7 +650,7 @@ def fit_ampl_calib_data(
     )
     fig.add_trace(
         go.Scatter(
-            x=amplitude,
+            x=amplitude_range,
             y=data,
             mode="markers",
             name="Data",
@@ -558,15 +664,17 @@ def fit_ampl_calib_data(
         arrowhead=1,
     )
     fig.update_layout(
-        title=f"Amplitude calibration of {target}",
-        xaxis_title="Amplitude (arb. units)",
-        yaxis_title="Measured value (arb. units)",
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
     )
     fig.show()
 
     print(f"Calibrated amplitude: {min_x:.6g}")
 
-    return min_x, min_y
+    return min_x
 
 
 def fit_chevron(
@@ -708,6 +816,7 @@ def get_angle(
         angle += np.pi / 2
     else:
         angle -= np.pi / 2
+    print(f"Angle: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
     return angle
 
 

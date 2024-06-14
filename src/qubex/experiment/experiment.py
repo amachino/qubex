@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from .. import fitting as fit
+from .. import fitting
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..fitting import RabiParam
 from ..measurement import (
@@ -24,10 +24,11 @@ from ..measurement import (
     Measurement,
     MeasureResult,
 )
-from ..pulse import FlatTop, Rect, Waveform
+from ..pulse import CPMG, Blank, FlatTop, PulseSequence, Rect, Waveform
 from ..typing import IQArray, ParametricWaveform, TargetMap
-from ..version import get_version
+from ..version import get_package_version
 from ..visualization import IQPlotter, plot_waveform
+from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import (
     AmplCalibData,
@@ -35,7 +36,10 @@ from .experiment_result import (
     ExperimentResult,
     FreqRabiData,
     RabiData,
+    RamseyData,
     SweepData,
+    T1Data,
+    T2Data,
     TimePhaseData,
 )
 from .experiment_tool import ExperimentTool
@@ -92,6 +96,7 @@ class Experiment:
             config=self._config,
             measurement=self._measurement,
         )
+        self.note: Final = ExperimentNote()
         self.print_environment()
 
     @property
@@ -201,11 +206,16 @@ class Experiment:
         self._rabi_params = rabi_params
         console.print("Rabi parameters are stored.")
 
-    def print_environment(self):
+    def print_environment(self, verbose: bool = False):
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         print("python:", sys.version.split()[0])
         print("env:", sys.prefix)
-        print("qubex:", get_version())
+        if verbose:
+            print("numpy:", get_package_version("numpy"))
+            print("quel_ic_config:", get_package_version("quel_ic_config"))
+            print("quel_clock_master:", get_package_version("quel_clock_master"))
+            print("qubecalib:", get_package_version("qubecalib"))
+        print("qubex:", get_package_version("qubex"))
         print("config:", self._config.config_path)
         print("chip:", self._chip_id)
         print("qubits:", self._qubits)
@@ -253,36 +263,15 @@ class Experiment:
 
         Examples
         --------
-        >>> experiment.linkup()
+        >>> ex.linkup()
         """
         if box_list is None:
             box_list = self.box_list
         self._measurement.linkup(box_list)
         self.check_status()
 
-    def relinkup(
-        self,
-        box_list: Optional[list[str]] = None,
-    ) -> None:
-        """
-        Relink up the measurement system.
-
-        Parameters
-        ----------
-        box_list : Optional[list[str]], optional
-            List of the box IDs to link up. Defaults to None.
-
-        Examples
-        --------
-        >>> experiment.relinkup()
-        """
-        if box_list is None:
-            box_list = self.box_list
-        self._measurement.relinkup(box_list)
-        self.check_status()
-
     @contextmanager
-    def modified_frequencies(self, frequencies: dict[str, float]):
+    def modified_frequencies(self, frequencies: dict[str, float] | None):
         """
         Temporarily modifies the frequencies of the qubits.
 
@@ -296,8 +285,11 @@ class Experiment:
         >>> with ex.modified_frequencies({"Q00": 5.0}):
         ...     # Do something
         """
-        with self._measurement.modified_frequencies(frequencies):
+        if frequencies is None:
             yield
+        else:
+            with self._measurement.modified_frequencies(frequencies):
+                yield
 
     def load_record(
         self,
@@ -322,7 +314,7 @@ class Experiment:
 
         Examples
         --------
-        >>> record = experiment.load_record("some_record.json")
+        >>> record = ex.load_record("some_record.json")
         """
         record = ExperimentRecord.load(name)
         print(f"ExperimentRecord `{name}` is loaded.\n")
@@ -334,6 +326,7 @@ class Experiment:
         self,
         sequence: TargetMap[IQArray],
         *,
+        frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -347,6 +340,8 @@ class Experiment:
         ----------
         sequence : TargetMap[IQArray]
             Sequence of the experiment.
+        frequencies : Optional[dict[str, float]]
+            Frequencies of the qubits.
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
@@ -365,7 +360,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.measure(
+        >>> result = ex.measure(
         ...     sequence={"Q00": np.zeros(0)},
         ...     mode="avg",
         ...     shots=3000,
@@ -378,13 +373,23 @@ class Experiment:
             target: np.array(waveform, dtype=np.complex128)
             for target, waveform in sequence.items()
         }
-        result = self._measurement.measure(
-            waveforms=waveforms,
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            control_window=control_window,
-        )
+        if frequencies is None:
+            result = self._measurement.measure(
+                waveforms=waveforms,
+                mode=mode,
+                shots=shots,
+                interval=interval,
+                control_window=control_window,
+            )
+        else:
+            with self.modified_frequencies(frequencies):
+                result = self._measurement.measure(
+                    waveforms=waveforms,
+                    mode=mode,
+                    shots=shots,
+                    interval=interval,
+                    control_window=control_window,
+                )
         if plot:
             result.plot()
         return result
@@ -460,7 +465,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.check_noise(["Q00", "Q01"])
+        >>> result = ex.check_noise(["Q00", "Q01"])
         """
         result = self._measurement.measure_noise(targets, duration)
         for target, data in result.data.items():
@@ -496,7 +501,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.check_waveform(["Q00", "Q01"])
+        >>> result = ex.check_waveform(["Q00", "Q01"])
         """
         result = self.measure(sequence={target: np.zeros(0) for target in targets})
         if plot:
@@ -507,7 +512,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 201, 4),
+        time_range: NDArray = np.arange(0, 201, 8),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -535,7 +540,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.check_rabi(["Q00", "Q01"])
+        >>> result = ex.check_rabi(["Q00", "Q01"])
         """
         ampl = self.params.control_amplitude
         amplitudes = {target: ampl[target] for target in targets}
@@ -587,7 +592,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.rabi_experiment(
+        >>> result = ex.rabi_experiment(
         ...     amplitudes={"Q00": 0.1},
         ...     time_range=np.arange(0, 201, 4),
         ...     detuning=0.0,
@@ -608,17 +613,16 @@ class Experiment:
         detuned_frequencies = {
             target: self.targets[target].frequency + detuning for target in amplitudes
         }
-        with self.modified_frequencies(detuned_frequencies):
-            sweep_result = self.sweep_parameter(
-                sequence=sequence,
-                sweep_range=time_range,
-                sweep_value_label="Time (ns)",
-                shots=shots,
-                interval=interval,
-                plot=plot,
-            )
+        sweep_result = self.sweep_parameter(
+            sequence=sequence,
+            sweep_range=time_range,
+            frequencies=detuned_frequencies,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
         rabi_params = {
-            target: fit.fit_rabi(
+            target: fitting.fit_rabi(
                 target=data.target,
                 times=data.sweep_range,
                 data=data.data,
@@ -645,14 +649,19 @@ class Experiment:
 
     def sweep_parameter(
         self,
-        *,
         sequence: TargetMap[ParametricWaveform],
+        *,
         sweep_range: NDArray,
-        sweep_value_label: str = "Sweep value",
         repetitions: int = 1,
+        frequencies: Optional[dict[str, float]] = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        title: str = "Sweep result",
+        xaxis_title: str = "Sweep value",
+        yaxis_title: str = "Measured value",
+        xaxis_type: Literal["linear", "log"] = "linear",
+        yaxis_type: Literal["linear", "log"] = "linear",
     ) -> ExperimentResult[SweepData]:
         """
         Sweeps a parameter and measures the signals.
@@ -663,16 +672,26 @@ class Experiment:
             Parametric sequence to sweep.
         sweep_range : NDArray
             Range of the parameter to sweep.
-        sweep_value_label : str
-            Label of the sweep value.
         repetitions : int, optional
             Number of repetitions. Defaults to 1.
+        frequencies : Optional[dict[str, float]]
+            Frequencies of the qubits.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        title : str, optional
+            Title of the plot. Defaults to "Sweep result".
+        xaxis_title : str, optional
+            Title of the x-axis. Defaults to "Sweep value".
+        yaxis_title : str, optional
+            Title of the y-axis. Defaults to "Measured value".
+        xaxis_type : Literal["linear", "log"], optional
+            Type of the x-axis. Defaults to "linear".
+        yaxis_type : Literal["linear", "log"], optional
+            Type of the y-axis. Defaults to "linear".
 
         Returns
         -------
@@ -681,7 +700,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.sweep_parameter(
+        >>> result = ex.sweep_parameter(
         ...     sequence={"Q00": lambda x: Rect(duration=30, amplitude=x)},
         ...     sweep_range=np.arange(0, 101, 4),
         ...     repetitions=4,
@@ -705,18 +724,23 @@ class Experiment:
         )
         signals = defaultdict(list)
         plotter = IQPlotter()
-        for result in generator:
-            for target, data in result.data.items():
-                signals[target].append(data.kerneled)
-            if plot:
-                plotter.update(signals)
+        with self.modified_frequencies(frequencies):
+            for result in generator:
+                for target, data in result.data.items():
+                    signals[target].append(data.kerneled)
+                if plot:
+                    plotter.update(signals)
         data = {
             target: SweepData(
                 target=target,
                 data=np.array(values),
                 sweep_range=sweep_range,
-                sweep_value_label=sweep_value_label,
                 rabi_param=self.rabi_params.get(target),
+                title=title,
+                xaxis_title=xaxis_title,
+                yaxis_title=yaxis_title,
+                xaxis_type=xaxis_type,
+                yaxis_type=yaxis_type,
             )
             for target, values in signals.items()
         }
@@ -725,8 +749,8 @@ class Experiment:
 
     def repeat_sequence(
         self,
-        *,
         sequence: TargetMap[Waveform],
+        *,
         repetitions: int,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -755,7 +779,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.repeat_sequence(
+        >>> result = ex.repeat_sequence(
         ...     sequence={"Q00": Rect(duration=64, amplitude=0.1)},
         ...     repetitions=4,
         ... )
@@ -766,12 +790,12 @@ class Experiment:
         }
         result = self.sweep_parameter(
             sweep_range=np.arange(repetitions + 1),
-            sweep_value_label="Number of repetitions",
             sequence=repeated_sequence,
             repetitions=1,
             shots=shots,
             interval=interval,
             plot=plot,
+            xaxis_title="Number of repetitions",
         )
         return result
 
@@ -809,7 +833,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.obtain_freq_rabi_relation(
+        >>> result = ex.obtain_freq_rabi_relation(
         ...     targets=["Q00", "Q01"],
         ...     detuning_range=np.linspace(-0.01, 0.01, 11),
         ...     time_range=np.arange(0, 101, 4),
@@ -823,8 +847,11 @@ class Experiment:
                 time_range=time_range,
                 amplitudes=amplitudes,
                 detuning=detuning,
-                plot=plot,
+                plot=False,
             )
+            clear_output()
+            if plot:
+                result.fit()
             clear_output(wait=True)
             rabi_params = result.rabi_params
             if rabi_params is None:
@@ -846,6 +873,7 @@ class Experiment:
             )
             for target, values in rabi_rates.items()
         }
+
         return ExperimentResult(data=data)
 
     def obtain_ampl_rabi_relation(
@@ -882,7 +910,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.obtain_ampl_rabi_relation(
+        >>> result = ex.obtain_ampl_rabi_relation(
         ...     targets=["Q00", "Q01"],
         ...     amplitude_range=np.linspace(0.01, 0.1, 10),
         ...     time_range=np.arange(0, 201, 4),
@@ -941,7 +969,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.obtain_time_phase_relation(
+        >>> result = ex.obtain_time_phase_relation(
         ...     targets=["Q00", "Q01"],
         ...     time_range=np.arange(0, 1024, 128),
         ... )
@@ -968,30 +996,6 @@ class Experiment:
             for qubit, values in iq_data.items()
         }
         return ExperimentResult(data=data)
-
-    def normalize(
-        self,
-        value: complex,
-        param: RabiParam,
-    ) -> float:
-        """
-        Normalizes the measured I/Q value.
-
-        Parameters
-        ----------
-        value : complex
-            Measured I/Q value.
-        param : RabiParam
-            Parameters of the Rabi oscillation.
-
-        Returns
-        -------
-        float
-            Normalized value.
-        """
-        value_rotated = value * np.exp(-1j * param.angle)
-        value_normalized = (value_rotated.imag - param.offset) / param.amplitude
-        return value_normalized
 
     def calc_control_amplitudes(
         self,
@@ -1038,6 +1042,81 @@ class Experiment:
 
         return amplitudes
 
+    def calibrate_default_pulse(
+        self,
+        targets: list[str],
+        pulse_type: Literal["pi", "hpi"],
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the default pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        rabi_params = self.rabi_params
+        if rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        def calibrate(target: str) -> AmplCalibData:
+            if pulse_type == "hpi":
+                rabi_rate = 12.5e-3
+            elif pulse_type == "pi":
+                rabi_rate = 25e-3
+            else:
+                raise ValueError("Invalid pulse type.")
+            ampl = self.calc_control_amplitudes(
+                rabi_rate=rabi_rate,
+                print_result=False,
+            )[target]
+            ampl_min = ampl * 0.5
+            ampl_max = ampl * 1.5
+            ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            sweep_data = self.sweep_parameter(
+                sequence={
+                    target: lambda x: FlatTop(
+                        duration=30,
+                        amplitude=x,
+                        tau=10,
+                    )
+                },
+                sweep_range=ampl_range,
+                repetitions=2 if pulse_type == "pi" else 4,
+                shots=DEFAULT_SHOTS,
+                interval=DEFAULT_INTERVAL,
+                plot=False,
+            ).data[target]
+
+            calib_value = fitting.fit_ampl_calib_data(
+                target=target,
+                amplitude_range=ampl_range,
+                data=-sweep_data.normalized,
+                title=f"{pulse_type} pulse calibration",
+            )
+
+            return AmplCalibData.new(
+                sweep_data=sweep_data,
+                calib_value=calib_value,
+            )
+
+        data: dict[str, AmplCalibData] = {}
+        for idx, target in enumerate(targets):
+            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
+            data[target] = calibrate(target)
+            print("")
+
+        print(f"Calibration results for {pulse_type} pulse:")
+        for target, calib_data in data.items():
+            print(f"{target}: {calib_data.calib_value:.6f}")
+
+        return ExperimentResult(data=data)
+
     def calibrate_hpi_pulse(
         self,
         targets: list[str],
@@ -1048,49 +1127,293 @@ class Experiment:
         Parameters
         ----------
         target : str
-            Target qubit to calibrate the π/2 pulse.
+            Target qubit to calibrate.
 
         Returns
         -------
-        ExperimentResult[SweepData]
+        ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
-        rabi_params = self.rabi_params
-        if rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
+        return self.calibrate_default_pulse(targets, "hpi")
 
-        def calibrate(target: str) -> AmplCalibData:
-            rabi_rate = 12.5e-3
-            ampl = self.calc_control_amplitudes(
-                rabi_rate=rabi_rate,
-                print_result=False,
-            )[target]
-            ampl_min = ampl * 0.5
-            ampl_max = ampl * 1.5
-            ampl_range = np.linspace(ampl_min, ampl_max, 20)
-            result = self.sweep_parameter(
-                sequence={
-                    target: lambda x: FlatTop(
-                        duration=30,
-                        amplitude=x,
-                        tau=10,
-                    )
-                },
-                sweep_range=ampl_range,
-                sweep_value_label="Control amplitude",
-                repetitions=4,
-                shots=DEFAULT_SHOTS,
-                interval=DEFAULT_INTERVAL,
-            ).data[target]
-            return AmplCalibData(
-                target=target,
-                data=result.normalized,
-                sweep_range=result.sweep_range,
+    def calibrate_pi_pulse(
+        self,
+        targets: list[str],
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the π pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        return self.calibrate_default_pulse(targets, "pi")
+
+    def t1_experiment(
+        self,
+        qubits: list[str],
+        *,
+        time_range: NDArray = 2 ** np.arange(1, 18),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[T1Data]:
+        """
+        Conducts a T1 experiment.
+
+        Parameters
+        ----------
+        qubits : list[str]
+            List of qubits to check the T1 decay.
+        time_range : NDArray
+            Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[T1Data]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.t1_experiment(
+        ...     target="Q00",
+        ...     time_range=2 ** np.arange(1, 18),
+        ...     shots=1024,
+        ... )
+        """
+
+        # wrap the lambda function with a function to scope the qubit variable
+        def t1_sequence(qubit: str) -> ParametricWaveform:
+            return lambda T: PulseSequence(
+                [
+                    self.pi_pulse[qubit],
+                    Blank(T),
+                ]
             )
 
-        data = {}
-        for target in targets:
-            data[target] = calibrate(target)
-            clear_output(wait=True)
+        t1_sequences = {qubit: t1_sequence(qubit) for qubit in qubits}
+
+        sweep_result = self.sweep_parameter(
+            sequence=t1_sequences,
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            title="T1 decay",
+            xaxis_title="Time (μs)",
+            yaxis_title="Measured value",
+            xaxis_type="log",
+        )
+
+        t1_value = {
+            qubit: fitting.fit_exp_decay(
+                target=qubit,
+                x=data.sweep_range,
+                y=0.5 * (1 - data.normalized),
+                title="T1",
+                xaxis_title="Time (μs)",
+                yaxis_title="Population",
+                xaxis_type="log",
+                yaxis_type="linear",
+            )
+            for qubit, data in sweep_result.data.items()
+        }
+
+        data = {
+            qubit: T1Data.new(data, t1_value[qubit])
+            for qubit, data in sweep_result.data.items()
+        }
+
+        return ExperimentResult(data=data)
+
+    def t2_experiment(
+        self,
+        qubits: list[str],
+        *,
+        time_range: NDArray = 200 * 2 ** np.arange(10),
+        n_cpmg: int = 1,
+        pi_cpmg: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[T2Data]:
+        """
+        Conducts a T2 experiment.
+
+        Parameters
+        ----------
+        qubits : list[str]
+            List of qubits to check the T2 decay.
+        time_range : NDArray
+            Time range of the experiment in ns.
+        n_cpmg : int, optional
+            Number of CPMG pulses. Defaults to 1.
+        pi_cpmg : Waveform, optional
+            π pulse for the CPMG sequence. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[T2Data]
+            Result of the experiment.
+        """
+
+        # wrap the lambda function with a function to scope the qubit variable
+        def t2_sequence(qubit: str) -> ParametricWaveform:
+            hpi = self.hpi_pulse[qubit]
+            pi = pi_cpmg or self.pi_pulse[qubit]
+
+            def waveform(T: int) -> Waveform:
+                if T == 0:
+                    return PulseSequence(
+                        [
+                            hpi,
+                            hpi.shifted(np.pi),
+                        ]
+                    )
+                return PulseSequence(
+                    [
+                        hpi,
+                        # Blank((T - pi.duration) // 2),
+                        # pi,
+                        # Blank((T - pi.duration) // 2),
+                        CPMG(
+                            tau=(T - pi.duration * n_cpmg) // (2 * n_cpmg),
+                            pi=pi,
+                            n=n_cpmg,
+                        ),
+                        hpi.shifted(np.pi),
+                    ]
+                )
+
+            return waveform
+
+        sweep_result = self.sweep_parameter(
+            sequence={qubit: t2_sequence(qubit) for qubit in qubits},
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        fit_result = {
+            qubit: fitting.fit_exp_decay(
+                target=qubit,
+                x=data.sweep_range,
+                y=0.5 * (1 - data.normalized),
+                title="T2",
+                xaxis_title="Time (μs)",
+                yaxis_title="Population",
+            )
+            for qubit, data in sweep_result.data.items()
+        }
+
+        data = {
+            qubit: T2Data.new(data, t2=fit_result[qubit])
+            for qubit, data in sweep_result.data.items()
+        }
+
+        return ExperimentResult(data=data)
+
+    def ramsey_experiment(
+        self,
+        qubits: list[str],
+        *,
+        time_range: NDArray = np.arange(0, 10000, 100),
+        detuning: float = 0.0,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[RamseyData]:
+        """
+        Conducts a Ramsey experiment.
+
+        Parameters
+        ----------
+        qubits : list[str]
+            List of qubits to check the Ramsey oscillation.
+        time_range : NDArray
+            Time range of the experiment in ns.
+        detuning : float, optional
+            Detuning of the control frequency. Defaults to 0.0.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[RamseyData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.ramsey_experiment(
+        ...     target="Q00",
+        ...     time_range=np.arange(0, 10000, 100),
+        ...     shots=1024,
+        ... )
+        """
+
+        # wrap the lambda function with a function to scope the qubit variable
+        def ramsey_sequence(qubit: str) -> ParametricWaveform:
+            hpi = self.hpi_pulse[qubit]
+            return lambda T: PulseSequence(
+                [
+                    hpi,
+                    Blank(T),
+                    hpi.shifted(np.pi),
+                ]
+            )
+
+        detuned_frequencies = {
+            qubit: self.qubits[qubit].frequency + detuning for qubit in qubits
+        }
+
+        sweep_result = self.sweep_parameter(
+            sequence={qubit: ramsey_sequence(qubit) for qubit in qubits},
+            sweep_range=time_range,
+            frequencies=detuned_frequencies,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        fit_result = {
+            qubit: fitting.fit_ramsey(
+                target=qubit,
+                x=data.sweep_range,
+                y=data.normalized,
+            )
+            for qubit, data in sweep_result.data.items()
+        }
+
+        data = {
+            qubit: RamseyData.new(
+                sweep_data=data,
+                t2=fit_result[qubit][0],
+                ramsey_freq=fit_result[qubit][1],
+            )
+            for qubit, data in sweep_result.data.items()
+        }
 
         return ExperimentResult(data=data)

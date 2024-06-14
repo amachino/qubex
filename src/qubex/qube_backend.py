@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from qubecalib import QubeCalib
+from qubecalib import QubeCalib, Sequencer
 from qubecalib.neopulse import Sequence
 from quel_ic_config import Quel1Box
 from rich.console import Console
@@ -83,6 +83,26 @@ class QubeBackend:
             raise ValueError(
                 f"Box {box_name} not in available boxes: {self.available_boxes}"
             )
+
+    def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
+        db = self.qubecalib.system_config_database
+        result = {}
+        for target in targets:
+            if target not in db._target_settings:
+                raise ValueError(f"Target {target} not in available targets.")
+
+            channels = db.get_channels_by_target(target)
+            bpc_list = [db.get_channel(channel) for channel in channels]
+            result[target] = [
+                {
+                    "box": db._box_settings[box_name],
+                    "port": db._port_settings[port_name],
+                    "channel_number": channel_number,
+                    "target": db._target_settings[target],
+                }
+                for box_name, port_name, channel_number in bpc_list
+            ]
+        return result
 
     def link_status(self, box_name: str) -> dict[int, bool]:
         """
@@ -384,6 +404,23 @@ class QubeBackend:
         """
         self.qubecalib.add_sequence(sequence)
 
+    def add_sequencer(self, sequencer: Sequencer):
+        """
+        Add a sequencer to the queue.
+
+        Parameters
+        ----------
+        sequencer : Sequencer
+            The sequencer to add to the queue.
+
+        Examples
+        --------
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> sequencer = Sequencer(...)
+        >>> backend.add_sequencer(sequencer)
+        """
+        self.qubecalib._executor.add_command(sequencer)
+
     def show_command_queue(self):
         """Show the current command queue."""
         console.print(self.qubecalib.show_command_queue())
@@ -487,6 +524,58 @@ class QubeBackend:
         """
         self.clear_command_queue()
         self.add_sequence(sequence)
+        return next(
+            self.execute(
+                repeats=repeats,
+                interval=interval,
+                integral_mode=integral_mode,
+                dsp_demodulation=dsp_demodulation,
+                software_demodulation=software_demodulation,
+            )
+        )
+
+    def execute_sequencer(
+        self,
+        sequencer: Sequencer,
+        *,
+        repeats: int,
+        interval: int,
+        integral_mode: str = "integral",
+        dsp_demodulation: bool = True,
+        software_demodulation: bool = False,
+    ) -> QubeBackendResult:
+        """
+        Execute a single sequence and return the measurement result.
+
+        Parameters
+        ----------
+        sequencer : Sequencer
+            The sequencer to execute.
+        repeats : int
+            Number of repeats of the sequence.
+        interval : int
+            Interval between sequences.
+        integral_mode : {"integral", "single"}, optional
+            Integral mode.
+        dsp_demodulation : bool, optional
+            Enable DSP demodulation.
+        software_demodulation : bool, optional
+            Enable software demodulation.
+
+        Returns
+        -------
+        QubeBackendResult
+            Measurement result.
+
+        Examples
+        --------
+        >>> backend = QubeBackend("./system_settings.json")
+        >>> with Sequence() as sequence:
+        ...     ...
+        >>> result = backend.execute_sequence(sequence, repeats=100, interval=1024)
+        """
+        self.clear_command_queue()
+        self.add_sequencer(sequencer)
         return next(
             self.execute(
                 repeats=repeats,

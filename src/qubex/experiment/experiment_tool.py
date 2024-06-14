@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import subprocess
 from typing import Final
 
 from qubecalib import QubeCalib
 from quel_ic_config import Quel1Box
 from rich.console import Console
+from rich.prompt import Confirm
 from rich.table import Table
 
 from ..config import Config
@@ -32,6 +34,16 @@ class ExperimentTool:
         """Get the QubeCalib instance."""
         return self._backend.qubecalib
 
+    def reboot_fpga(self, box_id: str) -> None:
+        """Reboot the FPGA."""
+        # Run the following commands in the terminal.
+        # $ source /tools/Xilinx/Vivado/2020.1/settings64.sh
+        # $ quel_reboot_fpga --port 3121 --adapter xxx
+        box = self._config.get_box(box_id)
+        adapter = box.adapter
+        reboot_command = f"quel_reboot_fpga --port 3121 --adapter {adapter}"
+        subprocess.run(reboot_command, shell=True)
+
     def get_quel1_box(self, box_id: str) -> Quel1Box:
         """Get the Quel1Box instance."""
         box = self._backend.qubecalib.create_box(box_id, reconnect=False)
@@ -55,7 +67,7 @@ class ExperimentTool:
         >>> ex = Experiment(chip_id="64Q")
         >>> ex.tool.configure_box("Q73A")
         """
-        self._config.configure_box_settings(self._chip_id, include=[box_id])
+        self.configure_boxes([box_id])
 
     def configure_boxes(self, box_list: list[str]) -> None:
         """
@@ -73,6 +85,56 @@ class ExperimentTool:
         >>> ex.tool.configure_boxes(["Q73A", "Q73B"])
         """
         self._config.configure_box_settings(self._chip_id, include=box_list)
+
+    def relinkup_box(self, box_id: str) -> None:
+        """
+        Relink up the box.
+
+        Parameters
+        ----------
+        box_id : str
+            Identifier of the box.
+
+        Examples
+        --------
+        >>> from qubex import Experiment
+        >>> ex = Experiment(chip_id="64Q")
+        >>> ex.tool.relinkup_box("Q73A")
+        """
+        self.relinkup_boxes([box_id])
+
+    def relinkup_boxes(
+        self,
+        box_list: list[str],
+    ) -> None:
+        """
+        Relink up the boxes.
+
+        Parameters
+        ----------
+        box_list : list[str]
+            List of box identifiers.
+
+        Examples
+        --------
+        >>> ex.tool.relinkup()
+        """
+        confirmed = Confirm.ask(
+            f"""
+You are going to relinkup the following boxes:
+
+[bold bright_green]{box_list}
+
+[bold italic bright_yellow]This operation will reset LO/NCO settings. Do you want to continue?
+"""
+        )
+        if not confirmed:
+            console.print("Operation cancelled.", style="bright_red bold")
+            return
+
+        print("Relinking up the boxes...")
+        self._measurement.relinkup(box_list)
+        print("Operation completed.")
 
     def print_wiring_info(self):
         """
@@ -153,7 +215,6 @@ class ExperimentTool:
         table1.add_column("VATT", justify="right")
         table1.add_column("FSC", justify="right")
         table2.add_column("PORT", justify="right")
-        table2.add_column("TYPE", justify="right")
         table2.add_column("FNCO-0", justify="right")
         table2.add_column("FNCO-1", justify="right")
         table2.add_column("FNCO-2", justify="right")
@@ -172,24 +233,25 @@ class ExperimentTool:
                 ssb = ""
                 vatt = ""
                 fsc = ""
-                fncos = [str(int(ch["fnco_freq"])) for ch in port["runits"].values()]
+                fncos = [f"{int(ch['fnco_freq']):_}" for ch in port["runits"].values()]
             elif direction == "out":
                 ssb = ssb_map[port["sideband"]]
                 vatt = port.get("vatt", "")
                 fsc = port["fullscale_current"]
-                fncos = [str(int(ch["fnco_freq"])) for ch in port["channels"].values()]
+                fncos = [
+                    f"{int(ch['fnco_freq']):_}" for ch in port["channels"].values()
+                ]
             table1.add_row(
                 str(number),
                 type,
                 ssb,
-                str(lo),
-                str(cnco),
+                f"{lo:_}",
+                f"{cnco:_}",
                 str(vatt),
                 str(fsc),
             )
             table2.add_row(
                 str(number),
-                type,
                 *fncos,
             )
         console.print(table1)
