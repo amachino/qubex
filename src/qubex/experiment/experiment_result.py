@@ -405,9 +405,9 @@ class T2EchoData(SweepData):
 
 
 @dataclass
-class T2StarData(SweepData):
+class RamseyData(SweepData):
     """
-    Data class representing the result of a T2* experiment.
+    Data class representing the result of a Ramsey experiment.
 
     Attributes
     ----------
@@ -431,12 +431,20 @@ class T2StarData(SweepData):
         Type of the y-axis.
     t2star : float, optional
         T2* time.
+    ramsey_freq : float, optional
+        Ramsey frequency.
     """
 
     t2star: float = np.nan
+    ramsey_freq: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, t2star: float) -> T2StarData:
+    def new(
+        cls,
+        sweep_data: SweepData,
+        t2star: float,
+        ramsey_freq: float,
+    ) -> RamseyData:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -448,20 +456,16 @@ class T2StarData(SweepData):
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t2star=t2star,
+            ramsey_freq=ramsey_freq,
         )
 
-    def fit(self) -> float:
-        tau = fitting.fit_ramsey(
+    def fit(self) -> tuple[float, float]:
+        t2star, ramsey_freq = fitting.fit_ramsey(
             target=self.target,
             x=self.sweep_range,
             y=self.normalized,
-            title="T2",
-            xaxis_title="Time (μs)",
-            yaxis_title="Measured value",
-            xaxis_type="linear",
-            yaxis_type="linear",
         )
-        return tau
+        return t2star, ramsey_freq
 
 
 @dataclass

@@ -36,10 +36,10 @@ from .experiment_result import (
     ExperimentResult,
     FreqRabiData,
     RabiData,
+    RamseyData,
     SweepData,
     T1Data,
     T2EchoData,
-    T2StarData,
     TimePhaseData,
 )
 from .experiment_tool import ExperimentTool
@@ -263,7 +263,7 @@ class Experiment:
 
         Examples
         --------
-        >>> experiment.linkup()
+        >>> ex.linkup()
         """
         if box_list is None:
             box_list = self.box_list
@@ -284,7 +284,7 @@ class Experiment:
 
         Examples
         --------
-        >>> experiment.relinkup()
+        >>> ex.relinkup()
         """
         if box_list is None:
             box_list = self.box_list
@@ -335,7 +335,7 @@ class Experiment:
 
         Examples
         --------
-        >>> record = experiment.load_record("some_record.json")
+        >>> record = ex.load_record("some_record.json")
         """
         record = ExperimentRecord.load(name)
         print(f"ExperimentRecord `{name}` is loaded.\n")
@@ -381,7 +381,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.measure(
+        >>> result = ex.measure(
         ...     sequence={"Q00": np.zeros(0)},
         ...     mode="avg",
         ...     shots=3000,
@@ -486,7 +486,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.check_noise(["Q00", "Q01"])
+        >>> result = ex.check_noise(["Q00", "Q01"])
         """
         result = self._measurement.measure_noise(targets, duration)
         for target, data in result.data.items():
@@ -522,7 +522,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.check_waveform(["Q00", "Q01"])
+        >>> result = ex.check_waveform(["Q00", "Q01"])
         """
         result = self.measure(sequence={target: np.zeros(0) for target in targets})
         if plot:
@@ -561,7 +561,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.check_rabi(["Q00", "Q01"])
+        >>> result = ex.check_rabi(["Q00", "Q01"])
         """
         ampl = self.params.control_amplitude
         amplitudes = {target: ampl[target] for target in targets}
@@ -613,7 +613,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.rabi_experiment(
+        >>> result = ex.rabi_experiment(
         ...     amplitudes={"Q00": 0.1},
         ...     time_range=np.arange(0, 201, 4),
         ...     detuning=0.0,
@@ -721,7 +721,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.sweep_parameter(
+        >>> result = ex.sweep_parameter(
         ...     sequence={"Q00": lambda x: Rect(duration=30, amplitude=x)},
         ...     sweep_range=np.arange(0, 101, 4),
         ...     repetitions=4,
@@ -800,7 +800,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.repeat_sequence(
+        >>> result = ex.repeat_sequence(
         ...     sequence={"Q00": Rect(duration=64, amplitude=0.1)},
         ...     repetitions=4,
         ... )
@@ -854,7 +854,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.obtain_freq_rabi_relation(
+        >>> result = ex.obtain_freq_rabi_relation(
         ...     targets=["Q00", "Q01"],
         ...     detuning_range=np.linspace(-0.01, 0.01, 11),
         ...     time_range=np.arange(0, 101, 4),
@@ -927,7 +927,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.obtain_ampl_rabi_relation(
+        >>> result = ex.obtain_ampl_rabi_relation(
         ...     targets=["Q00", "Q01"],
         ...     amplitude_range=np.linspace(0.01, 0.1, 10),
         ...     time_range=np.arange(0, 201, 4),
@@ -986,7 +986,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.obtain_time_phase_relation(
+        >>> result = ex.obtain_time_phase_relation(
         ...     targets=["Q00", "Q01"],
         ...     time_range=np.arange(0, 1024, 128),
         ... )
@@ -1227,7 +1227,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = experiment.t1_experiment(
+        >>> result = ex.t1_experiment(
         ...     target="Q00",
         ...     time_range=2 ** np.arange(1, 18),
         ...     shots=1024,
@@ -1359,23 +1359,23 @@ class Experiment:
 
         return ExperimentResult(data=data)
 
-    def t2star_experiment(
+    def ramsey_experiment(
         self,
         qubits: list[str],
         *,
-        time_range: NDArray = np.arange(0, 10000, 200),
+        time_range: NDArray = np.arange(0, 10000, 100),
         detuning: float = 0.0,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> ExperimentResult[T2StarData]:
+    ) -> ExperimentResult[RamseyData]:
         """
-        Conducts a T2* experiment.
+        Conducts a Ramsey experiment.
 
         Parameters
         ----------
         qubits : list[str]
-            List of qubits to check the T2* decay.
+            List of qubits to check the Ramsey oscillation.
         time_range : NDArray
             Time range of the experiment in ns.
         detuning : float, optional
@@ -1389,12 +1389,12 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[T2StarData]
+        ExperimentResult[RamseyData]
             Result of the experiment.
 
         Examples
         --------
-        >>> result = experiment.t2star_experiment(
+        >>> result = ex.ramsey_experiment(
         ...     target="Q00",
         ...     time_range=np.arange(0, 10000, 100),
         ...     shots=1024,
@@ -1402,7 +1402,7 @@ class Experiment:
         """
 
         # wrap the lambda function with a function to scope the qubit variable
-        def t2star_sequence(qubit: str) -> ParametricWaveform:
+        def ramsey_sequence(qubit: str) -> ParametricWaveform:
             hpi = self.hpi_pulse[qubit]
             return lambda T: PulseSequence(
                 [
@@ -1412,42 +1412,34 @@ class Experiment:
                 ]
             )
 
-        t2star_sequences = {qubit: t2star_sequence(qubit) for qubit in qubits}
-
         detuned_frequencies = {
             qubit: self.qubits[qubit].frequency + detuning for qubit in qubits
         }
 
         sweep_result = self.sweep_parameter(
-            sequence=t2star_sequences,
+            sequence={qubit: ramsey_sequence(qubit) for qubit in qubits},
             sweep_range=time_range,
             frequencies=detuned_frequencies,
             shots=shots,
             interval=interval,
             plot=plot,
-            title="T2*",
-            xaxis_title="Time (μs)",
-            yaxis_title="Measured value",
-            xaxis_type="linear",
-            yaxis_type="linear",
         )
 
-        t2star_value = {
+        fit_result = {
             qubit: fitting.fit_ramsey(
                 target=qubit,
                 x=data.sweep_range,
                 y=data.normalized,
-                title="T2*",
-                xaxis_title="Time (μs)",
-                yaxis_title="Population",
-                xaxis_type="linear",
-                yaxis_type="linear",
             )
             for qubit, data in sweep_result.data.items()
         }
 
         data = {
-            qubit: T2StarData.new(data, t2star_value[qubit])
+            qubit: RamseyData.new(
+                sweep_data=data,
+                t2star=fit_result[qubit][0],
+                ramsey_freq=fit_result[qubit][1],
+            )
             for qubit, data in sweep_result.data.items()
         }
 

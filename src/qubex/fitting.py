@@ -341,23 +341,23 @@ def fit_ramsey(
     y: npt.NDArray[np.float64],
     p0=None,
     bounds=None,
-    title: str = "T2*",
+    title: str = "Ramsey fringe",
     xaxis_title: str = "Time (μs)",
     yaxis_title: str = "Amplitude (arb. units)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
-) -> float:
+) -> tuple[float, float]:
     """
-    Fit Ramsey fringes using a damped cosine function and plot the results.
+    Fit Ramsey fringe using a damped cosine function and plot the results.
 
     Parameters
     ----------
     target : str
         Identifier of the target.
     x : npt.NDArray[np.float64]
-        Array of time points for the Ramsey fringes.
+        Array of time points for the Ramsey fringe.
     y : npt.NDArray[np.float64]
-        Amplitude data for the Ramsey fringes.
+        Amplitude data for the Ramsey fringe.
     p0 : optional
         Initial guess for the fitting parameters.
     bounds : optional
@@ -365,14 +365,14 @@ def fit_ramsey(
 
     Returns
     -------
-    float
-        Decay time of the Ramsey fringes in nanoseconds.
+    tuple[float, float]
+        Decay time and frequency of the Ramsey fringe.
     """
     wave_count_est = estimate_wave_count(x, y)
     amplitude_est = (np.max(y) - np.min(y)) / 2
     omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
     phase_est = 0.0
-    offset_est = (np.max(y) + np.min(y)) / 2
+    offset_est = 0.0
     tau_est = 10_000
 
     if p0 is None:
@@ -380,21 +380,24 @@ def fit_ramsey(
 
     if bounds is None:
         bounds = (
-            (0, 0, 0, -np.inf, 0),
-            (np.inf, np.inf, np.pi, np.inf, np.inf),
+            (0, omega_est * 0.9, 0, -np.inf, 0),
+            (np.inf, omega_est * 1.1, np.pi, np.inf, np.inf),
         )
 
     popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
 
     A = popt[0]
-    tau = popt[1]
-    omega = popt[2]
-    phi = popt[3]
-    C = popt[4]
+    omega = popt[1]
+    phi = popt[2]
+    C = popt[3]
+    tau = popt[4]
+    f = omega / (2 * np.pi)
 
     print(
         f"Fitted function: {A:.3g} * exp(-t/{tau:.3g}) * cos({omega:.3g} * t + {phi:.3g}) + {C:.3g}"
     )
+    print(f"Decay time: {tau * 1e-3:.3g} μs")
+    print(f"Frequency: {f * 1e3:.3g} MHz")
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
@@ -416,8 +419,16 @@ def fit_ramsey(
             name="Data",
         )
     )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"τ = {tau * 1e-3:.3g} μs, f = {f * 1e3:.3g} MHz",
+        showarrow=False,
+    )
     fig.update_layout(
-        title=f"{title} = {tau*1e3:.3g} μs : {target}",
+        title=f"{title} : {target}",
         xaxis_title=xaxis_title,
         yaxis_title=yaxis_title,
         xaxis_type=xaxis_type,
@@ -425,7 +436,7 @@ def fit_ramsey(
     )
     fig.show()
 
-    return tau
+    return tau, f
 
 
 def fit_exp_decay(
