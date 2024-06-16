@@ -1,66 +1,64 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
+import plotly.graph_objects as go
 from numpy.typing import NDArray
+from sklearn.cluster import KMeans
 from sklearn.metrics import confusion_matrix
-from sklearn.mixture import GaussianMixture
+
+from qubex.style import COLORS
 
 
 @dataclass
 class StateClassifier:
     """
-    A state classifier model that uses a Gaussian Mixture Model to classify data.
+    A state classifier model that uses k-means to classify data.
 
     Attributes
     ----------
     dataset : dict[int, NDArray[np.float32]]
         A dictionary of state labels and preprocessed data.
-    model : GaussianMixture
-        The fitted Gaussian Mixture Model.
+    model : KMeans
+        The fitted k-means model.
     label_map : dict[int, int]
-        A mapping from GMM component labels to state labels.
-    means : dict[int, complex]
-        The mean of each state.
-    covariances : dict[int, float]
-        The covariance of each state.
-    weights : dict[int, float]
-        The weight of each state.
+        A mapping from k-means cluster labels to state labels.
+    conf_matrix : NDArray
+        The confusion matrix of the classifier.
+    centroids : dict[int, complex]
+        The centroid of each state.
     """
 
     dataset: dict[int, NDArray[np.float32]]
-    model: GaussianMixture
+    model: KMeans
     label_map: dict[int, int]
     conf_matrix: NDArray
-    means: dict[int, complex]
-    covariances: dict[int, float]
-    weights: dict[int, float]
+    centroids: dict[int, complex]
 
     @classmethod
     def fit(
         cls,
         data: dict[int, NDArray[np.complex64]],
-        covariance_type: Literal["full", "spherical", "tied", "diag"] = "full",
+        n_init: int = 10,
         random_state: int = 42,
     ) -> StateClassifier:
         """
-        Fit a Gaussian Mixture Model to the provided data.
+        Fit a k-means model to the provided data.
 
         Parameters
         ----------
-        data : dict[int, NDArray[np.complex128]]
+        data : dict[int, NDArray[np.complex64]]
             A dictionary of state labels and complex data.
-        covariance_type : Literal["full", "spherical", "tied", "diag"], optional
-            The type of covariance matrix to use, by default "full".
+        n_init : int, optional
+            Number of time the k-means algorithm will be run with different centroid seeds, by default 10.
         random_state : int, optional
             The random state for the model, by default 42.
 
         Returns
         -------
-        StateClassifier or None
-            A state classifier model, or None if the fitting fails.
+        StateClassifier
+            A state classifier model.
         """
         # Validate input data
         if not isinstance(data, dict) or not all(
@@ -72,18 +70,18 @@ class StateClassifier:
 
         # Convert complex data to real-valued features
         dataset = {
-            state: np.array([np.real(data[state]), np.imag(data[state])]).T
+            state: np.column_stack((np.real(data[state]), np.imag(data[state])))
             for state in data
         }
 
-        # Fit Gaussian Mixture Model
-        model = GaussianMixture(
-            n_components=len(dataset),
-            covariance_type=covariance_type,
-            random_state=random_state,
-            # n_init=10,
-        )
+        # Fit k-means model
         concat_data = np.concatenate(list(dataset.values()))
+        n_clusters = len(dataset)
+        model = KMeans(
+            n_clusters=n_clusters,
+            n_init=n_init,
+            random_state=random_state,
+        )
         model.fit(concat_data)
 
         # Create label map
@@ -93,10 +91,7 @@ class StateClassifier:
         conf_matrix = cls._create_confusion_matrix(model, dataset, label_map)
 
         # Extract model parameters
-        means, covariances, weights = cls._extract_model_parameters(
-            model=model,
-            label_map=label_map,
-        )
+        centroids = cls._extract_model_parameters(model)
 
         # Return state classifier model
         return cls(
@@ -104,30 +99,28 @@ class StateClassifier:
             model=model,
             label_map=label_map,
             conf_matrix=conf_matrix,
-            means=means,
-            covariances=covariances,
-            weights=weights,
+            centroids=centroids,
         )
 
     @staticmethod
     def _create_label_map(
-        model: GaussianMixture,
+        model: KMeans,
         dataset: dict[int, NDArray[np.float32]],
     ) -> dict[int, int]:
         """
-        Create a mapping from state labels to GMM component labels.
+        Create a mapping from k-means cluster labels to state labels.
 
         Parameters
         ----------
-        model : GaussianMixture
-            The fitted Gaussian Mixture Model.
+        model : KMeans
+            The fitted k-means model.
         dataset : dict[int, NDArray[np.float32]]
             The preprocessed dataset.
 
         Returns
         -------
         dict[int, int]
-            A mapping from GMM component labels to state labels.
+            A mapping from k-means cluster labels to state labels.
         """
         label_map = {label: 0 for label in range(len(dataset))}
         for state, data in dataset.items():
@@ -139,7 +132,7 @@ class StateClassifier:
 
     @staticmethod
     def _create_confusion_matrix(
-        model: GaussianMixture,
+        model: KMeans,
         dataset: dict[int, NDArray[np.float32]],
         label_map: dict[int, int],
     ) -> NDArray:
@@ -148,12 +141,12 @@ class StateClassifier:
 
         Parameters
         ----------
-        model : GaussianMixture
-            The fitted Gaussian Mixture Model.
+        model : KMeans
+            The fitted k-means model.
         dataset : dict[int, NDArray[np.float32]]
             The preprocessed dataset.
         label_map : dict[int, int]
-            A mapping from GMM component labels to state labels.
+            A mapping from k-means cluster labels to state labels.
 
         Returns
         -------
@@ -171,33 +164,26 @@ class StateClassifier:
 
     @staticmethod
     def _extract_model_parameters(
-        model: GaussianMixture,
-        label_map: dict[int, int],
-    ) -> tuple[dict[int, complex], dict[int, float], dict[int, float]]:
+        model: KMeans,
+    ) -> dict[int, complex]:
         """
-        Extract the mean, standard deviation, and weight of each state.
+        Extract the centroid of each cluster.
 
         Parameters
         ----------
-        model : GaussianMixture
-            The fitted Gaussian Mixture Model.
-        label_map : dict[int, int]
-            A mapping from GMM component labels to state labels.
+        model : KMeans
+            The fitted k-means model.
 
         Returns
         -------
-        tuple[dict[int, complex], dict[int, float], dict[int, float]]
-            The means, covariances, and weights of each state.
+        dict[int, complex]
+            The centroids of each cluster as complex numbers.
         """
-        means, covariances, weights = {}, {}, {}
-        means_arr = np.array(model.means_)
-        covariances_arr = np.array(model.covariances_)
-        weights_arr = np.array(model.weights_)
-        for label, state in label_map.items():
-            means[state] = complex(means_arr[label][0] + 1j * means_arr[label][1])
-            covariances[state] = covariances_arr[label]
-            weights[state] = weights_arr[label]
-        return means, covariances, weights
+        centroids = {}
+        centroids_arr = model.cluster_centers_
+        for label in range(len(centroids_arr)):
+            centroids[label] = complex(centroids_arr[label][0], centroids_arr[label][1])
+        return centroids
 
     def predict(
         self,
@@ -218,63 +204,94 @@ class StateClassifier:
         """
         # Convert complex data to real-valued features
         real_imag_data = np.column_stack([np.real(data), np.imag(data)])
-        # Predict GMM component labels
-        gmm_labels = self.model.predict(real_imag_data)
-        # Convert GMM component labels to state labels
-        state_labels = np.array([self.label_map[label] for label in gmm_labels])
+        # Predict k-means cluster labels
+        cluster_labels = self.model.predict(real_imag_data)
+        # Convert k-means cluster labels to state labels
+        state_labels = np.array([self.label_map[label] for label in cluster_labels])
 
         return state_labels
 
-    def predict_proba(
+    def classify(
         self,
         data: NDArray[np.complex128],
-    ) -> NDArray:
+        plot: bool = True,
+    ) -> dict[int, int]:
         """
-        Predict the probability of each sample belonging to each state.
+        Classify the provided data and return the state counts.
 
         Parameters
         ----------
         data : NDArray[np.complex128]
             An array of complex numbers representing the data to classify.
+        plot : bool, optional
+            A flag to plot the data and predicted labels, by default True.
 
         Returns
         -------
-        NDArray
-            An array of probabilities for each sample, where each row represents
-            the probabilities of that sample belonging to each state.
+        dict[int, int]
+            A dictionary of state labels and their counts.
         """
-        # Convert complex data to real-valued features
-        real_imag_data = np.column_stack([np.real(data), np.imag(data)])
-        # Predict probabilities of GMM component labels
-        gmm_proba = self.model.predict_proba(real_imag_data)
+        predicted_labels = self.predict(data)
+        if plot:
+            self.plot(data, predicted_labels)
+        count = np.bincount(predicted_labels)
+        state = {label: count[label] for label in range(len(count))}
+        return state
 
-        # Map GMM component probabilities to state probabilities
-        # state_proba = np.zeros((len(data), len(self.dataset)))
-        # for label, state in self.label_map.items():
-        #     state_proba[:, state] = gmm_proba[:, label]
-
-        return gmm_proba
-
-    def classify(
+    def plot(
         self,
-        value: complex,
-    ) -> tuple[int, float]:
+        data: NDArray[np.complex128],
+        labels: NDArray,
+    ):
         """
-        Classify a single value based on the fitted model.
+        Plot the data and the predicted labels.
 
         Parameters
         ----------
-        value : complex
-            A complex number to classify.
-
-        Returns
-        -------
-        tuple[int, float]
-            The predicted state label and the probability of the prediction.
+        data : NDArray[np.complex128]
+            An array of complex numbers representing the data.
+        labels : NDArray
+            An array of predicted state labels.
         """
-        # Predict the state label
-        label = self.predict(np.array([value]))[0]
-        # Predict the probability of the state label
-        proba = self.predict_proba(np.array([value]))[0, label]
+        x = data.real
+        y = data.imag
+        unique_labels = np.unique(labels)
 
-        return label, proba
+        fig = go.Figure()
+        for label in unique_labels:
+            mask = labels == label
+            fig.add_trace(
+                go.Scatter(
+                    x=x[mask],
+                    y=y[mask],
+                    mode="markers",
+                    name=f"|{label}⟩",
+                    marker=dict(
+                        size=5,
+                        color=COLORS[label],
+                    ),
+                )
+            )
+        for label, centroid in self.centroids.items():
+            fig.add_trace(
+                go.Scatter(
+                    x=[centroid.real],
+                    y=[centroid.imag],
+                    mode="markers",
+                    name=f"|{label}⟩",
+                    showlegend=False,
+                    marker=dict(
+                        size=10,
+                        color="black",
+                        symbol="x",
+                    ),
+                )
+            )
+        fig.update_layout(
+            title="State Classification",
+            xaxis=dict(title="In-Phase (arb. units)"),
+            yaxis=dict(title="Quadrature (arb. units)"),
+            showlegend=True,
+            template="qubex+square",
+        )
+        fig.show()
