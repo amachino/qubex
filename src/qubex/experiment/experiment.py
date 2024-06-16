@@ -1315,7 +1315,7 @@ class Experiment:
 
     def t1_experiment(
         self,
-        qubits: list[str],
+        targets: list[str],
         *,
         time_range: NDArray = 2 ** np.arange(1, 18),
         shots: int = DEFAULT_SHOTS,
@@ -1327,7 +1327,7 @@ class Experiment:
 
         Parameters
         ----------
-        qubits : list[str]
+        targets : list[str]
             List of qubits to check the T1 decay.
         time_range : NDArray
             Time range of the experiment in ns.
@@ -1353,15 +1353,15 @@ class Experiment:
         """
 
         # wrap the lambda function with a function to scope the qubit variable
-        def t1_sequence(qubit: str) -> ParametricWaveform:
+        def t1_sequence(target: str) -> ParametricWaveform:
             return lambda T: PulseSequence(
                 [
-                    self.pi_pulse[qubit],
+                    self.pi_pulse[target],
                     Blank(T),
                 ]
             )
 
-        t1_sequences = {qubit: t1_sequence(qubit) for qubit in qubits}
+        t1_sequences = {target: t1_sequence(target) for target in targets}
 
         sweep_result = self.sweep_parameter(
             sequence=t1_sequences,
@@ -1376,8 +1376,8 @@ class Experiment:
         )
 
         t1_value = {
-            qubit: fitting.fit_exp_decay(
-                target=qubit,
+            target: fitting.fit_exp_decay(
+                target=target,
                 x=data.sweep_range,
                 y=0.5 * (1 - data.normalized),
                 title="T1",
@@ -1386,19 +1386,19 @@ class Experiment:
                 xaxis_type="log",
                 yaxis_type="linear",
             )
-            for qubit, data in sweep_result.data.items()
+            for target, data in sweep_result.data.items()
         }
 
         data = {
-            qubit: T1Data.new(data, t1_value[qubit])
-            for qubit, data in sweep_result.data.items()
+            target: T1Data.new(data, t1_value[target])
+            for target, data in sweep_result.data.items()
         }
 
         return ExperimentResult(data=data)
 
     def t2_experiment(
         self,
-        qubits: list[str],
+        targets: list[str],
         *,
         time_range: NDArray = 200 * 2 ** np.arange(10),
         n_cpmg: int = 1,
@@ -1434,9 +1434,9 @@ class Experiment:
         """
 
         # wrap the lambda function with a function to scope the qubit variable
-        def t2_sequence(qubit: str) -> ParametricWaveform:
-            hpi = self.hpi_pulse[qubit]
-            pi = pi_cpmg or self.pi_pulse[qubit]
+        def t2_sequence(target: str) -> ParametricWaveform:
+            hpi = self.hpi_pulse[target]
+            pi = pi_cpmg or self.pi_pulse[target]
 
             def waveform(T: int) -> Waveform:
                 if T == 0:
@@ -1464,7 +1464,7 @@ class Experiment:
             return waveform
 
         sweep_result = self.sweep_parameter(
-            sequence={qubit: t2_sequence(qubit) for qubit in qubits},
+            sequence={target: t2_sequence(target) for target in targets},
             sweep_range=time_range,
             shots=shots,
             interval=interval,
@@ -1472,27 +1472,27 @@ class Experiment:
         )
 
         fit_result = {
-            qubit: fitting.fit_exp_decay(
-                target=qubit,
+            target: fitting.fit_exp_decay(
+                target=target,
                 x=data.sweep_range,
                 y=0.5 * (1 - data.normalized),
                 title="T2",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
             )
-            for qubit, data in sweep_result.data.items()
+            for target, data in sweep_result.data.items()
         }
 
         data = {
-            qubit: T2Data.new(data, t2=fit_result[qubit])
-            for qubit, data in sweep_result.data.items()
+            target: T2Data.new(data, t2=fit_result[target])
+            for target, data in sweep_result.data.items()
         }
 
         return ExperimentResult(data=data)
 
     def ramsey_experiment(
         self,
-        qubits: list[str],
+        targets: list[str],
         *,
         time_range: NDArray = np.arange(0, 10000, 100),
         detuning: float = 0.0,
@@ -1533,8 +1533,8 @@ class Experiment:
         """
 
         # wrap the lambda function with a function to scope the qubit variable
-        def ramsey_sequence(qubit: str) -> ParametricWaveform:
-            hpi = self.hpi_pulse[qubit]
+        def ramsey_sequence(target: str) -> ParametricWaveform:
+            hpi = self.hpi_pulse[target]
             return lambda T: PulseSequence(
                 [
                     hpi,
@@ -1544,11 +1544,11 @@ class Experiment:
             )
 
         detuned_frequencies = {
-            qubit: self.qubits[qubit].frequency + detuning for qubit in qubits
+            target: self.qubits[target].frequency + detuning for target in targets
         }
 
         sweep_result = self.sweep_parameter(
-            sequence={qubit: ramsey_sequence(qubit) for qubit in qubits},
+            sequence={target: ramsey_sequence(target) for target in targets},
             sweep_range=time_range,
             frequencies=detuned_frequencies,
             shots=shots,
@@ -1557,21 +1557,21 @@ class Experiment:
         )
 
         fit_result = {
-            qubit: fitting.fit_ramsey(
-                target=qubit,
+            target: fitting.fit_ramsey(
+                target=target,
                 x=data.sweep_range,
                 y=data.normalized,
             )
-            for qubit, data in sweep_result.data.items()
+            for target, data in sweep_result.data.items()
         }
 
         data = {
-            qubit: RamseyData.new(
+            target: RamseyData.new(
                 sweep_data=data,
-                t2=fit_result[qubit][0],
-                ramsey_freq=fit_result[qubit][1],
+                t2=fit_result[target][0],
+                ramsey_freq=fit_result[target][1],
             )
-            for qubit, data in sweep_result.data.items()
+            for target, data in sweep_result.data.items()
         }
 
         return ExperimentResult(data=data)
