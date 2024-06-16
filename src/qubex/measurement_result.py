@@ -26,7 +26,7 @@ class MeasureData:
     mode: MeasureMode
     raw: NDArray
     kerneled: NDArray
-    classified: NDArray | None
+    classified: dict[int, int] | None
 
     def plot(self):
         if self.mode == MeasureMode.SINGLE:

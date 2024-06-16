@@ -25,6 +25,7 @@ from ..measurement import (
     MeasureResult,
 )
 from ..pulse import CPMG, Blank, FlatTop, PulseSequence, Rect, Waveform
+from ..state_classifier import StateClassifier
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..version import get_package_version
 from ..visualization import IQPlotter, plot_waveform
@@ -364,7 +365,7 @@ class Experiment:
 
     def measure(
         self,
-        sequence: TargetMap[IQArray],
+        sequence: TargetMap[IQArray] | TargetMap[Waveform],
         *,
         frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
@@ -409,10 +410,12 @@ class Experiment:
         ...     plot=True,
         ... )
         """
-        waveforms = {
-            target: np.array(waveform, dtype=np.complex128)
-            for target, waveform in sequence.items()
-        }
+        waveforms = {}
+        for target, waveform in sequence.items():
+            if isinstance(waveform, Waveform):
+                waveforms[target] = waveform.values
+            else:
+                waveforms[target] = np.array(waveform, dtype=np.complex128)
         if frequencies is None:
             result = self._measurement.measure(
                 waveforms=waveforms,
@@ -1575,3 +1578,29 @@ class Experiment:
         }
 
         return ExperimentResult(data=data)
+
+    def build_classifier(
+        self,
+        targets: list[str],
+    ):
+        result_g = self.measure(
+            {target: np.zeros(0) for target in targets},
+            mode="single",
+        )
+        result_e = self.measure(
+            {target: self.pi_pulse[target].values for target in targets},
+            mode="single",
+        )
+        self._measurement.classifiers = {
+            target: StateClassifier.fit(
+                {
+                    0: result_g.data[target].kerneled,
+                    1: result_e.data[target].kerneled,
+                }
+            )
+            for target in targets
+        }
+        for target in targets:
+            clf = self._measurement.classifiers[target]
+            clf.classify(result_g.data[target].kerneled)
+            clf.classify(result_e.data[target].kerneled)

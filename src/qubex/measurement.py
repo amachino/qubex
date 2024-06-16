@@ -525,7 +525,7 @@ class Measurement:
                 if classifier is None:
                     classified_data = None
                 else:
-                    classified_data = classifier.predict(kerneled)
+                    classified_data = classifier.classify(kerneled, plot=False)
             elif measure_mode == MeasureMode.AVG:
                 # iqs: ndarray[duration, 1]
                 raw = iqs[capture_index].squeeze()
