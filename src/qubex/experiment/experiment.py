@@ -47,6 +47,11 @@ from .experiment_tool import ExperimentTool
 console = Console()
 
 MIN_DURATION = 128
+DEFAULT_NOTE_PATH = ".default_note.json"
+DEFAULT_HPI_AMPLITUDE = "default_hpi_amplitude"
+DEFAULT_HPI_DURATION = 30
+DEFAULT_PI_AMPLITUDE = "default_pi_amplitude"
+DEFAULT_PI_DURATION = 30
 
 
 class Experiment:
@@ -96,11 +101,15 @@ class Experiment:
             config=self._config,
             measurement=self._measurement,
         )
+        self._default_note: Final = ExperimentNote(
+            file_path=DEFAULT_NOTE_PATH,
+        )
         self.note: Final = ExperimentNote()
         self.print_environment()
 
     @property
     def system(self):
+        """Get the quantum system."""
         return self._config.get_quantum_system(self._chip_id)
 
     @property
@@ -110,10 +119,12 @@ class Experiment:
 
     @property
     def chip_id(self) -> str:
+        """Get the chip ID."""
         return self._chip_id
 
     @property
     def qubits(self) -> dict[str, Qubit]:
+        """Get the qubits."""
         all_qubits = self._config.get_qubits(self._chip_id)
         qubits = {}
         for qubit in all_qubits:
@@ -123,6 +134,7 @@ class Experiment:
 
     @property
     def resonators(self) -> dict[str, Resonator]:
+        """Get the resonators."""
         all_resonators = self._config.get_resonators(self._chip_id)
         resonators = {}
         for resonator in all_resonators:
@@ -142,8 +154,14 @@ class Experiment:
 
     @property
     def box_list(self) -> list[str]:
+        """Get the list of the box IDs."""
         boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
         return [box.id for box in boxes]
+
+    @property
+    def config_path(self) -> str:
+        """Get the path of the configuration file."""
+        return str(self._config.config_path)
 
     @property
     def hpi_pulse(self) -> TargetMap[Waveform]:
@@ -155,10 +173,16 @@ class Experiment:
         TargetMap[Waveform]
             π/2 pulse.
         """
+        amplitude: dict = self._default_note.get(DEFAULT_HPI_AMPLITUDE)
+        if amplitude is None:
+            print(
+                "Default π/2 amplitude is not set. Using `control_amplitude` in params.yaml."
+            )
+            amplitude = self.params.control_amplitude
         return {
             target: FlatTop(
-                duration=30,
-                amplitude=self.params.control_amplitude[target],
+                duration=DEFAULT_HPI_DURATION,
+                amplitude=amplitude[target],
                 tau=10,
             )
             for target in self.qubits
@@ -174,14 +198,22 @@ class Experiment:
         TargetMap[Waveform]
             π pulse.
         """
-        return {
-            target: FlatTop(
-                duration=30,
-                amplitude=self.params.control_amplitude[target],
-                tau=10,
-            ).repeated(2)
-            for target in self.qubits
-        }
+        amplitude: dict = self._default_note.get(DEFAULT_PI_AMPLITUDE)
+        if amplitude is None:
+            # Use the default hpi pulse * 2
+            print("Default π amplitude is not set. Using the default π/2 pulse * 2.")
+            hpi = self.hpi_pulse
+            pi = {target: hpi[target].repeated(2) for target in self.qubits}
+        else:
+            pi = {
+                target: FlatTop(
+                    duration=DEFAULT_PI_DURATION,
+                    amplitude=amplitude[target],
+                    tau=10,
+                )
+                for target in self.qubits
+            }
+        return pi
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
@@ -207,6 +239,7 @@ class Experiment:
         console.print("Rabi parameters are stored.")
 
     def print_environment(self, verbose: bool = False):
+        """Print the environment information."""
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         print("python:", sys.version.split()[0])
         print("env:", sys.prefix)
@@ -225,6 +258,7 @@ class Experiment:
         self.print_boxes()
 
     def print_boxes(self):
+        """Print the box information."""
         boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
         table = Table(header_style="bold")
         table.add_column("ID", justify="left")
@@ -236,6 +270,7 @@ class Experiment:
         console.print(table)
 
     def check_status(self):
+        """Check the status of the measurement system."""
         link_status = self._measurement.check_link_status(self.box_list)
         clock_status = self._measurement.check_clock_status(self.box_list)
         if link_status["status"]:
@@ -290,6 +325,10 @@ class Experiment:
         else:
             with self._measurement.modified_frequencies(frequencies):
                 yield
+
+    def save_default(self):
+        """Save the default settings."""
+        self._default_note.save()
 
     def load_record(
         self,
@@ -751,7 +790,7 @@ class Experiment:
         self,
         sequence: TargetMap[Waveform],
         *,
-        repetitions: int,
+        repetitions: int = 10,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -763,8 +802,8 @@ class Experiment:
         ----------
         sequence : dict[str, Waveform]
             Pulse sequence to repeat.
-        repetitions : int
-            Number of repetitions.
+        repetitions : int, optional
+            Number of repetitions. Defaults to 10.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -805,6 +844,8 @@ class Experiment:
         *,
         detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
         time_range: NDArray = np.arange(0, 101, 4),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[FreqRabiData]:
         """
@@ -818,6 +859,10 @@ class Experiment:
             Range of the detuning to sweep in GHz.
         time_range : NDArray
             Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -843,17 +888,19 @@ class Experiment:
         amplitudes = {target: ampl[target] for target in targets}
         rabi_rates: dict[str, list[float]] = defaultdict(list)
         for detuning in detuning_range:
-            result = self.rabi_experiment(
+            rabi_result = self.rabi_experiment(
                 time_range=time_range,
                 amplitudes=amplitudes,
                 detuning=detuning,
+                shots=shots,
+                interval=interval,
                 plot=False,
             )
             clear_output()
             if plot:
-                result.fit()
+                rabi_result.fit()
             clear_output(wait=True)
-            rabi_params = result.rabi_params
+            rabi_params = rabi_result.rabi_params
             if rabi_params is None:
                 raise ValueError("Rabi parameters are not stored.")
             for target, param in rabi_params.items():
@@ -874,7 +921,8 @@ class Experiment:
             for target, values in rabi_rates.items()
         }
 
-        return ExperimentResult(data=data)
+        result = ExperimentResult(data=data)
+        return result
 
     def obtain_ampl_rabi_relation(
         self,
@@ -882,6 +930,8 @@ class Experiment:
         *,
         amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
         time_range: NDArray = np.arange(0, 201, 4),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[AmplRabiData]:
         """
@@ -895,6 +945,10 @@ class Experiment:
             Range of the control amplitude to sweep.
         time_range : NDArray
             Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -922,8 +976,10 @@ class Experiment:
             if amplitude <= 0:
                 continue
             result = self.rabi_experiment(
-                time_range=time_range,
                 amplitudes={target: amplitude for target in targets},
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
                 plot=plot,
             )
             clear_output(wait=True)
@@ -948,6 +1004,8 @@ class Experiment:
         targets: list[str],
         *,
         time_range: NDArray = np.arange(0, 1024, 128),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[TimePhaseData]:
         """
@@ -959,6 +1017,8 @@ class Experiment:
             List of targets to check the phase shift.
         time_range : NDArray, optional
             The control window range to sweep in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -979,6 +1039,8 @@ class Experiment:
         for window in time_range:
             result = self.measure(
                 sequence={target: np.zeros(0) for target in targets},
+                shots=shots,
+                interval=interval,
                 control_window=window,
                 plot=False,
             )
@@ -1042,10 +1104,35 @@ class Experiment:
 
         return amplitudes
 
+    def calibrate_control_frequency(
+        self,
+        targets: list[str],
+        *,
+        detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
+        time_range: NDArray = np.arange(0, 101, 4),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict[str, float]:
+        result = self.obtain_freq_rabi_relation(
+            targets=targets,
+            detuning_range=detuning_range,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+        fit_data = {target: data.fit()[0] for target, data in result.data.items()}
+        for target, fit in fit_data.items():
+            print(f"{target}: {fit:.6f}")
+        return fit_data
+
     def calibrate_default_pulse(
         self,
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the default pulse.
@@ -1054,6 +1141,12 @@ class Experiment:
         ----------
         target : str
             Target qubit to calibrate.
+        pulse_type : Literal["pi", "hpi"]
+            Type of the pulse to calibrate.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
         -------
@@ -1088,8 +1181,8 @@ class Experiment:
                 },
                 sweep_range=ampl_range,
                 repetitions=2 if pulse_type == "pi" else 4,
-                shots=DEFAULT_SHOTS,
-                interval=DEFAULT_INTERVAL,
+                shots=shots,
+                interval=interval,
                 plot=False,
             ).data[target]
 
@@ -1120,6 +1213,8 @@ class Experiment:
     def calibrate_hpi_pulse(
         self,
         targets: list[str],
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π/2 pulse.
@@ -1128,17 +1223,33 @@ class Experiment:
         ----------
         target : str
             Target qubit to calibrate.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
         -------
         ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
-        return self.calibrate_default_pulse(targets, "hpi")
+        result = self.calibrate_default_pulse(
+            targets=targets,
+            pulse_type="hpi",
+            shots=shots,
+            interval=interval,
+        )
+
+        ampl = {target: data.calib_value for target, data in result.data.items()}
+        self._default_note.put(DEFAULT_HPI_AMPLITUDE, ampl)
+
+        return result
 
     def calibrate_pi_pulse(
         self,
         targets: list[str],
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π pulse.
@@ -1147,13 +1258,27 @@ class Experiment:
         ----------
         target : str
             Target qubit to calibrate.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
         -------
         ExperimentResult[AmplCalibData]
             Result of the experiment.
         """
-        return self.calibrate_default_pulse(targets, "pi")
+        result = self.calibrate_default_pulse(
+            targets=targets,
+            pulse_type="pi",
+            shots=shots,
+            interval=interval,
+        )
+
+        ampl = {target: data.calib_value for target, data in result.data.items()}
+        self._default_note.put(DEFAULT_PI_AMPLITUDE, ampl)
+
+        return result
 
     def t1_experiment(
         self,
