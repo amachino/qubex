@@ -1128,6 +1128,38 @@ class Experiment:
             print(f"{target}: {fit:.6f}")
         return fit_data
 
+    def calibrate_readout_frequency(
+        self,
+        targets: list[str],
+        *,
+        detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
+        time_range: NDArray = np.arange(0, 101, 4),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict[str, list[float]]:
+        result = defaultdict(list)
+        for detuning in detuning_range:
+            modified_frequencies = {
+                resonator.label: resonator.frequency + detuning
+                for resonator in self.resonators.values()
+            }
+            with self.modified_frequencies(modified_frequencies):
+                rabi_result = self.rabi_experiment(
+                    time_range=time_range,
+                    amplitudes={
+                        target: self.params.control_amplitude[target]
+                        for target in targets
+                    },
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+                for qubit, data in rabi_result.data.items():
+                    result[qubit].append(data.rabi_param.amplitude)
+                clear_output(wait=True)
+        return result
+
     def calibrate_default_pulse(
         self,
         targets: list[str],
