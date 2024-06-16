@@ -24,7 +24,7 @@ class StateClassifier:
         The fitted k-means model.
     label_map : dict[int, int]
         A mapping from k-means cluster labels to state labels.
-    conf_matrix : NDArray
+    confusion_matrix : NDArray
         The confusion matrix of the classifier.
     centroids : dict[int, complex]
         The centroid of each state.
@@ -33,7 +33,7 @@ class StateClassifier:
     dataset: dict[int, NDArray[np.float32]]
     model: KMeans
     label_map: dict[int, int]
-    conf_matrix: NDArray
+    confusion_matrix: NDArray
     centroids: dict[int, complex]
 
     @classmethod
@@ -88,7 +88,7 @@ class StateClassifier:
         label_map = cls._create_label_map(model, dataset)
 
         # Create confusion matrix
-        conf_matrix = cls._create_confusion_matrix(model, dataset, label_map)
+        confusion_matrix = cls._create_confusion_matrix(model, dataset, label_map)
 
         # Extract model parameters
         centroids = cls._extract_model_parameters(model)
@@ -98,7 +98,7 @@ class StateClassifier:
             dataset=dataset,
             model=model,
             label_map=label_map,
-            conf_matrix=conf_matrix,
+            confusion_matrix=confusion_matrix,
             centroids=centroids,
         )
 
@@ -159,8 +159,7 @@ class StateClassifier:
         concat_data = np.concatenate(list(dataset.values()))
         predicted_labels_ = model.predict(concat_data)
         predicted_labels = np.array([label_map[label] for label in predicted_labels_])
-        conf_matrix = confusion_matrix(true_labels, predicted_labels)
-        return conf_matrix
+        return confusion_matrix(true_labels, predicted_labels)
 
     @staticmethod
     def _extract_model_parameters(
