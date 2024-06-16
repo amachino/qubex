@@ -22,9 +22,26 @@ class MeasureMode(Enum):
 
 @dataclass
 class MeasureData:
+    target: str
+    mode: MeasureMode
     raw: NDArray
     kerneled: NDArray
-    classified: NDArray
+    classified: NDArray | None
+
+    def plot(self):
+        if self.mode == MeasureMode.SINGLE:
+            scatter_iq_data(
+                data={self.target: self.kerneled},
+                title=f"Readout IQ data of {self.target}",
+            )
+        elif self.mode == MeasureMode.AVG:
+            plot_waveform(
+                data=self.raw,
+                sampling_period=8,
+                title=f"Readout waveform of {self.target}",
+                xlabel="Capture time (ns)",
+                ylabel="Amplitude (arb. units)",
+            )
 
 
 @dataclass
@@ -38,11 +55,5 @@ class MeasureResult:
             data = {qubit: data.kerneled for qubit, data in self.data.items()}
             scatter_iq_data(data=data)
         elif self.mode == MeasureMode.AVG:
-            for qubit, data in self.data.items():
-                plot_waveform(
-                    data=data.raw,
-                    sampling_period=8,
-                    title=f"Readout waveform of {qubit}",
-                    xlabel="Capture time (ns)",
-                    ylabel="Amplitude (arb. units)",
-                )
+            for qubit in self.data.values():
+                qubit.plot()

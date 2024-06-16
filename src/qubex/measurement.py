@@ -34,6 +34,7 @@ from .config import Config, Target
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .pulse import FlatTop
 from .qube_backend import QubeBackend, QubeBackendResult
+from .state_classifier import StateClassifier
 from .typing import IQArray, TargetMap
 
 DEFAULT_CONFIG_DIR = "./config"
@@ -73,6 +74,7 @@ class Measurement:
         config_path = config.get_system_settings_path(chip_id)
         self._backend: Final = QubeBackend(config_path)
         self._params: Final = config.get_params(chip_id)
+        self.classifiers: TargetMap[StateClassifier] = {}
 
     @property
     def chip_id(self) -> str:
@@ -519,16 +521,22 @@ class Measurement:
                 # iqs: ndarray[duration, shots]
                 raw = iqs[capture_index].T.squeeze()
                 kerneled = np.mean(iqs[capture_index], axis=0) * 2 ** (-32)
-                classified_data = np.array([])
+                classifier = self.classifiers.get(qubit)
+                if classifier is None:
+                    classified_data = None
+                else:
+                    classified_data = classifier.predict(kerneled)
             elif measure_mode == MeasureMode.AVG:
                 # iqs: ndarray[duration, 1]
                 raw = iqs[capture_index].squeeze()
                 kerneled = np.mean(iqs) * 2 ** (-32)
-                classified_data = np.array([])
+                classified_data = None
             else:
                 raise ValueError(f"Invalid measure mode: {measure_mode}")
 
             measure_data[qubit] = MeasureData(
+                target=target,
+                mode=measure_mode,
                 raw=raw,
                 kerneled=kerneled,
                 classified=classified_data,
