@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
@@ -8,7 +9,7 @@ from rich.console import Console
 console = Console()
 
 
-FILE_PATH = "experiment_note.json"
+FILE_PATH = ".user_note.json"
 
 
 class ExperimentNote:
@@ -24,6 +25,7 @@ class ExperimentNote:
         """
         self._dict: dict[str, Any] = {}
         self._file_path = file_path
+        self.load()
 
     def put(self, key: str, value: Any):
         """
@@ -119,15 +121,16 @@ class ExperimentNote:
         filename : str, optional
             The name of the file to load from. Defaults to 'experiment_note.json'.
         """
+
+        filename = filename or self._file_path
+        file_path = Path(filename)
+
+        if not file_path.exists():
+            with open(filename, "w") as file:
+                json.dump({}, file)
         try:
-            filename = filename or self._file_path
             with open(filename, "r") as file:
                 self._dict = json.load(file)
-            console.print(f"ExperimentNote loaded from '{filename}'.")
-        except FileNotFoundError:
-            console.print(
-                f"File '{filename}' not found. Starting with an empty ExperimentNote."
-            )
         except json.JSONDecodeError:
             console.print(
                 f"Error decoding JSON from '{filename}'. Starting with an empty ExperimentNote."

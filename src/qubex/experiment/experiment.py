@@ -47,7 +47,8 @@ from .experiment_tool import ExperimentTool
 console = Console()
 
 MIN_DURATION = 128
-DEFAULT_NOTE_PATH = ".default_note.json"
+
+SYSTEM_NOTE_PATH = ".system_note.json"
 DEFAULT_HPI_AMPLITUDE = "default_hpi_amplitude"
 DEFAULT_HPI_DURATION = 30
 DEFAULT_PI_AMPLITUDE = "default_pi_amplitude"
@@ -101,10 +102,10 @@ class Experiment:
             config=self._config,
             measurement=self._measurement,
         )
-        self._default_note: Final = ExperimentNote(
-            file_path=DEFAULT_NOTE_PATH,
-        )
         self.note: Final = ExperimentNote()
+        self._system_note: Final = ExperimentNote(
+            file_path=SYSTEM_NOTE_PATH,
+        )
         self.print_environment()
 
     @property
@@ -173,7 +174,7 @@ class Experiment:
         TargetMap[Waveform]
             π/2 pulse.
         """
-        amplitude: dict = self._default_note.get(DEFAULT_HPI_AMPLITUDE)
+        amplitude: dict = self._system_note.get(DEFAULT_HPI_AMPLITUDE)
         if amplitude is None:
             print(
                 "Default π/2 amplitude is not set. Using `control_amplitude` in params.yaml."
@@ -198,7 +199,7 @@ class Experiment:
         TargetMap[Waveform]
             π pulse.
         """
-        amplitude: dict = self._default_note.get(DEFAULT_PI_AMPLITUDE)
+        amplitude: dict = self._system_note.get(DEFAULT_PI_AMPLITUDE)
         if amplitude is None:
             # Use the default hpi pulse * 2
             print("Default π amplitude is not set. Using the default π/2 pulse * 2.")
@@ -328,7 +329,7 @@ class Experiment:
 
     def save_default(self):
         """Save the default settings."""
-        self._default_note.save()
+        self._system_note.save()
 
     def load_record(
         self,
@@ -1241,7 +1242,7 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self._default_note.put(DEFAULT_HPI_AMPLITUDE, ampl)
+        self._system_note.put(DEFAULT_HPI_AMPLITUDE, ampl)
 
         return result
 
@@ -1276,7 +1277,7 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self._default_note.put(DEFAULT_PI_AMPLITUDE, ampl)
+        self._system_note.put(DEFAULT_PI_AMPLITUDE, ampl)
 
         return result
 
