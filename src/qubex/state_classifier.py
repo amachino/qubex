@@ -21,12 +21,12 @@ class StateClassifier:
     model : GaussianMixture
         The fitted Gaussian Mixture Model.
     label_map : dict[int, int]
-        A mapping from state labels to GMM component labels.
-    mean : dict[int, complex]
+        A mapping from GMM component labels to state labels.
+    means : dict[int, complex]
         The mean of each state.
-    stddev : dict[int, float]
-        The standard deviation of each state.
-    weight : dict[int, float]
+    covariances : dict[int, float]
+        The covariance of each state.
+    weights : dict[int, float]
         The weight of each state.
     """
 
@@ -72,7 +72,7 @@ class StateClassifier:
 
         # Convert complex data to real-valued features
         dataset = {
-            state: np.column_stack([np.real(data[state]), np.imag(data[state])])
+            state: np.array([np.real(data[state]), np.imag(data[state])]).T
             for state in data
         }
 
@@ -81,6 +81,7 @@ class StateClassifier:
             n_components=len(dataset),
             covariance_type=covariance_type,
             random_state=random_state,
+            # n_init=10,
         )
         concat_data = np.concatenate(list(dataset.values()))
         model.fit(concat_data)
@@ -94,7 +95,6 @@ class StateClassifier:
         # Extract model parameters
         means, covariances, weights = cls._extract_model_parameters(
             model=model,
-            dataset=dataset,
             label_map=label_map,
         )
 
@@ -127,13 +127,14 @@ class StateClassifier:
         Returns
         -------
         dict[int, int]
-            A mapping from state labels to GMM component labels.
+            A mapping from GMM component labels to state labels.
         """
-        label_map = {}
+        label_map = {label: 0 for label in range(len(dataset))}
         for state, data in dataset.items():
             result = model.predict(data)
             count = np.bincount(result)
-            label_map[state] = np.argmax(count).astype(int)
+            label = np.argmax(count).astype(int)
+            label_map[label] = state
         return label_map
 
     @staticmethod
@@ -152,7 +153,7 @@ class StateClassifier:
         dataset : dict[int, NDArray[np.float32]]
             The preprocessed dataset.
         label_map : dict[int, int]
-            A mapping from state labels to GMM component labels.
+            A mapping from GMM component labels to state labels.
 
         Returns
         -------
@@ -160,7 +161,7 @@ class StateClassifier:
             A confusion matrix of true and predicted labels.
         """
         true_labels = np.concatenate(
-            [np.full(len(dataset[state]), state) for state in dataset]
+            [np.full(len(data), state) for state, data in dataset.items()]
         )
         concat_data = np.concatenate(list(dataset.values()))
         predicted_labels_ = model.predict(concat_data)
@@ -171,7 +172,6 @@ class StateClassifier:
     @staticmethod
     def _extract_model_parameters(
         model: GaussianMixture,
-        dataset: dict[int, NDArray[np.float32]],
         label_map: dict[int, int],
     ) -> tuple[dict[int, complex], dict[int, float], dict[int, float]]:
         """
@@ -181,10 +181,8 @@ class StateClassifier:
         ----------
         model : GaussianMixture
             The fitted Gaussian Mixture Model.
-        dataset : dict[int, NDArray[np.float32]]
-            The preprocessed dataset.
         label_map : dict[int, int]
-            A mapping from state labels to GMM component labels.
+            A mapping from GMM component labels to state labels.
 
         Returns
         -------
@@ -192,12 +190,13 @@ class StateClassifier:
             The means, covariances, and weights of each state.
         """
         means, covariances, weights = {}, {}, {}
-        for state in dataset:
-            means_arr = np.array(model.means_)[label_map[state]]
-            means[state] = means_arr[0] + 1j * means_arr[1]
-            covariances[state] = np.array(model.covariances_)[label_map[state]]
-            weights[state] = np.array(model.weights_)[label_map[state]]
-
+        means_arr = np.array(model.means_)
+        covariances_arr = np.array(model.covariances_)
+        weights_arr = np.array(model.weights_)
+        for label, state in label_map.items():
+            means[state] = complex(means_arr[label][0] + 1j * means_arr[label][1])
+            covariances[state] = covariances_arr[label]
+            weights[state] = weights_arr[label]
         return means, covariances, weights
 
     def predict(
@@ -250,11 +249,11 @@ class StateClassifier:
         gmm_proba = self.model.predict_proba(real_imag_data)
 
         # Map GMM component probabilities to state probabilities
-        state_proba = np.zeros((gmm_proba.shape[0], len(self.label_map)))
-        for component, state in self.label_map.items():
-            state_proba[:, state] += gmm_proba[:, component]
+        # state_proba = np.zeros((len(data), len(self.dataset)))
+        # for label, state in self.label_map.items():
+        #     state_proba[:, state] = gmm_proba[:, label]
 
-        return state_proba
+        return gmm_proba
 
     def classify(
         self,
