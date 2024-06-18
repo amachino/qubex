@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from ..pulse import Blank
 from ..pulse_sequence import PulseSequence
 from ..waveform import Waveform

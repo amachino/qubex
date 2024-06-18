@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from typing import Literal
 
@@ -52,7 +54,7 @@ class Pulse(Waveform):
             * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase_shift))
         )
 
-    def copy(self) -> "Pulse":
+    def copy(self) -> Pulse:
         """Returns a copy of the pulse."""
         return deepcopy(self)
 
@@ -60,7 +62,7 @@ class Pulse(Waveform):
         self,
         total_duration: float,
         pad_side: Literal["right", "left"] = "right",
-    ) -> "Pulse":
+    ) -> Pulse:
         """
         Returns a copy of the pulse with zero padding.
 
@@ -82,25 +84,25 @@ class Pulse(Waveform):
         new_pulse._values = values
         return new_pulse
 
-    def scaled(self, scale: float) -> "Pulse":
+    def scaled(self, scale: float) -> Pulse:
         """Returns a copy of the pulse scaled by the given factor."""
         new_pulse = deepcopy(self)
         new_pulse._scale *= scale
         return new_pulse
 
-    def detuned(self, detuning: float) -> "Pulse":
+    def detuned(self, detuning: float) -> Pulse:
         """Returns a copy of the pulse detuned by the given frequency."""
         new_pulse = deepcopy(self)
         new_pulse._detuning += detuning
         return new_pulse
 
-    def shifted(self, phase: float) -> "Pulse":
+    def shifted(self, phase: float) -> Pulse:
         """Returns a copy of the pulse shifted by the given phase."""
         new_pulse = deepcopy(self)
         new_pulse._phase_shift += phase
         return new_pulse
 
-    def repeated(self, n: int) -> "Pulse":
+    def repeated(self, n: int) -> Pulse:
         """Returns a copy of the pulse repeated n times."""
         new_pulse = deepcopy(self)
         new_pulse._values = np.tile(self._values, n)
