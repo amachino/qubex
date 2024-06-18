@@ -27,8 +27,12 @@ class Pauli:
         self.coefficient = coefficient
         self.operator = operator
 
-    def __repr__(self):
-        return f"Pauli({self.coefficient}, {self.operator})"
+    def to_string(self) -> str:
+        sign = {1: "", -1: "-", 1j: "i", -1j: "-i"}[self.coefficient]
+        return f"{sign}{self.operator}"
+
+    def print(self):
+        print(self.to_string())
 
     def __hash__(self):
         return hash((self.coefficient, self.operator))
@@ -43,23 +47,18 @@ class Clifford:
 
     Attributes
     ----------
-    sequence : list[str]
-        The decomposition of the Clifford operator into a sequence of generators.
+    name : str
+        The name of the Clifford operator.
     map : dict[str, Pauli]
-        The Clifford transformation map that maps Pauli operators to new Pauli operators.
+        The Pauli transformation map of the Clifford operator.
     """
-
-    # Generator names
-    X90 = "X90"
-    Z90 = "Z90"
 
     def __init__(
         self,
-        *,
-        sequence: list[str],
+        name: str,
         map: dict[str, Pauli],
     ):
-        self.sequence = sequence
+        self.name = name
         self.map = map
 
     @classmethod
@@ -73,7 +72,7 @@ class Clifford:
             An identity Clifford with no operations and a map that does not change Pauli operators.
         """
         return Clifford(
-            sequence=[],
+            name="I",
             map={
                 "I": Pauli(1, "I"),
                 "X": Pauli(1, "X"),
@@ -93,7 +92,7 @@ class Clifford:
             A Clifford representing a 90-degree rotation around the X-axis.
         """
         return Clifford(
-            sequence=[cls.X90],
+            name="X90",
             map={
                 "I": Pauli(1, "I"),
                 "X": Pauli(1, "X"),
@@ -113,7 +112,7 @@ class Clifford:
             A Clifford representing a 90-degree rotation around the Z-axis.
         """
         return Clifford(
-            sequence=[cls.Z90],
+            name="Z90",
             map={
                 "I": Pauli(1, "I"),
                 "X": Pauli(1, "Y"),
@@ -122,33 +121,57 @@ class Clifford:
             },
         )
 
-    @classmethod
-    def compose(
-        cls,
-        c1: Clifford,
-        c2: Clifford,
-    ) -> Clifford:
+    @property
+    def inverse(self) -> Clifford:
         """
-        Compose two Clifford transformations and return the resulting Clifford transformation.
-
-        Parameters
-        ----------
-        c1 : Clifford
-            The first Clifford transformation.
-        c2 : Clifford
-            The second Clifford transformation.
+        Compute the inverse of the Clifford transformation.
 
         Returns
         -------
         Clifford
-            The resulting Clifford transformation from composing c1 and c2.
+            The inverse of the current Clifford transformation.
         """
-        identity_map = cls.identity().map
-        composed_map = {
-            key: c2.apply_to(c1.apply_to(value)) for key, value in identity_map.items()
+        inverse_map = {}
+        for operator, pauli in self.map.items():
+            coefficient = 1 / pauli.coefficient
+            inverse_map[pauli.operator] = Pauli(coefficient, operator)
+        map = {
+            "I": inverse_map["I"],
+            "X": inverse_map["X"],
+            "Y": inverse_map["Y"],
+            "Z": inverse_map["Z"],
         }
         return Clifford(
-            sequence=c1.sequence + c2.sequence,
+            name=f"{self.name}^-1",
+            map=map,
+        )
+
+    def is_identity(self) -> bool:
+        """Check if the Clifford transformation is the identity."""
+        return all(pauli.coefficient == 1 for pauli in self.map.values())
+
+    def compose(
+        self,
+        other: Clifford,
+    ) -> Clifford:
+        """
+        Compose two Clifford transformations.
+
+        Parameters
+        ----------
+        other : Clifford
+            The other Clifford transformation to compose with.
+
+        Returns
+        -------
+        Clifford
+            The resulting Clifford transformation after composing the two input transformations.
+        """
+        composed_map = {}
+        for operator, pauli in self.map.items():
+            composed_map[operator] = other.apply_to(pauli)
+        return Clifford(
+            name=f"{self.name}->{other.name}",
             map=composed_map,
         )
 
@@ -173,96 +196,213 @@ class Clifford:
         new_coefficient = pauli.coefficient * mapped_pauli.coefficient
         return Pauli(new_coefficient, mapped_pauli.operator)
 
-    def __repr__(self):
-        return f"Clifford({self.sequence}, {self.map})"
+    def to_string(self) -> str:
+        map = ", ".join(
+            f"{operator}->{pauli.to_string()}" for operator, pauli in self.map.items()
+        )
+        return f"{{{map}}}"
+
+    def print(self):
+        print(self.to_string())
+
+    def __repr__(self) -> str:
+        return f"Clifford({self.to_string()})"
+
+    def __hash__(self):
+        return hash(tuple(self.map.items()))
+
+    def __eq__(self, other) -> bool:
+        return self.map == other.map
+
+
+class CliffordSequence:
+    """
+    Represents a sequence of Clifford operators.
+
+    Attributes
+    ----------
+    sequence : list[Clifford]
+        The sequence of Clifford operators.
+    clifford : Clifford
+        The cumulative Clifford operator of the sequence.
+    """
+
+    def __init__(
+        self,
+        sequence: list[Clifford],
+        clifford: Clifford,
+    ):
+        self.sequence = sequence
+        self.clifford = clifford
+        self._inverse: CliffordSequence | None = None
+
+    @classmethod
+    def identity(cls) -> CliffordSequence:
+        """
+        Create an identity Clifford sequence.
+
+        Returns
+        -------
+        CliffordSequence
+            An identity Clifford sequence with no operations and an identity Clifford.
+        """
+        return cls(sequence=[], clifford=Clifford.identity())
+
+    @property
+    def inverse(self) -> CliffordSequence:
+        """
+        Compute the inverse of the Clifford sequence.
+
+        Returns
+        -------
+        CliffordSequence
+            The inverse of the current Clifford sequence.
+        """
+        if self._inverse is None:
+            raise ValueError("No inverse set.")
+        return self._inverse
+
+    @inverse.setter
+    def inverse(self, inverse: CliffordSequence):
+        self._inverse = inverse
+
+    @property
+    def length(self) -> int:
+        """Returns the length of the sequence."""
+        return len(self.sequence)
+
+    def count(self, clifford: Clifford) -> int:
+        """
+        Count the number of occurrences of a Clifford operator in the sequence.
+
+        Parameters
+        ----------
+        clifford : Clifford
+            The Clifford operator to count.
+
+        Returns
+        -------
+        int
+            The number of occurrences of the input Clifford operator in the sequence.
+        """
+        return self.sequence.count(clifford)
+
+    def compose(
+        self,
+        other: Clifford,
+    ) -> CliffordSequence:
+        """
+        Compose a Clifford transformation with the current sequence.
+
+        Parameters
+        ----------
+        other : Clifford
+            The Clifford transformation to compose with the sequence.
+
+        Returns
+        -------
+        CliffordSequence
+            The resulting Clifford sequence after composing the input transformation.
+        """
+        composed_sequence = self.sequence + [other]
+        composed_clifford = self.clifford.compose(other)
+        return CliffordSequence(sequence=composed_sequence, clifford=composed_clifford)
+
+    def to_string(self) -> str:
+        sequence = "->".join(clifford.name for clifford in self.sequence)
+        return f"CliffordSequence(\n  map={self.clifford.to_string()},\n  sequence=[{sequence}],\n  count={{X90: {self.count(Clifford.x90())}, Z90: {self.count(Clifford.z90())}}}\n)"
+
+    def print(self):
+        print(self.to_string())
+
+    def __repr__(self) -> str:
+        sequence = "->".join(clifford.name for clifford in self.sequence)
+        return f"CliffordSequence({sequence})"
+
+    def __hash__(self) -> int:
+        return hash(tuple(self.sequence))
 
 
 class CliffordGenerator:
     """
-    Generates Clifford transformations from two generators X90 and Z90.
+    Generates Clifford operators and sequences.
 
     Methods
     -------
-    generate_clifford(bit_sequence: int) -> Clifford:
-        Generate a Clifford transformation from X90 and Z90 generators.
-    find_clifford_group(max_gate_count: int = 10) -> list[Clifford]:
-        Find the group of unique Clifford transformations up to a specified gate count.
+    find_clifford_group(max_gate_count: int = 10) -> list[CliffordSequence]:
+        Find the group of unique Clifford operators up to a specified gate count.
     """
 
     @classmethod
-    def generate_clifford(
+    def generate_clifford_sequences(
         cls,
-        bit_representation: int,
-    ) -> Clifford:
+        max_gates: int = 5,
+    ) -> list[CliffordSequence]:
         """
-        Generate a Clifford transformation from X90 and Z90 generators.
+        Generate unique Clifford sequences up to a specified gate count.
 
         Parameters
         ----------
-        bit_representation : int
-            The bit representation of the gate sequence,
-            e.g. 0 -> X90, 1 -> Z90, 1011 -> Z90-X90-Z90-Z90
+        max_gates : int, optional
+            The maximum number of gates in the Clifford sequences.
 
         Returns
         -------
-        Clifford
-            The generated Clifford transformation.
+        set[CliffordSequence]
+            The set of unique Clifford sequences up to the specified gate count.
         """
-        gate_sequence: list[str] = []
-        identity_clifford = Clifford.identity()
-        current_clifford = identity_clifford
+        # Start with the identity Clifford
+        identity = CliffordSequence.identity()
 
-        # Decompose the bit representation into X90 and Z90 generators
-        while bit_representation > 1:
-            # Apply the X90 or Z90 generator based on the least significant bit
-            if bit_representation % 2 == 0:
-                # Apply the X90 generator
-                gate_sequence.append(Clifford.X90)
-                current_clifford = Clifford.compose(current_clifford, Clifford.x90())
-            else:
-                # Apply the Z90 generator
-                gate_sequence.append(Clifford.Z90)
-                current_clifford = Clifford.compose(current_clifford, Clifford.z90())
-            bit_representation //= 2
-        return Clifford(sequence=gate_sequence, map=current_clifford.map)
+        # Dictionary to store found Clifford operators
+        found_cliffords: dict[Clifford, CliffordSequence] = {
+            identity.clifford: identity
+        }
 
-    @classmethod
-    def find_clifford_group(cls, max_gate_count: int = 10) -> list[Clifford]:
-        """
-        Find the group of unique Clifford transformations up to a specified gate count.
+        # Clifford generators
+        x90 = Clifford.x90()
+        z90 = Clifford.z90()
 
-        Parameters
-        ----------
-        max_gate_count : int, optional
-            The maximum number of gate sequences to consider (default is 10).
+        # Recursive function to generate Clifford sequences
+        def generate_clifford_sequences(
+            sequence: CliffordSequence,
+            gate_count: int,
+        ):
+            if gate_count == 0:
+                # Base case: reached the maximum number of gates
+                return
+            for clifford in (x90, z90):
+                # Compose the current sequence with the Clifford generator
+                new_sequence = sequence.compose(clifford)
+                # Add the new sequence to the dictionary if it is unique
+                if new_sequence.clifford not in found_cliffords:
+                    found_cliffords[new_sequence.clifford] = new_sequence
+                # Update the existing sequence if the new sequence is shorter
+                else:
+                    existing_sequence = found_cliffords[new_sequence.clifford]
+                    if new_sequence.count(x90) < existing_sequence.count(x90):
+                        found_cliffords[new_sequence.clifford] = new_sequence
+                # Recurse with the new sequence
+                generate_clifford_sequences(new_sequence, gate_count - 1)
 
-        Returns
-        -------
-        list of Clifford
-            A list of unique Clifford transformations.
-        """
-        # Generate all possible Clifford transformations up to the maximum gate count
-        clifford_group: list[Clifford] = []
-        # The number of combinations of X90 and Z90 generators is 2^(max_gate_count)
-        for bit_representation in range(2**max_gate_count):
-            # Generate a Clifford transformation from the bit representation
-            clifford = cls.generate_clifford(bit_representation)
-            found_same_clifford = False
-            for existing in clifford_group:
-                # Check if the Clifford transformation is the same as an existing one
-                if existing.map == clifford.map:
-                    found_same_clifford = True
-                    # If the new Clifford transformation has fewer X90 gates, replace the existing one
-                    existing_X90_count = existing.sequence.count(Clifford.X90)
-                    new_X90_count = clifford.sequence.count(Clifford.X90)
-                    if new_X90_count < existing_X90_count:
-                        clifford_group.remove(existing)
-                        clifford_group.append(clifford)
-                    break
-            # If the Clifford transformation is unique, add it to the group
-            if not found_same_clifford:
-                clifford_group.append(clifford)
-            # If the group contains all 24 unique Clifford transformations, stop searching
-            if len(clifford_group) == 24:
-                break
+        # Generate Clifford sequences starting from the identity
+        generate_clifford_sequences(identity, max_gates + 1)  # +1 for the identity
+
+        # Set the inverse of each Clifford sequence
+        for sequence in found_cliffords.values():
+            inverse = found_cliffords.get(sequence.clifford.inverse, None)
+            if inverse is None:
+                raise ValueError("Inverse not found.")
+            sequence.inverse = inverse
+
+        # Sort the Clifford operators by the number of X90 and Z90 gates
+        clifford_group = list(found_cliffords.values())
+        clifford_group.sort(key=lambda x: x.count(z90), reverse=True)
+        clifford_group.sort(key=lambda x: x.count(x90), reverse=True)
+
+        # Print the results
+        print(f"Found {len(clifford_group)} unique Clifford operators.")
+        print(f"Max number of gates: {max_gates}")
+
+        # Return the Clifford group
         return clifford_group
