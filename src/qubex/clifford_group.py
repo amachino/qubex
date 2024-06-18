@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 
 class Pauli:
     """
@@ -33,6 +35,9 @@ class Pauli:
 
     def print(self):
         print(self.to_string())
+
+    def __repr__(self) -> str:
+        return f"Pauli({self.coefficient}, '{self.operator}')"
 
     def __hash__(self):
         return hash((self.coefficient, self.operator))
@@ -206,7 +211,7 @@ class Clifford:
         print(self.to_string())
 
     def __repr__(self) -> str:
-        return f"Clifford({self.to_string()})"
+        return f"Clifford(name='{self.name}', map={self.to_string()})"
 
     def __hash__(self):
         return hash(tuple(self.map.items()))
@@ -317,33 +322,31 @@ class CliffordSequence:
 
     def __repr__(self) -> str:
         sequence = "->".join(clifford.name for clifford in self.sequence)
-        return f"CliffordSequence({sequence})"
+        return f"CliffordSequence(sequence=[{sequence}], clifford={self.clifford.to_string()})"
 
     def __hash__(self) -> int:
         return hash(tuple(self.sequence))
 
 
-class CliffordGenerator:
-    """
-    Generates Clifford operators and sequences.
+class CliffordGroup:
+    def __init__(self, max_gates: int = 5):
+        self.clifford_sequences = self.generate_clifford_sequences(max_gates=max_gates)
 
-    Methods
-    -------
-    find_clifford_group(max_gate_count: int = 10) -> list[CliffordSequence]:
-        Find the group of unique Clifford operators up to a specified gate count.
-    """
+    @property
+    def cliffords(self) -> list[Clifford]:
+        """Returns the Clifford operators in the group."""
+        return [sequence.clifford for sequence in self.clifford_sequences]
 
-    @classmethod
     def generate_clifford_sequences(
-        cls,
-        max_gates: int = 5,
+        self,
+        max_gates: int,
     ) -> list[CliffordSequence]:
         """
         Generate unique Clifford sequences up to a specified gate count.
 
         Parameters
         ----------
-        max_gates : int, optional
+        max_gates : int
             The maximum number of gates in the Clifford sequences.
 
         Returns
@@ -400,9 +403,29 @@ class CliffordGenerator:
         clifford_group.sort(key=lambda x: x.count(z90), reverse=True)
         clifford_group.sort(key=lambda x: x.count(x90), reverse=True)
 
-        # Print the results
-        print(f"Found {len(clifford_group)} unique Clifford operators.")
-        print(f"Max number of gates: {max_gates}")
-
         # Return the Clifford group
         return clifford_group
+
+    def get_random_clifford_sequences(
+        self,
+        count: int,
+        seed: int | None = None,
+    ) -> list[CliffordSequence]:
+        """
+        Get a random sample of Clifford sequences from the group.
+
+        Parameters
+        ----------
+        count : int
+            The number of Clifford sequences to sample.
+        seed : int, optional
+            The seed for the random number generator.
+
+        Returns
+        -------
+        list[CliffordSequence]
+            A random sample of Clifford sequences from the group.
+        """
+        if seed is not None:
+            random.seed(seed)
+        return random.sample(self.clifford_sequences, count)
