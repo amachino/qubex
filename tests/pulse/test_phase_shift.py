@@ -21,10 +21,15 @@ def test_phase_shift():
     """PhaseShift should be repeated a given number of times."""
     seq = PulseSequence(
         [
-            Pulse([1, 2, 3]),
+            Pulse([1]),
+            PhaseShift(np.pi / 2),
+            Pulse([1]),
+            PhaseShift(np.pi / 2),
+            Pulse([1]),
             PhaseShift(np.pi),
-            Pulse([1, 2, 3]),
-            Pulse([1, 2, 3]),
+            Pulse([1]),
+            Pulse([1]),
         ],
     )
-    assert seq.values == pytest.approx([1, 2, 3, -1, -2, -3, -1, -2, -3])
+    assert seq.values == pytest.approx([1, 1j, -1, 1, 1])
+    assert seq.reversed().values == pytest.approx([1, 1, -1, 1j, 1])
