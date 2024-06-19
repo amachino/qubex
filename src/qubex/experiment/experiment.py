@@ -249,6 +249,27 @@ class Experiment:
         self._rabi_params = rabi_params
         console.print("Rabi parameters are stored.")
 
+    def get_spectators(self, qubit: str) -> list[Qubit]:
+        """
+        Get the spectators of the given qubit.
+
+        Parameters
+        ----------
+        qubit : str
+            Qubit to get the spectators.
+
+        Returns
+        -------
+        list[Qubit]
+            List of the spectators.
+        """
+        spectator_labels = self.system.chip.graph.get_spectators(qubit)
+        spectators: list[Qubit] = []
+        for label in spectator_labels:
+            spectator = self._config.get_qubit(self.chip_id, label)
+            spectators.append(spectator)
+        return spectators
+
     def print_environment(self, verbose: bool = False):
         """Print the environment information."""
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))

@@ -1,11 +1,22 @@
 from dataclasses import dataclass
 
+from .lattice_chip_graph import LatticeChipGraph
+
 
 @dataclass
 class Chip:
     id: str
     name: str
     n_qubits: int
+
+    @property
+    def graph(self) -> LatticeChipGraph:
+        if self.n_qubits == 16:
+            return LatticeChipGraph(2, 2)
+        elif self.n_qubits == 64:
+            return LatticeChipGraph(4, 4)
+        else:
+            raise ValueError("Unsupported number of qubits.")
 
 
 @dataclass
