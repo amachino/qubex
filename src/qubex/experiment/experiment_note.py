@@ -9,7 +9,7 @@ from rich.console import Console
 console = Console()
 
 
-FILE_PATH = ".user_note.json"
+FILE_PATH = ".experiment_note.json"
 
 
 class ExperimentNote:

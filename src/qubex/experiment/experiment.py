@@ -49,7 +49,9 @@ console = Console()
 
 MIN_DURATION = 128
 
+USER_NOTE_PATH = ".user_note.json"
 SYSTEM_NOTE_PATH = ".system_note.json"
+
 DEFAULT_HPI_AMPLITUDE = "default_hpi_amplitude"
 DEFAULT_HPI_DURATION = 30
 DEFAULT_PI_AMPLITUDE = "default_pi_amplitude"
@@ -103,7 +105,9 @@ class Experiment:
             config=self._config,
             measurement=self._measurement,
         )
-        self.note: Final = ExperimentNote()
+        self._user_note: Final = ExperimentNote(
+            file_path=USER_NOTE_PATH,
+        )
         self._system_note: Final = ExperimentNote(
             file_path=SYSTEM_NOTE_PATH,
         )
@@ -164,6 +168,11 @@ class Experiment:
     def config_path(self) -> str:
         """Get the path of the configuration file."""
         return str(self._config.config_path)
+
+    @property
+    def note(self) -> ExperimentNote:
+        """Get the user note."""
+        return self._user_note
 
     @property
     def hpi_pulse(self) -> TargetMap[Waveform]:
