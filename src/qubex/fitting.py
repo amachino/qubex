@@ -583,8 +583,9 @@ def fit_exp_decay(
 def fit_rb(
     *,
     target: str,
-    x: npt.NDArray[np.float64],
+    x: npt.NDArray[np.int64],
     y: npt.NDArray[np.float64],
+    error_y: npt.NDArray[np.float64] | None = None,
     p0=None,
     bounds=None,
     title: str = "Randomized benchmarking",
@@ -604,6 +605,8 @@ def fit_rb(
         Time points for the decay data.
     y : npt.NDArray[np.float64]
         Amplitude data for the decay.
+    error_y : npt.NDArray[np.float64], optional
+        Error data for the decay.
     p0 : optional
         Initial guess for the fitting parameters.
     bounds : optional
@@ -655,6 +658,7 @@ def fit_rb(
         go.Scatter(
             x=x,
             y=y,
+            error_y=dict(type="data", array=error_y),
             mode="markers",
             name="Data",
         )

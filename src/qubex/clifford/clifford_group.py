@@ -349,7 +349,7 @@ class CliffordGroup:
     def get_random_clifford_sequences(
         self,
         n: int,
-        seed: int = 42,
+        seed: int | None = None,
     ) -> list[CliffordSequence]:
         """Returns a list of n random Clifford operators."""
         random.seed(seed)
@@ -368,7 +368,7 @@ class CliffordGroup:
     def get_random_cliffords_and_total_inverse(
         self,
         n: int,
-        seed: int = 42,
+        seed: int | None = None,
     ) -> tuple[list[list[str]], list[str]]:
         clifford_sequences = self.get_random_clifford_sequences(n, seed)
 

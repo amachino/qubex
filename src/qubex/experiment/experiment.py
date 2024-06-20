@@ -1644,7 +1644,7 @@ class Experiment:
         n: int,
         x90: Waveform | None = None,
         interleave: Waveform | None = None,
-        seed: int = 42,
+        seed: int | None = None,
     ) -> PulseSequence:
         """
         Generates a randomized benchmarking sequence.
@@ -1660,7 +1660,7 @@ class Experiment:
         interleave : Waveform, optional
             Interleaved gate. Defaults to None.
         seed : int, optional
-            Random seed. Defaults to 42.
+            Random seed.
 
         Returns
         -------
@@ -1684,9 +1684,8 @@ class Experiment:
                     sequence.append(x90)
                 elif gate == "Z90":
                     sequence.append(z90)
-
-        if interleave is not None:
-            sequence.append(interleave)
+            if interleave is not None:
+                sequence.append(interleave)
 
         for gate in inverse:
             if gate == "X90":
@@ -1702,6 +1701,7 @@ class Experiment:
         n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 50),
         x90: Waveform | None = None,
         interleave: Waveform | None = None,
+        seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1719,6 +1719,8 @@ class Experiment:
             π/2 pulse. Defaults to None.
         interleave : Waveform, optional
             Interleaved gate. Defaults to None.
+        seed : int, optional
+            Random seed.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1738,6 +1740,7 @@ class Experiment:
                 n=N,
                 x90=x90,
                 interleave=interleave,
+                seed=seed,
             )
 
         sweep_result = self.sweep_parameter(
@@ -1773,3 +1776,82 @@ class Experiment:
         }
 
         return ExperimentResult(data=data)
+
+    def randomized_benchmarking(
+        self,
+        *,
+        target: str,
+        n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
+        n_trials: int = 30,
+        x90: Waveform | None = None,
+        interleave: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict[str, NDArray]:
+        """
+        Conducts a randomized benchmarking experiment with multiple trials.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        n_cliffords_range : NDArray[np.int64], optional
+            Range of the number of Cliffords. Defaults to np.arange(0, 1001, 100).
+        n_trials : int, optional
+            Number of trials for different random seeds. Defaults to 30.
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        interleave : Waveform, optional
+            Interleaved gate. Defaults to None.
+        seed : int, optional
+            Random seed.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict[str, NDArray]
+            Results of the experiment.
+        """
+        results = []
+        seeds = np.random.randint(0, 2**32, n_trials)
+        for seed in seeds:
+            result = self.rb_experiment(
+                target=target,
+                n_cliffords_range=n_cliffords_range,
+                x90=x90,
+                interleave=interleave,
+                seed=seed,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            results.append(result.data[target].normalized)
+            clear_output(wait=True)
+
+        mean = np.mean(results, axis=0)
+        std = np.std(results, axis=0)
+
+        if plot:
+            fitting.fit_rb(
+                target=target,
+                x=n_cliffords_range,
+                y=mean,
+                error_y=std,
+                title="Randomized benchmarking",
+                xaxis_title="Number of Cliffords",
+                yaxis_title="Z expectation value",
+                xaxis_type="linear",
+                yaxis_type="linear",
+            )
+
+        return {
+            "n_cliffords": n_cliffords_range,
+            "fidelity_mean": mean,
+            "fidelity_std": std,
+        }
