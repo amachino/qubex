@@ -188,6 +188,10 @@ class Waveform(ABC):
         ylabel : str, optional
             Label of the y-axis.
         """
+        if self.length == 0:
+            print("Waveform is empty.")
+            return
+
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
@@ -238,6 +242,10 @@ class Waveform(ABC):
         ylabel : str, optional
             Label of the y-axis.
         """
+        if self.length == 0:
+            print("Waveform is empty.")
+            return
+
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         ampl = np.append(self.abs, self.abs[-1])
         phase = np.append(self.angle, self.angle[-1])
