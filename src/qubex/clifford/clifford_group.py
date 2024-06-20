@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-import random
+import json
+from pathlib import Path
+
+FILE_NAME = "clifford_group.json"
 
 
 class Pauli:
@@ -207,6 +210,9 @@ class Clifford:
         )
         return f"{{{map}}}"
 
+    def to_dict(self) -> dict:
+        return {operator: pauli.to_string() for operator, pauli in self.map.items()}
+
     def print(self):
         print(self.to_string())
 
@@ -252,6 +258,11 @@ class CliffordSequence:
             An identity Clifford sequence with no operations and an identity Clifford.
         """
         return cls(sequence=[], clifford=Clifford.identity())
+
+    @property
+    def gate_sequence(self) -> list[str]:
+        """Returns the sequence of gate names."""
+        return [clifford.name for clifford in self.sequence]
 
     @property
     def inverse(self) -> CliffordSequence:
@@ -313,34 +324,30 @@ class CliffordSequence:
         composed_clifford = self.clifford.compose(other)
         return CliffordSequence(sequence=composed_sequence, clifford=composed_clifford)
 
-    def to_string(self) -> str:
-        sequence = "->".join(clifford.name for clifford in self.sequence)
-        return f"CliffordSequence(\n  map={self.clifford.to_string()},\n  sequence=[{sequence}],\n  count={{X90: {self.count(Clifford.x90())}, Z90: {self.count(Clifford.z90())}}}\n)"
-
-    def print(self):
-        print(self.to_string())
-
-    def __repr__(self) -> str:
-        sequence = "->".join(clifford.name for clifford in self.sequence)
-        return f"CliffordSequence(sequence=[{sequence}], clifford={self.clifford.to_string()})"
-
     def __hash__(self) -> int:
         return hash(tuple(self.sequence))
 
 
 class CliffordGroup:
-    def __init__(self, max_gates: int = 5):
-        self.clifford_sequences = self.generate_clifford_sequences(max_gates=max_gates)
+    def __init__(self):
+        self._clifford_sequences = list[CliffordSequence]()
 
     @property
-    def cliffords(self) -> list[Clifford]:
+    def cliffords(self) -> dict[str, dict]:
         """Returns the Clifford operators in the group."""
-        return [sequence.clifford for sequence in self.clifford_sequences]
+        result = dict[str, dict]()
+        for index, clifford_sequence in enumerate(self._clifford_sequences):
+            result[f"#{index}"] = {
+                "map": clifford_sequence.clifford.to_dict(),
+                "sequence": clifford_sequence.gate_sequence,
+                "inverse": clifford_sequence.inverse.gate_sequence,
+            }
+        return result
 
-    def generate_clifford_sequences(
+    def generate(
         self,
-        max_gates: int,
-    ) -> list[CliffordSequence]:
+        max_gates: int = 5,
+    ):
         """
         Generate unique Clifford sequences up to a specified gate count.
 
@@ -398,34 +405,20 @@ class CliffordGroup:
                 raise ValueError("Inverse not found.")
             sequence.inverse = inverse
 
-        # Sort the Clifford operators by the number of X90 and Z90 gates
-        clifford_group = list(found_cliffords.values())
-        clifford_group.sort(key=lambda x: x.count(z90), reverse=True)
-        clifford_group.sort(key=lambda x: x.count(x90), reverse=True)
+        # Store the Clifford sequences in the group
+        clifford_sequences = list(found_cliffords.values())
+        self._clifford_sequences = clifford_sequences
 
-        # Return the Clifford group
-        return clifford_group
+    def save(self):
+        """Save the Clifford group to a JSON file."""
+        current_dir = Path(__file__).parent
+        file_path = current_dir / FILE_NAME
+        with open(file_path, "w") as file:
+            json.dump(self.cliffords, file, indent=2)
 
-    def get_random_clifford_sequences(
-        self,
-        count: int,
-        seed: int | None = None,
-    ) -> list[CliffordSequence]:
-        """
-        Get a random sample of Clifford sequences from the group.
-
-        Parameters
-        ----------
-        count : int
-            The number of Clifford sequences to sample.
-        seed : int, optional
-            The seed for the random number generator.
-
-        Returns
-        -------
-        list[CliffordSequence]
-            A random sample of Clifford sequences from the group.
-        """
-        if seed is not None:
-            random.seed(seed)
-        return random.sample(self.clifford_sequences, count)
+    def load(self) -> dict[str, dict]:
+        """Load the Clifford group from a JSON file."""
+        current_dir = Path(__file__).parent
+        file_path = current_dir / FILE_NAME
+        with open(file_path, "r") as file:
+            return json.load(file)
