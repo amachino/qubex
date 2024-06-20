@@ -1643,7 +1643,8 @@ class Experiment:
         target: str,
         n: int,
         x90: Waveform | None = None,
-        interleave: Waveform | None = None,
+        interleave_waveform: Waveform | None = None,
+        interleave_map: dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
     ) -> PulseSequence:
         """
@@ -1657,8 +1658,10 @@ class Experiment:
             Number of Clifford gates.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        interleave : Waveform, optional
-            Interleaved gate. Defaults to None.
+        interleave_waveform : Waveform, optional
+            Waveform of the interleaved gate. Defaults to None.
+        interleave_map : dict[str, tuple[complex, str]], optional
+            Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
 
@@ -1666,6 +1669,27 @@ class Experiment:
         -------
         PulseSequence
             Randomized benchmarking sequence.
+
+        Examples
+        --------
+        >>> sequence = ex.rb_sequence(
+        ...     target="Q00",
+        ...     n=100,
+        ...     x90=Rect(duration=30, amplitude=0.1),
+        ... )
+
+        >>> sequence = ex.rb_sequence(
+        ...     target="Q00",
+        ...     n=100,
+        ...     x90=Rect(duration=30, amplitude=0.1),
+        ...     interleave_waveform=Rect(duration=30, amplitude=0.1),
+        ...     interleave_map={
+        ...         "I": (1, "I"),
+        ...         "X": (1, "X"),
+        ...         "Y": (-1, "Y"),
+        ...         "Z": (-1, "Z"),
+        ...     },
+        ... )
         """
         x90 = x90 or self.hpi_pulse[target]
         z90 = PhaseShift(np.pi / 2)
@@ -1673,10 +1697,20 @@ class Experiment:
         sequence: list[Waveform | PhaseShift] = []
 
         clifford_group = CliffordGroup()
-        cliffords, inverse = clifford_group.get_random_cliffords_and_total_inverse(
-            n=n,
-            seed=seed,
-        )
+
+        if interleave_waveform is None:
+            cliffords, inverse = clifford_group.create_rb_sequences(
+                n=n,
+                seed=seed,
+            )
+        else:
+            if interleave_map is None:
+                raise ValueError("Interleave map must be provided.")
+            cliffords, inverse = clifford_group.create_irb_sequences(
+                n=n,
+                seed=seed,
+                interleave=interleave_map,
+            )
 
         for clifford in cliffords:
             for gate in clifford:
@@ -1684,8 +1718,8 @@ class Experiment:
                     sequence.append(x90)
                 elif gate == "Z90":
                     sequence.append(z90)
-            if interleave is not None:
-                sequence.append(interleave)
+            if interleave_waveform is not None:
+                sequence.append(interleave_waveform)
 
         for gate in inverse:
             if gate == "X90":
@@ -1700,7 +1734,8 @@ class Experiment:
         target: str,
         n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 50),
         x90: Waveform | None = None,
-        interleave: Waveform | None = None,
+        interleave_waveform: Waveform | None = None,
+        interleave_map: dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1717,8 +1752,10 @@ class Experiment:
             Range of the number of Cliffords. Defaults to np.arange(0, 1001, 50).
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        interleave : Waveform, optional
-            Interleaved gate. Defaults to None.
+        interleave_waveform : Waveform, optional
+            Waveform of the interleaved gate. Defaults to None.
+        interleave_map : dict[str, tuple[complex, str]], optional
+            Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
         shots : int, optional
@@ -1732,6 +1769,27 @@ class Experiment:
         -------
         ExperimentResult[RBData]
             Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.rb_experiment(
+        ...     target="Q00",
+        ...     n_cliffords_range=np.arange(0, 1001, 50),
+        ...     x90=Rect(duration=30, amplitude=0.1),
+        ... )
+
+        >>> result = ex.rb_experiment(
+        ...     target="Q00",
+        ...     n_cliffords_range=np.arange(0, 1001, 50),
+        ...     x90=Rect(duration=30, amplitude=0.1),
+        ...     interleave_waveform=Rect(duration=30, amplitude=0.1),
+        ...     interleave_map={
+        ...         "I": (1, "I"),
+        ...         "X": (1, "X"),
+        ...         "Y": (-1, "Y"),
+        ...         "Z": (-1, "Z"),
+        ...     },
+        ... )
         """
 
         def rb_sequence(target: str) -> ParametricWaveform:
@@ -1739,7 +1797,8 @@ class Experiment:
                 target=target,
                 n=N,
                 x90=x90,
-                interleave=interleave,
+                interleave_waveform=interleave_waveform,
+                interleave_map=interleave_map,
                 seed=seed,
             )
 
@@ -1784,7 +1843,6 @@ class Experiment:
         n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
         n_trials: int = 30,
         x90: Waveform | None = None,
-        interleave: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1802,8 +1860,10 @@ class Experiment:
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        interleave : Waveform, optional
-            Interleaved gate. Defaults to None.
+        interleave_waveform : Waveform, optional
+            Waveform of the interleaved gate. Defaults to None.
+        interleave_map : dict[str, tuple[complex, str]], optional
+            Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
         shots : int, optional
@@ -1825,7 +1885,6 @@ class Experiment:
                 target=target,
                 n_cliffords_range=n_cliffords_range,
                 x90=x90,
-                interleave=interleave,
                 seed=seed,
                 shots=shots,
                 interval=interval,

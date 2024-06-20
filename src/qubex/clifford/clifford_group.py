@@ -365,18 +365,89 @@ class CliffordGroup:
 
         return inverse
 
-    def get_random_cliffords_and_total_inverse(
+    def create_rb_sequences(
         self,
         n: int,
         seed: int | None = None,
     ) -> tuple[list[list[str]], list[str]]:
+        """
+        Create a set of random Clifford operators for randomized benchmarking.
+
+        Parameters
+        ----------
+        n : int
+            The number of random Clifford operators to return.
+        seed : int, optional
+            The seed for the random number generator.
+
+        Returns
+        -------
+        tuple[list[list[str]], list[str]]
+            A tuple containing the list of random Clifford operators and their total inverse.
+        """
+        # Get the random Clifford operators
         clifford_sequences = self.get_random_clifford_sequences(n, seed)
 
+        # Compose the Clifford operators
         composed = CliffordSequence.identity()
         for clifford_sequence in clifford_sequences:
+            # Apply the random Clifford operator
             composed = composed.compose(clifford_sequence.clifford)
+        # Compute the total inverse of the composed Clifford operators
         composed_inverse = self.get_inverse(composed)
 
+        # Return the Clifford operators and their total inverse
+        return [
+            clifford_sequence.gate_sequence for clifford_sequence in clifford_sequences
+        ], composed_inverse.gate_sequence
+
+    def create_irb_sequences(
+        self,
+        n: int,
+        interleave: dict[str, tuple[complex, str]],
+        seed: int | None = None,
+    ) -> tuple[list[list[str]], list[str]]:
+        """
+        Create a set of random Clifford operators for interleaved randomized benchmarking.
+
+        Parameters
+        ----------
+        n : int
+            The number of random Clifford operators to return.
+        interlieve : dict[str, tuple[complex, str]]
+            The interleaved gate to apply after each Clifford operator.
+        seed : int, optional
+            The seed for the random number generator.
+
+        Returns
+        -------
+        tuple[list[list[str]], list[str]]
+            A tuple containing the list of random Clifford operators and their total inverse.
+        """
+        # Get the random Clifford operators
+        clifford_sequences = self.get_random_clifford_sequences(n, seed)
+
+        # Create the interleaved Clifford operator
+        interleave_cliford = Clifford(
+            name="U",
+            map={
+                "I": Pauli(*interleave["I"]),
+                "X": Pauli(*interleave["X"]),
+                "Y": Pauli(*interleave["Y"]),
+                "Z": Pauli(*interleave["Z"]),
+            },
+        )
+        # Compose the Clifford operators with the interleaved operator
+        composed = CliffordSequence.identity()
+        for clifford_sequence in clifford_sequences:
+            # Apply the random Clifford operator
+            composed = composed.compose(clifford_sequence.clifford)
+            # Apply the interleaved Clifford operator
+            composed = composed.compose(interleave_cliford)
+        # Compute the total inverse of the composed Clifford operators
+        composed_inverse = self.get_inverse(composed)
+
+        # Return the Clifford operators and their total inverse
         return [
             clifford_sequence.gate_sequence for clifford_sequence in clifford_sequences
         ], composed_inverse.gate_sequence
