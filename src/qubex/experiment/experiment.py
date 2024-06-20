@@ -39,6 +39,7 @@ from .experiment_result import (
     FreqRabiData,
     RabiData,
     RamseyData,
+    RBData,
     SweepData,
     T1Data,
     T2Data,
@@ -1693,3 +1694,82 @@ class Experiment:
             elif gate == "Z90":
                 sequence.append(z90)
         return PulseSequence(sequence)
+
+    def rb_experiment(
+        self,
+        *,
+        target: str,
+        n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 50),
+        x90: Waveform | None = None,
+        interleave: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[RBData]:
+        """
+        Conducts a randomized benchmarking experiment.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        n_cliffords_range : NDArray[np.int64], optional
+            Range of the number of Cliffords. Defaults to np.arange(0, 1001, 50).
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        interleave : Waveform, optional
+            Interleaved gate. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[RBData]
+            Result of the experiment.
+        """
+
+        def rb_sequence(target: str) -> ParametricWaveform:
+            return lambda N: self.rb_sequence(
+                target=target,
+                n=N,
+                x90=x90,
+                interleave=interleave,
+            )
+
+        sweep_result = self.sweep_parameter(
+            {target: rb_sequence(target)},
+            sweep_range=n_cliffords_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        fit_result = {
+            target: fitting.fit_rb(
+                target=target,
+                x=data.sweep_range,
+                y=data.normalized,
+                title="Randomized benchmarking",
+                xaxis_title="Number of Cliffords",
+                yaxis_title="Z expectation value",
+                xaxis_type="linear",
+                yaxis_type="linear",
+            )
+            for target, data in sweep_result.data.items()
+        }
+
+        data = {
+            target: RBData.new(
+                data,
+                depolarizing_rate=fit_result[target][0],
+                avg_gate_error=fit_result[target][1],
+                avg_gate_fidelity=fit_result[target][2],
+            )
+            for target, data in sweep_result.data.items()
+        }
+
+        return ExperimentResult(data=data)
