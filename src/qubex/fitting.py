@@ -588,6 +588,7 @@ def fit_rb(
     error_y: npt.NDArray[np.float64] | None = None,
     p0=None,
     bounds=None,
+    plot: bool = True,
     title: str = "Randomized benchmarking",
     xaxis_title: str = "Number of Cliffords",
     yaxis_title: str = "Z expectation value",
@@ -611,6 +612,8 @@ def fit_rb(
         Initial guess for the fitting parameters.
     bounds : optional
         Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
     xaxis_title : str, optional
@@ -642,43 +645,44 @@ def fit_rb(
     avg_gate_error = (2 - 1) / 2 * (1 - r)
     avg_gate_fidelity = (1 + (2 - 1) * r) / 2
 
-    x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = func_rb(x_fine, *popt)
+    if plot:
+        x_fine = np.linspace(np.min(x), np.max(x), 1000)
+        y_fine = func_rb(x_fine, *popt)
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=y_fine,
+                mode="lines",
+                name="Fit",
+            )
         )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x,
-            y=y,
-            error_y=dict(type="data", array=error_y),
-            mode="markers",
-            name="Data",
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=y,
+                error_y=dict(type="data", array=error_y),
+                mode="markers",
+                name="Data",
+            )
         )
-    )
-    fig.add_annotation(
-        xref="paper",
-        yref="paper",
-        x=0.95,
-        y=0.95,
-        text=f"F = {avg_gate_fidelity * 100:.3f}%",
-        showarrow=False,
-    )
-    fig.update_layout(
-        title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
-        xaxis_type=xaxis_type,
-        yaxis_type=yaxis_type,
-    )
-    fig.show()
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"F = {avg_gate_fidelity * 100:.3f}%",
+            showarrow=False,
+        )
+        fig.update_layout(
+            title=f"{title} : {target}",
+            xaxis_title=xaxis_title,
+            yaxis_title=yaxis_title,
+            xaxis_type=xaxis_type,
+            yaxis_type=yaxis_type,
+        )
+        fig.show()
 
     return depolarizing_rate, avg_gate_error, avg_gate_fidelity
 
