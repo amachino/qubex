@@ -151,7 +151,7 @@ class Clifford:
             "Z": inverse_map["Z"],
         }
         return Clifford(
-            name=f"{self.name}^-1",
+            name=f"({self.name})^-1",
             map=map,
         )
 
@@ -212,7 +212,13 @@ class Clifford:
         return f"{{{map}}}"
 
     def to_dict(self) -> dict:
-        return {operator: pauli.to_string() for operator, pauli in self.map.items()}
+        return {
+            operator: [
+                pauli.coefficient,
+                pauli.operator,
+            ]
+            for operator, pauli in self.map.items()
+        }
 
     def print(self):
         print(self.to_string())
@@ -246,7 +252,6 @@ class CliffordSequence:
     ):
         self.sequence = sequence
         self.clifford = clifford
-        self._inverse: CliffordSequence | None = None
 
     @classmethod
     def identity(cls) -> CliffordSequence:
@@ -264,24 +269,6 @@ class CliffordSequence:
     def gate_sequence(self) -> list[str]:
         """Returns the sequence of gate names."""
         return [clifford.name for clifford in self.sequence]
-
-    @property
-    def inverse(self) -> CliffordSequence:
-        """
-        Compute the inverse of the Clifford sequence.
-
-        Returns
-        -------
-        CliffordSequence
-            The inverse of the current Clifford sequence.
-        """
-        if self._inverse is None:
-            raise ValueError("No inverse set.")
-        return self._inverse
-
-    @inverse.setter
-    def inverse(self, inverse: CliffordSequence):
-        self._inverse = inverse
 
     @property
     def length(self) -> int:
@@ -331,27 +318,68 @@ class CliffordSequence:
 
 class CliffordGroup:
     def __init__(self):
-        self._clifford_sequences = list[CliffordSequence]()
+        self._clifford_dict = dict[Clifford, CliffordSequence]()
+        self.load()
 
     @property
-    def cliffords(self) -> dict[str, dict]:
+    def clifford_sequences(self) -> list[CliffordSequence]:
         """Returns the Clifford operators in the group."""
-        return self.load()
+        return list(self._clifford_dict.values())
 
-    def get_clifford(self, index: int) -> dict[str, dict]:
+    @property
+    def cliffords(self) -> list[dict]:
+        """Returns the Clifford operators in the group."""
+        return [
+            {
+                "index": index,
+                "sequence": clifford_sequence.gate_sequence,
+                "map": clifford_sequence.clifford.to_dict(),
+            }
+            for index, clifford_sequence in enumerate(self.clifford_sequences)
+        ]
+
+    def get_clifford_sequences(self, index: int) -> CliffordSequence:
         """Returns the Clifford operator at a given index."""
-        return self.cliffords[f"#{index}"]
+        return self.clifford_sequences[index]
 
-    def get_random_cliffords(
+    def get_clifford(self, index: int) -> dict:
+        """Returns the Clifford operator at a given index."""
+        return self.cliffords[index]
+
+    def get_random_clifford_sequences(
         self,
         n: int,
-        seed: int = 0,
-    ) -> list[dict]:
+        seed: int = 42,
+    ) -> list[CliffordSequence]:
         """Returns a list of n random Clifford operators."""
         random.seed(seed)
-        keys = list(self.cliffords.keys())
-        random_keys = random.choices(keys, k=n)
-        return [self.cliffords[key] for key in random_keys]
+        return random.choices(self.clifford_sequences, k=n)
+
+    def get_inverse(self, clifford_sequence: CliffordSequence) -> CliffordSequence:
+        """Returns the inverse of a given Clifford operator."""
+
+        clifford = clifford_sequence.clifford
+        inverse = self._clifford_dict.get(clifford.inverse, None)
+        if inverse is None:
+            raise ValueError("Clifford operator not found in the group.")
+
+        return inverse
+
+    def get_random_cliffords_and_total_inverse(
+        self,
+        n: int,
+        seed: int = 42,
+    ) -> tuple[list[list[str]], list[str]]:
+        clifford_sequences = self.get_random_clifford_sequences(n, seed)
+
+        composed = CliffordSequence.identity()
+        for clifford_sequence in clifford_sequences:
+            composed = composed.compose(clifford_sequence.clifford)
+        composed_inverse = self.get_inverse(composed)
+
+        return [
+            clifford_sequence.gate_sequence for clifford_sequence in clifford_sequences
+        ], composed_inverse.gate_sequence
 
     def generate(
         self,
@@ -407,36 +435,52 @@ class CliffordGroup:
         # Generate Clifford sequences starting from the identity
         generate_clifford_sequences(identity, max_gates + 1)  # +1 for the identity
 
-        # Set the inverse of each Clifford sequence
-        for sequence in found_cliffords.values():
-            inverse = found_cliffords.get(sequence.clifford.inverse, None)
-            if inverse is None:
-                raise ValueError("Inverse not found.")
-            sequence.inverse = inverse
-
         # Store the Clifford sequences in the group
-        clifford_sequences = list(found_cliffords.values())
-        self._clifford_sequences = clifford_sequences
+        self._clifford_dict = found_cliffords
 
     def save(self):
         """Save the Clifford group to a JSON file."""
-        data = dict[str, dict]()
-        for index, clifford_sequence in enumerate(self._clifford_sequences):
-            data[f"#{index}"] = {
-                "index": index,
-                "map": clifford_sequence.clifford.to_dict(),
-                "sequence": clifford_sequence.gate_sequence,
-                "inverse": clifford_sequence.inverse.gate_sequence,
-            }
-
+        data = list[dict]()
+        for index, clifford_sequence in enumerate(self._clifford_dict.values()):
+            data.append(
+                {
+                    "index": index,
+                    "sequence": clifford_sequence.gate_sequence,
+                    "map": clifford_sequence.clifford.to_dict(),
+                }
+            )
         current_dir = Path(__file__).parent
         file_path = current_dir / FILE_NAME
         with open(file_path, "w") as file:
             json.dump(data, file, indent=2)
 
-    def load(self) -> dict[str, dict]:
+    def load(self):
         """Load the Clifford group from a JSON file."""
         current_dir = Path(__file__).parent
         file_path = current_dir / FILE_NAME
         with open(file_path, "r") as file:
-            return json.load(file)
+            data = json.load(file)
+
+        for item in data:
+            sequence = []
+            for gate in item["sequence"]:
+                if gate == "X90":
+                    sequence.append(Clifford.x90())
+                elif gate == "Z90":
+                    sequence.append(Clifford.z90())
+            map = {
+                "I": Pauli(*item["map"]["I"]),
+                "X": Pauli(*item["map"]["X"]),
+                "Y": Pauli(*item["map"]["Y"]),
+                "Z": Pauli(*item["map"]["Z"]),
+                # operator: Pauli(coefficient, operator)
+                # for operator, [coefficient, operator] in item["map"].items()
+            }
+            clifford_sequence = CliffordSequence(
+                sequence=sequence,
+                clifford=Clifford(
+                    name=f"#{item['index']}",
+                    map=map,
+                ),
+            )
+            self._clifford_dict[clifford_sequence.clifford] = clifford_sequence

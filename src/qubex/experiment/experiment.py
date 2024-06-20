@@ -14,6 +14,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 
 from .. import fitting
+from ..clifford.clifford_group import CliffordGroup
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..fitting import RabiParam
 from ..measurement import (
@@ -24,7 +25,7 @@ from ..measurement import (
     Measurement,
     MeasureResult,
 )
-from ..pulse import CPMG, Blank, FlatTop, PulseSequence, Rect, Waveform
+from ..pulse import CPMG, Blank, FlatTop, PhaseShift, PulseSequence, Rect, Waveform
 from ..state_classifier import StateClassifier
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..version import get_package_version
@@ -1634,3 +1635,61 @@ class Experiment:
             clf = self._measurement.classifiers[target]
             clf.classify(result_g.data[target].kerneled)
             clf.classify(result_e.data[target].kerneled)
+
+    def rb_sequence(
+        self,
+        *,
+        target: str,
+        n: int,
+        x90: Waveform | None = None,
+        interleave: Waveform | None = None,
+        seed: int = 42,
+    ) -> PulseSequence:
+        """
+        Generates a randomized benchmarking sequence.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        n : int
+            Number of Clifford gates.
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        interleave : Waveform, optional
+            Interleaved gate. Defaults to None.
+        seed : int, optional
+            Random seed. Defaults to 42.
+
+        Returns
+        -------
+        PulseSequence
+            Randomized benchmarking sequence.
+        """
+        x90 = x90 or self.hpi_pulse[target]
+        z90 = PhaseShift(np.pi / 2)
+
+        sequence: list[Waveform | PhaseShift] = []
+
+        clifford_group = CliffordGroup()
+        cliffords, inverse = clifford_group.get_random_cliffords_and_total_inverse(
+            n=n,
+            seed=seed,
+        )
+
+        for clifford in cliffords:
+            for gate in clifford:
+                if gate == "X90":
+                    sequence.append(x90)
+                elif gate == "Z90":
+                    sequence.append(z90)
+
+        if interleave is not None:
+            sequence.append(interleave)
+
+        for gate in inverse:
+            if gate == "X90":
+                sequence.append(x90)
+            elif gate == "Z90":
+                sequence.append(z90)
+        return PulseSequence(sequence)
