@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 
 FILE_NAME = "clifford_group.json"
@@ -335,14 +336,22 @@ class CliffordGroup:
     @property
     def cliffords(self) -> dict[str, dict]:
         """Returns the Clifford operators in the group."""
-        result = dict[str, dict]()
-        for index, clifford_sequence in enumerate(self._clifford_sequences):
-            result[f"#{index}"] = {
-                "map": clifford_sequence.clifford.to_dict(),
-                "sequence": clifford_sequence.gate_sequence,
-                "inverse": clifford_sequence.inverse.gate_sequence,
-            }
-        return result
+        return self.load()
+
+    def get_clifford(self, index: int) -> dict[str, dict]:
+        """Returns the Clifford operator at a given index."""
+        return self.cliffords[f"#{index}"]
+
+    def get_random_cliffords(
+        self,
+        n: int,
+        seed: int = 0,
+    ) -> list[dict]:
+        """Returns a list of n random Clifford operators."""
+        random.seed(seed)
+        keys = list(self.cliffords.keys())
+        random_keys = random.choices(keys, k=n)
+        return [self.cliffords[key] for key in random_keys]
 
     def generate(
         self,
@@ -411,10 +420,19 @@ class CliffordGroup:
 
     def save(self):
         """Save the Clifford group to a JSON file."""
+        data = dict[str, dict]()
+        for index, clifford_sequence in enumerate(self._clifford_sequences):
+            data[f"#{index}"] = {
+                "index": index,
+                "map": clifford_sequence.clifford.to_dict(),
+                "sequence": clifford_sequence.gate_sequence,
+                "inverse": clifford_sequence.inverse.gate_sequence,
+            }
+
         current_dir = Path(__file__).parent
         file_path = current_dir / FILE_NAME
         with open(file_path, "w") as file:
-            json.dump(self.cliffords, file, indent=2)
+            json.dump(data, file, indent=2)
 
     def load(self) -> dict[str, dict]:
         """Load the Clifford group from a JSON file."""
