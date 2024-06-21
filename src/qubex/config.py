@@ -559,19 +559,9 @@ class Config:
         list[Qubit]
             A list of target qubits for the cross-resonance control qubit.
         """
-        qubits = self.get_qubits(chip_id)
-        control = self.get_qubit(chip_id, label)
-        control_index = qubits.index(control)
-        mux_number = control_index // 4
-        control_index_in_mux = control_index % 4
-        edges = {
-            0: (1, 2),
-            1: (3, 0),
-            2: (0, 3),
-            3: (2, 1),
-        }
-        target_indices = [4 * mux_number + edge for edge in edges[control_index_in_mux]]
-        target_qubits = [qubits[i] for i in target_indices]
+        chip = self.get_chip(chip_id)
+        spectators = chip.graph.get_spectators(label)
+        target_qubits = [self.get_qubit(chip_id, qubit) for qubit in spectators]
         return target_qubits
 
     def get_box(self, id: str) -> Box:
@@ -1316,7 +1306,17 @@ You are going to configure the following boxes:
 
         f_ge = self.get_ctrl_ge_target(chip_id, qubit).frequency * 1e9
         f_ef = self.get_ctrl_ef_target(chip_id, qubit).frequency * 1e9
-        f_cr = self.get_ctrl_cr_targets(chip_id, qubit)[0].frequency * 1e9
+
+        cr_targets = self.get_ctrl_cr_targets(chip_id, qubit)
+        cr_freqs = []
+        for target in cr_targets:
+            if not target.frequency:
+                continue
+            cr_freqs.append(target.frequency * 1e9)
+        if not cr_freqs:
+            f_cr = f_ge
+        else:
+            f_cr = (max(cr_freqs) + min(cr_freqs)) / 2
 
         if n_channel == 1:
             f_med = f_ge
