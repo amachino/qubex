@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backend = ["qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.0.0"]
+backend = ["qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.0.2"]
 
 [tool.setuptools.dynamic]
 version = { attr = "qubex.version.get_version" }
