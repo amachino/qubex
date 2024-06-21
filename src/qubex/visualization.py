@@ -1,9 +1,53 @@
+from typing import Literal
+
 import numpy as np
 import plotly.graph_objs as go
 from IPython.display import display
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 from .typing import IQArray, TargetMap
+
+
+def plot_xy(
+    *,
+    x: ArrayLike,
+    y: ArrayLike,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
+    title: str = "",
+    xlabel: str = "",
+    ylabel: str = "",
+    **kwargs,
+):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=y, mode=mode, **kwargs))
+    fig.update_layout(
+        title=title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        template="qubex",
+    )
+    fig.show()
+
+
+def plot_xy_square(
+    *,
+    x: ArrayLike,
+    y: ArrayLike,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
+    title: str = "",
+    xlabel: str = "",
+    ylabel: str = "",
+    **kwargs,
+):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=y, mode=mode, **kwargs))
+    fig.update_layout(
+        title=title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        template="qubex+square",
+    )
+    fig.show()
 
 
 def plot_waveform(

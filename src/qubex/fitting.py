@@ -580,6 +580,113 @@ def fit_exp_decay(
     return tau
 
 
+def fit_rb(
+    *,
+    target: str,
+    x: npt.NDArray[np.int64],
+    y: npt.NDArray[np.float64],
+    error_y: npt.NDArray[np.float64] | None = None,
+    p0=None,
+    bounds=None,
+    plot: bool = True,
+    title: str = "Randomized benchmarking",
+    xaxis_title: str = "Number of Cliffords",
+    yaxis_title: str = "Z expectation value",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> tuple[float, float, float]:
+    """
+    Fit randomized benchmarking data to an exponential decay function and plot the results.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    x : npt.NDArray[np.float64]
+        Time points for the decay data.
+    y : npt.NDArray[np.float64]
+        Amplitude data for the decay.
+    error_y : npt.NDArray[np.float64], optional
+        Error data for the decay.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Label for the x-axis.
+    yaxis_title : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        Depolarizing rate, average error, and average fidelity of the randomized benchmarking.
+    """
+    if p0 is None:
+        p0 = 0.01
+
+    if bounds is None:
+        bounds = (0, 1)
+
+    def func_rb(n: npt.NDArray[np.float64], p: float):
+        return (1 - p) ** n
+
+    popt, _ = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
+    depolarizing_rate = popt[0]
+    r = 1 - depolarizing_rate
+    avg_gate_error = (2 - 1) / 2 * (1 - r)
+    avg_gate_fidelity = (1 + (2 - 1) * r) / 2
+
+    if plot:
+        x_fine = np.linspace(np.min(x), np.max(x), 1000)
+        y_fine = func_rb(x_fine, *popt)
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=y_fine,
+                mode="lines",
+                name="Fit",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=y,
+                error_y=dict(type="data", array=error_y),
+                mode="markers",
+                name="Data",
+            )
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"F = {avg_gate_fidelity * 100:.3f}%",
+            showarrow=False,
+        )
+        fig.update_layout(
+            title=f"{title} : {target}",
+            xaxis_title=xaxis_title,
+            yaxis_title=yaxis_title,
+            xaxis_type=xaxis_type,
+            yaxis_type=yaxis_type,
+        )
+        fig.show()
+
+    return depolarizing_rate, avg_gate_error, avg_gate_fidelity
+
+
 def fit_ampl_calib_data(
     target: str,
     amplitude_range: npt.NDArray[np.float64],

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import datetime
 import os
 from dataclasses import dataclass
@@ -87,7 +89,7 @@ class ExperimentRecord(Generic[T]):
         data: Any,
         name: str,
         description: str = "",
-    ) -> "ExperimentRecord":
+    ) -> ExperimentRecord:
         """
         Create and save a new experiment record.
 
@@ -110,7 +112,7 @@ class ExperimentRecord(Generic[T]):
         return record
 
     @staticmethod
-    def load(name: str, data_dir=DEFAULT_DATA_DIR) -> "ExperimentRecord":
+    def load(name: str, data_dir=DEFAULT_DATA_DIR) -> ExperimentRecord:
         """
         Load an experiment record from a file.
 

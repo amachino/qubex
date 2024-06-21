@@ -85,6 +85,15 @@ pio.templates["qubex"] = go.layout.Template(
     ),
 )
 
+pio.templates["square"] = go.layout.Template(
+    layout=go.Layout(
+        autosize=False,
+        width=500,
+        height=500,
+        yaxis=dict(scaleanchor="x", scaleratio=1),
+    ),
+)
+
 
 def apply_template(template: str):
     pio.templates.default = template

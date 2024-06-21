@@ -522,6 +522,74 @@ class RamseyData(SweepData):
 
 
 @dataclass
+class RBData(SweepData):
+    """
+    Data class representing the result of a randomized benchmarking
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    sweep_range : NDArray
+        Sweep range of the experiment.
+    rabi_param : RabiParam, optional
+        Parameters of the Rabi oscillation.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Title of the x-axis.
+    yaxis_title : str, optional
+        Title of the y-axis.
+    xaxis_type : str, optional
+        Type of the x-axis.
+    yaxis_type : str, optional
+        Type of the y-axis.
+    depolarizing_rate : float, optional
+        Depolarizing rate.
+    avg_gate_error : float, optional
+        Average gate error.
+    avg_gate_fidelity : float, optional
+        Average gate fidelity.
+    """
+
+    depolarizing_rate: float = np.nan
+    avg_gate_error: float = np.nan
+    avg_gate_fidelity: float = np.nan
+
+    @classmethod
+    def new(
+        cls,
+        sweep_data: SweepData,
+        depolarizing_rate: float,
+        avg_gate_error: float,
+        avg_gate_fidelity: float,
+    ) -> RBData:
+        return cls(
+            target=sweep_data.target,
+            data=sweep_data.data,
+            sweep_range=sweep_data.sweep_range,
+            rabi_param=sweep_data.rabi_param,
+            title=sweep_data.title,
+            xaxis_title=sweep_data.xaxis_title,
+            yaxis_title=sweep_data.yaxis_title,
+            xaxis_type=sweep_data.xaxis_type,
+            yaxis_type=sweep_data.yaxis_type,
+            depolarizing_rate=depolarizing_rate,
+            avg_gate_error=avg_gate_error,
+            avg_gate_fidelity=avg_gate_fidelity,
+        )
+
+    def fit(self) -> tuple[float, float, float]:
+        return fitting.fit_rb(
+            target=self.target,
+            x=self.sweep_range,
+            y=self.normalized,
+        )
+
+
+@dataclass
 class AmplRabiData(TargetData):
     """
     The relation between the drive amplitude and the Rabi rate.

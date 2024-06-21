@@ -1,8 +1,15 @@
+from __future__ import annotations
+
 import json
+from pathlib import Path
 from typing import Any
+
 from rich.console import Console
 
 console = Console()
+
+
+FILE_PATH = ".experiment_note.json"
 
 
 class ExperimentNote:
@@ -12,22 +19,29 @@ class ExperimentNote:
     about an experiment that is not part of the main experiment data.
     """
 
-    def __init__(self):
+    def __init__(self, file_path: str = FILE_PATH):
         """
         Initializes the ExperimentNote with an empty dictionary.
         """
-        self._dict = {}
+        self._dict: dict[str, Any] = {}
+        self._file_path = file_path
+        self.load()
 
     def put(self, key: str, value: Any):
         """
         Puts the key-value pair into the dictionary. Only allows JSON serializable values.
 
-        Args:
-            key: The key to put.
-            value: The value to put.
+        Parameters
+        ----------
+        key : str
+            The key to put.
+        value : Any
+            The value to put.
 
-        Raises:
-            ValueError: If the value is not JSON serializable.
+        Raises
+        ------
+        ValueError
+            If the value is not JSON serializable.
         """
         if not self._is_json_serializable(value):
             raise ValueError(f"Value for key '{key}' is not JSON serializable.")
@@ -44,11 +58,15 @@ class ExperimentNote:
         """
         Gets the value associated with the key.
 
-        Args:
-            key: The key to get.
+        Parameters
+        ----------
+        key : str
+            The key to get.
 
-        Returns:
-            The value associated with the key.
+        Returns
+        -------
+        Any
+            The value associated with the key, or None if the key is not found.
         """
         if key not in self._dict:
             console.print(f"Key '{key}' not found.")
@@ -59,8 +77,10 @@ class ExperimentNote:
         """
         Removes the key-value pair from the dictionary.
 
-        Args:
-            key: The key to remove.
+        Parameters
+        ----------
+        key : str
+            The key to remove.
         """
         removed_value = self._dict.pop(key, None)
         if removed_value is not None:
@@ -75,35 +95,42 @@ class ExperimentNote:
         self._dict.clear()
         console.print("All entries have been cleared from the ExperimentNote.")
 
-    def save(self, filename: str = "experiment_note.json"):
+    def save(self, filename: str | None = None):
         """
         Saves the ExperimentNote to a JSON file.
 
-        Args:
-            filename: The name of the file to save to. Defaults to 'experiment_note.json'.
+        Parameters
+        ----------
+        filename : str, optional
+            The name of the file to save to. Defaults to 'experiment_note.json'.
         """
         try:
+            filename = filename or self._file_path
             with open(filename, "w") as file:
                 json.dump(self._dict, file, indent=4)
             console.print(f"ExperimentNote saved to '{filename}'.")
         except Exception as e:
             console.print(f"Failed to save ExperimentNote: {e}")
 
-    def load(self, filename: str = "experiment_note.json"):
+    def load(self, filename: str | None = None):
         """
         Loads the ExperimentNote from a JSON file.
 
-        Args:
-            filename: The name of the file to load from. Defaults to 'experiment_note.json'.
+        Parameters
+        ----------
+        filename : str, optional
+            The name of the file to load from. Defaults to 'experiment_note.json'.
         """
+
+        filename = filename or self._file_path
+        file_path = Path(filename)
+
+        if not file_path.exists():
+            with open(filename, "w") as file:
+                json.dump({}, file)
         try:
             with open(filename, "r") as file:
                 self._dict = json.load(file)
-            console.print(f"ExperimentNote loaded from '{filename}'.")
-        except FileNotFoundError:
-            console.print(
-                f"File '{filename}' not found. Starting with an empty ExperimentNote."
-            )
         except json.JSONDecodeError:
             console.print(
                 f"Error decoding JSON from '{filename}'. Starting with an empty ExperimentNote."
@@ -115,7 +142,9 @@ class ExperimentNote:
         """
         Returns the JSON representation of the ExperimentNote.
 
-        Returns:
+        Returns
+        -------
+        str
             The JSON representation of the ExperimentNote.
         """
         return json.dumps(self._dict)
@@ -124,7 +153,9 @@ class ExperimentNote:
         """
         Returns the JSON representation of the ExperimentNote.
 
-        Returns:
+        Returns
+        -------
+        str
             The JSON representation of the ExperimentNote.
         """
         return json.dumps(self._dict, indent=4)
@@ -133,10 +164,14 @@ class ExperimentNote:
         """
         Checks if a value is JSON serializable.
 
-        Args:
-            value: The value to check.
+        Parameters
+        ----------
+        value : Any
+            The value to check.
 
-        Returns:
+        Returns
+        -------
+        bool
             True if the value is JSON serializable, False otherwise.
         """
         try:

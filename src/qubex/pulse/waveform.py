@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Final, Literal
 
@@ -75,29 +77,29 @@ class Waveform(ABC):
         return np.where(self.abs == 0, 0, np.angle(self.values))
 
     @abstractmethod
-    def copy(self) -> "Waveform":
+    def copy(self) -> Waveform:
         """Returns a copy of the waveform."""
 
     @abstractmethod
     def padded(
         self, total_duration: float, pad_side: Literal["right", "left"] = "right"
-    ) -> "Waveform":
+    ) -> Waveform:
         """Returns a copy of the waveform with zero padding."""
 
     @abstractmethod
-    def scaled(self, scale: float) -> "Waveform":
+    def scaled(self, scale: float) -> Waveform:
         """Returns a copy of the waveform scaled by the given factor."""
 
     @abstractmethod
-    def detuned(self, detuning: float) -> "Waveform":
+    def detuned(self, detuning: float) -> Waveform:
         """Returns a copy of the waveform detuned by the given frequency."""
 
     @abstractmethod
-    def shifted(self, phase: float) -> "Waveform":
+    def shifted(self, phase: float) -> Waveform:
         """Returns a copy of the waveform shifted by the given phase."""
 
     @abstractmethod
-    def repeated(self, n: int) -> "Waveform":
+    def repeated(self, n: int) -> Waveform:
         """Returns a copy of the waveform repeated n times."""
 
     def _number_of_samples(
@@ -186,6 +188,10 @@ class Waveform(ABC):
         ylabel : str, optional
             Label of the y-axis.
         """
+        if self.length == 0:
+            print("Waveform is empty.")
+            return
+
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
@@ -236,6 +242,10 @@ class Waveform(ABC):
         ylabel : str, optional
             Label of the y-axis.
         """
+        if self.length == 0:
+            print("Waveform is empty.")
+            return
+
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         ampl = np.append(self.abs, self.abs[-1])
         phase = np.append(self.angle, self.angle[-1])
