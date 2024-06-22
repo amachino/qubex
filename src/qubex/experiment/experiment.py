@@ -186,12 +186,14 @@ class Experiment:
         TargetMap[Waveform]
             π/2 pulse.
         """
-        amplitude: dict = self._system_note.get(DEFAULT_HPI_AMPLITUDE)
-        if amplitude is None:
-            print(
-                "Default π/2 amplitude is not set. Using `control_amplitude` in params.yaml."
-            )
-            amplitude = self.params.control_amplitude
+        # preset hpi amplitude
+        amplitude = self.params.control_amplitude
+        # calibrated hpi amplitude
+        calib_amplitude: dict[str, float] = self._system_note.get(DEFAULT_HPI_AMPLITUDE)
+        if calib_amplitude is not None:
+            for target in calib_amplitude:
+                # use the calibrated hpi amplitude if it is stored
+                amplitude[target] = calib_amplitude[target]
         return {
             target: FlatTop(
                 duration=DEFAULT_HPI_DURATION,
@@ -211,22 +213,21 @@ class Experiment:
         TargetMap[Waveform]
             π pulse.
         """
-        amplitude: dict = self._system_note.get(DEFAULT_PI_AMPLITUDE)
-        if amplitude is None:
-            # Use the default hpi pulse * 2
-            print("Default π amplitude is not set. Using the default π/2 pulse * 2.")
-            hpi = self.hpi_pulse
-            pi = {target: hpi[target].repeated(2) for target in self.qubits}
-        else:
-            pi = {
-                target: FlatTop(
+        # preset hpi pulse
+        hpi = self.hpi_pulse
+        # generate the pi pulse from the hpi pulse
+        pi = {target: hpi[target].repeated(2) for target in self.qubits}
+        # calibrated pi amplitude
+        calib_amplitude: dict[str, float] = self._system_note.get(DEFAULT_PI_AMPLITUDE)
+        if calib_amplitude is not None:
+            for target in calib_amplitude:
+                # use the calibrated pi amplitude if it is stored
+                pi[target] = FlatTop(
                     duration=DEFAULT_PI_DURATION,
-                    amplitude=amplitude[target],
+                    amplitude=calib_amplitude[target],
                     tau=10,
                 )
-                for target in self.qubits
-            }
-        return pi
+        return {target: pi[target] for target in self.qubits}
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
