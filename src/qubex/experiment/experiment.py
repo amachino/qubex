@@ -9,6 +9,7 @@ from typing import Final, Literal, Optional, Sequence
 import numpy as np
 from IPython.display import clear_output
 from numpy.typing import NDArray
+from qctrlvisualizer import display_bloch_sphere_from_bloch_vectors
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
@@ -413,7 +414,7 @@ class Experiment:
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -432,7 +433,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         control_window : int, optional
-            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+            Control window. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -452,12 +453,14 @@ class Experiment:
         ...     plot=True,
         ... )
         """
+        control_window = control_window or self._control_window
         waveforms = {}
         for target, waveform in sequence.items():
             if isinstance(waveform, Waveform):
                 waveforms[target] = waveform.values
             else:
                 waveforms[target] = np.array(waveform, dtype=np.complex128)
+
         if frequencies is None:
             result = self._measurement.measure(
                 waveforms=waveforms,
@@ -486,7 +489,7 @@ class Experiment:
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
     ):
         """
         Measures the signals using the given sequences.
@@ -502,7 +505,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         control_window : int, optional
-            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+            Control window. Defaults to None.
 
         Yields
         ------
@@ -521,7 +524,7 @@ class Experiment:
             mode=mode,
             shots=shots,
             interval=interval,
-            control_window=control_window,
+            control_window=control_window or self._control_window,
         )
 
     def check_noise(
@@ -741,6 +744,7 @@ class Experiment:
         frequencies: Optional[dict[str, float]] = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        control_window: int | None = None,
         plot: bool = True,
         title: str = "Sweep result",
         xaxis_title: str = "Sweep value",
@@ -765,6 +769,8 @@ class Experiment:
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
+        control_window : int, optional
+            Control window. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         title : str, optional
@@ -805,7 +811,7 @@ class Experiment:
             sequences=sequences,
             shots=shots,
             interval=interval,
-            control_window=self._control_window,
+            control_window=control_window or self._control_window,
         )
         signals = defaultdict(list)
         plotter = IQPlotter()
@@ -2063,13 +2069,13 @@ class Experiment:
 
     def state_tomography(
         self,
-        sequence: TargetMap[IQArray] | TargetMap[Waveform],
+        sequence: TargetMap[IQArray | Waveform],
         *,
         x90: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
-    ) -> dict[str, float]:
+    ) -> dict[str, tuple[float, float, float]]:
         """
         Conducts a state tomography experiment.
 
@@ -2088,12 +2094,12 @@ class Experiment:
 
         Returns
         -------
-        dict[str, float]
+        dict[str, tuple[float, float, float]]
             Results of the experiment.
         """
-        results = {}
+        buffer: dict[str, list[float]] = defaultdict(list)
         for basis in ["X", "Y", "Z"]:
-            result = self.measure(
+            measure_result = self.measure(
                 {
                     target: self.state_tomography_sequence(
                         target=target,
@@ -2107,7 +2113,7 @@ class Experiment:
                 interval=interval,
                 plot=plot,
             )
-            for target, data in result.data.items():
+            for target, data in measure_result.data.items():
                 # TODO: add normalization option to the measure method
                 rabi_param = self.rabi_params[target]
                 if rabi_param is None:
@@ -2117,5 +2123,64 @@ class Experiment:
                 values_normalized = (
                     np.imag(values_rotated) - rabi_param.offset
                 ) / rabi_param.amplitude
-            results[basis] = values_normalized
-        return results
+                buffer[target] += [values_normalized]
+
+        result = {
+            target: (
+                values[0],  # X
+                values[1],  # Y
+                values[2],  # Z
+            )
+            for target, values in buffer.items()
+        }
+        return result
+
+    def state_evolution_tomography(
+        self,
+        *,
+        sequences: Sequence[TargetMap[IQArray | Waveform]],
+        x90: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict[str, NDArray[np.float64]]:
+        """
+        Conducts a state evolution tomography experiment.
+
+        Parameters
+        ----------
+        sequences : Sequence[TargetMap[IQArray | Waveform]]
+            Sequences to measure for each target.
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        dict[str, NDArray[np.float64]]
+            Results of the experiment.
+        """
+        buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
+        for sequence in sequences:
+            state_vectors = self.state_tomography(
+                sequence=sequence,
+                x90=x90,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            for target, state_vector in state_vectors.items():
+                buffer[target].append(state_vector)
+
+        result = {target: np.array(states) for target, states in buffer.items()}
+
+        if plot:
+            for target, states in result.items():
+                display_bloch_sphere_from_bloch_vectors(states)
+
+        return result

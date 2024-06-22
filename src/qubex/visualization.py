@@ -8,6 +8,26 @@ from numpy.typing import ArrayLike, NDArray
 from .typing import IQArray, TargetMap
 
 
+def plot(
+    y: ArrayLike,
+    *,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
+    title: str = "",
+    xlabel: str = "",
+    ylabel: str = "",
+    **kwargs,
+):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(y=y, mode=mode, **kwargs))
+    fig.update_layout(
+        title=title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        template="qubex",
+    )
+    fig.show()
+
+
 def plot_xy(
     *,
     x: ArrayLike,
