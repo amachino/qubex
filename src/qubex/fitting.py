@@ -69,9 +69,6 @@ def normalize(
     """
     values_rotated = values * np.exp(-1j * param.angle)
     values_normalized = (np.imag(values_rotated) - param.offset) / param.amplitude
-    # initial_value = values_normalized[0]
-    # if initial_value < 0:
-    #     values_normalized = -values_normalized
     return values_normalized
 
 

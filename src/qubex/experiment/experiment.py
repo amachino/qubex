@@ -25,7 +25,16 @@ from ..measurement import (
     Measurement,
     MeasureResult,
 )
-from ..pulse import CPMG, Blank, FlatTop, PhaseShift, PulseSequence, Rect, Waveform
+from ..pulse import (
+    CPMG,
+    Blank,
+    FlatTop,
+    PhaseShift,
+    Pulse,
+    PulseSequence,
+    Rect,
+    Waveform,
+)
 from ..state_classifier import StateClassifier
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..version import get_package_version
@@ -2008,3 +2017,105 @@ class Experiment:
             "mean": mean,
             "std": std,
         }
+
+    def state_tomography_sequence(
+        self,
+        *,
+        target: str,
+        sequence: IQArray | Waveform,
+        basis: str,
+        x90: Waveform | None = None,
+    ) -> PulseSequence:
+        """
+        Generates a state tomography sequence.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        sequence : IQArray | Waveform
+            Sequence to measure.
+        basis : str
+            Measurement basis. "X", "Y", or "Z".
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+
+        Returns
+        -------
+        PulseSequence
+            State tomography sequence.
+        """
+        if isinstance(sequence, list) or isinstance(sequence, np.ndarray):
+            sequence = Pulse(sequence)
+        elif not isinstance(sequence, Waveform):
+            raise ValueError("Invalid sequence.")
+
+        x90 = x90 or self.hpi_pulse[target]
+
+        if basis == "X":
+            return PulseSequence([x90.shifted(np.pi / 2), sequence])
+        elif basis == "Y":
+            return PulseSequence([x90, sequence])
+        elif basis == "Z":
+            return PulseSequence([sequence])
+        else:
+            raise ValueError("Invalid basis.")
+
+    def state_tomography(
+        self,
+        sequence: TargetMap[IQArray] | TargetMap[Waveform],
+        *,
+        x90: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = False,
+    ) -> dict[str, float]:
+        """
+        Conducts a state tomography experiment.
+
+        Parameters
+        ----------
+        sequence : TargetMap[IQArray] | TargetMap[Waveform]
+            Sequence to measure for each target.
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        dict[str, float]
+            Results of the experiment.
+        """
+        results = {}
+        for basis in ["X", "Y", "Z"]:
+            result = self.measure(
+                {
+                    target: self.state_tomography_sequence(
+                        target=target,
+                        sequence=sequence,
+                        basis=basis,
+                        x90=x90,
+                    )
+                    for target, sequence in sequence.items()
+                },
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+            for target, data in result.data.items():
+                # TODO: add normalization option to the measure method
+                rabi_param = self.rabi_params[target]
+                if rabi_param is None:
+                    raise ValueError("Rabi parameters are not stored.")
+                values = data.kerneled
+                values_rotated = values * np.exp(-1j * rabi_param.angle)
+                values_normalized = (
+                    np.imag(values_rotated) - rabi_param.offset
+                ) / rabi_param.amplitude
+            results[basis] = values_normalized
+        return results
