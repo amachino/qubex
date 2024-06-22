@@ -281,7 +281,7 @@ class TabuchiDD(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         The total duration of the pulse sequence in nanoseconds.
     beta : float, optional
         Beta parameter influencing the x and y components of the pulse.
@@ -338,7 +338,7 @@ class TabuchiDD(Pulse):
 
     def __init__(
         self,
-        duration: int,
+        duration: float,
         beta=0.0,
         phi=0.0,
         **kwargs,
@@ -359,7 +359,8 @@ class TabuchiDD(Pulse):
         error_y = beta
         y = (1 + error_y) * np.array([self._vy(t) for t in self.t])
 
-        return x + 1j * y
+        values = (x + 1j * y) / np.pi / 2 * 1e3
+        return values
 
     def _vx(self, t) -> float:
         return sum(
@@ -369,4 +370,25 @@ class TabuchiDD(Pulse):
     def _vy(self, t) -> float:
         return sum(
             v * np.sin(2 * np.pi * n * t / self.T) for n, v in enumerate(self.vy_n, 1)
+        )
+
+    def plot_xy(
+        self,
+        *,
+        title=None,
+        xlabel="Time (ns)",
+        ylabel="Amplitude (MHz)",
+    ):
+        super().plot_xy(title=title, xlabel=xlabel, ylabel=ylabel)
+
+    def plot_polar(
+        self,
+        *,
+        title="",
+        xlabel="Time (ns)",
+        ylabel_1="Amplitude (MHz)",
+        ylabel_2="Phase (rad)",
+    ):
+        super().plot_polar(
+            title=title, xlabel=xlabel, ylabel_1=ylabel_1, ylabel_2=ylabel_2
         )
