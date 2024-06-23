@@ -91,6 +91,27 @@ class PulseSequence(Waveform):
         )
         return values
 
+    @property
+    def virtual_phases(self) -> npt.NDArray[np.float64]:
+        """Returns the virtual phases of the pulse sequence."""
+        phases = []
+        current_phase = 0.0
+        for obj in self._sequence:
+            if isinstance(obj, PhaseShift):
+                current_phase += obj.theta
+            elif isinstance(obj, Waveform):
+                phases += [current_phase] * obj.length
+        return np.array(phases)
+
+    @property
+    def total_virtual_phase(self) -> float:
+        """Returns the total virtual phase of the pulse sequence."""
+        phase_shift = 0.0
+        for obj in self._sequence:
+            if isinstance(obj, PhaseShift):
+                phase_shift += obj.theta
+        return phase_shift
+
     def add(self, obj: Waveform | PhaseShift) -> None:
         """Adds a waveform or phase shift to the pulse sequence."""
         self._sequence.append(obj)

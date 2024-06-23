@@ -371,24 +371,3 @@ class TabuchiDD(Pulse):
         return sum(
             v * np.sin(2 * np.pi * n * t / self.T) for n, v in enumerate(self.vy_n, 1)
         )
-
-    def plot_xy(
-        self,
-        *,
-        title=None,
-        xlabel="Time (ns)",
-        ylabel="Amplitude (MHz)",
-    ):
-        super().plot_xy(title=title, xlabel=xlabel, ylabel=ylabel)
-
-    def plot_polar(
-        self,
-        *,
-        title="",
-        xlabel="Time (ns)",
-        ylabel_1="Amplitude (MHz)",
-        ylabel_2="Phase (rad)",
-    ):
-        super().plot_polar(
-            title=title, xlabel=xlabel, ylabel_1=ylabel_1, ylabel_2=ylabel_2
-        )

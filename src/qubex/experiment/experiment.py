@@ -2124,7 +2124,6 @@ class Experiment:
                 plot=plot,
             )
             for target, data in measure_result.data.items():
-                # TODO: add normalization option to the measure method
                 rabi_param = self.rabi_params[target]
                 if rabi_param is None:
                     raise ValueError("Rabi parameters are not stored.")
@@ -2135,6 +2134,7 @@ class Experiment:
                 ) / rabi_param.amplitude
                 buffer[target] += [values_normalized]
 
+        # TODO: Correct the virtual Z phase
         result = {
             target: (
                 values[0],  # X
@@ -2245,7 +2245,7 @@ class Experiment:
 
         sequences = [
             {target: pulse.values[0:i] for target, pulse in pulses.items()}
-            for i in range(1, pulse_length + 1)
+            for i in range(pulse_length + 1)
         ]
 
         result = self.state_evolution_tomography(
