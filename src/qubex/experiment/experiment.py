@@ -1712,7 +1712,7 @@ class Experiment:
         ... )
         """
         x90 = x90 or self.hpi_pulse[target]
-        z90 = PhaseShift(np.pi / 2)
+        z90 = PhaseShift(-np.pi / 2)
 
         sequence: list[Waveform | PhaseShift] = []
 
@@ -1858,8 +1858,8 @@ class Experiment:
 
     def randomized_benchmarking(
         self,
-        *,
         target: str,
+        *,
         n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
         n_trials: int = 30,
         x90: Waveform | None = None,
@@ -1898,6 +1898,9 @@ class Experiment:
         dict
             Results of the experiment.
         """
+        if self._rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
         results = []
         seeds = np.random.randint(0, 2**32, n_trials)
         for seed in seeds:
@@ -2063,9 +2066,9 @@ class Experiment:
         x90 = x90 or self.hpi_pulse[target]
 
         if basis == "X":
-            return PulseSequence([x90.shifted(np.pi / 2), sequence])
+            return PulseSequence([sequence, x90.shifted(-np.pi / 2)])
         elif basis == "Y":
-            return PulseSequence([x90, sequence])
+            return PulseSequence([sequence, x90])
         elif basis == "Z":
             return PulseSequence([sequence])
         else:

@@ -628,7 +628,7 @@ def fit_rb(
         Depolarizing rate, average error, and average fidelity of the randomized benchmarking.
     """
     if p0 is None:
-        p0 = 0.01
+        p0 = 0.0
 
     if bounds is None:
         bounds = (0, 1)
