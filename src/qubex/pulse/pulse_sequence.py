@@ -15,6 +15,11 @@ class PhaseShift:
         self.theta = theta
 
 
+class VirtualZ(PhaseShift):
+    def __init__(self, theta: float):
+        super().__init__(-theta)
+
+
 class PulseSequence(Waveform):
     """
     A class to represent a pulse sequence.

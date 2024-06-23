@@ -36,10 +36,10 @@ from ..pulse import (
     CPMG,
     Blank,
     FlatTop,
-    PhaseShift,
     Pulse,
     PulseSequence,
     Rect,
+    VirtualZ,
     Waveform,
 )
 from ..typing import IQArray, ParametricWaveform, TargetMap
@@ -249,6 +249,11 @@ class Experiment:
         if self._rabi_params is None:
             return {}
         return self._rabi_params
+
+    def _validate_rabi_params(self):
+        """Check if the Rabi parameters are stored."""
+        if self._rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
         """
@@ -1141,8 +1146,7 @@ class Experiment:
         current_amplitudes = self.params.control_amplitude
         rabi_params = rabi_params or self.rabi_params
 
-        if self._rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
+        self._validate_rabi_params()
 
         amplitudes = {
             target: current_amplitudes[target]
@@ -1712,9 +1716,9 @@ class Experiment:
         ... )
         """
         x90 = x90 or self.hpi_pulse[target]
-        z90 = PhaseShift(-np.pi / 2)
+        z90 = VirtualZ(np.pi / 2)
 
-        sequence: list[Waveform | PhaseShift] = []
+        sequence: list[Waveform | VirtualZ] = []
 
         clifford_group = CliffordGroup()
 
@@ -1898,8 +1902,7 @@ class Experiment:
         dict
             Results of the experiment.
         """
-        if self._rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
+        self._validate_rabi_params()
 
         results = []
         seeds = np.random.randint(0, 2**32, n_trials)
@@ -2218,6 +2221,8 @@ class Experiment:
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         """
+        self._validate_rabi_params()
+
         pulses: dict[str, Pulse] = {}
         pulse_length_set = set()
         for target, waveform in waveforms.items():
