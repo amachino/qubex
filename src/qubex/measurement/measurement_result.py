@@ -5,7 +5,7 @@ from enum import Enum
 
 from numpy.typing import NDArray
 
-from .visualization import plot_waveform, scatter_iq_data
+from ..analysis import plot_waveform, scatter_iq_data
 
 
 class MeasureMode(Enum):

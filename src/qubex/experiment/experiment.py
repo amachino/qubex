@@ -14,10 +14,9 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from .. import fitting
-from ..clifford.clifford_group import CliffordGroup
+from ..analysis import IQPlotter, RabiParam, fitting, plot_waveform
+from ..clifford import CliffordGroup
 from ..config import Config, Params, Qubit, Resonator, Target
-from ..fitting import RabiParam
 from ..measurement import (
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
@@ -25,6 +24,7 @@ from ..measurement import (
     DEFAULT_SHOTS,
     Measurement,
     MeasureResult,
+    StateClassifier,
 )
 from ..pulse import (
     CPMG,
@@ -36,10 +36,8 @@ from ..pulse import (
     Rect,
     Waveform,
 )
-from ..state_classifier import StateClassifier
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..version import get_package_version
-from ..visualization import IQPlotter, plot_waveform
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import (

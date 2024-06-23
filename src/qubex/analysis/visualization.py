@@ -5,7 +5,7 @@ import plotly.graph_objs as go
 from IPython.display import display
 from numpy.typing import ArrayLike, NDArray
 
-from .typing import IQArray, TargetMap
+from ..typing import IQArray, TargetMap
 
 
 def plot(
