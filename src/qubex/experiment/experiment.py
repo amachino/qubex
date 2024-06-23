@@ -18,6 +18,7 @@ from ..analysis import (
     RabiParam,
     display_bloch_sphere,
     fitting,
+    plot_state_vectors,
     plot_waveform,
 )
 from ..clifford import CliffordGroup
@@ -2191,34 +2192,52 @@ class Experiment:
 
     def pulse_tomography(
         self,
-        pulses: TargetMap[IQArray | Waveform],
+        waveforms: TargetMap[IQArray | Waveform],
         *,
         x90: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> TargetMap[NDArray[np.float64]]:
-        """ """
-        waveforms = {}
-        waveform_length_set = set()
-        for target, pulse in pulses.items():
-            if isinstance(pulse, list):
-                waveform = np.array(pulse)
-            elif isinstance(pulse, Waveform):
-                waveform = pulse.values
-            waveforms[target] = waveform
-            waveform_length_set.add(len(waveform))
-        if len(waveform_length_set) != 1:
+        """
+        Conducts a pulse tomography experiment.
+
+        Parameters
+        ----------
+        waveforms : TargetMap[IQArray | Waveform]
+            Waveforms to measure for each target.
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        """
+        pulses: dict[str, Pulse] = {}
+        pulse_length_set = set()
+        for target, waveform in waveforms.items():
+            if isinstance(waveform, list) or isinstance(waveform, np.ndarray):
+                pulse = Pulse(waveform)
+            elif isinstance(waveform, Waveform):
+                pulse = Pulse(waveform.values)
+            else:
+                raise ValueError("Invalid waveform.")
+            pulses[target] = pulse
+            pulse_length_set.add(pulse.length)
+        if len(pulse_length_set) != 1:
             raise ValueError("The lengths of the waveforms must be the same.")
-        waveform_length = waveform_length_set.pop()
+
+        pulse_length = pulse_length_set.pop()
 
         if plot:
-            for target, waveform in waveforms.items():
-                Pulse(waveform).plot(title=f"Waveform of {target}")
+            for target in pulses:
+                pulses[target].plot(title=f"Waveform of {target}")
 
         sequences = [
-            {target: waveform[0:i] for target, waveform in waveforms.items()}
-            for i in range(1, waveform_length + 1)
+            {target: pulse.values[0:i] for target, pulse in pulses.items()}
+            for i in range(1, pulse_length + 1)
         ]
 
         result = self.state_evolution_tomography(
@@ -2228,5 +2247,13 @@ class Experiment:
             interval=interval,
             plot=plot,
         )
+
+        if plot:
+            for target, states in result.items():
+                plot_state_vectors(
+                    times=pulses.popitem()[1].times,
+                    state_vectors=states,
+                    title=f"State evolution of {target}",
+                )
 
         return result

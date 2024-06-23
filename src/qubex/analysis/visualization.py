@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Literal
 
 import numpy as np
@@ -13,13 +15,15 @@ def display_bloch_sphere(bloch_vectors: NDArray[np.float64]):
     qcv.display_bloch_sphere_from_bloch_vectors(bloch_vectors)
 
 
-def plot(
+def plot_y(
     y: ArrayLike,
     *,
     mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
     title: str = "",
     xlabel: str = "",
     ylabel: str = "",
+    xlim: tuple[float, float] | list[float] | None = None,
+    ylim: tuple[float, float] | list[float] | None = None,
     **kwargs,
 ):
     fig = go.Figure()
@@ -28,6 +32,8 @@ def plot(
         title=title,
         xaxis_title=xlabel,
         yaxis_title=ylabel,
+        xaxis_range=xlim,
+        yaxis_range=ylim,
         template="qubex",
     )
     fig.show()
@@ -41,6 +47,8 @@ def plot_xy(
     title: str = "",
     xlabel: str = "",
     ylabel: str = "",
+    xlim: tuple[float, float] | list[float] | None = None,
+    ylim: tuple[float, float] | list[float] | None = None,
     **kwargs,
 ):
     fig = go.Figure()
@@ -49,6 +57,8 @@ def plot_xy(
         title=title,
         xaxis_title=xlabel,
         yaxis_title=ylabel,
+        xaxis_range=xlim,
+        yaxis_range=ylim,
         template="qubex",
     )
     fig.show()
@@ -62,6 +72,8 @@ def plot_xy_square(
     title: str = "",
     xlabel: str = "",
     ylabel: str = "",
+    xlim: tuple[float, float] | list[float] | None = None,
+    ylim: tuple[float, float] | list[float] | None = None,
     **kwargs,
 ):
     fig = go.Figure()
@@ -70,7 +82,51 @@ def plot_xy_square(
         title=title,
         xaxis_title=xlabel,
         yaxis_title=ylabel,
+        xaxis_range=xlim,
+        yaxis_range=ylim,
         template="qubex+square",
+    )
+    fig.show()
+
+
+def plot_state_vectors(
+    times: NDArray[np.float64],
+    state_vectors: NDArray[np.float64],
+    *,
+    title: str = "State evolution",
+    xlabel: str = "Time (ns)",
+    ylabel: str = "Expectation value",
+):
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=times,
+            y=state_vectors[:, 0],
+            mode="lines+markers",
+            name="X",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=times,
+            y=state_vectors[:, 1],
+            mode="lines+markers",
+            name="Y",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=times,
+            y=state_vectors[:, 2],
+            mode="lines+markers",
+            name="Z",
+        )
+    )
+    fig.update_layout(
+        title=title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        yaxis=dict(range=[-1.1, 1.1]),
     )
     fig.show()
 
