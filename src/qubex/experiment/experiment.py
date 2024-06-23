@@ -9,12 +9,17 @@ from typing import Final, Literal, Optional, Sequence
 import numpy as np
 from IPython.display import clear_output
 from numpy.typing import NDArray
-from qctrlvisualizer import display_bloch_sphere_from_bloch_vectors
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from ..analysis import IQPlotter, RabiParam, fitting, plot_waveform
+from ..analysis import (
+    IQPlotter,
+    RabiParam,
+    display_bloch_sphere,
+    fitting,
+    plot_waveform,
+)
 from ..clifford import CliffordGroup
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..measurement import (
@@ -2179,6 +2184,49 @@ class Experiment:
 
         if plot:
             for target, states in result.items():
-                display_bloch_sphere_from_bloch_vectors(states)
+                print(f"State evolution of {target}")
+                display_bloch_sphere(states)
+
+        return result
+
+    def pulse_tomography(
+        self,
+        pulses: TargetMap[IQArray | Waveform],
+        *,
+        x90: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> TargetMap[NDArray[np.float64]]:
+        """ """
+        waveforms = {}
+        waveform_length_set = set()
+        for target, pulse in pulses.items():
+            if isinstance(pulse, list):
+                waveform = np.array(pulse)
+            elif isinstance(pulse, Waveform):
+                waveform = pulse.values
+            waveforms[target] = waveform
+            waveform_length_set.add(len(waveform))
+        if len(waveform_length_set) != 1:
+            raise ValueError("The lengths of the waveforms must be the same.")
+        waveform_length = waveform_length_set.pop()
+
+        if plot:
+            for target, waveform in waveforms.items():
+                Pulse(waveform).plot(title=f"Waveform of {target}")
+
+        sequences = [
+            {target: waveform[0:i] for target, waveform in waveforms.items()}
+            for i in range(1, waveform_length + 1)
+        ]
+
+        result = self.state_evolution_tomography(
+            sequences=sequences,
+            x90=x90,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
 
         return result

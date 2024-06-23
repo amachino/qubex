@@ -2,10 +2,15 @@ from typing import Literal
 
 import numpy as np
 import plotly.graph_objs as go
+import qctrlvisualizer as qcv
 from IPython.display import display
 from numpy.typing import ArrayLike, NDArray
 
 from ..typing import IQArray, TargetMap
+
+
+def display_bloch_sphere(bloch_vectors: NDArray[np.float64]):
+    qcv.display_bloch_sphere_from_bloch_vectors(bloch_vectors)
 
 
 def plot(

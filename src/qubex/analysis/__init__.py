@@ -1,6 +1,7 @@
 from .fitting import RabiParam
 from .visualization import (
     IQPlotter,
+    display_bloch_sphere,
     plot,
     plot_waveform,
     plot_xy,
@@ -11,6 +12,7 @@ from .visualization import (
 __all__ = [
     "RabiParam",
     "IQPlotter",
+    "display_bloch_sphere",
     "plot",
     "plot_waveform",
     "plot_xy",
