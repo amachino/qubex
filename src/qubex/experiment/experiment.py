@@ -1382,7 +1382,7 @@ class Experiment:
         plot: bool = True,
     ) -> ExperimentResult[T1Data]:
         """
-        Conducts a T1 experiment.
+        Conducts a T1 experiment in parallel.
 
         Parameters
         ----------
@@ -1467,7 +1467,7 @@ class Experiment:
         plot: bool = True,
     ) -> ExperimentResult[T2Data]:
         """
-        Conducts a T2 experiment.
+        Conducts a T2 experiment in series.
 
         Parameters
         ----------
@@ -1495,7 +1495,7 @@ class Experiment:
         # wrap the lambda function with a function to scope the qubit variable
         def t2_sequence(target: str) -> ParametricWaveform:
             hpi = self.hpi_pulse[target]
-            pi = pi_cpmg or self.pi_pulse[target]
+            pi = pi_cpmg or hpi.repeated(2)
 
             def waveform(T: int) -> Waveform:
                 if T == 0:
@@ -1522,30 +1522,25 @@ class Experiment:
 
             return waveform
 
-        sweep_result = self.sweep_parameter(
-            sequence={target: t2_sequence(target) for target in targets},
-            sweep_range=time_range,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-        )
-
-        fit_result = {
-            target: fitting.fit_exp_decay(
+        data: dict[str, T2Data] = {}
+        for target in targets:
+            sweep_data = self.sweep_parameter(
+                sequence={target: t2_sequence(target)},
+                sweep_range=time_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            ).data[target]
+            t2 = fitting.fit_exp_decay(
                 target=target,
-                x=data.sweep_range,
-                y=0.5 * (1 - data.normalized),
+                x=sweep_data.sweep_range,
+                y=0.5 * (1 - sweep_data.normalized),
                 title="T2",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
             )
-            for target, data in sweep_result.data.items()
-        }
-
-        data = {
-            target: T2Data.new(data, t2=fit_result[target])
-            for target, data in sweep_result.data.items()
-        }
+            t2_data = T2Data.new(sweep_data, t2=t2)
+            data[target] = t2_data
 
         return ExperimentResult(data=data)
 
