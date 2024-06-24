@@ -13,10 +13,16 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from .. import fitting
-from ..clifford.clifford_group import CliffordGroup
+from ..analysis import (
+    IQPlotter,
+    RabiParam,
+    display_bloch_sphere,
+    fitting,
+    plot_state_vectors,
+    plot_waveform,
+)
+from ..clifford import CliffordGroup
 from ..config import Config, Params, Qubit, Resonator, Target
-from ..fitting import RabiParam
 from ..measurement import (
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
@@ -24,12 +30,21 @@ from ..measurement import (
     DEFAULT_SHOTS,
     Measurement,
     MeasureResult,
+    StateClassifier,
 )
-from ..pulse import CPMG, Blank, FlatTop, PhaseShift, PulseSequence, Rect, Waveform
-from ..state_classifier import StateClassifier
+from ..pulse import (
+    CPMG,
+    Blank,
+    FlatTop,
+    Pulse,
+    PulseSequence,
+    Rect,
+    PhaseShift,
+    VirtualZ,
+    Waveform,
+)
 from ..typing import IQArray, ParametricWaveform, TargetMap
 from ..version import get_package_version
-from ..visualization import IQPlotter, plot_waveform
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import (
@@ -186,19 +201,21 @@ class Experiment:
         TargetMap[Waveform]
             π/2 pulse.
         """
-        amplitude: dict = self._system_note.get(DEFAULT_HPI_AMPLITUDE)
-        if amplitude is None:
-            print(
-                "Default π/2 amplitude is not set. Using `control_amplitude` in params.yaml."
-            )
-            amplitude = self.params.control_amplitude
+        # preset hpi amplitude
+        amplitude = self.params.control_amplitude
+        # calibrated hpi amplitude
+        calib_amplitude: dict[str, float] = self._system_note.get(DEFAULT_HPI_AMPLITUDE)
+        if calib_amplitude is not None:
+            for target in calib_amplitude:
+                # use the calibrated hpi amplitude if it is stored
+                amplitude[target] = calib_amplitude[target]
         return {
             target: FlatTop(
                 duration=DEFAULT_HPI_DURATION,
                 amplitude=amplitude[target],
                 tau=10,
             )
-            for target in self.qubits
+            for target in self._qubits
         }
 
     @property
@@ -211,22 +228,21 @@ class Experiment:
         TargetMap[Waveform]
             π pulse.
         """
-        amplitude: dict = self._system_note.get(DEFAULT_PI_AMPLITUDE)
-        if amplitude is None:
-            # Use the default hpi pulse * 2
-            print("Default π amplitude is not set. Using the default π/2 pulse * 2.")
-            hpi = self.hpi_pulse
-            pi = {target: hpi[target].repeated(2) for target in self.qubits}
-        else:
-            pi = {
-                target: FlatTop(
+        # preset hpi pulse
+        hpi = self.hpi_pulse
+        # generate the pi pulse from the hpi pulse
+        pi = {target: hpi[target].repeated(2) for target in self._qubits}
+        # calibrated pi amplitude
+        calib_amplitude: dict[str, float] = self._system_note.get(DEFAULT_PI_AMPLITUDE)
+        if calib_amplitude is not None:
+            for target in calib_amplitude:
+                # use the calibrated pi amplitude if it is stored
+                pi[target] = FlatTop(
                     duration=DEFAULT_PI_DURATION,
-                    amplitude=amplitude[target],
+                    amplitude=calib_amplitude[target],
                     tau=10,
                 )
-                for target in self.qubits
-            }
-        return pi
+        return {target: pi[target] for target in self._qubits}
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
@@ -234,6 +250,11 @@ class Experiment:
         if self._rabi_params is None:
             return {}
         return self._rabi_params
+
+    def _validate_rabi_params(self):
+        """Check if the Rabi parameters are stored."""
+        if self._rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
         """
@@ -403,7 +424,7 @@ class Experiment:
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -422,7 +443,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         control_window : int, optional
-            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+            Control window. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -442,12 +463,14 @@ class Experiment:
         ...     plot=True,
         ... )
         """
+        control_window = control_window or self._control_window
         waveforms = {}
         for target, waveform in sequence.items():
             if isinstance(waveform, Waveform):
                 waveforms[target] = waveform.values
             else:
                 waveforms[target] = np.array(waveform, dtype=np.complex128)
+
         if frequencies is None:
             result = self._measurement.measure(
                 waveforms=waveforms,
@@ -476,7 +499,7 @@ class Experiment:
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
     ):
         """
         Measures the signals using the given sequences.
@@ -492,7 +515,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         control_window : int, optional
-            Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+            Control window. Defaults to None.
 
         Yields
         ------
@@ -511,7 +534,7 @@ class Experiment:
             mode=mode,
             shots=shots,
             interval=interval,
-            control_window=control_window,
+            control_window=control_window or self._control_window,
         )
 
     def check_noise(
@@ -731,6 +754,7 @@ class Experiment:
         frequencies: Optional[dict[str, float]] = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        control_window: int | None = None,
         plot: bool = True,
         title: str = "Sweep result",
         xaxis_title: str = "Sweep value",
@@ -755,6 +779,8 @@ class Experiment:
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
+        control_window : int, optional
+            Control window. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         title : str, optional
@@ -795,7 +821,7 @@ class Experiment:
             sequences=sequences,
             shots=shots,
             interval=interval,
-            control_window=self._control_window,
+            control_window=control_window or self._control_window,
         )
         signals = defaultdict(list)
         plotter = IQPlotter()
@@ -1121,8 +1147,7 @@ class Experiment:
         current_amplitudes = self.params.control_amplitude
         rabi_params = rabi_params or self.rabi_params
 
-        if self._rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
+        self._validate_rabi_params()
 
         amplitudes = {
             target: current_amplitudes[target]
@@ -1358,7 +1383,7 @@ class Experiment:
         plot: bool = True,
     ) -> ExperimentResult[T1Data]:
         """
-        Conducts a T1 experiment.
+        Conducts a T1 experiment in parallel.
 
         Parameters
         ----------
@@ -1443,7 +1468,7 @@ class Experiment:
         plot: bool = True,
     ) -> ExperimentResult[T2Data]:
         """
-        Conducts a T2 experiment.
+        Conducts a T2 experiment in series.
 
         Parameters
         ----------
@@ -1471,7 +1496,7 @@ class Experiment:
         # wrap the lambda function with a function to scope the qubit variable
         def t2_sequence(target: str) -> ParametricWaveform:
             hpi = self.hpi_pulse[target]
-            pi = pi_cpmg or self.pi_pulse[target]
+            pi = pi_cpmg or hpi.repeated(2)
 
             def waveform(T: int) -> Waveform:
                 if T == 0:
@@ -1498,30 +1523,25 @@ class Experiment:
 
             return waveform
 
-        sweep_result = self.sweep_parameter(
-            sequence={target: t2_sequence(target) for target in targets},
-            sweep_range=time_range,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-        )
-
-        fit_result = {
-            target: fitting.fit_exp_decay(
+        data: dict[str, T2Data] = {}
+        for target in targets:
+            sweep_data = self.sweep_parameter(
+                sequence={target: t2_sequence(target)},
+                sweep_range=time_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            ).data[target]
+            t2 = fitting.fit_exp_decay(
                 target=target,
-                x=data.sweep_range,
-                y=0.5 * (1 - data.normalized),
+                x=sweep_data.sweep_range,
+                y=0.5 * (1 - sweep_data.normalized),
                 title="T2",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
             )
-            for target, data in sweep_result.data.items()
-        }
-
-        data = {
-            target: T2Data.new(data, t2=fit_result[target])
-            for target, data in sweep_result.data.items()
-        }
+            t2_data = T2Data.new(sweep_data, t2=t2)
+            data[target] = t2_data
 
         return ExperimentResult(data=data)
 
@@ -1529,14 +1549,15 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 10000, 100),
+        time_range: NDArray = np.arange(0, 10000, 200),
         detuning: float = 0.0,
+        spectator_state: Literal["0", "1"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[RamseyData]:
         """
-        Conducts a Ramsey experiment.
+        Conducts a Ramsey experiment in series.
 
         Parameters
         ----------
@@ -1546,6 +1567,8 @@ class Experiment:
             Time range of the experiment in ns.
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.0.
+        spectator_state : Literal["0", "1"], optional
+            Spectator state. Defaults to "0".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1567,47 +1590,53 @@ class Experiment:
         ... )
         """
 
-        # wrap the lambda function with a function to scope the qubit variable
-        def ramsey_sequence(target: str) -> ParametricWaveform:
+        def ramsey_sequence(target: str) -> dict[str, ParametricWaveform]:
             hpi = self.hpi_pulse[target]
-            return lambda T: PulseSequence(
-                [
-                    hpi,
-                    Blank(T),
-                    hpi.shifted(np.pi),
-                ]
-            )
+            sequence: dict[str, ParametricWaveform] = {
+                target: lambda T: PulseSequence(
+                    [
+                        hpi,
+                        Blank(T),
+                        hpi.shifted(np.pi),
+                    ]
+                )
+            }
+            if spectator_state == "1":
+                spectators = self.get_spectators(target)
+                for spectator in spectators:
+                    if spectator.label in self._qubits:
+                        pi = self.pi_pulse[spectator.label]
+                        sequence[spectator.label] = lambda T: PulseSequence(
+                            [
+                                pi,
+                                Blank(T + hpi.duration * 2),
+                            ]
+                        )
+            return sequence
 
-        detuned_frequencies = {
-            target: self.qubits[target].frequency + detuning for target in targets
-        }
+        data: dict[str, RamseyData] = {}
+        for target in targets:
+            detuned_frequency = self.qubits[target].frequency + detuning
 
-        sweep_result = self.sweep_parameter(
-            sequence={target: ramsey_sequence(target) for target in targets},
-            sweep_range=time_range,
-            frequencies=detuned_frequencies,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-        )
-
-        fit_result = {
-            target: fitting.fit_ramsey(
+            sweep_data = self.sweep_parameter(
+                sequence=ramsey_sequence(target),
+                sweep_range=time_range,
+                frequencies={target: detuned_frequency},
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            ).data[target]
+            t2, ramsey_freq = fitting.fit_ramsey(
                 target=target,
-                x=data.sweep_range,
-                y=data.normalized,
+                x=sweep_data.sweep_range,
+                y=sweep_data.normalized,
             )
-            for target, data in sweep_result.data.items()
-        }
-
-        data = {
-            target: RamseyData.new(
-                sweep_data=data,
-                t2=fit_result[target][0],
-                ramsey_freq=fit_result[target][1],
+            ramsey_data = RamseyData.new(
+                sweep_data=sweep_data,
+                t2=t2,
+                ramsey_freq=ramsey_freq,
             )
-            for target, data in sweep_result.data.items()
-        }
+            data[target] = ramsey_data
 
         return ExperimentResult(data=data)
 
@@ -1692,9 +1721,9 @@ class Experiment:
         ... )
         """
         x90 = x90 or self.hpi_pulse[target]
-        z90 = PhaseShift(np.pi / 2)
+        z90 = VirtualZ(np.pi / 2)
 
-        sequence: list[Waveform | PhaseShift] = []
+        sequence: list[Waveform | VirtualZ] = []
 
         clifford_group = CliffordGroup()
 
@@ -1838,8 +1867,8 @@ class Experiment:
 
     def randomized_benchmarking(
         self,
-        *,
         target: str,
+        *,
         n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
         n_trials: int = 30,
         x90: Waveform | None = None,
@@ -1878,6 +1907,8 @@ class Experiment:
         dict
             Results of the experiment.
         """
+        self._validate_rabi_params()
+
         results = []
         seeds = np.random.randint(0, 2**32, n_trials)
         for seed in seeds:
@@ -2007,3 +2038,267 @@ class Experiment:
             "mean": mean,
             "std": std,
         }
+
+    def state_tomography_sequence(
+        self,
+        *,
+        target: str,
+        sequence: IQArray | Waveform,
+        basis: str,
+        x90: Waveform | None = None,
+    ) -> PulseSequence:
+        """
+        Generates a state tomography sequence.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        sequence : IQArray | Waveform
+            Sequence to measure.
+        basis : str
+            Measurement basis. "X", "Y", or "Z".
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+
+        Returns
+        -------
+        PulseSequence
+            State tomography sequence.
+        """
+        if isinstance(sequence, list) or isinstance(sequence, np.ndarray):
+            sequence = Pulse(sequence)
+        elif not isinstance(sequence, Waveform):
+            raise ValueError("Invalid sequence.")
+
+        x90 = x90 or self.hpi_pulse[target]
+        y90m = x90.shifted(-np.pi / 2)
+
+        if basis == "X":
+            if isinstance(sequence, PulseSequence):
+                return sequence.added(y90m)
+            else:
+                return PulseSequence([sequence, y90m])
+        elif basis == "Y":
+            if isinstance(sequence, PulseSequence):
+                return sequence.added(x90)
+            else:
+                return PulseSequence([sequence, x90])
+        elif basis == "Z":
+            return PulseSequence([sequence])
+        else:
+            raise ValueError("Invalid basis.")
+
+    def state_tomography(
+        self,
+        sequence: TargetMap[IQArray | Waveform],
+        *,
+        x90: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = False,
+    ) -> dict[str, tuple[float, float, float]]:
+        """
+        Conducts a state tomography experiment.
+
+        Parameters
+        ----------
+        sequence : TargetMap[IQArray] | TargetMap[Waveform]
+            Sequence to measure for each target.
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        dict[str, tuple[float, float, float]]
+            Results of the experiment.
+        """
+        buffer: dict[str, list[float]] = defaultdict(list)
+        for basis in ["X", "Y", "Z"]:
+            measure_result = self.measure(
+                {
+                    target: self.state_tomography_sequence(
+                        target=target,
+                        sequence=sequence,
+                        basis=basis,
+                        x90=x90,
+                    )
+                    for target, sequence in sequence.items()
+                },
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+            for target, data in measure_result.data.items():
+                rabi_param = self.rabi_params[target]
+                if rabi_param is None:
+                    raise ValueError("Rabi parameters are not stored.")
+                values = data.kerneled
+                values_rotated = values * np.exp(-1j * rabi_param.angle)
+                values_normalized = (
+                    np.imag(values_rotated) - rabi_param.offset
+                ) / rabi_param.amplitude
+                buffer[target] += [values_normalized]
+
+        result = {
+            target: (
+                values[0],  # X
+                values[1],  # Y
+                values[2],  # Z
+            )
+            for target, values in buffer.items()
+        }
+        return result
+
+    def state_evolution_tomography(
+        self,
+        *,
+        sequences: Sequence[TargetMap[IQArray | Waveform]],
+        x90: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict[str, NDArray[np.float64]]:
+        """
+        Conducts a state evolution tomography experiment.
+
+        Parameters
+        ----------
+        sequences : Sequence[TargetMap[IQArray | Waveform]]
+            Sequences to measure for each target.
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        dict[str, NDArray[np.float64]]
+            Results of the experiment.
+        """
+        buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
+        for sequence in sequences:
+            state_vectors = self.state_tomography(
+                sequence=sequence,
+                x90=x90,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            for target, state_vector in state_vectors.items():
+                buffer[target].append(state_vector)
+
+        result = {target: np.array(states) for target, states in buffer.items()}
+
+        if plot:
+            for target, states in result.items():
+                print(f"State evolution of {target}")
+                display_bloch_sphere(states)
+
+        return result
+
+    def pulse_tomography(
+        self,
+        waveforms: TargetMap[IQArray | Waveform],
+        *,
+        x90: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> TargetMap[NDArray[np.float64]]:
+        """
+        Conducts a pulse tomography experiment.
+
+        Parameters
+        ----------
+        waveforms : TargetMap[IQArray | Waveform]
+            Waveforms to measure for each target.
+        x90 : Waveform, optional
+            π/2 pulse. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        """
+        self._validate_rabi_params()
+
+        pulses: dict[str, Waveform] = {}
+        pulse_length_set = set()
+        for target, waveform in waveforms.items():
+            if isinstance(waveform, Waveform):
+                pulse = waveform
+            elif isinstance(waveform, list) or isinstance(waveform, np.ndarray):
+                pulse = Pulse(waveform)
+            else:
+                raise ValueError("Invalid waveform.")
+            pulses[target] = pulse
+            pulse_length_set.add(pulse.length)
+        if len(pulse_length_set) != 1:
+            raise ValueError("The lengths of the waveforms must be the same.")
+
+        pulse_length = pulse_length_set.pop()
+
+        if plot:
+            for target in pulses:
+                pulses[target].plot(title=f"Waveform of {target}")
+
+        def partial_waveform(waveform: Waveform, index: int) -> Waveform:
+            """Returns a partial waveform up to the given index."""
+
+            # If the waveform is a PulseSequence, we need to handle the PhaseShift gate.
+            if isinstance(waveform, PulseSequence):
+                current_index = 0
+                pulse_sequence = PulseSequence([])
+                for pulse in waveform._sequence:
+                    # If the pulse is a PhaseShift gate, we can simply add it to the sequence.
+                    if isinstance(pulse, PhaseShift):
+                        pulse_sequence = pulse_sequence.added(pulse)
+                        continue
+                    # If the pulse is a Pulse and the length is greater than the index, we need to create a partial pulse.
+                    elif current_index + pulse.length > index:
+                        pulse = Pulse(pulse.values[0 : index - current_index])
+                        pulse_sequence = pulse_sequence.added(pulse)
+                        break
+                    # If the pulse is a Pulse and the length is less than the index, we can add the pulse to the sequence.
+                    else:
+                        pulse_sequence = pulse_sequence.added(pulse)
+                        current_index += pulse.length
+                return pulse_sequence
+            # If the waveform is a Pulse, we can simply return the partial waveform.
+            else:
+                return Pulse(waveform.values[0:index])
+
+        sequences = [
+            {target: partial_waveform(pulse, i) for target, pulse in pulses.items()}
+            for i in range(pulse_length + 1)
+        ]
+
+        result = self.state_evolution_tomography(
+            sequences=sequences,
+            x90=x90,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        if plot:
+            for target, states in result.items():
+                plot_state_vectors(
+                    times=pulses.popitem()[1].times,
+                    state_vectors=states,
+                    title=f"State evolution of {target}",
+                )
+
+        return result

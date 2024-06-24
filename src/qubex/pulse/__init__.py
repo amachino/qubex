@@ -1,6 +1,6 @@
 from .library import CPMG, Drag, DragCos, DragGauss, FlatTop, Gauss, Rect
 from .pulse import Blank, Pulse
-from .pulse_sequence import PhaseShift, PulseSequence
+from .pulse_sequence import PhaseShift, PulseSequence, VirtualZ
 from .waveform import Waveform
 
 __all__ = [
@@ -15,5 +15,6 @@ __all__ = [
     "Pulse",
     "PulseSequence",
     "Rect",
+    "VirtualZ",
     "Waveform",
 ]

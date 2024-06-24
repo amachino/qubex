@@ -7,7 +7,7 @@ import httpx
 import numpy as np
 import numpy.typing as npt
 
-from qubex.measurement_result import MeasureData, MeasureMode, MeasureResult
+from qubex.measurement import MeasureData, MeasureMode, MeasureResult
 from qubex.pulse import Waveform
 
 API_BASE_URL = "https://qiqb.ngrok.dev"
@@ -120,9 +120,11 @@ class PulseAPI:
 
         measure_data = {
             qubit: MeasureData(
+                target=qubit,
+                mode=MeasureMode(response["mode"]),
                 raw=to_ndarray(data["raw"]),
                 kerneled=to_ndarray(data["kerneled"]),
-                classified=np.array([]),
+                classified=data["classified"],
             )
             for qubit, data in response["data"].items()
         }

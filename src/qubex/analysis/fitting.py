@@ -69,9 +69,6 @@ def normalize(
     """
     values_rotated = values * np.exp(-1j * param.angle)
     values_normalized = (np.imag(values_rotated) - param.offset) / param.amplitude
-    # initial_value = values_normalized[0]
-    # if initial_value < 0:
-    #     values_normalized = -values_normalized
     return values_normalized
 
 
@@ -631,7 +628,7 @@ def fit_rb(
         Depolarizing rate, average error, and average fidelity of the randomized benchmarking.
     """
     if p0 is None:
-        p0 = 0.01
+        p0 = 0.0
 
     if bounds is None:
         bounds = (0, 1)

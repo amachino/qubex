@@ -281,7 +281,7 @@ class TabuchiDD(Pulse):
 
     Parameters
     ----------
-    duration : int
+    duration : float
         The total duration of the pulse sequence in nanoseconds.
     beta : float, optional
         Beta parameter influencing the x and y components of the pulse.
@@ -338,7 +338,7 @@ class TabuchiDD(Pulse):
 
     def __init__(
         self,
-        duration: int,
+        duration: float,
         beta=0.0,
         phi=0.0,
         **kwargs,
@@ -359,7 +359,8 @@ class TabuchiDD(Pulse):
         error_y = beta
         y = (1 + error_y) * np.array([self._vy(t) for t in self.t])
 
-        return x + 1j * y
+        values = (x + 1j * y) / np.pi / 2 * 1e3
+        return values
 
     def _vx(self, t) -> float:
         return sum(
