@@ -1548,14 +1548,14 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 10000, 100),
+        time_range: NDArray = np.arange(0, 10000, 200),
         detuning: float = 0.0,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[RamseyData]:
         """
-        Conducts a Ramsey experiment.
+        Conducts a Ramsey experiment in series.
 
         Parameters
         ----------
@@ -1597,36 +1597,29 @@ class Experiment:
                 ]
             )
 
-        detuned_frequencies = {
-            target: self.qubits[target].frequency + detuning for target in targets
-        }
+        data: dict[str, RamseyData] = {}
+        for target in targets:
+            detuned_frequency = self.qubits[target].frequency + detuning
 
-        sweep_result = self.sweep_parameter(
-            sequence={target: ramsey_sequence(target) for target in targets},
-            sweep_range=time_range,
-            frequencies=detuned_frequencies,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-        )
-
-        fit_result = {
-            target: fitting.fit_ramsey(
+            sweep_data = self.sweep_parameter(
+                sequence={target: ramsey_sequence(target)},
+                sweep_range=time_range,
+                frequencies={target: detuned_frequency},
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            ).data[target]
+            t2, ramsey_freq = fitting.fit_ramsey(
                 target=target,
-                x=data.sweep_range,
-                y=data.normalized,
+                x=sweep_data.sweep_range,
+                y=sweep_data.normalized,
             )
-            for target, data in sweep_result.data.items()
-        }
-
-        data = {
-            target: RamseyData.new(
-                sweep_data=data,
-                t2=fit_result[target][0],
-                ramsey_freq=fit_result[target][1],
+            ramsey_data = RamseyData.new(
+                sweep_data=sweep_data,
+                t2=t2,
+                ramsey_freq=ramsey_freq,
             )
-            for target, data in sweep_result.data.items()
-        }
+            data[target] = ramsey_data
 
         return ExperimentResult(data=data)
 
