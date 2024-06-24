@@ -39,6 +39,7 @@ from ..pulse import (
     Pulse,
     PulseSequence,
     Rect,
+    PhaseShift,
     VirtualZ,
     Waveform,
 )
@@ -2233,13 +2234,13 @@ class Experiment:
         """
         self._validate_rabi_params()
 
-        pulses: dict[str, Pulse] = {}
+        pulses: dict[str, Waveform] = {}
         pulse_length_set = set()
         for target, waveform in waveforms.items():
-            if isinstance(waveform, list) or isinstance(waveform, np.ndarray):
+            if isinstance(waveform, Waveform):
+                pulse = waveform
+            elif isinstance(waveform, list) or isinstance(waveform, np.ndarray):
                 pulse = Pulse(waveform)
-            elif isinstance(waveform, Waveform):
-                pulse = Pulse(waveform.values)
             else:
                 raise ValueError("Invalid waveform.")
             pulses[target] = pulse
@@ -2253,8 +2254,34 @@ class Experiment:
             for target in pulses:
                 pulses[target].plot(title=f"Waveform of {target}")
 
+        def partial_waveform(waveform: Waveform, index: int) -> Waveform:
+            """Returns a partial waveform up to the given index."""
+
+            # If the waveform is a PulseSequence, we need to handle the PhaseShift gate.
+            if isinstance(waveform, PulseSequence):
+                current_index = 0
+                pulse_sequence = PulseSequence([])
+                for pulse in waveform._sequence:
+                    # If the pulse is a PhaseShift gate, we can simply add it to the sequence.
+                    if isinstance(pulse, PhaseShift):
+                        pulse_sequence = pulse_sequence.added(pulse)
+                        continue
+                    # If the pulse is a Pulse and the length is greater than the index, we need to create a partial pulse.
+                    elif current_index + pulse.length > index:
+                        pulse = Pulse(pulse.values[0 : index - current_index])
+                        pulse_sequence = pulse_sequence.added(pulse)
+                        break
+                    # If the pulse is a Pulse and the length is less than the index, we can add the pulse to the sequence.
+                    else:
+                        pulse_sequence = pulse_sequence.added(pulse)
+                        current_index += pulse.length
+                return pulse_sequence
+            # If the waveform is a Pulse, we can simply return the partial waveform.
+            else:
+                return Pulse(waveform.values[0:index])
+
         sequences = [
-            {target: pulse.values[0:i] for target, pulse in pulses.items()}
+            {target: partial_waveform(pulse, i) for target, pulse in pulses.items()}
             for i in range(pulse_length + 1)
         ]
 
