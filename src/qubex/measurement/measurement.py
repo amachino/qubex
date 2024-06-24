@@ -406,15 +406,15 @@ class Measurement:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ):
-        qubits = {target.split("-")[0] for target in waveforms.keys()}
-        max_waveform_length = max(len(waveform) for waveform in waveforms.values())
-        if max_waveform_length > control_window:
-            raise ValueError("The waveform length exceeds the control window.")
-
         control_length = control_window // 2
         capture_length = capture_window // 2
         readout_length = readout_duration // 2
-
+        qubits = {target.split("-")[0] for target in waveforms.keys()}
+        max_waveform_length = max(len(waveform) for waveform in waveforms.values())
+        if max_waveform_length > control_length:
+            raise ValueError(
+                f"The waveform duration ({max_waveform_length * 2}) exceeds the control window ({control_window})."
+            )
         # zero padding (control)
         # [0, 0, ..., 0, control, 0, 0, ..., 0, 0, 0, 0]
         # |<-- control_length --><-- capture_length -->|

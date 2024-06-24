@@ -214,7 +214,7 @@ class Experiment:
                 amplitude=amplitude[target],
                 tau=10,
             )
-            for target in self.qubits
+            for target in self._qubits
         }
 
     @property
@@ -230,7 +230,7 @@ class Experiment:
         # preset hpi pulse
         hpi = self.hpi_pulse
         # generate the pi pulse from the hpi pulse
-        pi = {target: hpi[target].repeated(2) for target in self.qubits}
+        pi = {target: hpi[target].repeated(2) for target in self._qubits}
         # calibrated pi amplitude
         calib_amplitude: dict[str, float] = self._system_note.get(DEFAULT_PI_AMPLITUDE)
         if calib_amplitude is not None:
@@ -241,7 +241,7 @@ class Experiment:
                     amplitude=calib_amplitude[target],
                     tau=10,
                 )
-        return {target: pi[target] for target in self.qubits}
+        return {target: pi[target] for target in self._qubits}
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
@@ -1550,6 +1550,7 @@ class Experiment:
         *,
         time_range: NDArray = np.arange(0, 10000, 200),
         detuning: float = 0.0,
+        spectator_state: Literal["0", "1"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1565,6 +1566,8 @@ class Experiment:
             Time range of the experiment in ns.
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.0.
+        spectator_state : Literal["0", "1"], optional
+            Spectator state. Defaults to "0".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1586,23 +1589,36 @@ class Experiment:
         ... )
         """
 
-        # wrap the lambda function with a function to scope the qubit variable
-        def ramsey_sequence(target: str) -> ParametricWaveform:
+        def ramsey_sequence(target: str) -> dict[str, ParametricWaveform]:
             hpi = self.hpi_pulse[target]
-            return lambda T: PulseSequence(
-                [
-                    hpi,
-                    Blank(T),
-                    hpi.shifted(np.pi),
-                ]
-            )
+            sequence: dict[str, ParametricWaveform] = {
+                target: lambda T: PulseSequence(
+                    [
+                        hpi,
+                        Blank(T),
+                        hpi.shifted(np.pi),
+                    ]
+                )
+            }
+            if spectator_state == "1":
+                spectators = self.get_spectators(target)
+                for spectator in spectators:
+                    if spectator.label in self._qubits:
+                        pi = self.pi_pulse[spectator.label]
+                        sequence[spectator.label] = lambda T: PulseSequence(
+                            [
+                                pi,
+                                Blank(T + hpi.duration * 2),
+                            ]
+                        )
+            return sequence
 
         data: dict[str, RamseyData] = {}
         for target in targets:
             detuned_frequency = self.qubits[target].frequency + detuning
 
             sweep_data = self.sweep_parameter(
-                sequence={target: ramsey_sequence(target)},
+                sequence=ramsey_sequence(target),
                 sweep_range=time_range,
                 frequencies={target: detuned_frequency},
                 shots=shots,
