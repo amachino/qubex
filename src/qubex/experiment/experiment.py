@@ -2071,11 +2071,18 @@ class Experiment:
             raise ValueError("Invalid sequence.")
 
         x90 = x90 or self.hpi_pulse[target]
+        y90m = x90.shifted(-np.pi / 2)
 
         if basis == "X":
-            return PulseSequence([sequence, x90.shifted(-np.pi / 2)])
+            if isinstance(sequence, PulseSequence):
+                return sequence.added(y90m)
+            else:
+                return PulseSequence([sequence, y90m])
         elif basis == "Y":
-            return PulseSequence([sequence, x90])
+            if isinstance(sequence, PulseSequence):
+                return sequence.added(x90)
+            else:
+                return PulseSequence([sequence, x90])
         elif basis == "Z":
             return PulseSequence([sequence])
         else:
@@ -2138,7 +2145,6 @@ class Experiment:
                 ) / rabi_param.amplitude
                 buffer[target] += [values_normalized]
 
-        # TODO: Correct the virtual Z phase
         result = {
             target: (
                 values[0],  # X

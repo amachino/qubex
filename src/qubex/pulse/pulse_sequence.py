@@ -112,10 +112,6 @@ class PulseSequence(Waveform):
                 phase_shift += obj.theta
         return phase_shift
 
-    def add(self, obj: Waveform | PhaseShift) -> None:
-        """Adds a waveform or phase shift to the pulse sequence."""
-        self._sequence.append(obj)
-
     def copy(self) -> PulseSequence:
         """Returns a copy of the pulse sequence."""
         return deepcopy(self)
@@ -174,4 +170,10 @@ class PulseSequence(Waveform):
         """Returns a copy of the pulse sequence with the order of the waveforms reversed."""
         new_sequence = deepcopy(self)
         new_sequence._sequence = list(reversed(new_sequence.waveforms))
+        return new_sequence
+
+    def added(self, obj: Waveform | PhaseShift) -> PulseSequence:
+        """Returns a copy of the pulse sequence with the given waveform or phase shift added."""
+        new_sequence = deepcopy(self)
+        new_sequence._sequence.append(obj)
         return new_sequence
