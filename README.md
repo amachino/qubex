@@ -1,6 +1,7 @@
 ## Requirements
 
 - Python 3.9 or higher
+- pip 24.0
 
 
 ## Installation
