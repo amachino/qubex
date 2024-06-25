@@ -1020,7 +1020,7 @@ You are going to configure the following boxes:
 
 [bold bright_green]{box_list_str}
 
-[bold italic bright_yellow]This operation will overwrite the existing device settings. Do you want to continue?
+[bold italic bright_red]This operation will overwrite the existing device settings. Do you want to continue?
 """
         )
         if not confirmed:
@@ -1330,9 +1330,8 @@ You are going to configure the following boxes:
             target_min, f_min = min(freq.items(), key=lambda item: item[1])
 
             if f_max - f_min > max_diff:
-                console.print(
-                    f"Warning: {target_max} ({f_max * 1e-9:.3f} GHz) is too far from {target_min} ({f_min * 1e-9:.3f} GHz). Ignored {target_cr}.",
-                    style="yellow bold",
+                print(
+                    f"Warning: {target_max} ({f_max * 1e-9:.3f} GHz) is too far from {target_min} ({f_min * 1e-9:.3f} GHz). Ignored {target_cr}."
                 )
                 freq[target_cr] = f_ge
                 f_max = f_ge
