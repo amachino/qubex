@@ -15,6 +15,11 @@ class PhaseShift:
         self.theta = theta
 
 
+class VirtualZ(PhaseShift):
+    def __init__(self, theta: float):
+        super().__init__(-theta)
+
+
 class PulseSequence(Waveform):
     """
     A class to represent a pulse sequence.
@@ -86,9 +91,26 @@ class PulseSequence(Waveform):
         )
         return values
 
-    def add(self, obj: Waveform | PhaseShift) -> None:
-        """Adds a waveform or phase shift to the pulse sequence."""
-        self._sequence.append(obj)
+    @property
+    def virtual_phases(self) -> npt.NDArray[np.float64]:
+        """Returns the virtual phases of the pulse sequence."""
+        phases = []
+        current_phase = 0.0
+        for obj in self._sequence:
+            if isinstance(obj, PhaseShift):
+                current_phase += obj.theta
+            elif isinstance(obj, Waveform):
+                phases += [current_phase] * obj.length
+        return np.array(phases)
+
+    @property
+    def total_virtual_phase(self) -> float:
+        """Returns the total virtual phase of the pulse sequence."""
+        phase_shift = 0.0
+        for obj in self._sequence:
+            if isinstance(obj, PhaseShift):
+                phase_shift += obj.theta
+        return phase_shift
 
     def copy(self) -> PulseSequence:
         """Returns a copy of the pulse sequence."""
@@ -148,4 +170,10 @@ class PulseSequence(Waveform):
         """Returns a copy of the pulse sequence with the order of the waveforms reversed."""
         new_sequence = deepcopy(self)
         new_sequence._sequence = list(reversed(new_sequence.waveforms))
+        return new_sequence
+
+    def added(self, obj: Waveform | PhaseShift) -> PulseSequence:
+        """Returns a copy of the pulse sequence with the given waveform or phase shift added."""
+        new_sequence = deepcopy(self)
+        new_sequence._sequence.append(obj)
         return new_sequence

@@ -125,7 +125,7 @@ You are going to relinkup the following boxes:
 
 [bold bright_green]{box_list}
 
-[bold italic bright_yellow]This operation will reset LO/NCO settings. Do you want to continue?
+[bold italic bright_red]This operation will reset LO/NCO settings. Do you want to continue?
 """
         )
         if not confirmed:
