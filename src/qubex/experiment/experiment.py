@@ -325,6 +325,43 @@ class Experiment:
         self._rabi_params = rabi_params
         console.print("Rabi parameters are stored.")
 
+    def get_pulse_for_state(
+        self,
+        target: str,
+        state: Literal["0", "1", "+", "-", "+i", "-i"],
+    ) -> Waveform:
+        """
+        Get the pulse to prepare the given state from the ground state.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        state : Literal["0", "1", "+", "-", "+i", "-i"]
+            State to prepare.
+
+        Returns
+        -------
+        Waveform
+            Pulse for the state.
+        """
+        if state == "0":
+            return Blank(0)
+        elif state == "1":
+            return self.pi_pulse[target]
+        else:
+            hpi = self.hpi_pulse[target]
+            if state == "+":
+                return hpi.shifted(np.pi / 2)
+            elif state == "-":
+                return hpi.shifted(-np.pi / 2)
+            elif state == "+i":
+                return hpi.shifted(np.pi)
+            elif state == "-i":
+                return hpi
+            else:
+                raise ValueError("Invalid state.")
+
     def get_spectators(self, qubit: str) -> list[Qubit]:
         """
         Get the spectators of the given qubit.
@@ -1825,18 +1862,10 @@ class Experiment:
                 spectators = self.get_spectators(target)
                 for spectator in spectators:
                     if spectator.label in self._qubits:
-                        if spectator_state == "1":
-                            pulse = self.pi_pulse[spectator.label]
-                        elif spectator_state == "+":
-                            pulse = self.hpi_pulse[spectator.label].shifted(np.pi / 2)
-                        elif spectator_state == "-":
-                            pulse = self.hpi_pulse[spectator.label].shifted(-np.pi / 2)
-                        elif spectator_state == "+i":
-                            pulse = self.hpi_pulse[spectator.label].shifted(np.pi)
-                        elif spectator_state == "-i":
-                            pulse = self.hpi_pulse[spectator.label]
-                        else:
-                            raise ValueError("Invalid spectator state.")
+                        pulse = self.get_pulse_for_state(
+                            target=spectator.label,
+                            state=spectator_state,
+                        )
                         sequence[spectator.label] = lambda T: PulseSequence(
                             [
                                 pulse,
@@ -2070,18 +2099,10 @@ class Experiment:
                 spectators = self.get_spectators(target)
                 for spectator in spectators:
                     if spectator.label in self._qubits:
-                        if spectator_state == "1":
-                            pulse = self.pi_pulse[spectator.label]
-                        elif spectator_state == "+":
-                            pulse = self.hpi_pulse[spectator.label].shifted(np.pi / 2)
-                        elif spectator_state == "-":
-                            pulse = self.hpi_pulse[spectator.label].shifted(-np.pi / 2)
-                        elif spectator_state == "+i":
-                            pulse = self.hpi_pulse[spectator.label].shifted(np.pi)
-                        elif spectator_state == "-i":
-                            pulse = self.hpi_pulse[spectator.label]
-                        else:
-                            raise ValueError("Invalid spectator state.")
+                        pulse = self.get_pulse_for_state(
+                            target=spectator.label,
+                            state=spectator_state,
+                        )
                         sequence[spectator.label] = lambda N: PulseSequence(
                             [
                                 pulse,
