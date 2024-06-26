@@ -35,11 +35,12 @@ from ..measurement import (
 from ..pulse import (
     CPMG,
     Blank,
+    Drag,
     FlatTop,
+    PhaseShift,
     Pulse,
     PulseSequence,
     Rect,
-    PhaseShift,
     VirtualZ,
     Waveform,
 )
@@ -71,8 +72,16 @@ SYSTEM_NOTE_PATH = ".system_note.json"
 
 DEFAULT_HPI_AMPLITUDE = "default_hpi_amplitude"
 DEFAULT_HPI_DURATION = 30
+DEFAULT_HPI_RISETIME = 10
 DEFAULT_PI_AMPLITUDE = "default_pi_amplitude"
 DEFAULT_PI_DURATION = 30
+DEFAULT_PI_RISETIME = 10
+DRAG_HPI_AMPLITUDE = "drag_hpi_amplitude"
+DRAG_HPI_DURATION = 16
+DRAG_HPI_LAMBDA = 0.5
+DRAG_PI_AMPLITUDE = "drag_pi_amplitude"
+DRAG_PI_DURATION = 16
+DRAG_PI_LAMBDA = 0.5
 
 
 class Experiment:
@@ -213,7 +222,7 @@ class Experiment:
             target: FlatTop(
                 duration=DEFAULT_HPI_DURATION,
                 amplitude=amplitude[target],
-                tau=10,
+                tau=DEFAULT_HPI_RISETIME,
             )
             for target in self._qubits
         }
@@ -240,9 +249,53 @@ class Experiment:
                 pi[target] = FlatTop(
                     duration=DEFAULT_PI_DURATION,
                     amplitude=calib_amplitude[target],
-                    tau=10,
+                    tau=DEFAULT_PI_RISETIME,
                 )
         return {target: pi[target] for target in self._qubits}
+
+    @property
+    def drag_hpi_pulse(self) -> TargetMap[Waveform]:
+        """
+        Get the DRAG π/2 pulse.
+
+        Returns
+        -------
+        TargetMap[Waveform]
+            DRAG π/2 pulse.
+        """
+        calib_amplitude: dict[str, float] = self._system_note.get(DRAG_HPI_AMPLITUDE)
+        if calib_amplitude is None:
+            raise ValueError("DRAG HPI amplitude is not stored.")
+        return {
+            target: Drag(
+                duration=DRAG_HPI_DURATION,
+                amplitude=calib_amplitude[target],
+                beta=-DRAG_HPI_LAMBDA / self.qubits[target].anharmonicity,
+            )
+            for target in self._qubits
+        }
+
+    @property
+    def drag_pi_pulse(self) -> TargetMap[Waveform]:
+        """
+        Get the DRAG π pulse.
+
+        Returns
+        -------
+        TargetMap[Waveform]
+            DRAG π pulse.
+        """
+        calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
+        if calib_amplitude is None:
+            raise ValueError("DRAG PI amplitude is not stored.")
+        return {
+            target: Drag(
+                duration=DRAG_PI_DURATION,
+                amplitude=calib_amplitude[target],
+                beta=-DRAG_PI_LAMBDA / self.qubits[target].anharmonicity,
+            )
+            for target in self._qubits
+        }
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
@@ -1252,9 +1305,21 @@ class Experiment:
 
         def calibrate(target: str) -> AmplCalibData:
             if pulse_type == "hpi":
-                rabi_rate = 12.5e-3
+                pulse = FlatTop(
+                    duration=DEFAULT_HPI_DURATION,
+                    amplitude=1,
+                    tau=DEFAULT_HPI_RISETIME,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.25 / area
             elif pulse_type == "pi":
-                rabi_rate = 25e-3
+                pulse = FlatTop(
+                    duration=DEFAULT_PI_DURATION,
+                    amplitude=1,
+                    tau=DEFAULT_PI_RISETIME,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.5 / area
             else:
                 raise ValueError("Invalid pulse type.")
             ampl = self.calc_control_amplitudes(
@@ -1265,13 +1330,7 @@ class Experiment:
             ampl_max = ampl * 1.5
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
             sweep_data = self.sweep_parameter(
-                sequence={
-                    target: lambda x: FlatTop(
-                        duration=30,
-                        amplitude=x,
-                        tau=10,
-                    )
-                },
+                sequence={target: lambda x: pulse.scaled(x)},
                 sweep_range=ampl_range,
                 repetitions=2 if pulse_type == "pi" else 4,
                 shots=shots,
@@ -1298,6 +1357,97 @@ class Experiment:
             print("")
 
         print(f"Calibration results for {pulse_type} pulse:")
+        for target, calib_data in data.items():
+            print(f"{target}: {calib_data.calib_value:.6f}")
+
+        return ExperimentResult(data=data)
+
+    def calibrate_drag_pulse(
+        self,
+        targets: list[str],
+        pulse_type: Literal["pi", "hpi"],
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the DRAG pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+        pulse_type : Literal["pi", "hpi"]
+            Type of the pulse to calibrate.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        rabi_params = self.rabi_params
+        if rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        def calibrate(target: str) -> AmplCalibData:
+            if pulse_type == "hpi":
+                pulse = Drag(
+                    duration=DRAG_HPI_DURATION,
+                    amplitude=1,
+                    beta=-DRAG_HPI_LAMBDA / self.qubits[target].anharmonicity,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.25 / area
+            elif pulse_type == "pi":
+                pulse = Drag(
+                    duration=DRAG_PI_DURATION,
+                    amplitude=1,
+                    beta=-DRAG_PI_LAMBDA / self.qubits[target].anharmonicity,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.5 / area
+            else:
+                raise ValueError("Invalid pulse type.")
+            ampl = self.calc_control_amplitudes(
+                rabi_rate=rabi_rate,
+                print_result=False,
+            )[target]
+            ampl_min = ampl * 0.5
+            ampl_max = ampl * 1.25  # stop at 1.25 to avoid leakage
+            ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            sweep_data = self.sweep_parameter(
+                sequence={
+                    target: lambda x: pulse.scaled(x),
+                },
+                sweep_range=ampl_range,
+                repetitions=2 if pulse_type == "pi" else 4,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            ).data[target]
+
+            calib_value = fitting.fit_ampl_calib_data(
+                target=target,
+                amplitude_range=ampl_range,
+                data=-sweep_data.normalized,
+                title=f"DRAG {pulse_type} pulse calibration",
+            )
+
+            return AmplCalibData.new(
+                sweep_data=sweep_data,
+                calib_value=calib_value,
+            )
+
+        data: dict[str, AmplCalibData] = {}
+        for idx, target in enumerate(targets):
+            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
+            data[target] = calibrate(target)
+            print("")
+
+        print(f"Calibration results for DRAG {pulse_type} pulse:")
         for target, calib_data in data.items():
             print(f"{target}: {calib_data.calib_value:.6f}")
 
@@ -1370,6 +1520,76 @@ class Experiment:
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
         self._system_note.put(DEFAULT_PI_AMPLITUDE, ampl)
+
+        return result
+
+    def calibrate_drag_hpi_pulse(
+        self,
+        targets: list[str],
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the DRAG π/2 pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        result = self.calibrate_drag_pulse(
+            targets=targets,
+            pulse_type="hpi",
+            shots=shots,
+            interval=interval,
+        )
+
+        ampl = {target: data.calib_value for target, data in result.data.items()}
+        self._system_note.put(DRAG_HPI_AMPLITUDE, ampl)
+
+        return result
+
+    def calibrate_drag_pi_pulse(
+        self,
+        targets: list[str],
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the DRAG π pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        result = self.calibrate_drag_pulse(
+            targets=targets,
+            pulse_type="pi",
+            shots=shots,
+            interval=interval,
+        )
+
+        ampl = {target: data.calib_value for target, data in result.data.items()}
+        self._system_note.put(DRAG_PI_AMPLITUDE, ampl)
 
         return result
 
