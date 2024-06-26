@@ -1770,8 +1770,8 @@ class Experiment:
         targets: list[str],
         *,
         time_range: NDArray = np.arange(0, 10000, 200),
-        detuning: float = 0.0,
-        spectator_state: Literal["0", "1"] = "0",
+        detuning: float = 0.0005,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1786,8 +1786,8 @@ class Experiment:
         time_range : NDArray
             Time range of the experiment in ns.
         detuning : float, optional
-            Detuning of the control frequency. Defaults to 0.0.
-        spectator_state : Literal["0", "1"], optional
+            Detuning of the control frequency. Defaults to 0.001 GHz.
+        spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -1821,15 +1821,26 @@ class Experiment:
                     ]
                 )
             }
-            if spectator_state == "1":
+            if spectator_state != "0":
                 spectators = self.get_spectators(target)
                 for spectator in spectators:
                     if spectator.label in self._qubits:
-                        pi = self.pi_pulse[spectator.label]
+                        if spectator_state == "1":
+                            pulse = self.pi_pulse[spectator.label]
+                        elif spectator_state == "+":
+                            pulse = self.hpi_pulse[spectator.label].shifted(np.pi / 2)
+                        elif spectator_state == "-":
+                            pulse = self.hpi_pulse[spectator.label].shifted(-np.pi / 2)
+                        elif spectator_state == "+i":
+                            pulse = self.hpi_pulse[spectator.label].shifted(np.pi)
+                        elif spectator_state == "-i":
+                            pulse = self.hpi_pulse[spectator.label]
+                        else:
+                            raise ValueError("Invalid spectator state.")
                         sequence[spectator.label] = lambda T: PulseSequence(
                             [
-                                pi,
-                                Blank(T + hpi.duration * 2),
+                                pulse,
+                                Blank(sequence[target](T).duration),
                             ]
                         )
             return sequence
@@ -1985,6 +1996,7 @@ class Experiment:
         x90: Waveform | None = None,
         interleave_waveform: Waveform | None = None,
         interleave_map: dict[str, tuple[complex, str]] | None = None,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -2005,6 +2017,8 @@ class Experiment:
             Waveform of the interleaved gate. Defaults to None.
         interleave_map : dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
+        spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
+            Spectator state. Defaults to "0".
         seed : int, optional
             Random seed.
         shots : int, optional
@@ -2041,46 +2055,70 @@ class Experiment:
         ... )
         """
 
-        def rb_sequence(target: str) -> ParametricWaveform:
-            return lambda N: self.rb_sequence(
-                target=target,
-                n=N,
-                x90=x90,
-                interleave_waveform=interleave_waveform,
-                interleave_map=interleave_map,
-                seed=seed,
-            )
+        def rb_sequence(target: str) -> dict[str, ParametricWaveform]:
+            sequence: dict[str, ParametricWaveform] = {
+                target: lambda N: self.rb_sequence(
+                    target=target,
+                    n=N,
+                    x90=x90,
+                    interleave_waveform=interleave_waveform,
+                    interleave_map=interleave_map,
+                    seed=seed,
+                )
+            }
+            if spectator_state != "0":
+                spectators = self.get_spectators(target)
+                for spectator in spectators:
+                    if spectator.label in self._qubits:
+                        if spectator_state == "1":
+                            pulse = self.pi_pulse[spectator.label]
+                        elif spectator_state == "+":
+                            pulse = self.hpi_pulse[spectator.label].shifted(np.pi / 2)
+                        elif spectator_state == "-":
+                            pulse = self.hpi_pulse[spectator.label].shifted(-np.pi / 2)
+                        elif spectator_state == "+i":
+                            pulse = self.hpi_pulse[spectator.label].shifted(np.pi)
+                        elif spectator_state == "-i":
+                            pulse = self.hpi_pulse[spectator.label]
+                        else:
+                            raise ValueError("Invalid spectator state.")
+                        sequence[spectator.label] = lambda N: PulseSequence(
+                            [
+                                pulse,
+                                Blank(sequence[target](N).duration),
+                            ]
+                        )
+            return sequence
 
         sweep_result = self.sweep_parameter(
-            {target: rb_sequence(target)},
+            rb_sequence(target),
             sweep_range=n_cliffords_range,
             shots=shots,
             interval=interval,
             plot=plot,
         )
 
-        fit_result = {
-            target: fitting.fit_rb(
-                target=target,
-                x=data.sweep_range,
-                y=data.normalized,
-                title="Randomized benchmarking",
-                xaxis_title="Number of Cliffords",
-                yaxis_title="Z expectation value",
-                xaxis_type="linear",
-                yaxis_type="linear",
-            )
-            for target, data in sweep_result.data.items()
-        }
+        sweep_data = sweep_result.data[target]
+
+        fit_data = fitting.fit_rb(
+            target=target,
+            x=sweep_data.sweep_range,
+            y=sweep_data.normalized,
+            title="Randomized benchmarking",
+            xaxis_title="Number of Cliffords",
+            yaxis_title="Z expectation value",
+            xaxis_type="linear",
+            yaxis_type="linear",
+        )
 
         data = {
-            target: RBData.new(
+            qubit: RBData.new(
                 data,
-                depolarizing_rate=fit_result[target][0],
-                avg_gate_error=fit_result[target][1],
-                avg_gate_fidelity=fit_result[target][2],
+                depolarizing_rate=fit_data[0],
+                avg_gate_error=fit_data[1],
+                avg_gate_fidelity=fit_data[2],
             )
-            for target, data in sweep_result.data.items()
+            for qubit, data in sweep_result.data.items()
         }
 
         return ExperimentResult(data=data)
@@ -2092,6 +2130,7 @@ class Experiment:
         n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
         n_trials: int = 30,
         x90: Waveform | None = None,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2109,10 +2148,8 @@ class Experiment:
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        interleave_waveform : Waveform, optional
-            Waveform of the interleaved gate. Defaults to None.
-        interleave_map : dict[str, tuple[complex, str]], optional
-            Clifford map of the interleaved gate. Defaults to None.
+        spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
+            Spectator state. Defaults to "0".
         seed : int, optional
             Random seed.
         shots : int, optional
@@ -2135,6 +2172,7 @@ class Experiment:
             result = self.rb_experiment(
                 target=target,
                 n_cliffords_range=n_cliffords_range,
+                spectator_state=spectator_state,
                 x90=x90,
                 seed=seed,
                 shots=shots,
@@ -2173,11 +2211,12 @@ class Experiment:
         self,
         *,
         target: str,
-        n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
-        n_trials: int = 30,
         interleave_waveform: Waveform,
         interleave_map: dict[str, tuple[complex, str]],
+        n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
+        n_trials: int = 30,
         x90: Waveform | None = None,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2189,20 +2228,18 @@ class Experiment:
         ----------
         target : str
             Target qubit.
-        n_cliffords_range : NDArray[np.int64], optional
-            Range of the number of Cliffords. Defaults to np.arange(0, 1001, 100).
-        n_trials : int, optional
-            Number of trials for different random seeds. Defaults to 30.
         interleave_waveform : Waveform
             Waveform of the interleaved gate.
         interleave_map : dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
+        n_cliffords_range : NDArray[np.int64], optional
+            Range of the number of Cliffords. Defaults to np.arange(0, 1001, 100).
+        n_trials : int, optional
+            Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        interleave_waveform : Waveform, optional
-            Waveform of the interleaved gate. Defaults to None.
-        interleave_map : dict[str, tuple[complex, str]], optional
-            Clifford map of the interleaved gate. Defaults to None.
+        spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
+            Spectator state. Defaults to "0".
         seed : int, optional
             Random seed.
         shots : int, optional
@@ -2223,9 +2260,10 @@ class Experiment:
             result = self.rb_experiment(
                 target=target,
                 n_cliffords_range=n_cliffords_range,
+                x90=x90,
                 interleave_waveform=interleave_waveform,
                 interleave_map=interleave_map,
-                x90=x90,
+                spectator_state=spectator_state,
                 seed=seed,
                 shots=shots,
                 interval=interval,
