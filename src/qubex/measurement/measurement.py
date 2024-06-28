@@ -43,7 +43,7 @@ DEFAULT_INTERVAL = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW = 1024  # ns
 DEFAULT_CAPTURE_WINDOW = 1024  # ns
 DEFAULT_READOUT_DURATION = 512  # ns
-INTERVAL_STEP = 102400  # ns
+INTERVAL_STEP = 10240  # ns
 
 
 class Measurement:
@@ -247,6 +247,7 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
+        backend: Literal["sequencer", "sequence"] = "sequencer",
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -288,18 +289,34 @@ class Measurement:
         ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
-        sequencer = self._create_sequencer(
-            waveforms=waveforms,
-            control_window=control_window,
-            capture_window=capture_window,
-            readout_duration=readout_duration,
-        )
-        backend_result = self._backend.execute_sequencer(
-            sequencer=sequencer,
-            repeats=shots,
-            interval=backend_interval,
-            integral_mode=measure_mode.integral_mode,
-        )
+        if backend == "sequence":
+            sequence = self._create_sequence(
+                waveforms=waveforms,
+                control_window=control_window,
+                capture_window=capture_window,
+                readout_duration=readout_duration,
+            )
+            backend_result = self._backend.execute_sequence(
+                sequence=sequence,
+                repeats=shots,
+                interval=backend_interval,
+                integral_mode=measure_mode.integral_mode,
+            )
+        elif backend == "sequencer":
+            sequencer = self._create_sequencer(
+                waveforms=waveforms,
+                control_window=control_window,
+                capture_window=capture_window,
+                readout_duration=readout_duration,
+            )
+            backend_result = self._backend.execute_sequencer(
+                sequencer=sequencer,
+                repeats=shots,
+                interval=backend_interval,
+                integral_mode=measure_mode.integral_mode,
+            )
+        else:
+            raise ValueError(f"Invalid backend: {backend}")
         return self._create_measure_result(backend_result, measure_mode)
 
     def measure_batch(
@@ -312,6 +329,7 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
+        backend: Literal["sequencer", "sequence"] = "sequencer",
     ):
         """
         Measure with the given control waveforms.
@@ -348,13 +366,22 @@ class Measurement:
         measure_mode = MeasureMode(mode)
         self._backend.clear_command_queue()
         for waveforms in waveforms_list:
-            sequencer = self._create_sequencer(
-                waveforms=waveforms,
-                control_window=control_window,
-                capture_window=capture_window,
-                readout_duration=readout_duration,
-            )
-            self._backend.add_sequencer(sequencer)
+            if backend == "sequence":
+                sequence = self._create_sequence(
+                    waveforms=waveforms,
+                    control_window=control_window,
+                    capture_window=capture_window,
+                    readout_duration=readout_duration,
+                )
+                self._backend.add_sequence(sequence)
+            elif backend == "sequencer":
+                sequencer = self._create_sequencer(
+                    waveforms=waveforms,
+                    control_window=control_window,
+                    capture_window=capture_window,
+                    readout_duration=readout_duration,
+                )
+                self._backend.add_sequencer(sequencer)
         backend_results = self._backend.execute(
             repeats=shots,
             interval=backend_interval,
