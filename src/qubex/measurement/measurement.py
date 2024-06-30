@@ -52,6 +52,7 @@ class Measurement:
         chip_id: str,
         *,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        use_neopulse: bool = True,
     ):
         """
         Initialize the Measurement.
@@ -69,6 +70,7 @@ class Measurement:
         >>> meas = Measurement("64Q")
         """
         self._chip_id: Final = chip_id
+        self._use_neopulse: Final = use_neopulse
         config = Config(config_dir)
         config.configure_system_settings(chip_id)
         config_path = config.get_system_settings_path(chip_id)
@@ -247,7 +249,6 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        backend: Literal["sequencer", "sequence"] = "sequence",
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -289,7 +290,7 @@ class Measurement:
         ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
-        if backend == "sequence":
+        if self._use_neopulse:
             sequence = self._create_sequence(
                 waveforms=waveforms,
                 control_window=control_window,
@@ -302,7 +303,7 @@ class Measurement:
                 interval=backend_interval,
                 integral_mode=measure_mode.integral_mode,
             )
-        elif backend == "sequencer":
+        else:
             sequencer = self._create_sequencer(
                 waveforms=waveforms,
                 control_window=control_window,
@@ -315,8 +316,6 @@ class Measurement:
                 interval=backend_interval,
                 integral_mode=measure_mode.integral_mode,
             )
-        else:
-            raise ValueError(f"Invalid backend: {backend}")
         return self._create_measure_result(backend_result, measure_mode)
 
     def measure_batch(
@@ -329,7 +328,6 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        backend: Literal["sequencer", "sequence"] = "sequence",
     ):
         """
         Measure with the given control waveforms.
@@ -366,7 +364,7 @@ class Measurement:
         measure_mode = MeasureMode(mode)
         self._backend.clear_command_queue()
         for waveforms in waveforms_list:
-            if backend == "sequence":
+            if self._use_neopulse:
                 sequence = self._create_sequence(
                     waveforms=waveforms,
                     control_window=control_window,
@@ -374,7 +372,7 @@ class Measurement:
                     readout_duration=readout_duration,
                 )
                 self._backend.add_sequence(sequence)
-            elif backend == "sequencer":
+            else:
                 sequencer = self._create_sequencer(
                     waveforms=waveforms,
                     control_window=control_window,

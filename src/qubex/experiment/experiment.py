@@ -123,6 +123,7 @@ class Experiment:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
+        use_neopulse: bool = True,
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
@@ -134,6 +135,7 @@ class Experiment:
         self._measurement: Final = Measurement(
             chip_id=chip_id,
             config_dir=config_dir,
+            use_neopulse=use_neopulse,
         )
         self.tool: Final = ExperimentTool(
             chip_id=self._chip_id,
