@@ -974,7 +974,7 @@ class Experiment:
         self,
         sequence: TargetMap[Waveform],
         *,
-        repetitions: int = 10,
+        repetitions: int = 20,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1346,7 +1346,8 @@ class Experiment:
         self,
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
-        shots: int = DEFAULT_SHOTS,
+        n_rotations: int = 8,
+        shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -1358,8 +1359,10 @@ class Experiment:
             Target qubit to calibrate.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 8.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to 3000.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -1395,13 +1398,14 @@ class Experiment:
                 rabi_rate=rabi_rate,
                 print_result=False,
             )[target]
-            ampl_min = ampl * 0.5
-            ampl_max = ampl * 1.5
+            ampl_min = ampl * (1 - 0.5 / n_rotations)
+            ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            n_per_rotation = 2 if pulse_type == "pi" else 4
             sweep_data = self.sweep_parameter(
                 sequence={target: lambda x: pulse.scaled(x)},
                 sweep_range=ampl_range,
-                repetitions=2 if pulse_type == "pi" else 4,
+                repetitions=n_per_rotation * n_rotations,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -1435,7 +1439,8 @@ class Experiment:
         self,
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
-        shots: int = DEFAULT_SHOTS,
+        n_rotations: int = 8,
+        shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -1447,8 +1452,10 @@ class Experiment:
             Target qubit to calibrate.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 8.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to 3000.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -1484,15 +1491,17 @@ class Experiment:
                 rabi_rate=rabi_rate,
                 print_result=False,
             )[target]
-            ampl_min = ampl * 0.5
-            ampl_max = ampl * 1.25  # stop at 1.25 to avoid leakage
+
+            ampl_min = ampl * (1 - 0.5 / n_rotations)
+            ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            n_per_rotation = 2 if pulse_type == "pi" else 4
             sweep_data = self.sweep_parameter(
                 sequence={
                     target: lambda x: pulse.scaled(x),
                 },
                 sweep_range=ampl_range,
-                repetitions=2 if pulse_type == "pi" else 4,
+                repetitions=n_per_rotation * n_rotations,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -1525,7 +1534,8 @@ class Experiment:
     def calibrate_hpi_pulse(
         self,
         targets: list[str],
-        shots: int = DEFAULT_SHOTS,
+        n_rotations: int = 8,
+        shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -1535,8 +1545,10 @@ class Experiment:
         ----------
         target : str
             Target qubit to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 8.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to 3000.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -1548,6 +1560,7 @@ class Experiment:
         result = self.calibrate_default_pulse(
             targets=targets,
             pulse_type="hpi",
+            n_rotations=n_rotations,
             shots=shots,
             interval=interval,
         )
@@ -1560,7 +1573,8 @@ class Experiment:
     def calibrate_pi_pulse(
         self,
         targets: list[str],
-        shots: int = DEFAULT_SHOTS,
+        n_rotations: int = 8,
+        shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -1570,8 +1584,10 @@ class Experiment:
         ----------
         target : str
             Target qubit to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 8.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to 3000.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -1583,6 +1599,7 @@ class Experiment:
         result = self.calibrate_default_pulse(
             targets=targets,
             pulse_type="pi",
+            n_rotations=n_rotations,
             shots=shots,
             interval=interval,
         )
@@ -1595,7 +1612,8 @@ class Experiment:
     def calibrate_drag_hpi_pulse(
         self,
         targets: list[str],
-        shots: int = DEFAULT_SHOTS,
+        n_rotations: int = 8,
+        shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -1605,8 +1623,10 @@ class Experiment:
         ----------
         target : str
             Target qubit to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 8.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to 3000.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -1618,6 +1638,7 @@ class Experiment:
         result = self.calibrate_drag_pulse(
             targets=targets,
             pulse_type="hpi",
+            n_rotations=n_rotations,
             shots=shots,
             interval=interval,
         )
@@ -1630,7 +1651,8 @@ class Experiment:
     def calibrate_drag_pi_pulse(
         self,
         targets: list[str],
-        shots: int = DEFAULT_SHOTS,
+        n_rotations: int = 8,
+        shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -1640,8 +1662,10 @@ class Experiment:
         ----------
         target : str
             Target qubit to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 8.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to 3000.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -1653,6 +1677,7 @@ class Experiment:
         result = self.calibrate_drag_pulse(
             targets=targets,
             pulse_type="pi",
+            n_rotations=n_rotations,
             shots=shots,
             interval=interval,
         )
