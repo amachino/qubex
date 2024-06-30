@@ -24,9 +24,11 @@ from ..analysis import (
 from ..clifford import CliffordGroup
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..measurement import (
+    DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
     DEFAULT_INTERVAL,
+    DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
     Measurement,
     MeasureResult,
@@ -94,10 +96,14 @@ class Experiment:
         Identifier of the quantum chip.
     qubits : list[str]
         List of qubits to use in the experiment.
-    control_window : int, optional
-        Control window. Defaults to DEFAULT_CONTROL_WINDOW.
     config_dir : str, optional
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
+    control_window : int, optional
+        Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+    capture_window : int, optional
+        Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
+    readout_duration : int, optional
+        Readout duration. Defaults to DEFAULT_READOUT_DURATION.
 
     Examples
     --------
@@ -113,12 +119,16 @@ class Experiment:
         *,
         chip_id: str,
         qubits: list[str],
-        control_window: int = DEFAULT_CONTROL_WINDOW,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        control_window: int = DEFAULT_CONTROL_WINDOW,
+        capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        readout_duration: int = DEFAULT_READOUT_DURATION,
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
         self._control_window: Final = control_window
+        self._capture_window: Final = capture_window
+        self._readout_duration: Final = readout_duration
         self._rabi_params: Optional[dict[str, RabiParam]] = None
         self._config: Final = Config(config_dir)
         self._measurement: Final = Measurement(
@@ -515,6 +525,8 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
+        capture_window: int | None = None,
+        readout_duration: int | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -534,6 +546,10 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         control_window : int, optional
             Control window. Defaults to None.
+        capture_window : int, optional
+            Capture window. Defaults to None.
+        readout_duration : int, optional
+            Readout duration. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -554,6 +570,8 @@ class Experiment:
         ... )
         """
         control_window = control_window or self._control_window
+        capture_window = capture_window or self._capture_window
+        readout_duration = readout_duration or self._readout_duration
         waveforms = {}
         for target, waveform in sequence.items():
             if isinstance(waveform, Waveform):
@@ -568,6 +586,8 @@ class Experiment:
                 shots=shots,
                 interval=interval,
                 control_window=control_window,
+                capture_window=capture_window,
+                readout_duration=readout_duration,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -577,6 +597,8 @@ class Experiment:
                     shots=shots,
                     interval=interval,
                     control_window=control_window,
+                    capture_window=capture_window,
+                    readout_duration=readout_duration,
                 )
         if plot:
             result.plot()
@@ -590,6 +612,8 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
+        capture_window: int | None = None,
+        readout_duration: int | None = None,
     ):
         """
         Measures the signals using the given sequences.
@@ -606,6 +630,10 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         control_window : int, optional
             Control window. Defaults to None.
+        capture_window : int, optional
+            Capture window. Defaults to None.
+        readout_duration : int, optional
+            Readout duration. Defaults to None.
 
         Yields
         ------
@@ -625,6 +653,8 @@ class Experiment:
             shots=shots,
             interval=interval,
             control_window=control_window or self._control_window,
+            capture_window=capture_window or self._capture_window,
+            readout_duration=readout_duration or self._readout_duration,
         )
 
     def check_noise(
