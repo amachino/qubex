@@ -1863,8 +1863,8 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 10000, 200),
-        detuning: float = 0.0005,
+        time_range: NDArray = np.arange(0, 10001, 200),
+        detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1956,6 +1956,86 @@ class Experiment:
             data[target] = ramsey_data
 
         return ExperimentResult(data=data)
+
+    def obtain_effective_control_frequency(
+        self,
+        target: str,
+        *,
+        time_range: NDArray = np.arange(0, 10001, 200),
+        detuning: float = 0.001,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> float:
+        """
+        Obtains the effective control frequency of the qubit.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to check the Ramsey oscillation.
+        time_range : NDArray
+            Time range of the experiment in ns.
+        detuning : float, optional
+            Detuning of the control frequency. Defaults to 0.001 GHz.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        float
+            Effective control frequency.
+
+        Examples
+        --------
+        >>> result = ex.obtain_true_control_frequency(
+        ...     target="Q00",
+        ...     time_range=np.arange(0, 10000, 100),
+        ...     shots=1024,
+        ... )
+        """
+        ramsey_freq_0 = (
+            self.ramsey_experiment(
+                targets=[target],
+                time_range=time_range,
+                detuning=detuning,
+                spectator_state="0",
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+            .data[target]
+            .ramsey_freq
+        )
+
+        ramsey_freq_1 = (
+            self.ramsey_experiment(
+                targets=[target],
+                time_range=time_range,
+                detuning=detuning,
+                spectator_state="1",
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+            .data[target]
+            .ramsey_freq
+        )
+
+        bare_freq_0 = self.targets[target].frequency + detuning - ramsey_freq_0
+        bare_freq_1 = self.targets[target].frequency + detuning - ramsey_freq_1
+        effective_freq = (bare_freq_0 + bare_freq_1) / 2
+
+        print(f"Original frequency: {self.targets[target].frequency:.6f}")
+        print(f"Bare frequency with spectator state 0: {bare_freq_0:.6f}")
+        print(f"Bare frequency with spectator state 1: {bare_freq_1:.6f}")
+        print(f"Effective control frequency: {effective_freq:.6f}")
+
+        return effective_freq
 
     def build_classifier(
         self,
