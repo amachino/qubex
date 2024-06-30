@@ -247,7 +247,7 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        backend: Literal["sequencer", "sequence"] = "sequencer",
+        backend: Literal["sequencer", "sequence"] = "sequence",
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -329,7 +329,7 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        backend: Literal["sequencer", "sequence"] = "sequencer",
+        backend: Literal["sequencer", "sequence"] = "sequence",
     ):
         """
         Measure with the given control waveforms.
