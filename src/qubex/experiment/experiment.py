@@ -518,6 +518,25 @@ class Experiment:
         print(f"created_at: {record.created_at}")
         return record
 
+    def normalize(
+        self,
+        data: IQArray,
+        rabi_param: RabiParam,
+    ) -> NDArray[np.float64]:
+        """
+        Normalize the measured data.
+
+        Parameters
+        ----------
+        data : IQArray
+            Measured data.
+        rabi_param : RabiParam
+            Rabi parameters.
+        """
+        values = data * np.exp(-1j * rabi_param.angle)
+        values_normalized = (np.imag(values) - rabi_param.offset) / rabi_param.amplitude
+        return values_normalized
+
     def measure(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform],
