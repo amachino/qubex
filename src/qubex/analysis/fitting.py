@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 import matplotlib.pyplot as plt
@@ -10,6 +11,17 @@ import plotly.graph_objects as go
 from scipy.fft import fft, fftfreq
 from scipy.optimize import curve_fit, minimize
 from sklearn.decomposition import PCA
+
+
+def _plotly_config(filename: str) -> dict:
+    prefix = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return {
+        "toImageButtonOptions": {
+            "format": "svg",
+            "filename": f"{prefix}_{filename}",
+            "scale": 3,
+        },
+    }
 
 
 @dataclass
@@ -266,7 +278,7 @@ def fit_rabi(
             xaxis_title="Drive time (ns)",
             yaxis_title="Amplitude (arb. units)",
         )
-        fig.show()
+        fig.show(config=_plotly_config(f"rabi_{target}"))
 
     return RabiParam(
         target=target,
@@ -351,7 +363,7 @@ def fit_detuned_rabi(
             xaxis_title="Control frequency (GHz)",
             yaxis_title="Rabi frequency (MHz)",
         )
-        fig.show()
+        fig.show(config=_plotly_config(f"detuned_rabi_{target}"))
 
     print(f"Resonance frequency: {f_resonance:.6f} GHz")
 
@@ -468,7 +480,7 @@ def fit_ramsey(
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
-    fig.show()
+    fig.show(config=_plotly_config(f"ramsey_{target}"))
 
     return tau, f
 
@@ -572,7 +584,7 @@ def fit_exp_decay(
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
-    fig.show()
+    fig.show(config=_plotly_config(f"exp_decay_{target}"))
 
     return tau
 
@@ -679,7 +691,7 @@ def fit_rb(
             xaxis_type=xaxis_type,
             yaxis_type=yaxis_type,
         )
-        fig.show()
+        fig.show(config=_plotly_config(f"rb_{target}"))
 
     return depolarizing_rate, avg_gate_error, avg_gate_fidelity
 
@@ -774,7 +786,7 @@ def fit_ampl_calib_data(
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
-    fig.show()
+    fig.show(config=_plotly_config(f"ampl_calib_{target}"))
 
     print(f"Calibrated amplitude: {min_x:.6g}")
 

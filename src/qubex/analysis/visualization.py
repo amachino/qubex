@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objs as go
@@ -9,6 +9,24 @@ from IPython.display import display
 from numpy.typing import ArrayLike, NDArray
 
 from ..typing import IQArray, TargetMap
+
+
+def _to_image_button_options(
+    format: Literal["png", "svg", "jpeg", "webp"] = "svg",
+    filename: str = "image",
+    height: int | None = None,
+    width: int | None = None,
+) -> dict:
+    options: dict[str, Any] = {
+        "format": format,
+        "filename": filename,
+        "scale": 3,
+    }
+    if height is not None:
+        options["height"] = height
+    if width is not None:
+        options["width"] = width
+    return {"toImageButtonOptions": options}
 
 
 def display_bloch_sphere(bloch_vectors: NDArray[np.float64]):
@@ -36,7 +54,8 @@ def plot_y(
         yaxis_range=ylim,
         template="qubex",
     )
-    fig.show()
+    config = _to_image_button_options()
+    fig.show(config=config)
 
 
 def plot_xy(
@@ -61,7 +80,8 @@ def plot_xy(
         yaxis_range=ylim,
         template="qubex",
     )
-    fig.show()
+    config = _to_image_button_options()
+    fig.show(config=config)
 
 
 def plot_xy_square(
@@ -86,7 +106,8 @@ def plot_xy_square(
         yaxis_range=ylim,
         template="qubex+square",
     )
-    fig.show()
+    config = _to_image_button_options()
+    fig.show(config=config)
 
 
 def plot_state_vectors(
@@ -128,7 +149,8 @@ def plot_state_vectors(
         yaxis_title=ylabel,
         yaxis=dict(range=[-1.1, 1.1]),
     )
-    fig.show()
+    config = _to_image_button_options()
+    fig.show(config=config)
 
 
 def plot_waveform(
@@ -160,7 +182,8 @@ def plot_waveform(
         xaxis_title=xlabel,
         yaxis_title=ylabel,
     )
-    fig.show()
+    config = _to_image_button_options()
+    fig.show(config=config)
 
 
 def scatter_iq_data(
@@ -187,7 +210,8 @@ def scatter_iq_data(
         margin=dict(l=120, r=120),
         yaxis=dict(scaleanchor="x", scaleratio=1),
     )
-    fig.show()
+    config = _to_image_button_options()
+    fig.show(config=config)
 
 
 class IQPlotter:

@@ -1962,7 +1962,7 @@ class Experiment:
         target: str,
         *,
         time_range: NDArray = np.arange(0, 10001, 200),
-        detuning: float = 0.001,
+        detuning: float = 0.0005,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1977,7 +1977,7 @@ class Experiment:
         time_range : NDArray
             Time range of the experiment in ns.
         detuning : float, optional
-            Detuning of the control frequency. Defaults to 0.001 GHz.
+            Detuning of the control frequency. Defaults to 0.0005 GHz.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
