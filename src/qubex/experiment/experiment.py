@@ -2375,6 +2375,7 @@ class Experiment:
         n_trials: int = 30,
         x90: Waveform | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        show_ref: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2398,8 +2399,8 @@ class Experiment:
             π/2 pulse. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
-        seed : int, optional
-            Random seed.
+        show_ref : bool, optional
+            Whether to show the reference curve. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2412,10 +2413,23 @@ class Experiment:
         dict
             Results of the experiment.
         """
-        results = []
+        rb_results = []
+        irb_results = []
         seeds = np.random.randint(0, 2**32, n_trials)
         for seed in seeds:
-            result = self.rb_experiment(
+            if show_ref:
+                rb_result = self.rb_experiment(
+                    target=target,
+                    n_cliffords_range=n_cliffords_range,
+                    x90=x90,
+                    spectator_state=spectator_state,
+                    seed=seed,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+                rb_results.append(rb_result.data[target].normalized)
+            irb_result = self.rb_experiment(
                 target=target,
                 n_cliffords_range=n_cliffords_range,
                 x90=x90,
@@ -2425,34 +2439,57 @@ class Experiment:
                 seed=seed,
                 shots=shots,
                 interval=interval,
-                plot=False,
+                plot=plot,
             )
-            results.append(result.data[target].normalized)
+            irb_results.append(irb_result.data[target].normalized)
             clear_output(wait=True)
 
-        mean = np.mean(results, axis=0)
-        std = np.std(results, axis=0)
-
-        fit_result = fitting.fit_rb(
+        if show_ref:
+            rb_mean = np.mean(rb_results, axis=0)
+            rb_std = np.std(rb_results, axis=0)
+            rb_fit_result = fitting.fit_rb(
+                target=target,
+                x=n_cliffords_range,
+                y=rb_mean,
+                error_y=rb_std,
+                plot=True,
+                title="Randomized benchmarking",
+            )
+            p_rb = rb_fit_result[0]
+        irb_mean = np.mean(irb_results, axis=0)
+        irb_std = np.std(irb_results, axis=0)
+        irb_fit_result = fitting.fit_rb(
             target=target,
             x=n_cliffords_range,
-            y=mean,
-            error_y=std,
+            y=irb_mean,
+            error_y=irb_std,
             plot=plot,
             title="Interleaved randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Z expectation value",
-            xaxis_type="linear",
-            yaxis_type="linear",
         )
+        p_irb = irb_fit_result[0]
+
+        if show_ref:
+            fitting.plot_irb(
+                target=target,
+                x=n_cliffords_range,
+                y_rb=rb_mean,
+                y_irb=irb_mean,
+                error_y_rb=rb_std,
+                error_y_irb=irb_std,
+                p_rb=p_rb,
+                p_irb=p_irb,
+                title="Interleaved randomized benchmarking",
+                xaxis_title="Number of Cliffords",
+                yaxis_title="Z expectation value",
+            )
 
         return {
-            "depolarizing_rate": fit_result[0],
-            "avg_gate_error": fit_result[1],
-            "avg_gate_fidelity": fit_result[2],
+            "depolarizing_rate": irb_fit_result[0],
+            "avg_gate_error": irb_fit_result[1],
+            "avg_gate_fidelity": irb_fit_result[2],
             "n_cliffords": n_cliffords_range,
-            "mean": mean,
-            "std": std,
+            "mean": irb_mean,
+            "std": irb_std,
         }
 
     def state_tomography_sequence(
