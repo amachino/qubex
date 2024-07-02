@@ -18,6 +18,7 @@ from ..analysis import (
     RabiParam,
     display_bloch_sphere,
     fitting,
+    plot_state_distribution,
     plot_state_vectors,
     plot_waveform,
 )
@@ -2068,6 +2069,16 @@ class Experiment:
             {target: self.pi_pulse[target].values for target in targets},
             mode="single",
         )
+        for target in targets:
+            data = {
+                "|0⟩": result_g.data[target].kerneled,
+                "|1⟩": result_e.data[target].kerneled,
+            }
+            plot_state_distribution(
+                data=data,
+                title=f"State distribution of {target}",
+            )
+
         self._measurement.classifiers = {
             target: StateClassifier.fit(
                 {
@@ -2079,8 +2090,14 @@ class Experiment:
         }
         for target in targets:
             clf = self._measurement.classifiers[target]
-            clf.classify(result_g.data[target].kerneled)
-            clf.classify(result_e.data[target].kerneled)
+            classified_g = clf.classify(target, result_g.data[target].kerneled)
+            fidelity_g = classified_g[0] / (classified_g[0] + classified_g[1])
+            classified_e = clf.classify(target, result_e.data[target].kerneled)
+            fidelity_e = classified_e[1] / (classified_e[0] + classified_e[1])
+            fidelity = (fidelity_g + fidelity_e) / 2
+            print(f"|0⟩ → {classified_g}, fidelity: {fidelity_g * 100:.2f}%")
+            print(f"|1⟩ → {classified_e}, fidelity: {fidelity_e * 100:.2f}%")
+            print(f"Average readout fidelity of {target}: {fidelity * 100:.2f}%")
 
     def rb_sequence(
         self,

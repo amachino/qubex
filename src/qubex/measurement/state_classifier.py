@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 from sklearn.cluster import KMeans
 from sklearn.metrics import confusion_matrix
 
-from qubex.style import COLORS
+from ..style import get_colors, get_config
 
 
 @dataclass
@@ -212,6 +212,7 @@ class StateClassifier:
 
     def classify(
         self,
+        target: str,
         data: NDArray[np.complex128],
         plot: bool = True,
     ) -> dict[int, int]:
@@ -232,13 +233,14 @@ class StateClassifier:
         """
         predicted_labels = self.predict(data)
         if plot:
-            self.plot(data, predicted_labels)
+            self.plot(target, data, predicted_labels)
         count = np.bincount(predicted_labels)
         state = {label: count[label] for label in range(len(count))}
         return state
 
     def plot(
         self,
+        target: str,
         data: NDArray[np.complex128],
         labels: NDArray,
     ):
@@ -255,9 +257,11 @@ class StateClassifier:
         x = data.real
         y = data.imag
         unique_labels = np.unique(labels)
+        colors = get_colors(alpha=0.8)
 
         fig = go.Figure()
-        for label in unique_labels:
+        for idx, label in enumerate(unique_labels):
+            color = colors[idx % len(colors)]
             mask = labels == label
             fig.add_trace(
                 go.Scatter(
@@ -266,8 +270,8 @@ class StateClassifier:
                     mode="markers",
                     name=f"|{label}⟩",
                     marker=dict(
-                        size=5,
-                        color=COLORS[label],
+                        size=4,
+                        color=f"rgba{color}",
                     ),
                 )
             )
@@ -287,10 +291,13 @@ class StateClassifier:
                 )
             )
         fig.update_layout(
-            title="State Classification",
-            xaxis=dict(title="In-Phase (arb. units)"),
-            yaxis=dict(title="Quadrature (arb. units)"),
+            title=f"State classification of {target}",
+            xaxis_title="In-Phase (arb. units)",
+            yaxis_title="Quadrature (arb. units)",
             showlegend=True,
-            template="qubex+square",
+            width=500,
+            height=400,
+            margin=dict(l=120, r=120),
+            yaxis=dict(scaleanchor="x", scaleratio=1),
         )
-        fig.show()
+        fig.show(config=get_config())
