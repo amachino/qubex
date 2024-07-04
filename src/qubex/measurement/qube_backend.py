@@ -11,6 +11,8 @@ from rich.console import Console
 
 console = Console()
 
+SAMPLING_PERIOD = 2.0  # ns
+
 
 @dataclass
 class QubeBackendResult:

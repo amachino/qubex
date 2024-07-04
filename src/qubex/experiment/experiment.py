@@ -27,7 +27,6 @@ from ..config import Config, Params, Qubit, Resonator, Target
 from ..measurement import (
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
-    DEFAULT_CONTROL_WINDOW,
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
@@ -100,7 +99,7 @@ class Experiment:
     config_dir : str, optional
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
     control_window : int, optional
-        Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+        Control window. Defaults to None.
     capture_window : int, optional
         Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
     readout_duration : int, optional
@@ -121,7 +120,7 @@ class Experiment:
         chip_id: str,
         qubits: list[str],
         config_dir: str = DEFAULT_CONFIG_DIR,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = True,
@@ -626,59 +625,6 @@ class Experiment:
             result.plot()
         return result
 
-    def _measure_batch(
-        self,
-        sequences: Sequence[TargetMap[IQArray]],
-        *,
-        mode: Literal["single", "avg"] = "avg",
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        readout_duration: int | None = None,
-    ):
-        """
-        Measures the signals using the given sequences.
-
-        Parameters
-        ----------
-        sequences : Sequence[TargetMap[IQArray]]
-            Sequences of the experiment.
-        mode : Literal["single", "avg"], optional
-            Measurement mode. Defaults to "avg".
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
-            Control window. Defaults to None.
-        capture_window : int, optional
-            Capture window. Defaults to None.
-        readout_duration : int, optional
-            Readout duration. Defaults to None.
-
-        Yields
-        ------
-        MeasureResult
-            Result of the experiment.
-        """
-        waveforms_list = [
-            {
-                target: np.array(waveform, dtype=np.complex128)
-                for target, waveform in sequence.items()
-            }
-            for sequence in sequences
-        ]
-        return self._measurement.measure_batch(
-            waveforms_list=waveforms_list,
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            control_window=control_window or self._control_window,
-            capture_window=capture_window or self._capture_window,
-            readout_duration=readout_duration or self._readout_duration,
-        )
-
     def check_noise(
         self,
         targets: list[str],
@@ -952,28 +898,27 @@ class Experiment:
         ... )
         """
         targets = list(sequence.keys())
-        sequences = [
-            {
-                target: sequence[target](param).repeated(repetitions).values
-                for target in targets
-            }
-            for param in sweep_range
-        ]
-        generator = self._measure_batch(
-            sequences=sequences,
-            shots=shots,
-            interval=interval,
-            control_window=control_window or self._control_window,
-        )
-        signals = defaultdict(list)
+        signals: dict[str, list] = defaultdict(list)
         plotter = IQPlotter()
+
         with self.modified_frequencies(frequencies):
-            for result in generator:
-                for target, data in result.data.items():
+            for param in sweep_range:
+                measure_result = self.measure(
+                    sequence={
+                        target: sequence[target](param).repeated(repetitions).values
+                        for target in targets
+                    },
+                    mode="avg",
+                    shots=shots,
+                    interval=interval,
+                    control_window=control_window or self._control_window,
+                )
+                for target, data in measure_result.data.items():
                     signals[target].append(data.kerneled)
                 if plot:
                     plotter.update(signals)
-        data = {
+
+        sweep_data = {
             target: SweepData(
                 target=target,
                 data=np.array(values),
@@ -987,7 +932,7 @@ class Experiment:
             )
             for target, values in signals.items()
         }
-        result = ExperimentResult(data=data, rabi_params=self.rabi_params)
+        result = ExperimentResult(data=sweep_data, rabi_params=self.rabi_params)
         return result
 
     def repeat_sequence(
