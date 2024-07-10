@@ -510,14 +510,10 @@ class Measurement:
                             CaptureSlots(
                                 duration=capture_length,
                                 post_blank=None,
-                                original_duration=capture_length,
-                                original_post_blank=None,
                             )
                         ],
                         prev_blank=control_length,
                         post_blank=None,
-                        original_prev_blank=control_length,
-                        original_post_blank=None,
                         repeats=None,
                     )
                 ],
