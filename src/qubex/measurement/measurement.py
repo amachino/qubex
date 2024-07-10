@@ -8,6 +8,7 @@ the readout signals.
 
 from __future__ import annotations
 
+import typing
 from contextlib import contextmanager
 from typing import Final, Literal
 
@@ -33,7 +34,7 @@ from ..config import Config, Target
 from ..pulse import FlatTop
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
-from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
+from .qube_backend import QubeBackend, QubeBackendResult
 from .state_classifier import StateClassifier
 
 DEFAULT_CONFIG_DIR = "./config"
@@ -245,7 +246,7 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
+        control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> MeasureResult:
@@ -284,16 +285,9 @@ class Measurement:
         ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ... })
         """
-        if control_window is None:
-            max_waveform_length = max(len(waveform) for waveform in waveforms.values())
-            max_waveform_duration = int(max_waveform_length * SAMPLING_PERIOD)
-            backend_interval = (
-                (max_waveform_duration + capture_window + interval) // INTERVAL_STEP + 1
-            ) * INTERVAL_STEP
-        else:
-            backend_interval = (
-                (control_window + capture_window + interval) // INTERVAL_STEP + 1
-            ) * INTERVAL_STEP
+        backend_interval = (
+            (control_window + capture_window + interval) // INTERVAL_STEP + 1
+        ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
         if self._use_neopulse:
@@ -324,11 +318,81 @@ class Measurement:
             )
         return self._create_measure_result(backend_result, measure_mode)
 
+    def measure_batch(
+        self,
+        waveforms_list: typing.Sequence[TargetMap[IQArray]],
+        *,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        control_window: int = DEFAULT_CONTROL_WINDOW,
+        capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        readout_duration: int = DEFAULT_READOUT_DURATION,
+    ):
+        """
+        Measure with the given control waveforms.
+
+        Parameters
+        ----------
+        waveforms_list : Sequence[TargetMap[IQArray]]
+            The control waveforms for each target.
+            Waveforms are complex I/Q arrays with the sampling period of 2 ns.
+        mode : Literal["single", "avg"], optional
+            The measurement mode, by default "single".
+            - "single": Measure once.
+            - "avg": Measure multiple times and average the results.
+        shots : int, optional
+            The number of shots, by default DEFAULT_SHOTS.
+        interval : int, optional
+            The interval in ns, by default DEFAULT_INTERVAL.
+        control_window : int, optional
+            The control window in ns, by default DEFAULT_CONTROL_WINDOW.
+        capture_window : int, optional
+            The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
+        readout_duration : int, optional
+            The readout duration in ns, by default DEFAULT_READOUT_DURATION.
+
+        Yields
+        ------
+        MeasureResult
+            The measurement results.
+        """
+        backend_interval = (
+            (control_window + capture_window + interval) // INTERVAL_STEP + 1
+        ) * INTERVAL_STEP
+
+        measure_mode = MeasureMode(mode)
+        self._backend.clear_command_queue()
+        for waveforms in waveforms_list:
+            if self._use_neopulse:
+                sequence = self._create_sequence(
+                    waveforms=waveforms,
+                    control_window=control_window,
+                    capture_window=capture_window,
+                    readout_duration=readout_duration,
+                )
+                self._backend.add_sequence(sequence)
+            else:
+                sequencer = self._create_sequencer(
+                    waveforms=waveforms,
+                    control_window=control_window,
+                    capture_window=capture_window,
+                    readout_duration=readout_duration,
+                )
+                self._backend.add_sequencer(sequencer)
+        backend_results = self._backend.execute(
+            repeats=shots,
+            interval=backend_interval,
+            integral_mode=measure_mode.integral_mode,
+        )
+        for backend_result in backend_results:
+            yield self._create_measure_result(backend_result, measure_mode)
+
     def _create_sequence(
         self,
         *,
         waveforms: TargetMap[IQArray],
-        control_window: int | None = None,
+        control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> Sequence:
@@ -337,8 +401,7 @@ class Measurement:
         qubits = {target.split("-")[0] for target in waveforms.keys()}
         with Sequence() as sequence:
             with Flushright():
-                if control_window is not None:
-                    padding(control_window)
+                padding(control_window)
                 for target, waveform in waveforms.items():
                     Arbit(np.array(waveform)).target(target)
             with Flushleft():
@@ -364,22 +427,19 @@ class Measurement:
         self,
         *,
         waveforms: TargetMap[IQArray],
-        control_window: int | None = None,
+        control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ):
-        max_waveform_length = max(len(waveform) for waveform in waveforms.values())
-        max_waveform_duration = int(max_waveform_length * SAMPLING_PERIOD)
-        if control_window is not None:
-            if max_waveform_duration > control_window:
-                raise ValueError(
-                    f"The waveform duration ({max_waveform_duration}) exceeds the control window ({control_window})."
-                )
-        control_length = control_window or max_waveform_duration
-        capture_length = int(capture_window // SAMPLING_PERIOD)
-        readout_length = int(readout_duration // SAMPLING_PERIOD)
+        control_length = control_window // 2
+        capture_length = capture_window // 2
+        readout_length = readout_duration // 2
         qubits = {target.split("-")[0] for target in waveforms.keys()}
-
+        max_waveform_length = max(len(waveform) for waveform in waveforms.values())
+        if max_waveform_length > control_length:
+            raise ValueError(
+                f"The waveform duration ({max_waveform_length * 2}) exceeds the control window ({control_window})."
+            )
         # zero padding (control)
         # [0, 0, ..., 0, control, 0, 0, ..., 0, 0, 0, 0]
         # |<-- control_length --><-- capture_length -->|
@@ -471,7 +531,6 @@ class Measurement:
         return Sequencer(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
-            # TODO: support group_items_by_target
             resource_map=resource_map,  # type: ignore
         )
 
