@@ -7,7 +7,7 @@ import httpx
 import numpy as np
 import numpy.typing as npt
 
-from qubex.measurement import MeasureData, MeasureMode, MeasureResult
+from qubex.measurement.measurement_result import MeasureData, MeasureMode, MeasureResult
 from qubex.pulse import Waveform
 
 API_BASE_URL = "https://qiqb.ngrok.dev"
