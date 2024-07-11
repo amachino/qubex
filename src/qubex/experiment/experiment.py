@@ -32,7 +32,6 @@ from ..measurement import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
     Measurement,
-    MeasurementSimulator,
     MeasureResult,
     StateClassifier,
 )
@@ -126,7 +125,6 @@ class Experiment:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = True,
-        simulator_mode: bool = False,
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
@@ -136,18 +134,11 @@ class Experiment:
         self._rabi_params: Optional[dict[str, RabiParam]] = None
         self._ef_rabi_params: Optional[dict[str, RabiParam]] = None
         self._config: Final = Config(config_dir)
-        if not simulator_mode:
-            self._measurement = Measurement(
-                chip_id=chip_id,
-                config_dir=config_dir,
-                use_neopulse=use_neopulse,
-            )
-        else:
-            self._measurement = MeasurementSimulator(
-                chip_id=chip_id,
-                qubits=qubits,
-                config_dir=config_dir,
-            )
+        self._measurement = Measurement(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            use_neopulse=use_neopulse,
+        )
         self.tool: Final = ExperimentTool(
             chip_id=self._chip_id,
             qubits=self._qubits,
