@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import typing
 from contextlib import contextmanager
-from typing import Final, Literal
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -69,13 +69,13 @@ class Measurement:
         >>> from qubex import Measurement
         >>> meas = Measurement("64Q")
         """
-        self._chip_id: Final = chip_id
-        self._use_neopulse: Final = use_neopulse
+        self._chip_id = chip_id
+        self._use_neopulse = use_neopulse
         config = Config(config_dir)
         config.configure_system_settings(chip_id)
         config_path = config.get_system_settings_path(chip_id)
-        self._backend: Final = QubeBackend(config_path)
-        self._params: Final = config.get_params(chip_id)
+        self._backend = QubeBackend(config_path)
+        self._params = config.get_params(chip_id)
         self.classifiers: TargetMap[StateClassifier] = {}
 
     @property

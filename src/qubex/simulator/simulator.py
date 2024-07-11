@@ -158,6 +158,13 @@ class Simulator:
 
         total_hamiltonian = [static_hamiltonian] + dynamic_hamiltonian
 
+        if len(control.times) == 0:
+            return Result(
+                system=self.system,
+                control=control,
+                states=[],
+            )
+
         result = qt.mesolve(
             H=total_hamiltonian,
             rho0=initial_state,

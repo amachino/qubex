@@ -8,6 +8,7 @@ from .measurement import (
     Measurement,
 )
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
+from .measurement_simulator import MeasurementSimulator
 from .state_classifier import StateClassifier
 
 __all__ = [
@@ -17,9 +18,10 @@ __all__ = [
     "DEFAULT_INTERVAL",
     "DEFAULT_READOUT_DURATION",
     "DEFAULT_SHOTS",
-    "Measurement",
     "MeasureData",
     "MeasureMode",
     "MeasureResult",
+    "Measurement",
+    "MeasurementSimulator",
     "StateClassifier",
 ]
