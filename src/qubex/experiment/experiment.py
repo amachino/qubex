@@ -31,10 +31,10 @@ from ..measurement import (
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
-    Measurement,
     MeasureResult,
     StateClassifier,
 )
+from ..measurement.measurement import Measurement
 from ..pulse import (
     CPMG,
     Blank,
