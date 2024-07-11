@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Mapping
 
 import numpy as np
 import plotly.graph_objs as go
@@ -8,6 +8,7 @@ import qctrlvisualizer as qcv
 from IPython.display import display
 from numpy.typing import ArrayLike, NDArray
 
+from ..style import get_colors, get_config
 from ..typing import IQArray, TargetMap
 
 
@@ -36,7 +37,7 @@ def plot_y(
         yaxis_range=ylim,
         template="qubex",
     )
-    fig.show()
+    fig.show(config=get_config())
 
 
 def plot_xy(
@@ -61,7 +62,7 @@ def plot_xy(
         yaxis_range=ylim,
         template="qubex",
     )
-    fig.show()
+    fig.show(config=get_config())
 
 
 def plot_xy_square(
@@ -86,7 +87,7 @@ def plot_xy_square(
         yaxis_range=ylim,
         template="qubex+square",
     )
-    fig.show()
+    fig.show(config=get_config())
 
 
 def plot_state_vectors(
@@ -128,7 +129,7 @@ def plot_state_vectors(
         yaxis_title=ylabel,
         yaxis=dict(range=[-1.1, 1.1]),
     )
-    fig.show()
+    fig.show(config=get_config())
 
 
 def plot_waveform(
@@ -160,22 +161,28 @@ def plot_waveform(
         xaxis_title=xlabel,
         yaxis_title=ylabel,
     )
-    fig.show()
+    fig.show(config=get_config())
 
 
-def scatter_iq_data(
-    data: TargetMap[IQArray],
-    title: str = "I/Q plane",
+def plot_state_distribution(
+    data: Mapping[str, IQArray],
+    title: str = "State distribution",
     xlabel: str = "In-phase (arb. units)",
     ylabel: str = "Quadrature (arb. units)",
 ) -> None:
     fig = go.Figure()
-    for qubit, iq in data.items():
+    colors = get_colors(alpha=0.8)
+    for idx, (qubit, iq) in enumerate(data.items()):
+        color = colors[idx % len(colors)]
         scatter = go.Scatter(
             x=np.real(iq),
             y=np.imag(iq),
             mode="markers",
             name=qubit,
+            marker=dict(
+                size=4,
+                color=f"rgba{color}",
+            ),
         )
         fig.add_trace(scatter)
     fig.update_layout(
@@ -187,7 +194,40 @@ def scatter_iq_data(
         margin=dict(l=120, r=120),
         yaxis=dict(scaleanchor="x", scaleratio=1),
     )
-    fig.show()
+    fig.show(config=get_config())
+
+
+def scatter_iq_data(
+    data: Mapping[str, IQArray],
+    title: str = "I/Q plane",
+    xlabel: str = "In-phase (arb. units)",
+    ylabel: str = "Quadrature (arb. units)",
+) -> None:
+    fig = go.Figure()
+    colors = get_colors(alpha=0.8)
+    for idx, (qubit, iq) in enumerate(data.items()):
+        color = colors[idx % len(colors)]
+        scatter = go.Scatter(
+            x=np.real(iq),
+            y=np.imag(iq),
+            mode="markers",
+            name=qubit,
+            marker=dict(
+                size=4,
+                color=f"rgba{color}",
+            ),
+        )
+        fig.add_trace(scatter)
+    fig.update_layout(
+        title=title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        width=500,
+        height=400,
+        margin=dict(l=120, r=120),
+        yaxis=dict(scaleanchor="x", scaleratio=1),
+    )
+    fig.show(config=get_config())
 
 
 class IQPlotter:

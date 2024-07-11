@@ -96,7 +96,7 @@ class Result:
         population = states[-1].diag()
         for idx, prob in enumerate(population):
             basis = self.system.basis_labels[idx] if label is None else str(idx)
-            print(f"|{basis}⟩: {prob:.3f}")
+            print(f"|{basis}⟩: {prob:.6f}")
 
     def plot_population_dynamics(
         self,
@@ -157,6 +157,13 @@ class Simulator:
             collapse_operators.append(dephasing_operator)
 
         total_hamiltonian = [static_hamiltonian] + dynamic_hamiltonian
+
+        if len(control.times) == 0:
+            return Result(
+                system=self.system,
+                control=control,
+                states=[],
+            )
 
         result = qt.mesolve(
             H=total_hamiltonian,

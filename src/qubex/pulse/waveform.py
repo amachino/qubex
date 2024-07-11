@@ -220,7 +220,14 @@ class Waveform(ABC):
             xaxis_title=xlabel,
             yaxis_title=ylabel,
         )
-        fig.show()
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "svg",
+                    "scale": 3,
+                },
+            }
+        )
 
     def plot_polar(
         self,
@@ -281,7 +288,12 @@ class Waveform(ABC):
         fig.update_xaxes(title_text=xlabel, row=2, col=1)
         fig.update_yaxes(title_text=ylabel_1, row=1, col=1)
         fig.update_yaxes(title_text=ylabel_2, row=2, col=1)
-        fig.update_layout(
-            width=600,
+        fig.update_layout(width=600)
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "svg",
+                    "scale": 3,
+                },
+            }
         )
-        fig.show()

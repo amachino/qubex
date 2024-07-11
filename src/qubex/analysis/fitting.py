@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 import matplotlib.pyplot as plt
@@ -10,6 +11,27 @@ import plotly.graph_objects as go
 from scipy.fft import fft, fftfreq
 from scipy.optimize import curve_fit, minimize
 from sklearn.decomposition import PCA
+
+COLORS = [
+    "#0C5DA5",
+    "#00B945",
+    "#FF9500",
+    "#FF2C00",
+    "#845B97",
+    "#474747",
+    "#9e9e9e",
+]
+
+
+def _plotly_config(filename: str) -> dict:
+    prefix = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return {
+        "toImageButtonOptions": {
+            "format": "svg",
+            "filename": f"{prefix}_{filename}",
+            "scale": 3,
+        },
+    }
 
 
 @dataclass
@@ -266,7 +288,7 @@ def fit_rabi(
             xaxis_title="Drive time (ns)",
             yaxis_title="Amplitude (arb. units)",
         )
-        fig.show()
+        fig.show(config=_plotly_config(f"rabi_{target}"))
 
     return RabiParam(
         target=target,
@@ -351,7 +373,7 @@ def fit_detuned_rabi(
             xaxis_title="Control frequency (GHz)",
             yaxis_title="Rabi frequency (MHz)",
         )
-        fig.show()
+        fig.show(config=_plotly_config(f"detuned_rabi_{target}"))
 
     print(f"Resonance frequency: {f_resonance:.6f} GHz")
 
@@ -468,7 +490,7 @@ def fit_ramsey(
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
-    fig.show()
+    fig.show(config=_plotly_config(f"ramsey_{target}"))
 
     return tau, f
 
@@ -572,7 +594,7 @@ def fit_exp_decay(
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
-    fig.show()
+    fig.show(config=_plotly_config(f"exp_decay_{target}"))
 
     return tau
 
@@ -679,9 +701,114 @@ def fit_rb(
             xaxis_type=xaxis_type,
             yaxis_type=yaxis_type,
         )
-        fig.show()
+        fig.show(config=_plotly_config(f"rb_{target}"))
 
     return depolarizing_rate, avg_gate_error, avg_gate_fidelity
+
+
+def plot_irb(
+    *,
+    target: str,
+    x: npt.NDArray[np.int64],
+    y_rb: npt.NDArray[np.float64],
+    y_irb: npt.NDArray[np.float64],
+    error_y_rb: npt.NDArray[np.float64],
+    error_y_irb: npt.NDArray[np.float64],
+    p_rb: float,
+    p_irb: float,
+    title: str = "Interleaved randomized benchmarking",
+    xaxis_title: str = "Number of Cliffords",
+    yaxis_title: str = "Z expectation value",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+):
+    """
+    Plot interleaved randomized benchmarking data.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    x : npt.NDArray[np.float64]
+        Time points for the decay data.
+    y_rb : npt.NDArray[np.float64]
+        Amplitude data for the decay.
+    y_irb : npt.NDArray[np.float64]
+        Amplitude data for the interleaved decay.
+    error_y_rb : npt.NDArray[np.float64]
+        Error data for the decay.
+    error_y_irb : npt.NDArray[np.float64]
+        Error data for the interleaved decay.
+    p_rb : float
+        Depolarizing rate of the randomized benchmarking.
+    p_irb : float
+        Depolarizing rate of the interleaved randomized benchmarking.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Label for the x-axis.
+    yaxis_title : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+    """
+
+    def func_rb(n: npt.NDArray[np.float64], p: float):
+        return (1 - p) ** n
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_rb_fine = func_rb(x_fine, p_rb)
+    y_irb_fine = func_rb(x_fine, p_irb)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_rb_fine,
+            mode="lines",
+            name="Reference",
+            line=dict(color=COLORS[0]),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y_rb,
+            error_y=dict(type="data", array=error_y_rb),
+            mode="markers",
+            marker=dict(color=COLORS[0]),
+            showlegend=False,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_irb_fine,
+            mode="lines",
+            name="Interleaved",
+            line=dict(color=COLORS[1]),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y_irb,
+            error_y=dict(type="data", array=error_y_irb),
+            mode="markers",
+            marker=dict(color=COLORS[1]),
+            showlegend=False,
+        )
+    )
+    fig.update_layout(
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+    fig.show(config=_plotly_config(f"irb_{target}"))
 
 
 def fit_ampl_calib_data(
@@ -774,7 +901,7 @@ def fit_ampl_calib_data(
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
-    fig.show()
+    fig.show(config=_plotly_config(f"ampl_calib_{target}"))
 
     print(f"Calibrated amplitude: {min_x:.6g}")
 

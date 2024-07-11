@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import typing
 from contextlib import contextmanager
-from typing import Final, Literal
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -43,7 +43,7 @@ DEFAULT_INTERVAL = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW = 1024  # ns
 DEFAULT_CAPTURE_WINDOW = 1024  # ns
 DEFAULT_READOUT_DURATION = 512  # ns
-INTERVAL_STEP = 102400  # ns
+INTERVAL_STEP = 10240  # ns
 
 
 class Measurement:
@@ -52,6 +52,7 @@ class Measurement:
         chip_id: str,
         *,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        use_neopulse: bool = True,
     ):
         """
         Initialize the Measurement.
@@ -68,12 +69,13 @@ class Measurement:
         >>> from qubex import Measurement
         >>> meas = Measurement("64Q")
         """
-        self._chip_id: Final = chip_id
+        self._chip_id = chip_id
+        self._use_neopulse = use_neopulse
         config = Config(config_dir)
         config.configure_system_settings(chip_id)
         config_path = config.get_system_settings_path(chip_id)
-        self._backend: Final = QubeBackend(config_path)
-        self._params: Final = config.get_params(chip_id)
+        self._backend = QubeBackend(config_path)
+        self._params = config.get_params(chip_id)
         self.classifiers: TargetMap[StateClassifier] = {}
 
     @property
@@ -288,18 +290,32 @@ class Measurement:
         ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
-        sequencer = self._create_sequencer(
-            waveforms=waveforms,
-            control_window=control_window,
-            capture_window=capture_window,
-            readout_duration=readout_duration,
-        )
-        backend_result = self._backend.execute_sequencer(
-            sequencer=sequencer,
-            repeats=shots,
-            interval=backend_interval,
-            integral_mode=measure_mode.integral_mode,
-        )
+        if self._use_neopulse:
+            sequence = self._create_sequence(
+                waveforms=waveforms,
+                control_window=control_window,
+                capture_window=capture_window,
+                readout_duration=readout_duration,
+            )
+            backend_result = self._backend.execute_sequence(
+                sequence=sequence,
+                repeats=shots,
+                interval=backend_interval,
+                integral_mode=measure_mode.integral_mode,
+            )
+        else:
+            sequencer = self._create_sequencer(
+                waveforms=waveforms,
+                control_window=control_window,
+                capture_window=capture_window,
+                readout_duration=readout_duration,
+            )
+            backend_result = self._backend.execute_sequencer(
+                sequencer=sequencer,
+                repeats=shots,
+                interval=backend_interval,
+                integral_mode=measure_mode.integral_mode,
+            )
         return self._create_measure_result(backend_result, measure_mode)
 
     def measure_batch(
@@ -348,13 +364,22 @@ class Measurement:
         measure_mode = MeasureMode(mode)
         self._backend.clear_command_queue()
         for waveforms in waveforms_list:
-            sequencer = self._create_sequencer(
-                waveforms=waveforms,
-                control_window=control_window,
-                capture_window=capture_window,
-                readout_duration=readout_duration,
-            )
-            self._backend.add_sequencer(sequencer)
+            if self._use_neopulse:
+                sequence = self._create_sequence(
+                    waveforms=waveforms,
+                    control_window=control_window,
+                    capture_window=capture_window,
+                    readout_duration=readout_duration,
+                )
+                self._backend.add_sequence(sequence)
+            else:
+                sequencer = self._create_sequencer(
+                    waveforms=waveforms,
+                    control_window=control_window,
+                    capture_window=capture_window,
+                    readout_duration=readout_duration,
+                )
+                self._backend.add_sequencer(sequencer)
         backend_results = self._backend.execute(
             repeats=shots,
             interval=backend_interval,
@@ -525,7 +550,7 @@ class Measurement:
                 if classifier is None:
                     classified_data = None
                 else:
-                    classified_data = classifier.classify(kerneled, plot=False)
+                    classified_data = classifier.classify(qubit, kerneled, plot=False)
             elif measure_mode == MeasureMode.AVG:
                 # iqs: ndarray[duration, 1]
                 raw = iqs[capture_index].squeeze()
