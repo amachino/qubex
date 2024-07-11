@@ -204,14 +204,17 @@ def scatter_iq_data(
     ylabel: str = "Quadrature (arb. units)",
 ) -> None:
     fig = go.Figure()
-    for qubit, iq in data.items():
+    colors = get_colors(alpha=0.8)
+    for idx, (qubit, iq) in enumerate(data.items()):
+        color = colors[idx % len(colors)]
         scatter = go.Scatter(
             x=np.real(iq),
             y=np.imag(iq),
             mode="markers",
             name=qubit,
             marker=dict(
-                color="rgba(12, 93, 165, 0.5)",
+                size=4,
+                color=f"rgba{color}",
             ),
         )
         fig.add_trace(scatter)
