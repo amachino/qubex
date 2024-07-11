@@ -25,16 +25,18 @@ from ..analysis import (
 from ..clifford import CliffordGroup
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..measurement import (
+    MeasureResult,
+    StateClassifier,
+)
+from ..measurement.measurement import (
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
-    MeasureResult,
-    StateClassifier,
+    Measurement,
 )
-from ..measurement.measurement import Measurement
 from ..pulse import (
     CPMG,
     Blank,
