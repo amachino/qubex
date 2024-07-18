@@ -257,3 +257,68 @@ class IQPlotter:
             scatter: go.Scatter = self._widget.data[idx]  # type: ignore
             scatter.x = np.real(data[qubit])
             scatter.y = np.imag(data[qubit])
+
+
+class IQPlotterPolar:
+    def __init__(self, normalize: bool = True):
+        self._normalize = normalize
+        self._num_scatters: int | None = None
+        self._widget = go.FigureWidget()
+        self._widget.update_layout(
+            title="I/Q plane",
+            width=500,
+            height=400,
+            margin=dict(l=120, r=120),
+            showlegend=True,
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    showline=True,
+                    showticklabels=True,
+                    side="counterclockwise",
+                    ticks="inside",
+                    dtick=0.5,
+                    gridcolor="lightgrey",
+                    gridwidth=1,
+                ),
+                angularaxis=dict(
+                    visible=True,
+                    showline=True,
+                    showticklabels=False,
+                    ticks="inside",
+                    dtick=30,
+                    gridcolor="lightgrey",
+                    gridwidth=1,
+                ),
+            ),
+        )
+
+    def update(
+        self,
+        data: TargetMap[IQArray],
+    ):
+        if self._num_scatters is None:
+            display(self._widget)
+            for qubit in data:
+                self._widget.add_scatterpolar(name=qubit, mode="markers")
+            self._num_scatters = len(data)
+        if len(data) != self._num_scatters:
+            raise ValueError("Number of scatters does not match")
+
+        if self._normalize:
+            self._widget.update_layout(polar_radialaxis_range=[0, 1.1])
+
+        signals = {}
+        for qubit, iq_list in data.items():
+            iq_array = np.array(iq_list)
+            if self._normalize:
+                r = np.abs(iq_array[0])
+                theta = np.angle(iq_array[0])
+                signals[qubit] = (iq_array * np.exp(-1j * theta)) / r
+            else:
+                signals[qubit] = iq_array
+
+        for idx, qubit in enumerate(data):
+            scatterpolar: go.Scatterpolar = self._widget.data[idx]  # type: ignore
+            scatterpolar.r = np.abs(signals[qubit])
+            scatterpolar.theta = np.angle(signals[qubit], deg=True)
