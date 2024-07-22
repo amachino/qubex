@@ -46,7 +46,7 @@ class System:
 
     @property
     def basis_indices(self) -> list[tuple[int, ...]]:
-        return list(np.ndindex(*[transmon.dimension for transmon in self.transmons]))
+        return list(np.ndindex(*[dim for dim in self.dimensions]))
 
     @property
     def basis_labels(self) -> list[str]:
@@ -54,7 +54,7 @@ class System:
 
     @property
     def identity(self) -> qt.Qobj:
-        return qt.tensor([qt.qeye(transmon.dimension) for transmon in self.transmons])
+        return qt.tensor([qt.qeye(dim) for dim in self.dimensions])
 
     def state(
         self,
@@ -62,9 +62,7 @@ class System:
         default: StateAlias = "0",
     ) -> qt.Qobj:
         if isinstance(alias, str):
-            return qt.tensor(
-                [self._state(transmon.dimension, alias) for transmon in self.transmons]
-            )
+            return qt.tensor([self._state(dim, alias) for dim in self.dimensions])
         elif isinstance(alias, dict):
             for label in alias:
                 if label not in self.graph.nodes:
