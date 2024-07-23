@@ -11,9 +11,10 @@ def test_inheritance():
 
 
 def test_empty_init():
-    """PulseSequence should raise a TypeError if no parameters are provided."""
-    with pytest.raises(TypeError):
-        PulseSequence()  # type: ignore
+    """PulseSequence should be initialized without any parameters."""
+    seq = PulseSequence()
+    assert seq.length == 0
+    assert seq.duration == 0
 
 
 def test_empty_list():

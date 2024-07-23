@@ -8,7 +8,7 @@ dt = PulseSequence.SAMPLING_PERIOD
 def test_empty_init():
     """PhaseShift should raise a TypeError if no parameters are provided."""
     with pytest.raises(TypeError):
-        PulseSequence()  # type: ignore
+        PhaseShift()  # type: ignore
 
 
 def test_init():
