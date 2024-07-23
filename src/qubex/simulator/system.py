@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Final, Literal
 
-import numpy as np
 import networkx as nx
+import numpy as np
 import qutip as qt
 from typing_extensions import TypeAlias
 
@@ -40,12 +40,13 @@ class System:
         self.transmons: Final = transmons
         self.couplings: Final = couplings or []
         self.graph: Final = nx.Graph()
-        self.hamiltonian = qt.Qobj()
+        self.dimensions: Final = [transmon.dimension for transmon in self.transmons]
+        self.hamiltonian = qt.tensor([qt.qzero(dim) for dim in self.dimensions])
         self._init_system()
 
     @property
     def basis_indices(self) -> list[tuple[int, ...]]:
-        return list(np.ndindex(*[transmon.dimension for transmon in self.transmons]))
+        return list(np.ndindex(*[dim for dim in self.dimensions]))
 
     @property
     def basis_labels(self) -> list[str]:
@@ -53,7 +54,7 @@ class System:
 
     @property
     def identity(self) -> qt.Qobj:
-        return qt.tensor([qt.qeye(transmon.dimension) for transmon in self.transmons])
+        return qt.tensor([qt.qeye(dim) for dim in self.dimensions])
 
     def state(
         self,
@@ -61,9 +62,7 @@ class System:
         default: StateAlias = "0",
     ) -> qt.Qobj:
         if isinstance(alias, str):
-            return qt.tensor(
-                [self._state(transmon.dimension, alias) for transmon in self.transmons]
-            )
+            return qt.tensor([self._state(dim, alias) for dim in self.dimensions])
         elif isinstance(alias, dict):
             for label in alias:
                 if label not in self.graph.nodes:
@@ -98,7 +97,7 @@ class System:
             state = (qt.basis(dim, 0) - 1j * qt.basis(dim, 1)).unit()
         elif alias == "*":
             # random state in qubit {|0>, |1>} subspace
-            state = qt.Qobj(np.append(qt.rand_ket_haar(2), [0 + 0j] * (dim - 2)))
+            state = qt.Qobj(np.append(qt.rand_ket(2).full(), [0 + 0j] * (dim - 2)))
         else:
             raise ValueError(f"Invalid state alias: {alias}")
         return state

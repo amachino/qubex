@@ -89,7 +89,7 @@ class SimulationResultPWC:
         frame: Literal["qubit", "drive"] = "qubit",
     ) -> None:
         substates = self.substates(label, frame)
-        rho = np.array(substates).squeeze()[:, :2, :2]
+        rho = np.array([substate.full() for substate in substates])[:, :2, :2]
         print(f"{label} in the {frame} frame")
         qv.display_bloch_sphere_from_density_matrices(rho)
 
