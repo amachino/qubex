@@ -34,7 +34,7 @@ from ..config import Config, Target
 from ..pulse import FlatTop
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
-from .qube_backend import QubeBackend, QubeBackendResult
+from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
 from .state_classifier import StateClassifier
 
 DEFAULT_CONFIG_DIR = "./config"
@@ -431,14 +431,14 @@ class Measurement:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ):
-        control_length = control_window // 2
-        capture_length = capture_window // 2
-        readout_length = readout_duration // 2
-        qubits = {target.split("-")[0] for target in waveforms.keys()}
+        control_length = self._number_of_samples(control_window)
+        capture_length = self._number_of_samples(capture_window)
+        readout_length = self._number_of_samples(readout_duration)
+        qubits = {Target.from_label(target).qubit for target in waveforms.keys()}
         max_waveform_length = max(len(waveform) for waveform in waveforms.values())
         if max_waveform_length > control_length:
             raise ValueError(
-                f"The waveform duration ({max_waveform_length * 2}) exceeds the control window ({control_window})."
+                f"The waveform length ({max_waveform_length}) exceeds the control window ({control_window})."
             )
         # zero padding (control)
         # [0, 0, ..., 0, control, 0, 0, ..., 0, 0, 0, 0]
@@ -572,3 +572,29 @@ class Measurement:
             data=measure_data,
             config=backend_result.config,
         )
+
+    @staticmethod
+    def _number_of_samples(
+        duration: float,
+    ) -> int:
+        """
+        Returns the number of samples in the waveform.
+
+        Parameters
+        ----------
+        duration : float
+            Duration of the waveform in ns.
+        """
+        dt = SAMPLING_PERIOD
+        if duration < 0:
+            raise ValueError("Duration must be positive.")
+
+        # Tolerance for floating point comparison
+        tolerance = 1e-9
+        frac = duration / dt
+        N = round(frac)
+        if abs(frac - N) > tolerance:
+            raise ValueError(
+                f"Duration must be a multiple of the sampling period ({dt} ns)."
+            )
+        return N
