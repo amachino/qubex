@@ -227,10 +227,11 @@ class Measurement:
         >>> result = meas.measure_noise()
         """
         capture = Capture(duration=duration)
+        readout_targets = {Target.get_readout(target) for target in targets}
         with Sequence() as sequence:
             with Flushleft():
-                for target in targets:
-                    capture.target(f"R{target}")
+                for target in readout_targets:
+                    capture.target(target)
         backend_result = self._backend.execute_sequence(
             sequence=sequence,
             repeats=1,
@@ -398,7 +399,7 @@ class Measurement:
     ) -> Sequence:
         readout_amplitude = self._params.readout_amplitude
         capture = Capture(duration=capture_window)
-        qubits = {target.split("-")[0] for target in waveforms.keys()}
+        qubits = {Target.get_qubit(target) for target in waveforms.keys()}
         with Sequence() as sequence:
             with Flushright():
                 padding(control_window)
@@ -406,16 +407,21 @@ class Measurement:
                     Arbit(np.array(waveform)).target(target)
             with Flushleft():
                 for qubit in qubits:
-                    read_target = f"R{qubit}"
+                    readout_target = Target.get_readout(qubit)
                     RaisedCosFlatTop(
                         duration=readout_duration,
                         amplitude=readout_amplitude[qubit],
                         rise_time=32,
-                    ).target(read_target)
-                    capture.target(read_target)
+                    ).target(readout_target)
+                    capture.target(readout_target)
         return sequence
 
-    def _readout_pulse(self, qubit: str, duration: int) -> FlatTop:
+    def _readout_pulse(
+        self,
+        target: str,
+        duration: int = DEFAULT_READOUT_DURATION,
+    ) -> FlatTop:
+        qubit = Target.get_qubit(target)
         readout_amplitude = self._params.readout_amplitude
         return FlatTop(
             duration=duration,
@@ -434,7 +440,7 @@ class Measurement:
         control_length = self._number_of_samples(control_window)
         capture_length = self._number_of_samples(capture_window)
         readout_length = self._number_of_samples(readout_duration)
-        qubits = {Target.from_label(target).qubit for target in waveforms.keys()}
+        qubits = {Target.get_qubit(target) for target in waveforms.keys()}
         max_waveform_length = max(len(waveform) for waveform in waveforms.values())
         if max_waveform_length > control_length:
             raise ValueError(
@@ -463,7 +469,8 @@ class Measurement:
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_slice = slice(control_length, control_length + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
-            readout_waveforms[f"R{qubit}"] = padded_waveform
+            readout_target = Target.get_readout(qubit)
+            readout_waveforms[readout_target] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
         gen_sequences: dict[str, GenSampledSequence] = {}
@@ -533,10 +540,33 @@ class Measurement:
     def _create_sequencer_from_schedule(
         self,
         schedule: PulseSchedule,
+        add_last_measurement: bool = False,
     ) -> Sequencer:
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
 
+        # readout targets in the provided schedule
+        readout_targets = [
+            target for target in schedule.targets if Target.is_readout(target)
+        ]
+
+        # add last readout pulse if necessary
+        if add_last_measurement:
+            # register all readout targets for the last measurement
+            readout_targets = list(
+                {Target.get_readout(target) for target in schedule.targets}
+            )
+            # create a new schedule with the last readout pulse
+            with PulseSchedule(schedule.targets + readout_targets) as ps:
+                ps.call(schedule)
+                ps.barrier()
+                for target in readout_targets:
+                    readout_pulse = self._readout_pulse(target)
+                    ps.add(target, readout_pulse)
+            # update the schedule
+            schedule = ps
+
+        # get sampled sequences
         sampled_sequences = schedule.get_sampled_sequences()
 
         # create GenSampledSequence
@@ -559,9 +589,6 @@ class Measurement:
 
         # create CapSampledSequence
         cap_sequences: dict[str, CapSampledSequence] = {}
-        readout_targets = [
-            target for target in schedule.targets if Target.is_readout(target)
-        ]
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
         for target, ranges in readout_ranges.items():
             cap_sub_sequence = CapSampledSubSequence(

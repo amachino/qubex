@@ -85,11 +85,6 @@ class Target:
         )
 
     @classmethod
-    def get_frequency(cls, label: str) -> float:
-        target = cls.from_label(label)
-        return target.frequency
-
-    @classmethod
     def get_type(cls, label: str) -> TargetType:
         target = cls.from_label(label)
         return target.type
@@ -98,6 +93,11 @@ class Target:
     def get_qubit(cls, label: str) -> str:
         target = cls.from_label(label)
         return target.qubit
+
+    @classmethod
+    def get_readout(cls, label: str) -> str:
+        target = cls.from_label(label)
+        return f"R{target.qubit}"
 
     @classmethod
     def is_readout(cls, label: str) -> bool:

@@ -15,15 +15,15 @@ from .pulse_sequence import PhaseShift, PulseSequence
 class PulseSchedule:
     def __init__(
         self,
-        targets: list[str],
+        targets: list[str] | set[str],
     ):
         """
         A class to represent a pulse schedule.
 
         Parameters
         ----------
-        targets : list[str]
-            A list of target qubits.
+        targets : list[str] | set[str]
+            The target qubits.
 
         Examples
         --------
@@ -37,7 +37,7 @@ class PulseSchedule:
         >>>     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
-        self.targets = targets
+        self.targets = list(set(targets))
         self._sequences = {target: PulseSequence() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
 
@@ -47,7 +47,7 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule() as ps:
+        >>> with PulseSchedule([...]) as ps:
         >>>     ps.add(...)
         """
         return self
@@ -58,11 +58,11 @@ class PulseSchedule:
 
         The following codes are equivalent:
 
-        >>> ps = PulseSchedule()
+        >>> ps = PulseSchedule([...])
         >>> ps.add(...)
         >>> ps.barrier()
 
-        >>> with PulseSchedule() as ps:
+        >>> with PulseSchedule([...]) as ps:
         >>>     ps.add(...)
 
         Note that the duration of sequences might be different if the context manager is not used.
@@ -107,7 +107,7 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule() as ps:
+        >>> with PulseSchedule(["Q01"]) as ps:
         >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         """
         if target not in self.targets:
@@ -132,13 +132,52 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule() as ps:
+        >>> with PulseSchedule(["Q01"]) as ps:
         >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         >>>     ps.barrier()
         """
         targets = targets or self.targets
         for target in targets:
             self.add(target, Blank(duration=self._max_offset() - self._offsets[target]))
+
+    def call(
+        self,
+        schedule: PulseSchedule,
+    ):
+        """
+        Call another pulse schedule in the current pulse schedule.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule
+            The pulse schedule to call.
+
+        Examples
+        --------
+        >>> with PulseSchedule(["Q01", "Q02"]) as ctrl:
+        >>>     ctrl.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        >>>     ctrl.barrier()
+        >>>     ctrl.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        >>> with PulseSchedule(["RQ01", "RQ02"]) as read:
+        >>>     read.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        >>>     read.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> with PulseSchedule(["Q01", "Q02", "RQ01", "RQ02"]) as ps:
+        >>>     ps.call(ctrl)
+        >>>     ps.barrier()
+        >>>     ps.call(read)
+        >>> ps.plot()
+        """
+        if schedule == self:
+            raise ValueError("Cannot call itself.")
+
+        for target in schedule.targets:
+            if target not in self.targets:
+                raise ValueError(f"The target {target} is not in the current schedule.")
+
+        self.barrier(schedule.targets)
+        sequences = schedule.get_sequences()
+        for target, sequence in sequences.items():
+            self.add(target, sequence)
 
     def plot(self):
         """
@@ -203,6 +242,7 @@ class PulseSchedule:
         fig.update_layout(
             title="Pulse Schedule",
             template="plotly",
+            height=100 * n_targets,
         )
         fig.update_xaxes(
             row=n_targets,
