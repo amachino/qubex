@@ -84,6 +84,26 @@ class Target:
             qubit=qubit,
         )
 
+    @classmethod
+    def get_frequency(cls, label: str) -> float:
+        target = cls.from_label(label)
+        return target.frequency
+
+    @classmethod
+    def get_type(cls, label: str) -> TargetType:
+        target = cls.from_label(label)
+        return target.type
+
+    @classmethod
+    def get_qubit(cls, label: str) -> str:
+        target = cls.from_label(label)
+        return target.qubit
+
+    @classmethod
+    def is_readout(cls, label: str) -> bool:
+        target = cls.from_label(label)
+        return target.type == TargetType.READ
+
 
 CONFIG_DIR = "config"
 BUILD_DIR = "build"

@@ -68,3 +68,29 @@ def test_get_sampled_sequences():
     seq_end = ps.get_sampled_sequences(duration=10, align="end")
     assert seq_end["Q00"] == pytest.approx([0, 0, 1, 0, 1j])
     assert seq_end["Q01"] == pytest.approx([0, 0, 1j, 0, 1])
+
+
+def test_get_pulse_ranges():
+    """PulseSchedule should return the pulse ranges."""
+    with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as ps:
+        ps.add("Q01", Pulse([1, 1, 1]))
+        ps.barrier()
+        ps.add("Q02", Pulse([1, 1, 1]))
+        ps.barrier()
+        ps.add("RQ01", Pulse([1, 1, 1]))
+        ps.add("RQ02", Pulse([1, 1, 1]))
+        ps.barrier()
+        ps.add("Q01", Pulse([1, 1, 1]))
+        ps.barrier()
+        ps.add("RQ01", Pulse([1, 1, 1]))
+        ps.add("RQ02", Pulse([1, 1, 1]))
+
+    ranges_all = ps.get_pulse_ranges()
+    assert ranges_all["Q01"] == pytest.approx([range(0, 3), range(9, 12)])
+    assert ranges_all["RQ01"] == pytest.approx([range(6, 9), range(12, 15)])
+    assert ranges_all["Q02"] == pytest.approx([range(3, 6)])
+    assert ranges_all["RQ02"] == pytest.approx([range(6, 9), range(12, 15)])
+
+    ranges_read = ps.get_pulse_ranges(["RQ01", "RQ02"])
+    assert ranges_read["RQ01"] == pytest.approx([range(6, 9), range(12, 15)])
+    assert ranges_read["RQ02"] == pytest.approx([range(6, 9), range(12, 15)])

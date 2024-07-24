@@ -31,7 +31,7 @@ from qubecalib.neopulse import (
 )
 
 from ..config import Config, Target
-from ..pulse import FlatTop
+from ..pulse import FlatTop, PulseSchedule
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
@@ -430,7 +430,7 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-    ):
+    ) -> Sequencer:
         control_length = self._number_of_samples(control_window)
         capture_length = self._number_of_samples(capture_window)
         readout_length = self._number_of_samples(readout_duration)
@@ -522,6 +522,87 @@ class Measurement:
         # create resource map
         all_targets = list(control_waveforms.keys()) + list(readout_waveforms.keys())
         resource_map = self._backend.get_resource_map(all_targets)
+
+        # return Sequencer
+        return Sequencer(
+            gen_sampled_sequence=gen_sequences,
+            cap_sampled_sequence=cap_sequences,
+            resource_map=resource_map,  # type: ignore
+        )
+
+    def _create_sequencer_from_schedule(
+        self,
+        schedule: PulseSchedule,
+    ) -> Sequencer:
+        if not schedule.is_valid():
+            raise ValueError("Invalid pulse schedule.")
+
+        sampled_sequences = schedule.get_sampled_sequences()
+
+        # create GenSampledSequence
+        gen_sequences: dict[str, GenSampledSequence] = {}
+        for target, waveform in sampled_sequences.items():
+            gen_sequences[target] = GenSampledSequence(
+                target_name=target,
+                prev_blank=0,
+                post_blank=None,
+                sub_sequences=[
+                    # has only one GenSampledSubSequence
+                    GenSampledSubSequence(
+                        real=np.real(waveform),
+                        imag=np.imag(waveform),
+                        post_blank=None,
+                        repeats=1,
+                    )
+                ],
+            )
+
+        # create CapSampledSequence
+        cap_sequences: dict[str, CapSampledSequence] = {}
+        readout_targets = [
+            target for target in schedule.targets if Target.is_readout(target)
+        ]
+        readout_ranges = schedule.get_pulse_ranges(readout_targets)
+        for target, ranges in readout_ranges.items():
+            cap_sub_sequence = CapSampledSubSequence(
+                capture_slots=[],
+                # prev_blank is the time to the first readout pulse
+                prev_blank=ranges[0].start,
+                post_blank=None,
+                repeats=None,
+            )
+            for i in range(len(ranges) - 1):
+                current_range = ranges[i]
+                next_range = ranges[i + 1]
+                cap_sub_sequence.capture_slots.append(
+                    CaptureSlots(
+                        duration=len(current_range),
+                        # post_blank is the time to the next readout pulse
+                        post_blank=next_range.start - current_range.stop,
+                    )
+                )
+            last_range = ranges[-1]
+            cap_sub_sequence.capture_slots.append(
+                CaptureSlots(
+                    duration=len(last_range),
+                    # post_blank is the time to the end of the schedule
+                    post_blank=schedule.length - last_range.stop,
+                )
+            )
+            cap_sequence = CapSampledSequence(
+                target_name=target,
+                prev_blank=0,
+                post_blank=None,
+                repeats=None,
+                sub_sequences=[
+                    # has only one CapSampledSubSequence
+                    cap_sub_sequence,
+                ],
+            )
+            cap_sequences[target] = cap_sequence
+
+        # create resource map
+        resource_map = self._backend.get_resource_map(schedule.targets)
 
         # return Sequencer
         return Sequencer(

@@ -13,72 +13,103 @@ from .pulse_sequence import PhaseShift, PulseSequence
 
 
 class PulseSchedule:
-    """
-    Examples
-    --------
-    with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as ps:
-        ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        ps.barrier()
-        ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
-        ps.barrier()
-        ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
-        ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
-
-    ps.plot()
-    """
-
     def __init__(
         self,
         targets: list[str],
     ):
+        """
+        A class to represent a pulse schedule.
+
+        Parameters
+        ----------
+        targets : list[str]
+            A list of target qubits.
+
+        Examples
+        --------
+        >>> from qubex.pulse import PulseSchedule, FlatTop
+        >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as ps:
+        >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        >>>     ps.barrier()
+        >>>     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        >>>     ps.barrier()
+        >>>     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        >>>     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> ps.plot()
+        """
         self.targets = targets
         self._sequences = {target: PulseSequence() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
 
     def __enter__(self):
+        """
+        Enter the context manager.
+
+        Examples
+        --------
+        >>> with PulseSchedule() as ps:
+        >>>     ps.add(...)
+        """
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        """
+        Exit the context manager and add a barrier to the sequence.
+
+        The following codes are equivalent:
+
+        >>> ps = PulseSchedule()
+        >>> ps.add(...)
+        >>> ps.barrier()
+
+        >>> with PulseSchedule() as ps:
+        >>>     ps.add(...)
+
+        Note that the duration of sequences might be different if the context manager is not used.
+        """
         self.barrier()
 
-    def get_sequences(
-        self,
-        duration: float | None = None,
-        align: Literal["start", "end"] = "start",
-    ) -> dict[str, PulseSequence]:
-        if duration is not None:
-            pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
-            return {
-                target: seq.padded(duration, pad_side)
-                for target, seq in self._sequences.items()
-            }
-        else:
-            return self._sequences.copy()
+    @property
+    def length(self) -> int:
+        """
+        Returns the length of the pulse schedule in samples.
+        """
+        if not self.is_valid():
+            raise ValueError("Inconsistent sequence lengths.")
+        return next(iter(self._sequences.values())).length
 
-    def get_sampled_sequences(
-        self,
-        duration: float | None = None,
-        align: Literal["start", "end"] = "start",
-    ) -> dict[str, npt.NDArray[np.complex128]]:
-        sequences = self.get_sequences(duration, align)
-        return {target: sequence.values for target, sequence in sequences.items()}
-
-    def _max_offset(
-        self,
-        targets: list[str] | None = None,
-    ) -> float:
-        if targets is None:
-            offsets = list(self._offsets.values())
-        else:
-            offsets = [self._offsets[target] for target in targets]
-
-        return max(offsets, default=0.0)
+    @property
+    def duration(self) -> float:
+        """
+        Returns the duration of the pulse schedule in ns.
+        """
+        return self.length * Waveform.SAMPLING_PERIOD
 
     def add(
         self,
         target: str,
         obj: Waveform | PhaseShift,
     ):
+        """
+        Add a waveform or a phase shift to the pulse schedule.
+
+        Parameters
+        ----------
+        target : str
+            The target qubit.
+        obj : Waveform | PhaseShift
+            The waveform or phase shift to add.
+
+        Raises
+        ------
+        ValueError
+            If the target is not valid.
+
+        Examples
+        --------
+        >>> with PulseSchedule() as ps:
+        >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        """
         if target not in self.targets:
             raise ValueError(f"Invalid target: {target}")
 
@@ -91,11 +122,40 @@ class PulseSchedule:
         self,
         targets: list[str] | None = None,
     ):
+        """
+        Add a barrier to the pulse schedule.
+
+        Parameters
+        ----------
+        targets : list[str], optional
+            The target qubits to add the barrier to.
+
+        Examples
+        --------
+        >>> with PulseSchedule() as ps:
+        >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        >>>     ps.barrier()
+        """
         targets = targets or self.targets
         for target in targets:
             self.add(target, Blank(duration=self._max_offset() - self._offsets[target]))
 
     def plot(self):
+        """
+        Plots the pulse schedule.
+
+        Examples
+        --------
+        >>> from qubex.pulse import PulseSchedule, FlatTop
+        >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as ps:
+        >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        >>>     ps.barrier()
+        >>>     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        >>>     ps.barrier()
+        >>>     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        >>>     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> ps.plot()
+        """
         n_targets = len(self.targets)
 
         if n_targets == 0:
@@ -158,3 +218,100 @@ class PulseSchedule:
                 range=[-1.1 * y_max, 1.1 * y_max],
             )
         fig.show()
+
+    def is_valid(self) -> bool:
+        """
+        Returns True if the pulse schedule is valid.
+        """
+        return len(set(seq.length for seq in self._sequences.values())) == 1
+
+    def get_sequences(
+        self,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+    ) -> dict[str, PulseSequence]:
+        """
+        Returns the pulse sequences.
+
+        Parameters
+        ----------
+        duration : float, optional
+            The duration of the sequences.
+        align : {"start", "end"}, optional
+            The alignment of the sequences.
+
+        Returns
+        -------
+        dict[str, PulseSequence]
+            The pulse sequences.
+        """
+        if duration is not None:
+            pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
+            return {
+                target: seq.padded(duration, pad_side)
+                for target, seq in self._sequences.items()
+            }
+        else:
+            return self._sequences.copy()
+
+    def get_sampled_sequences(
+        self,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+    ) -> dict[str, npt.NDArray[np.complex128]]:
+        """
+        Returns the sampled pulse sequences.
+
+        Parameters
+        ----------
+        duration : float, optional
+            The duration of the sequences.
+        align : {"start", "end"}, optional
+            The alignment of the sequences.
+
+        Returns
+        -------
+        dict[str, npt.NDArray[np.complex128]]
+            The sampled pulse sequences
+        """
+        sequences = self.get_sequences(duration, align)
+        return {target: sequence.values for target, sequence in sequences.items()}
+
+    def get_pulse_ranges(
+        self,
+        targets: list[str] | None = None,
+    ) -> dict[str, list[range]]:
+        """
+        Returns the pulse ranges.
+
+        Parameters
+        ----------
+        targets : list[str], optional
+            The target qubits.
+
+        Returns
+        -------
+        dict[str, list[range]]
+            The pulse ranges.
+        """
+        targets = targets or self.targets
+        ranges: dict[str, list[range]] = {target: [] for target in targets}
+        for target in targets:
+            current_offset = 0
+            for waveform in self._sequences[target].waveforms:
+                next_offset = current_offset + waveform.length
+                if not isinstance(waveform, Blank):
+                    ranges[target].append(range(current_offset, next_offset))
+                current_offset = next_offset
+        return ranges
+
+    def _max_offset(
+        self,
+        targets: list[str] | None = None,
+    ) -> float:
+        if targets is None:
+            offsets = list(self._offsets.values())
+        else:
+            offsets = [self._offsets[target] for target in targets]
+
+        return max(offsets, default=0.0)
