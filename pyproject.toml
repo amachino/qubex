@@ -20,14 +20,14 @@ dependencies = [
     "plotly ~= 5.0",
     "pyyaml ~= 6.0",
     "qctrl-visualizer ~= 8.0",
-    "qutip ~= 4.0",
+    "qutip ~= 5.0",
     "rich ~= 13.0",
     "scikit-learn ~= 1.0",
     "scipy ~= 1.0",
 ]
 
 [project.optional-dependencies]
-backend = ["qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.0.4"]
+backend = ["qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.0.6"]
 
 [tool.setuptools.dynamic]
 version = { attr = "qubex.version.get_version" }
