@@ -190,6 +190,8 @@ class PulseSchedule:
 
     def plot(
         self,
+        *,
+        width: int = 1000,
         time_unit: Literal["ns", "samples"] = "ns",
     ):
         """
@@ -256,8 +258,8 @@ class PulseSchedule:
             )
         fig.update_layout(
             title="Pulse Schedule",
-            template="plotly",
-            height=100 * n_targets + 200,
+            height=80 * n_targets + 140,
+            width=width,
         )
         fig.update_xaxes(
             row=n_targets,

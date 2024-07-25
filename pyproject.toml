@@ -24,6 +24,7 @@ dependencies = [
     "rich ~= 13.0",
     "scikit-learn ~= 1.0",
     "scipy ~= 1.0",
+    "tqdm ~= 4.0",
 ]
 
 [project.optional-dependencies]

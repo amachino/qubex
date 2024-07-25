@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
+from tqdm import tqdm
 
 from ..analysis import (
     IQPlotter,
@@ -1148,7 +1149,7 @@ class Experiment:
         signals = defaultdict(list)
         plotter = IQPlotter()
         with self.modified_frequencies(frequencies):
-            for result in generator:
+            for result in tqdm(generator):
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
                 if plot:
@@ -2843,7 +2844,7 @@ class Experiment:
             Results of the experiment.
         """
         buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
-        for sequence in sequences:
+        for sequence in tqdm(sequences):
             state_vectors = self.state_tomography(
                 sequence=sequence,
                 x90=x90,
