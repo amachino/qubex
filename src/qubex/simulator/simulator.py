@@ -13,6 +13,7 @@ import qutip as qt
 from .system import StateAlias, System
 
 SAMPLING_PERIOD: float = 2.0  # ns
+STEP_PER_SAMPLE: int = 4
 
 
 class Control:
@@ -22,7 +23,7 @@ class Control:
         frequency: float,
         waveform: list | npt.NDArray,
         sampling_period: float = SAMPLING_PERIOD,
-        steps_per_sample: int = 4,
+        steps_per_sample: int = STEP_PER_SAMPLE,
     ):
         """
         A control signal for a single qubit.
@@ -129,9 +130,9 @@ class MultiControl:
     def __init__(
         self,
         frequencies: dict[str, float],
-        waveforms: dict[str, list | npt.NDArray],
+        waveforms: dict[str, list] | dict[str, npt.NDArray],
         sampling_period: float = SAMPLING_PERIOD,
-        steps_per_sample: int = 6,
+        steps_per_sample: int = STEP_PER_SAMPLE,
     ):
         """
         Parameters
@@ -143,7 +144,7 @@ class MultiControl:
         sampling_period : float, optional
             The sampling period of the control signals, by default 2.0 ns.
         steps_per_sample : int, optional
-            The number of steps per sample, by default 6.
+            The number of steps per sample, by default 4.
 
         Raises
         ------
