@@ -179,7 +179,10 @@ class PulseSchedule:
         for target, sequence in sequences.items():
             self.add(target, sequence)
 
-    def plot(self):
+    def plot(
+        self,
+        time_unit: Literal["ns", "samples"] = "ns",
+    ):
         """
         Plots the pulse schedule.
 
@@ -210,7 +213,10 @@ class PulseSchedule:
             vertical_spacing=0.05,
         )
         for i, (target, seq) in enumerate(sequences.items()):
-            times = np.append(seq.times, seq.times[-1] + seq.SAMPLING_PERIOD)
+            if time_unit == "ns":
+                times = np.append(seq.times, seq.times[-1] + seq.SAMPLING_PERIOD)
+            else:
+                times = np.arange(seq.length + 1)
             real = np.append(seq.real, seq.real[-1])
             imag = np.append(seq.imag, seq.imag[-1])
             fig.add_trace(
@@ -247,7 +253,7 @@ class PulseSchedule:
         fig.update_xaxes(
             row=n_targets,
             col=1,
-            title_text="Time (ns)",
+            title_text="Time (ns)" if time_unit == "ns" else "Time (samples)",
         )
         for i, (target, seq) in enumerate(sequences.items()):
             y_max = np.max(seq.abs)
