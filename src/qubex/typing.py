@@ -18,5 +18,5 @@ IQArray = Union[
     NDArray[np.float64],
 ]
 
-ParametricWaveform = Callable[..., Waveform]
-ParametricSchedule = Callable[..., PulseSchedule]
+ParametricWaveformDict = Callable[..., TargetMap[Waveform]]
+ParametricPulseSchedule = Callable[..., PulseSchedule]

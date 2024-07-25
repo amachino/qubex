@@ -227,7 +227,7 @@ class Measurement:
         >>> result = meas.measure_noise()
         """
         capture = Capture(duration=duration)
-        readout_targets = {Target.get_readout(target) for target in targets}
+        readout_targets = {Target.get_readout_label(target) for target in targets}
         with Sequence() as sequence:
             with Flushleft():
                 for target in readout_targets:
@@ -399,7 +399,7 @@ class Measurement:
     ) -> Sequence:
         readout_amplitude = self._params.readout_amplitude
         capture = Capture(duration=capture_window)
-        qubits = {Target.get_qubit(target) for target in waveforms.keys()}
+        qubits = {Target.get_qubit_label(target) for target in waveforms.keys()}
         with Sequence() as sequence:
             with Flushright():
                 padding(control_window)
@@ -407,7 +407,7 @@ class Measurement:
                     Arbit(np.array(waveform)).target(target)
             with Flushleft():
                 for qubit in qubits:
-                    readout_target = Target.get_readout(qubit)
+                    readout_target = Target.get_readout_label(qubit)
                     RaisedCosFlatTop(
                         duration=readout_duration,
                         amplitude=readout_amplitude[qubit],
@@ -421,7 +421,7 @@ class Measurement:
         target: str,
         duration: int = DEFAULT_READOUT_DURATION,
     ) -> FlatTop:
-        qubit = Target.get_qubit(target)
+        qubit = Target.get_qubit_label(target)
         readout_amplitude = self._params.readout_amplitude
         return FlatTop(
             duration=duration,
@@ -440,7 +440,7 @@ class Measurement:
         control_length = self._number_of_samples(control_window)
         capture_length = self._number_of_samples(capture_window)
         readout_length = self._number_of_samples(readout_duration)
-        qubits = {Target.get_qubit(target) for target in waveforms.keys()}
+        qubits = {Target.get_qubit_label(target) for target in waveforms.keys()}
         max_waveform_length = max(len(waveform) for waveform in waveforms.values())
         if max_waveform_length > control_length:
             raise ValueError(
@@ -469,7 +469,7 @@ class Measurement:
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_slice = slice(control_length, control_length + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
-            readout_target = Target.get_readout(qubit)
+            readout_target = Target.get_readout_label(qubit)
             readout_waveforms[readout_target] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
@@ -554,7 +554,7 @@ class Measurement:
         if add_last_measurement:
             # register all readout targets for the last measurement
             readout_targets = list(
-                {Target.get_readout(target) for target in schedule.targets}
+                {Target.get_readout_label(target) for target in schedule.targets}
             )
             # create a new schedule with the last readout pulse
             with PulseSchedule(schedule.targets + readout_targets) as ps:

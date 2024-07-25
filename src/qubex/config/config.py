@@ -85,17 +85,27 @@ class Target:
         )
 
     @classmethod
-    def get_type(cls, label: str) -> TargetType:
+    def get_target_type(cls, label: str) -> TargetType:
         target = cls.from_label(label)
         return target.type
 
     @classmethod
-    def get_qubit(cls, label: str) -> str:
+    def get_qubit_label(cls, label: str) -> str:
         target = cls.from_label(label)
         return target.qubit
 
     @classmethod
-    def get_readout(cls, label: str) -> str:
+    def get_ge_label(cls, label: str) -> str:
+        target = cls.from_label(label)
+        return target.qubit
+
+    @classmethod
+    def get_ef_label(cls, label: str) -> str:
+        target = cls.from_label(label)
+        return f"{target.qubit}-ef"
+
+    @classmethod
+    def get_readout_label(cls, label: str) -> str:
         target = cls.from_label(label)
         return f"R{target.qubit}"
 

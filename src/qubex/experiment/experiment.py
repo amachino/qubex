@@ -51,7 +51,12 @@ from ..pulse import (
     VirtualZ,
     Waveform,
 )
-from ..typing import IQArray, ParametricSchedule, ParametricWaveform, TargetMap
+from ..typing import (
+    IQArray,
+    ParametricPulseSchedule,
+    ParametricWaveformDict,
+    TargetMap,
+)
 from ..version import get_package_version
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
@@ -871,15 +876,12 @@ class Experiment:
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
-        # rect pulse with duration T
-        def rabi_sequence(target: str) -> ParametricWaveform:
-            return lambda T: Rect(
-                duration=T,
-                amplitude=amplitudes[target],
-            )
-
-        # generate the Rabi sequence for each target
-        sequence = {target: rabi_sequence(target) for target in targets}
+        # rabi sequence with rect pulses of duration T
+        def rabi_sequence(T: int) -> PulseSchedule:
+            with PulseSchedule(targets) as ps:
+                for target in targets:
+                    ps.add(target, Rect(duration=T, amplitude=amplitudes[target]))
+            return ps
 
         # detune target frequencies if necessary
         detuned_frequencies = {
@@ -888,7 +890,7 @@ class Experiment:
 
         # run the Rabi experiment by sweeping the drive time
         sweep_result = self.sweep_parameter(
-            sequence=sequence,
+            sequence=rabi_sequence,
             sweep_range=time_range,
             frequencies=detuned_frequencies,
             shots=shots,
@@ -976,50 +978,31 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
-        # target objects
-        targets = []
-        for label in amplitudes:
-            if label.endswith("-ef"):  # TODO: improve this
-                target = Target.from_label(label)
-            else:
-                target = Target.from_label(f"{label}-ef")
-            targets.append(target)
+        ge_labels = [Target.get_ge_label(label) for label in amplitudes]
+        ef_labels = [Target.get_ef_label(label) for label in amplitudes]
+        ef_targets = [self.targets[ef] for ef in ef_labels]
 
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
-        # apply pi pulse to excite the target qubit
-        def prep_sequence(qubit: str) -> ParametricWaveform:
-            return lambda T: PulseSequence(
-                [
-                    self.pi_pulse[qubit],
-                    Blank(T),
-                ]
-            )
-
-        # rect pulse with duration T
-        def rabi_sequence(qubit: str) -> ParametricWaveform:
-            return lambda T: Rect(
-                duration=T,
-                amplitude=amplitudes[qubit],
-            )
-
-        # generate the Rabi sequence for each target
-        sequence = {}
-        for target in targets:
-            # apply the pi pulse to excite the target qubit
-            sequence[target.qubit] = prep_sequence(target.qubit)
-            # apply the Rabi sequence with ef frequency
-            sequence[target.label] = rabi_sequence(target.qubit)
+        # ef rabi sequence with rect pulses of duration T
+        def ef_rabi_sequence(T: int) -> PulseSchedule:
+            with PulseSchedule(ge_labels + ef_labels) as ps:
+                # prepare qubits to the excited state
+                for ge in ge_labels:
+                    ps.add(ge, self.pi_pulse[ge])
+                ps.barrier()
+                # apply the ef drive to induce the ef Rabi oscillation
+                for ef in ef_labels:
+                    ps.add(ef, Rect(duration=T, amplitude=amplitudes[ef]))
+            return ps
 
         # detune ef frequencies if necessary
-        detuned_frequencies = {
-            target.label: target.frequency + detuning for target in targets
-        }
+        detuned_frequencies = {ef.label: ef.frequency + detuning for ef in ef_targets}
 
         # run the Rabi experiment by sweeping the drive time
         sweep_result = self.sweep_parameter(
-            sequence=sequence,
+            sequence=ef_rabi_sequence,
             sweep_range=time_range,
             frequencies=detuned_frequencies,
             shots=shots,
@@ -1044,13 +1027,13 @@ class Experiment:
 
         # create the Rabi data for each target
         rabi_data = {
-            target.label: RabiData(
-                target=target.label,
-                data=sweep_result.data[target.qubit].data,
+            ef.label: RabiData(
+                target=ef.label,
+                data=sweep_result.data[ef.qubit].data,
                 time_range=time_range,
-                rabi_param=rabi_params[target.qubit],
+                rabi_param=rabi_params[ef.qubit],
             )
-            for target in targets
+            for ef in ef_targets
         }
 
         # create the experiment result
@@ -1064,7 +1047,7 @@ class Experiment:
 
     def sweep_parameter(
         self,
-        sequence: TargetMap[ParametricWaveform] | ParametricSchedule,
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
         sweep_range: NDArray,
         repetitions: int = 1,
@@ -1084,7 +1067,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : TargetMap[ParametricWaveform] | ParametricSchedule
+        sequence : ParametricPulseSchedule | ParametricWaveformMap
             Parametric sequence to sweep.
         sweep_range : NDArray
             Range of the parameter to sweep.
@@ -1119,7 +1102,7 @@ class Experiment:
         Examples
         --------
         >>> result = ex.sweep_parameter(
-        ...     sequence={"Q00": lambda x: Rect(duration=30, amplitude=x)},
+        ...     sequence=lambda x: {"Q00": Rect(duration=30, amplitude=x)},
         ...     sweep_range=np.arange(0, 101, 4),
         ...     repetitions=4,
         ...     shots=1024,
@@ -1127,6 +1110,7 @@ class Experiment:
         ... )
         """
         if isinstance(sequence, dict):
+            # TODO: this parameter type (dict[str, Callable[..., Waveform]]) will be deprecated
             targets = list(sequence.keys())
             sequences = [
                 {
@@ -1135,11 +1119,23 @@ class Experiment:
                 }
                 for param in sweep_range
             ]
-        elif callable(sequence):
-            sequences = [
-                sequence(param).repeated(repetitions).get_sampled_sequences()
-                for param in sweep_range
-            ]
+
+        if callable(sequence):
+            if isinstance(sequence(0), PulseSchedule):
+                sequences = [
+                    sequence(param).repeated(repetitions).get_sampled_sequences()  # type: ignore
+                    for param in sweep_range
+                ]
+            elif isinstance(sequence(0), dict):
+                sequences = [
+                    {
+                        target: waveform.repeated(repetitions).values
+                        for target, waveform in sequence(param).items()  # type: ignore
+                    }
+                    for param in sweep_range
+                ]
+        else:
+            raise ValueError("Invalid sequence.")
         generator = self._measure_batch(
             sequences=sequences,
             shots=shots,
@@ -1185,10 +1181,10 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : dict[str, Waveform]
+        sequence : TargetMap[Waveform] | PulseSchedule
             Pulse sequence to repeat.
         repetitions : int, optional
-            Number of repetitions. Defaults to 10.
+            Number of repetitions. Defaults to 20.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1208,12 +1204,19 @@ class Experiment:
         ...     repetitions=4,
         ... )
         """
-        if isinstance(sequence, PulseSchedule):
-            sequence = sequence.get_sequences()
-        repeated_sequence = {
-            target: lambda param, p=pulse: p.repeated(int(param))
-            for target, pulse in sequence.items()
-        }
+
+        def repeated_sequence(N: int) -> PulseSchedule:
+            if isinstance(sequence, dict):
+                targets = list(sequence.keys())
+                with PulseSchedule(targets) as ps:
+                    for target, pulse in sequence.items():
+                        ps.add(target, pulse.repeated(N))
+            elif isinstance(sequence, PulseSchedule):
+                ps = sequence.repeated(N)
+            else:
+                raise ValueError("Invalid sequence.")
+            return ps
+
         result = self.sweep_parameter(
             sweep_range=np.arange(repetitions + 1),
             sequence=repeated_sequence,
@@ -1606,7 +1609,7 @@ class Experiment:
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
             n_per_rotation = 2 if pulse_type == "pi" else 4
             sweep_data = self.sweep_parameter(
-                sequence={target: lambda x: pulse.scaled(x)},
+                sequence=lambda x: {target: pulse.scaled(x)},
                 sweep_range=ampl_range,
                 repetitions=n_per_rotation * n_rotations,
                 shots=shots,
@@ -1700,9 +1703,7 @@ class Experiment:
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
             n_per_rotation = 2 if pulse_type == "pi" else 4
             sweep_data = self.sweep_parameter(
-                sequence={
-                    target: lambda x: pulse.scaled(x),
-                },
+                sequence=lambda x: {target: pulse.scaled(x)},
                 sweep_range=ampl_range,
                 repetitions=n_per_rotation * n_rotations,
                 shots=shots,
