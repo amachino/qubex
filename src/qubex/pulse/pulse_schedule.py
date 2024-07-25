@@ -29,12 +29,12 @@ class PulseSchedule:
         --------
         >>> from qubex.pulse import PulseSchedule, FlatTop
         >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as ps:
-        >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        >>>     ps.barrier()
-        >>>     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
-        >>>     ps.barrier()
-        >>>     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
-        >>>     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
         self.targets = list(set(targets))
@@ -48,7 +48,7 @@ class PulseSchedule:
         Examples
         --------
         >>> with PulseSchedule([...]) as ps:
-        >>>     ps.add(...)
+        ...     ps.add(...)
         """
         return self
 
@@ -63,7 +63,7 @@ class PulseSchedule:
         >>> ps.barrier()
 
         >>> with PulseSchedule([...]) as ps:
-        >>>     ps.add(...)
+        ...     ps.add(...)
 
         Note that the duration of sequences might be different if the context manager is not used.
         """
@@ -108,7 +108,7 @@ class PulseSchedule:
         Examples
         --------
         >>> with PulseSchedule(["Q01"]) as ps:
-        >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         """
         if target not in self.targets:
             raise ValueError(f"Invalid target: {target}")
@@ -133,8 +133,8 @@ class PulseSchedule:
         Examples
         --------
         >>> with PulseSchedule(["Q01"]) as ps:
-        >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        >>>     ps.barrier()
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
         """
         targets = targets or self.targets
         for target in targets:
@@ -155,16 +155,16 @@ class PulseSchedule:
         Examples
         --------
         >>> with PulseSchedule(["Q01", "Q02"]) as ctrl:
-        >>>     ctrl.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        >>>     ctrl.barrier()
-        >>>     ctrl.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     ctrl.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ctrl.barrier()
+        ...     ctrl.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
         >>> with PulseSchedule(["RQ01", "RQ02"]) as read:
-        >>>     read.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
-        >>>     read.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     read.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     read.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> with PulseSchedule(["Q01", "Q02", "RQ01", "RQ02"]) as ps:
-        >>>     ps.call(ctrl)
-        >>>     ps.barrier()
-        >>>     ps.call(read)
+        ...     ps.call(ctrl)
+        ...     ps.barrier()
+        ...     ps.call(read)
         >>> ps.plot()
         """
         if schedule == self:
@@ -187,12 +187,12 @@ class PulseSchedule:
         --------
         >>> from qubex.pulse import PulseSchedule, FlatTop
         >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as ps:
-        >>>     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        >>>     ps.barrier()
-        >>>     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
-        >>>     ps.barrier()
-        >>>     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
-        >>>     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
         n_targets = len(self.targets)
