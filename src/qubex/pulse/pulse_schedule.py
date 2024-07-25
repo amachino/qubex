@@ -179,6 +179,15 @@ class PulseSchedule:
         for target, sequence in sequences.items():
             self.add(target, sequence)
 
+    def repeated(self, n: int) -> PulseSchedule:
+        """
+        Returns a repeated pulse schedule.
+        """
+        new = PulseSchedule(self.targets)
+        for _ in range(n):
+            new.call(self)
+        return new
+
     def plot(
         self,
         time_unit: Literal["ns", "samples"] = "ns",

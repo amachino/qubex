@@ -44,12 +44,13 @@ from ..pulse import (
     FlatTop,
     PhaseShift,
     Pulse,
+    PulseSchedule,
     PulseSequence,
     Rect,
     VirtualZ,
     Waveform,
 )
-from ..typing import IQArray, ParametricWaveform, TargetMap
+from ..typing import IQArray, ParametricSchedule, ParametricWaveform, TargetMap
 from ..version import get_package_version
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
@@ -559,7 +560,7 @@ class Experiment:
 
     def measure(
         self,
-        sequence: TargetMap[IQArray] | TargetMap[Waveform],
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
@@ -575,7 +576,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : TargetMap[IQArray]
+        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Sequence of the experiment.
         frequencies : Optional[dict[str, float]]
             Frequencies of the qubits.
@@ -614,6 +615,10 @@ class Experiment:
         capture_window = capture_window or self._capture_window
         readout_duration = readout_duration or self._readout_duration
         waveforms = {}
+
+        if isinstance(sequence, PulseSchedule):
+            sequence = sequence.get_sampled_sequences()
+
         for target, waveform in sequence.items():
             if isinstance(waveform, Waveform):
                 waveforms[target] = waveform.values
@@ -1057,7 +1062,7 @@ class Experiment:
 
     def sweep_parameter(
         self,
-        sequence: TargetMap[ParametricWaveform],
+        sequence: TargetMap[ParametricWaveform] | ParametricSchedule,
         *,
         sweep_range: NDArray,
         repetitions: int = 1,
@@ -1077,7 +1082,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : TargetMap[ParametricWaveform]
+        sequence : TargetMap[ParametricWaveform] | ParametricSchedule
             Parametric sequence to sweep.
         sweep_range : NDArray
             Range of the parameter to sweep.
@@ -1119,14 +1124,20 @@ class Experiment:
         ...     plot=True,
         ... )
         """
-        targets = list(sequence.keys())
-        sequences = [
-            {
-                target: sequence[target](param).repeated(repetitions).values
-                for target in targets
-            }
-            for param in sweep_range
-        ]
+        if isinstance(sequence, dict):
+            targets = list(sequence.keys())
+            sequences = [
+                {
+                    target: sequence[target](param).repeated(repetitions).values
+                    for target in targets
+                }
+                for param in sweep_range
+            ]
+        elif callable(sequence):
+            sequences = [
+                sequence(param).repeated(repetitions).get_sampled_sequences()
+                for param in sweep_range
+            ]
         generator = self._measure_batch(
             sequences=sequences,
             shots=shots,
@@ -1160,7 +1171,7 @@ class Experiment:
 
     def repeat_sequence(
         self,
-        sequence: TargetMap[Waveform],
+        sequence: TargetMap[Waveform] | PulseSchedule,
         *,
         repetitions: int = 20,
         shots: int = DEFAULT_SHOTS,
@@ -1195,6 +1206,8 @@ class Experiment:
         ...     repetitions=4,
         ... )
         """
+        if isinstance(sequence, PulseSchedule):
+            sequence = sequence.get_sequences()
         repeated_sequence = {
             target: lambda param, p=pulse: p.repeated(int(param))
             for target, pulse in sequence.items()
