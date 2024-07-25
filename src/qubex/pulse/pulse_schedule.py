@@ -242,7 +242,7 @@ class PulseSchedule:
         fig.update_layout(
             title="Pulse Schedule",
             template="plotly",
-            height=100 * n_targets,
+            height=100 * n_targets + 200,
         )
         fig.update_xaxes(
             row=n_targets,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from typing_extensions import deprecated
 
 from ..pulse import Pulse
 
@@ -48,7 +49,7 @@ class FlatTop(Pulse):
         Amplitude of the pulse.
     tau : float
         Rise and fall time of the pulse in ns.
-    
+
     Examples
     --------
     >>> pulse = FlatTop(
@@ -59,17 +60,7 @@ class FlatTop(Pulse):
 
     Notes
     -----
-    |        ________________________
-    |       /                        \
-    |      /                          \
-    |     /                            \
-    |    /                              \
-    |___                                 _______
-    |   <---->                      <---->
-    |     tau                        tau
-    |   <-------------------------------->
-    |                duration
-    | 
+    flat-top period = duration - 2 * tau
     """
 
     def __init__(
@@ -97,7 +88,7 @@ class FlatTop(Pulse):
         super().__init__(values, **kwargs)
 
 
-class Gauss(Pulse):
+class Gaussian(Pulse):
     """
     A class to represent a Gaussian pulse.
 
@@ -109,10 +100,16 @@ class Gauss(Pulse):
         Amplitude of the Gaussian pulse.
     sigma : float
         Standard deviation of the Gaussian pulse in ns.
+    beta : float, optional
+        DRAG correction amplitude.
 
     Examples
     --------
-    >>> pulse = Gauss(duration=100, amplitude=1.0, sigma=10)
+    >>> pulse = Gaussian(
+    ...     duration=100,
+    ...     amplitude=1.0,
+    ...     sigma=10,
+    ... )
     """
 
     def __init__(
@@ -121,6 +118,7 @@ class Gauss(Pulse):
         duration: float,
         amplitude: float,
         sigma: float,
+        beta: float = 0.0,
         **kwargs,
     ):
         if sigma == 0:
@@ -129,10 +127,15 @@ class Gauss(Pulse):
         t = self._sampling_points(duration)
         mu = duration * 0.5
         real = amplitude * np.exp(-((t - mu) ** 2) / (2 * sigma**2))
-        imag = 0
-        values = real + 1j * imag
+        imag = (mu - t) / (sigma**2) * real
+        values = real + beta * 1j * imag
 
         super().__init__(values, **kwargs)
+
+
+@deprecated("Use `Gaussian` instead.")
+class Gauss(Gaussian):
+    pass
 
 
 class Drag(Pulse):
@@ -146,7 +149,7 @@ class Drag(Pulse):
     amplitude : float
         Amplitude of the DRAG pulse.
     beta : float
-        The correction amplitude.
+        DRAG correction amplitude.
 
     Examples
     --------
@@ -180,6 +183,7 @@ class Drag(Pulse):
         super().__init__(values, **kwargs)
 
 
+@deprecated("Use `Gaussian` instead.")
 class DragGauss(Pulse):
     """
     A class to represent a DRAG Gaussian pulse.
@@ -226,6 +230,55 @@ class DragGauss(Pulse):
         super().__init__(values, **kwargs)
 
 
+class RaisedCosine(Pulse):
+    """
+    A class to represent a raised cosine pulse.
+
+    Parameters
+    ----------
+    duration : float
+        Duration of the pulse in ns.
+    amplitude : float
+        Amplitude of the pulse.
+    beta : float, optional
+        DRAG correction amplitude.
+
+    Examples
+    --------
+    >>> pulse = RaisedCosine(
+    ...     duration=100,
+    ...     amplitude=1.0,
+    ... )
+    """
+
+    def __init__(
+        self,
+        *,
+        duration: float,
+        amplitude: float,
+        beta: float = 0.0,
+        **kwargs,
+    ):
+        t = self._sampling_points(duration)
+
+        if duration == 0:
+            values = np.array([], dtype=np.complex128)
+        else:
+            real = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
+            imag = (
+                2
+                * np.pi
+                / duration
+                * amplitude
+                * np.sin(2 * np.pi * t / duration)
+                * 0.5
+            )
+            values = real + beta * 1j * imag
+
+        super().__init__(values, **kwargs)
+
+
+@deprecated("Use `RaisedCosine` instead.")
 class DragCos(Pulse):
     """
     A class to represent a DRAG cosine pulse.
@@ -275,6 +328,7 @@ class DragCos(Pulse):
         super().__init__(values, **kwargs)
 
 
+@deprecated("Will be removed.")
 class TabuchiDD(Pulse):
     """
     Class representing the Tabuchi Dynamical Decoupling pulse sequence.
