@@ -143,7 +143,7 @@ class Measurement:
             "clocks": clock_statuses,
         }
 
-    def linkup(self, box_list: list[str]):
+    def linkup(self, box_list: list[str], noise_threshold: int = 500):
         """
         Link up the boxes and synchronize the clocks.
 
@@ -156,7 +156,7 @@ class Measurement:
         --------
         >>> meas.linkup(["Q73A", "U10B"])
         """
-        self._backend.linkup_boxes(box_list)
+        self._backend.linkup_boxes(box_list, noise_threshold=noise_threshold)
         self._backend.sync_clocks(box_list)
 
     def relinkup(self, box_list: list[str]):

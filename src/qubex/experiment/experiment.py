@@ -465,6 +465,7 @@ class Experiment:
     def linkup(
         self,
         box_list: Optional[list[str]] = None,
+        noise_threshold: int = 500,
     ) -> None:
         """
         Link up the measurement system.
@@ -480,7 +481,7 @@ class Experiment:
         """
         if box_list is None:
             box_list = self.box_list
-        self._measurement.linkup(box_list)
+        self._measurement.linkup(box_list, noise_threshold=noise_threshold)
         self.check_status()
 
     @contextmanager
