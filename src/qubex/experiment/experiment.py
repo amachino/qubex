@@ -1145,7 +1145,7 @@ class Experiment:
         signals = defaultdict(list)
         plotter = IQPlotter()
         with self.modified_frequencies(frequencies):
-            for result in tqdm(generator):
+            for result in generator:
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
                 if plot:
