@@ -15,14 +15,14 @@ from .pulse_sequence import PhaseShift, PulseSequence
 class PulseSchedule:
     def __init__(
         self,
-        targets: list[str] | set[str],
+        targets: list[str],
     ):
         """
         A class to represent a pulse schedule.
 
         Parameters
         ----------
-        targets : list[str] | set[str]
+        targets : list[str]
             The target qubits.
 
         Examples
@@ -37,7 +37,8 @@ class PulseSchedule:
         ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
-        self.targets = list(set(targets))
+        # Remove duplicates while preserving order
+        self.targets = list(dict.fromkeys(targets))
         self._sequences = {target: PulseSequence() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
 
