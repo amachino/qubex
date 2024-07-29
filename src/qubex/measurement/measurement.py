@@ -31,10 +31,10 @@ from qubecalib.neopulse import (
 )
 
 from ..config import Config, Target
-from ..pulse import FlatTop
+from ..pulse import FlatTop, PulseSchedule
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
-from .qube_backend import QubeBackend, QubeBackendResult
+from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
 from .state_classifier import StateClassifier
 
 DEFAULT_CONFIG_DIR = "./config"
@@ -143,7 +143,7 @@ class Measurement:
             "clocks": clock_statuses,
         }
 
-    def linkup(self, box_list: list[str]):
+    def linkup(self, box_list: list[str], noise_threshold: int = 500):
         """
         Link up the boxes and synchronize the clocks.
 
@@ -156,7 +156,7 @@ class Measurement:
         --------
         >>> meas.linkup(["Q73A", "U10B"])
         """
-        self._backend.linkup_boxes(box_list)
+        self._backend.linkup_boxes(box_list, noise_threshold=noise_threshold)
         self._backend.sync_clocks(box_list)
 
     def relinkup(self, box_list: list[str]):
@@ -227,10 +227,11 @@ class Measurement:
         >>> result = meas.measure_noise()
         """
         capture = Capture(duration=duration)
+        readout_targets = {Target.get_readout_label(target) for target in targets}
         with Sequence() as sequence:
             with Flushleft():
-                for target in targets:
-                    capture.target(f"R{target}")
+                for target in readout_targets:
+                    capture.target(target)
         backend_result = self._backend.execute_sequence(
             sequence=sequence,
             repeats=1,
@@ -398,7 +399,7 @@ class Measurement:
     ) -> Sequence:
         readout_amplitude = self._params.readout_amplitude
         capture = Capture(duration=capture_window)
-        qubits = {target.split("-")[0] for target in waveforms.keys()}
+        qubits = {Target.get_qubit_label(target) for target in waveforms.keys()}
         with Sequence() as sequence:
             with Flushright():
                 padding(control_window)
@@ -406,16 +407,21 @@ class Measurement:
                     Arbit(np.array(waveform)).target(target)
             with Flushleft():
                 for qubit in qubits:
-                    read_target = f"R{qubit}"
+                    readout_target = Target.get_readout_label(qubit)
                     RaisedCosFlatTop(
                         duration=readout_duration,
                         amplitude=readout_amplitude[qubit],
                         rise_time=32,
-                    ).target(read_target)
-                    capture.target(read_target)
+                    ).target(readout_target)
+                    capture.target(readout_target)
         return sequence
 
-    def _readout_pulse(self, qubit: str, duration: int) -> FlatTop:
+    def _readout_pulse(
+        self,
+        target: str,
+        duration: int = DEFAULT_READOUT_DURATION,
+    ) -> FlatTop:
+        qubit = Target.get_qubit_label(target)
         readout_amplitude = self._params.readout_amplitude
         return FlatTop(
             duration=duration,
@@ -430,15 +436,15 @@ class Measurement:
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-    ):
-        control_length = control_window // 2
-        capture_length = capture_window // 2
-        readout_length = readout_duration // 2
-        qubits = {target.split("-")[0] for target in waveforms.keys()}
+    ) -> Sequencer:
+        control_length = self._number_of_samples(control_window)
+        capture_length = self._number_of_samples(capture_window)
+        readout_length = self._number_of_samples(readout_duration)
+        qubits = {Target.get_qubit_label(target) for target in waveforms.keys()}
         max_waveform_length = max(len(waveform) for waveform in waveforms.values())
         if max_waveform_length > control_length:
             raise ValueError(
-                f"The waveform duration ({max_waveform_length * 2}) exceeds the control window ({control_window})."
+                f"The waveform length ({max_waveform_length}) exceeds the control window ({control_window})."
             )
         # zero padding (control)
         # [0, 0, ..., 0, control, 0, 0, ..., 0, 0, 0, 0]
@@ -463,7 +469,8 @@ class Measurement:
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_slice = slice(control_length, control_length + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
-            readout_waveforms[f"R{qubit}"] = padded_waveform
+            readout_target = Target.get_readout_label(qubit)
+            readout_waveforms[readout_target] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
         gen_sequences: dict[str, GenSampledSequence] = {}
@@ -530,6 +537,107 @@ class Measurement:
             resource_map=resource_map,  # type: ignore
         )
 
+    def _create_sequencer_from_schedule(
+        self,
+        schedule: PulseSchedule,
+        add_last_measurement: bool = False,
+    ) -> Sequencer:
+        if not schedule.is_valid():
+            raise ValueError("Invalid pulse schedule.")
+
+        # readout targets in the provided schedule
+        readout_targets = [
+            target for target in schedule.targets if Target.is_readout(target)
+        ]
+
+        # add last readout pulse if necessary
+        if add_last_measurement:
+            # register all readout targets for the last measurement
+            readout_targets = list(
+                {Target.get_readout_label(target) for target in schedule.targets}
+            )
+            # create a new schedule with the last readout pulse
+            with PulseSchedule(schedule.targets + readout_targets) as ps:
+                ps.call(schedule)
+                ps.barrier()
+                for target in readout_targets:
+                    readout_pulse = self._readout_pulse(target)
+                    ps.add(target, readout_pulse)
+            # update the schedule
+            schedule = ps
+
+        # get sampled sequences
+        sampled_sequences = schedule.get_sampled_sequences()
+
+        # create GenSampledSequence
+        gen_sequences: dict[str, GenSampledSequence] = {}
+        for target, waveform in sampled_sequences.items():
+            gen_sequences[target] = GenSampledSequence(
+                target_name=target,
+                prev_blank=0,
+                post_blank=None,
+                sub_sequences=[
+                    # has only one GenSampledSubSequence
+                    GenSampledSubSequence(
+                        real=np.real(waveform),
+                        imag=np.imag(waveform),
+                        post_blank=None,
+                        repeats=1,
+                    )
+                ],
+            )
+
+        # create CapSampledSequence
+        cap_sequences: dict[str, CapSampledSequence] = {}
+        readout_ranges = schedule.get_pulse_ranges(readout_targets)
+        for target, ranges in readout_ranges.items():
+            cap_sub_sequence = CapSampledSubSequence(
+                capture_slots=[],
+                # prev_blank is the time to the first readout pulse
+                prev_blank=ranges[0].start,
+                post_blank=None,
+                repeats=None,
+            )
+            for i in range(len(ranges) - 1):
+                current_range = ranges[i]
+                next_range = ranges[i + 1]
+                cap_sub_sequence.capture_slots.append(
+                    CaptureSlots(
+                        duration=len(current_range),
+                        # post_blank is the time to the next readout pulse
+                        post_blank=next_range.start - current_range.stop,
+                    )
+                )
+            last_range = ranges[-1]
+            cap_sub_sequence.capture_slots.append(
+                CaptureSlots(
+                    duration=len(last_range),
+                    # post_blank is the time to the end of the schedule
+                    post_blank=schedule.length - last_range.stop,
+                )
+            )
+            cap_sequence = CapSampledSequence(
+                target_name=target,
+                prev_blank=0,
+                post_blank=None,
+                repeats=None,
+                sub_sequences=[
+                    # has only one CapSampledSubSequence
+                    cap_sub_sequence,
+                ],
+            )
+            cap_sequences[target] = cap_sequence
+
+        # create resource map
+        resource_map = self._backend.get_resource_map(schedule.targets)
+
+        # return Sequencer
+        return Sequencer(
+            gen_sampled_sequence=gen_sequences,
+            cap_sampled_sequence=cap_sequences,
+            resource_map=resource_map,  # type: ignore
+        )
+
     def _create_measure_result(
         self,
         backend_result: QubeBackendResult,
@@ -572,3 +680,29 @@ class Measurement:
             data=measure_data,
             config=backend_result.config,
         )
+
+    @staticmethod
+    def _number_of_samples(
+        duration: float,
+    ) -> int:
+        """
+        Returns the number of samples in the waveform.
+
+        Parameters
+        ----------
+        duration : float
+            Duration of the waveform in ns.
+        """
+        dt = SAMPLING_PERIOD
+        if duration < 0:
+            raise ValueError("Duration must be positive.")
+
+        # Tolerance for floating point comparison
+        tolerance = 1e-9
+        frac = duration / dt
+        N = round(frac)
+        if abs(frac - N) > tolerance:
+            raise ValueError(
+                f"Duration must be a multiple of the sampling period ({dt} ns)."
+            )
+        return N

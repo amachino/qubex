@@ -47,7 +47,7 @@ class PulseSequence(Waveform):
 
     def __init__(
         self,
-        sequence: Sequence,
+        sequence: Sequence = [],
         *,
         scale: float = 1.0,
         detuning: float = 0.0,
@@ -112,6 +112,38 @@ class PulseSequence(Waveform):
                 phase_shift += obj.theta
         return phase_shift
 
+    def add(self, obj: Waveform | PhaseShift) -> None:
+        """Adds the given waveform or phase shift to the pulse sequence."""
+        self._sequence.append(obj)
+
+    def pad(
+        self,
+        total_duration: float,
+        pad_side: Literal["right", "left"] = "right",
+    ) -> None:
+        """
+        Adds zero padding to the pulse sequence.
+
+        Parameters
+        ----------
+        total_duration : float
+            Total duration of the pulse sequence in ns.
+        pad_side : {"right", "left"}, optional
+            Side of the zero padding.
+        """
+        duration = total_duration - self.duration
+        if duration < 0:
+            raise ValueError(
+                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
+            )
+        blank = Blank(duration)
+        if pad_side == "right":
+            self._sequence.append(blank)
+        elif pad_side == "left":
+            self._sequence.insert(0, blank)
+        else:
+            raise ValueError("pad_side must be either 'right' or 'left'.")
+
     def copy(self) -> PulseSequence:
         """Returns a copy of the pulse sequence."""
         return deepcopy(self)
@@ -131,8 +163,13 @@ class PulseSequence(Waveform):
         pad_side : {"right", "left"}, optional
             Side of the zero padding.
         """
+        duration = total_duration - self.duration
+        if duration < 0:
+            raise ValueError(
+                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
+            )
         new_sequence = deepcopy(self)
-        blank = Blank(duration=total_duration - new_sequence.duration)
+        blank = Blank(duration=duration)
         if pad_side == "right":
             new_waveforms = new_sequence._sequence + [blank]
         elif pad_side == "left":

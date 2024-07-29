@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
+from tqdm import tqdm
 
 from ..analysis import (
     IQPlotter,
@@ -44,12 +45,18 @@ from ..pulse import (
     FlatTop,
     PhaseShift,
     Pulse,
+    PulseSchedule,
     PulseSequence,
     Rect,
     VirtualZ,
     Waveform,
 )
-from ..typing import IQArray, ParametricWaveform, TargetMap
+from ..typing import (
+    IQArray,
+    ParametricPulseSchedule,
+    ParametricWaveformDict,
+    TargetMap,
+)
 from ..version import get_package_version
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
@@ -464,6 +471,7 @@ class Experiment:
     def linkup(
         self,
         box_list: Optional[list[str]] = None,
+        noise_threshold: int = 500,
     ) -> None:
         """
         Link up the measurement system.
@@ -479,7 +487,7 @@ class Experiment:
         """
         if box_list is None:
             box_list = self.box_list
-        self._measurement.linkup(box_list)
+        self._measurement.linkup(box_list, noise_threshold=noise_threshold)
         self.check_status()
 
     @contextmanager
@@ -559,7 +567,7 @@ class Experiment:
 
     def measure(
         self,
-        sequence: TargetMap[IQArray] | TargetMap[Waveform],
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
@@ -575,7 +583,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : TargetMap[IQArray]
+        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Sequence of the experiment.
         frequencies : Optional[dict[str, float]]
             Frequencies of the qubits.
@@ -614,6 +622,10 @@ class Experiment:
         capture_window = capture_window or self._capture_window
         readout_duration = readout_duration or self._readout_duration
         waveforms = {}
+
+        if isinstance(sequence, PulseSchedule):
+            sequence = sequence.get_sampled_sequences()
+
         for target, waveform in sequence.items():
             if isinstance(waveform, Waveform):
                 waveforms[target] = waveform.values
@@ -864,15 +876,12 @@ class Experiment:
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
-        # rect pulse with duration T
-        def rabi_sequence(target: str) -> ParametricWaveform:
-            return lambda T: Rect(
-                duration=T,
-                amplitude=amplitudes[target],
-            )
-
-        # generate the Rabi sequence for each target
-        sequence = {target: rabi_sequence(target) for target in targets}
+        # rabi sequence with rect pulses of duration T
+        def rabi_sequence(T: int) -> PulseSchedule:
+            with PulseSchedule(targets) as ps:
+                for target in targets:
+                    ps.add(target, Rect(duration=T, amplitude=amplitudes[target]))
+            return ps
 
         # detune target frequencies if necessary
         detuned_frequencies = {
@@ -881,7 +890,7 @@ class Experiment:
 
         # run the Rabi experiment by sweeping the drive time
         sweep_result = self.sweep_parameter(
-            sequence=sequence,
+            sequence=rabi_sequence,
             sweep_range=time_range,
             frequencies=detuned_frequencies,
             shots=shots,
@@ -969,50 +978,31 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
-        # target objects
-        targets = []
-        for label in amplitudes:
-            if label.endswith("-ef"):  # TODO: improve this
-                target = Target.from_label(label)
-            else:
-                target = Target.from_label(f"{label}-ef")
-            targets.append(target)
+        ge_labels = [Target.get_ge_label(label) for label in amplitudes]
+        ef_labels = [Target.get_ef_label(label) for label in amplitudes]
+        ef_targets = [self.targets[ef] for ef in ef_labels]
 
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
-        # apply pi pulse to excite the target qubit
-        def prep_sequence(qubit: str) -> ParametricWaveform:
-            return lambda T: PulseSequence(
-                [
-                    self.pi_pulse[qubit],
-                    Blank(T),
-                ]
-            )
-
-        # rect pulse with duration T
-        def rabi_sequence(qubit: str) -> ParametricWaveform:
-            return lambda T: Rect(
-                duration=T,
-                amplitude=amplitudes[qubit],
-            )
-
-        # generate the Rabi sequence for each target
-        sequence = {}
-        for target in targets:
-            # apply the pi pulse to excite the target qubit
-            sequence[target.qubit] = prep_sequence(target.qubit)
-            # apply the Rabi sequence with ef frequency
-            sequence[target.label] = rabi_sequence(target.qubit)
+        # ef rabi sequence with rect pulses of duration T
+        def ef_rabi_sequence(T: int) -> PulseSchedule:
+            with PulseSchedule(ge_labels + ef_labels) as ps:
+                # prepare qubits to the excited state
+                for ge in ge_labels:
+                    ps.add(ge, self.pi_pulse[ge])
+                ps.barrier()
+                # apply the ef drive to induce the ef Rabi oscillation
+                for ef in ef_labels:
+                    ps.add(ef, Rect(duration=T, amplitude=amplitudes[ef]))
+            return ps
 
         # detune ef frequencies if necessary
-        detuned_frequencies = {
-            target.label: target.frequency + detuning for target in targets
-        }
+        detuned_frequencies = {ef.label: ef.frequency + detuning for ef in ef_targets}
 
         # run the Rabi experiment by sweeping the drive time
         sweep_result = self.sweep_parameter(
-            sequence=sequence,
+            sequence=ef_rabi_sequence,
             sweep_range=time_range,
             frequencies=detuned_frequencies,
             shots=shots,
@@ -1037,13 +1027,13 @@ class Experiment:
 
         # create the Rabi data for each target
         rabi_data = {
-            target.label: RabiData(
-                target=target.label,
-                data=sweep_result.data[target.qubit].data,
+            ef.label: RabiData(
+                target=ef.label,
+                data=sweep_result.data[ef.qubit].data,
                 time_range=time_range,
-                rabi_param=rabi_params[target.qubit],
+                rabi_param=rabi_params[ef.qubit],
             )
-            for target in targets
+            for ef in ef_targets
         }
 
         # create the experiment result
@@ -1057,7 +1047,7 @@ class Experiment:
 
     def sweep_parameter(
         self,
-        sequence: TargetMap[ParametricWaveform],
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
         sweep_range: NDArray,
         repetitions: int = 1,
@@ -1077,7 +1067,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : TargetMap[ParametricWaveform]
+        sequence : ParametricPulseSchedule | ParametricWaveformMap
             Parametric sequence to sweep.
         sweep_range : NDArray
             Range of the parameter to sweep.
@@ -1112,21 +1102,40 @@ class Experiment:
         Examples
         --------
         >>> result = ex.sweep_parameter(
-        ...     sequence={"Q00": lambda x: Rect(duration=30, amplitude=x)},
+        ...     sequence=lambda x: {"Q00": Rect(duration=30, amplitude=x)},
         ...     sweep_range=np.arange(0, 101, 4),
         ...     repetitions=4,
         ...     shots=1024,
         ...     plot=True,
         ... )
         """
-        targets = list(sequence.keys())
-        sequences = [
-            {
-                target: sequence[target](param).repeated(repetitions).values
-                for target in targets
-            }
-            for param in sweep_range
-        ]
+        if isinstance(sequence, dict):
+            # TODO: this parameter type (dict[str, Callable[..., Waveform]]) will be deprecated
+            targets = list(sequence.keys())
+            sequences = [
+                {
+                    target: sequence[target](param).repeated(repetitions).values
+                    for target in targets
+                }
+                for param in sweep_range
+            ]
+
+        if callable(sequence):
+            if isinstance(sequence(0), PulseSchedule):
+                sequences = [
+                    sequence(param).repeated(repetitions).get_sampled_sequences()  # type: ignore
+                    for param in sweep_range
+                ]
+            elif isinstance(sequence(0), dict):
+                sequences = [
+                    {
+                        target: waveform.repeated(repetitions).values
+                        for target, waveform in sequence(param).items()  # type: ignore
+                    }
+                    for param in sweep_range
+                ]
+        else:
+            raise ValueError("Invalid sequence.")
         generator = self._measure_batch(
             sequences=sequences,
             shots=shots,
@@ -1136,7 +1145,7 @@ class Experiment:
         signals = defaultdict(list)
         plotter = IQPlotter()
         with self.modified_frequencies(frequencies):
-            for result in generator:
+            for result in tqdm(generator):
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
                 if plot:
@@ -1160,7 +1169,7 @@ class Experiment:
 
     def repeat_sequence(
         self,
-        sequence: TargetMap[Waveform],
+        sequence: TargetMap[Waveform] | PulseSchedule,
         *,
         repetitions: int = 20,
         shots: int = DEFAULT_SHOTS,
@@ -1172,10 +1181,10 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : dict[str, Waveform]
+        sequence : TargetMap[Waveform] | PulseSchedule
             Pulse sequence to repeat.
         repetitions : int, optional
-            Number of repetitions. Defaults to 10.
+            Number of repetitions. Defaults to 20.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1195,10 +1204,19 @@ class Experiment:
         ...     repetitions=4,
         ... )
         """
-        repeated_sequence = {
-            target: lambda param, p=pulse: p.repeated(int(param))
-            for target, pulse in sequence.items()
-        }
+
+        def repeated_sequence(N: int) -> PulseSchedule:
+            if isinstance(sequence, dict):
+                targets = list(sequence.keys())
+                with PulseSchedule(targets) as ps:
+                    for target, pulse in sequence.items():
+                        ps.add(target, pulse.repeated(N))
+            elif isinstance(sequence, PulseSchedule):
+                ps = sequence.repeated(N)
+            else:
+                raise ValueError("Invalid sequence.")
+            return ps
+
         result = self.sweep_parameter(
             sweep_range=np.arange(repetitions + 1),
             sequence=repeated_sequence,
@@ -1591,7 +1609,7 @@ class Experiment:
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
             n_per_rotation = 2 if pulse_type == "pi" else 4
             sweep_data = self.sweep_parameter(
-                sequence={target: lambda x: pulse.scaled(x)},
+                sequence=lambda x: {target: pulse.scaled(x)},
                 sweep_range=ampl_range,
                 repetitions=n_per_rotation * n_rotations,
                 shots=shots,
@@ -1685,9 +1703,7 @@ class Experiment:
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
             n_per_rotation = 2 if pulse_type == "pi" else 4
             sweep_data = self.sweep_parameter(
-                sequence={
-                    target: lambda x: pulse.scaled(x),
-                },
+                sequence=lambda x: {target: pulse.scaled(x)},
                 sweep_range=ampl_range,
                 repetitions=n_per_rotation * n_rotations,
                 shots=shots,
@@ -1914,19 +1930,15 @@ class Experiment:
         ... )
         """
 
-        # wrap the lambda function with a function to scope the qubit variable
-        def t1_sequence(target: str) -> ParametricWaveform:
-            return lambda T: PulseSequence(
-                [
-                    self.pi_pulse[target],
-                    Blank(T),
-                ]
-            )
-
-        t1_sequences = {target: t1_sequence(target) for target in targets}
+        def t1_sequence(T: int) -> PulseSchedule:
+            with PulseSchedule(targets) as ps:
+                for target in targets:
+                    ps.add(target, self.pi_pulse[target])
+                    ps.add(target, Blank(T))
+            return ps
 
         sweep_result = self.sweep_parameter(
-            sequence=t1_sequences,
+            sequence=t1_sequence,
             sweep_range=time_range,
             shots=shots,
             interval=interval,
@@ -1995,40 +2007,28 @@ class Experiment:
             Result of the experiment.
         """
 
-        # wrap the lambda function with a function to scope the qubit variable
-        def t2_sequence(target: str) -> ParametricWaveform:
-            hpi = self.hpi_pulse[target]
-            pi = pi_cpmg or hpi.repeated(2)
-
-            def waveform(T: int) -> Waveform:
-                if T == 0:
-                    return PulseSequence(
-                        [
-                            hpi,
-                            hpi.shifted(np.pi),
-                        ]
-                    )
-                return PulseSequence(
-                    [
-                        hpi,
-                        # Blank((T - pi.duration) // 2),
-                        # pi,
-                        # Blank((T - pi.duration) // 2),
-                        CPMG(
-                            tau=(T - pi.duration * n_cpmg) // (2 * n_cpmg),
-                            pi=pi,
-                            n=n_cpmg,
-                        ),
-                        hpi.shifted(np.pi),
-                    ]
-                )
-
-            return waveform
-
         data: dict[str, T2Data] = {}
         for target in targets:
+
+            def t2_sequence(T: int) -> PulseSchedule:
+                with PulseSchedule([target]) as ps:
+                    hpi = self.hpi_pulse[target]
+                    pi = pi_cpmg or hpi.repeated(2)
+                    ps.add(target, hpi)
+                    if T > 0:
+                        ps.add(
+                            target,
+                            CPMG(
+                                tau=(T - pi.duration * n_cpmg) // (2 * n_cpmg),
+                                pi=pi,
+                                n=n_cpmg,
+                            ),
+                        )
+                    ps.add(target, hpi.shifted(np.pi))
+                return ps
+
             sweep_data = self.sweep_parameter(
-                sequence={target: t2_sequence(target)},
+                sequence=t2_sequence,
                 sweep_range=time_range,
                 shots=shots,
                 interval=interval,
@@ -2091,40 +2091,34 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
-
-        def ramsey_sequence(target: str) -> dict[str, ParametricWaveform]:
-            hpi = self.hpi_pulse[target]
-            sequence: dict[str, ParametricWaveform] = {
-                target: lambda T: PulseSequence(
-                    [
-                        hpi,
-                        Blank(T),
-                        hpi.shifted(np.pi),
-                    ]
-                )
-            }
-            if spectator_state != "0":
-                spectators = self.get_spectators(target)
-                for spectator in spectators:
-                    if spectator.label in self._qubits:
-                        pulse = self.get_pulse_for_state(
-                            target=spectator.label,
-                            state=spectator_state,
-                        )
-                        sequence[spectator.label] = lambda T: PulseSequence(
-                            [
-                                pulse,
-                                Blank(sequence[target](T).duration),
-                            ]
-                        )
-            return sequence
-
         data: dict[str, RamseyData] = {}
         for target in targets:
+
+            def ramsey_sequence(T: int) -> PulseSchedule:
+                with PulseSchedule([target]) as ps:
+                    # Excite spectator qubits if needed
+                    if spectator_state != "0":
+                        spectators = self.get_spectators(target)
+                        for spectator in spectators:
+                            if spectator.label in self._qubits:
+                                pulse = self.get_pulse_for_state(
+                                    target=spectator.label,
+                                    state=spectator_state,
+                                )
+                                ps.add(spectator.label, pulse)
+                        ps.barrier()
+
+                    # Ramsey sequence for the target qubit
+                    hpi = self.hpi_pulse[target]
+                    ps.add(target, hpi)
+                    ps.add(target, Blank(T))
+                    ps.add(target, hpi.shifted(np.pi))
+                return ps
+
             detuned_frequency = self.qubits[target].frequency + detuning
 
             sweep_data = self.sweep_parameter(
-                sequence=ramsey_sequence(target),
+                sequence=ramsey_sequence,
                 sweep_range=time_range,
                 frequencies={target: detuned_frequency},
                 shots=shots,
@@ -2425,35 +2419,36 @@ class Experiment:
         ... )
         """
 
-        def rb_sequence(target: str) -> dict[str, ParametricWaveform]:
-            sequence: dict[str, ParametricWaveform] = {
-                target: lambda N: self.rb_sequence(
-                    target=target,
-                    n=N,
-                    x90=x90,
-                    interleave_waveform=interleave_waveform,
-                    interleave_map=interleave_map,
-                    seed=seed,
+        def rb_sequence(N: int) -> PulseSchedule:
+            with PulseSchedule([target]) as ps:
+                # Excite spectator qubits if needed
+                if spectator_state != "0":
+                    spectators = self.get_spectators(target)
+                    for spectator in spectators:
+                        if spectator.label in self._qubits:
+                            pulse = self.get_pulse_for_state(
+                                target=spectator.label,
+                                state=spectator_state,
+                            )
+                            ps.add(spectator.label, pulse)
+                    ps.barrier()
+
+                # Randomized benchmarking sequence
+                ps.add(
+                    target,
+                    self.rb_sequence(
+                        target=target,
+                        n=N,
+                        x90=x90,
+                        interleave_waveform=interleave_waveform,
+                        interleave_map=interleave_map,
+                        seed=seed,
+                    ),
                 )
-            }
-            if spectator_state != "0":
-                spectators = self.get_spectators(target)
-                for spectator in spectators:
-                    if spectator.label in self._qubits:
-                        pulse = self.get_pulse_for_state(
-                            target=spectator.label,
-                            state=spectator_state,
-                        )
-                        sequence[spectator.label] = lambda N: PulseSequence(
-                            [
-                                pulse,
-                                Blank(sequence[target](N).duration),
-                            ]
-                        )
-            return sequence
+            return ps
 
         sweep_result = self.sweep_parameter(
-            rb_sequence(target),
+            rb_sequence,
             sweep_range=n_cliffords_range,
             shots=shots,
             interval=interval,
@@ -2748,7 +2743,7 @@ class Experiment:
 
     def state_tomography(
         self,
-        sequence: TargetMap[IQArray | Waveform],
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         x90: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2760,7 +2755,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequence : TargetMap[IQArray] | TargetMap[Waveform]
+        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Sequence to measure for each target.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
@@ -2777,6 +2772,10 @@ class Experiment:
             Results of the experiment.
         """
         buffer: dict[str, list[float]] = defaultdict(list)
+
+        if isinstance(sequence, PulseSchedule):
+            sequence = sequence.get_sequences()
+
         for basis in ["X", "Y", "Z"]:
             measure_result = self.measure(
                 {
@@ -2816,7 +2815,9 @@ class Experiment:
     def state_evolution_tomography(
         self,
         *,
-        sequences: Sequence[TargetMap[IQArray | Waveform]],
+        sequences: Sequence[TargetMap[IQArray]]
+        | Sequence[TargetMap[Waveform]]
+        | Sequence[PulseSchedule],
         x90: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -2827,7 +2828,7 @@ class Experiment:
 
         Parameters
         ----------
-        sequences : Sequence[TargetMap[IQArray | Waveform]]
+        sequences : Sequence[TargetMap[IQArray]] | Sequence[TargetMap[Waveform]] | Sequence[PulseSchedule]
             Sequences to measure for each target.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
@@ -2844,7 +2845,7 @@ class Experiment:
             Results of the experiment.
         """
         buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
-        for sequence in sequences:
+        for sequence in tqdm(sequences):
             state_vectors = self.state_tomography(
                 sequence=sequence,
                 x90=x90,
@@ -2866,7 +2867,7 @@ class Experiment:
 
     def pulse_tomography(
         self,
-        waveforms: TargetMap[IQArray | Waveform],
+        waveforms: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         x90: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2878,7 +2879,7 @@ class Experiment:
 
         Parameters
         ----------
-        waveforms : TargetMap[IQArray | Waveform]
+        waveforms : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Waveforms to measure for each target.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
@@ -2890,6 +2891,9 @@ class Experiment:
             Whether to plot the measured signals. Defaults to True.
         """
         self._validate_rabi_params()
+
+        if isinstance(waveforms, PulseSchedule):
+            waveforms = waveforms.get_sequences()
 
         pulses: dict[str, Waveform] = {}
         pulse_length_set = set()

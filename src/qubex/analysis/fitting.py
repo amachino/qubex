@@ -205,10 +205,31 @@ def fit_rabi(
         Data class containing the parameters of the Rabi oscillation.
     """
     print(f"Target: {target}")
+    data = np.array(data, dtype=np.complex128)
 
-    # Rotate the data to the vertical (Q) axis
-    angle = get_angle(data)
-    rotated = rotate(data, -angle)
+    # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
+    if len(data) < 2:
+        angle = 0.0
+    else:
+        # angle of the |g> state
+        angle_0 = np.angle(data[0])
+        # rotate the |g> state to the +I axis
+        data_0 = data * np.exp(-1j * angle_0)
+        # convert to a 2D vector for PCA
+        data_0_vec = np.column_stack([data_0.real, data_0.imag])
+        # perform PCA
+        pca = PCA(n_components=2).fit(data_0_vec)
+        # get second component as the |g> + |e> vector
+        second_component = pca.components_[1]
+        # get the angle of the |g> + |e> vector
+        angle_1 = np.arctan(second_component[1] / second_component[0])
+        # adjust the angle to the correct quadrant
+        if angle_1 > 0:
+            angle_1 -= np.pi
+        # total angle to rotate the data
+        angle = angle_0 + angle_1
+
+    rotated = data * np.exp(-1j * angle)
     noise = float(np.std(rotated.real))
 
     x = times
@@ -1015,40 +1036,6 @@ def rotate(
     points = np.array(data)
     rotated_points = points * np.exp(1j * angle)
     return rotated_points
-
-
-def get_angle(
-    data: npt.ArrayLike,
-) -> float:
-    """
-    Determine the angle of a linear fit to the complex data points.
-
-    Parameters
-    ----------
-    data : npt.ArrayLike
-        Array of complex data points to be rotated.
-
-    Returns
-    -------
-    float
-        Angle in radians of the linear fit to the data points.
-    """
-    data_complex = np.array(data, dtype=np.complex128)
-    if len(data_complex) < 2:
-        return 0.0
-    data_vector = np.column_stack([data_complex.real, data_complex.imag])
-    pca = PCA(n_components=1).fit(data_vector)
-    first_component = pca.components_[0]
-    gradient = first_component[1] / first_component[0]
-    mean = np.mean(data_vector, axis=0)
-    intercept = mean[1] - gradient * mean[0]
-    angle = np.arctan(gradient)
-    if intercept > 0:
-        angle += np.pi / 2
-    else:
-        angle -= np.pi / 2
-    print(f"Angle: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
-    return angle
 
 
 def estimate_wave_count(times, data) -> float:

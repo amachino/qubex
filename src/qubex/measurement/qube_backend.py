@@ -11,6 +11,8 @@ from rich.console import Console
 
 console = Console()
 
+SAMPLING_PERIOD: Final[float] = 2.0  # ns
+
 
 @dataclass
 class QubeBackendResult:
@@ -205,7 +207,11 @@ class QubeBackend:
         # return the box
         return box
 
-    def linkup_boxes(self, box_list: list[str]) -> dict[str, Quel1Box]:
+    def linkup_boxes(
+        self,
+        box_list: list[str],
+        noise_threshold: int = 500,
+    ) -> dict[str, Quel1Box]:
         """
         Linkup all the boxes in the list.
 
@@ -223,7 +229,7 @@ class QubeBackend:
         boxes = {}
         for box_name in box_list:
             try:
-                boxes[box_name] = self.linkup(box_name)
+                boxes[box_name] = self.linkup(box_name, noise_threshold=noise_threshold)
                 print(f"{box_name:5}", ":", "Linked up")
             except Exception as e:
                 print(f"{box_name:5}", ":", "Error", e)

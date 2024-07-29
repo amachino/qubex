@@ -1,4 +1,14 @@
-from .pulse_library import Drag, DragCos, DragGauss, FlatTop, Gauss, Pulse, Rect
+from .pulse_library import (
+    Drag,
+    DragCos,
+    DragGauss,
+    FlatTop,
+    Gauss,
+    Gaussian,
+    Pulse,
+    RaisedCosine,
+    Rect,
+)
 from .sequence_library import CPMG
 
 __all__ = [
@@ -8,6 +18,8 @@ __all__ = [
     "DragGauss",
     "FlatTop",
     "Gauss",
+    "Gaussian",
     "Pulse",
+    "RaisedCosine",
     "Rect",
 ]

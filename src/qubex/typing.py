@@ -5,7 +5,7 @@ from typing import Callable, Mapping, TypeVar, Union
 import numpy as np
 from numpy.typing import NDArray
 
-from .pulse import Waveform
+from .pulse import PulseSchedule, Waveform
 
 T_co = TypeVar("T_co", covariant=True)
 
@@ -18,4 +18,5 @@ IQArray = Union[
     NDArray[np.float64],
 ]
 
-ParametricWaveform = Callable[..., Waveform]
+ParametricWaveformDict = Callable[..., TargetMap[Waveform]]
+ParametricPulseSchedule = Callable[..., PulseSchedule]
