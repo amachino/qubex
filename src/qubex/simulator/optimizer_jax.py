@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import cache, partial
-from typing import Final, Sequence
+from functools import cache, cached_property, partial
+from typing import Final
 
 import jax
 import jax.numpy as jnp
@@ -13,14 +13,17 @@ import qutip as qt
 from IPython.display import display
 from jax import Array
 from jax.scipy.linalg import expm
-from jax.typing import ArrayLike
 from numpy.typing import NDArray
 
-from .simulator import System
+from .simulator import StateAlias, System
 
 
 @dataclass
 class OptimizationResult:
+    params: optax.Params
+    infidelity: float
+    unitary: qt.Qobj
+    state: qt.Qobj
     times: NDArray[np.float64]
     waveforms: dict[str, NDArray[np.complex128]]
     history: NDArray[np.float64]
@@ -85,22 +88,14 @@ class PulseOptimizer:
         self,
         *,
         quantum_system: System,
-        target_unitary: ArrayLike | qt.Qobj,
-        control_qubits: Sequence[str],
+        target_unitary: qt.Qobj,
+        initial_state: qt.Qobj | StateAlias | dict[str, StateAlias] = "0",
+        control_frequencies: dict[str, float],
         segment_count: int,
         segment_width: float,
         max_rabi_frequency: float,
     ):
-        system_hamiltonian = qt.Qobj(quantum_system.hamiltonian)
-        target_unitary = qt.Qobj(target_unitary)
-
-        print("System Hamiltonian")
-        display(system_hamiltonian)
-        print("Target Unitary")
-        display(target_unitary)
-
-        if not system_hamiltonian.isherm:
-            raise ValueError("Hamiltonian must be Hermitian.")
+        system_hamiltonian = quantum_system.hamiltonian
 
         if not target_unitary.isunitary:
             raise ValueError("Target unitary must be unitary.")
@@ -110,18 +105,79 @@ class PulseOptimizer:
                 "Hamiltonian and target unitary must have the same dimension."
             )
 
+        if not isinstance(initial_state, qt.Qobj):
+            initial_state = quantum_system.state(initial_state)
+
+        print("System Hamiltonian")
+        display(system_hamiltonian)
+        print("Target Unitary")
+        display(target_unitary)
+        print("Initial State")
+        display(initial_state)
+
         self.quantum_system: Final = quantum_system
-        self.control_qubits: Final = control_qubits
+        self.target_unitary: Final = target_unitary
+        self.initial_state: Final = initial_state
+        self.control_frequencies: Final = control_frequencies
         self.segment_count: Final = segment_count
         self.segment_duration: Final = segment_width
-        self.duration: Final = segment_count * segment_width
-        self.max_rabi_rate: Final = 2 * np.pi * max_rabi_frequency
-        self.system_hamiltonian: Final = jnp.asarray(system_hamiltonian.full())
-        self.dimension: Final = system_hamiltonian.shape[0]
-        self.identity: Final = jnp.eye(self.dimension)
-        self.target_unitary: Final = jnp.asarray(target_unitary.full())
-        self.target_unitary_dagger: Final = self.target_unitary.conj().T
+        self.max_rabi_frequency: Final = max_rabi_frequency
         self.jacobian: Final = jax.jit(jax.grad(self.loss_fn))
+
+    @cached_property
+    def system_hamiltonian(self) -> Array:
+        return jnp.asarray(self.quantum_system.hamiltonian.full())
+
+    @cached_property
+    def target_unitary_dagger(self) -> Array:
+        return jnp.asarray(self.target_unitary.full()).conj().T
+
+    @cached_property
+    def target_state(self) -> Array:
+        return jnp.asarray(self.target_unitary * self.initial_state)
+
+    @cached_property
+    def dimension(self) -> int:
+        return self.system_hamiltonian.shape[0]
+
+    @cached_property
+    def dimensions(self):
+        return self.quantum_system.hamiltonian.dims
+
+    @cached_property
+    def identity(self) -> Array:
+        return jnp.eye(self.dimension)
+
+    @cached_property
+    def duration(self) -> float:
+        return self.segment_count * self.segment_duration
+
+    @cached_property
+    def control_qubits(self) -> list[str]:
+        return list(self.control_frequencies.keys())
+
+    @cached_property
+    def frame_frequency(self) -> float:
+        return np.mean(list(self.control_frequencies.values())).astype(float)
+
+    @cached_property
+    def relative_frequencies(self) -> dict[str, float]:
+        return {
+            target: frequency - self.frame_frequency
+            for target, frequency in self.control_frequencies.items()
+        }
+
+    @cached_property
+    def max_rabi_rate(self) -> float:
+        return 2 * np.pi * self.max_rabi_frequency
+
+    @cached_property
+    def lower_bound(self) -> dict[str, float]:
+        return {target: -self.max_rabi_rate for target in self.control_frequencies}
+
+    @cached_property
+    def upper_bound(self) -> dict[str, float]:
+        return {target: self.max_rabi_rate for target in self.control_frequencies}
 
     @cache
     def a(self, target) -> Array:
@@ -131,28 +187,49 @@ class PulseOptimizer:
     def a_dag(self, target) -> Array:
         return self.a(target).conj().T
 
-    @cache
-    def X(self, target) -> Array:
-        return 0.5 * (self.a_dag(target) + self.a(target))
-
-    @cache
-    def Y(self, target) -> Array:
-        return 0.5j * (self.a_dag(target) - self.a(target))
-
     @partial(jax.jit, static_argnums=0)
     def loss_fn(self, params: dict[str, Array]) -> Array:
+        U = self.evolve(params)
+        return self.unitary_infidelity(U)
+
+    @partial(jax.jit, static_argnums=0)
+    def evolve(self, params: dict[str, Array]) -> Array:
         dt = self.segment_duration
         U = self.identity
         for index in range(self.segment_count):
             H = self.system_hamiltonian
             for target, iq_array in params.items():
+                a = self.a(target)
+                ad = self.a_dag(target)
+                delta = self.relative_frequencies[target]
                 I, Q = iq_array[index]
-                H += I * self.X(target) + Q * self.Y(target)
+                Omega = I + 1j * Q
+                Omega = Omega * np.exp(-1j * delta * dt)
+                H += 0.5 * (ad * Omega + a * jnp.conj(Omega))
             U = expm(-1j * H * dt) @ U
+        return U
 
-        V = self.target_unitary_dagger
+    @partial(jax.jit, static_argnums=0)
+    def unitary_infidelity(self, U: Array) -> Array:
         D = self.dimension
+        V = self.target_unitary_dagger
         return 1 - jnp.abs((V @ U).trace() / D) ** 2
+
+    @partial(jax.jit, static_argnums=0)
+    def state_infidelity(self, psi: Array) -> Array:
+        phi = self.target_state
+        return 1 - jnp.abs(jnp.vdot(phi, psi)) ** 2
+
+    def random_params(self, key: Array) -> dict[str, Array]:
+        return {
+            target: jax.random.uniform(
+                key=jax.random.split(key)[0],
+                shape=(self.segment_count, 2),
+                minval=-self.max_rabi_rate,
+                maxval=self.max_rabi_rate,
+            )
+            for target in self.control_frequencies
+        }
 
     def optimize(
         self,
@@ -160,17 +237,11 @@ class PulseOptimizer:
         learning_rate: float = 1e-3,
         max_iterations: int = 1000,
         tolerance: float = 1e-6,
+        seed: int = 0,
     ) -> OptimizationResult:
-        shape = (self.segment_count, 2)
-        params = {
-            target: jax.random.uniform(
-                key=jax.random.key(index),
-                shape=shape,
-                minval=-self.max_rabi_rate,
-                maxval=self.max_rabi_rate,
-            )
-            for index, target in enumerate(self.control_qubits)
-        }
+        key = jax.random.PRNGKey(seed)
+        params = self.random_params(key)
+
         solver = optax.adam(learning_rate=learning_rate)
         opt_state = solver.init(params)
 
@@ -181,15 +252,24 @@ class PulseOptimizer:
             params = optax.apply_updates(params, updates)
             params = optax.projections.projection_box(
                 params,
-                lower={target: -self.max_rabi_rate for target in self.control_qubits},
-                upper={target: self.max_rabi_rate for target in self.control_qubits},
+                lower=self.lower_bound,
+                upper=self.upper_bound,
             )
             loss = self.loss_fn(params)
             loss_history.append(loss)
             if loss < tolerance:
                 break
 
+        infidelity = float(loss)
+        unitary = qt.Qobj(np.asarray(self.evolve(params)), dims=self.dimensions)
+
+        state = unitary * self.initial_state
+
         result = OptimizationResult(
+            params=params,
+            infidelity=infidelity,
+            unitary=unitary,
+            state=state,
             times=np.linspace(0, self.duration, self.segment_count + 1),
             waveforms={
                 target: np.asarray([iq[0] + 1j * iq[1] for iq in iq_array])  # type: ignore
