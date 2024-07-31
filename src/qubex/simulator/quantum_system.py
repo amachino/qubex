@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from functools import cache, cached_property
-from typing import Final, Literal
+from typing import Final, Literal, Mapping
 
 import networkx as nx
 import numpy as np
@@ -159,12 +159,12 @@ class QuantumSystem:
 
     def state(
         self,
-        states: StateAlias | dict[str, StateAlias | qt.Qobj],
+        states: StateAlias | Mapping[str, StateAlias | qt.Qobj],
         default: StateAlias = "0",
     ) -> qt.Qobj:
         if isinstance(states, str):
             return qt.tensor(
-                [self._state(dim, states) for dim in self.object_dimensions]
+                [self.single_state(dim, states) for dim in self.object_dimensions]
             )
         elif isinstance(states, dict):
             for label in states:
@@ -182,14 +182,16 @@ class QuantumSystem:
                             )
                         object_states.append(state)
                     elif isinstance(state, str):
-                        object_states.append(self._state(object.dimension, state))
+                        object_states.append(self.single_state(object.dimension, state))
                 else:
-                    object_states.append(self._state(object.dimension, default))
+                    object_states.append(self.single_state(object.dimension, default))
             return qt.tensor(object_states)
+        else:
+            raise ValueError("Invalid state input.")
 
     @cache
-    def _state(
-        self,
+    @staticmethod
+    def single_state(
         dim: int,
         alias: StateAlias,
     ) -> qt.Qobj:
