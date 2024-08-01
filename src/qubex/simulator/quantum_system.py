@@ -190,8 +190,8 @@ class QuantumSystem:
             raise ValueError("Invalid state input.")
 
     @cache
-    @staticmethod
     def single_state(
+        self,
         dim: int,
         alias: StateAlias,
     ) -> qt.Qobj:
