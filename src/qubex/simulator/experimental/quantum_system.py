@@ -179,6 +179,10 @@ class QuantumSystem:
     def number_matrix(self) -> qt.Qobj:
         return qt.tensor([qt.num(dim) for dim in self.object_dimensions])
 
+    @cached_property
+    def ground_state(self) -> qt.Qobj:
+        return self.state({object.label: "0" for object in self.objects})
+
     @cache
     def get_index(self, label: str) -> int:
         if label not in self.graph.nodes:

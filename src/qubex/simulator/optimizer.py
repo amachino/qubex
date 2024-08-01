@@ -5,6 +5,7 @@ import numpy as np
 import numpy.typing as npt
 import qutip as qt
 from scipy.optimize import OptimizeResult, minimize
+from typing_extensions import deprecated
 
 from .system import System
 
@@ -29,6 +30,7 @@ class OptimizationResult:
         plt.show()
 
 
+@deprecated("will be removed in the future")
 class PulseOptimizer:
     def __init__(
         self,

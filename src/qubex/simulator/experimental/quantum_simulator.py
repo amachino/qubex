@@ -477,8 +477,14 @@ class QuantumSimulator:
 
         total_hamiltonian = [static_hamiltonian] + dynamic_hamiltonian
 
+        H = qt.QobjEvo(  # type: ignore
+            total_hamiltonian,
+            tlist=control.times,
+            order=0,  # 0th order for piecewise constant control
+        )
+
         result = qt.mesolve(
-            H=total_hamiltonian,
+            H=H,
             rho0=initial_state,
             tlist=control.times,
             c_ops=collapse_operators,

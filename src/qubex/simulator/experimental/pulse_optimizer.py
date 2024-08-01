@@ -15,7 +15,7 @@ from jax import Array
 from jax.scipy.linalg import expm
 from numpy.typing import NDArray
 
-from ..simulator import StateAlias, System
+from .quantum_system import QuantumSystem
 
 
 @dataclass
@@ -87,9 +87,9 @@ class PulseOptimizer:
     def __init__(
         self,
         *,
-        quantum_system: System,
+        quantum_system: QuantumSystem,
         target_unitary: qt.Qobj,
-        initial_state: qt.Qobj | StateAlias | dict[str, StateAlias] = "0",
+        initial_state: qt.Qobj,
         control_frequencies: dict[str, float],
         segment_count: int,
         segment_width: float,
@@ -180,12 +180,14 @@ class PulseOptimizer:
         return {target: self.max_rabi_rate for target in self.control_frequencies}
 
     @cache
-    def a(self, target) -> Array:
-        return jnp.asarray(self.quantum_system.lowering_operator(target).full())
+    def lowering_operator(self, target) -> Array:
+        a = self.quantum_system.get_lowering_operator(target)
+        return jnp.asarray(a.full())
 
     @cache
-    def a_dag(self, target) -> Array:
-        return self.a(target).conj().T
+    def raising_operator(self, target) -> Array:
+        ad = self.quantum_system.get_raising_operator(target)
+        return jnp.asarray(ad.full())
 
     @partial(jax.jit, static_argnums=0)
     def loss_fn(self, params: dict[str, Array]) -> Array:
@@ -199,8 +201,8 @@ class PulseOptimizer:
         for index in range(self.segment_count):
             H = self.system_hamiltonian
             for target, iq_array in params.items():
-                a = self.a(target)
-                ad = self.a_dag(target)
+                a = self.lowering_operator(target)
+                ad = self.raising_operator(target)
                 delta = self.relative_frequencies[target]
                 I, Q = iq_array[index]
                 Omega = I + 1j * Q

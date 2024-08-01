@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 import qctrlvisualizer as qv
 import qutip as qt
+from typing_extensions import deprecated
 
 from .system import StateAlias, System
 
@@ -399,6 +400,7 @@ class Result:
         )
 
 
+@deprecated("will be removed in the future")
 class Simulator:
     def __init__(
         self,
