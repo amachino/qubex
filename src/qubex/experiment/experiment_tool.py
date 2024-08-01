@@ -82,7 +82,7 @@ class ExperimentTool:
         --------
         >>> from qubex import Experiment
         >>> ex = Experiment(chip_id="64Q")
-        >>> ex.tool.configure_boxes(["Q73A", "Q73B"])
+        >>> ex.tool.configure_boxes(["Q73A", "U10B"])
         """
         self._config.configure_box_settings(self._chip_id, include=box_list)
 

@@ -96,8 +96,8 @@ class QuantumSystem:
     def __init__(
         self,
         *,
-        objects: list[Object],
-        couplings: list[Coupling] | None = None,
+        objects: Sequence[Object],
+        couplings: Sequence[Coupling] | None = None,
     ):
         couplings = couplings or []
 
