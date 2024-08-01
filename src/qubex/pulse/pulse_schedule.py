@@ -139,7 +139,10 @@ class PulseSchedule:
         """
         targets = targets or self.targets
         for target in targets:
-            self.add(target, Blank(duration=self._max_offset() - self._offsets[target]))
+            self.add(
+                target,
+                Blank(duration=self._max_offset(targets) - self._offsets[target]),
+            )
 
     def call(
         self,
