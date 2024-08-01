@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from functools import cache, cached_property
-from typing import Final, Literal, Mapping
+from typing import Final, Mapping, Sequence, Union
 
 import networkx as nx
 import numpy as np
 import qutip as qt
-from typing_extensions import TypeAlias
-
-StateAlias: TypeAlias = Literal["0", "1", "2", "+", "-", "+i", "-i", "*", "**"]
 
 
 @dataclass(frozen=True)
@@ -18,7 +15,7 @@ class Object:
     dimension: int
     frequency: float
     anharmonicity: float
-    decay_rate: float
+    relaxation_rate: float
     dephasing_rate: float
 
 
@@ -28,7 +25,7 @@ class Qubit(Object):
         *,
         label: str,
         frequency: float,
-        decay_rate: float = 0.0,
+        relaxation_rate: float = 0.0,
         dephasing_rate: float = 0.0,
     ):
         super().__init__(
@@ -36,19 +33,20 @@ class Qubit(Object):
             dimension=2,
             frequency=frequency,
             anharmonicity=0.0,
-            decay_rate=decay_rate,
+            relaxation_rate=relaxation_rate,
             dephasing_rate=dephasing_rate,
         )
 
 
 class Resonator(Object):
+
     def __init__(
         self,
         *,
         label: str,
         dimension: int,
         frequency: float,
-        decay_rate: float = 0.0,
+        relaxation_rate: float = 0.0,
         dephasing_rate: float = 0.0,
     ):
         super().__init__(
@@ -56,12 +54,13 @@ class Resonator(Object):
             dimension=dimension,
             frequency=frequency,
             anharmonicity=0.0,
-            decay_rate=decay_rate,
+            relaxation_rate=relaxation_rate,
             dephasing_rate=dephasing_rate,
         )
 
 
 class Transmon(Object):
+
     def __init__(
         self,
         *,
@@ -69,7 +68,7 @@ class Transmon(Object):
         dimension: int,
         frequency: float,
         anharmonicity: float,
-        decay_rate: float = 0.0,
+        relaxation_rate: float = 0.0,
         dephasing_rate: float = 0.0,
     ):
         super().__init__(
@@ -77,7 +76,7 @@ class Transmon(Object):
             dimension=dimension,
             frequency=frequency,
             anharmonicity=anharmonicity,
-            decay_rate=decay_rate,
+            relaxation_rate=relaxation_rate,
             dephasing_rate=dephasing_rate,
         )
 
@@ -93,6 +92,7 @@ class Coupling:
 
 
 class QuantumSystem:
+
     def __init__(
         self,
         *,
@@ -100,6 +100,8 @@ class QuantumSystem:
         couplings: list[Coupling] | None = None,
     ):
         couplings = couplings or []
+
+        # validate objects and couplings
         object_labels = [object.label for object in objects]
         if len(object_labels) != len(set(object_labels)):
             raise ValueError("Objects must have unique labels.")
@@ -114,32 +116,48 @@ class QuantumSystem:
     def graph(self) -> nx.Graph:
         graph = nx.Graph()
         for object in self.objects:
-            graph.add_node(object.label, **asdict(object))
+            graph.add_node(
+                object.label,
+                type=type(object).__name__,
+                props=asdict(object),
+            )
         for coupling in self.couplings:
-            graph.add_edge(*coupling.pair, **asdict(coupling))
+            graph.add_edge(
+                *coupling.pair,
+                type=type(coupling).__name__,
+                props=asdict(coupling),
+            )
         return graph
+
+    @cached_property
+    def object_labels(self) -> list[str]:
+        return [object.label for object in self.objects]
 
     @cached_property
     def object_dimensions(self) -> list[int]:
         return [object.dimension for object in self.objects]
 
     @cached_property
-    def diagonal_hamiltonian(self) -> qt.Qobj:
-        H = self.zero
-        for object in self.objects:
-            H += self.get_diagonal_hamiltonian(object.label)
+    def coupling_labels(self) -> list[str]:
+        return [coupling.label for coupling in self.couplings]
+
+    @cached_property
+    def object_hamiltonian(self) -> qt.Qobj:
+        H = self.zero_matrix
+        for label in self.object_labels:
+            H += self.get_object_hamiltonian(label)
         return H
 
     @cached_property
     def coupling_hamiltonian(self) -> qt.Qobj:
-        H = self.zero
-        for coupling in self.couplings:
-            H += self.get_coupling_hamiltonian(coupling.pair)
+        H = self.zero_matrix
+        for label in self.coupling_labels:
+            H += self.get_coupling_hamiltonian(label)
         return H
 
     @cached_property
     def hamiltonian(self) -> qt.Qobj:
-        return self.diagonal_hamiltonian + self.coupling_hamiltonian
+        return self.object_hamiltonian + self.coupling_hamiltonian
 
     @cached_property
     def basis_indices(self) -> list[tuple[int, ...]]:
@@ -150,23 +168,108 @@ class QuantumSystem:
         return ["".join(str(i) for i in basis) for basis in self.basis_indices]
 
     @cached_property
-    def zero(self) -> qt.Qobj:
+    def zero_matrix(self) -> qt.Qobj:
         return qt.tensor([qt.qzero(dim) for dim in self.object_dimensions])
 
     @cached_property
-    def identity(self) -> qt.Qobj:
+    def identity_matrix(self) -> qt.Qobj:
         return qt.tensor([qt.qeye(dim) for dim in self.object_dimensions])
+
+    @cached_property
+    def number_matrix(self) -> qt.Qobj:
+        return qt.tensor([qt.num(dim) for dim in self.object_dimensions])
+
+    @cache
+    def get_index(self, label: str) -> int:
+        if label not in self.graph.nodes:
+            raise ValueError(f"Object {label} does not exist.")
+        return list(self.graph.nodes).index(label)
+
+    @cache
+    def get_object(self, label: str) -> Object:
+        if label not in self.graph.nodes:
+            raise ValueError(f"Object {label} does not exist.")
+        ObjectClass = globals()[self.graph.nodes[label]["type"]]
+        return ObjectClass(**self.graph.nodes[label]["props"])
+
+    @cache
+    def get_coupling(self, label: str | tuple[str, str]) -> Coupling:
+        pair = label if isinstance(label, tuple) else tuple(label.split("-"))
+        if pair not in self.graph.edges:
+            raise ValueError(f"Coupling {pair} does not exist.")
+        CouplingClass = globals()[self.graph.edges[pair]["type"]]
+        return CouplingClass(**self.graph.edges[pair]["props"])
+
+    @cache
+    def get_lowering_operator(self, label: str) -> qt.Qobj:
+        if label not in self.graph.nodes:
+            raise ValueError(f"Node {label} does not exist.")
+        return qt.tensor(
+            [
+                (
+                    qt.destroy(object.dimension)
+                    if object.label == label
+                    else qt.qeye(object.dimension)
+                )
+                for object in self.objects
+            ]
+        )
+
+    @cache
+    def get_raising_operator(self, label: str) -> qt.Qobj:
+        return self.get_lowering_operator(label).dag()
+
+    @cache
+    def get_object_hamiltonian(self, label: str) -> qt.Qobj:
+        object = self.get_object(label)
+        omega = 2 * np.pi * object.frequency
+        alpha = 2 * np.pi * object.anharmonicity
+        a = self.get_lowering_operator(object.label)
+        ad = a.dag()
+        return omega * ad * a + 0.5 * alpha * (ad * ad * a * a)
+
+    @cache
+    def get_coupling_hamiltonian(self, label: str | tuple[str, str]) -> qt.Qobj:
+        pair = label if isinstance(label, tuple) else tuple(label.split("-"))
+        coupling = self.get_coupling(pair)
+        g = 2 * np.pi * coupling.strength
+        a_0 = self.get_lowering_operator(coupling.pair[0])
+        ad_0 = a_0.dag()
+        a_1 = self.get_lowering_operator(coupling.pair[1])
+        ad_1 = a_1.dag()
+        return g * (ad_0 * a_1 + ad_1 * a_0)
+
+    def draw(self, **kwargs):
+        nx.draw(
+            self.graph,
+            with_labels=True,
+            **kwargs,
+        )
 
     def state(
         self,
-        states: StateAlias | Mapping[str, StateAlias | qt.Qobj],
-        default: StateAlias = "0",
+        states: Union[
+            Mapping[str, int | str | qt.Qobj],
+            Sequence[int | str | qt.Qobj],
+            None,
+        ] = None,
+        default: int | str = 0,
     ) -> qt.Qobj:
-        if isinstance(states, str):
+        if states is None:
             return qt.tensor(
-                [self.single_state(dim, states) for dim in self.object_dimensions]
+                [self.create_state(dim, default) for dim in self.object_dimensions]
             )
-        elif isinstance(states, dict):
+
+        if isinstance(states, Sequence):
+            if len(states) != len(self.objects):
+                raise ValueError(
+                    f"Number of states ({len(states)}) must match number of objects ({len(self.objects)})."
+                )
+            states = {
+                object.label: state for object, state in zip(self.objects, states)
+            }
+
+        if isinstance(states, Mapping):
             for label in states:
                 if label not in self.graph.nodes:
                     raise ValueError(f"Object {label} does not exist.")
@@ -181,31 +284,29 @@ class QuantumSystem:
                                 f"State for object {object.label} must have shape ({object.dimension}, 1)."
                             )
                         object_states.append(state)
-                    elif isinstance(state, str):
-                        object_states.append(self.single_state(object.dimension, state))
+                    else:
+                        object_states.append(self.create_state(object.dimension, state))
                 else:
-                    object_states.append(self.single_state(object.dimension, default))
+                    object_states.append(self.create_state(object.dimension, default))
             return qt.tensor(object_states)
         else:
             raise ValueError("Invalid state input.")
 
-    @cache
-    def single_state(
-        self,
-        dim: int,
-        alias: StateAlias,
-    ) -> qt.Qobj:
-        if alias == "0":
+    @staticmethod
+    def create_state(dim: int, alias: int | str) -> qt.Qobj:
+        if isinstance(alias, int):
+            state = qt.basis(dim, alias)
+        elif alias in ("0", "g"):
             state = qt.basis(dim, 0)
-        elif alias == "1":
+        elif alias in ("1", "e"):
             state = qt.basis(dim, 1)
-        elif alias == "2":
+        elif alias in ("2", "f"):
             state = qt.basis(dim, 2)
         elif alias == "+":
             state = (qt.basis(dim, 0) + qt.basis(dim, 1)).unit()
         elif alias == "-":
             state = (qt.basis(dim, 0) - qt.basis(dim, 1)).unit()
-        elif alias == "+i":
+        elif alias in ("+i", "i"):
             state = (qt.basis(dim, 0) + 1j * qt.basis(dim, 1)).unit()
         elif alias == "-i":
             state = (qt.basis(dim, 0) - 1j * qt.basis(dim, 1)).unit()
@@ -217,62 +318,3 @@ class QuantumSystem:
         else:
             raise ValueError(f"Invalid state alias: {alias}")
         return state
-
-    @cache
-    def get_index(self, label: str) -> int:
-        if label not in self.graph.nodes:
-            raise ValueError(f"Object {label} does not exist.")
-        return list(self.graph.nodes).index(label)
-
-    @cache
-    def get_object(self, label: str) -> Object:
-        if label not in self.graph.nodes:
-            raise ValueError(f"Object {label} does not exist.")
-        return Object(**self.graph.nodes[label])
-
-    @cache
-    def get_coupling(self, pair: tuple[str, str]) -> Coupling:
-        if pair not in self.graph.edges:
-            raise ValueError(f"Coupling {pair} does not exist.")
-        return Coupling(**self.graph.edges[pair])
-
-    @cache
-    def get_diagonal_hamiltonian(self, label: str) -> qt.Qobj:
-        object = self.get_object(label)
-        omega = 2 * np.pi * object.frequency
-        alpha = 2 * np.pi * object.anharmonicity
-        b = self.lowering_operator(object.label)
-        bd = b.dag()
-        return omega * bd * b + 0.5 * alpha * (bd * bd * b * b)
-
-    @cache
-    def get_coupling_hamiltonian(self, pair: tuple[str, str]) -> qt.Qobj:
-        coupling = self.get_coupling(pair)
-        g = 2 * np.pi * coupling.strength
-        b_0 = self.lowering_operator(coupling.pair[0])
-        bd_0 = b_0.dag()
-        b_1 = self.lowering_operator(coupling.pair[1])
-        bd_1 = b_1.dag()
-        return g * (bd_0 * b_1 + bd_1 * b_0)
-
-    @cache
-    def lowering_operator(self, label: str) -> qt.Qobj:
-        if label not in self.graph.nodes:
-            raise ValueError(f"Node {label} does not exist.")
-        return qt.tensor(
-            [
-                (
-                    qt.destroy(object.dimension)
-                    if object.label == label
-                    else qt.qeye(object.dimension)
-                )
-                for object in self.objects
-            ]
-        )
-
-    def draw(self, **kwargs):
-        nx.draw(
-            self.graph,
-            with_labels=True,
-            **kwargs,
-        )
