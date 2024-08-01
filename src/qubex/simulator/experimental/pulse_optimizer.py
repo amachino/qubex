@@ -15,7 +15,7 @@ from jax import Array
 from jax.scipy.linalg import expm
 from numpy.typing import NDArray
 
-from .simulator import StateAlias, System
+from ..simulator import StateAlias, System
 
 
 @dataclass

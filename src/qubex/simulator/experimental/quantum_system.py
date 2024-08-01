@@ -220,6 +220,10 @@ class QuantumSystem:
         return self.get_lowering_operator(label).dag()
 
     @cache
+    def get_number_operator(self, label: str) -> qt.Qobj:
+        return self.get_raising_operator(label) * self.get_lowering_operator(label)
+
+    @cache
     def get_object_hamiltonian(self, label: str) -> qt.Qobj:
         object = self.get_object(label)
         omega = 2 * np.pi * object.frequency
