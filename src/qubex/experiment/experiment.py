@@ -978,6 +978,10 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
+        amplitudes = {
+            Target.get_ef_label(label): amplitude
+            for label, amplitude in amplitudes.items()
+        }
         ge_labels = [Target.get_ge_label(label) for label in amplitudes]
         ef_labels = [Target.get_ef_label(label) for label in amplitudes]
         ef_targets = [self.targets[ef] for ef in ef_labels]
@@ -2815,9 +2819,11 @@ class Experiment:
     def state_evolution_tomography(
         self,
         *,
-        sequences: Sequence[TargetMap[IQArray]]
-        | Sequence[TargetMap[Waveform]]
-        | Sequence[PulseSchedule],
+        sequences: (
+            Sequence[TargetMap[IQArray]]
+            | Sequence[TargetMap[Waveform]]
+            | Sequence[PulseSchedule]
+        ),
         x90: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
