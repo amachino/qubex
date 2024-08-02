@@ -576,6 +576,8 @@ class Experiment:
         control_window: int | None = None,
         capture_window: int | None = None,
         readout_duration: int | None = None,
+        time_offset: dict[str, int] = {},
+        time_to_start: dict[str, int] = {},
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -641,6 +643,8 @@ class Experiment:
                 control_window=control_window,
                 capture_window=capture_window,
                 readout_duration=readout_duration,
+                time_offset=time_offset,
+                time_to_start=time_to_start,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -652,6 +656,8 @@ class Experiment:
                     control_window=control_window,
                     capture_window=capture_window,
                     readout_duration=readout_duration,
+                    time_offset=time_offset,
+                    time_to_start=time_to_start,
                 )
         if plot:
             result.plot()
@@ -667,6 +673,8 @@ class Experiment:
         control_window: int | None = None,
         capture_window: int | None = None,
         readout_duration: int | None = None,
+        time_offset: dict[str, int] = {},
+        time_to_start: dict[str, int] = {},
     ):
         """
         Measures the signals using the given sequences.
@@ -708,6 +716,8 @@ class Experiment:
             control_window=control_window or self._control_window,
             capture_window=capture_window or self._capture_window,
             readout_duration=readout_duration or self._readout_duration,
+            time_offset=time_offset,
+            time_to_start=time_to_start,
         )
 
     def check_noise(
@@ -786,6 +796,8 @@ class Experiment:
         time_range: NDArray = np.arange(0, 201, 8),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        time_offset: dict[str, int] = {},
+        time_to_start: dict[str, int] = {},
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -821,6 +833,8 @@ class Experiment:
             shots=shots,
             interval=interval,
             store_params=True,
+            time_offset=time_offset,
+            time_to_start=time_to_start,
             plot=plot,
         )
         return result
@@ -835,6 +849,8 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
+        time_offset: dict[str, int] = {},
+        time_to_start: dict[str, int] = {},
     ) -> ExperimentResult[RabiData]:
         """
         Conducts a Rabi experiment.
@@ -895,6 +911,8 @@ class Experiment:
             frequencies=detuned_frequencies,
             shots=shots,
             interval=interval,
+            time_offset=time_offset,
+            time_to_start=time_to_start,
             plot=plot,
         )
 
@@ -1059,6 +1077,8 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
+        time_offset: dict[str, int] = {},
+        time_to_start: dict[str, int] = {},
         plot: bool = True,
         title: str = "Sweep result",
         xaxis_title: str = "Sweep value",
@@ -1145,6 +1165,8 @@ class Experiment:
             shots=shots,
             interval=interval,
             control_window=control_window or self._control_window,
+            time_offset=time_offset,
+            time_to_start=time_to_start,
         )
         signals = defaultdict(list)
         plotter = IQPlotter()
