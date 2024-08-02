@@ -25,10 +25,7 @@ from ..analysis import (
 )
 from ..clifford import CliffordGroup
 from ..config import Config, Params, Qubit, Resonator, Target
-from ..measurement import (
-    MeasureResult,
-    StateClassifier,
-)
+from ..measurement import MeasureResult, StateClassifier
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
@@ -51,12 +48,7 @@ from ..pulse import (
     VirtualZ,
     Waveform,
 )
-from ..typing import (
-    IQArray,
-    ParametricPulseSchedule,
-    ParametricWaveformDict,
-    TargetMap,
-)
+from ..typing import IQArray, ParametricPulseSchedule, ParametricWaveformDict, TargetMap
 from ..version import get_package_version
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
@@ -1547,11 +1539,11 @@ class Experiment:
         targets: list[str],
         *,
         detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
-        time_range: NDArray = np.arange(0, 101, 4),
+        time_range: NDArray = np.arange(0, 101, 8),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> dict[str, list[float]]:
+    ) -> dict[str, float]:
         result = defaultdict(list)
         for detuning in detuning_range:
             modified_frequencies = {
@@ -1567,12 +1559,31 @@ class Experiment:
                     },
                     shots=shots,
                     interval=interval,
-                    plot=plot,
+                    plot=False,
                 )
+                clear_output()
+                if plot:
+                    rabi_result.fit()
+                clear_output(wait=True)
                 for qubit, data in rabi_result.data.items():
                     result[qubit].append(data.rabi_param.amplitude)
-                clear_output(wait=True)
-        return result
+
+        fit_data = {}
+        for target, values in result.items():
+            freq = self.resonators[target].frequency
+            freq_fit = fitting.fit_lorentzian(
+                target=target,
+                freq_range=detuning_range + freq,
+                data=np.array(values),
+                title="Readout frequency calibration",
+                xaxis_title="Readout frequency (GHz)",
+            )
+            fit_data[target] = freq_fit
+
+        for target, freq in fit_data.items():
+            print(f"{target}: {freq:.6f}")
+
+        return fit_data
 
     def calibrate_default_pulse(
         self,
@@ -2012,8 +2023,8 @@ class Experiment:
 
         Parameters
         ----------
-        qubits : list[str]
-            List of qubits to check the T2 decay.
+        targets : list[str]
+            List of targets to check the T2 decay.
         time_range : NDArray
             Time range of the experiment in ns.
         n_cpmg : int, optional
@@ -2089,8 +2100,8 @@ class Experiment:
 
         Parameters
         ----------
-        qubits : list[str]
-            List of qubits to check the Ramsey oscillation.
+        targets : list[str]
+            List of targets to check the Ramsey oscillation.
         time_range : NDArray
             Time range of the experiment in ns.
         detuning : float, optional
