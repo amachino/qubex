@@ -3097,3 +3097,69 @@ class Experiment:
         fig.show()
 
         return freq_range, phases_diff
+
+    def scan_control_frequencies(
+        self,
+        *,
+        target: str,
+        center_frequency: float,
+        frequency_step: float = 0.005,
+        control_pulse: Waveform | None = None,
+        shots: int = 1000,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """
+        Scans the control frequencies to check the phase shift.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        center_frequency : float
+            Center frequency of the control pulse in GHz.
+        frequency_step : float, optional
+            Frequency step of the scan in GHz.
+        control_pulse : Waveform | None, optional
+            Control pulse to excite the qubit.
+        shots : int, optional
+            Number of shots.
+        interval : int, optional
+            Interval between shots.
+
+        Returns
+        -------
+        tuple[NDArray[np.float64], NDArray[np.float64]]
+            Frequency range and phases.
+        """
+        control_pulse = control_pulse or FlatTop(duration=30, amplitude=0.2, tau=10)
+
+        widget = go.FigureWidget()
+        widget.add_scatter(name=target, mode="markers+lines")
+        widget.update_layout(
+            title="Control frequency scan",
+            xaxis_title="Control frequency (GHz)",
+            yaxis_title="Phase (rad)",
+        )
+        scatter: go.Scatter = widget.data[0]  # type: ignore
+        display(widget)
+        phases = []
+        freq_range = np.arange(
+            center_frequency - 0.25,
+            center_frequency + 0.25,
+            frequency_step,
+        )
+        for idx, freq in enumerate(tqdm(freq_range)):
+            with self.modified_frequencies({target: freq}):
+                result = self.measure(
+                    {target: control_pulse},
+                    mode="avg",
+                    shots=shots,
+                    interval=interval,
+                )
+                iq = result.data[target].kerneled
+                angle = np.angle(iq)
+                phases.append(angle)
+                scatter.x = freq_range[: idx + 1]
+                scatter.y = np.unwrap(phases)
+
+        return freq_range, np.unwrap(phases)
