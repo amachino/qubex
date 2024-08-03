@@ -3004,7 +3004,7 @@ class Experiment:
 
         return result
 
-    def scan_readout_frequencies(
+    def scan_resonator_frequencies(
         self,
         *,
         target: str,
@@ -3013,7 +3013,7 @@ class Experiment:
         interval: int = 0,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """
-        Scans the readout frequencies to check the phase shift.
+        Scans the readout frequencies to find the resonator frequencies.
 
         Parameters
         ----------
@@ -3037,7 +3037,7 @@ class Experiment:
             widget = go.FigureWidget()
             widget.add_scatter(name=target, mode="markers+lines")
             widget.update_layout(
-                title="Readout frequency scan",
+                title="Resonator frequency scan",
                 xaxis_title="Readout frequency (GHz)",
                 yaxis_title="Phase (rad)",
             )
@@ -3069,7 +3069,7 @@ class Experiment:
             fig.add_scatter(name=target, mode="markers", x=x, y=y)
             fig.add_scatter(name="fit", mode="lines", x=x, y=y_fit)
             fig.update_layout(
-                title="Readout frequency scan",
+                title="Resonator frequency scan",
                 xaxis_title="Readout frequency (GHz)",
                 yaxis_title="Phase (rad)",
             )
@@ -3090,7 +3090,7 @@ class Experiment:
             y=phases_diff,
         )
         fig.update_layout(
-            title="Readout frequency scan",
+            title="Resonator frequency scan",
             xaxis_title="Readout frequency (GHz)",
             yaxis_title="Phase diff (rad)",
         )
@@ -3098,7 +3098,7 @@ class Experiment:
 
         return freq_range, phases_diff
 
-    def scan_control_frequencies(
+    def scan_qubit_frequencies(
         self,
         *,
         target: str,
@@ -3109,7 +3109,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """
-        Scans the control frequencies to check the phase shift.
+        Scans the control frequencies to find the qubit frequencies.
 
         Parameters
         ----------
@@ -3136,7 +3136,7 @@ class Experiment:
         widget = go.FigureWidget()
         widget.add_scatter(name=target, mode="markers+lines")
         widget.update_layout(
-            title="Control frequency scan",
+            title="Qubit frequency scan",
             xaxis_title="Control frequency (GHz)",
             yaxis_title="Phase (rad)",
         )
