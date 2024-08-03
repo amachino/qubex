@@ -504,9 +504,13 @@ class Experiment:
             with self._measurement.modified_frequencies(frequencies):
                 yield
 
-    def save_default(self):
+    def save_defaults(self):
         """Save the default settings."""
         self._system_note.save()
+
+    def clear_defaults(self):
+        """Clear the default settings."""
+        self._system_note.clear()
 
     def load_record(
         self,
