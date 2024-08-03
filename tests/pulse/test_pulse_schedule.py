@@ -45,15 +45,13 @@ def test_specific_barrier():
     """PulseSchedule should add a barrier to specific qubits."""
     with PulseSchedule(["Q00", "Q01", "Q02", "Q03"]) as ps:
         ps.add("Q00", Pulse([1]))
-        ps.barrier(["Q01", "Q02"])
+        ps.barrier(["Q00", "Q01"])
         ps.add("Q01", Pulse([1, 1, 1]))
         ps.add("Q02", Pulse([1, 1, 1]))
-        ps.add("Q03", Pulse([1, 1, 1]))
     seq = ps.get_sampled_sequences()
     assert seq["Q00"] == pytest.approx([1, 0, 0, 0])
     assert seq["Q01"] == pytest.approx([0, 1, 1, 1])
-    assert seq["Q02"] == pytest.approx([0, 1, 1, 1])
-    assert seq["Q03"] == pytest.approx([1, 1, 1, 0])
+    assert seq["Q02"] == pytest.approx([1, 1, 1, 0])
 
 
 def test_get_sampled_sequences():
