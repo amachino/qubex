@@ -41,9 +41,9 @@ def plot_y(
 
 
 def plot_xy(
-    *,
     x: ArrayLike,
     y: ArrayLike,
+    *,
     mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
     title: str = "",
     xlabel: str = "",
@@ -66,9 +66,9 @@ def plot_xy(
 
 
 def plot_xy_square(
-    *,
     x: ArrayLike,
     y: ArrayLike,
+    *,
     mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
     title: str = "",
     xlabel: str = "",
@@ -88,6 +88,41 @@ def plot_xy_square(
         template="qubex+square",
     )
     fig.show(config=get_config())
+
+
+def plot_fft(
+    times: NDArray[np.float64],
+    data: NDArray[np.complex128],
+    *,
+    title: str = "FFT Result",
+    xlabel: str = "Frequency (GHz)",
+    ylabel: str = "Amplitude (arb. units)",
+) -> None:
+    fft_result = np.fft.fft(data)
+    fft_freqs = np.fft.fftfreq(len(data), times[1] - times[0])
+    fft_result = np.fft.fftshift(fft_result)
+    fft_freqs = np.fft.fftshift(fft_freqs)
+
+    fft_magnitude = np.abs(fft_result)
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=fft_freqs,
+            y=fft_magnitude,
+            mode="lines",
+            name="Magnitude",
+        )
+    )
+
+    fig.update_layout(
+        title=title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+    )
+
+    fig.show()
 
 
 def plot_state_vectors(

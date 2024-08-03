@@ -3,9 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+import numpy as np
 from numpy.typing import NDArray
 
-from ..analysis import plot_waveform, scatter_iq_data
+from ..analysis import plot_fft, plot_waveform, scatter_iq_data
+
+SAMPLING_PERIOD_SINGLE = 2.0
+SAMPLING_PERIOD_AVG = 8.0
 
 
 class MeasureMode(Enum):
@@ -20,13 +24,26 @@ class MeasureMode(Enum):
         }[self]
 
 
-@dataclass
+@dataclass(frozen=True)
 class MeasureData:
     target: str
     mode: MeasureMode
     raw: NDArray
     kerneled: NDArray
     classified: dict[int, int] | None
+
+    @property
+    def length(self) -> int:
+        return len(self.raw)
+
+    @property
+    def times(self) -> NDArray[np.float64]:
+        if self.mode == MeasureMode.SINGLE:
+            return np.arange(self.length) * SAMPLING_PERIOD_SINGLE
+        elif self.mode == MeasureMode.AVG:
+            return np.arange(self.length) * SAMPLING_PERIOD_AVG
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
     def plot(self):
         if self.mode == MeasureMode.SINGLE:
@@ -37,14 +54,23 @@ class MeasureData:
         elif self.mode == MeasureMode.AVG:
             plot_waveform(
                 data=self.raw,
-                sampling_period=8,
+                sampling_period=SAMPLING_PERIOD_AVG,
                 title=f"Readout waveform of {self.target}",
                 xlabel="Capture time (ns)",
                 ylabel="Amplitude (arb. units)",
             )
 
+    def plot_fft(self):
+        plot_fft(
+            times=self.times,
+            data=self.raw,
+            title=f"Fourier transform of {self.target}",
+            xlabel="Frequency (GHz)",
+            ylabel="Amplitude (arb. units)",
+        )
 
-@dataclass
+
+@dataclass(frozen=True)
 class MeasureResult:
     mode: MeasureMode
     data: dict[str, MeasureData]
@@ -57,3 +83,7 @@ class MeasureResult:
         elif self.mode == MeasureMode.AVG:
             for qubit in self.data.values():
                 qubit.plot()
+
+    def plot_fft(self):
+        for qubit in self.data.values():
+            qubit.plot_fft()
