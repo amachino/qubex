@@ -3051,7 +3051,7 @@ class Experiment:
             for idx, freq in enumerate(tqdm(freq_range)):
                 with self.modified_frequencies({readout: freq}):
                     result = self.measure(
-                        {target: []},
+                        {target: np.zeros(0)},
                         mode="avg",
                         shots=shots,
                         interval=interval,
