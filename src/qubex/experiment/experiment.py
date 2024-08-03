@@ -7,7 +7,8 @@ from datetime import datetime
 from typing import Final, Literal, Optional, Sequence
 
 import numpy as np
-from IPython.display import clear_output
+import plotly.graph_objects as go
+from IPython.display import clear_output, display
 from numpy.typing import NDArray
 from rich.console import Console
 from rich.prompt import Confirm
@@ -3002,3 +3003,97 @@ class Experiment:
                 )
 
         return result
+
+    def scan_readout_frequencies(
+        self,
+        *,
+        target: str,
+        freq_range: NDArray[np.float64] = np.arange(9.8, 10.3, 0.002),
+        shots: int = 100,
+        interval: int = 0,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """
+        Scans the readout frequencies to check the phase shift.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit connected to the resonator of interest.
+        freq_range : NDArray[np.float64], optional
+            Frequency range to scan in GHz. Defaults to np.arange(9.8, 10.3, 0.002).
+        shots : int, optional
+            Number of shots. Defaults to 100.
+        interval : int, optional
+            Interval between shots. Defaults to 0.
+
+        Returns
+        -------
+        tuple[NDArray[np.float64], NDArray[np.float64]]
+            Frequency range and phase difference.
+        """
+        readout = Target.get_readout_label(target)
+
+        def measure_phases(freq_range, phase_shift=0.0) -> NDArray[np.float64]:
+            widget = go.FigureWidget()
+            widget.add_scatter(name=target, mode="markers+lines")
+            widget.update_layout(
+                title="Readout frequency scan",
+                xaxis_title="Readout frequency (GHz)",
+                yaxis_title="Phase (rad)",
+            )
+            scatter: go.Scatter = widget.data[0]  # type: ignore
+            display(widget)
+            phases = []
+            for idx, freq in enumerate(tqdm(freq_range)):
+                with self.modified_frequencies({readout: freq}):
+                    result = self.measure(
+                        {target: []},
+                        mode="avg",
+                        shots=shots,
+                        interval=interval,
+                    )
+                    iq = result.data[target].kerneled
+                    angle = np.angle(iq)
+                    angle = np.angle(iq) - freq * phase_shift
+                    phases.append(angle)
+                    scatter.x = freq_range[: idx + 1]
+                    scatter.y = np.unwrap(phases)
+            return np.unwrap(phases)
+
+        def measure_phase_shift(freq_range) -> float:
+            phases = measure_phases(freq_range)
+            x, y = freq_range, np.unwrap(phases)
+            coefficients = np.polyfit(x, y, 1)
+            y_fit = np.polyval(coefficients, x)
+            fig = go.Figure()
+            fig.add_scatter(name=target, mode="markers", x=x, y=y)
+            fig.add_scatter(name="fit", mode="lines", x=x, y=y_fit)
+            fig.update_layout(
+                title="Readout frequency scan",
+                xaxis_title="Readout frequency (GHz)",
+                yaxis_title="Phase (rad)",
+            )
+            fig.show()
+            phase_shift = coefficients[0]
+            print(f"phase_shift: {phase_shift} rad/GHz")
+            return phase_shift
+
+        phase_shift = measure_phase_shift(freq_range[0:30])
+        phases = measure_phases(freq_range, phase_shift=phase_shift)
+        phases_diff = np.abs(np.diff(phases))
+
+        fig = go.Figure()
+        fig.add_scatter(
+            name=target,
+            mode="markers+lines",
+            x=freq_range,
+            y=phases_diff,
+        )
+        fig.update_layout(
+            title="Readout frequency scan",
+            xaxis_title="Readout frequency (GHz)",
+            yaxis_title="Phase diff (rad)",
+        )
+        fig.show()
+
+        return freq_range, phases_diff
