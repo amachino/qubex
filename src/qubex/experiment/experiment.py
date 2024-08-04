@@ -1259,6 +1259,7 @@ class Experiment:
         *,
         detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
         time_range: NDArray = np.arange(0, 101, 4),
+        rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1274,6 +1275,8 @@ class Experiment:
             Range of the detuning to sweep in GHz.
         time_range : NDArray
             Time range of the experiment in ns.
+        rabi_level : Literal["ge", "ef"], optional
+            Rabi level to use. Defaults to "ge".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1300,17 +1303,30 @@ class Experiment:
         ... )
         """
         ampl = self.params.control_amplitude
-        amplitudes = {target: ampl[target] for target in targets}
         rabi_rates: dict[str, list[float]] = defaultdict(list)
         for detuning in detuning_range:
-            rabi_result = self.rabi_experiment(
-                time_range=time_range,
-                amplitudes=amplitudes,
-                detuning=detuning,
-                shots=shots,
-                interval=interval,
-                plot=False,
-            )
+            if rabi_level == "ge":
+                rabi_result = self.rabi_experiment(
+                    time_range=time_range,
+                    amplitudes={target: ampl[target] for target in targets},
+                    detuning=detuning,
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                )
+            elif rabi_level == "ef":
+                rabi_result = self.ef_rabi_experiment(
+                    time_range=time_range,
+                    amplitudes={
+                        target: ampl[target] / np.sqrt(2) for target in targets
+                    },
+                    detuning=detuning,
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                )
+            else:
+                raise ValueError("Invalid rabi_level.")
             clear_output()
             if plot:
                 rabi_result.fit()
@@ -1323,7 +1339,8 @@ class Experiment:
                 rabi_rates[target].append(rabi_rate)
 
         frequencies = {
-            target: detuning_range + self.qubits[target].frequency for target in targets
+            target: detuning_range + self.targets[target].frequency
+            for target in rabi_rates
         }
 
         data = {
@@ -1537,8 +1554,44 @@ class Experiment:
             plot=plot,
         )
         fit_data = {target: data.fit()[0] for target, data in result.data.items()}
+
+        print("\nResults\n-------")
+        print("ge frequency (GHz):")
         for target, fit in fit_data.items():
-            print(f"{target}: {fit:.6f}")
+            print(f"    {target}: {fit:.6f}")
+        return fit_data
+
+    def calibrate_ef_control_frequency(
+        self,
+        targets: list[str],
+        *,
+        detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
+        time_range: NDArray = np.arange(0, 101, 4),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict[str, float]:
+        result = self.obtain_freq_rabi_relation(
+            targets=targets,
+            detuning_range=detuning_range,
+            rabi_level="ef",
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+        fit_data = {target: data.fit()[0] for target, data in result.data.items()}
+
+        print("\nResults\n-------")
+        print("ef frequency (GHz):")
+        for target, fit in fit_data.items():
+            label = Target.get_ge_label(target)
+            print(f"    {label}: {fit:.6f}")
+        print("anharmonicity (GHz):")
+        for target, fit in fit_data.items():
+            label = Target.get_ge_label(target)
+            ge_freq = self.targets[label].frequency
+            print(f"    {label}: {fit - ge_freq:.6f}")
         return fit_data
 
     def calibrate_readout_frequency(
