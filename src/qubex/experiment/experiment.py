@@ -850,6 +850,33 @@ class Experiment:
         self,
         targets: list[str],
         *,
+        plot: bool = True,
+    ) -> ExperimentResult[RabiData]:
+        """
+        Checks the Rabi oscillation of the given targets.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the Rabi oscillation.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[RabiData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.check_rabi(["Q00", "Q01"])
+        """
+        return self.obtain_rabi_params(targets, plot=plot)
+
+    def obtain_rabi_params(
+        self,
+        targets: list[str],
+        *,
         time_range: NDArray = np.arange(0, 201, 8),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -880,7 +907,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = ex.check_rabi(["Q00", "Q01"])
+        >>> result = ex.obtain_rabi_params(["Q00", "Q01"])
         """
         ampl = self.params.control_amplitude
         amplitudes = {target: ampl[target] for target in targets}
@@ -896,7 +923,7 @@ class Experiment:
         )
         return result
 
-    def check_ef_rabi(
+    def obtain_ef_rabi_params(
         self,
         targets: list[str],
         *,
@@ -928,7 +955,7 @@ class Experiment:
 
         Examples
         --------
-        >>> result = ex.check_ef_rabi(["Q00", "Q01"])
+        >>> result = ex.obtain_ef_rabi_params(["Q00", "Q01"])
         """
         ef_labels = [Target.get_ef_label(target) for target in targets]
         ef_targets = [self.targets[ef] for ef in ef_labels]
