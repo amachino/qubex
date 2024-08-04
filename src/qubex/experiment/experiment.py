@@ -325,6 +325,24 @@ class Experiment:
             return {}
         return self._rabi_params
 
+    @property
+    def ge_rabi_params(self) -> dict[str, RabiParam]:
+        """Get the ge Rabi parameters."""
+        return {
+            target: param
+            for target, param in self.rabi_params.items()
+            if Target.is_ge_control(target)
+        }
+
+    @property
+    def ef_rabi_params(self) -> dict[str, RabiParam]:
+        """Get the ef Rabi parameters."""
+        return {
+            Target.get_ge_label(target): param
+            for target, param in self.rabi_params.items()
+            if Target.is_ef_control(target)
+        }
+
     def _validate_rabi_params(self):
         """Check if the Rabi parameters are stored."""
         if self._rabi_params is None:
@@ -348,46 +366,6 @@ class Experiment:
         else:
             self._rabi_params = rabi_params
         console.print("Rabi parameters are stored.")
-
-    def get_ge_rabi_param(self, target: str) -> RabiParam:
-        """
-        Get the ge Rabi parameters of the given target.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit.
-
-        Returns
-        -------
-        RabiParam
-            Rabi parameters.
-        """
-        if self._rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
-
-        ge_label = Target.get_ge_label(target)
-        return self._rabi_params[ge_label]
-
-    def get_ef_rabi_param(self, target: str) -> RabiParam:
-        """
-        Get the ef Rabi parameters of the given target.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit.
-
-        Returns
-        -------
-        RabiParam
-            Rabi parameters.
-        """
-        if self._rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
-
-        ef_label = Target.get_ef_label(target)
-        return self._rabi_params[ef_label]
 
     def get_pulse_for_state(
         self,
@@ -1225,14 +1203,12 @@ class Experiment:
         ...     plot=True,
         ... )
         """
-
-        def get_rabi_param(target: str) -> RabiParam:
-            if rabi_level == "ge":
-                return self.get_ge_rabi_param(target)
-            elif rabi_level == "ef":
-                return self.get_ef_rabi_param(target)
-            else:
-                raise ValueError("Invalid Rabi level.")
+        if rabi_level == "ge":
+            rabi_params = self.ge_rabi_params
+        elif rabi_level == "ef":
+            rabi_params = self.ef_rabi_params
+        else:
+            raise ValueError("Invalid Rabi level.")
 
         if isinstance(sequence, dict):
             # TODO: this parameter type (dict[str, Callable[..., Waveform]]) will be deprecated
@@ -1282,7 +1258,7 @@ class Experiment:
                 target=target,
                 data=np.array(values),
                 sweep_range=sweep_range,
-                rabi_param=get_rabi_param(target),
+                rabi_param=rabi_params.get(target),
                 title=title,
                 xaxis_title=xaxis_title,
                 yaxis_title=yaxis_title,
