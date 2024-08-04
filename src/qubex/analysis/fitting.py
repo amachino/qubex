@@ -329,7 +329,7 @@ def fit_rabi(
         )
         fig.update_layout(
             title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
-            xaxis_title="Drive time (ns)",
+            xaxis_title="Drive duration (ns)",
             yaxis_title="Amplitude (arb. units)",
         )
         fig.show(config=_plotly_config(f"rabi_{target}"))

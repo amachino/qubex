@@ -40,16 +40,14 @@ class ExperimentNote:
         """
         if not self._is_json_serializable(value):
             raise ValueError(f"Value for key '{key}' is not JSON serializable.")
+
         old_value = self._dict.get(key)
 
-        if (
-            key in self._dict
-            and isinstance(self._dict[key], dict)
-            and isinstance(value, dict)
-        ):
-            self._dict[key].update(value)
+        if isinstance(old_value, dict) and isinstance(value, dict):
+            self._update_dict_recursively(old_value, value)
         else:
             self._dict[key] = value
+
         if old_value is not None:
             print(
                 f"Key '{key}' updated: changed from '{old_value}' to '{self._dict[key]}'."
@@ -140,6 +138,24 @@ class ExperimentNote:
         except Exception as e:
             print(f"Failed to load ExperimentNote: {e}")
 
+    def delete(self, filename: str | None = None):
+        """
+        Deletes the JSON file containing the ExperimentNote.
+
+        Parameters
+        ----------
+        filename : str, optional
+            The name of the file to delete. Defaults to 'experiment_note.json'.
+        """
+        filename = filename or self._file_path
+        file_path = Path(filename)
+
+        if file_path.exists():
+            file_path.unlink()
+            print(f"ExperimentNote file '{filename}' deleted.")
+        else:
+            print(f"ExperimentNote file '{filename}' not found.")
+
     def __str__(self) -> str:
         """
         Returns the JSON representation of the ExperimentNote.
@@ -181,3 +197,24 @@ class ExperimentNote:
             return True
         except (TypeError, ValueError):
             return False
+
+    def _update_dict_recursively(self, old_dict: dict, new_dict: dict):
+        """
+        Recursively updates old_dict with new_dict.
+
+        Parameters
+        ----------
+        old_dict : dict
+            The dictionary to update.
+        new_dict : dict
+            The dictionary with updated values.
+        """
+        for key, value in new_dict.items():
+            if (
+                isinstance(value, dict)
+                and key in old_dict
+                and isinstance(old_dict[key], dict)
+            ):
+                self._update_dict_recursively(old_dict[key], value)
+            else:
+                old_dict[key] = value

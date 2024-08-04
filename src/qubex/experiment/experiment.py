@@ -75,12 +75,12 @@ MIN_DURATION = 128
 USER_NOTE_PATH = ".user_note.json"
 SYSTEM_NOTE_PATH = ".system_note.json"
 
-DEFAULT_HPI_AMPLITUDE = "default_hpi_amplitude"
-DEFAULT_HPI_DURATION = 30
-DEFAULT_HPI_RISETIME = 10
-DEFAULT_PI_AMPLITUDE = "default_pi_amplitude"
-DEFAULT_PI_DURATION = 30
-DEFAULT_PI_RISETIME = 10
+HPI_AMPLITUDE = "hpi_amplitude"
+HPI_DURATION = 30
+HPI_RISETIME = 10
+PI_AMPLITUDE = "pi_amplitude"
+PI_DURATION = 30
+PI_RISETIME = 10
 DRAG_HPI_AMPLITUDE = "drag_hpi_amplitude"
 DRAG_HPI_DURATION = 16
 DRAG_HPI_LAMBDA = 0.5
@@ -134,7 +134,6 @@ class Experiment:
         self._capture_window: Final = capture_window
         self._readout_duration: Final = readout_duration
         self._rabi_params: Optional[dict[str, RabiParam]] = None
-        self._ef_rabi_params: Optional[dict[str, RabiParam]] = None
         self._config: Final = Config(config_dir)
         self._measurement = Measurement(
             chip_id=chip_id,
@@ -229,16 +228,16 @@ class Experiment:
         # preset hpi amplitude
         amplitude = self.params.control_amplitude
         # calibrated hpi amplitude
-        calib_amplitude: dict[str, float] = self._system_note.get(DEFAULT_HPI_AMPLITUDE)
+        calib_amplitude: dict[str, float] = self._system_note.get(HPI_AMPLITUDE)
         if calib_amplitude is not None:
             for target in calib_amplitude:
                 # use the calibrated hpi amplitude if it is stored
                 amplitude[target] = calib_amplitude[target]
         return {
             target: FlatTop(
-                duration=DEFAULT_HPI_DURATION,
+                duration=HPI_DURATION,
                 amplitude=amplitude[target],
-                tau=DEFAULT_HPI_RISETIME,
+                tau=HPI_RISETIME,
             )
             for target in self._qubits
         }
@@ -258,14 +257,14 @@ class Experiment:
         # generate the pi pulse from the hpi pulse
         pi = {target: hpi[target].repeated(2) for target in self._qubits}
         # calibrated pi amplitude
-        calib_amplitude: dict[str, float] = self._system_note.get(DEFAULT_PI_AMPLITUDE)
+        calib_amplitude: dict[str, float] = self._system_note.get(PI_AMPLITUDE)
         if calib_amplitude is not None:
             for target in calib_amplitude:
                 # use the calibrated pi amplitude if it is stored
                 pi[target] = FlatTop(
-                    duration=DEFAULT_PI_DURATION,
+                    duration=PI_DURATION,
                     amplitude=calib_amplitude[target],
-                    tau=DEFAULT_PI_RISETIME,
+                    tau=PI_RISETIME,
                 )
         return {target: pi[target] for target in self._qubits}
 
@@ -335,27 +334,14 @@ class Experiment:
             Parameters of the Rabi oscillation.
         """
         if self._rabi_params is not None:
-            overwrite = Confirm.ask("Overwrite the existing Rabi parameters?")
-            if not overwrite:
-                return
-        self._rabi_params = rabi_params
+            if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
+                self._rabi_params.update(rabi_params)
+            else:
+                if Confirm.ask("Overwrite the existing Rabi parameters?"):
+                    self._rabi_params.update(rabi_params)
+        else:
+            self._rabi_params = rabi_params
         console.print("Rabi parameters are stored.")
-
-    def store_ef_rabi_params(self, rabi_params: dict[str, RabiParam]):
-        """
-        Stores the ef Rabi parameters.
-
-        Parameters
-        ----------
-        rabi_params : dict[str, RabiParam]
-            Parameters of the Rabi oscillation.
-        """
-        if self._ef_rabi_params is not None:
-            overwrite = Confirm.ask("Overwrite the existing ef Rabi parameters?")
-            if not overwrite:
-                return
-        self._ef_rabi_params = rabi_params
-        console.print("ef Rabi parameters are stored.")
 
     def get_pulse_for_state(
         self,
@@ -504,13 +490,23 @@ class Experiment:
             with self._measurement.modified_frequencies(frequencies):
                 yield
 
+    def print_defaults(self):
+        """Print the default params."""
+        display(self._system_note)
+
     def save_defaults(self):
-        """Save the default settings."""
+        """Save the default params."""
         self._system_note.save()
 
     def clear_defaults(self):
-        """Clear the default settings."""
+        """Clear the default params."""
         self._system_note.clear()
+
+    def delete_defaults(self):
+        """Delete the default params."""
+        if Confirm.ask("Delete the default params?"):
+            self._system_note.clear()
+            self._system_note.save()
 
     def load_record(
         self,
@@ -913,6 +909,9 @@ class Experiment:
             plot=plot,
         )
 
+        # sweep data with the target labels
+        sweep_data = sweep_result.data
+
         # fit the Rabi oscillation
         rabi_params = {
             target: fitting.fit_rabi(
@@ -921,7 +920,7 @@ class Experiment:
                 data=data.data,
                 plot=plot,
             )
-            for target, data in sweep_result.data.items()
+            for target, data in sweep_data.items()
         }
 
         # store the Rabi parameters if necessary
@@ -932,11 +931,11 @@ class Experiment:
         rabi_data = {
             target: RabiData(
                 target=target,
-                data=sweep_result.data[target].data,
+                data=data.data,
                 time_range=time_range,
                 rabi_param=rabi_params[target],
             )
-            for target in targets
+            for target, data in sweep_data.items()
         }
 
         # create the experiment result
@@ -1029,30 +1028,33 @@ class Experiment:
             plot=plot,
         )
 
+        # sweep data with the ef labels
+        sweep_data = {ef.label: sweep_result.data[ef.qubit] for ef in ef_targets}
+
         # fit the Rabi oscillation
         rabi_params = {
             target: fitting.fit_rabi(
-                target=data.target,
+                target=target,
                 times=data.sweep_range,
                 data=data.data,
                 plot=plot,
             )
-            for target, data in sweep_result.data.items()
+            for target, data in sweep_data.items()
         }
 
         # store the Rabi parameters if necessary
         if store_params:
-            self.store_ef_rabi_params(rabi_params)
+            self.store_rabi_params(rabi_params)
 
         # create the Rabi data for each target
         rabi_data = {
-            ef.label: RabiData(
-                target=ef.label,
-                data=sweep_result.data[ef.qubit].data,
+            target: RabiData(
+                target=target,
+                data=data.data,
                 time_range=time_range,
-                rabi_param=rabi_params[ef.qubit],
+                rabi_param=rabi_params[target],
             )
-            for ef in ef_targets
+            for target, data in sweep_data.items()
         }
 
         # create the experiment result
@@ -1626,17 +1628,17 @@ class Experiment:
         def calibrate(target: str) -> AmplCalibData:
             if pulse_type == "hpi":
                 pulse = FlatTop(
-                    duration=DEFAULT_HPI_DURATION,
+                    duration=HPI_DURATION,
                     amplitude=1,
-                    tau=DEFAULT_HPI_RISETIME,
+                    tau=HPI_RISETIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
             elif pulse_type == "pi":
                 pulse = FlatTop(
-                    duration=DEFAULT_PI_DURATION,
+                    duration=PI_DURATION,
                     amplitude=1,
-                    tau=DEFAULT_PI_RISETIME,
+                    tau=PI_RISETIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -1812,7 +1814,7 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self._system_note.put(DEFAULT_HPI_AMPLITUDE, ampl)
+        self._system_note.put(HPI_AMPLITUDE, ampl)
 
         return result
 
@@ -1851,7 +1853,7 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self._system_note.put(DEFAULT_PI_AMPLITUDE, ampl)
+        self._system_note.put(PI_AMPLITUDE, ampl)
 
         return result
 
