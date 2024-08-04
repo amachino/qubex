@@ -897,10 +897,14 @@ def fit_ampl_calib_data(
             (np.max(data) + np.min(data)) / 2,
         )
 
-    popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
-    print(
-        f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
-    )
+    try:
+        popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
+        print(
+            f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
+        )
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return 0.0
 
     result = minimize(
         cos_func,

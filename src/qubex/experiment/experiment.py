@@ -319,6 +319,46 @@ class Experiment:
         }
 
     @property
+    def ef_hpi_pulse(self) -> TargetMap[Waveform]:
+        """
+        Get the ef π/2 pulse.
+
+        Returns
+        -------
+        TargetMap[Waveform]
+            π/2 pulse.
+        """
+        amplitude = self._system_note.get(EF_HPI_AMPLITUDE)
+        return {
+            target: FlatTop(
+                duration=EF_HPI_DURATION,
+                amplitude=amplitude[target],
+                tau=EF_HPI_RISETIME,
+            )
+            for target in self._qubits
+        }
+
+    @property
+    def ef_pi_pulse(self) -> TargetMap[Waveform]:
+        """
+        Get the ef π pulse.
+
+        Returns
+        -------
+        TargetMap[Waveform]
+            π/2 pulse.
+        """
+        amplitude = self._system_note.get(EF_PI_AMPLITUDE)
+        return {
+            target: FlatTop(
+                duration=EF_PI_DURATION,
+                amplitude=amplitude[target],
+                tau=EF_PI_RISETIME,
+            )
+            for target in self._qubits
+        }
+
+    @property
     def rabi_params(self) -> dict[str, RabiParam]:
         """Get the Rabi parameters."""
         if self._rabi_params is None:
@@ -890,15 +930,29 @@ class Experiment:
         --------
         >>> result = ex.check_ef_rabi(["Q00", "Q01"])
         """
+        ef_labels = [Target.get_ef_label(target) for target in targets]
+        ef_targets = [self.targets[ef] for ef in ef_labels]
+
         ampl = self.params.control_amplitude
-        amplitudes = {target: ampl[target] / np.sqrt(2) for target in targets}
-        result = self.ef_rabi_experiment(
-            amplitudes=amplitudes,
-            time_range=time_range,
-            shots=shots,
-            interval=interval,
-            store_params=True,
-            plot=plot,
+        amplitudes = {ef.label: ampl[ef.qubit] / np.sqrt(2) for ef in ef_targets}
+
+        rabi_data = {}
+        rabi_params = {}
+        for label in ef_labels:
+            data = self.ef_rabi_experiment(
+                amplitudes={label: amplitudes[label]},
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=True,
+                plot=plot,
+            ).data[label]
+            rabi_data[label] = data
+            rabi_params[label] = data.rabi_param
+
+        result = ExperimentResult(
+            data=rabi_data,
+            rabi_params=rabi_params,
         )
         return result
 
