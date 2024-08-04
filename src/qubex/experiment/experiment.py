@@ -87,6 +87,12 @@ DRAG_HPI_LAMBDA = 0.5
 DRAG_PI_AMPLITUDE = "drag_pi_amplitude"
 DRAG_PI_DURATION = 16
 DRAG_PI_LAMBDA = 0.5
+EF_HPI_AMPLITUDE = "ef_hpi_amplitude"
+EF_HPI_DURATION = 30
+EF_HPI_RISETIME = 10
+EF_PI_AMPLITUDE = "ef_pi_amplitude"
+EF_PI_DURATION = 30
+EF_PI_RISETIME = 10
 
 
 class Experiment:
@@ -832,6 +838,52 @@ class Experiment:
         )
         return result
 
+    def check_ef_rabi(
+        self,
+        targets: list[str],
+        *,
+        time_range: NDArray = np.arange(0, 201, 8),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[RabiData]:
+        """
+        Conducts a Rabi experiment with the default amplitude.
+
+        Parameters
+        ----------
+        targets : list[str]
+            List of targets to check the Rabi oscillation.
+        time_range : NDArray, optional
+            Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[RabiData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.check_ef_rabi(["Q00", "Q01"])
+        """
+        ampl = self.params.control_amplitude
+        amplitudes = {target: ampl[target] / np.sqrt(2) for target in targets}
+        result = self.ef_rabi_experiment(
+            amplitudes=amplitudes,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            store_params=True,
+            plot=plot,
+        )
+        return result
+
     def rabi_experiment(
         self,
         *,
@@ -1493,8 +1545,10 @@ class Experiment:
 
     def calc_control_amplitudes(
         self,
+        *,
         rabi_rate: float = 12.5e-3,
-        rabi_params: dict[str, RabiParam] | None = None,
+        current_amplitudes: dict[str, float] | None = None,
+        current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
     ) -> dict[str, float]:
         """
@@ -1502,10 +1556,12 @@ class Experiment:
 
         Parameters
         ----------
-        rabi_params : dict[str, RabiParam], optional
-            Parameters of the Rabi oscillation. Defaults to None.
         rabi_rate : float, optional
-            Rabi rate of the experiment. Defaults to 12.5 MHz.
+            Target Rabi rate in GHz. Defaults to 12.5e-3.
+        current_amplitudes : dict[str, float], optional
+            Current control amplitudes. Defaults to None.
+        current_rabi_params : dict[str, RabiParam], optional
+            Current Rabi parameters. Defaults to None.
         print_result : bool, optional
             Whether to print the result. Defaults to True.
 
@@ -1514,16 +1570,28 @@ class Experiment:
         dict[str, float]
             Control amplitudes for the Rabi rate.
         """
-        current_amplitudes = self.params.control_amplitude
-        rabi_params = rabi_params or self.rabi_params
+        current_rabi_params = current_rabi_params or self.rabi_params
 
-        self._validate_rabi_params()
+        if current_rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        if current_amplitudes is None:
+            current_amplitudes = {}
+            default_ampl = self.params.control_amplitude
+            for target in current_rabi_params:
+                if Target.is_ge_control(target):
+                    current_amplitudes[target] = default_ampl[target]
+                elif Target.is_ef_control(target):
+                    qubit = Target.get_qubit_label(target)
+                    current_amplitudes[target] = default_ampl[qubit] / np.sqrt(2)
+                else:
+                    raise ValueError("Invalid target.")
 
         amplitudes = {
             target: current_amplitudes[target]
             * rabi_rate
-            / rabi_params[target].frequency
-            for target in rabi_params
+            / current_rabi_params[target].frequency
+            for target in current_rabi_params
         }
 
         if print_result:

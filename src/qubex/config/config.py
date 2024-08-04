@@ -110,6 +110,16 @@ class Target:
         return f"R{target.qubit}"
 
     @classmethod
+    def is_ge_control(cls, label: str) -> bool:
+        target = cls.from_label(label)
+        return target.type == TargetType.CTRL_GE
+
+    @classmethod
+    def is_ef_control(cls, label: str) -> bool:
+        target = cls.from_label(label)
+        return target.type == TargetType.CTRL_EF
+
+    @classmethod
     def is_readout(cls, label: str) -> bool:
         target = cls.from_label(label)
         return target.type == TargetType.READ
