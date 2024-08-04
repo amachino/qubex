@@ -87,12 +87,6 @@ DRAG_HPI_LAMBDA = 0.5
 DRAG_PI_AMPLITUDE = "drag_pi_amplitude"
 DRAG_PI_DURATION = 16
 DRAG_PI_LAMBDA = 0.5
-EF_HPI_AMPLITUDE = "ef_hpi_amplitude"
-EF_HPI_DURATION = 30
-EF_HPI_RISETIME = 10
-EF_PI_AMPLITUDE = "ef_pi_amplitude"
-EF_PI_DURATION = 30
-EF_PI_RISETIME = 10
 
 
 class Experiment:
@@ -328,14 +322,15 @@ class Experiment:
         TargetMap[Waveform]
             π/2 pulse.
         """
-        amplitude = self._system_note.get(EF_HPI_AMPLITUDE)
+        amplitude = self._system_note.get(HPI_AMPLITUDE)
+        ef_labels = [Target.get_ef_label(target) for target in self._qubits]
         return {
             target: FlatTop(
-                duration=EF_HPI_DURATION,
+                duration=HPI_DURATION,
                 amplitude=amplitude[target],
-                tau=EF_HPI_RISETIME,
+                tau=HPI_RISETIME,
             )
-            for target in self._qubits
+            for target in ef_labels
         }
 
     @property
@@ -348,14 +343,15 @@ class Experiment:
         TargetMap[Waveform]
             π/2 pulse.
         """
-        amplitude = self._system_note.get(EF_PI_AMPLITUDE)
+        amplitude = self._system_note.get(PI_AMPLITUDE)
+        ef_labels = [Target.get_ef_label(target) for target in self._qubits]
         return {
             target: FlatTop(
-                duration=EF_PI_DURATION,
+                duration=PI_DURATION,
                 amplitude=amplitude[target],
-                tau=EF_PI_RISETIME,
+                tau=PI_RISETIME,
             )
-            for target in self._qubits
+            for target in ef_labels
         }
 
     @property
@@ -775,6 +771,89 @@ class Experiment:
             readout_duration=readout_duration or self._readout_duration,
             time_offset=time_offset,
             time_to_start=time_to_start,
+        )
+
+    def measure_state(
+        self,
+        states: dict[
+            str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]
+        ],
+        *,
+        mode: Literal["single", "avg"] = "single",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        control_window: int | None = None,
+        capture_window: int | None = None,
+        readout_duration: int | None = None,
+        plot: bool = False,
+    ) -> MeasureResult:
+        """
+        Measures the signals using the given states.
+
+        Parameters
+        ----------
+        states : dict[str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]]
+            States to prepare.
+        mode : Literal["single", "avg"], optional
+            Measurement mode. Defaults to "single".
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        control_window : int, optional
+            Control window. Defaults to None.
+        capture_window : int, optional
+            Capture window. Defaults to None.
+        readout_duration : int, optional
+            Readout duration. Defaults to None.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.measure_state(
+        ...     states={"Q00": "0", "Q01": "1"},
+        ...     mode="single",
+        ...     shots=3000,
+        ...     interval=100 * 1024,
+        ...     control_window=1024,
+        ...     plot=True,
+        ... )
+        """
+        targets = []
+
+        for target, state in states.items():
+            targets.append(target)
+            if state == "f":
+                targets.append(Target.get_ef_label(target))
+
+        with PulseSchedule(targets) as ps:
+            for target, state in states.items():
+                if state in ["0", "1", "+", "-", "+i", "-i"]:
+                    ps.add(target, self.get_pulse_for_state(target, state))  # type: ignore
+                elif state == "g":
+                    ps.add(target, Blank(0))
+                elif state == "e":
+                    ps.add(target, self.pi_pulse[target])
+                elif state == "f":
+                    ps.add(target, self.pi_pulse[target])
+                    ef_label = Target.get_ef_label(target)
+                    ps.add(ef_label, self.ef_pi_pulse[ef_label])
+
+        return self.measure(
+            sequence=ps,
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            control_window=control_window,
+            capture_window=capture_window,
+            readout_duration=readout_duration,
+            plot=plot,
         )
 
     def check_noise(
@@ -1954,17 +2033,17 @@ class Experiment:
 
             if pulse_type == "hpi":
                 pulse = FlatTop(
-                    duration=EF_HPI_DURATION,
+                    duration=HPI_DURATION,
                     amplitude=1,
-                    tau=EF_HPI_RISETIME,
+                    tau=HPI_RISETIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
             elif pulse_type == "pi":
                 pulse = FlatTop(
-                    duration=EF_PI_DURATION,
+                    duration=PI_DURATION,
                     amplitude=1,
-                    tau=EF_PI_RISETIME,
+                    tau=PI_RISETIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -2230,7 +2309,7 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self._system_note.put(EF_HPI_AMPLITUDE, ampl)
+        self._system_note.put(HPI_AMPLITUDE, ampl)
 
         return result
 
@@ -2269,7 +2348,7 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self._system_note.put(EF_PI_AMPLITUDE, ampl)
+        self._system_note.put(PI_AMPLITUDE, ampl)
 
         return result
 
