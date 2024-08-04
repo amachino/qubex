@@ -842,6 +842,7 @@ class Experiment:
                     ps.add(target, self.pi_pulse[target])
                 elif state == "f":
                     ps.add(target, self.pi_pulse[target])
+                    ps.barrier()
                     ef_label = Target.get_ef_label(target)
                     ps.add(ef_label, self.ef_pi_pulse[ef_label])
 
@@ -2761,44 +2762,62 @@ class Experiment:
     def build_classifier(
         self,
         targets: list[str],
+        n_clusters: Literal[2, 3] = 2,
     ):
-        result_g = self.measure(
-            {target: np.zeros(0) for target in targets},
-            mode="single",
-        )
-        result_e = self.measure(
-            {target: self.pi_pulse[target].values for target in targets},
-            mode="single",
-        )
+        result_g = self.measure_state({target: "g" for target in targets})
+        result_e = self.measure_state({target: "e" for target in targets})
+        if n_clusters == 3:
+            result_f = self.measure_state({target: "f" for target in targets})
         for target in targets:
-            data = {
-                "|0⟩": result_g.data[target].kerneled,
-                "|1⟩": result_e.data[target].kerneled,
+            data_to_plot = {
+                "|g⟩": result_g.data[target].kerneled,
+                "|e⟩": result_e.data[target].kerneled,
             }
+            if n_clusters == 3:
+                data_to_plot["|f⟩"] = result_f.data[target].kerneled
             plot_state_distribution(
-                data=data,
+                data=data_to_plot,
                 title=f"State distribution of {target}",
             )
 
-        self._measurement.classifiers = {
-            target: StateClassifier.fit(
-                {
-                    0: result_g.data[target].kerneled,
-                    1: result_e.data[target].kerneled,
-                }
-            )
-            for target in targets
-        }
+        classifiers = {}
+        for target in targets:
+            data_to_fit = {
+                0: result_g.data[target].kerneled,
+                1: result_e.data[target].kerneled,
+            }
+            if n_clusters == 3:
+                data_to_fit[2] = result_f.data[target].kerneled
+            classifiers[target] = StateClassifier.fit(data_to_fit)
+        self._measurement.classifiers = classifiers
+
         for target in targets:
             clf = self._measurement.classifiers[target]
             classified_g = clf.classify(target, result_g.data[target].kerneled)
-            fidelity_g = classified_g[0] / (classified_g[0] + classified_g[1])
             classified_e = clf.classify(target, result_e.data[target].kerneled)
-            fidelity_e = classified_e[1] / (classified_e[0] + classified_e[1])
-            fidelity = (fidelity_g + fidelity_e) / 2
-            print(f"|0⟩ → {classified_g}, fidelity: {fidelity_g * 100:.2f}%")
-            print(f"|1⟩ → {classified_e}, fidelity: {fidelity_e * 100:.2f}%")
-            print(f"Average readout fidelity of {target}: {fidelity * 100:.2f}%")
+            if n_clusters == 2:
+                fidelity_g = classified_g[0] / (classified_g[0] + classified_g[1])
+                fidelity_e = classified_e[1] / (classified_e[0] + classified_e[1])
+                fidelity = (fidelity_g + fidelity_e) / 2
+                print(f"|0⟩ → {classified_g}, fidelity: {fidelity_g * 100:.2f}%")
+                print(f"|1⟩ → {classified_e}, fidelity: {fidelity_e * 100:.2f}%")
+                print(f"Average readout fidelity of {target}: {fidelity * 100:.2f}%")
+            elif n_clusters == 3:
+                classified_f = clf.classify(target, result_f.data[target].kerneled)
+                fidelity_g = classified_g[0] / (
+                    classified_g[0] + classified_g[1] + classified_g[2]
+                )
+                fidelity_e = classified_e[1] / (
+                    classified_e[0] + classified_e[1] + classified_e[2]
+                )
+                fidelity_f = classified_f[2] / (
+                    classified_f[0] + classified_f[1] + classified_f[2]
+                )
+                fidelity = (fidelity_g + fidelity_e + fidelity_f) / 3
+                print(f"|0⟩ → {classified_g}, fidelity: {fidelity_g * 100:.2f}%")
+                print(f"|1⟩ → {classified_e}, fidelity: {fidelity_e * 100:.2f}%")
+                print(f"|2⟩ → {classified_f}, fidelity: {fidelity_f * 100:.2f}%")
+                print(f"Average readout fidelity of {target}: {fidelity * 100:.2f}%")
 
     def rb_sequence(
         self,
