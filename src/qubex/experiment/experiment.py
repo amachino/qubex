@@ -349,6 +349,46 @@ class Experiment:
             self._rabi_params = rabi_params
         console.print("Rabi parameters are stored.")
 
+    def get_ge_rabi_param(self, target: str) -> RabiParam:
+        """
+        Get the ge Rabi parameters of the given target.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+
+        Returns
+        -------
+        RabiParam
+            Rabi parameters.
+        """
+        if self._rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        ge_label = Target.get_ge_label(target)
+        return self._rabi_params[ge_label]
+
+    def get_ef_rabi_param(self, target: str) -> RabiParam:
+        """
+        Get the ef Rabi parameters of the given target.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+
+        Returns
+        -------
+        RabiParam
+            Rabi parameters.
+        """
+        if self._rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        ef_label = Target.get_ef_label(target)
+        return self._rabi_params[ef_label]
+
     def get_pulse_for_state(
         self,
         target: str,
@@ -1125,6 +1165,7 @@ class Experiment:
         sweep_range: NDArray,
         repetitions: int = 1,
         frequencies: Optional[dict[str, float]] = None,
+        rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
@@ -1184,6 +1225,15 @@ class Experiment:
         ...     plot=True,
         ... )
         """
+
+        def get_rabi_param(target: str) -> RabiParam:
+            if rabi_level == "ge":
+                return self.get_ge_rabi_param(target)
+            elif rabi_level == "ef":
+                return self.get_ef_rabi_param(target)
+            else:
+                raise ValueError("Invalid Rabi level.")
+
         if isinstance(sequence, dict):
             # TODO: this parameter type (dict[str, Callable[..., Waveform]]) will be deprecated
             targets = list(sequence.keys())
@@ -1232,7 +1282,7 @@ class Experiment:
                 target=target,
                 data=np.array(values),
                 sweep_range=sweep_range,
-                rabi_param=self.rabi_params.get(target),
+                rabi_param=get_rabi_param(target),
                 title=title,
                 xaxis_title=xaxis_title,
                 yaxis_title=yaxis_title,
@@ -1806,6 +1856,116 @@ class Experiment:
 
         return ExperimentResult(data=data)
 
+    def calibrate_ef_pulse(
+        self,
+        targets: list[str],
+        pulse_type: Literal["pi", "hpi"],
+        n_rotations: int = 2,
+        shots: int = 3000,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the default pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+        pulse_type : Literal["pi", "hpi"]
+            Type of the pulse to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 2.
+        shots : int, optional
+            Number of shots. Defaults to 3000.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        rabi_params = self.rabi_params
+        if rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        ef_labels = [Target.get_ef_label(label) for label in targets]
+
+        def calibrate(target: str) -> AmplCalibData:
+            ge_label = Target.get_ge_label(target)
+            ef_label = Target.get_ef_label(target)
+
+            if pulse_type == "hpi":
+                pulse = FlatTop(
+                    duration=EF_HPI_DURATION,
+                    amplitude=1,
+                    tau=EF_HPI_RISETIME,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.25 / area
+            elif pulse_type == "pi":
+                pulse = FlatTop(
+                    duration=EF_PI_DURATION,
+                    amplitude=1,
+                    tau=EF_PI_RISETIME,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.5 / area
+            else:
+                raise ValueError("Invalid pulse type.")
+            ampl = self.calc_control_amplitudes(
+                rabi_rate=rabi_rate,
+                print_result=False,
+            )[ef_label]
+            ampl_min = ampl * (1 - 0.5 / n_rotations)
+            ampl_max = ampl * (1 + 0.5 / n_rotations)
+            ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            n_per_rotation = 2 if pulse_type == "pi" else 4
+            repetitions = n_per_rotation * n_rotations
+
+            def sequence(x: float) -> PulseSchedule:
+                with PulseSchedule([ge_label, ef_label]) as ps:
+                    ps.add(ge_label, self.pi_pulse[ge_label])
+                    ps.barrier()
+                    ps.add(ef_label, pulse.scaled(x).repeated(repetitions))
+                return ps
+
+            sweep_data = self.sweep_parameter(
+                sequence=sequence,
+                sweep_range=ampl_range,
+                repetitions=1,
+                rabi_level="ef",
+                shots=shots,
+                interval=interval,
+                plot=True,
+            ).data[ge_label]
+
+            calib_value = fitting.fit_ampl_calib_data(
+                target=ef_label,
+                amplitude_range=ampl_range,
+                data=-sweep_data.normalized,
+                title=f"ef {pulse_type} pulse calibration",
+            )
+
+            return AmplCalibData.new(
+                sweep_data=sweep_data,
+                calib_value=calib_value,
+            )
+
+        data: dict[str, AmplCalibData] = {}
+        for idx, target in enumerate(ef_labels):
+            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
+            data[target] = calibrate(target)
+            print("")
+
+        return ExperimentResult(data=data)
+
+        print(f"Calibration results for {pulse_type} pulse:")
+        for target, calib_data in data.items():
+            print(f"{target}: {calib_data.calib_value:.6f}")
+
+        return ExperimentResult(data=data)
+
     def calibrate_drag_pulse(
         self,
         targets: list[str],
@@ -1975,6 +2135,84 @@ class Experiment:
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
         self._system_note.put(PI_AMPLITUDE, ampl)
+
+        return result
+
+    def calibrate_ef_hpi_pulse(
+        self,
+        targets: list[str],
+        n_rotations: int = 2,
+        shots: int = 3000,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the ef π/2 pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 2.
+        shots : int, optional
+            Number of shots. Defaults to 3000.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        result = self.calibrate_ef_pulse(
+            targets=targets,
+            pulse_type="hpi",
+            n_rotations=n_rotations,
+            shots=shots,
+            interval=interval,
+        )
+
+        ampl = {target: data.calib_value for target, data in result.data.items()}
+        self._system_note.put(EF_HPI_AMPLITUDE, ampl)
+
+        return result
+
+    def calibrate_ef_pi_pulse(
+        self,
+        targets: list[str],
+        n_rotations: int = 2,
+        shots: int = 3000,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the ef π pulse.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit to calibrate.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 2.
+        shots : int, optional
+            Number of shots. Defaults to 3000.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        result = self.calibrate_ef_pulse(
+            targets=targets,
+            pulse_type="pi",
+            n_rotations=n_rotations,
+            shots=shots,
+            interval=interval,
+        )
+
+        ampl = {target: data.calib_value for target, data in result.data.items()}
+        self._system_note.put(EF_PI_AMPLITUDE, ampl)
 
         return result
 
