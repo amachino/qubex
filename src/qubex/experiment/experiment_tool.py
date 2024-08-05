@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from ..config import Config, Port
+from ..config import Config
 from ..measurement.measurement import Measurement
 
 console = Console()
@@ -256,6 +256,22 @@ You are going to relinkup the following boxes:
         console.print(table1)
         console.print(table2)
 
+    def get_base_frequencies(self, box_id: str, port_number: int) -> list[float]:
+        settings = self.dump_box(box_id)["ports"][port_number]
+        ssb = settings["sideband"]
+        lo = int(settings["lo_freq"])
+        cnco = int(settings["cnco_freq"])
+        channels = settings["channels"]
+        fnco_list = [int(ch["fnco_freq"]) for ch in channels.values()]
+        base_frequencies = []
+        for fnco in fnco_list:
+            if ssb == "U":
+                f = lo + cnco + fnco
+            else:
+                f = lo - cnco - fnco
+            base_frequencies.append(f * 1e-9)
+        return base_frequencies
+
     def print_base_frequencies(self, target: str) -> None:
         """ """
         control, readout, _ = self._config.get_ports_by_qubit(
@@ -267,24 +283,14 @@ You are going to relinkup the following boxes:
             print(f"Ports for qubit {target} are not found.")
             return
 
-        def get_base_frequencies(port: Port) -> list[float]:
-            settings = self.dump_box(port.box.id)["ports"][port.number]
-            ssb = settings["sideband"]
-            lo = int(settings["lo_freq"])
-            cnco = int(settings["cnco_freq"])
-            channels = settings["channels"]
-            fnco_list = [int(ch["fnco_freq"]) for ch in channels.values()]
-            base_frequencies = []
-            for fnco in fnco_list:
-                if ssb == "U":
-                    f = lo + cnco + fnco
-                else:
-                    f = lo - cnco - fnco
-                base_frequencies.append(f * 1e-9)
-            return base_frequencies
-
-        control_base_frequencies = get_base_frequencies(control)
-        readout_base_frequencies = get_base_frequencies(readout)
+        control_base_frequencies = self.get_base_frequencies(
+            box_id=control.box.id,
+            port_number=control.number,
+        )
+        readout_base_frequency = self.get_base_frequencies(
+            box_id=readout.box.id,
+            port_number=readout.number,
+        )[0]
 
         table = Table(
             show_header=True,
@@ -296,6 +302,6 @@ You are going to relinkup the following boxes:
         table.add_column("READ", justify="center")
         table.add_row(
             *[f"{f:.3f} GHz" for f in control_base_frequencies],
-            f"{readout_base_frequencies[0]:.3f} GHz",
+            f"{readout_base_frequency:.3f} GHz",
         )
         console.print(table)
