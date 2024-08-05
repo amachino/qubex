@@ -381,11 +381,16 @@ class Experiment:
         }
 
     @property
+    def classifiers(self) -> dict[str, StateClassifier]:
+        """Get the classifiers."""
+        return self._measurement.classifiers
+
+    @property
     def state_centroids(self) -> dict[str, dict[int, complex]]:
         """Get the state centroids."""
         return {
             target: classifier.centroids
-            for target, classifier in self._measurement.classifiers.items()
+            for target, classifier in self.classifiers.items()
         }
 
     def _validate_rabi_params(self):
@@ -2868,7 +2873,7 @@ class Experiment:
         self._measurement.classifiers = classifiers
 
         for target in targets:
-            clf = self._measurement.classifiers[target]
+            clf = classifiers[target]
             classified = [
                 clf.classify(target, data[target][state]) for state in range(n_states)
             ]
@@ -3765,15 +3770,40 @@ class Experiment:
 
         return freq_range, np.unwrap(phases)
 
-    def measure_probabilities(
+    def measure_state_probabilities(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, NDArray[np.float64]]:
-        if self._measurement.classifiers is None:
-            raise ValueError("Classifiers are not built.")
+        """
+        Measures the state probabilities of the target qubits.
+
+        Parameters
+        ----------
+        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
+            Sequence to measure for each target.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        dict[str, NDArray[np.float64]]
+            State probabilities of the target qubits.
+
+        Examples
+        --------
+        >>> sequence = {
+        ...     "Q00": ex.hpi_pulse["Q00"],
+        ...     "Q01": ex.hpi_pulse["Q01"],
+        ... }
+        >>> probs = ex.measure_state_probabilities(sequence)
+        """
+        if self.classifiers is None:
+            raise ValueError("Classifiers are not built. Run `build_classifier` first.")
 
         result = self.measure(
             sequence,
@@ -3791,12 +3821,42 @@ class Experiment:
         *,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
         params_list: Sequence | NDArray,
+        xlabel: str = "Index",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, NDArray[np.float64]]:
+        """
+        Measures the probability dynamics of the target qubits.
+
+        Parameters
+        ----------
+        sequence : ParametricPulseSchedule | ParametricWaveformDict
+            Parametric sequence to measure.
+        params_list : Sequence | NDArray
+            List of parameters.
+        xlabel : str, optional
+            Label of the x-axis. Defaults to "Index".
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        dict[str, NDArray[np.float64]]
+            Probability dynamics of the target qubits.
+
+        Examples
+        --------
+        >>> sequence = lambda x: {
+        ...     "Q00": ex.hpi_pulse["Q00"].scaled(x),
+        ...     "Q01": ex.hpi_pulse["Q01"].scaled(x),
+        >>> params_list = np.linspace(0.5, 1.5, 100)
+        >>> probs = ex.measure_probability_dynamics(sequence, params_list)
+        """
         buffer = defaultdict(list)
         for params in tqdm(params_list):
-            probs_dict = self.measure_probabilities(
+            probs_dict = self.measure_state_probabilities(
                 sequence=sequence(params),
                 shots=shots,
                 interval=interval,
@@ -3806,19 +3866,29 @@ class Experiment:
 
         result = {target: np.array(probs) for target, probs in buffer.items()}
 
+        print(type(params_list[0]))
+        if isinstance(params_list[0], int):
+            x = params_list
+        else:
+            try:
+                float(params_list[0])
+                x = params_list
+            except ValueError:
+                x = np.arange(len(params_list))
+
         fig = go.Figure()
         for target, probs_array in result.items():
             for state, probs in enumerate(probs_array.T):
                 fig.add_scatter(
                     name=f"|{state}⟩",
                     mode="lines+markers",
-                    x=params_list,
+                    x=x,
                     y=probs,
                 )
         fig.update_layout(
-            title=f"Probabilities dynamics of {target}",
-            xaxis_title="Parameter",
-            yaxis_title="Probability",
+            title=f"Probabilities dynamics : {target}",
+            xaxis_title=xlabel,
+            yaxis_title="State probability",
         )
         fig.show()
         return result
