@@ -3764,3 +3764,61 @@ class Experiment:
                 scatter.y = np.unwrap(phases)
 
         return freq_range, np.unwrap(phases)
+
+    def measure_probabilities(
+        self,
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
+        *,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> dict[str, NDArray[np.float64]]:
+        if self._measurement.classifiers is None:
+            raise ValueError("Classifiers are not built.")
+
+        result = self.measure(
+            sequence,
+            mode="single",
+            shots=shots,
+            interval=interval,
+        )
+
+        probs = {target: data.probabilities for target, data in result.data.items()}
+
+        return probs
+
+    def measure_probability_dynamics(
+        self,
+        *,
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
+        params_list: Sequence | NDArray,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> dict[str, NDArray[np.float64]]:
+        buffer = defaultdict(list)
+        for params in tqdm(params_list):
+            probs_dict = self.measure_probabilities(
+                sequence=sequence(params),
+                shots=shots,
+                interval=interval,
+            )
+            for target, probs in probs_dict.items():
+                buffer[target].append(probs)
+
+        result = {target: np.array(probs) for target, probs in buffer.items()}
+
+        fig = go.Figure()
+        for target, probs_array in result.items():
+            for state, probs in enumerate(probs_array.T):
+                fig.add_scatter(
+                    name=f"|{state}⟩",
+                    mode="lines+markers",
+                    x=params_list,
+                    y=probs,
+                )
+        fig.update_layout(
+            title=f"Probabilities dynamics of {target}",
+            xaxis_title="Parameter",
+            yaxis_title="Probability",
+        )
+        fig.show()
+        return result

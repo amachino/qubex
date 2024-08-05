@@ -45,6 +45,13 @@ class MeasureData:
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
+    @property
+    def probabilities(self) -> NDArray[np.float64]:
+        if self.classified is None:
+            raise ValueError("No classification data available")
+        total = sum(self.classified.values())
+        return np.array([count / total for count in self.classified.values()])
+
     def plot(self):
         if self.mode == MeasureMode.SINGLE:
             scatter_iq_data(
