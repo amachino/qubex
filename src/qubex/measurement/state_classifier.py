@@ -36,6 +36,11 @@ class StateClassifier:
     confusion_matrix: NDArray
     centroids: dict[int, complex]
 
+    @property
+    def n_clusters(self) -> int:
+        """The number of clusters in the model."""
+        return len(self.dataset)
+
     @classmethod
     def fit(
         cls,
@@ -234,7 +239,7 @@ class StateClassifier:
         predicted_labels = self.predict(data)
         if plot:
             self.plot(target, data, predicted_labels)
-        count = np.bincount(predicted_labels)
+        count = np.bincount(predicted_labels, minlength=self.n_clusters)
         state = {label: count[label] for label in range(len(count))}
         return state
 

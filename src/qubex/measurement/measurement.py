@@ -76,7 +76,7 @@ class Measurement:
         config_path = config.get_system_settings_path(chip_id)
         self._backend = QubeBackend(config_path)
         self._params = config.get_params(chip_id)
-        self.classifiers: TargetMap[StateClassifier] = {}
+        self.classifiers: dict[str, StateClassifier] = {}
 
     @property
     def chip_id(self) -> str:
