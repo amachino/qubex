@@ -399,6 +399,56 @@ class Measurement:
         for backend_result in backend_results:
             yield self._create_measure_result(backend_result, measure_mode)
 
+    def execute(
+        self,
+        schedule: PulseSchedule,
+        *,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        time_offset: dict[str, int] = {},
+        time_to_start: dict[str, int] = {},
+    ) -> MeasureResult:
+        """
+        Measure with the given control waveforms.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule
+            The pulse schedule.
+        mode : Literal["single", "avg"], optional
+            The measurement mode, by default "single".
+            - "single": Measure once.
+            - "avg": Measure multiple times and average the results.
+        shots : int, optional
+            The number of shots, by default DEFAULT_SHOTS.
+        interval : int, optional
+            The interval in ns, by default DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        MeasureResult
+            The measurement results.
+        """
+        backend_interval = (
+            (int(schedule.duration) + interval) // INTERVAL_STEP + 1
+        ) * INTERVAL_STEP
+
+        measure_mode = MeasureMode(mode)
+        sequencer = self._create_sequencer_from_schedule(
+            schedule=schedule,
+            add_last_measurement=False,
+            time_offset=time_offset,
+            time_to_start=time_to_start,
+        )
+        backend_result = self._backend.execute_sequencer(
+            sequencer=sequencer,
+            repeats=shots,
+            interval=backend_interval,
+            integral_mode=measure_mode.integral_mode,
+        )
+        return self._create_measure_result(backend_result, measure_mode)
+
     def _create_sequence(
         self,
         *,
@@ -607,6 +657,8 @@ class Measurement:
         cap_sequences: dict[str, CapSampledSequence] = {}
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
         for target, ranges in readout_ranges.items():
+            if not ranges:
+                continue
             cap_sub_sequence = CapSampledSubSequence(
                 capture_slots=[],
                 # prev_blank is the time to the first readout pulse

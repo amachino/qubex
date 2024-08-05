@@ -41,6 +41,7 @@ from ..pulse import (
     Blank,
     Drag,
     FlatTop,
+    Gaussian,
     PhaseShift,
     Pulse,
     PulseSchedule,
@@ -617,6 +618,56 @@ class Experiment:
         values = data * np.exp(-1j * rabi_param.angle)
         values_normalized = (np.imag(values) - rabi_param.offset) / rabi_param.amplitude
         return values_normalized
+
+    def execute(
+        self,
+        schedule: PulseSchedule,
+        *,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        time_offset: dict[str, int] = {},
+        time_to_start: dict[str, int] = {},
+    ) -> MeasureResult:
+        """
+        Execute the given schedule.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule
+            Schedule to execute.
+        mode : Literal["single", "avg"], optional
+            Measurement mode. Defaults to "avg".
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> with pulse.PulseSchedule(["Q00", "Q01"]) as ps:
+        ...     ps.add("Q00", pulse.Rect(...))
+        ...     ps.add("Q01", pulse.Gaussian(...))
+        >>> result = ex.execute(
+        ...     schedule=ps,
+        ...     mode="avg",
+        ...     shots=3000,
+        ...     interval=100 * 1024,
+        ... )
+        """
+        return self._measurement.execute(
+            schedule=schedule,
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            time_offset=time_offset,
+            time_to_start=time_to_start,
+        )
 
     def measure(
         self,
@@ -3526,8 +3577,8 @@ class Experiment:
 
     def scan_resonator_frequencies(
         self,
-        *,
         target: str,
+        *,
         freq_range: NDArray[np.float64] = np.arange(9.8, 10.3, 0.002),
         shots: int = 100,
         interval: int = 0,
@@ -3620,13 +3671,14 @@ class Experiment:
 
     def scan_qubit_frequencies(
         self,
-        *,
         target: str,
+        *,
         center_frequency: float,
         frequency_step: float = 0.005,
-        control_pulse: Waveform | None = None,
+        control_amplitude: float = 0.01,
+        readout_amplitude: float = 0.01,
         shots: int = 1000,
-        interval: int = DEFAULT_INTERVAL,
+        interval: int = 0,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """
         Scans the control frequencies to find the qubit frequencies.
@@ -3639,8 +3691,10 @@ class Experiment:
             Center frequency of the control pulse in GHz.
         frequency_step : float, optional
             Frequency step of the scan in GHz.
-        control_pulse : Waveform | None, optional
-            Control pulse to excite the qubit.
+        control_amplitude : float, optional
+            Amplitude of the control pulse. Defaults to 0.01.
+        readout_amplitude : float, optional
+            Amplitude of the readout pulse. Defaults to 0.01.
         shots : int, optional
             Number of shots.
         interval : int, optional
@@ -3651,8 +3705,6 @@ class Experiment:
         tuple[NDArray[np.float64], NDArray[np.float64]]
             Frequency range and phases.
         """
-        control_pulse = control_pulse or FlatTop(duration=30, amplitude=0.2, tau=10)
-
         widget = go.FigureWidget()
         widget.add_scatter(name=target, mode="markers+lines")
         widget.update_layout(
@@ -3668,15 +3720,31 @@ class Experiment:
             center_frequency + 0.25,
             frequency_step,
         )
+
+        qubit = target
+        resonator = Target.get_readout_label(target)
+        control_pulse = Gaussian(
+            duration=1024,
+            amplitude=control_amplitude,
+            sigma=128,
+        )
+        readout_pulse = FlatTop(
+            duration=1024,
+            amplitude=readout_amplitude,
+            tau=128,
+        )
         for idx, freq in enumerate(tqdm(freq_range)):
-            with self.modified_frequencies({target: freq}):
-                result = self.measure(
-                    {target: control_pulse},
+            with self.modified_frequencies({qubit: freq}):
+                with PulseSchedule([qubit, resonator]) as ps:
+                    ps.add(qubit, control_pulse)
+                    ps.add(resonator, readout_pulse)
+                result = self.execute(
+                    schedule=ps,
                     mode="avg",
                     shots=shots,
                     interval=interval,
                 )
-                iq = result.data[target].kerneled
+                iq = result.data[qubit].kerneled
                 angle = np.angle(iq)
                 phases.append(angle)
                 scatter.x = freq_range[: idx + 1]
