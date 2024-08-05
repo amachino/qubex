@@ -127,12 +127,15 @@ class StateClassifier:
         dict[int, int]
             A mapping from k-means cluster labels to state labels.
         """
-        label_map = {label: 0 for label in range(len(dataset))}
+        n_clusters = len(dataset)
+        label_map = {label: -1 for label in range(n_clusters)}
         for state, data in dataset.items():
             result = model.predict(data)
-            count = np.bincount(result)
-            label = np.argmax(count).astype(int)
-            label_map[label] = state
+            count = np.bincount(result, minlength=n_clusters)
+            for label in np.argsort(count)[::-1]:
+                if label_map[label] == -1:
+                    label_map[label] = state
+                    break
         return label_map
 
     @staticmethod

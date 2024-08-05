@@ -3770,7 +3770,7 @@ class Experiment:
 
         return freq_range, np.unwrap(phases)
 
-    def measure_state_probabilities(
+    def measure_population(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
@@ -3778,7 +3778,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
-        Measures the state probabilities of the target qubits.
+        Measures the state populations of the target qubits.
 
         Parameters
         ----------
@@ -3800,7 +3800,7 @@ class Experiment:
         ...     "Q00": ex.hpi_pulse["Q00"],
         ...     "Q01": ex.hpi_pulse["Q01"],
         ... }
-        >>> probs = ex.measure_state_probabilities(sequence)
+        >>> probs = ex.measure_population(sequence)
         """
         if self.classifiers is None:
             raise ValueError("Classifiers are not built. Run `build_classifier` first.")
@@ -3819,7 +3819,7 @@ class Experiment:
         }
         return probabilities, standard_deviations
 
-    def measure_probability_dynamics(
+    def measure_population_dynamics(
         self,
         *,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
@@ -3831,7 +3831,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
-        Measures the probability dynamics of the target qubits.
+        Measures the population dynamics of the target qubits.
 
         Parameters
         ----------
@@ -3857,7 +3857,7 @@ class Experiment:
         ...     "Q00": ex.hpi_pulse["Q00"].scaled(x),
         ...     "Q01": ex.hpi_pulse["Q01"].scaled(x),
         >>> params_list = np.linspace(0.5, 1.5, 100)
-        >>> probs = ex.measure_probability_dynamics(sequence, params_list)
+        >>> probs = ex.measure_popultion_dynamics(sequence, params_list)
         """
         if isinstance(params_list[0], int):
             x = params_list
@@ -3868,30 +3868,30 @@ class Experiment:
             except ValueError:
                 x = np.arange(len(params_list))
 
-        buffer_probs = defaultdict(list)
-        buffer_errors = defaultdict(list)
+        buffer_pops = defaultdict(list)
+        buffer_errs = defaultdict(list)
 
         for params in tqdm(params_list):
-            prob_dict, err_dict = self.measure_state_probabilities(
+            prob_dict, err_dict = self.measure_population(
                 sequence=sequence(params),
                 shots=shots,
                 interval=interval,
             )
             for target, probs in prob_dict.items():
-                buffer_probs[target].append(probs)
+                buffer_pops[target].append(probs)
             for target, errors in err_dict.items():
-                buffer_errors[target].append(errors)
+                buffer_errs[target].append(errors)
 
-        result_probs = {
-            target: np.array(buffer_probs[target]).T for target in buffer_probs
+        result_pops = {
+            target: np.array(buffer_pops[target]).T for target in buffer_pops
         }
-        result_errors = {
-            target: np.array(buffer_errors[target]).T for target in buffer_errors
+        result_errs = {
+            target: np.array(buffer_errs[target]).T for target in buffer_errs
         }
 
         fig = go.Figure()
-        for target in result_probs:
-            for state, probs in enumerate(result_probs[target]):
+        for target in result_pops:
+            for state, probs in enumerate(result_pops[target]):
                 fig.add_scatter(
                     name=f"|{state}⟩",
                     mode=scatter_mode,
@@ -3899,7 +3899,7 @@ class Experiment:
                     y=probs,
                     error_y=dict(
                         type="data",
-                        array=result_errors[target][state],
+                        array=result_errs[target][state],
                         visible=True,
                         thickness=1.5,
                         width=3,
@@ -3909,10 +3909,11 @@ class Experiment:
                     marker=dict(size=5),
                 )
         fig.update_layout(
-            title=f"Probabilities dynamics : {target}",
+            title=f"Population dynamics : {target}",
             xaxis_title=xlabel,
-            yaxis_title="State probability",
+            yaxis_title="Probability",
+            yaxis_range=[0, 1],
         )
         fig.show()
 
-        return result_probs, result_errors
+        return result_pops, result_errs
