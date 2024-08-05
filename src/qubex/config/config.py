@@ -1058,13 +1058,13 @@ class Config:
             f"""
 You are going to configure the following boxes:
 
-[bold bright_green]{box_list_str}
+[bold bright_green]{box_list_str}[/bold bright_green]
 
-[bold italic bright_red]This operation will overwrite the existing device settings. Do you want to continue?
+This operation will overwrite the existing device settings. Do you want to continue?
 """
         )
         if not confirmed:
-            console.print("Operation cancelled.", style="bright_red bold")
+            print("Operation cancelled.")
             return
 
         ports = self.get_port_details(chip_id)

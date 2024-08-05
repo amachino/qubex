@@ -123,13 +123,13 @@ class ExperimentTool:
             f"""
 You are going to relinkup the following boxes:
 
-[bold bright_green]{box_list}
+[bold bright_green]{box_list}[/bold bright_green]
 
-[bold italic bright_red]This operation will reset LO/NCO settings. Do you want to continue?
+This operation will reset LO/NCO settings. Do you want to continue?
 """
         )
         if not confirmed:
-            console.print("Operation cancelled.", style="bright_red bold")
+            print("Operation cancelled.")
             return
 
         print("Relinking up the boxes...")
@@ -256,7 +256,49 @@ You are going to relinkup the following boxes:
         console.print(table1)
         console.print(table2)
 
-    def get_base_frequencies(self, box_id: str, port_number: int) -> list[float]:
+    def configure_port(
+        self,
+        box_id: str,
+        port_number: int,
+        channel_number: int,
+        *,
+        lo_freq: int | None = None,
+        cnco_freq: int | None = None,
+        fnco_freq: int | None = None,
+        vatt: int | None = None,
+        sideband: str | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+    ) -> None:
+        confirmed = Confirm.ask(
+            f"""
+You are going to configure the following port settings:
+
+[bold bright_green]{box_id}-{port_number}[/bold bright_green]
+
+Do you want to continue?
+"""
+        )
+        if not confirmed:
+            print("Operation cancelled.")
+            return
+        quel1_box = self.get_quel1_box(box_id)
+        quel1_box.config_port(
+            port=port_number,
+            lo_freq=lo_freq,
+            cnco_freq=cnco_freq,
+            vatt=vatt,
+            sideband=sideband,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+        )
+        quel1_box.config_channel(
+            port=port_number,
+            channel=channel_number,
+            fnco_freq=fnco_freq,
+        )
+
+    def get_base_frequencies(self, box_id: str, port_number: int) -> list[int]:
         settings = self.dump_box(box_id)["ports"][port_number]
         ssb = settings["sideband"]
         lo = int(settings["lo_freq"])
@@ -269,7 +311,7 @@ You are going to relinkup the following boxes:
                 f = lo + cnco + fnco
             else:
                 f = lo - cnco - fnco
-            base_frequencies.append(f * 1e-9)
+            base_frequencies.append(f)
         return base_frequencies
 
     def print_base_frequencies(self, target: str) -> None:
@@ -301,7 +343,7 @@ You are going to relinkup the following boxes:
             table.add_column(f"CTRL_{i}", justify="center")
         table.add_column("READ", justify="center")
         table.add_row(
-            *[f"{f:.3f} GHz" for f in control_base_frequencies],
-            f"{readout_base_frequency:.3f} GHz",
+            *[f"{f * 1e-9:.3f} GHz" for f in control_base_frequencies],
+            f"{readout_base_frequency * 1e-9:.3f} GHz",
         )
         console.print(table)
