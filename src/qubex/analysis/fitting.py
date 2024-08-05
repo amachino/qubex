@@ -247,7 +247,8 @@ def fit_rabi(
         pca = PCA(n_components=2).fit(data_0_vec)
         # get second component as the |g> + |e> vector
         second_component = pca.components_[1]
-        # get the angle of the |g> + |e> vector
+        # get the angle of the |g> + |e> vector (angle should be negative)
+        second_component *= -1 if second_component[1] > 0 else 1
         angle_1 = np.arctan2(second_component[1], second_component[0])
         # total angle to rotate the data
         angle = angle_0 + angle_1
