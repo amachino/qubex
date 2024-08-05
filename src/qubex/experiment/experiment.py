@@ -3776,7 +3776,7 @@ class Experiment:
         *,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> dict[str, NDArray[np.float64]]:
+    ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measures the state probabilities of the target qubits.
 
@@ -3791,8 +3791,8 @@ class Experiment:
 
         Returns
         -------
-        dict[str, NDArray[np.float64]]
-            State probabilities of the target qubits.
+        tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]
+            State probabilities and standard deviations.
 
         Examples
         --------
@@ -3811,10 +3811,13 @@ class Experiment:
             shots=shots,
             interval=interval,
         )
-
-        probs = {target: data.probabilities for target, data in result.data.items()}
-
-        return probs
+        probabilities = {
+            target: data.probabilities for target, data in result.data.items()
+        }
+        standard_deviations = {
+            target: data.standard_deviations for target, data in result.data.items()
+        }
+        return probabilities, standard_deviations
 
     def measure_probability_dynamics(
         self,
@@ -3822,9 +3825,11 @@ class Experiment:
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
         params_list: Sequence | NDArray,
         xlabel: str = "Index",
+        scatter_mode: str = "lines+markers",
+        show_error: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> dict[str, NDArray[np.float64]]:
+    ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measures the probability dynamics of the target qubits.
 
@@ -3843,8 +3848,8 @@ class Experiment:
 
         Returns
         -------
-        dict[str, NDArray[np.float64]]
-            Probability dynamics of the target qubits.
+        tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]
+            State probabilities and standard deviations.
 
         Examples
         --------
@@ -3854,19 +3859,6 @@ class Experiment:
         >>> params_list = np.linspace(0.5, 1.5, 100)
         >>> probs = ex.measure_probability_dynamics(sequence, params_list)
         """
-        buffer = defaultdict(list)
-        for params in tqdm(params_list):
-            probs_dict = self.measure_state_probabilities(
-                sequence=sequence(params),
-                shots=shots,
-                interval=interval,
-            )
-            for target, probs in probs_dict.items():
-                buffer[target].append(probs)
-
-        result = {target: np.array(probs) for target, probs in buffer.items()}
-
-        print(type(params_list[0]))
         if isinstance(params_list[0], int):
             x = params_list
         else:
@@ -3876,14 +3868,45 @@ class Experiment:
             except ValueError:
                 x = np.arange(len(params_list))
 
+        buffer_probs = defaultdict(list)
+        buffer_errors = defaultdict(list)
+
+        for params in tqdm(params_list):
+            prob_dict, err_dict = self.measure_state_probabilities(
+                sequence=sequence(params),
+                shots=shots,
+                interval=interval,
+            )
+            for target, probs in prob_dict.items():
+                buffer_probs[target].append(probs)
+            for target, errors in err_dict.items():
+                buffer_errors[target].append(errors)
+
+        result_probs = {
+            target: np.array(buffer_probs[target]).T for target in buffer_probs
+        }
+        result_errors = {
+            target: np.array(buffer_errors[target]).T for target in buffer_errors
+        }
+
         fig = go.Figure()
-        for target, probs_array in result.items():
-            for state, probs in enumerate(probs_array.T):
+        for target in result_probs:
+            for state, probs in enumerate(result_probs[target]):
                 fig.add_scatter(
                     name=f"|{state}⟩",
-                    mode="lines+markers",
+                    mode=scatter_mode,
                     x=x,
                     y=probs,
+                    error_y=dict(
+                        type="data",
+                        array=result_errors[target][state],
+                        visible=True,
+                        thickness=1.5,
+                        width=3,
+                    )
+                    if show_error
+                    else None,
+                    marker=dict(size=5),
                 )
         fig.update_layout(
             title=f"Probabilities dynamics : {target}",
@@ -3891,4 +3914,5 @@ class Experiment:
             yaxis_title="State probability",
         )
         fig.show()
-        return result
+
+        return result_probs, result_errors

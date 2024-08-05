@@ -52,6 +52,16 @@ class MeasureData:
         total = sum(self.classified.values())
         return np.array([count / total for count in self.classified.values()])
 
+    @property
+    def standard_deviations(self) -> NDArray[np.float64]:
+        if self.classified is None:
+            raise ValueError("No classification data available")
+        return np.sqrt(
+            self.probabilities
+            * (1 - self.probabilities)
+            / sum(self.classified.values())
+        )
+
     def plot(self):
         if self.mode == MeasureMode.SINGLE:
             scatter_iq_data(
