@@ -1071,6 +1071,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         params = self.get_params(chip_id)
         readout_vatt = params.readout_vatt
         control_vatt = params.control_vatt
+        fullscale_current = 40527
 
         for box in boxes:
             quel1_box = qc.create_box(box.id, reconnect=False)
@@ -1093,8 +1094,9 @@ This operation will overwrite the existing device settings. Do you want to conti
                             port=port.number,
                             lo_freq=lo,
                             cnco_freq=cnco,
-                            sideband="U",
                             vatt=readout_vatt[port.mux],
+                            sideband="U",
+                            fullscale_current=fullscale_current,
                         )
                         quel1_box.config_channel(
                             port=port.number,
@@ -1155,8 +1157,9 @@ This operation will overwrite the existing device settings. Do you want to conti
                             port=port.number,
                             lo_freq=lo,
                             cnco_freq=cnco,
-                            sideband="L",
                             vatt=control_vatt[port.ctrl_qubit],
+                            sideband="L",
+                            fullscale_current=fullscale_current,
                         )
                         if port.n_channel == 1:
                             quel1_box.config_channel(
