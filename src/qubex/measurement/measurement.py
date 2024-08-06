@@ -253,8 +253,6 @@ class Measurement:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        time_offset: dict[str, int] = {},
-        time_to_start: dict[str, int] = {},
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -311,8 +309,6 @@ class Measurement:
                 repeats=shots,
                 interval=backend_interval,
                 integral_mode=measure_mode.integral_mode,
-                time_offset=time_offset,
-                time_to_start=time_to_start,
             )
         else:
             sequencer = self._create_sequencer(
@@ -321,8 +317,6 @@ class Measurement:
                 capture_window=capture_window,
                 capture_offset=capture_offset,
                 readout_duration=readout_duration,
-                time_offset=time_offset,
-                time_to_start=time_to_start,
             )
             backend_result = self._backend.execute_sequencer(
                 sequencer=sequencer,
@@ -343,8 +337,6 @@ class Measurement:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        time_offset: dict[str, int] = {},
-        time_to_start: dict[str, int] = {},
     ):
         """
         Measure with the given control waveforms.
@@ -391,7 +383,7 @@ class Measurement:
                     capture_offset=capture_offset,
                     readout_duration=readout_duration,
                 )
-                self._backend.add_sequence(sequence, time_offset, time_to_start)
+                self._backend.add_sequence(sequence)
             else:
                 sequencer = self._create_sequencer(
                     waveforms=waveforms,
@@ -399,8 +391,6 @@ class Measurement:
                     capture_window=capture_window,
                     capture_offset=capture_offset,
                     readout_duration=readout_duration,
-                    time_offset=time_offset,
-                    time_to_start=time_to_start,
                 )
                 self._backend.add_sequencer(sequencer)
         backend_results = self._backend.execute(
@@ -419,8 +409,6 @@ class Measurement:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
-        time_offset: dict[str, int] = {},
-        time_to_start: dict[str, int] = {},
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -454,8 +442,6 @@ class Measurement:
             schedule=schedule,
             add_last_measurement=False,
             capture_offset=capture_offset,
-            time_offset=time_offset,
-            time_to_start=time_to_start,
         )
         backend_result = self._backend.execute_sequencer(
             sequencer=sequencer,
@@ -516,8 +502,6 @@ class Measurement:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        time_offset: dict[str, int] = {},
-        time_to_start: dict[str, int] = {},
     ) -> Sequencer:
         control_length = self._number_of_samples(control_window)
         capture_length = self._number_of_samples(capture_window)
@@ -620,8 +604,6 @@ class Measurement:
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore
-            time_offset=time_offset,
-            time_to_start=time_to_start,
         )
 
     def _create_sequencer_from_schedule(
@@ -629,8 +611,6 @@ class Measurement:
         schedule: PulseSchedule,
         add_last_measurement: bool = False,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
-        time_offset: dict[str, int] = {},
-        time_to_start: dict[str, int] = {},
     ) -> Sequencer:
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -733,8 +713,6 @@ class Measurement:
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore
-            time_offset=time_offset,
-            time_to_start=time_to_start,
         )
 
     def _create_measure_result(
