@@ -28,6 +28,7 @@ from ..clifford import CliffordGroup
 from ..config import Config, Params, Qubit, Resonator, Target
 from ..measurement import MeasureResult, StateClassifier
 from ..measurement.measurement import (
+    DEFAULT_CAPTURE_OFFSET,
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
@@ -126,6 +127,7 @@ class Experiment:
         config_dir: str = DEFAULT_CONFIG_DIR,
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = True,
     ):
@@ -133,6 +135,7 @@ class Experiment:
         self._qubits: Final = qubits
         self._control_window: Final = control_window
         self._capture_window: Final = capture_window
+        self._capture_offset: Final = capture_offset
         self._readout_duration: Final = readout_duration
         self._rabi_params: Optional[dict[str, RabiParam]] = None
         self._config: Final = Config(config_dir)
@@ -692,6 +695,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
         capture_window: int | None = None,
+        capture_offset: int | None = None,
         readout_duration: int | None = None,
         time_offset: dict[str, int] = {},
         time_to_start: dict[str, int] = {},
@@ -716,6 +720,8 @@ class Experiment:
             Control window. Defaults to None.
         capture_window : int, optional
             Capture window. Defaults to None.
+        capture_offset : int, optional
+            Capture offset. Defaults to None.
         readout_duration : int, optional
             Readout duration. Defaults to None.
         plot : bool, optional
@@ -739,6 +745,7 @@ class Experiment:
         """
         control_window = control_window or self._control_window
         capture_window = capture_window or self._capture_window
+        capture_offset = capture_offset or self._capture_offset
         readout_duration = readout_duration or self._readout_duration
         waveforms = {}
 
@@ -759,6 +766,7 @@ class Experiment:
                 interval=interval,
                 control_window=control_window,
                 capture_window=capture_window,
+                capture_offset=capture_offset,
                 readout_duration=readout_duration,
                 time_offset=time_offset,
                 time_to_start=time_to_start,
@@ -772,6 +780,7 @@ class Experiment:
                     interval=interval,
                     control_window=control_window,
                     capture_window=capture_window,
+                    capture_offset=capture_offset,
                     readout_duration=readout_duration,
                     time_offset=time_offset,
                     time_to_start=time_to_start,
@@ -789,6 +798,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
         capture_window: int | None = None,
+        capture_offset: int | None = None,
         readout_duration: int | None = None,
         time_offset: dict[str, int] = {},
         time_to_start: dict[str, int] = {},
@@ -810,6 +820,8 @@ class Experiment:
             Control window. Defaults to None.
         capture_window : int, optional
             Capture window. Defaults to None.
+        capture_offset : int, optional
+            Capture offset. Defaults to None.
         readout_duration : int, optional
             Readout duration. Defaults to None.
 
@@ -832,6 +844,7 @@ class Experiment:
             interval=interval,
             control_window=control_window or self._control_window,
             capture_window=capture_window or self._capture_window,
+            capture_offset=capture_offset or self._capture_offset,
             readout_duration=readout_duration or self._readout_duration,
             time_offset=time_offset,
             time_to_start=time_to_start,
@@ -848,6 +861,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
         capture_window: int | None = None,
+        capture_offset: int | None = None,
         readout_duration: int | None = None,
         plot: bool = False,
     ) -> MeasureResult:
@@ -868,6 +882,8 @@ class Experiment:
             Control window. Defaults to None.
         capture_window : int, optional
             Capture window. Defaults to None.
+        capture_offset : int, optional
+            Capture offset. Defaults to None.
         readout_duration : int, optional
             Readout duration. Defaults to None.
         plot : bool, optional
@@ -917,6 +933,7 @@ class Experiment:
             interval=interval,
             control_window=control_window,
             capture_window=capture_window,
+            capture_offset=capture_offset,
             readout_duration=readout_duration,
             plot=plot,
         )
@@ -1372,6 +1389,8 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
+        capture_window: int | None = None,
+        capture_offset: int | None = None,
         time_offset: dict[str, int] = {},
         time_to_start: dict[str, int] = {},
         plot: bool = True,
@@ -1400,6 +1419,10 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         control_window : int, optional
             Control window. Defaults to None.
+        capture_window : int, optional
+            Capture window. Defaults to None.
+        capture_offset : int, optional
+            Capture offset. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         title : str, optional
@@ -1467,6 +1490,8 @@ class Experiment:
             shots=shots,
             interval=interval,
             control_window=control_window or self._control_window,
+            capture_window=capture_window or self._capture_window,
+            capture_offset=capture_offset or self._capture_offset,
             time_offset=time_offset,
             time_to_start=time_to_start,
         )
