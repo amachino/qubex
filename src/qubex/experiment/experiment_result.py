@@ -134,7 +134,7 @@ class RabiData(TargetData):
             )
             fig.update_layout(
                 title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
-                xaxis_title="Drive time (ns)",
+                xaxis_title="Drive duration (ns)",
                 yaxis_title="Normalized value",
             )
             fig.show()
@@ -158,7 +158,7 @@ class RabiData(TargetData):
             )
             fig.update_layout(
                 title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
-                xaxis_title="Drive time (ns)",
+                xaxis_title="Drive duration (ns)",
                 yaxis_title="Measured value",
             )
             fig.show()

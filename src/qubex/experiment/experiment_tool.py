@@ -82,7 +82,7 @@ class ExperimentTool:
         --------
         >>> from qubex import Experiment
         >>> ex = Experiment(chip_id="64Q")
-        >>> ex.tool.configure_boxes(["Q73A", "Q73B"])
+        >>> ex.tool.configure_boxes(["Q73A", "U10B"])
         """
         self._config.configure_box_settings(self._chip_id, include=box_list)
 
@@ -123,13 +123,13 @@ class ExperimentTool:
             f"""
 You are going to relinkup the following boxes:
 
-[bold bright_green]{box_list}
+[bold bright_green]{box_list}[/bold bright_green]
 
-[bold italic bright_red]This operation will reset LO/NCO settings. Do you want to continue?
+This operation will reset LO/NCO settings. Do you want to continue?
 """
         )
         if not confirmed:
-            console.print("Operation cancelled.", style="bright_red bold")
+            print("Operation cancelled.")
             return
 
         print("Relinking up the boxes...")
@@ -212,13 +212,14 @@ You are going to relinkup the following boxes:
         table1.add_column("SSB", justify="right")
         table1.add_column("LO", justify="right")
         table1.add_column("CNCO", justify="right")
-        table1.add_column("VATT", justify="right")
+        # table1.add_column("VATT", justify="right")
         table1.add_column("FSC", justify="right")
         table2.add_column("PORT", justify="right")
+        table2.add_column("TYPE", justify="right")
+        table2.add_column("SSB", justify="right")
         table2.add_column("FNCO-0", justify="right")
         table2.add_column("FNCO-1", justify="right")
         table2.add_column("FNCO-2", justify="right")
-        table2.add_column("FNCO-3", justify="right")
 
         port_map = self._config.get_port_map(box_id)
         ssb_map = {"U": "[cyan]USB[/cyan]", "L": "[green]LSB[/green]"}
@@ -229,30 +230,120 @@ You are going to relinkup the following boxes:
             lo = int(port["lo_freq"])
             cnco = int(port["cnco_freq"])
             type = port_map[number].value
-            if direction == "in":
-                ssb = ""
-                vatt = ""
-                fsc = ""
-                fncos = [f"{int(ch['fnco_freq']):_}" for ch in port["runits"].values()]
-            elif direction == "out":
+            if direction == "out":
                 ssb = ssb_map[port["sideband"]]
-                vatt = port.get("vatt", "")
+                # vatt = port.get("vatt", "")
                 fsc = port["fullscale_current"]
-                fncos = [
-                    f"{int(ch['fnco_freq']):_}" for ch in port["channels"].values()
-                ]
             table1.add_row(
                 str(number),
                 type,
                 ssb,
                 f"{lo:_}",
                 f"{cnco:_}",
-                str(vatt),
+                # str(vatt),
                 str(fsc),
             )
-            table2.add_row(
-                str(number),
-                *fncos,
-            )
+            if direction == "out":
+                fncos = [
+                    f"{int(ch['fnco_freq']):_}" for ch in port["channels"].values()
+                ]
+                table2.add_row(
+                    str(number),
+                    type,
+                    ssb,
+                    *fncos,
+                )
         console.print(table1)
         console.print(table2)
+
+    def configure_port(
+        self,
+        box_id: str,
+        port_number: int,
+        channel_number: int,
+        *,
+        lo_freq: int | None = None,
+        cnco_freq: int | None = None,
+        fnco_freq: int | None = None,
+        vatt: int | None = None,
+        sideband: str | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+    ) -> None:
+        confirmed = Confirm.ask(
+            f"""
+You are going to configure the following port settings:
+
+[bold bright_green]{box_id}-{port_number}[/bold bright_green]
+
+Do you want to continue?
+"""
+        )
+        if not confirmed:
+            print("Operation cancelled.")
+            return
+        quel1_box = self.get_quel1_box(box_id)
+        quel1_box.config_port(
+            port=port_number,
+            lo_freq=lo_freq,
+            cnco_freq=cnco_freq,
+            vatt=vatt,
+            sideband=sideband,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+        )
+        quel1_box.config_channel(
+            port=port_number,
+            channel=channel_number,
+            fnco_freq=fnco_freq,
+        )
+
+    def get_base_frequencies(self, box_id: str, port_number: int) -> list[int]:
+        settings = self.dump_box(box_id)["ports"][port_number]
+        ssb = settings["sideband"]
+        lo = int(settings["lo_freq"])
+        cnco = int(settings["cnco_freq"])
+        channels = settings["channels"]
+        fnco_list = [int(ch["fnco_freq"]) for ch in channels.values()]
+        base_frequencies = []
+        for fnco in fnco_list:
+            if ssb == "U":
+                f = lo + cnco + fnco
+            else:
+                f = lo - cnco - fnco
+            base_frequencies.append(f)
+        return base_frequencies
+
+    def print_base_frequencies(self, target: str) -> None:
+        """ """
+        control, readout, _ = self._config.get_ports_by_qubit(
+            self._chip_id,
+            target,
+        )
+
+        if control is None or readout is None:
+            print(f"Ports for qubit {target} are not found.")
+            return
+
+        control_base_frequencies = self.get_base_frequencies(
+            box_id=control.box.id,
+            port_number=control.number,
+        )
+        readout_base_frequency = self.get_base_frequencies(
+            box_id=readout.box.id,
+            port_number=readout.number,
+        )[0]
+
+        table = Table(
+            show_header=True,
+            header_style="bold",
+            title=f"BASE FREQUENCIES ({target})",
+        )
+        for i in range(len(control_base_frequencies)):
+            table.add_column(f"CTRL_{i}", justify="center")
+        table.add_column("READ", justify="center")
+        table.add_row(
+            *[f"{f * 1e-9:.3f} GHz" for f in control_base_frequencies],
+            f"{readout_base_frequency * 1e-9:.3f} GHz",
+        )
+        console.print(table)

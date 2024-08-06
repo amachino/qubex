@@ -27,11 +27,12 @@ from qubecalib.neopulse import (
     GenSampledSubSequence,
     RaisedCosFlatTop,
     Sequence,
+    Series,
     padding,
 )
 
 from ..config import Config, Target
-from ..pulse import FlatTop, PulseSchedule
+from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
@@ -42,6 +43,7 @@ DEFAULT_SHOTS = 1024
 DEFAULT_INTERVAL = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW = 1024  # ns
 DEFAULT_CAPTURE_WINDOW = 1024  # ns
+DEFAULT_CAPTURE_OFFSET = 128  # ns
 DEFAULT_READOUT_DURATION = 512  # ns
 INTERVAL_STEP = 10240  # ns
 
@@ -76,7 +78,7 @@ class Measurement:
         config_path = config.get_system_settings_path(chip_id)
         self._backend = QubeBackend(config_path)
         self._params = config.get_params(chip_id)
-        self.classifiers: TargetMap[StateClassifier] = {}
+        self.classifiers: dict[str, StateClassifier] = {}
 
     @property
     def chip_id(self) -> str:
@@ -249,6 +251,7 @@ class Measurement:
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> MeasureResult:
         """
@@ -271,6 +274,8 @@ class Measurement:
             The control window in ns, by default DEFAULT_CONTROL_WINDOW.
         capture_window : int, optional
             The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
+        capture_offset : int, optional
+            The capture offset in ns, by default DEFAULT_CAPTURE_OFFSET.
         readout_duration : int, optional
             The readout duration in ns, by default DEFAULT_READOUT_DURATION.
 
@@ -296,6 +301,7 @@ class Measurement:
                 waveforms=waveforms,
                 control_window=control_window,
                 capture_window=capture_window,
+                capture_offset=capture_offset,
                 readout_duration=readout_duration,
             )
             backend_result = self._backend.execute_sequence(
@@ -309,6 +315,7 @@ class Measurement:
                 waveforms=waveforms,
                 control_window=control_window,
                 capture_window=capture_window,
+                capture_offset=capture_offset,
                 readout_duration=readout_duration,
             )
             backend_result = self._backend.execute_sequencer(
@@ -328,6 +335,7 @@ class Measurement:
         interval: int = DEFAULT_INTERVAL,
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ):
         """
@@ -350,6 +358,8 @@ class Measurement:
             The control window in ns, by default DEFAULT_CONTROL_WINDOW.
         capture_window : int, optional
             The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
+        capture_offset : int, optional
+            The capture offset in ns, by default DEFAULT_CAPTURE_OFFSET.
         readout_duration : int, optional
             The readout duration in ns, by default DEFAULT_READOUT_DURATION.
 
@@ -370,6 +380,7 @@ class Measurement:
                     waveforms=waveforms,
                     control_window=control_window,
                     capture_window=capture_window,
+                    capture_offset=capture_offset,
                     readout_duration=readout_duration,
                 )
                 self._backend.add_sequence(sequence)
@@ -378,6 +389,7 @@ class Measurement:
                     waveforms=waveforms,
                     control_window=control_window,
                     capture_window=capture_window,
+                    capture_offset=capture_offset,
                     readout_duration=readout_duration,
                 )
                 self._backend.add_sequencer(sequencer)
@@ -389,12 +401,63 @@ class Measurement:
         for backend_result in backend_results:
             yield self._create_measure_result(backend_result, measure_mode)
 
+    def execute(
+        self,
+        schedule: PulseSchedule,
+        *,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        capture_offset: int = DEFAULT_CAPTURE_OFFSET,
+    ) -> MeasureResult:
+        """
+        Measure with the given control waveforms.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule
+            The pulse schedule.
+        mode : Literal["single", "avg"], optional
+            The measurement mode, by default "single".
+            - "single": Measure once.
+            - "avg": Measure multiple times and average the results.
+        shots : int, optional
+            The number of shots, by default DEFAULT_SHOTS.
+        interval : int, optional
+            The interval in ns, by default DEFAULT_INTERVAL.
+        capture_offset : int, optional
+            The capture offset in ns, by default DEFAULT_CAPTURE_OFFSET.
+
+        Returns
+        -------
+        MeasureResult
+            The measurement results.
+        """
+        backend_interval = (
+            (int(schedule.duration) + interval) // INTERVAL_STEP + 1
+        ) * INTERVAL_STEP
+
+        measure_mode = MeasureMode(mode)
+        sequencer = self._create_sequencer_from_schedule(
+            schedule=schedule,
+            add_last_measurement=False,
+            capture_offset=capture_offset,
+        )
+        backend_result = self._backend.execute_sequencer(
+            sequencer=sequencer,
+            repeats=shots,
+            interval=backend_interval,
+            integral_mode=measure_mode.integral_mode,
+        )
+        return self._create_measure_result(backend_result, measure_mode)
+
     def _create_sequence(
         self,
         *,
         waveforms: TargetMap[IQArray],
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> Sequence:
         readout_amplitude = self._params.readout_amplitude
@@ -405,15 +468,17 @@ class Measurement:
                 padding(control_window)
                 for target, waveform in waveforms.items():
                     Arbit(np.array(waveform)).target(target)
-            with Flushleft():
-                for qubit in qubits:
-                    readout_target = Target.get_readout_label(qubit)
-                    RaisedCosFlatTop(
-                        duration=readout_duration,
-                        amplitude=readout_amplitude[qubit],
-                        rise_time=32,
-                    ).target(readout_target)
-                    capture.target(readout_target)
+            with Series():
+                padding(capture_offset)
+                with Flushleft():
+                    for qubit in qubits:
+                        readout_target = Target.get_readout_label(qubit)
+                        RaisedCosFlatTop(
+                            duration=readout_duration,
+                            amplitude=readout_amplitude[qubit],
+                            rise_time=32,
+                        ).target(readout_target)
+                        capture.target(readout_target)
         return sequence
 
     def _readout_pulse(
@@ -435,6 +500,7 @@ class Measurement:
         waveforms: TargetMap[IQArray],
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> Sequencer:
         control_length = self._number_of_samples(control_window)
@@ -467,7 +533,10 @@ class Measurement:
             readout_pulse = self._readout_pulse(qubit, readout_duration)
             total_length = control_length + capture_length
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
-            readout_slice = slice(control_length, control_length + readout_length)
+            readout_slice = slice(
+                control_length + capture_offset,
+                control_length + capture_offset + readout_length,
+            )
             padded_waveform[readout_slice] = readout_pulse.values
             readout_target = Target.get_readout_label(qubit)
             readout_waveforms[readout_target] = padded_waveform
@@ -519,7 +588,7 @@ class Measurement:
                                 post_blank=None,
                             )
                         ],
-                        prev_blank=control_length,
+                        prev_blank=control_length + capture_offset,
                         post_blank=None,
                         repeats=None,
                     )
@@ -541,6 +610,7 @@ class Measurement:
         self,
         schedule: PulseSchedule,
         add_last_measurement: bool = False,
+        capture_offset: int = DEFAULT_CAPTURE_OFFSET,
     ) -> Sequencer:
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -561,7 +631,12 @@ class Measurement:
                 ps.call(schedule)
                 ps.barrier()
                 for target in readout_targets:
-                    readout_pulse = self._readout_pulse(target)
+                    readout_pulse = PulseSequence(
+                        [
+                            Blank(duration=capture_offset),
+                            self._readout_pulse(target),
+                        ]
+                    )
                     ps.add(target, readout_pulse)
             # update the schedule
             schedule = ps
@@ -591,6 +666,8 @@ class Measurement:
         cap_sequences: dict[str, CapSampledSequence] = {}
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
         for target, ranges in readout_ranges.items():
+            if not ranges:
+                continue
             cap_sub_sequence = CapSampledSubSequence(
                 capture_slots=[],
                 # prev_blank is the time to the first readout pulse

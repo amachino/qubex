@@ -172,6 +172,32 @@ def func_exp_decay(
     return A * np.exp(-t / tau) + C
 
 
+def func_lorentzian(
+    f: npt.NDArray[np.float64],
+    A: float,
+    f0: float,
+    gamma: float,
+    C: float,
+) -> npt.NDArray[np.float64]:
+    """
+    Calculate a Lorentzian function with given parameters.
+
+    Parameters
+    ----------
+    f : npt.NDArray[np.float64]
+        Frequency points for the function evaluation.
+    A : float
+        Amplitude of the Lorentzian function.
+    f0 : float
+        Central frequency of the Lorentzian function.
+    gamma : float
+        Width of the Lorentzian function.
+    C : float
+        Vertical offset of the Lorentzian function.
+    """
+    return A / (1 + ((f - f0) / gamma) ** 2) + C
+
+
 def fit_rabi(
     *,
     target: str,
@@ -221,11 +247,9 @@ def fit_rabi(
         pca = PCA(n_components=2).fit(data_0_vec)
         # get second component as the |g> + |e> vector
         second_component = pca.components_[1]
-        # get the angle of the |g> + |e> vector
-        angle_1 = np.arctan(second_component[1] / second_component[0])
-        # adjust the angle to the correct quadrant
-        if angle_1 > 0:
-            angle_1 -= np.pi
+        # get the angle of the |g> + |e> vector (angle should be negative)
+        second_component *= -1 if second_component[1] > 0 else 1
+        angle_1 = np.arctan2(second_component[1], second_component[0])
         # total angle to rotate the data
         angle = angle_0 + angle_1
 
@@ -306,7 +330,7 @@ def fit_rabi(
         )
         fig.update_layout(
             title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
-            xaxis_title="Drive time (ns)",
+            xaxis_title="Drive duration (ns)",
             yaxis_title="Amplitude (arb. units)",
         )
         fig.show(config=_plotly_config(f"rabi_{target}"))
@@ -874,10 +898,14 @@ def fit_ampl_calib_data(
             (np.max(data) + np.min(data)) / 2,
         )
 
-    popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
-    print(
-        f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
-    )
+    try:
+        popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
+        print(
+            f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
+        )
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return 0.0
 
     result = minimize(
         cos_func,
@@ -927,6 +955,92 @@ def fit_ampl_calib_data(
     print(f"Calibrated amplitude: {min_x:.6g}")
 
     return min_x
+
+
+def fit_lorentzian(
+    target: str,
+    freq_range: npt.NDArray[np.float64],
+    data: npt.NDArray[np.float64],
+    p0=None,
+    title: str = "Lorentzian fit",
+    xaxis_title: str = "Frequency (GHz)",
+    yaxis_title: str = "Amplitude (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> float:
+    """
+    Fit Lorentzian data to a Lorentzian function and plot the results.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    freq_range : npt.NDArray[np.float64]
+        Frequency range for the Lorentzian data.
+    data : npt.NDArray[np.float64]
+        Amplitude data for the Lorentzian data.
+
+    Returns
+    -------
+    float
+        Central frequency of the Lorentzian.
+    """
+    if p0 is None:
+        p0 = (
+            np.abs(np.max(data) - np.min(data)),
+            np.mean(freq_range),
+            (np.max(freq_range) - np.min(freq_range)) / 4,
+            np.min(data),
+        )
+
+    popt, _ = curve_fit(func_lorentzian, freq_range, data, p0=p0)
+
+    A = popt[0]
+    f0 = popt[1]
+    gamma = popt[2]
+    C = popt[3]
+
+    print(
+        f"Fitted function: {A:.3g} / (1 + ((f - {f0:.3g}) / {gamma:.3g})^2) + {C:.3g}"
+    )
+
+    x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
+    y_fine = func_lorentzian(x_fine, *popt)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=freq_range,
+            y=data,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        x=f0,
+        y=A,
+        text=f"max: {f0:.6g}",
+        showarrow=True,
+        arrowhead=1,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+    fig.show(config=_plotly_config(f"lorentzian_{target}"))
+
+    return f0
 
 
 def fit_chevron(

@@ -6,7 +6,7 @@ from typing import Final, Literal
 import networkx as nx
 import numpy as np
 import qutip as qt
-from typing_extensions import TypeAlias
+from typing_extensions import TypeAlias, deprecated
 
 StateAlias: TypeAlias = Literal["0", "1", "+", "-", "+i", "-i", "*"]
 
@@ -31,6 +31,7 @@ class Coupling:
         return f"{self.pair[0]}-{self.pair[1]}"
 
 
+@deprecated("will be removed in the future")
 class System:
     def __init__(
         self,

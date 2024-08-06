@@ -110,6 +110,16 @@ class Target:
         return f"R{target.qubit}"
 
     @classmethod
+    def is_ge_control(cls, label: str) -> bool:
+        target = cls.from_label(label)
+        return target.type == TargetType.CTRL_GE
+
+    @classmethod
+    def is_ef_control(cls, label: str) -> bool:
+        target = cls.from_label(label)
+        return target.type == TargetType.CTRL_EF
+
+    @classmethod
     def is_readout(cls, label: str) -> bool:
         target = cls.from_label(label)
         return target.type == TargetType.READ
@@ -1048,19 +1058,20 @@ class Config:
             f"""
 You are going to configure the following boxes:
 
-[bold bright_green]{box_list_str}
+[bold bright_green]{box_list_str}[/bold bright_green]
 
-[bold italic bright_red]This operation will overwrite the existing device settings. Do you want to continue?
+This operation will overwrite the existing device settings. Do you want to continue?
 """
         )
         if not confirmed:
-            console.print("Operation cancelled.", style="bright_red bold")
+            print("Operation cancelled.")
             return
 
         ports = self.get_port_details(chip_id)
         params = self.get_params(chip_id)
         readout_vatt = params.readout_vatt
         control_vatt = params.control_vatt
+        fullscale_current = 40527
 
         for box in boxes:
             quel1_box = qc.create_box(box.id, reconnect=False)
@@ -1083,8 +1094,9 @@ You are going to configure the following boxes:
                             port=port.number,
                             lo_freq=lo,
                             cnco_freq=cnco,
-                            sideband="U",
                             vatt=readout_vatt[port.mux],
+                            sideband="U",
+                            fullscale_current=fullscale_current,
                         )
                         quel1_box.config_channel(
                             port=port.number,
@@ -1145,8 +1157,9 @@ You are going to configure the following boxes:
                             port=port.number,
                             lo_freq=lo,
                             cnco_freq=cnco,
-                            sideband="L",
                             vatt=control_vatt[port.ctrl_qubit],
+                            sideband="L",
+                            fullscale_current=fullscale_current,
                         )
                         if port.n_channel == 1:
                             quel1_box.config_channel(

@@ -392,7 +392,12 @@ class QubeBackend:
         box_config = box.dump_box()
         return box_config
 
-    def add_sequence(self, sequence: Sequence):
+    def add_sequence(
+        self,
+        sequence: Sequence,
+        time_offset: dict[str, int] = {},  # {box_name: time_offset}
+        time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
+    ):
         """
         Add a sequence to the queue.
 
@@ -408,7 +413,11 @@ class QubeBackend:
         ...     ...
         >>> backend.add_sequence(sequence)
         """
-        self.qubecalib.add_sequence(sequence)
+        self.qubecalib.add_sequence(
+            sequence,
+            time_offset=time_offset,
+            time_to_start=time_to_start,
+        )
 
     def add_sequencer(self, sequencer: Sequencer):
         """
@@ -497,6 +506,8 @@ class QubeBackend:
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
+        time_offset: dict[str, int] = {},  # {box_name: time_offset}
+        time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
     ) -> QubeBackendResult:
         """
         Execute a single sequence and return the measurement result.
@@ -529,7 +540,11 @@ class QubeBackend:
         >>> result = backend.execute_sequence(sequence, repeats=100, interval=1024)
         """
         self.clear_command_queue()
-        self.add_sequence(sequence)
+        self.add_sequence(
+            sequence,
+            time_offset=time_offset,
+            time_to_start=time_to_start,
+        )
         return next(
             self.execute(
                 repeats=repeats,
