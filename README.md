@@ -9,7 +9,7 @@
 ### Client only
 
 ```bash
-pip install git+https://github.com/amachino/qubex.git@v1.0.8
+pip install git+https://github.com/amachino/qubex.git@v1.0.9
 ```
 
 ### Client and backend
