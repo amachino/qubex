@@ -230,6 +230,9 @@ This operation will reset LO/NCO settings. Do you want to continue?
             lo = int(port["lo_freq"])
             cnco = int(port["cnco_freq"])
             type = port_map[number].value
+            ssb = ""
+            # vatt = ""
+            fsc = ""
             if direction == "out":
                 ssb = ssb_map[port["sideband"]]
                 # vatt = port.get("vatt", "")
