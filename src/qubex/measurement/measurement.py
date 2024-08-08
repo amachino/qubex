@@ -313,7 +313,6 @@ class Measurement:
         else:
             sequencer = self._create_sequencer(
                 waveforms=waveforms,
-                control_window=control_window,
                 capture_window=capture_window,
                 capture_offset=capture_offset,
                 readout_duration=readout_duration,
@@ -387,7 +386,6 @@ class Measurement:
             else:
                 sequencer = self._create_sequencer(
                     waveforms=waveforms,
-                    control_window=control_window,
                     capture_window=capture_window,
                     capture_offset=capture_offset,
                     readout_duration=readout_duration,
@@ -498,45 +496,37 @@ class Measurement:
         self,
         *,
         waveforms: TargetMap[IQArray],
-        control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> Sequencer:
-        control_length = self._number_of_samples(control_window)
+        qubits = {Target.get_qubit_label(target) for target in waveforms.keys()}
+        control_length = max(len(waveform) for waveform in waveforms.values())
+        offset_length = self._number_of_samples(capture_offset)
         capture_length = self._number_of_samples(capture_window)
         readout_length = self._number_of_samples(readout_duration)
-        qubits = {Target.get_qubit_label(target) for target in waveforms.keys()}
-        max_waveform_length = max(len(waveform) for waveform in waveforms.values())
-        if max_waveform_length > control_length:
-            raise ValueError(
-                f"The waveform length ({max_waveform_length}) exceeds the control window ({control_window})."
-            )
+        total_length = control_length + offset_length + capture_length
+        readout_start = control_length + offset_length
+
         # zero padding (control)
-        # [0, 0, ..., 0, control, 0, 0, ..., 0, 0, 0, 0]
-        # |<-- control_length --><-- capture_length -->|
+        # [0, .., 0, 0, control, 0, 0, .., 0, 0, 0, 0, 0, .., 0, 0, 0]
+        # |<- control_length -><- offset_length -><- capture_length ->|
         control_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for target, waveform in waveforms.items():
-            waveform_length = len(waveform)
-            total_length = control_length + capture_length
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
-            left_padding = control_length - waveform_length
-            control_slice = slice(left_padding, left_padding + waveform_length)
+            left_padding = control_length - len(waveform)
+            control_slice = slice(left_padding, control_length)
             padded_waveform[control_slice] = waveform
             control_waveforms[target] = padded_waveform
 
         # zero padding (readout)
-        # [0, 0, ..., 0, 0, 0, 0, readout, 0, ..., 0, 0]
-        # |<-- control_length --><-- capture_length -->|
+        # [0, .., 0, 0, 0, 0, 0, 0, 0, .., 0, 0, 0, readout, 0, ..., 0]
+        # |<- control_length -><- offset_length -><- capture_length ->|
         readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for qubit in qubits:
             readout_pulse = self._readout_pulse(qubit, readout_duration)
-            total_length = control_length + capture_length
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
-            readout_slice = slice(
-                control_length + capture_offset,
-                control_length + capture_offset + readout_length,
-            )
+            readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
             readout_target = Target.get_readout_label(qubit)
             readout_waveforms[readout_target] = padded_waveform
@@ -588,7 +578,7 @@ class Measurement:
                                 post_blank=None,
                             )
                         ],
-                        prev_blank=control_length + capture_offset,
+                        prev_blank=readout_start,
                         post_blank=None,
                         repeats=None,
                     )
