@@ -24,8 +24,8 @@ from ..analysis import (
     plot_state_vectors,
     plot_waveform,
 )
+from ..backend import Config, Params, Qubit, Resonator, Target
 from ..clifford import CliffordGroup
-from ..config import Config, Params, Qubit, Resonator, Target
 from ..measurement import MeasureResult, StateClassifier
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_OFFSET,

@@ -31,11 +31,11 @@ from qubecalib.neopulse import (
     padding,
 )
 
-from ..config import Config, Target
+from ..backend import Config, Target
+from ..backend.qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
 from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
-from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
 from .state_classifier import StateClassifier
 
 DEFAULT_CONFIG_DIR = "./config"

@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from ..config import Config
+from ..backend import Config
 from ..measurement.measurement import Measurement
 
 console = Console()
