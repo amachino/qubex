@@ -315,12 +315,12 @@ class Port:
     number: int
     type: PortType
     channels: tuple[Channel, ...]
-    loopback: bool | None = None
     sideband: Literal["U", "L"] | None = None
     lo_freq: float | None = None
     cnco_freq: float | None = None
     vatt: float | None = None
     fullscale_current: float | None = None
+    loopback: bool | None = None
 
     @property
     def direction(self) -> str:
@@ -367,7 +367,7 @@ class Channel:
     id: str
     port_id: str
     number: int
-    fnco: float | None = None
+    fnco_freq: float | None = None
     ndelay: int | None = None
     nwait: int | None = None
 
