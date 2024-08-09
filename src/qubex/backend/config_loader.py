@@ -82,6 +82,50 @@ class ConfigLoader:
         """Returns the absolute path to the configuration directory."""
         return Path(self._config_dir).resolve()
 
+    def get_system_settings_path(self, chip_id: str) -> Path:
+        """
+        Returns the path to the system settings file for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        Path
+            The path to the system settings file.
+
+        Examples
+        --------
+        >>> config = ConfigLoader()
+        >>> config.get_system_settings_path("64Q")
+        PosixPath('config/build/64Q/system_settings.json')
+        """
+        return Path(self._config_dir) / BUILD_DIR / chip_id / self._system_settings_file
+
+    def get_box_settings_path(self, chip_id: str) -> Path:
+        """
+        Returns the path to the box settings file for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        Path
+            The path to the box settings file.
+
+        Examples
+        --------
+        >>> config = ConfigLoader()
+        >>> config.get_box_settings_path("64Q")
+        PosixPath('config/build/64Q/box_settings.json')
+        """
+        return Path(self._config_dir) / BUILD_DIR / chip_id / self._box_settings_file
+
     def _load_config_file(self, file_name) -> dict:
         path = Path(self._config_dir) / file_name
         try:
@@ -450,50 +494,6 @@ class ConfigLoader:
                         channel.fnco_freq = fncos[idx]
         return control_system
 
-    def get_system_settings_path(self, chip_id: str) -> Path:
-        """
-        Returns the path to the system settings file for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        Path
-            The path to the system settings file.
-
-        Examples
-        --------
-        >>> config = ConfigLoader()
-        >>> config.get_system_settings_path("64Q")
-        PosixPath('config/build/64Q/system_settings.json')
-        """
-        return Path(self._config_dir) / BUILD_DIR / chip_id / self._system_settings_file
-
-    def get_box_settings_path(self, chip_id: str) -> Path:
-        """
-        Returns the path to the box settings file for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        Path
-            The path to the box settings file.
-
-        Examples
-        --------
-        >>> config = ConfigLoader()
-        >>> config.get_box_settings_path("64Q")
-        PosixPath('config/build/64Q/box_settings.json')
-        """
-        return Path(self._config_dir) / BUILD_DIR / chip_id / self._box_settings_file
-
     def configure_system_settings(
         self,
         chip_id: str,
@@ -637,9 +637,12 @@ class ConfigLoader:
         except FileNotFoundError:
             print(f"System settings file not found for chip ID: {chip_id}")
             return
+
         control_system = self.get_control_system(chip_id)
+        control_system = self.configure_control_system(chip_id, loopback=loopback)
         qube_system = control_system.qube_system
         boxes = list(qube_system.boxes.values())
+
         if include is not None:
             boxes = [box for box in boxes if box.id in include]
         if exclude is not None:
@@ -659,106 +662,40 @@ This operation will overwrite the existing device settings. Do you want to conti
             print("Operation cancelled.")
             return
 
-        params = self._params_dict[chip_id]
-        readout_vatt = params["readout_vatt"]
-        control_vatt = params["control_vatt"]
-        fullscale_current = 40527
-
         for box in boxes:
             quel1_box = qc.create_box(box.id, reconnect=False)
             quel1_box.reconnect()
             for port in box.ports:
-                if port.type == PortType.READ_OUT:
-                    try:
-                        mux = control_system.get_mux_by_port(port)
-                        lo, cnco, fnco = self.find_read_lo_nco(
-                            chip_id=chip_id,
-                            qubits=mux.qubit_labels,
-                        )
-                        quel1_box.config_port(
-                            port=port.number,
-                            lo_freq=lo,
-                            cnco_freq=cnco,
-                            vatt=readout_vatt[mux.number],
-                            sideband="U",
-                            fullscale_current=fullscale_current,
-                            rfswitch="open" if loopback else "block",
-                        )
+                if port.type in [PortType.NOT_AVAILABLE, PortType.CTRL]:
+                    quel1_box.config_port(
+                        port=port.number,
+                        lo_freq=port.lo_freq,
+                        cnco_freq=port.cnco_freq,
+                        vatt=port.vatt,
+                        sideband=port.sideband,
+                        fullscale_current=port.fullscale_current,
+                        rfswitch=port.rfswitch,
+                    )
+                    for channel in port.channels:
                         quel1_box.config_channel(
                             port=port.number,
-                            channel=0,
-                            fnco_freq=fnco,
+                            channel=channel.number,
+                            fnco_freq=channel.fnco_freq,
                         )
-                    except ValueError as e:
-                        print(f"{port.id}: {e}")
-                        print(f"lo = {lo}, cnco = {cnco}, fnco = {fnco}")
-                        continue
                 elif port.type == PortType.READ_IN:
-                    try:
-                        mux = control_system.get_mux_by_port(port)
-                        lo, cnco, fnco = self.find_read_lo_nco(
-                            chip_id=chip_id,
-                            qubits=mux.qubit_labels,
-                        )
-                        quel1_box.config_port(
+                    quel1_box.config_port(
+                        port=port.number,
+                        lo_freq=port.lo_freq,
+                        cnco_locked_with=qube_system.get_readout_pair(port).number,
+                        rfswitch=port.rfswitch,
+                    )
+                    for channel in port.channels:
+                        quel1_box.config_runit(
                             port=port.number,
-                            lo_freq=lo,
-                            cnco_locked_with=mux.read_out_port.number,
-                            rfswitch="loop" if loopback else "open",
+                            runit=channel.number,
+                            fnco_freq=channel.fnco_freq,
                         )
-                        for idx in range(mux.n_qubits):
-                            quel1_box.config_runit(
-                                port=port.number,
-                                runit=idx,
-                                fnco_freq=fnco,
-                            )
-                    except ValueError as e:
-                        print(f"{port.id}: {e}")
-                        print(f"lo = {lo}, cnco = {cnco}, fnco = {fnco}")
-                        continue
-                elif port.type == PortType.CTRL:
-                    try:
-                        qubit = control_system.port_qubit_map[port.id].label
-                        lo, cnco, fncos = self.find_ctrl_lo_nco(
-                            chip_id=chip_id,
-                            qubit=qubit,
-                            n_channels=port.n_channels,
-                        )
-                        quel1_box.config_port(
-                            port=port.number,
-                            lo_freq=lo,
-                            cnco_freq=cnco,
-                            vatt=control_vatt[qubit],
-                            sideband="L",
-                            fullscale_current=fullscale_current,
-                            rfswitch="block" if loopback else "pass",
-                        )
-                        if port.n_channels == 1:
-                            quel1_box.config_channel(
-                                port=port.number,
-                                channel=0,
-                                fnco_freq=fncos[0],
-                            )
-                        elif port.n_channels == 3:
-                            quel1_box.config_channel(
-                                port=port.number,
-                                channel=0,
-                                fnco_freq=fncos[0],
-                            )
-                            quel1_box.config_channel(
-                                port=port.number,
-                                channel=1,
-                                fnco_freq=fncos[1],
-                            )
-                            quel1_box.config_channel(
-                                port=port.number,
-                                channel=2,
-                                fnco_freq=fncos[2],
-                            )
-                    except ValueError as e:
-                        print(f"{port.id}: {e}")
-                        print(f"lo = {lo}, cnco = {cnco}, fncos = {fncos}")
-                        continue
+        print("Box settings configured.")
 
     def save_box_settings(
         self,

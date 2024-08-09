@@ -186,7 +186,7 @@ NUMBER_OF_CHANNELS: Final = {
     },
 }
 
-READOUT_PAIRS: Final = {
+READOUT_PAIRS: Final[dict[BoxType, dict[int, int]]] = {
     BoxType.QUEL1_A: {
         0: 1,
         7: 8,
@@ -316,10 +316,10 @@ class Port:
     type: PortType
     channels: tuple[Channel, ...]
     sideband: Literal["U", "L"] | None = None
-    lo_freq: float | None = None
-    cnco_freq: float | None = None
-    vatt: float | None = None
-    fullscale_current: float | None = None
+    lo_freq: int | None = None
+    cnco_freq: int | None = None
+    vatt: int | None = None
+    fullscale_current: int | None = None
     loopback: bool | None = None
 
     @property
@@ -367,7 +367,7 @@ class Channel:
     id: str
     port_id: str
     number: int
-    fnco_freq: float | None = None
+    fnco_freq: int | None = None
     ndelay: int | None = None
     nwait: int | None = None
 
@@ -395,3 +395,10 @@ class QubeSystem:
             return self._boxes[box_id]
         except KeyError:
             raise KeyError(f"Box `{box_id}` not found.")
+
+    def get_readout_pair(self, port: Port) -> Port:
+        box = self.get_box(port.box_id)
+        pair_port_id = READOUT_PAIRS[box.type].get(port.number)
+        if pair_port_id is None:
+            raise ValueError(f"Port `{port.id}` does not have a readout pair.")
+        return box.ports[pair_port_id]
