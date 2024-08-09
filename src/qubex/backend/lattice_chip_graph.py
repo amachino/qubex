@@ -51,7 +51,9 @@ class LatticeChipGraph:
         """
         self.n_row: Final = n_row
         self.n_col: Final = n_col
-        self.n_qubits: Final = self.n_row * self.n_col * MUX_SIZE
+        self.n_muxes: Final = n_row * n_col
+        self.n_qubits_per_mux: Final = MUX_SIZE
+        self.n_qubits: Final = self.n_muxes * MUX_SIZE
         self.max_digit: Final = len(str(self.n_qubits - 1))
         self.edges: Final = self.create_edges(n_row, n_col)
 
@@ -88,6 +90,28 @@ class LatticeChipGraph:
             List of qubit edges.
         """
         return [(self.qubits[edge[0]], self.qubits[edge[1]]) for edge in self.edges]
+
+    def get_qubits_in_mux(
+        self,
+        mux: int,
+    ) -> list[str]:
+        """
+        Get qubit names in the input MUX.
+
+        Parameters
+        ----------
+        mux : int
+            MUX number.
+
+        Returns
+        -------
+        list[str]
+            List of qubit names in the MUX.
+        """
+        base_qubit = mux * MUX_SIZE
+        return [
+            f"Q{str(base_qubit + i).zfill(self.max_digit)}" for i in range(MUX_SIZE)
+        ]
 
     def get_spectators(
         self,
@@ -159,14 +183,14 @@ class LatticeChipGraph:
                 # Connections to adjacent MUXes
                 # Right neighbor
                 if col < n_col - 1:
-                    right_base_qubit = base_qubit + 4
+                    right_base_qubit = base_qubit + MUX_SIZE
                     right_qubits = [right_base_qubit + i for i in range(MUX_SIZE)]
                     edge_set.add((qubits[1], right_qubits[0]))
                     edge_set.add((qubits[3], right_qubits[2]))
 
                 # Down neighbor
                 if row < n_row - 1:
-                    down_base_qubit = base_qubit + n_col * 4
+                    down_base_qubit = base_qubit + n_col * MUX_SIZE
                     down_qubits = [down_base_qubit + i for i in range(MUX_SIZE)]
                     edge_set.add((qubits[2], down_qubits[0]))
                     edge_set.add((qubits[3], down_qubits[1]))

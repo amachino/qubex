@@ -1,27 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
+from typing import Final
 
 import yaml
 from qubecalib import QubeCalib
 from rich.console import Console
 from rich.prompt import Confirm
 
-from .hardware import (
-    PORT_MAPPING,
-    Box,
-    BoxType,
-    CtrlPort,
-    Port,
-    PortType,
-    ReadInPort,
-    ReadOutPort,
-)
+from .control_system import ControlSystem, Mux, Target
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
+from .qube_system import Box, BoxType, Port, PortType, QubeSystem
 
-CLOCK_MASTER_ADDRESS = "10.3.0.255"
+CONFIG_DIR: Final = "config"
+BUILD_DIR: Final = "build"
+CHIP_FILE: Final = "chip.yaml"
+BOX_FILE: Final = "box.yaml"
+WIRING_FILE: Final = "wiring.yaml"
+PROPS_FILE: Final = "props.yaml"
+PARAMS_FILE: Final = "params.yaml"
+SYSTEM_SETTINGS_FILE: Final = "system_settings.json"
+BOX_SETTINGS_FILE: Final = "box_settings.json"
 
 console = Console()
 
@@ -42,105 +42,7 @@ class Params:
     capture_delay: dict[int, int]
 
 
-class TargetType(Enum):
-    CTRL_GE = "CTRL_GE"
-    CTRL_EF = "CTRL_EF"
-    CTRL_CR = "CTRL_CR"
-    READ = "READ"
-
-
-@dataclass
-class Target:
-    label: str
-    frequency: float
-    type: TargetType
-    qubit: str
-
-    @classmethod
-    def from_label(
-        cls,
-        label: str,
-        frequency: float = 0.0,
-    ) -> Target:
-        parts = label.split("-")
-        if len(parts) == 1:
-            if parts[0].startswith("R"):
-                qubit = parts[0][1:]
-                type = TargetType.READ
-            else:
-                qubit = parts[0]
-                type = TargetType.CTRL_GE
-        else:
-            qubit = parts[0]
-            if parts[1] == "ef":
-                type = TargetType.CTRL_EF
-            else:
-                type = TargetType.CTRL_CR
-
-        return cls(
-            label=label,
-            frequency=frequency,
-            type=type,
-            qubit=qubit,
-        )
-
-    @classmethod
-    def get_target_type(cls, label: str) -> TargetType:
-        target = cls.from_label(label)
-        return target.type
-
-    @classmethod
-    def get_qubit_label(cls, label: str) -> str:
-        target = cls.from_label(label)
-        return target.qubit
-
-    @classmethod
-    def get_ge_label(cls, label: str) -> str:
-        target = cls.from_label(label)
-        return target.qubit
-
-    @classmethod
-    def get_ef_label(cls, label: str) -> str:
-        target = cls.from_label(label)
-        return f"{target.qubit}-ef"
-
-    @classmethod
-    def get_readout_label(cls, label: str) -> str:
-        target = cls.from_label(label)
-        return f"R{target.qubit}"
-
-    @classmethod
-    def is_ge_control(cls, label: str) -> bool:
-        target = cls.from_label(label)
-        return target.type == TargetType.CTRL_GE
-
-    @classmethod
-    def is_ef_control(cls, label: str) -> bool:
-        target = cls.from_label(label)
-        return target.type == TargetType.CTRL_EF
-
-    @classmethod
-    def is_readout(cls, label: str) -> bool:
-        target = cls.from_label(label)
-        return target.type == TargetType.READ
-
-
-CONFIG_DIR = "config"
-BUILD_DIR = "build"
-CHIP_FILE = "chip.yaml"
-BOX_FILE = "box.yaml"
-WIRING_FILE = "wiring.yaml"
-PROPS_FILE = "props.yaml"
-PARAMS_FILE = "params.yaml"
-SYSTEM_SETTINGS_FILE = "system_settings.json"
-BOX_SETTINGS_FILE = "box_settings.json"
-
-
-class Config:
-    """
-    Config class provides methods to configure the QubeX system.
-    """
-
+class ConfigLoader:
     def __init__(
         self,
         config_dir: str = CONFIG_DIR,
@@ -243,10 +145,7 @@ class Config:
             with open(path, "r") as file:
                 result = yaml.safe_load(file)
         except FileNotFoundError:
-            console.print(
-                f"Configuration file not found: {path}",
-                style="red bold",
-            )
+            print(f"Configuration file not found: {path}")
             raise
         return result
 
@@ -308,29 +207,6 @@ class Config:
             capture_delay=params["capture_delay"],
         )
 
-    def get_quantum_system(self, chip_id: str) -> QuantumSystem:
-        """
-        Returns the QuantumSystem object for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        QuantumSystem
-            The QuantumSystem object for the given chip ID.
-        """
-        chip = self.get_chip(chip_id)
-        qubits = self.get_qubits(chip_id)
-        resonators = self.get_resonators(chip_id)
-        return QuantumSystem(
-            chip=chip,
-            qubits=qubits,
-            resonators=resonators,
-        )
-
     def get_chip(self, id: str) -> Chip:
         """
         Returns the Chip object for the given ID.
@@ -359,32 +235,9 @@ class Config:
         Returns
         -------
         list[Chip]
-            A list of all Chip objects.
+            A list of all Chip objects
         """
         return [self.get_chip(id) for id in self._chip_dict.keys()]
-
-    def get_qubit(self, chip_id: str, label: str) -> Qubit:
-        """
-        Returns the Qubit object for the given chip ID and label.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        label : str
-            The qubit label (e.g., "Q00").
-
-        Returns
-        -------
-        Qubit
-            The Qubit object for the given chip ID and label.
-        """
-        props = self.get_props(chip_id)
-        return Qubit(
-            label=label,
-            frequency=props.qubit_frequency[label],
-            anharmonicity=props.anharmonicity[label],
-        )
 
     def get_qubits(self, chip_id: str) -> list[Qubit]:
         """
@@ -401,39 +254,17 @@ class Config:
             A list of Qubit objects for the given chip ID.
         """
         chip = self.get_chip(chip_id)
-        qubit_labels = [f"Q{i:02d}" for i in range(chip.n_qubits)]
         props = self.get_props(chip_id)
         return [
             Qubit(
+                index=index,
                 label=label,
                 frequency=props.qubit_frequency[label],
                 anharmonicity=props.anharmonicity[label],
+                resonator=Target.get_readout_label(label),
             )
-            for label in qubit_labels
+            for index, label in enumerate(chip.qubits)
         ]
-
-    def get_resonator(self, chip_id: str, label: str) -> Resonator:
-        """
-        Returns the Resonator object for the given chip ID and label.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        label : str
-            The qubit label (e.g., "Q00").
-
-        Returns
-        -------
-        Resonator
-            The Resonator object for the given chip ID and label.
-        """
-        props = self.get_props(chip_id)
-        return Resonator(
-            label=f"R{label}",
-            frequency=props.resonator_frequency[label],
-            qubit=label,
-        )
 
     def get_resonators(self, chip_id: str) -> list[Resonator]:
         """
@@ -453,16 +284,17 @@ class Config:
         qubits = self.get_qubits(chip_id)
         return [
             Resonator(
-                label=f"R{qubit.label}",
+                index=qubit.index,
+                label=Target.get_readout_label(qubit.label),
                 frequency=props.resonator_frequency[qubit.label],
                 qubit=qubit.label,
             )
             for qubit in qubits
         ]
 
-    def get_all_targets(self, chip_id: str) -> list[Target]:
+    def get_quantum_system(self, chip_id: str) -> QuantumSystem:
         """
-        Returns a list of all Target objects for the given chip ID.
+        Returns the QuantumSystem object for the given chip ID.
 
         Parameters
         ----------
@@ -471,172 +303,42 @@ class Config:
 
         Returns
         -------
-        list[Target]
-            A list of all Target objects for the given chip ID.
-        """
-        qubits = self.get_qubits(chip_id)
-        targets = []
-        for qubit in qubits:
-            targets.append(self.get_read_target(chip_id, qubit.label))
-            targets.append(self.get_ctrl_ge_target(chip_id, qubit.label))
-            targets.append(self.get_ctrl_ef_target(chip_id, qubit.label))
-            targets.extend(self.get_ctrl_cr_targets(chip_id, qubit.label))
-        return targets
-
-    def get_read_target(self, chip_id: str, label: str) -> Target:
-        """
-        Returns the readout Target object for the given chip ID and qubit label.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        label : str
-            The qubit label (e.g., "Q00").
-
-        Returns
-        -------
-        Target
-            The readout Target object for the given chip ID and qubit label.
-        """
-        resonator = self.get_resonator(chip_id, label)
-        return Target(
-            label=resonator.label,
-            frequency=resonator.frequency,
-            type=TargetType.READ,
-            qubit=label,
-        )
-
-    def get_ctrl_ge_target(self, chip_id: str, label: str) -> Target:
-        """
-        Returns the control (ge) Target object for the given chip ID and qubit label.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        label : str
-            The qubit label (e.g., "Q00").
-
-        Returns
-        -------
-        Target
-            The control (ge) Target object for the given chip ID and qubit label.
-        """
-        qubit = self.get_qubit(chip_id, label)
-        return Target(
-            label=label,
-            frequency=qubit.frequency,
-            type=TargetType.CTRL_GE,
-            qubit=label,
-        )
-
-    def get_ctrl_ef_target(self, chip_id: str, label: str) -> Target:
-        """
-        Returns the control (ef) Target object for the given chip ID and qubit label.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        label : str
-            The qubit label (e.g., "Q00").
-
-        Returns
-        -------
-        Target
-            The control (ef) Target object for the given chip ID and qubit label.
-        """
-        qubit = self.get_qubit(chip_id, label)
-        return Target(
-            label=f"{label}-ef",
-            frequency=qubit.frequency + qubit.anharmonicity,
-            type=TargetType.CTRL_EF,
-            qubit=label,
-        )
-
-    def get_ctrl_cr_targets(self, chip_id: str, label: str) -> list[Target]:
-        """
-        Returns a list of control (CR) Target objects for the given chip ID and qubit label.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        label : str
-            The qubit label (e.g., "Q00").
-
-        Returns
-        -------
-        list[Target]
-            A list of control (CR) Target objects for the given chip ID and qubit label.
-        """
-        target_qubits = self.get_cr_target_qubits(chip_id, label)
-        return [
-            Target(
-                label=f"{label}-CR",
-                # label=f"{label}-{target_qubit.label}",
-                frequency=target_qubit.frequency,
-                type=TargetType.CTRL_CR,
-                qubit=label,
-            )
-            for target_qubit in target_qubits
-        ]
-
-    def get_cr_target_qubits(self, chip_id: str, label: str) -> list[Qubit]:
-        """
-        Returns a list of target qubits for the cross-resonance control qubit.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        label : str
-            The cross-resonance control qubit label (e.g., "Q00").
-
-        Returns
-        -------
-        list[Qubit]
-            A list of target qubits for the cross-resonance control qubit.
+        QuantumSystem
+            The QuantumSystem object for the given chip ID.
         """
         chip = self.get_chip(chip_id)
-        spectators = chip.graph.get_spectators(label)
-        target_qubits = [self.get_qubit(chip_id, qubit) for qubit in spectators]
-        return target_qubits
-
-    def get_box(self, id: str) -> Box:
-        """
-        Returns the Box object for the given ID.
-
-        Parameters
-        ----------
-        id : str
-            The ID of the box (e.g., "Q73A").
-
-        Returns
-        -------
-        Box
-            The Box object for the given ID.
-        """
-        box_info = self._box_dict[id]
-        return Box(
-            id=id,
-            name=box_info["name"],
-            type=BoxType(box_info["type"]),
-            address=box_info["address"],
-            adapter=box_info["adapter"],
+        qubits = self.get_qubits(chip_id)
+        resonators = self.get_resonators(chip_id)
+        return QuantumSystem(
+            chip=chip,
+            qubits=qubits,
+            resonators=resonators,
         )
 
     def get_all_boxes(self) -> list[Box]:
         """
         Returns a list of all Box objects.
 
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
         Returns
         -------
         list[Box]
-            A list of all Box objects.
+            A list of all Box objects
         """
-        return [self.get_box(id) for id in self._box_dict.keys()]
+        return [
+            Box(
+                id=id,
+                name=self._box_dict[id]["name"],
+                type=BoxType(self._box_dict[id]["type"]),
+                address=self._box_dict[id]["address"],
+                adapter=self._box_dict[id]["adapter"],
+            )
+            for id in self._box_dict.keys()
+        ]
 
     def get_boxes(self, chip_id: str) -> list[Box]:
         """
@@ -652,43 +354,43 @@ class Config:
         list[Box]
             A list of Box objects for the given chip ID.
         """
-        ports = self.get_port_details(chip_id)
-        box_set = set([port.box.id for port in ports])
-        return [self.get_box(box_id) for box_id in box_set]
+        try:
+            wiring_list = self._wiring_dict[chip_id]
+        except KeyError:
+            print(f"Wiring configuration not found for chip ID: {chip_id}")
+            raise
 
-    def get_port(self, box: Box, port_number: int) -> Port:
+        box_ids = set()
+        for wiring in wiring_list:
+            box_ids.add(wiring["read_out"].split("-")[0])
+            box_ids.add(wiring["read_in"].split("-")[0])
+            for ctrl in wiring["ctrl"]:
+                box_ids.add(ctrl.split("-")[0])
+
+        return [box for box in self.get_all_boxes() if box.id in box_ids]
+
+    def get_qube_system(
+        self,
+        chip_id: str | None = None,
+    ) -> QubeSystem:
         """
-        Returns the Port object for the given box and port number.
+        Returns the QubeSystem object for the given chip ID.
 
         Parameters
         ----------
-        box : Box
-            The Box object.
-        port_number : int
-            The port number.
+        chip_id : str | None, optional
+            The quantum chip ID (e.g., "64Q"), by default None.
 
         Returns
         -------
-        Port
-            The Port object for the given box and port number.
+        QubeSystem
+            The QubeSystem object for the given chip ID.
         """
-        return Port(number=port_number, box=box)
-
-    def get_ports(self, box: Box) -> list[Port]:
-        """
-        Returns a list of Port objects for the given box.
-
-        Parameters
-        ----------
-        box : Box
-            The Box object.
-
-        Returns
-        -------
-        list[Port]
-            A list of Port objects for the given box.
-        """
-        return [self.get_port(box, port_number) for port_number in range(14)]
+        if chip_id is None:
+            boxes = self.get_all_boxes()
+        else:
+            boxes = self.get_boxes(chip_id)
+        return QubeSystem(boxes=boxes)
 
     def get_port_from_specifier(
         self,
@@ -699,6 +401,8 @@ class Config:
 
         Parameters
         ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
         specifier : str
             The specifier for the port (e.g., "Q73A-11").
 
@@ -709,29 +413,14 @@ class Config:
         """
         box_id, port_str = specifier.split("-")
         port_number = int(port_str)
-        box = self.get_box(box_id)
-        port = self.get_port(box, port_number)
+        qube_system = self.get_qube_system()
+        box = qube_system.get_box(box_id)
+        port = box.ports[port_number]
         return port
 
-    def get_qubit_names(self, mux: int) -> list[str]:
+    def get_muxes(self, chip_id: str) -> list[Mux]:
         """
-        Returns the qubit names for the given multiplexer.
-
-        Parameters
-        ----------
-        mux : int
-            The multiplexer number.
-
-        Returns
-        -------
-        list[str]
-            A list of qubit names for the given multiplexer.
-        """
-        return [f"Q{4 * mux + i:02d}" for i in range(4)]
-
-    def get_port_details(self, chip_id: str) -> list[Port]:
-        """
-        Returns a list of Port objects for the given chip ID.
+        Returns a list of Mux objects for the given chip ID.
 
         Parameters
         ----------
@@ -740,149 +429,54 @@ class Config:
 
         Returns
         -------
-        list[Port]
-            A list of Port objects for the given chip ID.
+        list[Mux]
+            A list of Mux objects for the given chip ID.
         """
         try:
             wiring_list = self._wiring_dict[chip_id]
         except KeyError:
-            console.print(
-                f"Wiring configuration not found for chip ID: {chip_id}",
-                style="red bold",
-            )
+            print(f"Wiring configuration not found for chip ID: {chip_id}")
             raise
-        ports: list[Port] = []
+        quantum_system = self.get_quantum_system(chip_id)
+        muxes: list[Mux] = []
         for wiring in wiring_list:
-            mux = wiring["mux"]
-            qubits = self.get_qubit_names(mux)
+            mux_number = wiring["mux"]
+            qubits = quantum_system.get_qubits_in_mux(mux_number)
             read_out = self.get_port_from_specifier(wiring["read_out"])
             read_in = self.get_port_from_specifier(wiring["read_in"])
             ctrls = [self.get_port_from_specifier(port) for port in wiring["ctrl"]]
-            read_out_port = ReadOutPort(
-                number=read_out.number,
-                box=read_out.box,
-                mux=mux,
+            mux = Mux(
+                number=mux_number,
+                qubits=tuple(qubits),
+                ctrl_ports=tuple(ctrls),
+                read_in_port=read_in,
+                read_out_port=read_out,
             )
-            read_in_port = ReadInPort(
-                number=read_in.number,
-                box=read_in.box,
-                read_out=read_out_port,
-            )
-            ctrl_ports = [
-                CtrlPort(
-                    number=ctrl.number,
-                    box=ctrl.box,
-                    ctrl_qubit=qubit,
-                )
-                for ctrl, qubit in zip(ctrls, qubits)
-            ]
-            ports.append(read_out_port)
-            ports.append(read_in_port)
-            ports.extend(ctrl_ports)
-        return ports
+            muxes.append(mux)
+        return muxes
 
-    def get_port_details_by_qubits(self, chip_id: str, qubits: list[str]) -> list[Port]:
+    def get_control_system(self, chip_id: str) -> ControlSystem:
         """
-        Returns a list of Port objects for the given chip ID and qubits.
+        Returns the ControlSystem object for the given chip ID.
 
         Parameters
         ----------
         chip_id : str
             The quantum chip ID (e.g., "64Q").
-        qubits : list[str]
-            A list of qubit labels.
 
         Returns
         -------
-        list[Port]
-            A list of Port objects for the given chip ID and qubits.
+        ControlSystem
+            The ControlSystem object for the given chip ID.
         """
-        ports = self.get_port_details(chip_id)
-        port_set: set[Port] = set()
-        for qubit in qubits:
-            for port in ports:
-                if isinstance(port, ReadOutPort):
-                    if qubit in port.read_qubits:
-                        port_set.add(port)
-                elif isinstance(port, ReadInPort):
-                    if qubit in port.read_out.read_qubits:
-                        port_set.add(port)
-                elif isinstance(port, CtrlPort):
-                    if qubit == port.ctrl_qubit:
-                        port_set.add(port)
-        return list(port_set)
-
-    def get_boxes_by_qubits(self, chip_id: str, qubits: list[str]) -> list[Box]:
-        """
-        Returns a list of Box objects for the given chip ID and qubits.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        qubits : list[str]
-            A list of qubit labels.
-
-        Returns
-        -------
-        list[Box]
-            A list of Box objects for the given chip ID and qubits.
-        """
-        ports = self.get_port_details_by_qubits(chip_id, qubits)
-        box_set: set[Box] = set()
-        for port in ports:
-            box_set.add(port.box)
-        return list(box_set)
-
-    def get_ports_by_qubit(
-        self,
-        chip_id: str,
-        qubit: str,
-    ) -> tuple[CtrlPort | None, ReadOutPort | None, ReadInPort | None]:
-        """
-        Returns the Port objects for the given chip ID and qubit.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        qubit : str
-            The qubit label.
-
-        Returns
-        -------
-        tuple[CtrlPort | None, ReadOutPort | None, ReadInPort | None]
-            The Port objects for the given chip ID and qubit.
-        """
-        ports = self.get_port_details(chip_id)
-        ctrl_port = None
-        read_out_port = None
-        read_in_port = None
-        for port in ports:
-            if isinstance(port, CtrlPort) and port.ctrl_qubit == qubit:
-                ctrl_port = port
-            elif isinstance(port, ReadOutPort) and qubit in port.read_qubits:
-                read_out_port = port
-            elif isinstance(port, ReadInPort) and qubit in port.read_out.read_qubits:
-                read_in_port = port
-        return ctrl_port, read_out_port, read_in_port
-
-    def get_port_map(self, box_id: str) -> dict[int, PortType]:
-        """
-        Returns a dictionary of port mappings for the given box ID.
-
-        Parameters
-        ----------
-        box_id : str
-            The box ID (e.g., "Q73A").
-
-        Returns
-        -------
-        dict[int, PortType]
-            A dictionary of port mappings for the given box ID.
-        """
-        box = self.get_box(box_id)
-        return PORT_MAPPING[box.type]
+        quantum_system = self.get_quantum_system(chip_id)
+        qube_system = self.get_qube_system(chip_id)
+        muxes = self.get_muxes(chip_id)
+        return ControlSystem(
+            quantum_system=quantum_system,
+            qube_system=qube_system,
+            muxes=muxes,
+        )
 
     def configure_system_settings(self, chip_id: str):
         """
@@ -898,15 +492,21 @@ class Config:
         >>> config = Config()
         >>> config.configure_system_settings("64Q")
         """
+        control_system = self.get_control_system(chip_id)
+        qube_system = control_system.qube_system
+        params = self.get_params(chip_id)
+
         qc = QubeCalib()
 
         # define clock master
-        qc.define_clockmaster(ipaddr=CLOCK_MASTER_ADDRESS, reset=True)
+        qc.define_clockmaster(
+            ipaddr=qube_system.clock_master_address,
+            reset=True,
+        )
 
-        boxes = self.get_boxes(chip_id)
-
+        boxes = control_system.qube_system.boxes
         # define boxes, ports, and channels
-        for box in boxes:
+        for box in boxes.values():
             # define box
             qc.define_box(
                 box_name=box.id,
@@ -915,83 +515,52 @@ class Config:
             )
 
             # define ports
-            ports = self.get_ports(box)
-            for port in ports:
+            for port in box.ports:
                 if port.type == PortType.NOT_AVAILABLE:
                     continue
                 qc.define_port(
-                    port_name=port.name,
+                    port_name=port.id,
                     box_name=box.id,
                     port_number=port.number,
                 )
 
-        # define channels
-        ports = self.get_port_details(chip_id)
-        capture_delay = self.get_params(chip_id).capture_delay
-        for port in ports:
-            if isinstance(port, ReadOutPort):
-                qc.define_channel(
-                    channel_name=f"{port.name}0",
-                    port_name=port.name,
-                    channel_number=0,
-                    ndelay_or_nwait=capture_delay[port.mux],
-                )
-            elif isinstance(port, ReadInPort):
-                for runit_index in range(4):
+                # define channels
+                for channel in port.channels:
+                    if port.type == PortType.READ_IN:
+                        mux = control_system.get_mux_by_port(port)
+                        ndelay_or_nwait = params.capture_delay[mux.number]
+                    else:
+                        ndelay_or_nwait = 0
                     qc.define_channel(
-                        channel_name=f"{port.name}{runit_index}",
-                        port_name=port.name,
-                        channel_number=runit_index,
-                        ndelay_or_nwait=capture_delay[port.read_out.mux],
-                    )
-            elif isinstance(port, CtrlPort):
-                for channel_index in range(port.n_channel):
-                    qc.define_channel(
-                        channel_name=f"{port.name}.CH{channel_index}",
-                        port_name=port.name,
-                        channel_number=channel_index,
+                        channel_name=channel.id,
+                        port_name=port.id,
+                        channel_number=channel.number,
+                        ndelay_or_nwait=ndelay_or_nwait,
                     )
 
-        # define targets
-        for port in ports:
-            if isinstance(port, ReadOutPort):
-                for qubit in port.read_qubits:
-                    target = self.get_read_target(chip_id, qubit)
-                    qc.define_target(
-                        target_name=target.label,
-                        channel_name=f"{port.name}0",
-                        target_frequency=target.frequency,
-                    )
-            elif isinstance(port, ReadInPort):
-                for idx, qubit in enumerate(port.read_out.read_qubits):
-                    target = self.get_read_target(chip_id, qubit)
-                    qc.define_target(
-                        target_name=target.label,
-                        channel_name=f"{port.name}{idx}",
-                        target_frequency=target.frequency,
-                    )
-            elif isinstance(port, CtrlPort):
-                qubit = port.ctrl_qubit
-                target_ge = self.get_ctrl_ge_target(chip_id, qubit)
-                qc.define_target(
-                    target_name=target_ge.label,
-                    channel_name=f"{port.name}.CH0",
-                    target_frequency=target_ge.frequency,
-                )
-                if port.n_channel == 3:
-                    target_ef = self.get_ctrl_ef_target(chip_id, qubit)
-                    target_cr = self.get_ctrl_cr_targets(chip_id, qubit)[0]
-                    qc.define_target(
-                        target_name=target_ef.label,
-                        channel_name=f"{port.name}.CH1",
-                        target_frequency=target_ef.frequency,
-                    )
-                    qc.define_target(
-                        target_name=target_cr.label,
-                        channel_name=f"{port.name}.CH2",
-                        target_frequency=target_cr.frequency,
-                    )
+        # define control targets
+        for target, channel in control_system.ctrl_channel_map.items():
+            qc.define_target(
+                target_name=target,
+                channel_name=channel.id,
+                target_frequency=control_system.targets[target].frequency,
+            )
 
+        # define readout (out) targets
+        for target, channel in control_system.read_out_channel_map.items():
+            qc.define_target(
+                target_name=target,
+                channel_name=channel.id,
+                target_frequency=control_system.targets[target].frequency,
+            )
+
+        # define readout (in) targets
+        for target, channel in control_system.read_in_channel_map.items():
+            qc.define_target(
+                target_name=target,
+                channel_name=channel.id,
+                target_frequency=control_system.targets[target].frequency,
+            )
         # save the system settings to a JSON file
         system_settings_path = self.get_system_settings_path(chip_id)
         system_settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1042,12 +611,11 @@ class Config:
             system_settings_path = self.get_system_settings_path(chip_id)
             qc = QubeCalib(str(system_settings_path))
         except FileNotFoundError:
-            console.print(
-                f"System settings file not found for chip ID: {chip_id}",
-                style="red bold",
-            )
+            print(f"System settings file not found for chip ID: {chip_id}")
             return
-        boxes = self.get_boxes(chip_id)
+        control_system = self.get_control_system(chip_id)
+        qube_system = control_system.qube_system
+        boxes = list(qube_system.boxes.values())
         if include is not None:
             boxes = [box for box in boxes if box.id in include]
         if exclude is not None:
@@ -1067,7 +635,6 @@ This operation will overwrite the existing device settings. Do you want to conti
             print("Operation cancelled.")
             return
 
-        ports = self.get_port_details(chip_id)
         params = self.get_params(chip_id)
         readout_vatt = params.readout_vatt
         control_vatt = params.control_vatt
@@ -1076,27 +643,22 @@ This operation will overwrite the existing device settings. Do you want to conti
         for box in boxes:
             quel1_box = qc.create_box(box.id, reconnect=False)
             quel1_box.reconnect()
-            for port in ports:
-                if port.box.id != box.id:
-                    continue
-
-                if isinstance(port, ReadOutPort):
-                    quel1_box.config_rfswitch(
-                        port=port.number,
-                        rfswitch="block" if loopback else "pass",
-                    )
+            for port in box.ports:
+                if port.type == PortType.READ_OUT:
                     try:
+                        mux = control_system.get_mux_by_port(port)
                         lo, cnco, fnco = self.find_read_lo_nco(
                             chip_id=chip_id,
-                            qubits=port.read_qubits,
+                            qubits=mux.qubit_labels,
                         )
                         quel1_box.config_port(
                             port=port.number,
                             lo_freq=lo,
                             cnco_freq=cnco,
-                            vatt=readout_vatt[port.mux],
+                            vatt=readout_vatt[mux.number],
                             sideband="U",
                             fullscale_current=fullscale_current,
+                            rfswitch="open" if loopback else "block",
                         )
                         quel1_box.config_channel(
                             port=port.number,
@@ -1104,70 +666,56 @@ This operation will overwrite the existing device settings. Do you want to conti
                             fnco_freq=fnco,
                         )
                     except ValueError as e:
-                        console.print(
-                            f"{port.name}: {e}",
-                            style="red bold",
-                        )
-                        console.print(
-                            f"lo = {lo}, cnco = {cnco}, fnco = {fnco}",
-                        )
+                        print(f"{port.id}: {e}")
+                        print(f"lo = {lo}, cnco = {cnco}, fnco = {fnco}")
                         continue
-                elif isinstance(port, ReadInPort):
-                    quel1_box.config_rfswitch(
-                        port=port.number,
-                        rfswitch="loop" if loopback else "open",
-                    )
-                    lo, cnco, fnco = self.find_read_lo_nco(
-                        chip_id=chip_id,
-                        qubits=port.read_out.read_qubits,
-                    )
+                elif port.type == PortType.READ_IN:
                     try:
+                        mux = control_system.get_mux_by_port(port)
+                        lo, cnco, fnco = self.find_read_lo_nco(
+                            chip_id=chip_id,
+                            qubits=mux.qubit_labels,
+                        )
                         quel1_box.config_port(
                             port=port.number,
                             lo_freq=lo,
-                            cnco_locked_with=port.read_out.number,
+                            cnco_locked_with=mux.read_out_port.number,
+                            rfswitch="loop" if loopback else "open",
                         )
-                        for idx in range(4):
+                        for idx in range(mux.n_qubits):
                             quel1_box.config_runit(
                                 port=port.number,
                                 runit=idx,
                                 fnco_freq=fnco,
                             )
                     except ValueError as e:
-                        console.print(
-                            f"{port.name}: {e}",
-                            style="red bold",
-                        )
-                        console.print(
-                            f"lo = {lo}, cnco = {cnco}, fnco = {fnco}",
-                        )
+                        print(f"{port.id}: {e}")
+                        print(f"lo = {lo}, cnco = {cnco}, fnco = {fnco}")
                         continue
-                elif isinstance(port, CtrlPort):
-                    quel1_box.config_rfswitch(
-                        port=port.number,
-                        rfswitch="block" if loopback else "pass",
-                    )
-                    lo, cnco, fncos = self.find_ctrl_lo_nco(
-                        chip_id=chip_id,
-                        qubit=port.ctrl_qubit,
-                        n_channel=port.n_channel,
-                    )
+                elif port.type == PortType.CTRL:
                     try:
+                        qubit = control_system.port_qubit_map[port.id].label
+                        lo, cnco, fncos = self.find_ctrl_lo_nco(
+                            chip_id=chip_id,
+                            qubit=qubit,
+                            n_channels=port.n_channels,
+                        )
                         quel1_box.config_port(
                             port=port.number,
                             lo_freq=lo,
                             cnco_freq=cnco,
-                            vatt=control_vatt[port.ctrl_qubit],
+                            vatt=control_vatt[qubit],
                             sideband="L",
                             fullscale_current=fullscale_current,
+                            rfswitch="block" if loopback else "pass",
                         )
-                        if port.n_channel == 1:
+                        if port.n_channels == 1:
                             quel1_box.config_channel(
                                 port=port.number,
                                 channel=0,
                                 fnco_freq=fncos[0],
                             )
-                        elif port.n_channel == 3:
+                        elif port.n_channels == 3:
                             quel1_box.config_channel(
                                 port=port.number,
                                 channel=0,
@@ -1184,19 +732,15 @@ This operation will overwrite the existing device settings. Do you want to conti
                                 fnco_freq=fncos[2],
                             )
                     except ValueError as e:
-                        console.print(
-                            f"{port.name}: {e}",
-                            style="red bold",
-                        )
-                        console.print(
-                            f"lo = {lo}, cnco = {cnco}, fncos = {fncos}",
-                        )
+                        print(f"{port.id}: {e}")
+                        print(f"lo = {lo}, cnco = {cnco}, fncos = {fncos}")
                         continue
 
     def save_box_settings(
         self,
         *,
         chip_id: str,
+        path_to_save: str | None = None,
     ):
         """
         Saves the box settings for the given chip ID.
@@ -1215,19 +759,16 @@ This operation will overwrite the existing device settings. Do you want to conti
             system_settings_path = self.get_system_settings_path(chip_id)
             qc = QubeCalib(str(system_settings_path))
         except FileNotFoundError:
-            console.print(
-                f"System settings file not found for chip ID: {chip_id}",
-                style="red bold",
-            )
+            print(f"System settings file not found for chip ID: {chip_id}")
             return
-        box_settings_path = self.get_box_settings_path(chip_id)
+        if path_to_save is None:
+            box_settings_path = self.get_box_settings_path(chip_id)
+        else:
+            box_settings_path = Path(path_to_save)
         box_settings_path.parent.mkdir(parents=True, exist_ok=True)
         qc.store_all_box_configs(box_settings_path)
 
-        console.print(
-            f"Box settings have been configured and saved to {box_settings_path}",
-            style="bright_green bold",
-        )
+        print(f"Box settings saved to: {box_settings_path}")
 
     def find_read_lo_nco(
         self,
@@ -1298,7 +839,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         self,
         chip_id: str,
         qubit: str,
-        n_channel: int,
+        n_channels: int,
         *,
         lo_min: int = 8_000_000_000,
         lo_max: int = 11_000_000_000,
@@ -1318,7 +859,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             The quantum chip ID (e.g., "64Q").
         qubit : str
             The control qubit.
-        n_channel : int
+        n_channels : int
             The number of channels.
         lo_min : int, optional
             The minimum LO frequency, by default 8_000_000_000.
@@ -1342,28 +883,19 @@ This operation will overwrite the existing device settings. Do you want to conti
         tuple[int, int, tuple[int, int, int]]
             The tuple (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) for the control qubit.
         """
+        control_system = self.get_control_system(chip_id)
 
         target_ge = f"{qubit}-ge"
         target_ef = f"{qubit}-ef"
         target_cr = f"{qubit}-CR"
 
-        f_ge = self.get_ctrl_ge_target(chip_id, qubit).frequency * 1e9
-        f_ef = self.get_ctrl_ef_target(chip_id, qubit).frequency * 1e9
+        f_ge = control_system.get_ge_target(qubit).frequency * 1e9
+        f_ef = control_system.get_ef_target(qubit).frequency * 1e9
+        f_cr = control_system.get_cr_target(qubit).frequency * 1e9
 
-        cr_targets = self.get_ctrl_cr_targets(chip_id, qubit)
-        cr_freqs = []
-        for target in cr_targets:
-            if not target.frequency:
-                continue
-            cr_freqs.append(target.frequency * 1e9)
-        if not cr_freqs:
-            f_cr = f_ge
-        else:
-            f_cr = (max(cr_freqs) + min(cr_freqs)) / 2
-
-        if n_channel == 1:
+        if n_channels == 1:
             f_med = f_ge
-        elif n_channel == 3:
+        elif n_channels == 3:
             freq = {
                 target_ge: f_ge,
                 target_ef: f_ef,
@@ -1382,7 +914,7 @@ This operation will overwrite the existing device settings. Do you want to conti
 
             f_med = (f_max + f_min) / 2
         else:
-            raise ValueError("Invalid number of channels: ", n_channel)
+            raise ValueError("Invalid number of channels: ", n_channels)
 
         min_diff = float("inf")
         best_lo = None
@@ -1410,7 +942,7 @@ This operation will overwrite the existing device settings. Do you want to conti
 
         fnco_ge = find_fnco(f_ge)
 
-        if n_channel == 1:
+        if n_channels == 1:
             return best_lo, cnco, (fnco_ge, 0, 0)
 
         fnco_ef = find_fnco(f_ef)

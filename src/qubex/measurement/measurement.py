@@ -31,7 +31,7 @@ from qubecalib.neopulse import (
     padding,
 )
 
-from ..backend import Config, Target
+from ..backend import ConfigLoader, Target
 from ..backend.qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
 from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
 from ..typing import IQArray, TargetMap
@@ -73,7 +73,7 @@ class Measurement:
         """
         self._chip_id = chip_id
         self._use_neopulse = use_neopulse
-        config = Config(config_dir)
+        config = ConfigLoader(config_dir)
         config.configure_system_settings(chip_id)
         config_path = config.get_system_settings_path(chip_id)
         self._backend = QubeBackend(config_path)

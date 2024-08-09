@@ -24,7 +24,7 @@ from ..analysis import (
     plot_state_vectors,
     plot_waveform,
 )
-from ..backend import Config, Params, Qubit, Resonator, Target
+from ..backend import ConfigLoader, Params, Qubit, Resonator, Target
 from ..clifford import CliffordGroup
 from ..measurement import MeasureResult, StateClassifier
 from ..measurement.measurement import (
@@ -138,7 +138,7 @@ class Experiment:
         self._capture_offset: Final = capture_offset
         self._readout_duration: Final = readout_duration
         self._rabi_params: Optional[dict[str, RabiParam]] = None
-        self._config: Final = Config(config_dir)
+        self._config: Final = ConfigLoader(config_dir)
         self._measurement = Measurement(
             chip_id=chip_id,
             config_dir=config_dir,

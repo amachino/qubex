@@ -1,13 +1,13 @@
-from .config import Config, Params, Port, Target
-from .hardware import Box, BoxType
+from .config_loader import ConfigLoader, Params, Port, Target
 from .lattice_chip_graph import LatticeChipGraph
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
+from .qube_system import Box, BoxType
 
 __all__ = [
     "Box",
     "BoxType",
     "Chip",
-    "Config",
+    "ConfigLoader",
     "LatticeChipGraph",
     "Params",
     "QuantumSystem",
