@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-from .lattice_chip_graph import LatticeChipGraph
+from .lattice_graph import LatticeGraph
 
 
 @dataclass(frozen=True)
@@ -13,11 +13,11 @@ class Chip:
     n_qubits: int
 
     @property
-    def graph(self) -> LatticeChipGraph:
+    def graph(self) -> LatticeGraph:
         if self.n_qubits == 16:
-            return LatticeChipGraph(2, 2)
+            return LatticeGraph(2, 2)
         elif self.n_qubits == 64:
-            return LatticeChipGraph(4, 4)
+            return LatticeGraph(4, 4)
         else:
             raise ValueError("Unsupported number of qubits.")
 

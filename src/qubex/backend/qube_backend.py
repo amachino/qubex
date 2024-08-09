@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from qubecalib import QubeCalib, Sequencer
-from qubecalib.neopulse import Sequence
-from quel_ic_config import Quel1Box
-from rich.console import Console
-
-console = Console()
+try:
+    from qubecalib import QubeCalib, Sequencer
+    from qubecalib.neopulse import Sequence
+    from quel_ic_config import Quel1Box
+except ImportError:
+    pass
 
 SAMPLING_PERIOD: Final[float] = 2.0  # ns
 
@@ -41,10 +41,7 @@ class QubeBackend:
         try:
             self.qubecalib: Final = QubeCalib(str(config_path))
         except FileNotFoundError:
-            console.print(
-                f"Configuration file {config_path} not found.",
-                style="bold red",
-            )
+            print(f"Configuration file {config_path} not found.")
             raise
 
     @property
@@ -200,10 +197,7 @@ class QubeBackend:
         # check if all links are up
         status = box.link_status()
         if not all(status.values()):
-            console.print(
-                f"Failed to linkup box {box_name}. Status: {status}",
-                style="bold red",
-            )
+            print(f"Failed to linkup box {box_name}. Status: {status}")
         # return the box
         return box
 
@@ -358,7 +352,7 @@ class QubeBackend:
         if not synchronized:
             synchronized = self.resync_clocks(box_list)
             if not synchronized:
-                console.print("Failed to synchronize clocks.", style="bold red")
+                print("Failed to synchronize clocks.")
         return synchronized
 
     def dump_box(self, box_name: str) -> dict:
@@ -438,7 +432,7 @@ class QubeBackend:
 
     def show_command_queue(self):
         """Show the current command queue."""
-        console.print(self.qubecalib.show_command_queue())
+        print(self.qubecalib.show_command_queue())
 
     def clear_command_queue(self):
         """Clear the command queue."""

@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
 import yaml
-from qubecalib import QubeCalib
 from rich.prompt import Confirm
+
+try:
+    from qubecalib import QubeCalib
+except ImportError:
+    pass
 
 from .control_system import ControlSystem, Mux, Target
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
@@ -22,11 +27,24 @@ PARAMS_FILE: Final = "params.yaml"
 SYSTEM_SETTINGS_FILE: Final = "system_settings.json"
 BOX_SETTINGS_FILE: Final = "box_settings.json"
 
-DEFAULT_CAPTURE_DELAY: Final = 7
-DEFAULT_READOUT_VATT: Final = 2048
+DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
+DEFAULT_READOUT_AMPLITUDE: Final = 0.01
 DEFAULT_CONTROL_VATT: Final = 3072
-DEFAULT_READOUT_FSC: Final = 40527
+DEFAULT_READOUT_VATT: Final = 2048
 DEFAULT_CONTROL_FSC: Final = 40527
+DEFAULT_READOUT_FSC: Final = 40527
+DEFAULT_CAPTURE_DELAY: Final = 7
+
+
+@dataclass(frozen=True)
+class Params:
+    control_amplitude: dict[str, float]
+    readout_amplitude: dict[str, float]
+    control_vatt: dict[str, int]
+    readout_vatt: dict[int, int]
+    control_fsc: dict[str, int]
+    readout_fsc: dict[int, int]
+    capture_delay: dict[int, int]
 
 
 class ConfigLoader:
@@ -135,6 +153,56 @@ class ConfigLoader:
             print(f"Configuration file not found: {path}")
             raise
         return result
+
+    def get_params(self, chip_id: str) -> Params:
+        """
+        Returns the Params object for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        Params
+            The Params object for the given chip ID.
+        """
+        try:
+            params = self._params_dict[chip_id]
+        except KeyError:
+            print(f"Parameters not found for chip ID: {chip_id}")
+            raise
+        return Params(
+            control_amplitude=params.get(
+                "control_amplitude",
+                defaultdict(lambda: DEFAULT_CONTROL_AMPLITUDE),
+            ),
+            readout_amplitude=params.get(
+                "readout_amplitude",
+                defaultdict(lambda: DEFAULT_READOUT_AMPLITUDE),
+            ),
+            control_vatt=params.get(
+                "control_vatt",
+                defaultdict(lambda: DEFAULT_CONTROL_VATT),
+            ),
+            readout_vatt=params.get(
+                "readout_vatt",
+                defaultdict(lambda: DEFAULT_READOUT_VATT),
+            ),
+            control_fsc=params.get(
+                "control_fsc",
+                defaultdict(lambda: DEFAULT_CONTROL_FSC),
+            ),
+            readout_fsc=params.get(
+                "readout_fsc",
+                defaultdict(lambda: DEFAULT_READOUT_FSC),
+            ),
+            capture_delay=params.get(
+                "capture_delay",
+                defaultdict(lambda: DEFAULT_CAPTURE_DELAY),
+            ),
+        )
 
     def get_chip(self, id: str) -> Chip:
         """
@@ -418,38 +486,12 @@ class ConfigLoader:
         control_system = self.get_control_system(chip_id)
         qube_system = control_system.qube_system
 
-        params = self._params_dict[chip_id]
-
-        capture_delay = params.get(
-            "capture_delay",
-            defaultdict(
-                lambda: DEFAULT_CAPTURE_DELAY,
-            ),
-        )
-        readout_vatt = params.get(
-            "readout_vatt",
-            defaultdict(
-                lambda: DEFAULT_READOUT_VATT,
-            ),
-        )
-        control_vatt = params.get(
-            "control_vatt",
-            defaultdict(
-                lambda: DEFAULT_CONTROL_VATT,
-            ),
-        )
-        readout_fsc = params.get(
-            "readout_fsc",
-            defaultdict(
-                lambda: DEFAULT_READOUT_FSC,
-            ),
-        )
-        control_fsc = params.get(
-            "control_fsc",
-            defaultdict(
-                lambda: DEFAULT_CONTROL_FSC,
-            ),
-        )
+        params = self.get_params(chip_id)
+        control_vatt = params.control_vatt
+        readout_vatt = params.readout_vatt
+        control_fsc = params.control_fsc
+        readout_fsc = params.readout_fsc
+        capture_delay = params.capture_delay
 
         for box in qube_system.boxes.values():
             for port in box.ports:
@@ -494,11 +536,11 @@ class ConfigLoader:
                         channel.fnco_freq = fncos[idx]
         return control_system
 
-    def configure_system_settings(
+    def generate_system_settings(
         self,
         chip_id: str,
         path_to_save: str | None = None,
-    ):
+    ) -> Path:
         """
         Configures the system settings for the given chip ID.
 
@@ -516,7 +558,7 @@ class ConfigLoader:
         """
         control_system = self.get_control_system(chip_id)
         qube_system = control_system.qube_system
-        params = self._params_dict[chip_id]
+        params = self.get_params(chip_id)
 
         qc = QubeCalib()
 
@@ -549,7 +591,7 @@ class ConfigLoader:
                 for channel in port.channels:
                     if port.type == PortType.READ_IN:
                         mux = control_system.get_mux_by_port(port)
-                        ndelay_or_nwait = params["capture_delay"][mux.number]
+                        ndelay_or_nwait = params.capture_delay[mux.number]
                     else:
                         ndelay_or_nwait = 0
                     qc.define_channel(
@@ -590,6 +632,8 @@ class ConfigLoader:
         system_settings_path.parent.mkdir(parents=True, exist_ok=True)
         with open(system_settings_path, "w") as f:
             f.write(qc.system_config_database.asjson())
+
+        return system_settings_path
 
     def configure_box_settings(
         self,

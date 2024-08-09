@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Final
@@ -13,14 +14,15 @@ class TargetType(Enum):
     CTRL_EF = "CTRL_EF"
     CTRL_CR = "CTRL_CR"
     READ = "READ"
+    UNKNOWN = "UNKNOWN"
 
 
 @dataclass
 class Target:
     label: str
     qubit: str
-    frequency: float
     type: TargetType
+    frequency: float
 
     @classmethod
     def from_label(
@@ -28,26 +30,29 @@ class Target:
         label: str,
         frequency: float = 0.0,
     ) -> Target:
-        parts = label.split("-")
-        if len(parts) == 1:
-            if parts[0].startswith("R"):
-                qubit = parts[0][1:]
-                type = TargetType.READ
-            else:
-                qubit = parts[0]
-                type = TargetType.CTRL_GE
+        if match := re.match(r"^R(Q\d+)$", label):
+            qubit = match.group(1)
+            type = TargetType.READ
+        elif match := re.match(r"^(Q\d+)$", label):
+            qubit = match.group(1)
+            type = TargetType.CTRL_GE
+        elif match := re.match(r"^(Q\d+)-ef$", label):
+            qubit = match.group(1)
+            type = TargetType.CTRL_EF
+        elif match := re.match(r"^(Q\d+)-CR$", label):
+            qubit = match.group(1)
+            type = TargetType.CTRL_CR
+        elif match := re.match(r"^(Q\d+)(-|_)[a-zA-Z0-9]+$", label):
+            qubit = match.group(1)
+            type = TargetType.UNKNOWN
         else:
-            qubit = parts[0]
-            if parts[1] == "ef":
-                type = TargetType.CTRL_EF
-            else:
-                type = TargetType.CTRL_CR
+            raise ValueError(f"Invalid target label `{label}`.")
 
         return cls(
             label=label,
-            frequency=frequency,
-            type=type,
             qubit=qubit,
+            type=type,
+            frequency=frequency,
         )
 
     @classmethod
@@ -335,10 +340,6 @@ class ControlSystem:
 
     def get_mux_by_port(self, port: Port) -> Mux:
         for mux in self.muxes:
-            if (
-                port in mux.ctrl_ports
-                or port == mux.read_in_port
-                or port == mux.read_out_port
-            ):
+            if port in mux.ctrl_ports or port in (mux.read_in_port, mux.read_out_port):
                 return mux
         raise ValueError(f"Port `{port}` not found in any MUX.")

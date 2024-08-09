@@ -1,11 +1,3 @@
-"""
-Measurement module.
-
-This module provides measurement functionalities using the QubeBackend.
-The Measurement class provides methods to send control waveforms and measure
-the readout signals.
-"""
-
 from __future__ import annotations
 
 import typing
@@ -14,25 +6,34 @@ from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
-from qubecalib import Sequencer
-from qubecalib.neopulse import (
-    Arbit,
-    CapSampledSequence,
-    CapSampledSubSequence,
-    Capture,
-    CaptureSlots,
-    Flushleft,
-    Flushright,
-    GenSampledSequence,
-    GenSampledSubSequence,
-    RaisedCosFlatTop,
-    Sequence,
-    Series,
-    padding,
-)
 
-from ..backend import ConfigLoader, Target
-from ..backend.qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
+try:
+    from qubecalib import Sequencer
+    from qubecalib.neopulse import (
+        Arbit,
+        CapSampledSequence,
+        CapSampledSubSequence,
+        Capture,
+        CaptureSlots,
+        Flushleft,
+        Flushright,
+        GenSampledSequence,
+        GenSampledSubSequence,
+        RaisedCosFlatTop,
+        Sequence,
+        Series,
+        padding,
+    )
+except ImportError:
+    pass
+
+from ..backend import (
+    SAMPLING_PERIOD,
+    ConfigLoader,
+    QubeBackend,
+    QubeBackendResult,
+    Target,
+)
 from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
@@ -73,11 +74,11 @@ class Measurement:
         """
         self._chip_id = chip_id
         self._use_neopulse = use_neopulse
-        config = ConfigLoader(config_dir)
-        config.configure_system_settings(chip_id)
-        config_path = config.get_system_settings_path(chip_id)
+        config_loader = ConfigLoader(config_dir)
+        config_path = config_loader.generate_system_settings(chip_id)
         self._backend = QubeBackend(config_path)
-        self._params = config.get_params(chip_id)
+        self._control_system = config_loader.get_control_system(chip_id)
+        self._params = config_loader.get_params(chip_id)
         self.classifiers: dict[str, StateClassifier] = {}
 
     @property

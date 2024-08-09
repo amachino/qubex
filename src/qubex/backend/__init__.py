@@ -1,6 +1,7 @@
-from .config_loader import ConfigLoader, Port, Target
-from .lattice_chip_graph import LatticeChipGraph
+from .config_loader import ConfigLoader, Params, Port, Target
+from .lattice_graph import LatticeGraph
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
+from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
 from .qube_system import Box, BoxType
 
 __all__ = [
@@ -8,10 +9,14 @@ __all__ = [
     "BoxType",
     "Chip",
     "ConfigLoader",
-    "LatticeChipGraph",
+    "LatticeGraph",
+    "Params",
+    "Port",
+    "QubeBackend",
+    "QubeBackendResult",
     "QuantumSystem",
     "Qubit",
     "Resonator",
-    "Port",
+    "SAMPLING_PERIOD",
     "Target",
 ]
