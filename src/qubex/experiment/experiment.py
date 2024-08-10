@@ -149,6 +149,7 @@ class Experiment:
             chip_id=self._chip_id,
             qubits=self._qubits,
             config=self._config,
+            control_system=self._control_system,
             measurement=self._measurement,
         )
         self._user_note: Final = ExperimentNote(

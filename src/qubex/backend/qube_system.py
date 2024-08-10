@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import astuple, dataclass, field
-from enum import Enum, auto
+from enum import Enum
 from typing import Final, Literal
 
 CLOCK_MASTER_ADDRESS: Final = "10.3.0.255"
@@ -17,13 +17,13 @@ class BoxType(Enum):
 
 
 class PortType(Enum):
-    NOT_AVAILABLE = 0
-    READ_IN = auto()
-    READ_OUT = auto()
-    CTRL = auto()
-    PUMP = auto()
-    MONITOR_IN = auto()
-    MONITOR_OUT = auto()
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+    READ_IN = "READ_IN"
+    READ_OUT = "READ_OUT"
+    CTRL = "CTRL"
+    PUMP = "PUMP"
+    MONITOR_IN = "MONITOR_IN"
+    MONITOR_OUT = "MONITOR_OUT"
 
 
 PORT_DIRECTION: Final = {

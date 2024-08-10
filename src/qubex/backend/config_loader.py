@@ -312,6 +312,29 @@ class ConfigLoader:
             resonators=resonators,
         )
 
+    def get_box(self, id: str) -> Box:
+        """
+        Returns the Box object for the given ID.
+
+        Parameters
+        ----------
+        id : str
+            The box ID (e.g., "Q2A").
+
+        Returns
+        -------
+        Box
+            The Box object for the given ID.
+        """
+        box_info = self._box_dict[id]
+        return Box(
+            id=id,
+            name=box_info["name"],
+            type=BoxType(box_info["type"]),
+            address=box_info["address"],
+            adapter=box_info["adapter"],
+        )
+
     def get_all_boxes(self) -> list[Box]:
         """
         Returns a list of all Box objects.
@@ -326,16 +349,7 @@ class ConfigLoader:
         list[Box]
             A list of all Box objects
         """
-        return [
-            Box(
-                id=id,
-                name=self._box_dict[id]["name"],
-                type=BoxType(self._box_dict[id]["type"]),
-                address=self._box_dict[id]["address"],
-                adapter=self._box_dict[id]["adapter"],
-            )
-            for id in self._box_dict.keys()
-        ]
+        return [self.get_box(id) for id in self._box_dict.keys()]
 
     def get_boxes(
         self,

@@ -132,6 +132,13 @@ class Mux:
         return len(self.qubits)
 
 
+@dataclass
+class PortSet:
+    ctrl_port: Port
+    read_in_port: Port
+    read_out_port: Port
+
+
 class ControlSystem:
     def __init__(
         self,
@@ -148,6 +155,8 @@ class ControlSystem:
         self._read_out_channel_map: Final = self._create_read_out_channel_map()
         self._port_qubit_map: Final = self._create_port_qubit_map()
         self._qubit_port_map: Final = self._create_qubit_port_map()
+        self._resonator_port_map: Final = self._create_resonator_port_map()
+        self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
 
     def _create_targets(self) -> dict[str, Target]:
         targets = {}
@@ -248,6 +257,25 @@ class ControlSystem:
                 map[qubit.label] = port
         return map
 
+    def _create_resonator_port_map(self) -> dict[str, Port]:
+        map = {}
+        for mux in self.muxes:
+            for qubit in mux.qubits:
+                label = Target.get_readout_label(qubit.label)
+                map[label] = mux.read_out_port
+        return map
+
+    def _create_qubit_port_set_map(self) -> dict[str, PortSet]:
+        map = {}
+        for mux in self.muxes:
+            for qubit, ctrl_port in zip(mux.qubits, mux.ctrl_ports):
+                map[qubit.label] = PortSet(
+                    ctrl_port=ctrl_port,
+                    read_in_port=mux.read_in_port,
+                    read_out_port=mux.read_out_port,
+                )
+        return map
+
     @property
     def quantum_system(self) -> QuantumSystem:
         return self._quantum_system
@@ -283,6 +311,14 @@ class ControlSystem:
     @property
     def qubit_port_map(self) -> dict[str, Port]:
         return self._qubit_port_map
+
+    @property
+    def resonator_port_map(self) -> dict[str, Port]:
+        return self._resonator_port_map
+
+    @property
+    def qubit_port_set_map(self) -> dict[str, PortSet]:
+        return self._qubit_port_set_map
 
     @property
     def ge_targets(self) -> dict[str, Target]:
