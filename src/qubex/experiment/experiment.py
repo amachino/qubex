@@ -24,7 +24,7 @@ from ..analysis import (
     plot_state_vectors,
     plot_waveform,
 )
-from ..backend import ConfigLoader, Params, Qubit, Resonator, Target
+from ..backend import Box, ConfigLoader, Params, Qubit, Resonator, Target
 from ..clifford import CliffordGroup
 from ..measurement import MeasureResult, StateClassifier
 from ..measurement.measurement import (
@@ -137,8 +137,9 @@ class Experiment:
         self._capture_window: Final = capture_window
         self._capture_offset: Final = capture_offset
         self._readout_duration: Final = readout_duration
-        self._rabi_params: Optional[dict[str, RabiParam]] = None
+        self._rabi_params: Final[dict[str, RabiParam]] = {}
         self._config: Final = ConfigLoader(config_dir)
+        self._control_system: Final = self._config.configure_control_system(chip_id)
         self._measurement = Measurement(
             chip_id=chip_id,
             config_dir=config_dir,
@@ -159,9 +160,19 @@ class Experiment:
         self.print_environment()
 
     @property
-    def system(self):
+    def control_system(self):
+        """Get the control system."""
+        return self._control_system
+
+    @property
+    def quantum_system(self):
         """Get the quantum system."""
-        return self._config.get_quantum_system(self._chip_id)
+        return self.control_system.quantum_system
+
+    @property
+    def qube_system(self):
+        """Get the qube system."""
+        return self.control_system.qube_system
 
     @property
     def params(self) -> Params:
@@ -174,40 +185,52 @@ class Experiment:
         return self._chip_id
 
     @property
+    def qubit_labels(self) -> list[str]:
+        """Get the list of the qubit labels."""
+        return self._qubits
+
+    @property
     def qubits(self) -> dict[str, Qubit]:
         """Get the qubits."""
-        all_qubits = self._config.get_qubits(self._chip_id)
-        qubits = {}
-        for qubit in all_qubits:
-            if qubit.label in self._qubits:
-                qubits[qubit.label] = qubit
-        return qubits
+        return {
+            qubit.label: qubit
+            for qubit in self._config.get_qubits(self._chip_id)
+            if qubit.label in self.qubit_labels
+        }
 
     @property
     def resonators(self) -> dict[str, Resonator]:
         """Get the resonators."""
-        all_resonators = self._config.get_resonators(self._chip_id)
-        resonators = {}
-        for resonator in all_resonators:
-            if resonator.qubit in self._qubits:
-                resonators[resonator.qubit] = resonator
-        return resonators
+        return {
+            resonator.label: resonator
+            for resonator in self._config.get_resonators(self._chip_id)
+            if resonator.qubit in self._qubits
+        }
 
     @property
     def targets(self) -> dict[str, Target]:
         """Get the targets."""
-        all_targets = self._measurement.targets
-        targets = {}
-        for target in all_targets:
-            if all_targets[target].qubit in self._qubits:
-                targets[target] = all_targets[target]
-        return targets
+        return {
+            label: target
+            for label, target in self._measurement.targets.items()
+            if target.qubit in self._qubits
+        }
 
     @property
-    def box_list(self) -> list[str]:
-        """Get the list of the box IDs."""
-        boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
-        return [box.id for box in boxes]
+    def box_ids(self) -> list[str]:
+        """Get the list of available box IDs."""
+        return [
+            box.id for box in self._config.get_boxes(self._chip_id, self.qubit_labels)
+        ]
+
+    @property
+    def boxes(self) -> dict[str, Box]:
+        """Get the boxes."""
+        return {
+            id: box
+            for id, box in self.qube_system.boxes.items()
+            if box.id in self.box_ids
+        }
 
     @property
     def config_path(self) -> str:
@@ -361,8 +384,6 @@ class Experiment:
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
         """Get the Rabi parameters."""
-        if self._rabi_params is None:
-            return {}
         return self._rabi_params
 
     @property
@@ -398,7 +419,7 @@ class Experiment:
 
     def _validate_rabi_params(self):
         """Check if the Rabi parameters are stored."""
-        if self._rabi_params is None:
+        if len(self._rabi_params) == 0:
             raise ValueError("Rabi parameters are not stored.")
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
@@ -410,14 +431,11 @@ class Experiment:
         rabi_params : dict[str, RabiParam]
             Parameters of the Rabi oscillation.
         """
-        if self._rabi_params is not None:
-            if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
-                self._rabi_params.update(rabi_params)
-            else:
-                if Confirm.ask("Overwrite the existing Rabi parameters?"):
-                    self._rabi_params.update(rabi_params)
+        if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
+            self._rabi_params.update(rabi_params)
         else:
-            self._rabi_params = rabi_params
+            if Confirm.ask("Overwrite the existing Rabi parameters?"):
+                self._rabi_params.update(rabi_params)
         console.print("Rabi parameters are stored.")
 
     def get_pulse_for_state(
@@ -471,12 +489,7 @@ class Experiment:
         list[Qubit]
             List of the spectators.
         """
-        spectator_labels = self.system.chip.graph.get_spectators(qubit)
-        spectators: list[Qubit] = []
-        for label in spectator_labels:
-            spectator = self._config.get_qubit(self.chip_id, label)
-            spectators.append(spectator)
-        return spectators
+        return self.quantum_system.get_spectators(qubit)
 
     def print_environment(self, verbose: bool = False):
         """Print the environment information."""
@@ -489,9 +502,9 @@ class Experiment:
             print("quel_clock_master:", get_package_version("quel_clock_master"))
             print("qubecalib:", get_package_version("qubecalib"))
         print("qubex:", get_package_version("qubex"))
-        print("config:", self._config.config_path)
-        print("chip:", self._chip_id)
-        print("qubits:", self._qubits)
+        print("config:", self.config_path)
+        print("chip:", self.chip_id)
+        print("qubits:", self.qubit_labels)
         print("control_window:", self._control_window, "ns")
         print("")
         print("Following devices will be used:")
@@ -499,20 +512,19 @@ class Experiment:
 
     def print_boxes(self):
         """Print the box information."""
-        boxes = self._config.get_boxes_by_qubits(self._chip_id, self._qubits)
         table = Table(header_style="bold")
         table.add_column("ID", justify="left")
         table.add_column("NAME", justify="left")
         table.add_column("ADDRESS", justify="left")
         table.add_column("ADAPTER", justify="left")
-        for box in boxes:
+        for box in self.boxes.values():
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
 
     def check_status(self):
         """Check the status of the measurement system."""
-        link_status = self._measurement.check_link_status(self.box_list)
-        clock_status = self._measurement.check_clock_status(self.box_list)
+        link_status = self._measurement.check_link_status(self.box_ids)
+        clock_status = self._measurement.check_clock_status(self.box_ids)
         if link_status["status"]:
             console.print("Link status: OK", style="green")
         else:
@@ -526,7 +538,7 @@ class Experiment:
 
     def linkup(
         self,
-        box_list: Optional[list[str]] = None,
+        box_ids: Optional[list[str]] = None,
         noise_threshold: int = 500,
     ) -> None:
         """
@@ -534,16 +546,16 @@ class Experiment:
 
         Parameters
         ----------
-        box_list : Optional[list[str]], optional
+        box_ids : Optional[list[str]], optional
             List of the box IDs to link up. Defaults to None.
 
         Examples
         --------
         >>> ex.linkup()
         """
-        if box_list is None:
-            box_list = self.box_list
-        self._measurement.linkup(box_list, noise_threshold=noise_threshold)
+        if box_ids is None:
+            box_ids = self.box_ids
+        self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
         self.check_status()
 
     @contextmanager

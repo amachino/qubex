@@ -337,23 +337,36 @@ class ConfigLoader:
             for id in self._box_dict.keys()
         ]
 
-    def get_boxes(self, chip_id: str) -> list[Box]:
+    def get_boxes(
+        self,
+        chip_id: str,
+        qubits: list[str] | None = None,
+    ) -> list[Box]:
         """
-        Returns a list of Box objects for the given chip ID.
+        Returns a list of Box objects for the given chip ID and qubits.
 
         Parameters
         ----------
         chip_id : str
             The quantum chip ID (e.g., "64Q").
+        qubits : list[str] | None, optional
+            The list of qubits, by default None.
 
         Returns
         -------
         list[Box]
-            A list of Box objects for the given chip ID.
+            A list of Box objects for the given chip ID and qubits.
         """
         wiring_list = self._wiring_dict[chip_id]
         box_ids = set()
         for wiring in wiring_list:
+            if qubits:
+                # skip if no qubit in the mux is in the given list
+                mux = wiring["mux"]
+                quantum_system = self.get_quantum_system(chip_id)
+                qubits_in_mux = quantum_system.get_qubits_in_mux(mux)
+                if not any(qubit.label in qubits for qubit in qubits_in_mux):
+                    continue
             box_ids.add(wiring["read_out"].split("-")[0])
             box_ids.add(wiring["read_in"].split("-")[0])
             for ctrl in wiring["ctrl"]:
