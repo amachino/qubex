@@ -13,9 +13,9 @@ try:
 except ImportError:
     pass
 
-from .control_system import ControlSystem, Mux, Target
+from .experiment_system import ExperimentSystem, Mux, Target
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
-from .qube_system import Box, BoxType, Port, PortType, QubeSystem
+from .control_system import Box, BoxType, Port, PortType, ControlSystem
 
 CONFIG_DIR: Final = "config"
 BUILD_DIR: Final = "build"
@@ -390,7 +390,7 @@ class ConfigLoader:
     def get_qube_system(
         self,
         chip_id: str | None = None,
-    ) -> QubeSystem:
+    ) -> ControlSystem:
         """
         Returns the QubeSystem object for the given chip ID.
 
@@ -408,7 +408,7 @@ class ConfigLoader:
             boxes = self.get_all_boxes()
         else:
             boxes = self.get_boxes(chip_id)
-        return QubeSystem(boxes=boxes)
+        return ControlSystem(boxes=boxes)
 
     def get_port_from_specifier(
         self,
@@ -469,7 +469,7 @@ class ConfigLoader:
             muxes.append(mux)
         return muxes
 
-    def get_control_system(self, chip_id: str) -> ControlSystem:
+    def get_control_system(self, chip_id: str) -> ExperimentSystem:
         """
         Returns the ControlSystem object for the given chip ID.
 
@@ -486,9 +486,9 @@ class ConfigLoader:
         quantum_system = self.get_quantum_system(chip_id)
         qube_system = self.get_qube_system(chip_id)
         muxes = self.get_muxes(chip_id)
-        return ControlSystem(
+        return ExperimentSystem(
             quantum_system=quantum_system,
-            qube_system=qube_system,
+            control_system=qube_system,
             muxes=muxes,
         )
 
@@ -496,7 +496,7 @@ class ConfigLoader:
         self,
         chip_id: str,
         loopback: bool = False,
-    ) -> ControlSystem:
+    ) -> ExperimentSystem:
         """
         Configures the ControlSystem object for the given chip ID.
 

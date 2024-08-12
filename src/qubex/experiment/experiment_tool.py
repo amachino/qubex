@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from ..backend import ConfigLoader, ControlSystem
+from ..backend import ConfigLoader, ExperimentSystem
 from ..measurement.measurement import Measurement
 
 console = Console()
@@ -21,7 +21,7 @@ class ExperimentTool:
         chip_id: str,
         qubits: list[str],
         config: ConfigLoader,
-        control_system: ControlSystem,
+        control_system: ExperimentSystem,
         measurement: Measurement,
     ):
         self._chip_id: Final = chip_id

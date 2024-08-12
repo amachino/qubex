@@ -1,431 +1,571 @@
 from __future__ import annotations
 
-import re
 from enum import Enum
-from pathlib import Path
-from typing import Final
+from typing import Final, Literal, Sequence, Union
 
-import yaml
 from pydantic.dataclasses import dataclass
 
 from .model import Model
-from .quantum_system import Chip, Mux, QuantumSystem, Qubit
-from .qube_system import Box, CapPort, GenPort, Port, QubeSystem
+
+DEFAULT_CLOCK_MASTER_ADDRESS: Final = "10.3.0.255"
+DEFAULT_LO_FREQ: Final = 9_000_000_000
+DEFAULT_CNCO_FREQ: Final = 1_500_000_000
+DEFAULT_FNCO_FREQ: Final = 0
+DEFAULT_VATT: Final = 3072  # 0xC00
+DEFAULT_FULLSCALE_CURRENT: Final = 40527
+DEFAULT_NDELAY: Final = 7
+DEFAULT_NWAIT: Final = 0
 
 
-class TargetType(Enum):
-    CTRL_GE = "CTRL_GE"
-    CTRL_EF = "CTRL_EF"
-    CTRL_CR = "CTRL_CR"
-    READ = "READ"
-    UNKNOWN = "UNKNOWN"
+class BoxType(Enum):
+    QUEL1_A = "quel1-a"
+    QUEL1_B = "quel1-b"
+    QUBE_RIKEN_A = "qube-riken-a"
+    QUBE_RIKEN_B = "qube-riken-b"
+    QUBE_OU_A = "qube-ou-a"
+    QUBE_OU_B = "qube-ou-b"
+
+
+class PortType(Enum):
+    NA = "NA"
+    READ_IN = "READ_IN"
+    READ_OUT = "READ_OUT"
+    CTRL = "CTRL"
+    PUMP = "PUMP"
+    MNTR_IN = "MNTR_IN"
+    MNTR_OUT = "MNTR_OUT"
+
+
+PORT_DIRECTION: Final = {
+    PortType.READ_IN: "in",
+    PortType.READ_OUT: "out",
+    PortType.CTRL: "out",
+    PortType.PUMP: "out",
+    PortType.MNTR_IN: "in",
+    PortType.MNTR_OUT: "out",
+}
+
+
+PORT_MAPPING: Final = {
+    BoxType.QUEL1_A: {
+        0: PortType.READ_IN,
+        1: PortType.READ_OUT,
+        2: PortType.CTRL,
+        3: PortType.PUMP,
+        4: PortType.CTRL,
+        5: PortType.MNTR_IN,
+        6: PortType.MNTR_OUT,
+        7: PortType.READ_IN,
+        8: PortType.READ_OUT,
+        9: PortType.CTRL,
+        10: PortType.PUMP,
+        11: PortType.CTRL,
+        12: PortType.MNTR_IN,
+        13: PortType.MNTR_OUT,
+    },
+    BoxType.QUEL1_B: {
+        0: PortType.NA,
+        1: PortType.CTRL,
+        2: PortType.CTRL,
+        3: PortType.CTRL,
+        4: PortType.CTRL,
+        5: PortType.MNTR_IN,
+        6: PortType.MNTR_OUT,
+        7: PortType.NA,
+        8: PortType.CTRL,
+        9: PortType.CTRL,
+        10: PortType.CTRL,
+        11: PortType.CTRL,
+        12: PortType.MNTR_IN,
+        13: PortType.MNTR_OUT,
+    },
+    BoxType.QUBE_RIKEN_A: {
+        0: PortType.READ_OUT,
+        1: PortType.READ_IN,
+        2: PortType.PUMP,
+        3: PortType.MNTR_OUT,
+        4: PortType.MNTR_IN,
+        5: PortType.CTRL,
+        6: PortType.CTRL,
+        7: PortType.CTRL,
+        8: PortType.CTRL,
+        9: PortType.MNTR_IN,
+        10: PortType.MNTR_OUT,
+        11: PortType.PUMP,
+        12: PortType.READ_IN,
+        13: PortType.READ_OUT,
+    },
+    BoxType.QUBE_RIKEN_B: {
+        0: PortType.CTRL,
+        1: PortType.NA,
+        2: PortType.CTRL,
+        3: PortType.MNTR_OUT,
+        4: PortType.MNTR_IN,
+        5: PortType.CTRL,
+        6: PortType.CTRL,
+        7: PortType.CTRL,
+        8: PortType.CTRL,
+        9: PortType.MNTR_IN,
+        10: PortType.MNTR_OUT,
+        11: PortType.CTRL,
+        12: PortType.NA,
+        13: PortType.CTRL,
+    },
+    BoxType.QUBE_OU_A: {
+        0: PortType.READ_OUT,
+        1: PortType.READ_IN,
+        2: PortType.PUMP,
+        3: PortType.NA,
+        4: PortType.NA,
+        5: PortType.CTRL,
+        6: PortType.CTRL,
+        7: PortType.CTRL,
+        8: PortType.CTRL,
+        9: PortType.NA,
+        10: PortType.NA,
+        11: PortType.PUMP,
+        12: PortType.READ_IN,
+        13: PortType.READ_OUT,
+    },
+    BoxType.QUBE_OU_B: {
+        0: PortType.CTRL,
+        1: PortType.NA,
+        2: PortType.CTRL,
+        3: PortType.NA,
+        4: PortType.NA,
+        5: PortType.CTRL,
+        6: PortType.CTRL,
+        7: PortType.CTRL,
+        8: PortType.CTRL,
+        9: PortType.NA,
+        10: PortType.NA,
+        11: PortType.CTRL,
+        12: PortType.NA,
+        13: PortType.CTRL,
+    },
+}
+
+NUMBER_OF_CHANNELS: Final = {
+    BoxType.QUEL1_A: {
+        0: 4,
+        1: 1,
+        2: 3,
+        3: 1,
+        4: 3,
+        5: 4,
+        6: 1,
+        7: 4,
+        8: 1,
+        9: 3,
+        10: 1,
+        11: 3,
+        12: 4,
+        13: 1,
+    },
+    BoxType.QUEL1_B: {
+        0: 0,
+        1: 1,
+        2: 3,
+        3: 1,
+        4: 3,
+        5: 4,
+        6: 1,
+        7: 0,
+        8: 1,
+        9: 3,
+        10: 1,
+        11: 3,
+        12: 4,
+        13: 1,
+    },
+    BoxType.QUBE_RIKEN_A: {
+        0: 1,
+        1: 4,
+        2: 1,
+        3: 1,
+        4: 4,
+        5: 3,
+        6: 3,
+        7: 3,
+        8: 3,
+        9: 4,
+        10: 1,
+        11: 1,
+        12: 4,
+        13: 1,
+    },
+    BoxType.QUBE_RIKEN_B: {
+        0: 1,
+        1: 0,
+        2: 1,
+        3: 1,
+        4: 4,
+        5: 3,
+        6: 3,
+        7: 3,
+        8: 3,
+        9: 4,
+        10: 1,
+        11: 1,
+        12: 0,
+        13: 1,
+    },
+    BoxType.QUBE_OU_A: {
+        0: 1,
+        1: 4,
+        2: 1,
+        3: 0,
+        4: 0,
+        5: 3,
+        6: 3,
+        7: 3,
+        8: 3,
+        9: 0,
+        10: 0,
+        11: 1,
+        12: 4,
+        13: 1,
+    },
+    BoxType.QUBE_OU_B: {
+        0: 1,
+        1: 0,
+        2: 1,
+        3: 0,
+        4: 0,
+        5: 3,
+        6: 3,
+        7: 3,
+        8: 3,
+        9: 0,
+        10: 0,
+        11: 1,
+        12: 0,
+        13: 1,
+    },
+}
+
+
+def create_ports(
+    box_id: str,
+    box_type: BoxType,
+) -> tuple[Union[GenPort, CapPort], ...]:
+    ports: list[Union[GenPort, CapPort]] = []
+    port_index = {
+        PortType.NA: 0,
+        PortType.READ_IN: 0,
+        PortType.READ_OUT: 0,
+        PortType.CTRL: 0,
+        PortType.PUMP: 0,
+        PortType.MNTR_IN: 0,
+        PortType.MNTR_OUT: 0,
+    }
+    for port_num, port_type in PORT_MAPPING[box_type].items():
+        index = port_index[port_type]
+        if port_type == PortType.NA:
+            port_id = f"{box_id}.NA{index}"
+        elif port_type == PortType.READ_IN:
+            port_id = f"{box_id}.READ{index}.IN"
+        elif port_type == PortType.READ_OUT:
+            port_id = f"{box_id}.READ{index}.OUT"
+        elif port_type == PortType.CTRL:
+            port_id = f"{box_id}.CTRL{index}"
+        elif port_type == PortType.PUMP:
+            port_id = f"{box_id}.PUMP{index}"
+        elif port_type == PortType.MNTR_IN:
+            port_id = f"{box_id}.MNTR{index}.IN"
+        elif port_type == PortType.MNTR_OUT:
+            port_id = f"{box_id}.MNTR{index}.OUT"
+        else:
+            raise ValueError(f"Invalid port type: {port_type}")
+        n_channels = NUMBER_OF_CHANNELS[box_type].get(port_num, 0)
+        port: Union[GenPort, CapPort, Port]
+        if port_type == PortType.NA:
+            continue
+        elif port_type in (PortType.READ_IN, PortType.MNTR_IN):
+            port = CapPort(
+                id=port_id,
+                box_id=box_id,
+                number=port_num,
+                type=port_type,
+                channels=tuple(
+                    CapChannel(
+                        id=f"{port_id}{channel_num}",
+                        port_id=port_id,
+                        number=channel_num,
+                    )
+                    for channel_num in range(n_channels)
+                ),
+            )
+        elif port_type in (PortType.READ_OUT, PortType.MNTR_OUT):
+            port = GenPort(
+                id=port_id,
+                box_id=box_id,
+                number=port_num,
+                type=port_type,
+                sideband="U",
+                channels=tuple(
+                    GenChannel(
+                        id=f"{port_id}{channel_num}",
+                        port_id=port_id,
+                        number=channel_num,
+                    )
+                    for channel_num in range(n_channels)
+                ),
+            )
+        elif port_type in (PortType.CTRL, PortType.PUMP):
+            port = GenPort(
+                id=port_id,
+                box_id=box_id,
+                number=port_num,
+                type=port_type,
+                sideband="L",
+                channels=tuple(
+                    GenChannel(
+                        id=f"{port_id}.CH{channel_num}",
+                        port_id=port_id,
+                        number=channel_num,
+                    )
+                    for channel_num in range(n_channels)
+                ),
+            )
+        else:
+            raise ValueError(f"Invalid port type: {port_type}")
+        ports.append(port)
+        port_index[port_type] += 1
+    return tuple(ports)
 
 
 @dataclass
-class Target(Model):
-    label: str
-    qubit: str
-    type: TargetType
-    frequency: float
+class BoxPool(Model):
+    boxes: tuple[Box, ...]
+    clock_master_address: str
+
+
+@dataclass
+class Box(Model):
+    id: str
+    name: str
+    type: BoxType
+    address: str
+    adapter: str
+    ports: tuple[Union[GenPort, CapPort], ...]
 
     @classmethod
-    def from_label(
+    def new(
         cls,
-        label: str,
-        frequency: float = 0.0,
-    ) -> Target:
-        if match := re.match(r"^R(Q\d+)$", label):
-            qubit = match.group(1)
-            type = TargetType.READ
-        elif match := re.match(r"^(Q\d+)$", label):
-            qubit = match.group(1)
-            type = TargetType.CTRL_GE
-        elif match := re.match(r"^(Q\d+)-ef$", label):
-            qubit = match.group(1)
-            type = TargetType.CTRL_EF
-        elif match := re.match(r"^(Q\d+)-CR$", label):
-            qubit = match.group(1)
-            type = TargetType.CTRL_CR
-        elif match := re.match(r"^(Q\d+)(-|_)[a-zA-Z0-9]+$", label):
-            qubit = match.group(1)
-            type = TargetType.UNKNOWN
-        else:
-            raise ValueError(f"Invalid target label `{label}`.")
-
+        *,
+        id: str,
+        name: str,
+        type: BoxType | str,
+        address: str,
+        adapter: str,
+    ) -> Box:
+        type = BoxType(type) if isinstance(type, str) else type
         return cls(
-            label=label,
-            qubit=qubit,
+            id=id,
+            name=name,
             type=type,
-            frequency=frequency,
+            address=address,
+            adapter=adapter,
+            ports=create_ports(id, type),
         )
 
-    @classmethod
-    def get_target_type(cls, label: str) -> TargetType:
-        target = cls.from_label(label)
-        return target.type
+    @property
+    def input_ports(self) -> list[CapPort]:
+        return [port for port in self.ports if isinstance(port, CapPort)]
 
-    @classmethod
-    def get_qubit_label(cls, label: str) -> str:
-        target = cls.from_label(label)
-        return target.qubit
+    @property
+    def output_ports(self) -> list[GenPort]:
+        return [port for port in self.ports if isinstance(port, GenPort)]
 
-    @classmethod
-    def get_ge_label(cls, label: str) -> str:
-        qubit = cls.get_qubit_label(label)
-        return f"{qubit}"
+    @property
+    def control_ports(self) -> list[Port]:
+        return [port for port in self.ports if port.is_control_port]
 
-    @classmethod
-    def get_ef_label(cls, label: str) -> str:
-        qubit = cls.get_qubit_label(label)
-        return f"{qubit}-ef"
+    @property
+    def readout_ports(self) -> list[Port]:
+        return [port for port in self.ports if port.is_readout_port]
 
-    @classmethod
-    def get_cr_label(cls, label: str) -> str:
-        qubit = cls.get_qubit_label(label)
-        return f"{qubit}-CR"
+    @property
+    def monitor_ports(self) -> list[Port]:
+        return [port for port in self.ports if port.is_monitor_port]
 
-    @classmethod
-    def get_readout_label(cls, label: str) -> str:
-        qubit = cls.get_qubit_label(label)
-        return f"R{qubit}"
-
-    @classmethod
-    def is_ge_control(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
-        return type == TargetType.CTRL_GE
-
-    @classmethod
-    def is_ef_control(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
-        return type == TargetType.CTRL_EF
-
-    @classmethod
-    def is_cr_control(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
-        return type == TargetType.CTRL_CR
-
-    @classmethod
-    def is_control(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
-        return type != TargetType.READ
-
-    @classmethod
-    def is_readout(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
-        return type == TargetType.READ
+    @property
+    def pump_ports(self) -> list[Port]:
+        return [port for port in self.ports if port.is_pump_port]
 
 
 @dataclass
-class WiringInfo:
-    ctrl: list[tuple[Qubit, GenPort]]
-    read_out: list[tuple[Mux, GenPort]]
-    read_in: list[tuple[Mux, CapPort]]
+class Port(Model):
+    id: str
+    box_id: str
+    number: int
+    type: PortType
+    channels: Union[tuple[GenChannel, ...], tuple[CapChannel, ...]]
+
+    @property
+    def direction(self) -> str:
+        return PORT_DIRECTION[self.type]
+
+    @property
+    def is_input_port(self) -> bool:
+        return self.direction == "in"
+
+    @property
+    def is_output_port(self) -> bool:
+        return self.direction == "out"
+
+    @property
+    def is_control_port(self) -> bool:
+        return self.type == PortType.CTRL
+
+    @property
+    def is_readout_port(self) -> bool:
+        return self.type in (PortType.READ_IN, PortType.READ_OUT)
+
+    @property
+    def is_monitor_port(self) -> bool:
+        return self.type in (PortType.MNTR_IN, PortType.MNTR_OUT)
+
+    @property
+    def is_pump_port(self) -> bool:
+        return self.type == PortType.PUMP
 
 
 @dataclass
-class PortSet:
-    ctrl_port: Port
-    read_in_port: Port
-    read_out_port: Port
+class GenPort(Port):
+    channels: tuple[GenChannel, ...]
+    sideband: Literal["U", "L"]
+    lo_freq: int = DEFAULT_LO_FREQ
+    cnco_freq: int = DEFAULT_CNCO_FREQ
+    vatt: int = DEFAULT_VATT
+    fullscale_current: int = DEFAULT_FULLSCALE_CURRENT
+    rfswitch: Literal["pass", "block"] = "pass"
+
+
+@dataclass
+class CapPort(Port):
+    channels: tuple[CapChannel, ...]
+    lo_freq: int = DEFAULT_LO_FREQ
+    cnco_freq: int = DEFAULT_CNCO_FREQ
+    rfswitch: Literal["open", "loop"] = "open"
+
+
+@dataclass
+class Channel(Model):
+    id: str
+    port_id: str
+    number: int
+
+
+@dataclass
+class GenChannel(Channel):
+    fnco_freq: int = DEFAULT_FNCO_FREQ
+    nwait: int = DEFAULT_NWAIT
+
+
+@dataclass
+class CapChannel(Channel):
+    fnco_freq: int = DEFAULT_FNCO_FREQ
+    ndelay: int = DEFAULT_NDELAY
 
 
 class ControlSystem:
     def __init__(
         self,
-        quantum_system: QuantumSystem,
-        qube_system: QubeSystem,
-        wiring_info: WiringInfo,
+        boxes: Sequence[Box],
+        clock_master_address: str = DEFAULT_CLOCK_MASTER_ADDRESS,
     ):
-        self._quantum_system: Final = quantum_system
-        self._qube_system: Final = qube_system
-        self._wiring_info: Final = wiring_info
-        # self._targets: Final = self._create_targets()
-        # self._ctrl_channel_map: Final = self._create_ctrl_channel_map()
-        # self._read_in_channel_map: Final = self._create_read_in_channel_map()
-        # self._read_out_channel_map: Final = self._create_read_out_channel_map()
-        # self._port_qubit_map: Final = self._create_port_qubit_map()
-        # self._qubit_port_map: Final = self._create_qubit_port_map()
-        # self._resonator_port_map: Final = self._create_resonator_port_map()
-        # self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
-
-    @classmethod
-    def load_from_config_files(cls, chip_id: str):
-        with open(Path("config/chip.yaml"), "r") as file:
-            chip_dict = yaml.safe_load(file)
-        with open(Path("config/box.yaml"), "r") as file:
-            box_dict = yaml.safe_load(file)
-        with open(Path("config/wiring.yaml"), "r") as file:
-            wiring_dict = yaml.safe_load(file)
-        chip = Chip.new(
-            id=chip_id,
-            name=chip_dict[chip_id]["name"],
-            n_qubits=chip_dict[chip_id]["n_qubits"],
+        self._box_pool: Final = BoxPool(
+            boxes=tuple(boxes),
+            clock_master_address=clock_master_address,
         )
-        quantum_system = QuantumSystem(chip=chip)
-        boxes = [
-            Box.new(
-                id=id,
-                name=box["name"],
-                type=box["type"],
-                address=box["address"],
-                adapter=box["adapter"],
-            )
-            for id, box in box_dict.items()
-        ]
-        qube_system = QubeSystem(boxes=boxes)
-
-        def get_port(specifier: str):
-            box_id = specifier.split("-")[0]
-            port_num = int(specifier.split("-")[1])
-            port = qube_system.get_port(box_id, port_num)
-            return port
-
-        ctrl: list[tuple[Qubit, GenPort]] = []
-        read_out: list[tuple[Mux, GenPort]] = []
-        read_in: list[tuple[Mux, CapPort]] = []
-
-        for wiring in wiring_dict[chip_id]:
-            mux_num = int(wiring["mux"])
-            mux = quantum_system.get_mux(mux_num)
-            qubits = quantum_system.get_qubits_in_mux(mux_num)
-            for identifier, qubit in zip(wiring["ctrl"], qubits):
-                ctrl_port: GenPort = get_port(identifier)  # type: ignore
-                ctrl.append((qubit, ctrl_port))
-            read_out_port: GenPort = get_port(wiring["read_out"])  # type: ignore
-            read_out.append((mux, read_out_port))
-            read_in_port: CapPort = get_port(wiring["read_in"])  # type: ignore
-            read_in.append((mux, read_in_port))
-
-        wiring_info = WiringInfo(
-            ctrl=ctrl,
-            read_out=read_out,
-            read_in=read_in,
-        )
-
-        return cls(
-            quantum_system=quantum_system,
-            qube_system=qube_system,
-            wiring_info=wiring_info,
-        )
-
-    def _create_targets(self) -> dict[str, Target]:
-        targets = {}
-
-        # control targets
-        qubits = self.quantum_system.qubits
-        for qubit in qubits.values():
-            # ge
-            ge_label = Target.get_ge_label(qubit.label)
-            targets[ge_label] = Target(
-                label=qubit.label,
-                frequency=qubit.frequency,
-                type=TargetType.CTRL_GE,
-                qubit=qubit.label,
-            )
-            # ef
-            ef_label = Target.get_ef_label(qubit.label)
-            targets[ef_label] = Target(
-                label=ef_label,
-                frequency=qubit.frequency + qubit.anharmonicity,
-                type=TargetType.CTRL_EF,
-                qubit=qubit.label,
-            )
-            # cr
-            spectators = self.quantum_system.chip.graph.get_spectators(qubit.label)
-            cr_initial_frequency = sum(
-                [qubits[spectator].frequency for spectator in spectators]
-            ) / len(spectators)
-            cr_label = Target.get_cr_label(qubit.label)
-            targets[cr_label] = Target(
-                label=cr_label,
-                frequency=cr_initial_frequency,
-                type=TargetType.CTRL_CR,
-                qubit=qubit.label,
-            )
-
-        # readout targets
-        resonators = self.quantum_system.resonators
-        for resonator in resonators.values():
-            targets[resonator.label] = Target(
-                label=resonator.label,
-                frequency=resonator.frequency,
-                type=TargetType.READ,
-                qubit=resonator.qubit,
-            )
-
-        return targets
-
-    def _create_ctrl_channel_map(self) -> dict[str, Channel]:
-        map = {}
-        for mux in self.muxes:
-            for qubit, port in zip(mux.qubits, mux.ctrl_ports):
-                label = qubit.label
-                n_channels = len(port.channels)
-                if n_channels == 1:
-                    ge = Target.get_ge_label(label)
-                    map[ge] = port.channels[0]
-                elif n_channels == 3:
-                    ge = Target.get_ge_label(label)
-                    ef = Target.get_ef_label(label)
-                    cr = Target.get_cr_label(label)
-                    map[ge] = port.channels[0]
-                    map[ef] = port.channels[1]
-                    map[cr] = port.channels[2]
-                else:
-                    raise ValueError("Invalid number of channels.")
-        return map
-
-    def _create_read_out_channel_map(self) -> dict[str, Channel]:
-        map = {}
-        for mux in self.muxes:
-            port = mux.read_out_port
-            for qubit in mux.qubits:
-                label = Target.get_readout_label(qubit.label)
-                map[label] = port.channels[0]
-        return map
-
-    def _create_read_in_channel_map(self) -> dict[str, Channel]:
-        map = {}
-        for mux in self.muxes:
-            port = mux.read_in_port
-            for index, qubit in enumerate(mux.qubits):
-                label = Target.get_readout_label(qubit.label)
-                map[label] = port.channels[index]
-        return map
-
-    def _create_port_qubit_map(self) -> dict[str, Qubit]:
-        map = {}
-        for mux in self.muxes:
-            for qubit, port in zip(mux.qubits, mux.ctrl_ports):
-                map[port.id] = qubit
-        return map
-
-    def _create_qubit_port_map(self) -> dict[str, Port]:
-        map = {}
-        for mux in self.muxes:
-            for qubit, port in zip(mux.qubits, mux.ctrl_ports):
-                map[qubit.label] = port
-        return map
-
-    def _create_resonator_port_map(self) -> dict[str, Port]:
-        map = {}
-        for mux in self.muxes:
-            for qubit in mux.qubits:
-                label = Target.get_readout_label(qubit.label)
-                map[label] = mux.read_out_port
-        return map
-
-    def _create_qubit_port_set_map(self) -> dict[str, PortSet]:
-        map = {}
-        for mux in self.muxes:
-            for qubit, ctrl_port in zip(mux.qubits, mux.ctrl_ports):
-                map[qubit.label] = PortSet(
-                    ctrl_port=ctrl_port,
-                    read_in_port=mux.read_in_port,
-                    read_out_port=mux.read_out_port,
-                )
-        return map
+        self._box_dict: Final = {box.id: box for box in self._box_pool.boxes}
 
     @property
-    def quantum_system(self) -> QuantumSystem:
-        return self._quantum_system
+    def box_pool(self) -> BoxPool:
+        return self._box_pool
 
     @property
-    def qube_system(self) -> QubeSystem:
-        return self._qube_system
+    def hash(self) -> int:
+        return self.box_pool.hash
 
     @property
-    def muxes(self) -> list[Wiring]:
-        return self._muxes
+    def clock_master_address(self) -> str:
+        return self.box_pool.clock_master_address
 
     @property
-    def targets(self) -> dict[str, Target]:
-        return self._targets
+    def boxes(self) -> list[Box]:
+        return list(self._box_pool.boxes)
 
-    @property
-    def ctrl_channel_map(self) -> dict[str, Channel]:
-        return self._ctrl_channel_map
-
-    @property
-    def read_in_channel_map(self) -> dict[str, Channel]:
-        return self._read_in_channel_map
-
-    @property
-    def read_out_channel_map(self) -> dict[str, Channel]:
-        return self._read_out_channel_map
-
-    @property
-    def port_qubit_map(self) -> dict[str, Qubit]:
-        return self._port_qubit_map
-
-    @property
-    def qubit_port_map(self) -> dict[str, Port]:
-        return self._qubit_port_map
-
-    @property
-    def resonator_port_map(self) -> dict[str, Port]:
-        return self._resonator_port_map
-
-    @property
-    def qubit_port_set_map(self) -> dict[str, PortSet]:
-        return self._qubit_port_set_map
-
-    @property
-    def ge_targets(self) -> dict[str, Target]:
-        ge_labels = [
-            Target.get_ge_label(qubit.label)
-            for qubit in self.quantum_system.qubits.values()
-        ]
-        return {label: self.get_ge_target(label) for label in ge_labels}
-
-    @property
-    def ef_targets(self) -> dict[str, Target]:
-        ef_labels = [
-            Target.get_ef_label(qubit.label)
-            for qubit in self.quantum_system.qubits.values()
-        ]
-        return {label: self.get_ef_target(label) for label in ef_labels}
-
-    @property
-    def cr_targets(self) -> dict[str, Target]:
-        cr_labels = [
-            Target.get_cr_label(qubit.label)
-            for qubit in self.quantum_system.qubits.values()
-        ]
-        return {label: self.get_cr_target(label) for label in cr_labels}
-
-    @property
-    def control_targets(self) -> dict[str, Target]:
-        return self.ge_targets | self.ef_targets | self.cr_targets
-
-    @property
-    def readout_targets(self) -> dict[str, Target]:
-        return {label: self.targets[label] for label in self.quantum_system.resonators}
-
-    def get_target(self, label: str) -> Target:
+    def get_box(self, box_id: str) -> Box:
         try:
-            return self._targets[label]
+            return self._box_dict[box_id]
         except KeyError:
-            raise KeyError(f"Target `{label}` not found.")
+            raise KeyError(f"Box `{box_id}` not found.")
 
-    def get_ge_target(self, label: str) -> Target:
-        label = Target.get_ge_label(label)
-        return self.get_target(label)
+    def get_port(self, box_id: str, port_number: int) -> GenPort | CapPort:
+        box = self.get_box(box_id)
+        try:
+            return next(port for port in box.ports if port.number == port_number)
+        except StopIteration:
+            raise IndexError(
+                f"Port number `{port_number}` not found in box `{box_id}`."
+            )
 
-    def get_ef_target(self, label: str) -> Target:
-        label = Target.get_ef_label(label)
-        return self.get_target(label)
+    def set_port_params(
+        self,
+        box_id: str,
+        port_number: int,
+        *,
+        rfswitch: Literal["pass", "block", "open", "loop"] | None = None,
+        sideband: Literal["U", "L"] | None = None,
+        lo_freq: int | None = None,
+        cnco_freq: int | None = None,
+        fnco_freqs: Sequence[int] | None = None,
+        vatt: int | None = None,
+        fullscale_current: int | None = None,
+        nwait: int | None = None,
+        ndelay: int | None = None,
+    ) -> None:
+        port = self.get_port(box_id, port_number)
 
-    def get_cr_target(self, label: str) -> Target:
-        label = Target.get_cr_label(label)
-        return self.get_target(label)
+        if rfswitch is not None:
+            port.rfswitch = rfswitch  # type: ignore
+        if lo_freq is not None:
+            port.lo_freq = lo_freq
+        if cnco_freq is not None:
+            port.cnco_freq = cnco_freq
 
-    def get_readout_target(self, label: str) -> Target:
-        label = Target.get_readout_label(label)
-        return self.get_target(label)
-
-    def get_mux_by_port(self, port: Port) -> Wiring:
-        for mux in self.muxes:
-            if port in mux.ctrl_ports or port in (mux.read_in_port, mux.read_out_port):
-                return mux
-        raise ValueError(f"Port `{port}` not found in any MUX.")
+        if isinstance(port, GenPort):
+            if sideband is not None:
+                port.sideband = sideband
+            if vatt is not None:
+                port.vatt = vatt
+            if fullscale_current is not None:
+                port.fullscale_current = fullscale_current
+            if fnco_freqs is not None:
+                if len(fnco_freqs) != len(port.channels):
+                    raise ValueError(
+                        f"Expected {len(port.channels)} fnco_freqs, "
+                        f"but got {len(fnco_freqs)}."
+                    )
+                for gen_channel, fnco_freq in zip(port.channels, fnco_freqs):
+                    gen_channel.fnco_freq = fnco_freq
+            if nwait is not None:
+                for gen_channel in port.channels:
+                    gen_channel.nwait = nwait
+        elif isinstance(port, CapPort):
+            if fnco_freqs is not None:
+                if len(fnco_freqs) != len(port.channels):
+                    raise ValueError(
+                        f"Expected {len(port.channels)} fnco_freqs, "
+                        f"but got {len(fnco_freqs)}."
+                    )
+                for cap_channel, fnco_freq in zip(port.channels, fnco_freqs):
+                    cap_channel.fnco_freq = fnco_freq
+            if ndelay is not None:
+                for cap_channel in port.channels:
+                    cap_channel.ndelay = ndelay
+        else:
+            raise ValueError(f"Invalid port type: {type(port)}")
