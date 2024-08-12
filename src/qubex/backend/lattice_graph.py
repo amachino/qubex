@@ -1,19 +1,24 @@
+from __future__ import annotations
+
+import math
 from typing import Final
 
 MUX_SIZE = 4
 
+PREFIX_QUBIT = "Q"
+PREFIX_RESONATOR = "RQ"
+PREFIX_MUX = "MUX"
+
 
 class LatticeGraph:
     """
-    Lattice chip graph.
-
-    ex1) n_row = 2, n_col = 2
+    ex1) n_qubits = 16
     |00|01|04|05|
     |02|03|06|07|
     |08|09|12|13|
     |10|11|14|15|
 
-    ex2) n_row = 4, n_col = 4
+    ex2) n_qubits = 64
     |00|01|04|05|08|09|12|13|
     |02|03|06|07|10|11|14|15|
     |16|17|20|21|24|25|28|29|
@@ -23,7 +28,7 @@ class LatticeGraph:
     |48|49|52|53|56|57|60|61|
     |50|51|54|55|58|59|62|63|
 
-    ex3) n_row = 6, n_col = 6
+    ex3) n_qubits = 144
     |000|001|004|005|008|009|012|013|016|017|020|021|
     |002|003|006|007|010|011|014|015|018|019|022|023|
     |024|025|028|029|032|033|036|037|040|041|044|045|
@@ -40,46 +45,105 @@ class LatticeGraph:
 
     def __init__(
         self,
-        n_row: int,
-        n_col: int,
+        n_qubits: int,
     ):
-        """
-        Initialize the lattice chip graph.
-
-        Parameters
-        ----------
-        n_row : int
-            Number of rows of MUXes.
-        n_col : int
-            Number of columns of MUXes.
-        """
-        self.n_row: Final = n_row
-        self.n_col: Final = n_col
-        self.n_muxes: Final = n_row * n_col
-        self.n_qubits_per_mux: Final = MUX_SIZE
-        self.n_qubits: Final = self.n_muxes * MUX_SIZE
+        if n_qubits % MUX_SIZE != 0:
+            raise ValueError("n_qubits must be a multiple of MUX_SIZE.")
+        n_muxes = n_qubits // MUX_SIZE
+        mux_side_length = math.isqrt(n_muxes)
+        if mux_side_length**2 != n_muxes:
+            raise ValueError("n_qubits must be a square number.")
+        self.n_qubits: Final = n_qubits
         self.max_digit: Final = len(str(self.n_qubits - 1))
-        self.edges: Final = self.create_edges(n_row, n_col)
+        self.edges: Final = self._create_edges(mux_side_length, mux_side_length)
+
+    @property
+    def n_muxes(
+        self,
+    ) -> int:
+        """
+        Get number of MUXes.
+
+        Returns
+        -------
+        int
+            Number of MUXes.
+        """
+        return self.n_qubits // MUX_SIZE
+
+    @property
+    def indices(
+        self,
+    ) -> list[int]:
+        """
+        Get qubit indices.
+
+        Returns
+        -------
+        list[int]
+            List of qubit indices.
+        """
+        return list(range(self.n_qubits))
 
     @property
     def qubits(
         self,
-        prefix: str = "Q",
+        prefix: str = PREFIX_QUBIT,
     ) -> list[str]:
         """
-        Get qubit names.
+        Get qubit labels.
 
         Parameters
         ----------
         prefix : str, optional
-            Prefix of qubit names, by default "Q".
+            Prefix of qubit labels, by default "Q".
 
         Returns
         -------
         list[str]
-            List of qubit names.
+            List of qubit labels.
         """
-        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in range(self.n_qubits)]
+        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in self.indices]
+
+    @property
+    def resonators(
+        self,
+        prefix: str = PREFIX_RESONATOR,
+    ) -> list[str]:
+        """
+        Get resonator labels.
+
+        Parameters
+        ----------
+        prefix : str, optional
+            Prefix of resonator labels, by default "RQ".
+
+        Returns
+        -------
+        list[str]
+            List of resonator labels.
+        """
+        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in self.indices]
+
+    @property
+    def muxes(
+        self,
+        prefix: str = PREFIX_MUX,
+    ) -> list[str]:
+        """
+        Get MUX labels.
+
+        Parameters
+        ----------
+        prefix : str, optional
+            Prefix of MUX labels, by default "MUX".
+
+        Returns
+        -------
+        list[str]
+            List of MUX labels.
+        """
+        return [f"{prefix}{i}" for i in range(self.n_muxes)]
 
     @property
     def qubit_edges(
@@ -95,57 +159,178 @@ class LatticeGraph:
         """
         return [(self.qubits[edge[0]], self.qubits[edge[1]]) for edge in self.edges]
 
+    def get_indices_in_mux(
+        self,
+        mux: int | str,
+    ) -> list[int]:
+        """
+        Get qubit indices in the input MUX.
+
+        Parameters
+        ----------
+        mux : int, str
+            MUX number or label.
+
+        Returns
+        -------
+        list[int]
+            List of qubit indices.
+        """
+        if isinstance(mux, str):
+            mux = self.muxes.index(mux)
+        base_qubit = mux * MUX_SIZE
+        return [base_qubit + i for i in range(MUX_SIZE)]
+
     def get_qubits_in_mux(
         self,
-        mux: int,
+        mux: int | str,
     ) -> list[str]:
         """
-        Get qubit names in the input MUX.
+        Get qubit labels in the input MUX.
 
         Parameters
         ----------
-        mux : int
-            MUX number.
+        mux : int, str
+            MUX number or label.
 
         Returns
         -------
         list[str]
-            List of qubit names in the MUX.
+            List of qubit labels.
         """
-        base_qubit = mux * MUX_SIZE
-        return [
-            f"Q{str(base_qubit + i).zfill(self.max_digit)}" for i in range(MUX_SIZE)
-        ]
+        return [self.qubits[i] for i in self.get_indices_in_mux(mux)]
 
-    def get_spectators(
+    def get_resonators_in_mux(
         self,
-        qubit: str,
+        mux: int | str,
     ) -> list[str]:
         """
-        Get spectators of the input qubit.
+        Get resonator labels in the input MUX.
 
         Parameters
         ----------
-        qubit : str
-            Qubit label.
+        mux : int, str
+            MUX number or label.
 
         Returns
         -------
         list[str]
-            List of spectator qubit labels.
+            List of resonator labels.
         """
+        return [self.resonators[i] for i in self.get_indices_in_mux(mux)]
+
+    def get_mux_of_qubit(
+        self,
+        qubit: str | int,
+    ) -> str:
+        """
+        Get MUX label of the input qubit.
+
+        Parameters
+        ----------
+        qubit : str, int
+            Qubit label or index.
+
+        Returns
+        -------
+        str
+            MUX label.
+        """
+        if isinstance(qubit, int):
+            qubit = self.qubits[qubit]
+        mux = self.qubits.index(qubit) // MUX_SIZE
+        return self.muxes[mux]
+
+    def get_mux_of_resonator(
+        self,
+        resonator: str | int,
+    ) -> str:
+        """
+        Get MUX label of the input resonator.
+
+        Parameters
+        ----------
+        resonator : str, int
+            Resonator label or index.
+
+        Returns
+        -------
+        str
+            MUX label.
+        """
+        if isinstance(resonator, int):
+            resonator = self.resonators[resonator]
+        mux = self.resonators.index(resonator) // MUX_SIZE
+        return self.muxes[mux]
+
+    def get_spectator_indices(
+        self,
+        qubit: int | str,
+        *,
+        in_same_mux: bool = False,
+    ) -> list[int]:
+        """
+        Get spectator indices of the input qubit.
+
+        Parameters
+        ----------
+        qubit : int, str
+            Qubit index or label.
+        in_same_mux : bool, optional
+            Whether to get only spectators in the same MUX, by default False.
+
+        Returns
+        -------
+        list[int]
+            List of spectator indices.
+        """
+        if isinstance(qubit, str):
+            qubit = self.qubits.index(qubit)
+
+        if in_same_mux:
+            mux = self.get_mux_of_qubit(qubit)
+
         spectators = []
-        for edge in self.qubit_edges:
+        for edge in self.edges:
             if edge[0] == qubit:
                 spectator = edge[1]
             elif edge[1] == qubit:
                 spectator = edge[0]
             else:
                 continue
+            if in_same_mux:
+                if self.get_mux_of_qubit(spectator) != mux:
+                    continue
             spectators.append(spectator)
         return spectators
 
-    def create_edges(
+    def get_spectator_qubits(
+        self,
+        qubit: int | str,
+        *,
+        in_same_mux: bool = False,
+    ) -> list[str]:
+        """
+        Get spectator labels of the input qubit.
+
+        Parameters
+        ----------
+        qubit : int, str
+            Qubit index or label.
+        in_same_mux : bool, optional
+            Whether to get only spectators in the same MUX, by default False.
+
+        Returns
+        -------
+        list[str]
+            List of spectator labels.
+        """
+        return [
+            self.qubits[spectator]
+            for spectator in self.get_spectator_indices(qubit, in_same_mux=in_same_mux)
+        ]
+
+    def _create_edges(
         self,
         n_row: int,
         n_col: int,

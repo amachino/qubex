@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from pydantic import RootModel, TypeAdapter
+from pydantic import ConfigDict, RootModel, TypeAdapter
+from pydantic.dataclasses import dataclass
 
 
+@dataclass(config=ConfigDict(validate_assignment=True))
 class Model:
     @classmethod
     def _pd_class(cls):

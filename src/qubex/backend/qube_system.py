@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Final, Literal, Union
+from typing import Final, Literal, Sequence, Union
 
 from pydantic.dataclasses import dataclass
 
 from .model import Model
 
-CLOCK_MASTER_ADDRESS: Final = "10.3.0.255"
-
+DEFAULT_CLOCK_MASTER_ADDRESS: Final = "10.3.0.255"
 DEFAULT_LO_FREQ: Final = 9_000_000_000
 DEFAULT_CNCO_FREQ: Final = 1_500_000_000
 DEFAULT_FNCO_FREQ: Final = 0
@@ -249,7 +248,7 @@ NUMBER_OF_CHANNELS: Final = {
 def create_ports(
     box_id: str,
     box_type: BoxType,
-) -> list[Union[GenPort, CapPort]]:
+) -> tuple[Union[GenPort, CapPort], ...]:
     ports: list[Union[GenPort, CapPort]] = []
     port_index = {
         PortType.NA: 0,
@@ -286,14 +285,14 @@ def create_ports(
                 box_id=box_id,
                 number=port_num,
                 type=port_type,
-                channels=[
+                channels=tuple(
                     CapChannel(
                         id=f"{port_id}{channel_num}",
                         port_id=port_id,
                         number=channel_num,
                     )
                     for channel_num in range(n_channels)
-                ],
+                ),
             )
         elif port_type in (PortType.READ_OUT, PortType.MNTR_OUT):
             port = GenPort(
@@ -302,14 +301,14 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="U",
-                channels=[
+                channels=tuple(
                     GenChannel(
                         id=f"{port_id}{channel_num}",
                         port_id=port_id,
                         number=channel_num,
                     )
                     for channel_num in range(n_channels)
-                ],
+                ),
             )
         elif port_type in (PortType.CTRL, PortType.PUMP):
             port = GenPort(
@@ -318,20 +317,26 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="L",
-                channels=[
+                channels=tuple(
                     GenChannel(
                         id=f"{port_id}.CH{channel_num}",
                         port_id=port_id,
                         number=channel_num,
                     )
                     for channel_num in range(n_channels)
-                ],
+                ),
             )
         else:
             raise ValueError(f"Invalid port type: {port_type}")
         ports.append(port)
         port_index[port_type] += 1
-    return ports
+    return tuple(ports)
+
+
+@dataclass
+class BoxPool(Model):
+    boxes: tuple[Box, ...]
+    clock_master_address: str
 
 
 @dataclass
@@ -341,7 +346,7 @@ class Box(Model):
     type: BoxType
     address: str
     adapter: str
-    ports: list[Union[GenPort, CapPort]]
+    ports: tuple[Union[GenPort, CapPort], ...]
 
     @classmethod
     def new(
@@ -394,7 +399,7 @@ class Port(Model):
     box_id: str
     number: int
     type: PortType
-    channels: Union[list[GenChannel], list[CapChannel]]
+    channels: Union[tuple[GenChannel, ...], tuple[CapChannel, ...]]
 
     @property
     def direction(self) -> str:
@@ -427,21 +432,21 @@ class Port(Model):
 
 @dataclass
 class GenPort(Port):
-    channels: list[GenChannel]
+    channels: tuple[GenChannel, ...]
     sideband: Literal["U", "L"]
     lo_freq: int = DEFAULT_LO_FREQ
     cnco_freq: int = DEFAULT_CNCO_FREQ
     vatt: int = DEFAULT_VATT
     fullscale_current: int = DEFAULT_FULLSCALE_CURRENT
-    rfswitch: str = "pass"
+    rfswitch: Literal["pass", "block"] = "pass"
 
 
 @dataclass
 class CapPort(Port):
-    channels: list[CapChannel]
+    channels: tuple[CapChannel, ...]
     lo_freq: int = DEFAULT_LO_FREQ
     cnco_freq: int = DEFAULT_CNCO_FREQ
-    rfswitch: str = "open"
+    rfswitch: Literal["open", "loop"] = "open"
 
 
 @dataclass
@@ -466,23 +471,96 @@ class CapChannel(Channel):
 class QubeSystem:
     def __init__(
         self,
-        *,
-        boxes: list[Box],
-        clock_master_address: str = CLOCK_MASTER_ADDRESS,
+        boxes: Sequence[Box],
+        clock_master_address: str = DEFAULT_CLOCK_MASTER_ADDRESS,
     ):
-        self._clock_master_address: Final = clock_master_address
-        self._box_dict: Final = {box.id: box for box in boxes}
+        self._box_pool: Final = BoxPool(
+            boxes=tuple(boxes),
+            clock_master_address=clock_master_address,
+        )
+        self._box_dict: Final = {box.id: box for box in self._box_pool.boxes}
+
+    @property
+    def box_pool(self) -> BoxPool:
+        return self._box_pool
+
+    @property
+    def hash(self) -> int:
+        return self.box_pool.hash
 
     @property
     def clock_master_address(self) -> str:
-        return self._clock_master_address
+        return self.box_pool.clock_master_address
 
     @property
     def boxes(self) -> list[Box]:
-        return list(self._box_dict.values())
+        return list(self._box_pool.boxes)
 
     def get_box(self, box_id: str) -> Box:
         try:
             return self._box_dict[box_id]
         except KeyError:
             raise KeyError(f"Box `{box_id}` not found.")
+
+    def set_port_params(
+        self,
+        box_id: str,
+        port_number: int,
+        *,
+        rfswitch: Literal["pass", "block", "open", "loop"] | None = None,
+        sideband: Literal["U", "L"] | None = None,
+        lo_freq: int | None = None,
+        cnco_freq: int | None = None,
+        fnco_freqs: Sequence[int] | None = None,
+        vatt: int | None = None,
+        fullscale_current: int | None = None,
+        nwait: int | None = None,
+        ndelay: int | None = None,
+    ) -> None:
+        box = self.get_box(box_id)
+        try:
+            port = box.ports[port_number]
+        except IndexError:
+            raise IndexError(
+                f"Port number `{port_number}` not found in box `{box_id}`."
+            )
+
+        if rfswitch is not None:
+            port.rfswitch = rfswitch  # type: ignore
+        if lo_freq is not None:
+            port.lo_freq = lo_freq
+        if cnco_freq is not None:
+            port.cnco_freq = cnco_freq
+
+        if isinstance(port, GenPort):
+            if sideband is not None:
+                port.sideband = sideband
+            if vatt is not None:
+                port.vatt = vatt
+            if fullscale_current is not None:
+                port.fullscale_current = fullscale_current
+            if fnco_freqs is not None:
+                if len(fnco_freqs) != len(port.channels):
+                    raise ValueError(
+                        f"Expected {len(port.channels)} fnco_freqs, "
+                        f"but got {len(fnco_freqs)}."
+                    )
+                for gen_channel, fnco_freq in zip(port.channels, fnco_freqs):
+                    gen_channel.fnco_freq = fnco_freq
+            if nwait is not None:
+                for gen_channel in port.channels:
+                    gen_channel.nwait = nwait
+        elif isinstance(port, CapPort):
+            if fnco_freqs is not None:
+                if len(fnco_freqs) != len(port.channels):
+                    raise ValueError(
+                        f"Expected {len(port.channels)} fnco_freqs, "
+                        f"but got {len(fnco_freqs)}."
+                    )
+                for cap_channel, fnco_freq in zip(port.channels, fnco_freqs):
+                    cap_channel.fnco_freq = fnco_freq
+            if ndelay is not None:
+                for cap_channel in port.channels:
+                    cap_channel.ndelay = ndelay
+        else:
+            raise ValueError(f"Invalid port type: {type(port)}")
