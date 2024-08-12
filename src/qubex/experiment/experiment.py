@@ -351,7 +351,7 @@ class Experiment:
             π/2 pulse.
         """
         amplitude = self._system_note.get(HPI_AMPLITUDE)
-        ef_labels = [Target.get_ef_label(target) for target in self._qubits]
+        ef_labels = [Target.ef_label(target) for target in self._qubits]
         return {
             target: FlatTop(
                 duration=HPI_DURATION,
@@ -372,7 +372,7 @@ class Experiment:
             π/2 pulse.
         """
         amplitude = self._system_note.get(PI_AMPLITUDE)
-        ef_labels = [Target.get_ef_label(target) for target in self._qubits]
+        ef_labels = [Target.ef_label(target) for target in self._qubits]
         return {
             target: FlatTop(
                 duration=PI_DURATION,
@@ -400,7 +400,7 @@ class Experiment:
     def ef_rabi_params(self) -> dict[str, RabiParam]:
         """Get the ef Rabi parameters."""
         return {
-            Target.get_ge_label(target): param
+            Target.ge_label(target): param
             for target, param in self.rabi_params.items()
             if Target.is_ef_control(target)
         }
@@ -909,7 +909,7 @@ class Experiment:
         for target, state in states.items():
             targets.append(target)
             if state == "f":
-                targets.append(Target.get_ef_label(target))
+                targets.append(Target.ef_label(target))
 
         with PulseSchedule(targets) as ps:
             for target, state in states.items():
@@ -922,7 +922,7 @@ class Experiment:
                 elif state == "f":
                     ps.add(target, self.pi_pulse[target])
                     ps.barrier()
-                    ef_label = Target.get_ef_label(target)
+                    ef_label = Target.ef_label(target)
                     ps.add(ef_label, self.ef_pi_pulse[ef_label])
 
         return self.measure(
@@ -1113,7 +1113,7 @@ class Experiment:
         --------
         >>> result = ex.obtain_ef_rabi_params(["Q00", "Q01"])
         """
-        ef_labels = [Target.get_ef_label(target) for target in targets]
+        ef_labels = [Target.ef_label(target) for target in targets]
         ef_targets = [self.targets[ef] for ef in ef_labels]
 
         ampl = self.params.control_amplitude
@@ -1296,11 +1296,10 @@ class Experiment:
         ... )
         """
         amplitudes = {
-            Target.get_ef_label(label): amplitude
-            for label, amplitude in amplitudes.items()
+            Target.ef_label(label): amplitude for label, amplitude in amplitudes.items()
         }
-        ge_labels = [Target.get_ge_label(label) for label in amplitudes]
-        ef_labels = [Target.get_ef_label(label) for label in amplitudes]
+        ge_labels = [Target.ge_label(label) for label in amplitudes]
+        ef_labels = [Target.ef_label(label) for label in amplitudes]
         ef_targets = [self.targets[ef] for ef in ef_labels]
 
         # drive time range
@@ -1845,7 +1844,7 @@ class Experiment:
                 if Target.is_ge_control(target):
                     current_amplitudes[target] = default_ampl[target]
                 elif Target.is_ef_control(target):
-                    qubit = Target.get_qubit_label(target)
+                    qubit = Target.qubit_label(target)
                     current_amplitudes[target] = default_ampl[qubit] / np.sqrt(2)
                 else:
                     raise ValueError("Invalid target.")
@@ -1916,11 +1915,11 @@ class Experiment:
         print("\nResults\n-------")
         print("ef frequency (GHz):")
         for target, fit in fit_data.items():
-            label = Target.get_ge_label(target)
+            label = Target.ge_label(target)
             print(f"    {label}: {fit:.6f}")
         print("anharmonicity (GHz):")
         for target, fit in fit_data.items():
-            label = Target.get_ge_label(target)
+            label = Target.ge_label(target)
             ge_freq = self.targets[label].frequency
             print(f"    {label}: {fit - ge_freq:.6f}")
         return fit_data
@@ -2105,11 +2104,11 @@ class Experiment:
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
-        ef_labels = [Target.get_ef_label(label) for label in targets]
+        ef_labels = [Target.ef_label(label) for label in targets]
 
         def calibrate(target: str) -> AmplCalibData:
-            ge_label = Target.get_ge_label(target)
-            ef_label = Target.get_ef_label(target)
+            ge_label = Target.ge_label(target)
+            ef_label = Target.ef_label(target)
 
             if pulse_type == "hpi":
                 pulse = FlatTop(
@@ -3635,7 +3634,7 @@ class Experiment:
         tuple[NDArray[np.float64], NDArray[np.float64]]
             Frequency range and phase difference.
         """
-        readout = Target.get_readout_label(target)
+        readout = Target.readout_label(target)
 
         def measure_phases(freq_range, phase_shift=0.0) -> NDArray[np.float64]:
             widget = go.FigureWidget()
@@ -3755,7 +3754,7 @@ class Experiment:
         )
 
         qubit = target
-        resonator = Target.get_readout_label(target)
+        resonator = Target.readout_label(target)
         control_pulse = Gaussian(
             duration=1024,
             amplitude=control_amplitude,

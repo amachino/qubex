@@ -8,9 +8,9 @@ from typing import Final
 import yaml
 from pydantic.dataclasses import dataclass
 
+from .control_system import Box, CapPort, ControlSystem, GenPort
 from .model import Model
-from .quantum_system import Chip, Mux, QuantumSystem, Qubit
-from .control_system import Box, CapPort, GenPort, Port, ControlSystem
+from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
 
 
 class TargetType(Enum):
@@ -27,6 +27,58 @@ class Target(Model):
     qubit: str
     type: TargetType
     frequency: float
+
+    @classmethod
+    def ge_target(
+        cls,
+        label: str,
+        frequency: float,
+    ) -> Target:
+        return cls(
+            label=Target.ge_label(label),
+            qubit=Target.qubit_label(label),
+            type=TargetType.CTRL_GE,
+            frequency=frequency,
+        )
+
+    @classmethod
+    def ef_target(
+        cls,
+        label: str,
+        frequency: float,
+    ) -> Target:
+        return cls(
+            label=Target.ef_label(label),
+            qubit=Target.qubit_label(label),
+            type=TargetType.CTRL_EF,
+            frequency=frequency,
+        )
+
+    @classmethod
+    def cr_target(
+        cls,
+        label: str,
+        frequency: float,
+    ) -> Target:
+        return cls(
+            label=Target.cr_label(label),
+            qubit=Target.qubit_label(label),
+            type=TargetType.CTRL_CR,
+            frequency=frequency,
+        )
+
+    @classmethod
+    def readout_target(
+        cls,
+        label: str,
+        frequency: float,
+    ) -> Target:
+        return cls(
+            label=Target.readout_label(label),
+            qubit=Target.qubit_label(label),
+            type=TargetType.READ,
+            frequency=frequency,
+        )
 
     @classmethod
     def from_label(
@@ -60,58 +112,58 @@ class Target(Model):
         )
 
     @classmethod
-    def get_target_type(cls, label: str) -> TargetType:
+    def target_type(cls, label: str) -> TargetType:
         target = cls.from_label(label)
         return target.type
 
     @classmethod
-    def get_qubit_label(cls, label: str) -> str:
+    def qubit_label(cls, label: str) -> str:
         target = cls.from_label(label)
         return target.qubit
 
     @classmethod
-    def get_ge_label(cls, label: str) -> str:
-        qubit = cls.get_qubit_label(label)
+    def ge_label(cls, label: str) -> str:
+        qubit = cls.qubit_label(label)
         return f"{qubit}"
 
     @classmethod
-    def get_ef_label(cls, label: str) -> str:
-        qubit = cls.get_qubit_label(label)
+    def ef_label(cls, label: str) -> str:
+        qubit = cls.qubit_label(label)
         return f"{qubit}-ef"
 
     @classmethod
-    def get_cr_label(cls, label: str) -> str:
-        qubit = cls.get_qubit_label(label)
+    def cr_label(cls, label: str) -> str:
+        qubit = cls.qubit_label(label)
         return f"{qubit}-CR"
 
     @classmethod
-    def get_readout_label(cls, label: str) -> str:
-        qubit = cls.get_qubit_label(label)
+    def readout_label(cls, label: str) -> str:
+        qubit = cls.qubit_label(label)
         return f"R{qubit}"
 
     @classmethod
     def is_ge_control(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
+        type = cls.target_type(label)
         return type == TargetType.CTRL_GE
 
     @classmethod
     def is_ef_control(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
+        type = cls.target_type(label)
         return type == TargetType.CTRL_EF
 
     @classmethod
     def is_cr_control(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
+        type = cls.target_type(label)
         return type == TargetType.CTRL_CR
 
     @classmethod
     def is_control(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
+        type = cls.target_type(label)
         return type != TargetType.READ
 
     @classmethod
     def is_readout(cls, label: str) -> bool:
-        type = cls.get_target_type(label)
+        type = cls.target_type(label)
         return type == TargetType.READ
 
 
@@ -120,13 +172,6 @@ class WiringInfo(Model):
     ctrl: list[tuple[Qubit, GenPort]]
     read_out: list[tuple[Mux, GenPort]]
     read_in: list[tuple[Mux, CapPort]]
-
-
-@dataclass
-class PortSet:
-    ctrl_port: Port
-    read_in_port: Port
-    read_out_port: Port
 
 
 class ExperimentSystem:
@@ -139,19 +184,23 @@ class ExperimentSystem:
         self._quantum_system: Final = quantum_system
         self._control_system: Final = control_system
         self._wiring_info: Final = wiring_info
-        # self._targets: Final = self._create_targets()
-        # self._ctrl_channel_map: Final = self._create_ctrl_channel_map()
-        # self._read_in_channel_map: Final = self._create_read_in_channel_map()
-        # self._read_out_channel_map: Final = self._create_read_out_channel_map()
-        # self._port_qubit_map: Final = self._create_port_qubit_map()
-        # self._qubit_port_map: Final = self._create_qubit_port_map()
-        # self._resonator_port_map: Final = self._create_resonator_port_map()
-        # self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
+        self._ge_target_dict: Final = self._create_ge_target_dict()
+        self._ef_target_dict: Final = self._create_ef_target_dict()
+        self._cr_target_dict: Final = self._create_cr_target_dict()
+        self._readout_target_dict: Final = self._create_readout_target_dict()
+        self._target_dict: Final = (
+            self._ge_target_dict
+            | self._ef_target_dict
+            | self._cr_target_dict
+            | self._readout_target_dict
+        )
 
     @classmethod
     def load_from_config_files(cls, chip_id: str):
         with open(Path("config/chip.yaml"), "r") as file:
             chip_dict = yaml.safe_load(file)
+        with open(Path("config/props.yaml"), "r") as file:
+            props_dict = yaml.safe_load(file)
         with open(Path("config/box.yaml"), "r") as file:
             box_dict = yaml.safe_load(file)
         with open(Path("config/wiring.yaml"), "r") as file:
@@ -161,6 +210,12 @@ class ExperimentSystem:
             name=chip_dict[chip_id]["name"],
             n_qubits=chip_dict[chip_id]["n_qubits"],
         )
+        props = props_dict[chip_id]
+        for qubit in chip.qubits:
+            qubit.frequency = props["qubit_frequency"][qubit.label]
+            qubit.anharmonicity = props["anharmonicity"][qubit.label]
+        for resonator in chip.resonators:
+            resonator.frequency = props["resonator_frequency"][resonator.qubit]
         quantum_system = QuantumSystem(chip=chip)
         boxes = [
             Box.new(
@@ -208,123 +263,51 @@ class ExperimentSystem:
             wiring_info=wiring_info,
         )
 
-    def _create_targets(self) -> dict[str, Target]:
-        targets = {}
-
-        # control targets
-        qubits = self.quantum_system.qubits
-        for qubit in qubits.values():
-            # ge
-            ge_label = Target.get_ge_label(qubit.label)
-            targets[ge_label] = Target(
+    def _create_ge_target_dict(self) -> dict[str, Target]:
+        targets = [
+            Target.ge_target(
                 label=qubit.label,
-                frequency=qubit.frequency,
-                type=TargetType.CTRL_GE,
-                qubit=qubit.label,
+                frequency=qubit.ge_frequency,
             )
-            # ef
-            ef_label = Target.get_ef_label(qubit.label)
-            targets[ef_label] = Target(
-                label=ef_label,
-                frequency=qubit.frequency + qubit.anharmonicity,
-                type=TargetType.CTRL_EF,
-                qubit=qubit.label,
-            )
-            # cr
-            spectators = self.quantum_system.chip.graph.get_spectators(qubit.label)
-            cr_initial_frequency = sum(
-                [qubits[spectator].frequency for spectator in spectators]
-            ) / len(spectators)
-            cr_label = Target.get_cr_label(qubit.label)
-            targets[cr_label] = Target(
-                label=cr_label,
-                frequency=cr_initial_frequency,
-                type=TargetType.CTRL_CR,
-                qubit=qubit.label,
-            )
+            for qubit in self.qubits
+        ]
+        return {target.label: target for target in targets}
 
-        # readout targets
-        resonators = self.quantum_system.resonators
-        for resonator in resonators.values():
-            targets[resonator.label] = Target(
+    def _create_ef_target_dict(self) -> dict[str, Target]:
+        targets = [
+            Target.ef_target(
+                label=qubit.label,
+                frequency=qubit.ef_frequency,
+            )
+            for qubit in self.qubits
+        ]
+        return {target.label: target for target in targets}
+
+    def _create_cr_target_dict(self) -> dict[str, Target]:
+        targets = [
+            Target.cr_target(
+                label=qubit.label,
+                frequency=sum(
+                    [
+                        spectator.ge_frequency
+                        for spectator in self.get_spectator_qubits(qubit.label)
+                    ]
+                )
+                / len(self.get_spectator_qubits(qubit.label)),
+            )
+            for qubit in self.qubits
+        ]
+        return {target.label: target for target in targets}
+
+    def _create_readout_target_dict(self) -> dict[str, Target]:
+        targets = [
+            Target.readout_target(
                 label=resonator.label,
                 frequency=resonator.frequency,
-                type=TargetType.READ,
-                qubit=resonator.qubit,
             )
-
-        return targets
-
-    def _create_ctrl_channel_map(self) -> dict[str, Channel]:
-        map = {}
-        for mux in self.muxes:
-            for qubit, port in zip(mux.qubits, mux.ctrl_ports):
-                label = qubit.label
-                n_channels = len(port.channels)
-                if n_channels == 1:
-                    ge = Target.get_ge_label(label)
-                    map[ge] = port.channels[0]
-                elif n_channels == 3:
-                    ge = Target.get_ge_label(label)
-                    ef = Target.get_ef_label(label)
-                    cr = Target.get_cr_label(label)
-                    map[ge] = port.channels[0]
-                    map[ef] = port.channels[1]
-                    map[cr] = port.channels[2]
-                else:
-                    raise ValueError("Invalid number of channels.")
-        return map
-
-    def _create_read_out_channel_map(self) -> dict[str, Channel]:
-        map = {}
-        for mux in self.muxes:
-            port = mux.read_out_port
-            for qubit in mux.qubits:
-                label = Target.get_readout_label(qubit.label)
-                map[label] = port.channels[0]
-        return map
-
-    def _create_read_in_channel_map(self) -> dict[str, Channel]:
-        map = {}
-        for mux in self.muxes:
-            port = mux.read_in_port
-            for index, qubit in enumerate(mux.qubits):
-                label = Target.get_readout_label(qubit.label)
-                map[label] = port.channels[index]
-        return map
-
-    def _create_port_qubit_map(self) -> dict[str, Qubit]:
-        map = {}
-        for mux in self.muxes:
-            for qubit, port in zip(mux.qubits, mux.ctrl_ports):
-                map[port.id] = qubit
-        return map
-
-    def _create_qubit_port_map(self) -> dict[str, Port]:
-        map = {}
-        for mux in self.muxes:
-            for qubit, port in zip(mux.qubits, mux.ctrl_ports):
-                map[qubit.label] = port
-        return map
-
-    def _create_resonator_port_map(self) -> dict[str, Port]:
-        map = {}
-        for mux in self.muxes:
-            for qubit in mux.qubits:
-                label = Target.get_readout_label(qubit.label)
-                map[label] = mux.read_out_port
-        return map
-
-    def _create_qubit_port_set_map(self) -> dict[str, PortSet]:
-        map = {}
-        for mux in self.muxes:
-            for qubit, ctrl_port in zip(mux.qubits, mux.ctrl_ports):
-                map[qubit.label] = PortSet(
-                    ctrl_port=ctrl_port,
-                    read_in_port=mux.read_in_port,
-                    read_out_port=mux.read_out_port,
-                )
-        return map
+            for resonator in self.resonators
+        ]
+        return {target.label: target for target in targets}
 
     @property
     def quantum_system(self) -> QuantumSystem:
@@ -335,97 +318,64 @@ class ExperimentSystem:
         return self._control_system
 
     @property
-    def muxes(self) -> list[Wiring]:
-        return self._muxes
+    def wiring_info(self) -> WiringInfo:
+        return self._wiring_info
 
     @property
-    def targets(self) -> dict[str, Target]:
-        return self._targets
+    def qubits(self) -> list[Qubit]:
+        return self.quantum_system.qubits
 
     @property
-    def ctrl_channel_map(self) -> dict[str, Channel]:
-        return self._ctrl_channel_map
+    def resonators(self) -> list[Resonator]:
+        return self.quantum_system.resonators
 
     @property
-    def read_in_channel_map(self) -> dict[str, Channel]:
-        return self._read_in_channel_map
+    def ge_targets(self) -> list[Target]:
+        return list(self._ge_target_dict.values())
 
     @property
-    def read_out_channel_map(self) -> dict[str, Channel]:
-        return self._read_out_channel_map
+    def ef_targets(self) -> list[Target]:
+        return list(self._ef_target_dict.values())
 
     @property
-    def port_qubit_map(self) -> dict[str, Qubit]:
-        return self._port_qubit_map
+    def cr_targets(self) -> list[Target]:
+        return list(self._cr_target_dict.values())
 
     @property
-    def qubit_port_map(self) -> dict[str, Port]:
-        return self._qubit_port_map
+    def control_targets(self) -> list[Target]:
+        return self.ge_targets + self.ef_targets + self.cr_targets
 
     @property
-    def resonator_port_map(self) -> dict[str, Port]:
-        return self._resonator_port_map
+    def readout_targets(self) -> list[Target]:
+        return list(self._readout_target_dict.values())
 
     @property
-    def qubit_port_set_map(self) -> dict[str, PortSet]:
-        return self._qubit_port_set_map
+    def targets(self) -> list[Target]:
+        return (
+            self.ge_targets + self.ef_targets + self.cr_targets + self.readout_targets
+        )
 
-    @property
-    def ge_targets(self) -> dict[str, Target]:
-        ge_labels = [
-            Target.get_ge_label(qubit.label)
-            for qubit in self.quantum_system.qubits.values()
-        ]
-        return {label: self.get_ge_target(label) for label in ge_labels}
-
-    @property
-    def ef_targets(self) -> dict[str, Target]:
-        ef_labels = [
-            Target.get_ef_label(qubit.label)
-            for qubit in self.quantum_system.qubits.values()
-        ]
-        return {label: self.get_ef_target(label) for label in ef_labels}
-
-    @property
-    def cr_targets(self) -> dict[str, Target]:
-        cr_labels = [
-            Target.get_cr_label(qubit.label)
-            for qubit in self.quantum_system.qubits.values()
-        ]
-        return {label: self.get_cr_target(label) for label in cr_labels}
-
-    @property
-    def control_targets(self) -> dict[str, Target]:
-        return self.ge_targets | self.ef_targets | self.cr_targets
-
-    @property
-    def readout_targets(self) -> dict[str, Target]:
-        return {label: self.targets[label] for label in self.quantum_system.resonators}
+    def get_spectator_qubits(self, qubit: int | str) -> list[Qubit]:
+        return self.quantum_system.get_spectator_qubits(qubit)
 
     def get_target(self, label: str) -> Target:
         try:
-            return self._targets[label]
+            return self._target_dict[label]
         except KeyError:
             raise KeyError(f"Target `{label}` not found.")
 
     def get_ge_target(self, label: str) -> Target:
-        label = Target.get_ge_label(label)
+        label = Target.ge_label(label)
         return self.get_target(label)
 
     def get_ef_target(self, label: str) -> Target:
-        label = Target.get_ef_label(label)
+        label = Target.ef_label(label)
         return self.get_target(label)
 
     def get_cr_target(self, label: str) -> Target:
-        label = Target.get_cr_label(label)
+        label = Target.cr_label(label)
         return self.get_target(label)
 
     def get_readout_target(self, label: str) -> Target:
-        label = Target.get_readout_label(label)
+        label = Target.readout_label(label)
         return self.get_target(label)
-
-    def get_mux_by_port(self, port: Port) -> Wiring:
-        for mux in self.muxes:
-            if port in mux.ctrl_ports or port in (mux.read_in_port, mux.read_out_port):
-                return mux
-        raise ValueError(f"Port `{port}` not found in any MUX.")

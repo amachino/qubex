@@ -258,7 +258,7 @@ class ConfigLoader:
                 label=label,
                 frequency=props["qubit_frequency"][label],
                 anharmonicity=props["anharmonicity"][label],
-                resonator=Target.get_readout_label(label),
+                resonator=Target.readout_label(label),
             )
             for index, label in enumerate(chip.qubits)
         ]
@@ -282,7 +282,7 @@ class ConfigLoader:
         return [
             Resonator(
                 index=qubit.index,
-                label=Target.get_readout_label(qubit.label),
+                label=Target.readout_label(qubit.label),
                 frequency=props["resonator_frequency"][qubit.label],
                 qubit=qubit.label,
             )

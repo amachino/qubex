@@ -46,6 +46,7 @@ class Chip(Model):
                 index=index,
                 label=label,
                 chip_id=id,
+                resonator=graph.resonators[index],
             )
             for index, label in enumerate(graph.qubits)
         )
@@ -54,6 +55,7 @@ class Chip(Model):
                 index=index,
                 label=label,
                 chip_id=id,
+                qubit=graph.qubits[index],
             )
             for index, label in enumerate(graph.resonators)
         )
@@ -82,8 +84,17 @@ class Qubit(Model):
     index: int
     label: str
     chip_id: str
+    resonator: str
     frequency: float = DEFAULT_QUBIT_FREQUENCY
     anharmonicity: float = DEFAULT_QUBIT_ANHARMONICITY
+
+    @property
+    def ge_frequency(self) -> float:
+        return self.frequency
+
+    @property
+    def ef_frequency(self) -> float:
+        return self.frequency + self.anharmonicity
 
 
 @dataclass
@@ -91,6 +102,7 @@ class Resonator(Model):
     index: int
     label: str
     chip_id: str
+    qubit: str
     frequency: float = DEFAULT_RESONATOR_FREQUENCY
 
 
@@ -188,7 +200,7 @@ class QuantumSystem:
         self,
         qubit: int | str,
         *,
-        in_same_mux: bool,
+        in_same_mux: bool = False,
     ) -> list[Qubit]:
         labels = self._graph.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
         return [self.get_qubit(label) for label in labels]
