@@ -606,7 +606,7 @@ class ConfigLoader:
 
             # define ports
             for port in box.ports:
-                if port.type == PortType.NOT_AVAILABLE:
+                if port.type == PortType.NA:
                     continue
                 qc.define_port(
                     port_name=port.id,
@@ -737,7 +737,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             quel1_box = qc.create_box(box.id, reconnect=False)
             quel1_box.reconnect()
             for port in box.ports:
-                if port.type in [PortType.NOT_AVAILABLE, PortType.CTRL]:
+                if port.type in [PortType.NA, PortType.CTRL]:
                     quel1_box.config_port(
                         port=port.number,
                         lo_freq=port.lo_freq,

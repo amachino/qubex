@@ -3,7 +3,7 @@ from .control_system import ControlSystem, Target
 from .lattice_graph import LatticeGraph
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
 from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
-from .qube_system import Box, BoxType, Port
+from .qube_system import Box, BoxType, Port, QubeSystem
 
 __all__ = [
     "Box",
@@ -16,6 +16,7 @@ __all__ = [
     "Port",
     "QubeBackend",
     "QubeBackendResult",
+    "QubeSystem",
     "QuantumSystem",
     "Qubit",
     "Resonator",
