@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Final
 
-from .quantum_system import QuantumSystem, Qubit
-from .qube_system import Channel, Port, QubeSystem
+import yaml
+from pydantic.dataclasses import dataclass
+
+from .model import Model
+from .quantum_system import Chip, Mux, QuantumSystem, Qubit
+from .qube_system import Box, CapPort, GenPort, Port, QubeSystem
 
 
 class TargetType(Enum):
@@ -18,7 +22,7 @@ class TargetType(Enum):
 
 
 @dataclass
-class Target:
+class Target(Model):
     label: str
     qubit: str
     type: TargetType
@@ -112,24 +116,10 @@ class Target:
 
 
 @dataclass
-class Mux:
-    number: int
-    qubits: tuple[Qubit, ...]
-    ctrl_ports: tuple[Port, ...]
-    read_in_port: Port
-    read_out_port: Port
-
-    @property
-    def label(self) -> str:
-        return f"MUX{self.number}"
-
-    @property
-    def qubit_labels(self) -> list[str]:
-        return [qubit.label for qubit in self.qubits]
-
-    @property
-    def n_qubits(self) -> int:
-        return len(self.qubits)
+class WiringInfo:
+    ctrl: list[tuple[Qubit, GenPort]]
+    read_out: list[tuple[Mux, GenPort]]
+    read_in: list[tuple[Mux, CapPort]]
 
 
 @dataclass
@@ -144,19 +134,79 @@ class ControlSystem:
         self,
         quantum_system: QuantumSystem,
         qube_system: QubeSystem,
-        muxes: list[Mux],
+        wiring_info: WiringInfo,
     ):
         self._quantum_system: Final = quantum_system
         self._qube_system: Final = qube_system
-        self._muxes: Final = muxes
-        self._targets: Final = self._create_targets()
-        self._ctrl_channel_map: Final = self._create_ctrl_channel_map()
-        self._read_in_channel_map: Final = self._create_read_in_channel_map()
-        self._read_out_channel_map: Final = self._create_read_out_channel_map()
-        self._port_qubit_map: Final = self._create_port_qubit_map()
-        self._qubit_port_map: Final = self._create_qubit_port_map()
-        self._resonator_port_map: Final = self._create_resonator_port_map()
-        self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
+        self._wiring_info: Final = wiring_info
+        # self._targets: Final = self._create_targets()
+        # self._ctrl_channel_map: Final = self._create_ctrl_channel_map()
+        # self._read_in_channel_map: Final = self._create_read_in_channel_map()
+        # self._read_out_channel_map: Final = self._create_read_out_channel_map()
+        # self._port_qubit_map: Final = self._create_port_qubit_map()
+        # self._qubit_port_map: Final = self._create_qubit_port_map()
+        # self._resonator_port_map: Final = self._create_resonator_port_map()
+        # self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
+
+    @classmethod
+    def load_from_config_files(cls, chip_id: str):
+        with open(Path("config/chip.yaml"), "r") as file:
+            chip_dict = yaml.safe_load(file)
+        with open(Path("config/box.yaml"), "r") as file:
+            box_dict = yaml.safe_load(file)
+        with open(Path("config/wiring.yaml"), "r") as file:
+            wiring_dict = yaml.safe_load(file)
+        chip = Chip.new(
+            id=chip_id,
+            name=chip_dict[chip_id]["name"],
+            n_qubits=chip_dict[chip_id]["n_qubits"],
+        )
+        quantum_system = QuantumSystem(chip=chip)
+        boxes = [
+            Box.new(
+                id=id,
+                name=box["name"],
+                type=box["type"],
+                address=box["address"],
+                adapter=box["adapter"],
+            )
+            for id, box in box_dict.items()
+        ]
+        qube_system = QubeSystem(boxes=boxes)
+
+        def get_port(specifier: str):
+            box_id = specifier.split("-")[0]
+            port_num = int(specifier.split("-")[1])
+            port = qube_system.get_port(box_id, port_num)
+            return port
+
+        ctrl: list[tuple[Qubit, GenPort]] = []
+        read_out: list[tuple[Mux, GenPort]] = []
+        read_in: list[tuple[Mux, CapPort]] = []
+
+        for wiring in wiring_dict[chip_id]:
+            mux_num = int(wiring["mux"])
+            mux = quantum_system.get_mux(mux_num)
+            qubits = quantum_system.get_qubits_in_mux(mux_num)
+            for identifier, qubit in zip(wiring["ctrl"], qubits):
+                ctrl_port: GenPort = get_port(identifier)  # type: ignore
+                ctrl.append((qubit, ctrl_port))
+            read_out_port: GenPort = get_port(wiring["read_out"])  # type: ignore
+            read_out.append((mux, read_out_port))
+            read_in_port: CapPort = get_port(wiring["read_in"])  # type: ignore
+            read_in.append((mux, read_in_port))
+
+        wiring_info = WiringInfo(
+            ctrl=ctrl,
+            read_out=read_out,
+            read_in=read_in,
+        )
+
+        return cls(
+            quantum_system=quantum_system,
+            qube_system=qube_system,
+            wiring_info=wiring_info,
+        )
 
     def _create_targets(self) -> dict[str, Target]:
         targets = {}
@@ -285,7 +335,7 @@ class ControlSystem:
         return self._qube_system
 
     @property
-    def muxes(self) -> list[Mux]:
+    def muxes(self) -> list[Wiring]:
         return self._muxes
 
     @property
@@ -374,7 +424,7 @@ class ControlSystem:
         label = Target.get_readout_label(label)
         return self.get_target(label)
 
-    def get_mux_by_port(self, port: Port) -> Mux:
+    def get_mux_by_port(self, port: Port) -> Wiring:
         for mux in self.muxes:
             if port in mux.ctrl_ports or port in (mux.read_in_port, mux.read_out_port):
                 return mux

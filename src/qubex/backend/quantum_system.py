@@ -143,21 +143,39 @@ class QuantumSystem:
 
     def get_qubit(
         self,
-        label: str,
+        label: int | str,
     ) -> Qubit:
         try:
-            return self._qubit_dict[label]
+            if isinstance(label, int):
+                return self.qubits[label]
+            else:
+                return self._qubit_dict[label]
         except KeyError:
             raise KeyError(f"Qubit `{label}` not found.")
 
     def get_resonator(
         self,
-        label: str,
+        label: int | str,
     ) -> Resonator:
         try:
-            return self._resonator_dict[label]
+            if isinstance(label, int):
+                return self.resonators[label]
+            else:
+                return self._resonator_dict[label]
         except KeyError:
             raise KeyError(f"Resonator `{label}` not found.")
+
+    def get_mux(
+        self,
+        label: int | str,
+    ) -> Mux:
+        try:
+            if isinstance(label, int):
+                return self.muxes[label]
+            else:
+                return self._mux_dict[label]
+        except KeyError:
+            raise KeyError(f"Mux `{label}` not found.")
 
     def get_qubits_in_mux(
         self,
@@ -174,3 +192,26 @@ class QuantumSystem:
     ) -> list[Qubit]:
         labels = self._graph.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
         return [self.get_qubit(label) for label in labels]
+
+    def set_qubit_params(
+        self,
+        qubit: int | str,
+        *,
+        frequency: float | None = None,
+        anharmonicity: float | None = None,
+    ) -> None:
+        obj = self.get_qubit(qubit)
+        if frequency is not None:
+            obj.frequency = frequency
+        if anharmonicity is not None:
+            obj.anharmonicity = anharmonicity
+
+    def set_resonator_params(
+        self,
+        resonator: int | str,
+        *,
+        frequency: float | None = None,
+    ) -> None:
+        obj = self.get_resonator(resonator)
+        if frequency is not None:
+            obj.frequency = frequency

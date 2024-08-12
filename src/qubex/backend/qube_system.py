@@ -278,8 +278,10 @@ def create_ports(
         else:
             raise ValueError(f"Invalid port type: {port_type}")
         n_channels = NUMBER_OF_CHANNELS[box_type].get(port_num, 0)
-        port: Union[GenPort, CapPort]
-        if port_type in (PortType.READ_IN, PortType.MNTR_IN):
+        port: Union[GenPort, CapPort, Port]
+        if port_type == PortType.NA:
+            continue
+        elif port_type in (PortType.READ_IN, PortType.MNTR_IN):
             port = CapPort(
                 id=port_id,
                 box_id=box_id,
@@ -502,6 +504,15 @@ class QubeSystem:
         except KeyError:
             raise KeyError(f"Box `{box_id}` not found.")
 
+    def get_port(self, box_id: str, port_number: int) -> GenPort | CapPort:
+        box = self.get_box(box_id)
+        try:
+            return next(port for port in box.ports if port.number == port_number)
+        except StopIteration:
+            raise IndexError(
+                f"Port number `{port_number}` not found in box `{box_id}`."
+            )
+
     def set_port_params(
         self,
         box_id: str,
@@ -517,13 +528,7 @@ class QubeSystem:
         nwait: int | None = None,
         ndelay: int | None = None,
     ) -> None:
-        box = self.get_box(box_id)
-        try:
-            port = box.ports[port_number]
-        except IndexError:
-            raise IndexError(
-                f"Port number `{port_number}` not found in box `{box_id}`."
-            )
+        port = self.get_port(box_id, port_number)
 
         if rfswitch is not None:
             port.rfswitch = rfswitch  # type: ignore
