@@ -27,7 +27,7 @@ class BoxType(Enum):
 
 
 class PortType(Enum):
-    NA = "NA"
+    NOT_AVAILABLE = "NA"
     READ_IN = "READ_IN"
     READ_OUT = "READ_OUT"
     CTRL = "CTRL"
@@ -64,14 +64,14 @@ PORT_MAPPING: Final = {
         13: PortType.MNTR_OUT,
     },
     BoxType.QUEL1_B: {
-        0: PortType.NA,
+        0: PortType.NOT_AVAILABLE,
         1: PortType.CTRL,
         2: PortType.CTRL,
         3: PortType.CTRL,
         4: PortType.CTRL,
         5: PortType.MNTR_IN,
         6: PortType.MNTR_OUT,
-        7: PortType.NA,
+        7: PortType.NOT_AVAILABLE,
         8: PortType.CTRL,
         9: PortType.CTRL,
         10: PortType.CTRL,
@@ -97,7 +97,7 @@ PORT_MAPPING: Final = {
     },
     BoxType.QUBE_RIKEN_B: {
         0: PortType.CTRL,
-        1: PortType.NA,
+        1: PortType.NOT_AVAILABLE,
         2: PortType.CTRL,
         3: PortType.MNTR_OUT,
         4: PortType.MNTR_IN,
@@ -108,39 +108,39 @@ PORT_MAPPING: Final = {
         9: PortType.MNTR_IN,
         10: PortType.MNTR_OUT,
         11: PortType.CTRL,
-        12: PortType.NA,
+        12: PortType.NOT_AVAILABLE,
         13: PortType.CTRL,
     },
     BoxType.QUBE_OU_A: {
         0: PortType.READ_OUT,
         1: PortType.READ_IN,
         2: PortType.PUMP,
-        3: PortType.NA,
-        4: PortType.NA,
+        3: PortType.NOT_AVAILABLE,
+        4: PortType.NOT_AVAILABLE,
         5: PortType.CTRL,
         6: PortType.CTRL,
         7: PortType.CTRL,
         8: PortType.CTRL,
-        9: PortType.NA,
-        10: PortType.NA,
+        9: PortType.NOT_AVAILABLE,
+        10: PortType.NOT_AVAILABLE,
         11: PortType.PUMP,
         12: PortType.READ_IN,
         13: PortType.READ_OUT,
     },
     BoxType.QUBE_OU_B: {
         0: PortType.CTRL,
-        1: PortType.NA,
+        1: PortType.NOT_AVAILABLE,
         2: PortType.CTRL,
-        3: PortType.NA,
-        4: PortType.NA,
+        3: PortType.NOT_AVAILABLE,
+        4: PortType.NOT_AVAILABLE,
         5: PortType.CTRL,
         6: PortType.CTRL,
         7: PortType.CTRL,
         8: PortType.CTRL,
-        9: PortType.NA,
-        10: PortType.NA,
+        9: PortType.NOT_AVAILABLE,
+        10: PortType.NOT_AVAILABLE,
         11: PortType.CTRL,
-        12: PortType.NA,
+        12: PortType.NOT_AVAILABLE,
         13: PortType.CTRL,
     },
 }
@@ -251,7 +251,7 @@ def create_ports(
 ) -> tuple[Union[GenPort, CapPort], ...]:
     ports: list[Union[GenPort, CapPort]] = []
     port_index = {
-        PortType.NA: 0,
+        PortType.NOT_AVAILABLE: 0,
         PortType.READ_IN: 0,
         PortType.READ_OUT: 0,
         PortType.CTRL: 0,
@@ -261,7 +261,7 @@ def create_ports(
     }
     for port_num, port_type in PORT_MAPPING[box_type].items():
         index = port_index[port_type]
-        if port_type == PortType.NA:
+        if port_type == PortType.NOT_AVAILABLE:
             port_id = f"{box_id}.NA{index}"
         elif port_type == PortType.READ_IN:
             port_id = f"{box_id}.READ{index}.IN"
@@ -279,7 +279,7 @@ def create_ports(
             raise ValueError(f"Invalid port type: {port_type}")
         n_channels = NUMBER_OF_CHANNELS[box_type].get(port_num, 0)
         port: Union[GenPort, CapPort, Port]
-        if port_type == PortType.NA:
+        if port_type == PortType.NOT_AVAILABLE:
             continue
         elif port_type in (PortType.READ_IN, PortType.MNTR_IN):
             port = CapPort(
