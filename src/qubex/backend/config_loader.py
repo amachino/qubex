@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -13,9 +12,9 @@ try:
 except ImportError:
     pass
 
-from .experiment_system import ExperimentSystem, Mux, Target
-from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
-from .control_system import Box, BoxType, Port, PortType, ControlSystem
+from .control_system import Box, CapPort, ControlSystem, GenPort, PortType
+from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
+from .quantum_system import Chip, QuantumSystem
 
 CONFIG_DIR: Final = "config"
 BUILD_DIR: Final = "build"
@@ -34,17 +33,6 @@ DEFAULT_READOUT_VATT: Final = 2048
 DEFAULT_CONTROL_FSC: Final = 40527
 DEFAULT_READOUT_FSC: Final = 40527
 DEFAULT_CAPTURE_DELAY: Final = 7
-
-
-@dataclass(frozen=True)
-class Params:
-    control_amplitude: dict[str, float]
-    readout_amplitude: dict[str, float]
-    control_vatt: dict[str, int]
-    readout_vatt: dict[int, int]
-    control_fsc: dict[str, int]
-    readout_fsc: dict[int, int]
-    capture_delay: dict[int, int]
 
 
 class ConfigLoader:
@@ -94,11 +82,37 @@ class ConfigLoader:
         self._wiring_dict = self._load_config_file(wiring_file)
         self._props_dict = self._load_config_file(props_file)
         self._params_dict = self._load_config_file(params_file)
+        self._quantum_system_dict = self._load_quantum_system()
+        self._control_system_dict = self._load_control_system()
+        self._wiring_info_dict = self._load_wiring_info()
+        self._control_params_dict = self._load_control_params()
+        self._experiment_system_dict = self._load_experiment_system()
 
     @property
     def config_path(self) -> Path:
         """Returns the absolute path to the configuration directory."""
         return Path(self._config_dir).resolve()
+
+    def get_experiment_system(self, chip_id: str) -> ExperimentSystem:
+        """
+        Returns the ExperimentSystem object for the given chip ID.
+
+        Parameters
+        ----------
+        chip_id : str
+            The quantum chip ID (e.g., "64Q").
+
+        Returns
+        -------
+        ExperimentSystem
+            The ExperimentSystem object for the given chip ID.
+
+        Examples
+        --------
+        >>> config = ConfigLoader()
+        >>> config.get_experiment_system("64Q")
+        """
+        return self._experiment_system_dict[chip_id]
 
     def get_system_settings_path(self, chip_id: str) -> Path:
         """
@@ -154,414 +168,134 @@ class ConfigLoader:
             raise
         return result
 
-    def get_params(self, chip_id: str) -> Params:
-        """
-        Returns the Params object for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        Params
-            The Params object for the given chip ID.
-        """
-        try:
-            params = self._params_dict[chip_id]
-        except KeyError:
-            print(f"Parameters not found for chip ID: {chip_id}")
-            raise
-        return Params(
-            control_amplitude=params.get(
-                "control_amplitude",
-                defaultdict(lambda: DEFAULT_CONTROL_AMPLITUDE),
-            ),
-            readout_amplitude=params.get(
-                "readout_amplitude",
-                defaultdict(lambda: DEFAULT_READOUT_AMPLITUDE),
-            ),
-            control_vatt=params.get(
-                "control_vatt",
-                defaultdict(lambda: DEFAULT_CONTROL_VATT),
-            ),
-            readout_vatt=params.get(
-                "readout_vatt",
-                defaultdict(lambda: DEFAULT_READOUT_VATT),
-            ),
-            control_fsc=params.get(
-                "control_fsc",
-                defaultdict(lambda: DEFAULT_CONTROL_FSC),
-            ),
-            readout_fsc=params.get(
-                "readout_fsc",
-                defaultdict(lambda: DEFAULT_READOUT_FSC),
-            ),
-            capture_delay=params.get(
-                "capture_delay",
-                defaultdict(lambda: DEFAULT_CAPTURE_DELAY),
-            ),
-        )
-
-    def get_chip(self, id: str) -> Chip:
-        """
-        Returns the Chip object for the given ID.
-
-        Parameters
-        ----------
-        id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        Chip
-            The Chip object for the given ID.
-        """
-        chip_info = self._chip_dict[id]
-        return Chip(
-            id=id,
-            name=chip_info["name"],
-            n_qubits=chip_info["n_qubits"],
-        )
-
-    def get_all_chips(self) -> list[Chip]:
-        """
-        Returns a list of all Chip objects.
-
-        Returns
-        -------
-        list[Chip]
-            A list of all Chip objects
-        """
-        return [self.get_chip(id) for id in self._chip_dict.keys()]
-
-    def get_qubits(self, chip_id: str) -> list[Qubit]:
-        """
-        Returns a list of Qubit objects for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        list[Qubit]
-            A list of Qubit objects for the given chip ID.
-        """
-        chip = self.get_chip(chip_id)
-        props = self._props_dict[chip_id]
-        return [
-            Qubit(
-                index=index,
-                label=label,
-                frequency=props["qubit_frequency"][label],
-                anharmonicity=props["anharmonicity"][label],
-                resonator=Target.readout_label(label),
+    def _load_quantum_system(self) -> dict[str, QuantumSystem]:
+        quantum_system_dict = {}
+        for chip_id, chip_info in self._chip_dict.items():
+            chip = Chip.new(
+                id=chip_id,
+                name=chip_info["name"],
+                n_qubits=chip_info["n_qubits"],
             )
-            for index, label in enumerate(chip.qubits)
-        ]
+            props = self._props_dict[chip_id]
+            for qubit in chip.qubits:
+                qubit.frequency = props["qubit_frequency"][qubit.label]
+                qubit.anharmonicity = props["anharmonicity"][qubit.label]
+            for resonator in chip.resonators:
+                resonator.frequency = props["resonator_frequency"][resonator.qubit]
+            quantum_system = QuantumSystem(chip=chip)
+            quantum_system_dict[chip_id] = quantum_system
+        return quantum_system_dict
 
-    def get_resonators(self, chip_id: str) -> list[Resonator]:
-        """
-        Returns a list of Resonator objects for the given chip ID.
+    def _load_control_system(self) -> dict[str, ControlSystem]:
+        control_system_dict = {}
+        for chip_id in self._chip_dict:
+            box_ids = []
+            for wiring in self._wiring_dict[chip_id]:
+                box_ids.append(wiring["read_out"].split("-")[0])
+                box_ids.append(wiring["read_in"].split("-")[0])
+                for ctrl in wiring["ctrl"]:
+                    box_ids.append(ctrl.split("-")[0])
+            boxes = [
+                Box.new(
+                    id=id,
+                    name=box["name"],
+                    type=box["type"],
+                    address=box["address"],
+                    adapter=box["adapter"],
+                )
+                for id, box in self._box_dict.items()
+                if id in box_ids
+            ]
+            control_system = ControlSystem(boxes=boxes)
+            control_system_dict[chip_id] = control_system
+        return control_system_dict
 
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
+    def _load_wiring_info(self) -> dict[str, WiringInfo]:
+        wiring_info_dict = {}
+        for chip_id in self._chip_dict:
+            quantum_system = self._quantum_system_dict[chip_id]
+            control_system = self._control_system_dict[chip_id]
 
-        Returns
-        -------
-        list[Resonator]
-            A list of Resonator objects for the given chip ID.
-        """
-        qubits = self.get_qubits(chip_id)
-        props = self._props_dict[chip_id]
-        return [
-            Resonator(
-                index=qubit.index,
-                label=Target.readout_label(qubit.label),
-                frequency=props["resonator_frequency"][qubit.label],
-                qubit=qubit.label,
+            def get_port(specifier: str):
+                box_id = specifier.split("-")[0]
+                port_num = int(specifier.split("-")[1])
+                port = control_system.get_port(box_id, port_num)
+                return port
+
+            ctrl = []
+            read_out = []
+            read_in = []
+            for wiring in self._wiring_dict[chip_id]:
+                mux_num = int(wiring["mux"])
+                mux = quantum_system.get_mux(mux_num)
+                qubits = quantum_system.get_qubits_in_mux(mux_num)
+                for identifier, qubit in zip(wiring["ctrl"], qubits):
+                    ctrl_port: GenPort = get_port(identifier)  # type: ignore
+                    ctrl.append((qubit, ctrl_port))
+                read_out_port: GenPort = get_port(wiring["read_out"])  # type: ignore
+                read_out.append((mux, read_out_port))
+                read_in_port: CapPort = get_port(wiring["read_in"])  # type: ignore
+                read_in.append((mux, read_in_port))
+
+            wiring_info = WiringInfo(
+                ctrl=ctrl,
+                read_out=read_out,
+                read_in=read_in,
             )
-            for qubit in qubits
-        ]
+            wiring_info_dict[chip_id] = wiring_info
+        return wiring_info_dict
 
-    def get_quantum_system(self, chip_id: str) -> QuantumSystem:
-        """
-        Returns the QuantumSystem object for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        QuantumSystem
-            The QuantumSystem object for the given chip ID.
-        """
-        chip = self.get_chip(chip_id)
-        qubits = self.get_qubits(chip_id)
-        resonators = self.get_resonators(chip_id)
-        return QuantumSystem(
-            chip=chip,
-            qubits=qubits,
-            resonators=resonators,
-        )
-
-    def get_box(self, id: str) -> Box:
-        """
-        Returns the Box object for the given ID.
-
-        Parameters
-        ----------
-        id : str
-            The box ID (e.g., "Q2A").
-
-        Returns
-        -------
-        Box
-            The Box object for the given ID.
-        """
-        box_info = self._box_dict[id]
-        return Box(
-            id=id,
-            name=box_info["name"],
-            type=BoxType(box_info["type"]),
-            address=box_info["address"],
-            adapter=box_info["adapter"],
-        )
-
-    def get_all_boxes(self) -> list[Box]:
-        """
-        Returns a list of all Box objects.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        list[Box]
-            A list of all Box objects
-        """
-        return [self.get_box(id) for id in self._box_dict.keys()]
-
-    def get_boxes(
-        self,
-        chip_id: str,
-        qubits: list[str] | None = None,
-    ) -> list[Box]:
-        """
-        Returns a list of Box objects for the given chip ID and qubits.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        qubits : list[str] | None, optional
-            The list of qubits, by default None.
-
-        Returns
-        -------
-        list[Box]
-            A list of Box objects for the given chip ID and qubits.
-        """
-        wiring_list = self._wiring_dict[chip_id]
-        box_ids = set()
-        for wiring in wiring_list:
-            if qubits:
-                # skip if no qubit in the mux is in the given list
-                mux = wiring["mux"]
-                quantum_system = self.get_quantum_system(chip_id)
-                qubits_in_mux = quantum_system.get_qubits_in_mux(mux)
-                if not any(qubit.label in qubits for qubit in qubits_in_mux):
-                    continue
-            box_ids.add(wiring["read_out"].split("-")[0])
-            box_ids.add(wiring["read_in"].split("-")[0])
-            for ctrl in wiring["ctrl"]:
-                box_ids.add(ctrl.split("-")[0])
-        return [box for box in self.get_all_boxes() if box.id in box_ids]
-
-    def get_qube_system(
-        self,
-        chip_id: str | None = None,
-    ) -> ControlSystem:
-        """
-        Returns the QubeSystem object for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str | None, optional
-            The quantum chip ID (e.g., "64Q"), by default None.
-
-        Returns
-        -------
-        QubeSystem
-            The QubeSystem object for the given chip ID.
-        """
-        if chip_id is None:
-            boxes = self.get_all_boxes()
-        else:
-            boxes = self.get_boxes(chip_id)
-        return ControlSystem(boxes=boxes)
-
-    def get_port_from_specifier(
-        self,
-        specifier: str,
-    ) -> Port:
-        """
-        Returns the Port object for the given specifier.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        specifier : str
-            The specifier for the port (e.g., "Q73A-11").
-
-        Returns
-        -------
-        Port
-            The Port object for the given specifier.
-        """
-        box_id, port_str = specifier.split("-")
-        port_number = int(port_str)
-        qube_system = self.get_qube_system()
-        box = qube_system.get_box(box_id)
-        port = box.ports[port_number]
-        return port
-
-    def get_muxes(self, chip_id: str) -> list[Mux]:
-        """
-        Returns a list of Mux objects for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        list[Mux]
-            A list of Mux objects for the given chip ID.
-        """
-        wiring_list = self._wiring_dict[chip_id]
-        quantum_system = self.get_quantum_system(chip_id)
-        muxes: list[Mux] = []
-        for wiring in wiring_list:
-            mux_number = wiring["mux"]
-            qubits = quantum_system.get_qubits_in_mux(mux_number)
-            read_out = self.get_port_from_specifier(wiring["read_out"])
-            read_in = self.get_port_from_specifier(wiring["read_in"])
-            ctrls = [self.get_port_from_specifier(port) for port in wiring["ctrl"]]
-            mux = Mux(
-                number=mux_number,
-                qubits=tuple(qubits),
-                ctrl_ports=tuple(ctrls),
-                read_in_port=read_in,
-                read_out_port=read_out,
+    def _load_control_params(self) -> dict[str, ControlParams]:
+        control_params_dict = {}
+        for chip_id, params in self._params_dict.items():
+            control_params = ControlParams(
+                control_amplitude=params.get(
+                    "control_amplitude",
+                    defaultdict(lambda: DEFAULT_CONTROL_AMPLITUDE),
+                ),
+                readout_amplitude=params.get(
+                    "readout_amplitude",
+                    defaultdict(lambda: DEFAULT_READOUT_AMPLITUDE),
+                ),
+                control_vatt=params.get(
+                    "control_vatt",
+                    defaultdict(lambda: DEFAULT_CONTROL_VATT),
+                ),
+                readout_vatt=params.get(
+                    "readout_vatt",
+                    defaultdict(lambda: DEFAULT_READOUT_VATT),
+                ),
+                control_fsc=params.get(
+                    "control_fsc",
+                    defaultdict(lambda: DEFAULT_CONTROL_FSC),
+                ),
+                readout_fsc=params.get(
+                    "readout_fsc",
+                    defaultdict(lambda: DEFAULT_READOUT_FSC),
+                ),
+                capture_delay=params.get(
+                    "capture_delay",
+                    defaultdict(lambda: DEFAULT_CAPTURE_DELAY),
+                ),
             )
-            muxes.append(mux)
-        return muxes
+            control_params_dict[chip_id] = control_params
+        return control_params_dict
 
-    def get_control_system(self, chip_id: str) -> ExperimentSystem:
-        """
-        Returns the ControlSystem object for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        ControlSystem
-            The ControlSystem object for the given chip ID.
-        """
-        quantum_system = self.get_quantum_system(chip_id)
-        qube_system = self.get_qube_system(chip_id)
-        muxes = self.get_muxes(chip_id)
-        return ExperimentSystem(
-            quantum_system=quantum_system,
-            control_system=qube_system,
-            muxes=muxes,
-        )
-
-    def configure_control_system(
-        self,
-        chip_id: str,
-        loopback: bool = False,
-    ) -> ExperimentSystem:
-        """
-        Configures the ControlSystem object for the given chip ID.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-
-        Returns
-        -------
-        ControlSystem
-            The configured ControlSystem object for the given chip ID.
-        """
-        control_system = self.get_control_system(chip_id)
-        qube_system = control_system.qube_system
-
-        params = self.get_params(chip_id)
-        control_vatt = params.control_vatt
-        readout_vatt = params.readout_vatt
-        control_fsc = params.control_fsc
-        readout_fsc = params.readout_fsc
-        capture_delay = params.capture_delay
-
-        for box in qube_system.boxes.values():
-            for port in box.ports:
-                if port.type == PortType.READ_OUT:
-                    mux = control_system.get_mux_by_port(port)
-                    lo, cnco, fnco = self.find_read_lo_nco(
-                        chip_id=chip_id,
-                        qubits=mux.qubit_labels,
-                    )
-                    port.lo_freq = lo
-                    port.cnco_freq = cnco
-                    port.vatt = readout_vatt[mux.number]
-                    port.sideband = "U"
-                    port.fullscale_current = readout_fsc[mux.number]
-                    port.loopback = loopback
-                    port.channels[0].fnco_freq = fnco
-                elif port.type == PortType.READ_IN:
-                    mux = control_system.get_mux_by_port(port)
-                    lo, cnco, fnco = self.find_read_lo_nco(
-                        chip_id=chip_id,
-                        qubits=mux.qubit_labels,
-                    )
-                    port.lo_freq = lo
-                    port.loopback = loopback
-                    for channel in port.channels:
-                        channel.fnco_freq = fnco
-                        channel.ndelay = capture_delay[mux.number]
-                elif port.type == PortType.CTRL:
-                    qubit = control_system.port_qubit_map[port.id].label
-                    lo, cnco, fncos = self.find_ctrl_lo_nco(
-                        chip_id=chip_id,
-                        qubit=qubit,
-                        n_channels=port.n_channels,
-                    )
-                    port.lo_freq = lo
-                    port.cnco_freq = cnco
-                    port.vatt = control_vatt[qubit]
-                    port.sideband = "L"
-                    port.fullscale_current = control_fsc[qubit]
-                    port.loopback = loopback
-                    for idx, channel in enumerate(port.channels):
-                        channel.fnco_freq = fncos[idx]
-        return control_system
+    def _load_experiment_system(self) -> dict[str, ExperimentSystem]:
+        experiment_system_dict = {}
+        for chip_id in self._chip_dict:
+            quantum_system = self._quantum_system_dict[chip_id]
+            control_system = self._control_system_dict[chip_id]
+            wiring_info = self._wiring_info_dict[chip_id]
+            control_params = self._control_params_dict[chip_id]
+            experiment_system = ExperimentSystem(
+                quantum_system=quantum_system,
+                control_system=control_system,
+                wiring_info=wiring_info,
+                control_params=control_params,
+            )
+            experiment_system_dict[chip_id] = experiment_system
+        return experiment_system_dict
 
     def generate_system_settings(
         self,
@@ -801,186 +535,3 @@ This operation will overwrite the existing device settings. Do you want to conti
         qc.store_all_box_configs(box_settings_path)
 
         print(f"Box settings saved to: {box_settings_path}")
-
-    def find_read_lo_nco(
-        self,
-        chip_id: str,
-        qubits: list[str],
-        *,
-        lo_min: int = 8_000_000_000,
-        lo_max: int = 11_000_000_000,
-        lo_step: int = 500_000_000,
-        nco_step: int = 23_437_500,
-        cnco: int = 1_500_000_000,
-        fnco_min: int = -234_375_000,
-        fnco_max: int = +234_375_000,
-    ) -> tuple[int, int, int]:
-        """
-        Finds the (lo, cnco, fnco) values for the readout qubits.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        qubits : list[str]
-            The readout qubits.
-        lo_min : int, optional
-            The minimum LO frequency, by default 8_000_000_000.
-        lo_max : int, optional
-            The maximum LO frequency, by default 11_000_000_000.
-        lo_step : int, optional
-            The LO frequency step, by default 500_000_000.
-        nco_step : int, optional
-            The NCO frequency step, by default 23_437_500.
-        cnco : int, optional
-            The CNCO frequency, by default 2_250_000_000.
-        fnco_min : int, optional
-            The minimum FNCO frequency, by default -750_000_000.
-        fnco_max : int, optional
-            The maximum FNCO frequency, by default +750_000_000.
-
-        Returns
-        -------
-        tuple[int, int, int]
-            The tuple (lo, cnco, fnco) for the readout qubits.
-        """
-        default_frequency = 10.0
-
-        props = self._props_dict[chip_id]
-        frequencies = props["resonator_frequency"]
-
-        mux_frequencies = [
-            frequencies.get(qubit, default_frequency) * 1e9 for qubit in qubits
-        ]
-        target_frequency = (max(mux_frequencies) + min(mux_frequencies)) / 2
-
-        min_diff = float("inf")
-        best_lo = None
-        best_fnco = None
-
-        for lo in range(lo_min, lo_max + 1, lo_step):
-            for fnco in range(fnco_min, fnco_max + 1, nco_step):
-                current_value = lo + cnco + fnco
-                current_diff = abs(current_value - target_frequency)
-                if current_diff < min_diff:
-                    min_diff = current_diff
-                    best_lo = lo
-                    best_fnco = fnco
-        if best_lo is None or best_fnco is None:
-            raise ValueError("No valid (lo, fnco) pair found.")
-        return best_lo, cnco, best_fnco
-
-    def find_ctrl_lo_nco(
-        self,
-        chip_id: str,
-        qubit: str,
-        n_channels: int,
-        *,
-        lo_min: int = 8_000_000_000,
-        lo_max: int = 11_000_000_000,
-        lo_step: int = 500_000_000,
-        nco_step: int = 23_437_500,
-        cnco: int = 2_250_000_000,
-        fnco_min: int = -750_000_000,
-        fnco_max: int = +750_000_000,
-        max_diff: int = 2_000_000_000,
-    ) -> tuple[int, int, tuple[int, int, int]]:
-        """
-        Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
-
-        Parameters
-        ----------
-        chip_id : str
-            The quantum chip ID (e.g., "64Q").
-        qubit : str
-            The control qubit.
-        n_channels : int
-            The number of channels.
-        lo_min : int, optional
-            The minimum LO frequency, by default 8_000_000_000.
-        lo_max : int, optional
-            The maximum LO frequency, by default 11_000_000_000.
-        lo_step : int, optional
-            The LO frequency step, by default 500_000_000.
-        nco_step : int, optional
-            The NCO frequency step, by default 23_437_500.
-        cnco : int, optional
-            The CNCO frequency, by default 2_250_000_000.
-        fnco_min : int, optional
-            The minimum FNCO frequency, by default -750_000_000.
-        fnco_max : int, optional
-            The maximum FNCO frequency, by default +750_000_000.
-        max_diff : int, optional
-            The maximum difference between CR and ge frequencies, by default 1_500_000_000.
-
-        Returns
-        -------
-        tuple[int, int, tuple[int, int, int]]
-            The tuple (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) for the control qubit.
-        """
-        control_system = self.get_control_system(chip_id)
-
-        target_ge = f"{qubit}-ge"
-        target_ef = f"{qubit}-ef"
-        target_cr = f"{qubit}-CR"
-
-        f_ge = control_system.get_ge_target(qubit).frequency * 1e9
-        f_ef = control_system.get_ef_target(qubit).frequency * 1e9
-        f_cr = control_system.get_cr_target(qubit).frequency * 1e9
-
-        if n_channels == 1:
-            f_med = f_ge
-        elif n_channels == 3:
-            freq = {
-                target_ge: f_ge,
-                target_ef: f_ef,
-                target_cr: f_cr,
-            }
-            target_max, f_max = max(freq.items(), key=lambda item: item[1])
-            target_min, f_min = min(freq.items(), key=lambda item: item[1])
-
-            if f_max - f_min > max_diff:
-                print(
-                    f"Warning: {target_max} ({f_max * 1e-9:.3f} GHz) is too far from {target_min} ({f_min * 1e-9:.3f} GHz). Ignored {target_cr}."
-                )
-                freq[target_cr] = f_ge
-                f_max = f_ge
-                f_min = f_ef
-
-            f_med = (f_max + f_min) / 2
-        else:
-            raise ValueError("Invalid number of channels: ", n_channels)
-
-        min_diff = float("inf")
-        best_lo = None
-        for lo in range(lo_min, lo_max + 1, lo_step):
-            current_value = lo - cnco
-            current_diff = abs(current_value - f_med)
-            if current_diff < min_diff:
-                min_diff = current_diff
-                best_lo = lo
-        if best_lo is None:
-            raise ValueError("No valid lo value found for: ", freq)
-
-        def find_fnco(target_frequency: float):
-            min_diff = float("inf")
-            best_fnco = None
-            for fnco in range(fnco_min, fnco_max + 1, nco_step):
-                current_value = abs(best_lo - cnco - fnco)
-                current_diff = abs(current_value - target_frequency)
-                if current_diff < min_diff:
-                    min_diff = current_diff
-                    best_fnco = fnco
-            if best_fnco is None:
-                raise ValueError("No valid fnco value found for: ", freq)
-            return best_fnco
-
-        fnco_ge = find_fnco(f_ge)
-
-        if n_channels == 1:
-            return best_lo, cnco, (fnco_ge, 0, 0)
-
-        fnco_ef = find_fnco(f_ef)
-        fnco_cr = find_fnco(f_cr)
-
-        return best_lo, cnco, (fnco_ge, fnco_ef, fnco_cr)

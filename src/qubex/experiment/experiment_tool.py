@@ -201,7 +201,7 @@ This operation will reset LO/NCO settings. Do you want to continue?
         """
 
         control_system = self._control_system
-        qube_system = control_system.qube_system
+        qube_system = control_system.control_system
 
         if box_id not in qube_system.boxes:
             print(f"Box {box_id} is not found.")

@@ -408,6 +408,10 @@ class Port(Model):
         return PORT_DIRECTION[self.type]
 
     @property
+    def n_channels(self) -> int:
+        return len(self.channels)
+
+    @property
     def is_input_port(self) -> bool:
         return self.direction == "in"
 

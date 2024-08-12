@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from pathlib import Path
 from typing import Final
 
-import yaml
 from pydantic.dataclasses import dataclass
 
-from .control_system import Box, CapPort, ControlSystem, GenPort
+from .control_system import Box, CapPort, ControlSystem, GenPort, PortType
 from .model import Model
-from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
+from .quantum_system import Mux, QuantumSystem, Qubit, Resonator
 
 
 class TargetType(Enum):
@@ -174,16 +172,29 @@ class WiringInfo(Model):
     read_in: list[tuple[Mux, CapPort]]
 
 
+@dataclass
+class ControlParams(Model):
+    control_amplitude: dict[str, float]
+    readout_amplitude: dict[str, float]
+    control_vatt: dict[str, int]
+    readout_vatt: dict[int, int]
+    control_fsc: dict[str, int]
+    readout_fsc: dict[int, int]
+    capture_delay: dict[int, int]
+
+
 class ExperimentSystem:
     def __init__(
         self,
         quantum_system: QuantumSystem,
         control_system: ControlSystem,
         wiring_info: WiringInfo,
+        control_params: ControlParams,
     ):
         self._quantum_system: Final = quantum_system
         self._control_system: Final = control_system
         self._wiring_info: Final = wiring_info
+        self._control_params: Final = control_params
         self._ge_target_dict: Final = self._create_ge_target_dict()
         self._ef_target_dict: Final = self._create_ef_target_dict()
         self._cr_target_dict: Final = self._create_cr_target_dict()
@@ -193,74 +204,6 @@ class ExperimentSystem:
             | self._ef_target_dict
             | self._cr_target_dict
             | self._readout_target_dict
-        )
-
-    @classmethod
-    def load_from_config_files(cls, chip_id: str):
-        with open(Path("config/chip.yaml"), "r") as file:
-            chip_dict = yaml.safe_load(file)
-        with open(Path("config/props.yaml"), "r") as file:
-            props_dict = yaml.safe_load(file)
-        with open(Path("config/box.yaml"), "r") as file:
-            box_dict = yaml.safe_load(file)
-        with open(Path("config/wiring.yaml"), "r") as file:
-            wiring_dict = yaml.safe_load(file)
-        chip = Chip.new(
-            id=chip_id,
-            name=chip_dict[chip_id]["name"],
-            n_qubits=chip_dict[chip_id]["n_qubits"],
-        )
-        props = props_dict[chip_id]
-        for qubit in chip.qubits:
-            qubit.frequency = props["qubit_frequency"][qubit.label]
-            qubit.anharmonicity = props["anharmonicity"][qubit.label]
-        for resonator in chip.resonators:
-            resonator.frequency = props["resonator_frequency"][resonator.qubit]
-        quantum_system = QuantumSystem(chip=chip)
-        boxes = [
-            Box.new(
-                id=id,
-                name=box["name"],
-                type=box["type"],
-                address=box["address"],
-                adapter=box["adapter"],
-            )
-            for id, box in box_dict.items()
-        ]
-        control_system = ControlSystem(boxes=boxes)
-
-        def get_port(specifier: str):
-            box_id = specifier.split("-")[0]
-            port_num = int(specifier.split("-")[1])
-            port = control_system.get_port(box_id, port_num)
-            return port
-
-        ctrl: list[tuple[Qubit, GenPort]] = []
-        read_out: list[tuple[Mux, GenPort]] = []
-        read_in: list[tuple[Mux, CapPort]] = []
-
-        for wiring in wiring_dict[chip_id]:
-            mux_num = int(wiring["mux"])
-            mux = quantum_system.get_mux(mux_num)
-            qubits = quantum_system.get_qubits_in_mux(mux_num)
-            for identifier, qubit in zip(wiring["ctrl"], qubits):
-                ctrl_port: GenPort = get_port(identifier)  # type: ignore
-                ctrl.append((qubit, ctrl_port))
-            read_out_port: GenPort = get_port(wiring["read_out"])  # type: ignore
-            read_out.append((mux, read_out_port))
-            read_in_port: CapPort = get_port(wiring["read_in"])  # type: ignore
-            read_in.append((mux, read_in_port))
-
-        wiring_info = WiringInfo(
-            ctrl=ctrl,
-            read_out=read_out,
-            read_in=read_in,
-        )
-
-        return cls(
-            quantum_system=quantum_system,
-            control_system=control_system,
-            wiring_info=wiring_info,
         )
 
     def _create_ge_target_dict(self) -> dict[str, Target]:
@@ -314,12 +257,16 @@ class ExperimentSystem:
         return self._quantum_system
 
     @property
-    def qube_system(self) -> ControlSystem:
+    def control_system(self) -> ControlSystem:
         return self._control_system
 
     @property
     def wiring_info(self) -> WiringInfo:
         return self._wiring_info
+
+    @property
+    def control_params(self) -> ControlParams:
+        return self._control_params
 
     @property
     def qubits(self) -> list[Qubit]:
@@ -328,6 +275,10 @@ class ExperimentSystem:
     @property
     def resonators(self) -> list[Resonator]:
         return self.quantum_system.resonators
+
+    @property
+    def boxes(self) -> list[Box]:
+        return self.control_system.boxes
 
     @property
     def ge_targets(self) -> list[Target]:
@@ -379,3 +330,225 @@ class ExperimentSystem:
     def get_readout_target(self, label: str) -> Target:
         label = Target.readout_label(label)
         return self.get_target(label)
+
+    def get_mux_by_readout_port(self, port: GenPort | CapPort) -> Mux:
+        for mux, cap_port in self.wiring_info.read_in:
+            if cap_port == port:
+                return mux
+        for mux, gen_port in self.wiring_info.read_out:
+            if gen_port == port:
+                return mux
+        raise KeyError(f"Port `{port.id}` not found in wiring info.")
+
+    def get_qubit_by_control_port(self, port: GenPort) -> Qubit:
+        for qubit, gen_port in self.wiring_info.ctrl:
+            if gen_port == port:
+                return qubit
+        raise KeyError(f"Port `{port.id}` not found in wiring info.")
+
+    def configure_control_system(self, loopback: bool = False):
+        control_vatt = self.control_params.control_vatt
+        readout_vatt = self.control_params.readout_vatt
+        control_fsc = self.control_params.control_fsc
+        readout_fsc = self.control_params.readout_fsc
+        capture_delay = self.control_params.capture_delay
+
+        for box in self.boxes:
+            for port in box.ports:
+                if isinstance(port, GenPort):
+                    if port.type == PortType.READ_OUT:
+                        mux = self.get_mux_by_readout_port(port)
+                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
+                        port.lo_freq = lo
+                        port.cnco_freq = cnco
+                        port.vatt = readout_vatt[mux.index]
+                        port.sideband = "U"
+                        port.fullscale_current = readout_fsc[mux.index]
+                        port.rfswitch = "block" if loopback else "pass"
+                        port.channels[0].fnco_freq = fnco
+                    elif port.type == PortType.CTRL:
+                        qubit = self.get_qubit_by_control_port(port)
+                        lo, cnco, fncos = self.find_control_lo_nco(
+                            qubit=qubit,
+                            n_channels=port.n_channels,
+                        )
+                        port.lo_freq = lo
+                        port.cnco_freq = cnco
+                        port.vatt = control_vatt[qubit.label]
+                        port.sideband = "L"
+                        port.fullscale_current = control_fsc[qubit.label]
+                        port.rfswitch = "block" if loopback else "pass"
+                        for idx, gen_channel in enumerate(port.channels):
+                            gen_channel.fnco_freq = fncos[idx]
+                elif isinstance(port, CapPort):
+                    if port.type == PortType.READ_IN:
+                        mux = self.get_mux_by_readout_port(port)
+                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
+                        port.lo_freq = lo
+                        port.rfswitch = "loop" if loopback else "open"
+                        for cap_channel in port.channels:
+                            cap_channel.fnco_freq = fnco
+                            cap_channel.ndelay = capture_delay[mux.index]
+
+    def find_readout_lo_nco(
+        self,
+        mux: Mux,
+        *,
+        lo_min: int = 8_000_000_000,
+        lo_max: int = 11_000_000_000,
+        lo_step: int = 500_000_000,
+        nco_step: int = 23_437_500,
+        cnco: int = 1_500_000_000,
+        fnco_min: int = -234_375_000,
+        fnco_max: int = +234_375_000,
+    ) -> tuple[int, int, int]:
+        """
+        Finds the (lo, cnco, fnco) values for the readout mux.
+
+        Parameters
+        ----------
+        mux : Mux
+            The readout mux.
+        lo_min : int, optional
+            The minimum LO frequency, by default 8_000_000_000.
+        lo_max : int, optional
+            The maximum LO frequency, by default 11_000_000_000.
+        lo_step : int, optional
+            The LO frequency step, by default 500_000_000.
+        nco_step : int, optional
+            The NCO frequency step, by default 23_437_500.
+        cnco : int, optional
+            The CNCO frequency, by default 2_250_000_000.
+        fnco_min : int, optional
+            The minimum FNCO frequency, by default -750_000_000.
+        fnco_max : int, optional
+            The maximum FNCO frequency, by default +750_000_000.
+
+        Returns
+        -------
+        tuple[int, int, int]
+            The tuple (lo, cnco, fnco) for the readout mux.
+        """
+        frequencies = [resonator.frequency * 1e9 for resonator in mux.resonators]
+        target_frequency = (max(frequencies) + min(frequencies)) / 2
+
+        min_diff = float("inf")
+        best_lo = None
+        best_fnco = None
+
+        for lo in range(lo_min, lo_max + 1, lo_step):
+            for fnco in range(fnco_min, fnco_max + 1, nco_step):
+                current_value = lo + cnco + fnco
+                current_diff = abs(current_value - target_frequency)
+                if current_diff < min_diff:
+                    min_diff = current_diff
+                    best_lo = lo
+                    best_fnco = fnco
+        if best_lo is None or best_fnco is None:
+            raise ValueError("No valid (lo, fnco) pair found.")
+        return best_lo, cnco, best_fnco
+
+    def find_control_lo_nco(
+        self,
+        qubit: Qubit,
+        n_channels: int,
+        *,
+        lo_min: int = 8_000_000_000,
+        lo_max: int = 11_000_000_000,
+        lo_step: int = 500_000_000,
+        nco_step: int = 23_437_500,
+        cnco: int = 2_250_000_000,
+        fnco_min: int = -750_000_000,
+        fnco_max: int = +750_000_000,
+        max_diff: int = 2_000_000_000,
+    ) -> tuple[int, int, tuple[int, int, int]]:
+        """
+        Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
+
+        Parameters
+        ----------
+        qubit : Qubit
+            The control qubit.
+        n_channels : int
+            The number of channels.
+        lo_min : int, optional
+            The minimum LO frequency, by default 8_000_000_000.
+        lo_max : int, optional
+            The maximum LO frequency, by default 11_000_000_000.
+        lo_step : int, optional
+            The LO frequency step, by default 500_000_000.
+        nco_step : int, optional
+            The NCO frequency step, by default 23_437_500.
+        cnco : int, optional
+            The CNCO frequency, by default 2_250_000_000.
+        fnco_min : int, optional
+            The minimum FNCO frequency, by default -750_000_000.
+        fnco_max : int, optional
+            The maximum FNCO frequency, by default +750_000_000.
+        max_diff : int, optional
+            The maximum difference between CR and ge frequencies, by default 1_500_000_000.
+
+        Returns
+        -------
+        tuple[int, int, tuple[int, int, int]]
+            The tuple (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) for the control qubit.
+        """
+        ge_target = self.get_ge_target(qubit.label)
+        ef_target = self.get_ef_target(qubit.label)
+        cr_target = self.get_cr_target(qubit.label)
+
+        f_ge = ge_target.frequency * 1e9
+        f_ef = ef_target.frequency * 1e9
+        f_cr = cr_target.frequency * 1e9
+
+        if n_channels == 1:
+            f_med = f_ge
+        elif n_channels == 3:
+            targets = [ge_target, ef_target, cr_target]
+            target_max = max(targets, key=lambda target: target.frequency)
+            target_min = min(targets, key=lambda target: target.frequency)
+            f_max = target_max.frequency * 1e9
+            f_min = target_min.frequency * 1e9
+            if f_max - f_min > max_diff:
+                print(
+                    f"Warning: {target_max.label} ({target_max.frequency:.3f} GHz) is too far from {target_min.label} ({target_min.frequency:.3f} GHz). Ignored {cr_target.label}."
+                )
+                f_med = (f_ge + f_ef) / 2
+            else:
+                f_med = (f_max + f_min) / 2
+        else:
+            raise ValueError("Invalid number of channels: ", n_channels)
+
+        min_diff = float("inf")
+        best_lo = None
+        for lo in range(lo_min, lo_max + 1, lo_step):
+            current_value = lo - cnco
+            current_diff = abs(current_value - f_med)
+            if current_diff < min_diff:
+                min_diff = current_diff
+                best_lo = lo
+        if best_lo is None:
+            raise ValueError("No valid lo value found for: ", f_med)
+
+        def find_fnco(target_frequency: float):
+            min_diff = float("inf")
+            best_fnco = None
+            for fnco in range(fnco_min, fnco_max + 1, nco_step):
+                current_value = abs(best_lo - cnco - fnco)
+                current_diff = abs(current_value - target_frequency)
+                if current_diff < min_diff:
+                    min_diff = current_diff
+                    best_fnco = fnco
+            if best_fnco is None:
+                raise ValueError("No valid fnco value found for: ", target_frequency)
+            return best_fnco
+
+        fnco_ge = find_fnco(f_ge)
+
+        if n_channels == 1:
+            return best_lo, cnco, (fnco_ge, 0, 0)
+
+        fnco_ef = find_fnco(f_ef)
+        fnco_cr = find_fnco(f_cr)
+
+        return best_lo, cnco, (fnco_ge, fnco_ef, fnco_cr)

@@ -1,18 +1,18 @@
-from .config_loader import ConfigLoader, Params
-from .experiment_system import ExperimentSystem, Target
+from .config_loader import ConfigLoader
+from .control_system import Box, BoxType, ControlSystem, Port
+from .experiment_system import ControlParams, ExperimentSystem, Target
 from .lattice_graph import LatticeGraph
 from .quantum_system import Chip, QuantumSystem, Qubit, Resonator
 from .qube_backend import SAMPLING_PERIOD, QubeBackend, QubeBackendResult
-from .control_system import Box, BoxType, Port, ControlSystem
 
 __all__ = [
     "Box",
     "BoxType",
     "Chip",
     "ConfigLoader",
+    "ControlParams",
     "ExperimentSystem",
     "LatticeGraph",
-    "Params",
     "Port",
     "QubeBackend",
     "QubeBackendResult",
