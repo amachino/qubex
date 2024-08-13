@@ -17,6 +17,14 @@ from .model import Model
 from .quantum_system import Mux, QuantumSystem, Qubit, Resonator
 from .target import Target
 
+DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
+DEFAULT_READOUT_AMPLITUDE: Final = 0.01
+DEFAULT_CONTROL_VATT: Final = 3072
+DEFAULT_READOUT_VATT: Final = 2048
+DEFAULT_CONTROL_FSC: Final = 40527
+DEFAULT_READOUT_FSC: Final = 40527
+DEFAULT_CAPTURE_DELAY: Final = 7
+
 
 @dataclass
 class WiringInfo(Model):
@@ -35,6 +43,35 @@ class ControlParams(Model):
     readout_fsc: dict[int, int]
     capture_delay: dict[int, int]
 
+    def get_control_amplitude(self, qubit: str) -> float:
+        return self.control_amplitude.get(qubit, DEFAULT_CONTROL_AMPLITUDE)
+
+    def get_readout_amplitude(self, qubit: str) -> float:
+        return self.readout_amplitude.get(qubit, DEFAULT_READOUT_AMPLITUDE)
+
+    def get_control_vatt(self, qubit: str) -> int:
+        return self.control_vatt.get(qubit, DEFAULT_CONTROL_VATT)
+
+    def get_readout_vatt(self, mux: int) -> int:
+        return self.readout_vatt.get(mux, DEFAULT_READOUT_VATT)
+
+    def get_control_fsc(self, qubit: str) -> int:
+        return self.control_fsc.get(qubit, DEFAULT_CONTROL_FSC)
+
+    def get_readout_fsc(self, mux: int) -> int:
+        return self.readout_fsc.get(mux, DEFAULT_READOUT_FSC)
+
+    def get_capture_delay(self, mux: int) -> int:
+        return self.capture_delay.get(mux, DEFAULT_CAPTURE_DELAY)
+
+
+@dataclass
+class SystemState(Model):
+    quantum_system: int
+    control_system: int
+    wiring_info: int
+    control_params: int
+
 
 class ExperimentSystem:
     def __init__(
@@ -48,6 +85,12 @@ class ExperimentSystem:
         self._control_system: Final = control_system
         self._wiring_info: Final = wiring_info
         self._control_params: Final = control_params
+        self._system_state: Final = SystemState(
+            quantum_system=quantum_system.hash,
+            control_system=control_system.hash,
+            wiring_info=wiring_info.hash,
+            control_params=control_params.hash,
+        )
         self._ge_target_dict: Final = self._create_ge_target_dict()
         self._ef_target_dict: Final = self._create_ef_target_dict()
         self._cr_target_dict: Final = self._create_cr_target_dict()
@@ -60,6 +103,7 @@ class ExperimentSystem:
         )
         self._target_gen_channel_map: Final = self._create_target_gen_channel_map()
         self._target_cap_channel_map: Final = self._create_target_cap_channel_map()
+        self._configure_control_system()
 
     def _create_ge_target_dict(self) -> dict[str, Target]:
         targets = [
@@ -81,17 +125,22 @@ class ExperimentSystem:
         ]
         return {target.label: target for target in targets}
 
+    def _calc_cr_target_frequency(self, qubit: Qubit) -> float:
+        spectator_qubits = self.get_spectator_qubits(qubit.label)
+        frequencies = [
+            spectator.ge_frequency
+            for spectator in spectator_qubits
+            if spectator.ge_frequency > 0
+        ]
+        if not frequencies:
+            return qubit.ge_frequency
+        return sum(frequencies) / len(frequencies)
+
     def _create_cr_target_dict(self) -> dict[str, Target]:
         targets = [
             Target.cr_target(
                 label=qubit.label,
-                frequency=sum(
-                    [
-                        spectator.ge_frequency
-                        for spectator in self.get_spectator_qubits(qubit.label)
-                    ]
-                )
-                / len(self.get_spectator_qubits(qubit.label)),
+                frequency=self._calc_cr_target_frequency(qubit),
             )
             for qubit in self.qubits
         ]
@@ -155,6 +204,56 @@ class ExperimentSystem:
         return dict(
             sorted(target_cap_channel_map.items(), key=lambda target: target[0].label)
         )
+
+    def _configure_control_system(self):
+        params = self.control_params
+
+        for box in self.boxes:
+            for port in box.ports:
+                if isinstance(port, GenPort):
+                    port.rfswitch = "pass"
+                    if port.type == PortType.READ_OUT:
+                        mux = self.get_mux_by_readout_port(port)
+                        if mux is None:
+                            continue
+                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
+                        port.lo_freq = lo
+                        port.cnco_freq = cnco
+                        port.sideband = "U"
+                        port.vatt = params.get_readout_vatt(mux.index)
+                        port.fullscale_current = params.get_readout_fsc(mux.index)
+                        port.channels[0].fnco_freq = fnco
+                    elif port.type == PortType.CTRL:
+                        qubit = self.get_qubit_by_control_port(port)
+                        if qubit is None:
+                            continue
+                        lo, cnco, fncos = self.find_control_lo_nco(
+                            qubit=qubit,
+                            n_channels=port.n_channels,
+                        )
+                        port.lo_freq = lo
+                        port.cnco_freq = cnco
+                        port.sideband = "L"
+                        port.vatt = params.get_control_vatt(qubit.label)
+                        port.fullscale_current = params.get_control_fsc(qubit.label)
+                        for idx, gen_channel in enumerate(port.channels):
+                            gen_channel.fnco_freq = fncos[idx]
+                elif isinstance(port, CapPort):
+                    port.rfswitch = "open"
+                    if port.type == PortType.READ_IN:
+                        mux = self.get_mux_by_readout_port(port)
+                        if mux is None:
+                            continue
+                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
+                        port.lo_freq = lo
+                        port.cnco_freq = cnco
+                        for cap_channel in port.channels:
+                            cap_channel.fnco_freq = fnco
+                            cap_channel.ndelay = params.get_capture_delay(mux.index)
+
+    @property
+    def state(self) -> SystemState:
+        return self._system_state
 
     @property
     def quantum_system(self) -> QuantumSystem:
@@ -221,6 +320,9 @@ class ExperimentSystem:
     def get_spectator_qubits(self, qubit: int | str) -> list[Qubit]:
         return self.quantum_system.get_spectator_qubits(qubit)
 
+    def get_box(self, label: str) -> Box:
+        return self.control_system.get_box(label)
+
     def get_target(self, label: str) -> Target:
         try:
             return self._target_dict[label]
@@ -258,56 +360,14 @@ class ExperimentSystem:
                 return qubit
         return None
 
-    def configure_control_system(self, loopback: bool = False):
-        params = self.control_params
-        control_vatt = params.control_vatt
-        readout_vatt = params.readout_vatt
-        control_fsc = params.control_fsc
-        readout_fsc = params.readout_fsc
-        capture_delay = params.capture_delay
-
-        for box in self.boxes:
-            for port in box.ports:
-                if isinstance(port, GenPort):
-                    port.rfswitch = "block" if loopback else "pass"
-                    if port.type == PortType.READ_OUT:
-                        mux = self.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
-                        port.lo_freq = lo
-                        port.cnco_freq = cnco
-                        port.sideband = "U"
-                        port.vatt = readout_vatt[mux.index]
-                        port.fullscale_current = readout_fsc[mux.index]
-                        port.channels[0].fnco_freq = fnco
-                    elif port.type == PortType.CTRL:
-                        qubit = self.get_qubit_by_control_port(port)
-                        if qubit is None:
-                            continue
-                        lo, cnco, fncos = self.find_control_lo_nco(
-                            qubit=qubit,
-                            n_channels=port.n_channels,
-                        )
-                        port.lo_freq = lo
-                        port.cnco_freq = cnco
-                        port.sideband = "L"
-                        port.vatt = control_vatt[qubit.label]
-                        port.fullscale_current = control_fsc[qubit.label]
-                        for idx, gen_channel in enumerate(port.channels):
-                            gen_channel.fnco_freq = fncos[idx]
-                elif isinstance(port, CapPort):
-                    port.rfswitch = "loop" if loopback else "open"
-                    if port.type == PortType.READ_IN:
-                        mux = self.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
-                        port.lo_freq = lo
-                        port.cnco_freq = cnco
-                        for cap_channel in port.channels:
-                            cap_channel.fnco_freq = fnco
-                            cap_channel.ndelay = capture_delay[mux.index]
+    def get_readout_pair(self, port: CapPort) -> GenPort:
+        cap_mux = self.get_mux_by_readout_port(port)
+        if cap_mux is None:
+            raise ValueError(f"No mux found for port: {port}")
+        for gen_mux, gen_port in self.wiring_info.read_out:
+            if gen_mux.index == cap_mux.index:
+                return gen_port
+        raise ValueError(f"No readout pair found for port: {port}")
 
     def find_readout_lo_nco(
         self,
@@ -421,20 +481,37 @@ class ExperimentSystem:
         f_cr = cr_target.frequency * 1e9
 
         if n_channels == 1:
-            f_med = f_ge
-        elif n_channels == 3:
-            targets = [ge_target, ef_target, cr_target]
-            target_max = max(targets, key=lambda target: target.frequency)
-            target_min = min(targets, key=lambda target: target.frequency)
-            f_max = target_max.frequency * 1e9
-            f_min = target_min.frequency * 1e9
-            if f_max - f_min > max_diff:
-                print(
-                    f"Warning: {target_max.label} ({target_max.frequency:.3f} GHz) is too far from {target_min.label} ({target_min.frequency:.3f} GHz). Ignored {cr_target.label}."
-                )
-                f_med = (f_ge + f_ef) / 2
+            if f_ge > 0:
+                f_target = f_ge
             else:
-                f_med = (f_max + f_min) / 2
+                f_target = f_cr
+        elif n_channels == 3:
+            targets = [
+                target
+                for target in [ge_target, ef_target, cr_target]
+                if target.frequency > 0
+            ]
+            if len(targets) > 0:
+                target_max = max(targets, key=lambda target: target.frequency)
+                target_min = min(targets, key=lambda target: target.frequency)
+                f_max = target_max.frequency * 1e9
+                f_min = target_min.frequency * 1e9
+                if f_max - f_min > max_diff:
+                    if f_ge < f_cr < f_ge + max_diff:
+                        f_target = (f_ge + f_cr) / 2
+                        # print(f"{ge_target.label}    : {f_ge * 1e-9:.3f} GHz")
+                        # print(f"{ef_target.label} : {f_ef * 1e-9:.3f} GHz <- ignored")
+                        # print(f"{cr_target.label} : {f_cr * 1e-9:.3f} GHz")
+                    else:
+                        f_target = (f_ge + f_ef) / 2
+                        # print(f"{ge_target.label}    : {f_ge * 1e-9:.3f} GHz")
+                        # print(f"{ef_target.label} : {f_ef * 1e-9:.3f} GHz")
+                        # print(f"{cr_target.label} : {f_cr * 1e-9:.3f} GHz <- ignored")
+
+                else:
+                    f_target = (f_max + f_min) / 2
+            else:
+                f_target = 0
         else:
             raise ValueError("Invalid number of channels: ", n_channels)
 
@@ -442,12 +519,12 @@ class ExperimentSystem:
         best_lo = None
         for lo in range(lo_min, lo_max + 1, lo_step):
             current_value = lo - cnco
-            current_diff = abs(current_value - f_med)
+            current_diff = abs(current_value - f_target)
             if current_diff < min_diff:
                 min_diff = current_diff
                 best_lo = lo
         if best_lo is None:
-            raise ValueError("No valid lo value found for: ", f_med)
+            raise ValueError("No valid lo value found for: ", f_target)
 
         def find_fnco(target_frequency: float):
             min_diff = float("inf")

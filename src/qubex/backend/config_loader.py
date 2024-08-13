@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from pathlib import Path
 from typing import Final
 
@@ -16,14 +15,6 @@ BOX_FILE: Final = "box.yaml"
 WIRING_FILE: Final = "wiring.yaml"
 PROPS_FILE: Final = "props.yaml"
 PARAMS_FILE: Final = "params.yaml"
-
-DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
-DEFAULT_READOUT_AMPLITUDE: Final = 0.01
-DEFAULT_CONTROL_VATT: Final = 3072
-DEFAULT_READOUT_VATT: Final = 2048
-DEFAULT_CONTROL_FSC: Final = 40527
-DEFAULT_READOUT_FSC: Final = 40527
-DEFAULT_CAPTURE_DELAY: Final = 7
 
 
 class ConfigLoader:
@@ -188,34 +179,13 @@ class ConfigLoader:
         control_params_dict = {}
         for chip_id, params in self._params_dict.items():
             control_params = ControlParams(
-                control_amplitude=params.get(
-                    "control_amplitude",
-                    defaultdict(lambda: DEFAULT_CONTROL_AMPLITUDE),
-                ),
-                readout_amplitude=params.get(
-                    "readout_amplitude",
-                    defaultdict(lambda: DEFAULT_READOUT_AMPLITUDE),
-                ),
-                control_vatt=params.get(
-                    "control_vatt",
-                    defaultdict(lambda: DEFAULT_CONTROL_VATT),
-                ),
-                readout_vatt=params.get(
-                    "readout_vatt",
-                    defaultdict(lambda: DEFAULT_READOUT_VATT),
-                ),
-                control_fsc=params.get(
-                    "control_fsc",
-                    defaultdict(lambda: DEFAULT_CONTROL_FSC),
-                ),
-                readout_fsc=params.get(
-                    "readout_fsc",
-                    defaultdict(lambda: DEFAULT_READOUT_FSC),
-                ),
-                capture_delay=params.get(
-                    "capture_delay",
-                    defaultdict(lambda: DEFAULT_CAPTURE_DELAY),
-                ),
+                control_amplitude=params.get("control_amplitude", {}),
+                readout_amplitude=params.get("readout_amplitude", {}),
+                control_vatt=params.get("control_vatt", {}),
+                readout_vatt=params.get("readout_vatt", {}),
+                control_fsc=params.get("control_fsc", {}),
+                readout_fsc=params.get("readout_fsc", {}),
+                capture_delay=params.get("capture_delay", {}),
             )
             control_params_dict[chip_id] = control_params
         return control_params_dict
