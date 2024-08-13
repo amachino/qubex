@@ -39,10 +39,14 @@ class StateManager:
     def __init__(self):
         if self._initialized:
             return
-        self._experiment_system = None
         self._qubecalib = QubeCalib()
-        self._device_settings = {}
+        self._experiment_system = None
+        self._device_settings = None
         self._initialized = True
+
+    @property
+    def qubecalib(self) -> QubeCalib:
+        return self._qubecalib
 
     @property
     def experiment_system(self) -> ExperimentSystem:
@@ -56,25 +60,21 @@ class StateManager:
         self._qubecalib = self._create_qubecalib(experiment_system)
 
     @property
-    def system_state(self) -> int:
-        return self.experiment_system.state.hash
+    def device_settings(self) -> dict:
+        return self._device_settings or {}
 
-    @property
-    def qubecalib(self) -> QubeCalib:
-        return self._qubecalib
+    @device_settings.setter
+    def device_settings(self, device_settings: dict):
+        self._device_settings = device_settings
+        self._experiment_system = self._create_experiment_system(device_settings)
 
     @property
     def qubecalib_state(self) -> int:
         return hash(self.qubecalib.system_config_database.asjson())
 
     @property
-    def device_settings(self) -> dict:
-        return self._device_settings
-
-    @device_settings.setter
-    def device_settings(self, device_settings: dict):
-        self._device_settings = device_settings
-        self._experiment_system = self._create_experiment_system(device_settings)
+    def system_state(self) -> int:
+        return self.experiment_system.state.hash
 
     @property
     def device_state(self) -> int:
@@ -90,17 +90,16 @@ class StateManager:
         self.experiment_system = config.get_experiment_system(chip_id)
 
     def _create_qubecalib(self, experiment_system: ExperimentSystem) -> QubeCalib:
-        qc = deepcopy(self.qubecalib)
+        qc = QubeCalib()
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
 
         qc.define_clockmaster(
             ipaddr=control_system.clock_master_address,
-            reset=False,  # TODO: check if this should be True
+            reset=True,  # this option has no effect and will be removed in the future
         )
 
         for box in control_system.boxes:
-            # define box
             qc.define_box(
                 box_name=box.id,
                 ipaddr_wss=box.address,
@@ -184,27 +183,16 @@ class StateManager:
                 )
         return experiment_system
 
-    def save_qubecalib_config(
-        self,
-        path_to_save: str = ".config/qubecalib.json",
-    ):
-        path = Path(path_to_save)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w") as f:
-            f.write(self.qubecalib.system_config_database.asjson())
-        print(f"Qubecalib configuration saved to {path}.")
-
-    def fetch_device_settings(self):
-        qc = self.qubecalib
+    def pull_state(self):
         boxes = self.experiment_system.boxes
         device_settings = {}
         for box in boxes:
-            quel1_box = qc.create_box(box.id, reconnect=False)
+            quel1_box = self.qubecalib.create_box(box.id, reconnect=False)
             quel1_box.reconnect()
             device_settings[box.id] = quel1_box.dump_box()
         self.device_settings = device_settings
 
-    def update_device_settings(
+    def push_state(
         self,
         *,
         include: list[str] | None = None,
@@ -256,9 +244,9 @@ This operation will overwrite the existing device settings. Do you want to conti
                                     fnco_freq=gen_channel.fnco_freq,
                                 )
                         except Exception as e:
-                            print(e, port)
+                            print(e, port.id)
                 elif isinstance(port, CapPort):
-                    if port.type == PortType.READ_IN:
+                    if port.type in (PortType.READ_IN,):
                         try:
                             quel1_box.config_port(
                                 port=port.number,
@@ -273,23 +261,32 @@ This operation will overwrite the existing device settings. Do you want to conti
                                     fnco_freq=cap_channel.fnco_freq,
                                 )
                         except Exception as e:
-                            print(e, port)
-        self.fetch_device_settings()
-        print("Configuration completed.")
+                            print(e, port.id)
+        self.pull_state()
 
     def print_box_info(
         self,
         box_id: str,
-        fetch_data: bool = True,
+        *,
+        fetch: bool = False,
     ) -> None:
-        if fetch_data:
-            self.fetch_device_settings()
-        box_ids = [box.id for box in self.experiment_system.boxes]
+        if fetch:
+            boxes = self.experiment_system.boxes
+            device_settings = {}
+            for box in boxes:
+                quel1_box = self.qubecalib.create_box(box.id, reconnect=False)
+                quel1_box.reconnect()
+                device_settings[box.id] = quel1_box.dump_box()
+            experiment_system = self._create_experiment_system(device_settings)
+        else:
+            experiment_system = self.experiment_system
+
+        box_ids = [box.id for box in experiment_system.boxes]
         if box_id not in box_ids:
             print(f"Box {box_id} is not found.")
             return
 
-        box = self.experiment_system.get_box(box_id)
+        box = experiment_system.get_box(box_id)
 
         table1 = Table(
             show_header=True,
@@ -314,23 +311,21 @@ This operation will overwrite the existing device settings. Do you want to conti
         table2.add_column("FNCO-1", justify="right")
         table2.add_column("FNCO-2", justify="right")
 
-        ssb_map = {"U": "USB", "L": "LSB"}
-
         for port in box.ports:
             number = str(port.number)
             type = port.type.value
-            if isinstance(port, GenPort):
-                ssb = ssb_map[port.sideband]
-                lo = f"{port.lo_freq:_}"
-                cnco = f"{port.cnco_freq:_}"
-                vatt = str(port.vatt)
-                fsc = str(port.fullscale_current)
-            elif isinstance(port, CapPort):
+            if isinstance(port, CapPort):
                 ssb = ""
                 lo = f"{port.lo_freq:_}"
                 cnco = f"{port.cnco_freq:_}"
                 vatt = ""
                 fsc = ""
+            elif isinstance(port, GenPort):
+                ssb = port.sideband
+                lo = f"{port.lo_freq:_}"
+                cnco = f"{port.cnco_freq:_}"
+                vatt = str(port.vatt)
+                fsc = str(port.fullscale_current)
 
             table1.add_row(
                 number,
@@ -350,3 +345,13 @@ This operation will overwrite the existing device settings. Do you want to conti
                 )
         console.print(table1)
         console.print(table2)
+
+    def save_qubecalib_config(
+        self,
+        path_to_save: str = "./qubecalib.json",
+    ):
+        path = Path(path_to_save)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w") as f:
+            f.write(self.qubecalib.system_config_database.asjson())
+        print(f"Qubecalib configuration saved to {path}.")
