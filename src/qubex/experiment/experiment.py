@@ -4,13 +4,14 @@ import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 from typing import Final, Literal, Optional, Sequence
 
 import numpy as np
 import plotly.graph_objects as go
 from IPython.display import clear_output, display
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
@@ -137,7 +138,7 @@ class Experiment:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        use_neopulse: bool = True,
+        use_neopulse: bool = False,
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
@@ -212,7 +213,7 @@ class Experiment:
         """Get the list of qubit labels."""
         return self._qubits
 
-    @property
+    @cached_property
     def qubits(self) -> dict[str, Qubit]:
         """Get the available qubit dict."""
         return {
@@ -221,7 +222,7 @@ class Experiment:
             if qubit.label in self.qubit_labels
         }
 
-    @property
+    @cached_property
     def resonators(self) -> dict[str, Resonator]:
         """Get the available resonator dict."""
         return {
@@ -230,7 +231,7 @@ class Experiment:
             if resonator.qubit in self.qubit_labels
         }
 
-    @property
+    @cached_property
     def targets(self) -> dict[str, Target]:
         """Get the available target dict."""
         return {
@@ -239,13 +240,13 @@ class Experiment:
             if target.qubit in self.qubit_labels
         }
 
-    @property
+    @cached_property
     def boxes(self) -> dict[str, Box]:
         """Get the available box dict."""
         boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
         return {box.id: box for box in boxes}
 
-    @property
+    @cached_property
     def box_ids(self) -> list[str]:
         """Get the available box IDs."""
         return list(self.boxes.keys())
@@ -523,7 +524,7 @@ class Experiment:
         print("config:", self.config_path)
         print("chip:", self.chip_id)
         print("qubits:", self.qubit_labels)
-        print("control_window:", self._control_window, "ns")
+        # print("control_window:", self._control_window, "ns")
         print("")
         print("Following devices will be used:")
         self.print_boxes()
@@ -1054,7 +1055,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 201, 8),
+        time_range: ArrayLike = np.arange(0, 201, 8),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1066,7 +1067,7 @@ class Experiment:
         ----------
         targets : list[str]
             List of targets to check the Rabi oscillation.
-        time_range : NDArray, optional
+        time_range : ArrayLike, optional
             Time range of the experiment in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -1160,7 +1161,7 @@ class Experiment:
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: NDArray,
+        time_range: ArrayLike,
         detuning: float = 0.0,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1174,7 +1175,7 @@ class Experiment:
         ----------
         amplitudes : dict[str, float]
             Amplitudes of the control pulses.
-        time_range : NDArray
+        time_range : ArrayLike
             Time range of the experiment.
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.0.

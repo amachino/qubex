@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing
 from contextlib import contextmanager
+from functools import cached_property
 from typing import Final, Literal
 
 import numpy as np
@@ -89,12 +90,12 @@ class Measurement:
         """Get the chip ID."""
         return self.experiment_system.chip.id
 
-    @property
+    @cached_property
     def targets(self) -> dict[str, Target]:
         """Get the targets."""
         return {target.label: target for target in self.experiment_system.targets}
 
-    @property
+    @cached_property
     def base_frequencies(self) -> dict[str, float]:
         """Get the base frequencies."""
         return {
@@ -102,7 +103,7 @@ class Measurement:
             for target in self.experiment_system.targets
         }
 
-    @property
+    @cached_property
     def diff_frequencies(self) -> dict[str, float]:
         """Get the base frequencies."""
         return {
@@ -522,6 +523,7 @@ class Measurement:
     ) -> Sequencer:
         qubits = {Target.qubit_label(target) for target in waveforms.keys()}
         control_length = max(len(waveform) for waveform in waveforms.values())
+        control_length = (control_length // MIN_DURATION + 1) * MIN_DURATION
         offset_length = self._number_of_samples(capture_offset)
         capture_length = self._number_of_samples(capture_window)
         readout_length = self._number_of_samples(readout_duration)
@@ -549,9 +551,9 @@ class Measurement:
             readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
             readout_target = Target.readout_label(qubit)
-            # omega = 2 * np.pi * self.diff_frequencies[readout_target]
-            # t = (readout_start * SAMPLING_PERIOD) // MIN_DURATION * MIN_DURATION
-            # padded_waveform *= np.exp(-1j * omega * t)
+            omega = 2 * np.pi * self.diff_frequencies[readout_target]
+            offset = readout_start * SAMPLING_PERIOD
+            padded_waveform *= np.exp(-1j * omega * offset)
             readout_waveforms[readout_target] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
