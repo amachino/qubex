@@ -37,7 +37,7 @@ from ..backend import (
     Target,
 )
 from ..clifford import CliffordGroup
-from ..measurement import MeasureResult, StateClassifier
+from ..measurement import Measurement, MeasureResult, StateClassifier
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_OFFSET,
     DEFAULT_CAPTURE_WINDOW,
@@ -46,7 +46,6 @@ from ..measurement.measurement import (
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
-    Measurement,
 )
 from ..pulse import (
     CPMG,
@@ -82,8 +81,6 @@ from .experiment_result import (
 )
 
 console = Console()
-
-MIN_DURATION = 128
 
 USER_NOTE_PATH = ".user_note.json"
 SYSTEM_NOTE_PATH = ".system_note.json"

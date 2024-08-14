@@ -216,13 +216,17 @@ class ExperimentSystem:
             qubit = self.qubits[qubit].label
         return self._qubit_port_set_map.get(qubit)
 
-    def get_base_frequency(self, label: str) -> int:
+    def get_base_frequency(self, label: str) -> float:
         target = self.get_target(label)
         channel = self.target_gen_channel_map[target]
         port = self.control_system.get_port_by_id(channel.port_id)
         if isinstance(port, GenPort):
-            return port.base_frequencies[channel.number]
+            return round(port.base_frequencies[channel.number] * 1e-9, 10)
         raise ValueError("Port is not a GenPort.")
+
+    def get_diff_frequency(self, label: str) -> float:
+        target = self.get_target(label)
+        return round(target.frequency - self.get_base_frequency(label), 10)
 
     def get_mux_by_readout_port(self, port: GenPort | CapPort) -> Mux | None:
         if isinstance(port, CapPort):

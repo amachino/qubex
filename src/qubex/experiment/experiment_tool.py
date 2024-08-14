@@ -185,7 +185,7 @@ def print_frequency_diffs(qubits: Sequence[str] | str) -> None:
     rows = []
     for target in targets:
         freq = target.frequency
-        base_freq = experiment_system.get_base_frequency(target.label) * 1e-9
+        base_freq = experiment_system.get_base_frequency(target.label)
         diff = freq - base_freq
         rows.append(
             [

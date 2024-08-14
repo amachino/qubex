@@ -35,6 +35,7 @@ DEFAULT_CAPTURE_WINDOW: Final = 1024  # ns
 DEFAULT_CAPTURE_OFFSET: Final = 128  # ns
 DEFAULT_READOUT_DURATION: Final = 512  # ns
 INTERVAL_STEP: Final = 10240  # ns
+MIN_DURATION: Final = 128  # ns
 
 
 class Measurement:
@@ -92,6 +93,22 @@ class Measurement:
     def targets(self) -> dict[str, Target]:
         """Get the targets."""
         return {target.label: target for target in self.experiment_system.targets}
+
+    @property
+    def base_frequencies(self) -> dict[str, float]:
+        """Get the base frequencies."""
+        return {
+            target.label: self.experiment_system.get_base_frequency(target.label)
+            for target in self.experiment_system.targets
+        }
+
+    @property
+    def diff_frequencies(self) -> dict[str, float]:
+        """Get the base frequencies."""
+        return {
+            target.label: self.experiment_system.get_diff_frequency(target.label)
+            for target in self.experiment_system.targets
+        }
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """
@@ -532,6 +549,9 @@ class Measurement:
             readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
             readout_target = Target.readout_label(qubit)
+            # omega = 2 * np.pi * self.diff_frequencies[readout_target]
+            # t = (readout_start * SAMPLING_PERIOD) // MIN_DURATION * MIN_DURATION
+            # padded_waveform *= np.exp(-1j * omega * t)
             readout_waveforms[readout_target] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
