@@ -9,7 +9,8 @@ from .control_system import Box, CapPort, ControlSystem, GenPort
 from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
 from .quantum_system import Chip, QuantumSystem
 
-CONFIG_DIR: Final = "config"
+DEFAULT_CONFIG_DIR: Final = "config"
+
 CHIP_FILE: Final = "chip.yaml"
 BOX_FILE: Final = "box.yaml"
 WIRING_FILE: Final = "wiring.yaml"
@@ -20,7 +21,7 @@ PARAMS_FILE: Final = "params.yaml"
 class ConfigLoader:
     def __init__(
         self,
-        config_dir: str = CONFIG_DIR,
+        config_dir: str = DEFAULT_CONFIG_DIR,
         *,
         chip_file: str = CHIP_FILE,
         box_file: str = BOX_FILE,

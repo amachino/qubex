@@ -4,6 +4,7 @@ import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Final, Literal, Optional, Sequence
 
 import numpy as np
@@ -24,7 +25,17 @@ from ..analysis import (
     plot_state_vectors,
     plot_waveform,
 )
-from ..backend import Box, ConfigLoader, Qubit, Resonator, Target
+from ..backend import (
+    Box,
+    ControlParams,
+    ControlSystem,
+    ExperimentSystem,
+    QuantumSystem,
+    Qubit,
+    Resonator,
+    StateManager,
+    Target,
+)
 from ..clifford import CliffordGroup
 from ..measurement import MeasureResult, StateClassifier
 from ..measurement.measurement import (
@@ -53,6 +64,7 @@ from ..pulse import (
 )
 from ..typing import IQArray, ParametricPulseSchedule, ParametricWaveformDict, TargetMap
 from ..version import get_package_version
+from . import experiment_tool
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import (
@@ -68,7 +80,6 @@ from .experiment_result import (
     T2Data,
     TimePhaseData,
 )
-from .experiment_tool import ExperimentTool
 
 console = Console()
 
@@ -133,24 +144,16 @@ class Experiment:
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
+        self._config_dir: Final = config_dir
         self._control_window: Final = control_window
         self._capture_window: Final = capture_window
         self._capture_offset: Final = capture_offset
         self._readout_duration: Final = readout_duration
         self._rabi_params: Final[dict[str, RabiParam]] = {}
-        self._config: Final = ConfigLoader(config_dir)
-        self._control_system: Final = self._config.configure_control_system(chip_id)
         self._measurement = Measurement(
             chip_id=chip_id,
             config_dir=config_dir,
             use_neopulse=use_neopulse,
-        )
-        self.tool: Final = ExperimentTool(
-            chip_id=self._chip_id,
-            qubits=self._qubits,
-            config=self._config,
-            control_system=self._control_system,
-            measurement=self._measurement,
         )
         self._user_note: Final = ExperimentNote(
             file_path=USER_NOTE_PATH,
@@ -158,27 +161,49 @@ class Experiment:
         self._system_note: Final = ExperimentNote(
             file_path=SYSTEM_NOTE_PATH,
         )
+        self._validate()
         self.print_environment()
 
-    @property
-    def control_system(self):
-        """Get the control system."""
-        return self._control_system
+    def _validate(self):
+        """Check if the experiment is valid."""
+        available_qubits = [
+            target.qubit for target in self.experiment_system.ge_targets
+        ]
+        unavailable_qubits = [
+            qubit for qubit in self._qubits if qubit not in available_qubits
+        ]
+        if len(unavailable_qubits) > 0:
+            raise ValueError(f"Unavailable qubits: {unavailable_qubits}")
 
     @property
-    def quantum_system(self):
+    def tool(self):
+        """Get the experiment tool."""
+        return experiment_tool
+
+    @property
+    def state_manager(self) -> StateManager:
+        """Get the state manager."""
+        return StateManager.shared()
+
+    @property
+    def experiment_system(self) -> ExperimentSystem:
+        """Get the experiment system."""
+        return self.state_manager.experiment_system
+
+    @property
+    def quantum_system(self) -> QuantumSystem:
         """Get the quantum system."""
-        return self.control_system.quantum_system
+        return self.experiment_system.quantum_system
 
     @property
-    def qube_system(self):
+    def control_system(self) -> ControlSystem:
         """Get the qube system."""
-        return self.control_system.qube_system
+        return self.experiment_system.control_system
 
     @property
-    def params(self) -> Params:
-        """Get the system parameters."""
-        return self._config.get_params(self._chip_id)
+    def params(self) -> ControlParams:
+        """Get the control parameters."""
+        return self.experiment_system.control_params
 
     @property
     def chip_id(self) -> str:
@@ -187,56 +212,51 @@ class Experiment:
 
     @property
     def qubit_labels(self) -> list[str]:
-        """Get the list of the qubit labels."""
+        """Get the list of qubit labels."""
         return self._qubits
 
     @property
     def qubits(self) -> dict[str, Qubit]:
-        """Get the qubits."""
+        """Get the available qubit dict."""
         return {
             qubit.label: qubit
-            for qubit in self._config.get_qubits(self._chip_id)
+            for qubit in self.experiment_system.qubits
             if qubit.label in self.qubit_labels
         }
 
     @property
     def resonators(self) -> dict[str, Resonator]:
-        """Get the resonators."""
+        """Get the available resonator dict."""
         return {
             resonator.label: resonator
-            for resonator in self._config.get_resonators(self._chip_id)
-            if resonator.qubit in self._qubits
+            for resonator in self.experiment_system.resonators
+            if resonator.qubit in self.qubit_labels
         }
 
     @property
     def targets(self) -> dict[str, Target]:
-        """Get the targets."""
+        """Get the available target dict."""
         return {
-            label: target
-            for label, target in self._measurement.targets.items()
-            if target.qubit in self._qubits
+            target.label: target
+            for target in self.experiment_system.targets
+            if target.qubit in self.qubit_labels
         }
-
-    @property
-    def box_ids(self) -> list[str]:
-        """Get the list of available box IDs."""
-        return [
-            box.id for box in self._config.get_boxes(self._chip_id, self.qubit_labels)
-        ]
 
     @property
     def boxes(self) -> dict[str, Box]:
-        """Get the boxes."""
-        return {
-            id: box
-            for id, box in self.qube_system.boxes.items()
-            if box.id in self.box_ids
-        }
+        """Get the available box dict."""
+        boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
+        return {box.id: box for box in boxes}
+
+    @property
+    def box_ids(self) -> list[str]:
+        """Get the available box IDs."""
+        return list(self.boxes.keys())
 
     @property
     def config_path(self) -> str:
         """Get the path of the configuration file."""
-        return str(self._config.config_path)
+        return str(Path(self._config_dir).resolve())
 
     @property
     def note(self) -> ExperimentNote:
@@ -490,7 +510,7 @@ class Experiment:
         list[Qubit]
             List of the spectators.
         """
-        return self.quantum_system.get_spectators(qubit)
+        return self.quantum_system.get_spectator_qubits(qubit)
 
     def print_environment(self, verbose: bool = False):
         """Print the environment information."""

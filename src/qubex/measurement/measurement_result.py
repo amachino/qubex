@@ -7,9 +7,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..analysis import plot_fft, plot_waveform, scatter_iq_data
+from ..backend import SAMPLING_PERIOD
 
-SAMPLING_PERIOD_SINGLE = 2.0
-SAMPLING_PERIOD_AVG = 8.0
+SAMPLING_PERIOD_SINGLE = SAMPLING_PERIOD
+SAMPLING_PERIOD_AVG = SAMPLING_PERIOD * 4
 
 
 class MeasureMode(Enum):

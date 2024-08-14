@@ -130,13 +130,6 @@ class DeviceController:
         ------
         ValueError
             If the box is not in the available boxes.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.link_status("Q73A")
-        {0: True, 1: True}
         """
         self._check_box_availabilty(box_name)
         box = self.qubecalib.create_box(box_name, reconnect=False)
@@ -155,12 +148,6 @@ class DeviceController:
         ------
         ValueError
             If the box is not in the available boxes.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.reconnect("Q73A")
         """
         self._check_box_availabilty(box_name)
         box = self.qubecalib.create_box(box_name, reconnect=False)
@@ -188,12 +175,6 @@ class DeviceController:
         ------
         ValueError
             If the box is not in the available boxes.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> box = backend.linkup("Q73A")
         """
         # check if the box is available
         self._check_box_availabilty(box_name)
@@ -222,12 +203,6 @@ class DeviceController:
         -------
         dict[str, Quel1Box]
             Dictionary of linked up boxes.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.linkup_boxes(["Q73A", "U10B"])
         """
         boxes = {}
         for box_name in box_list:
@@ -246,12 +221,6 @@ class DeviceController:
         ----------
         box_name : str
             Name of the box to relinkup.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.relinkup("Q73A")
         """
         box = self.qubecalib.create_box(box_name, reconnect=False)
         box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
@@ -260,12 +229,6 @@ class DeviceController:
     def relinkup_boxes(self, box_list: list[str]):
         """
         Relinkup all the boxes in the list.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.relinkup_boxes(["Q73A", "U10B"])
         """
         for box_name in box_list:
             self.relinkup(box_name)
@@ -283,12 +246,6 @@ class DeviceController:
         -------
         list[tuple[bool, int, int]]
             List of clocks.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.read_clocks(["Q73A", "U10B"])
         """
         result = list(self.qubecalib.read_clock(*box_list))
         return result
@@ -306,12 +263,6 @@ class DeviceController:
         -------
         bool
             True if the clocks are synchronized, False otherwise.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.check_clocks(["Q73A", "U10B"])
         """
 
         result = self.qubecalib.read_clock(*box_list)
@@ -332,12 +283,6 @@ class DeviceController:
         ----------
         box_list : list[str]
             List of box names.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.resync_clocks(["Q73A", "U10B"])
         """
         self.qubecalib.resync(*box_list)
         return self.check_clocks(box_list)
@@ -350,12 +295,6 @@ class DeviceController:
         ----------
         box_list : list[str]
             List of box names.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.sync_clocks(["Q73A", "U10B"])
         """
         synchronized = self.check_clocks(box_list)
         if not synchronized:
@@ -382,12 +321,6 @@ class DeviceController:
         ------
         ValueError
             If the box is not in the available boxes.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.dump_box("Q73A")
         """
         self._check_box_availabilty(box_name)
         try:
@@ -412,13 +345,6 @@ class DeviceController:
         ----------
         sequence : Sequence
             The sequence to add to the queue.
-
-        Examples
-        --------
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> with Sequence() as sequence:
-        ...     ...
-        >>> backend.add_sequence(sequence)
         """
         self.qubecalib.add_sequence(
             sequence,
@@ -434,12 +360,6 @@ class DeviceController:
         ----------
         sequencer : Sequencer
             The sequencer to add to the queue.
-
-        Examples
-        --------
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> sequencer = Sequencer(...)
-        >>> backend.add_sequencer(sequencer)
         """
         self.qubecalib._executor.add_command(sequencer)
 
@@ -478,17 +398,8 @@ class DeviceController:
 
         Yields
         ------
-        QubeBackendResult
+        RawResult
             Measurement result.
-
-        Examples
-        --------
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> with Sequence() as sequence:
-        ...     ...
-        >>> backend.add_sequence(sequence)
-        >>> for result in backend.execute(repeats=100, interval=1024):
-        ...     print(result)
         """
         for status, data, config in self.qubecalib.step_execute(
             repeats=repeats,
@@ -536,15 +447,8 @@ class DeviceController:
 
         Returns
         -------
-        QubeBackendResult
+        RawResult
             Measurement result.
-
-        Examples
-        --------
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> with Sequence() as sequence:
-        ...     ...
-        >>> result = backend.execute_sequence(sequence, repeats=100, interval=1024)
         """
         self.clear_command_queue()
         self.add_sequence(
@@ -592,15 +496,8 @@ class DeviceController:
 
         Returns
         -------
-        QubeBackendResult
+        RawResult
             Measurement result.
-
-        Examples
-        --------
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> with Sequence() as sequence:
-        ...     ...
-        >>> result = backend.execute_sequence(sequence, repeats=100, interval=1024)
         """
         self.clear_command_queue()
         self.add_sequencer(sequencer)
@@ -624,11 +521,6 @@ class DeviceController:
             Name of the target.
         frequency : float
             Modified frequency in GHz.
-
-        Examples
-        --------
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.modify_target_frequency("Q00", 10.0)
         """
         self.qubecalib.modify_target_frequency(target, frequency)
 
@@ -640,11 +532,6 @@ class DeviceController:
         ----------
         frequencies : dict[str, float]
             Dictionary of target frequencies.
-
-        Examples
-        --------
-        >>> backend = QubeBackend("./system_settings.json")
-        >>> backend.modify_target_frequencies({"Q00": 10.0, "Q01": 10.0})
         """
         for target, frequency in frequencies.items():
             self.modify_target_frequency(target, frequency)

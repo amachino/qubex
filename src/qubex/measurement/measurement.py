@@ -2,36 +2,25 @@ from __future__ import annotations
 
 import typing
 from contextlib import contextmanager
-from typing import Literal
+from typing import Final, Literal
 
 import numpy as np
 import numpy.typing as npt
 
 try:
     from qubecalib import Sequencer
-    from qubecalib.neopulse import (
-        Arbit,
-        CapSampledSequence,
-        CapSampledSubSequence,
-        Capture,
-        CaptureSlots,
-        Flushleft,
-        Flushright,
-        GenSampledSequence,
-        GenSampledSubSequence,
-        RaisedCosFlatTop,
-        Sequence,
-        Series,
-        padding,
-    )
+    from qubecalib import neopulse as pls
 except ImportError:
     pass
 
 from ..backend import (
+    DEFAULT_CONFIG_DIR,
     SAMPLING_PERIOD,
-    ConfigLoader,
+    ControlParams,
     DeviceController,
+    ExperimentSystem,
     RawResult,
+    StateManager,
     Target,
 )
 from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
@@ -39,14 +28,13 @@ from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .state_classifier import StateClassifier
 
-DEFAULT_CONFIG_DIR = "./config"
-DEFAULT_SHOTS = 1024
-DEFAULT_INTERVAL = 150 * 1024  # ns
-DEFAULT_CONTROL_WINDOW = 1024  # ns
-DEFAULT_CAPTURE_WINDOW = 1024  # ns
-DEFAULT_CAPTURE_OFFSET = 128  # ns
-DEFAULT_READOUT_DURATION = 512  # ns
-INTERVAL_STEP = 10240  # ns
+DEFAULT_SHOTS: Final = 1024
+DEFAULT_INTERVAL: Final = 150 * 1024  # ns
+DEFAULT_CONTROL_WINDOW: Final = 1024  # ns
+DEFAULT_CAPTURE_WINDOW: Final = 1024  # ns
+DEFAULT_CAPTURE_OFFSET: Final = 128  # ns
+DEFAULT_READOUT_DURATION: Final = 512  # ns
+INTERVAL_STEP: Final = 10240  # ns
 
 
 class Measurement:
@@ -72,28 +60,38 @@ class Measurement:
         >>> from qubex import Measurement
         >>> meas = Measurement("64Q")
         """
-        self._chip_id = chip_id
+        self._state_manager = StateManager.shared()
+        self._state_manager.load(
+            chip_id=chip_id,
+            config_dir=config_dir,
+        )
         self._use_neopulse = use_neopulse
-        config_loader = ConfigLoader(config_dir)
-        config_path = config_loader.generate_system_settings(chip_id)
-        self._backend = DeviceController(config_path)
-        self._control_system = config_loader.get_control_system(chip_id)
-        self._params = config_loader.get_params(chip_id)
         self.classifiers: dict[str, StateClassifier] = {}
+
+    @property
+    def experiment_system(self) -> ExperimentSystem:
+        """Get the experiment system."""
+        return self._state_manager.experiment_system
+
+    @property
+    def device_controller(self) -> DeviceController:
+        """Get the device controller."""
+        return self._state_manager.device_controller
+
+    @property
+    def control_params(self) -> ControlParams:
+        """Get the control parameters."""
+        return self.experiment_system.control_params
 
     @property
     def chip_id(self) -> str:
         """Get the chip ID."""
-        return self._chip_id
+        return self.experiment_system.chip.id
 
     @property
     def targets(self) -> dict[str, Target]:
         """Get the targets."""
-        target_settings = self._backend.target_settings
-        return {
-            target: Target.from_label(target, setting["frequency"])
-            for target, setting in target_settings.items()
-        }
+        return {target.label: target for target in self.experiment_system.targets}
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """
@@ -113,7 +111,9 @@ class Measurement:
         --------
         >>> meas.check_link_status(["Q73A", "U10B"])
         """
-        link_statuses = {box: self._backend.link_status(box) for box in box_list}
+        link_statuses = {
+            box: self.device_controller.link_status(box) for box in box_list
+        }
         is_linkedup = all([all(status.values()) for status in link_statuses.values()])
         return {
             "status": is_linkedup,
@@ -138,9 +138,9 @@ class Measurement:
         --------
         >>> meas.check_clock_status(["Q73A", "U10B"])
         """
-        clocks = self._backend.read_clocks(box_list)
+        clocks = self.device_controller.read_clocks(box_list)
         clock_statuses = {box: clock for box, clock in zip(box_list, clocks)}
-        is_synced = self._backend.check_clocks(box_list)
+        is_synced = self.device_controller.check_clocks(box_list)
         return {
             "status": is_synced,
             "clocks": clock_statuses,
@@ -159,8 +159,8 @@ class Measurement:
         --------
         >>> meas.linkup(["Q73A", "U10B"])
         """
-        self._backend.linkup_boxes(box_list, noise_threshold=noise_threshold)
-        self._backend.sync_clocks(box_list)
+        self.device_controller.linkup_boxes(box_list, noise_threshold=noise_threshold)
+        self.device_controller.sync_clocks(box_list)
 
     def relinkup(self, box_list: list[str]):
         """
@@ -175,8 +175,8 @@ class Measurement:
         --------
         >>> meas.relinkup(["Q73A", "U10B"])
         """
-        self._backend.relinkup_boxes(box_list)
-        self._backend.sync_clocks(box_list)
+        self.device_controller.relinkup_boxes(box_list)
+        self.device_controller.sync_clocks(box_list)
 
     @contextmanager
     def modified_frequencies(self, target_frequencies: dict[str, float]):
@@ -197,13 +197,15 @@ class Measurement:
         ...     })
         """
         original_frequencies = {
-            label: target.frequency for label, target in self.targets.items()
+            label: target.frequency
+            for label, target in self.targets.items()
+            if label in target_frequencies
         }
-        self._backend.modify_target_frequencies(target_frequencies)
+        self.device_controller.modify_target_frequencies(target_frequencies)
         try:
             yield
         finally:
-            self._backend.modify_target_frequencies(original_frequencies)
+            self.device_controller.modify_target_frequencies(original_frequencies)
 
     def measure_noise(
         self,
@@ -229,13 +231,13 @@ class Measurement:
         --------
         >>> result = meas.measure_noise()
         """
-        capture = Capture(duration=duration)
+        capture = pls.Capture(duration=duration)
         readout_targets = {Target.readout_label(target) for target in targets}
-        with Sequence() as sequence:
-            with Flushleft():
+        with pls.Sequence() as sequence:
+            with pls.Flushleft():
                 for target in readout_targets:
                     capture.target(target)
-        backend_result = self._backend.execute_sequence(
+        backend_result = self.device_controller.execute_sequence(
             sequence=sequence,
             repeats=1,
             interval=DEFAULT_INTERVAL,
@@ -305,7 +307,7 @@ class Measurement:
                 capture_offset=capture_offset,
                 readout_duration=readout_duration,
             )
-            backend_result = self._backend.execute_sequence(
+            backend_result = self.device_controller.execute_sequence(
                 sequence=sequence,
                 repeats=shots,
                 interval=backend_interval,
@@ -318,7 +320,7 @@ class Measurement:
                 capture_offset=capture_offset,
                 readout_duration=readout_duration,
             )
-            backend_result = self._backend.execute_sequencer(
+            backend_result = self.device_controller.execute_sequencer(
                 sequencer=sequencer,
                 repeats=shots,
                 interval=backend_interval,
@@ -373,7 +375,7 @@ class Measurement:
         ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
-        self._backend.clear_command_queue()
+        self.device_controller.clear_command_queue()
         for waveforms in waveforms_list:
             if self._use_neopulse:
                 sequence = self._create_sequence(
@@ -383,7 +385,7 @@ class Measurement:
                     capture_offset=capture_offset,
                     readout_duration=readout_duration,
                 )
-                self._backend.add_sequence(sequence)
+                self.device_controller.add_sequence(sequence)
             else:
                 sequencer = self._create_sequencer(
                     waveforms=waveforms,
@@ -391,8 +393,8 @@ class Measurement:
                     capture_offset=capture_offset,
                     readout_duration=readout_duration,
                 )
-                self._backend.add_sequencer(sequencer)
-        backend_results = self._backend.execute(
+                self.device_controller.add_sequencer(sequencer)
+        backend_results = self.device_controller.execute(
             repeats=shots,
             interval=backend_interval,
             integral_mode=measure_mode.integral_mode,
@@ -442,7 +444,7 @@ class Measurement:
             add_last_measurement=False,
             capture_offset=capture_offset,
         )
-        backend_result = self._backend.execute_sequencer(
+        backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
             repeats=shots,
             interval=backend_interval,
@@ -458,21 +460,21 @@ class Measurement:
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-    ) -> Sequence:
-        readout_amplitude = self._params.readout_amplitude
-        capture = Capture(duration=capture_window)
+    ) -> pls.Sequence:
+        readout_amplitude = self.control_params.readout_amplitude
+        capture = pls.Capture(duration=capture_window)
         qubits = {Target.qubit_label(target) for target in waveforms.keys()}
-        with Sequence() as sequence:
-            with Flushright():
-                padding(control_window)
+        with pls.Sequence() as sequence:
+            with pls.Flushright():
+                pls.padding(control_window)
                 for target, waveform in waveforms.items():
-                    Arbit(np.array(waveform)).target(target)
-            with Series():
-                padding(capture_offset)
-                with Flushleft():
+                    pls.Arbit(np.array(waveform)).target(target)
+            with pls.Series():
+                pls.padding(capture_offset)
+                with pls.Flushleft():
                     for qubit in qubits:
                         readout_target = Target.readout_label(qubit)
-                        RaisedCosFlatTop(
+                        pls.RaisedCosFlatTop(
                             duration=readout_duration,
                             amplitude=readout_amplitude[qubit],
                             rise_time=32,
@@ -486,7 +488,7 @@ class Measurement:
         duration: int = DEFAULT_READOUT_DURATION,
     ) -> FlatTop:
         qubit = Target.qubit_label(target)
-        readout_amplitude = self._params.readout_amplitude
+        readout_amplitude = self.control_params.readout_amplitude
         return FlatTop(
             duration=duration,
             amplitude=readout_amplitude[qubit],
@@ -533,16 +535,16 @@ class Measurement:
             readout_waveforms[readout_target] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
-        gen_sequences: dict[str, GenSampledSequence] = {}
-        cap_sequences: dict[str, CapSampledSequence] = {}
+        gen_sequences: dict[str, pls.GenSampledSequence] = {}
+        cap_sequences: dict[str, pls.CapSampledSequence] = {}
         for target, waveform in control_waveforms.items():
             # add GenSampledSequence (control)
-            gen_sequences[target] = GenSampledSequence(
+            gen_sequences[target] = pls.GenSampledSequence(
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
                 sub_sequences=[
-                    GenSampledSubSequence(
+                    pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
                         post_blank=None,
@@ -552,12 +554,12 @@ class Measurement:
             )
         for target, waveform in readout_waveforms.items():
             # add GenSampledSequence (readout)
-            gen_sequences[target] = GenSampledSequence(
+            gen_sequences[target] = pls.GenSampledSequence(
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
                 sub_sequences=[
-                    GenSampledSubSequence(
+                    pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
                         post_blank=None,
@@ -566,15 +568,15 @@ class Measurement:
                 ],
             )
             # add CapSampledSequence
-            cap_sequences[target] = CapSampledSequence(
+            cap_sequences[target] = pls.CapSampledSequence(
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
                 repeats=None,
                 sub_sequences=[
-                    CapSampledSubSequence(
+                    pls.CapSampledSubSequence(
                         capture_slots=[
-                            CaptureSlots(
+                            pls.CaptureSlots(
                                 duration=capture_length,
                                 post_blank=None,
                             )
@@ -588,7 +590,7 @@ class Measurement:
 
         # create resource map
         all_targets = list(control_waveforms.keys()) + list(readout_waveforms.keys())
-        resource_map = self._backend.get_resource_map(all_targets)
+        resource_map = self.device_controller.get_resource_map(all_targets)
 
         # return Sequencer
         return Sequencer(
@@ -636,15 +638,15 @@ class Measurement:
         sampled_sequences = schedule.get_sampled_sequences()
 
         # create GenSampledSequence
-        gen_sequences: dict[str, GenSampledSequence] = {}
+        gen_sequences: dict[str, pls.GenSampledSequence] = {}
         for target, waveform in sampled_sequences.items():
-            gen_sequences[target] = GenSampledSequence(
+            gen_sequences[target] = pls.GenSampledSequence(
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
                 sub_sequences=[
                     # has only one GenSampledSubSequence
-                    GenSampledSubSequence(
+                    pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
                         post_blank=None,
@@ -654,12 +656,12 @@ class Measurement:
             )
 
         # create CapSampledSequence
-        cap_sequences: dict[str, CapSampledSequence] = {}
+        cap_sequences: dict[str, pls.CapSampledSequence] = {}
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
         for target, ranges in readout_ranges.items():
             if not ranges:
                 continue
-            cap_sub_sequence = CapSampledSubSequence(
+            cap_sub_sequence = pls.CapSampledSubSequence(
                 capture_slots=[],
                 # prev_blank is the time to the first readout pulse
                 prev_blank=ranges[0].start,
@@ -670,7 +672,7 @@ class Measurement:
                 current_range = ranges[i]
                 next_range = ranges[i + 1]
                 cap_sub_sequence.capture_slots.append(
-                    CaptureSlots(
+                    pls.CaptureSlots(
                         duration=len(current_range),
                         # post_blank is the time to the next readout pulse
                         post_blank=next_range.start - current_range.stop,
@@ -678,13 +680,13 @@ class Measurement:
                 )
             last_range = ranges[-1]
             cap_sub_sequence.capture_slots.append(
-                CaptureSlots(
+                pls.CaptureSlots(
                     duration=len(last_range),
                     # post_blank is the time to the end of the schedule
                     post_blank=schedule.length - last_range.stop,
                 )
             )
-            cap_sequence = CapSampledSequence(
+            cap_sequence = pls.CapSampledSequence(
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
@@ -697,7 +699,7 @@ class Measurement:
             cap_sequences[target] = cap_sequence
 
         # create resource map
-        resource_map = self._backend.get_resource_map(schedule.targets)
+        resource_map = self.device_controller.get_resource_map(schedule.targets)
 
         # return Sequencer
         return Sequencer(

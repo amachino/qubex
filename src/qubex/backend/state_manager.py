@@ -8,7 +8,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import Sequence, deprecated
 
-from .config_loader import CONFIG_DIR, ConfigLoader
+from .config_loader import DEFAULT_CONFIG_DIR, ConfigLoader
 from .control_system import CapPort, GenPort, PortType
 from .device_controller import DeviceController
 from .experiment_system import ExperimentSystem
@@ -39,6 +39,10 @@ class StateManager:
         self._device_controller = DeviceController()
         self._device_settings = {}
         self._initialized = True
+
+    @property
+    def is_loaded(self) -> bool:
+        return self.experiment_system is not None
 
     @property
     def experiment_system(self) -> ExperimentSystem:
@@ -86,7 +90,7 @@ class StateManager:
         self,
         *,
         chip_id: str,
-        config_dir: str = CONFIG_DIR,
+        config_dir: str = DEFAULT_CONFIG_DIR,
     ):
         config = ConfigLoader(config_dir)
         self.experiment_system = config.get_experiment_system(chip_id)
