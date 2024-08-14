@@ -24,7 +24,7 @@ from ..analysis import (
     plot_state_vectors,
     plot_waveform,
 )
-from ..backend import Box, ConfigLoader, Params, Qubit, Resonator, Target
+from ..backend import Box, ConfigLoader, Qubit, Resonator, Target
 from ..clifford import CliffordGroup
 from ..measurement import MeasureResult, StateClassifier
 from ..measurement.measurement import (

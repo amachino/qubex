@@ -15,39 +15,36 @@ SAMPLING_PERIOD: Final[float] = 2.0  # ns
 
 
 @dataclass
-class QubeBackendResult:
-    """Dataclass for measurement results."""
-
+class RawResult:
     status: dict
     data: dict
     config: dict
 
 
-class QubeBackend:
-    def __init__(self, config_path: str | Path):
-        """
-        Initialize the QubeBackend.
-
-        Parameters
-        ----------
-        config_path : str | Path
-            Path to the JSON configuration file of qube-calib.
-
-        Examples
-        --------
-        >>> from qubex.qube_backend import QubeBackend
-        >>> backend = QubeBackend("./system_settings.json")
-        """
-        try:
-            self.qubecalib: Final = QubeCalib(str(config_path))
-        except FileNotFoundError:
-            print(f"Configuration file {config_path} not found.")
-            raise
+class DeviceController:
+    def __init__(
+        self,
+        config_path: str | Path | None = None,
+    ):
+        if config_path is None:
+            self.qubecalib = QubeCalib()
+        else:
+            try:
+                self.qubecalib = QubeCalib(str(config_path))
+            except FileNotFoundError:
+                print(f"Configuration file {config_path} not found.")
+                raise
 
     @property
     def system_config(self) -> dict[str, dict]:
         """Get the system configuration."""
         config = self.qubecalib.system_config_database.asdict()
+        return config
+
+    @property
+    def system_config_json(self) -> str:
+        """Get the system configuration as JSON."""
+        config = self.qubecalib.system_config_database.asjson()
         return config
 
     @property
@@ -76,6 +73,18 @@ class QubeBackend:
             List of available boxes.
         """
         return list(self.box_settings.keys())
+
+    @property
+    def hash(self) -> int:
+        """
+        Get the hash of the system configuration.
+
+        Returns
+        -------
+        int
+            Hash of the system configuration.
+        """
+        return hash(self.qubecalib.system_config_database.asjson())
 
     def _check_box_availabilty(self, box_name: str):
         if box_name not in self.available_boxes:
@@ -381,9 +390,13 @@ class QubeBackend:
         >>> backend.dump_box("Q73A")
         """
         self._check_box_availabilty(box_name)
-        box = self.qubecalib.create_box(box_name, reconnect=False)
-        box.reconnect()
-        box_config = box.dump_box()
+        try:
+            box = self.qubecalib.create_box(box_name, reconnect=False)
+            box.reconnect()
+            box_config = box.dump_box()
+        except Exception as e:
+            print(f"Failed to dump box {box_name}. Error: {e}")
+            box_config = {}
         return box_config
 
     def add_sequence(
@@ -484,7 +497,7 @@ class QubeBackend:
             dsp_demodulation=dsp_demodulation,
             software_demodulation=software_demodulation,
         ):
-            result = QubeBackendResult(
+            result = RawResult(
                 status=status,
                 data=data,
                 config=config,
@@ -502,7 +515,7 @@ class QubeBackend:
         software_demodulation: bool = False,
         time_offset: dict[str, int] = {},  # {box_name: time_offset}
         time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
-    ) -> QubeBackendResult:
+    ) -> RawResult:
         """
         Execute a single sequence and return the measurement result.
 
@@ -558,7 +571,7 @@ class QubeBackend:
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
-    ) -> QubeBackendResult:
+    ) -> RawResult:
         """
         Execute a single sequence and return the measurement result.
 

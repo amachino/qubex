@@ -486,6 +486,15 @@ class GenPort(Port):
     fullscale_current: int = DEFAULT_FULLSCALE_CURRENT
     rfswitch: Literal["pass", "block"] = "pass"
 
+    @property
+    def base_frequencies(self) -> tuple[int, ...]:
+        return tuple(
+            self.lo_freq + self.cnco_freq + channel.fnco_freq
+            if self.sideband == "U"
+            else self.lo_freq - self.cnco_freq - channel.fnco_freq
+            for channel in self.channels
+        )
+
 
 @dataclass
 class CapPort(Port):
@@ -556,6 +565,13 @@ class ControlSystem:
             raise IndexError(
                 f"Port number `{port_number}` not found in box `{box_id}`."
             )
+
+    def get_port_by_id(self, port_id: str) -> GenPort | CapPort:
+        for box in self.boxes:
+            for port in box.ports:
+                if port.id == port_id:
+                    return port
+        raise KeyError(f"Port `{port_id}` not found.")
 
     def set_port_params(
         self,

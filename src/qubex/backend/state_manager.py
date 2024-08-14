@@ -6,15 +6,11 @@ from pathlib import Path
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
-from typing_extensions import deprecated
-
-try:
-    from qubecalib import QubeCalib
-except ImportError:
-    pass
+from typing_extensions import Sequence, deprecated
 
 from .config_loader import CONFIG_DIR, ConfigLoader
 from .control_system import CapPort, GenPort, PortType
+from .device_controller import DeviceController
 from .experiment_system import ExperimentSystem
 
 console = Console()
@@ -30,23 +26,19 @@ class StateManager:
         return cls._instance
 
     @classmethod
-    def shared_manager(cls):
+    def shared(cls):
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
-    @deprecated("Use StateManager.shared_manager() instead.")
+    @deprecated("Use StateManager.shared() instead.")
     def __init__(self):
         if self._initialized:
             return
-        self._qubecalib = QubeCalib()
         self._experiment_system = None
-        self._device_settings = None
+        self._device_controller = DeviceController()
+        self._device_settings = {}
         self._initialized = True
-
-    @property
-    def qubecalib(self) -> QubeCalib:
-        return self._qubecalib
 
     @property
     def experiment_system(self) -> ExperimentSystem:
@@ -57,7 +49,16 @@ class StateManager:
     @experiment_system.setter
     def experiment_system(self, experiment_system: ExperimentSystem):
         self._experiment_system = experiment_system
-        self._qubecalib = self._create_qubecalib(experiment_system)
+        # update device controller to reflect the new experiment system
+        self._device_controller = self._create_device_controller(experiment_system)
+
+    @property
+    def device_controller(self) -> DeviceController:
+        return self._device_controller
+
+    @device_controller.setter
+    def device_controller(self, device_controller: DeviceController):
+        self._device_controller = device_controller
 
     @property
     def device_settings(self) -> dict:
@@ -66,15 +67,16 @@ class StateManager:
     @device_settings.setter
     def device_settings(self, device_settings: dict):
         self._device_settings = device_settings
+        # update experiment system to reflect the new device settings
         self._experiment_system = self._create_experiment_system(device_settings)
-
-    @property
-    def qubecalib_state(self) -> int:
-        return hash(self.qubecalib.system_config_database.asjson())
 
     @property
     def system_state(self) -> int:
         return self.experiment_system.state.hash
+
+    @property
+    def controller_state(self) -> int:
+        return self.device_controller.hash
 
     @property
     def device_state(self) -> int:
@@ -89,119 +91,24 @@ class StateManager:
         config = ConfigLoader(config_dir)
         self.experiment_system = config.get_experiment_system(chip_id)
 
-    def _create_qubecalib(self, experiment_system: ExperimentSystem) -> QubeCalib:
-        qc = QubeCalib()
-        control_system = experiment_system.control_system
-        control_params = experiment_system.control_params
-
-        qc.define_clockmaster(
-            ipaddr=control_system.clock_master_address,
-            reset=True,  # this option has no effect and will be removed in the future
-        )
-
-        for box in control_system.boxes:
-            qc.define_box(
-                box_name=box.id,
-                ipaddr_wss=box.address,
-                boxtype=box.type.value,
-            )
-
-            for port in box.ports:
-                if port.type == PortType.NOT_AVAILABLE:
-                    continue
-                qc.define_port(
-                    port_name=port.id,
-                    box_name=box.id,
-                    port_number=port.number,
-                )
-
-                for channel in port.channels:
-                    if port.type == PortType.READ_IN:
-                        mux = experiment_system.get_mux_by_readout_port(port)
-                        if mux is None:
-                            raise ValueError(
-                                f"No mux found for readout port: {port.id}"
-                            )
-                        ndelay_or_nwait = control_params.capture_delay[mux.index]
-                    else:
-                        ndelay_or_nwait = 0
-                    qc.define_channel(
-                        channel_name=channel.id,
-                        port_name=port.id,
-                        channel_number=channel.number,
-                        ndelay_or_nwait=ndelay_or_nwait,
-                    )
-
-        target_gen_channel_map = experiment_system.target_gen_channel_map
-        for target, gen_channel in target_gen_channel_map.items():
-            qc.define_target(
-                target_name=target.label,
-                channel_name=gen_channel.id,
-                target_frequency=target.frequency,
-            )
-        target_cap_channel_map = experiment_system.target_cap_channel_map
-        for target, cap_channel in target_cap_channel_map.items():
-            qc.define_target(
-                target_name=target.label,
-                channel_name=cap_channel.id,
-                target_frequency=target.frequency,
-            )
-        return qc
-
-    def _create_experiment_system(
-        self,
-        device_settings: dict,
-    ) -> ExperimentSystem:
-        experiment_system = deepcopy(self.experiment_system)
-        control_system = experiment_system.control_system
-        for box_id, box in device_settings.items():
-            for port_number, port in box["ports"].items():
-                direction = port["direction"]
-                lo_freq = int(port["lo_freq"])
-                cnco_freq = int(port["cnco_freq"])
-                if direction == "out":
-                    sideband = port["sideband"]
-                    fullscale_current = int(port["fullscale_current"])
-                    fnco_freqs = [
-                        int(channel["fnco_freq"])
-                        for channel in port["channels"].values()
-                    ]
-                elif direction == "in":
-                    sideband = None
-                    fullscale_current = None
-                    fnco_freqs = [
-                        int(channel["fnco_freq"]) for channel in port["runits"].values()
-                    ]
-                control_system.set_port_params(
-                    box_id=box_id,
-                    port_number=port_number,
-                    sideband=sideband,
-                    lo_freq=lo_freq,
-                    cnco_freq=cnco_freq,
-                    fnco_freqs=fnco_freqs,
-                    fullscale_current=fullscale_current,
-                )
-        return experiment_system
-
     def pull_state(self):
-        boxes = self.experiment_system.boxes
-        device_settings = {}
-        for box in boxes:
-            quel1_box = self.qubecalib.create_box(box.id, reconnect=False)
-            quel1_box.reconnect()
-            device_settings[box.id] = quel1_box.dump_box()
+        device_settings = {
+            box.id: self.device_controller.dump_box(box.id)
+            for box in self.experiment_system.boxes
+        }
         self.device_settings = device_settings
 
     def push_state(
         self,
+        box_ids: Sequence[str] | None = None,
         *,
-        include: list[str] | None = None,
-        exclude: list[str] | None = None,
+        exclude: Sequence[str] | None = None,
     ):
         boxes = self.experiment_system.boxes
 
-        if include is not None:
-            boxes = [box for box in boxes if box.id in include]
+        if box_ids is not None:
+            boxes = [box for box in boxes if box.id in box_ids]
+
         if exclude is not None:
             boxes = [box for box in boxes if box.id not in exclude]
 
@@ -219,7 +126,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             print("Operation cancelled.")
             return
 
-        qc = self.qubecalib
+        qc = self.device_controller.qubecalib
 
         for box in boxes:
             quel1_box = qc.create_box(box.id, reconnect=False)
@@ -262,7 +169,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                                 )
                         except Exception as e:
                             print(e, port.id)
-        self.pull_state()
+        # self.pull_state()
 
     def print_box_info(
         self,
@@ -271,12 +178,10 @@ This operation will overwrite the existing device settings. Do you want to conti
         fetch: bool = False,
     ) -> None:
         if fetch:
-            boxes = self.experiment_system.boxes
-            device_settings = {}
-            for box in boxes:
-                quel1_box = self.qubecalib.create_box(box.id, reconnect=False)
-                quel1_box.reconnect()
-                device_settings[box.id] = quel1_box.dump_box()
+            device_settings = {
+                box.id: self.device_controller.dump_box(box.id)
+                for box in self.experiment_system.boxes
+            }
             experiment_system = self._create_experiment_system(device_settings)
         else:
             experiment_system = self.experiment_system
@@ -353,5 +258,104 @@ This operation will overwrite the existing device settings. Do you want to conti
         path = Path(path_to_save)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
-            f.write(self.qubecalib.system_config_database.asjson())
+            f.write(self.device_controller.system_config_json)
         print(f"Qubecalib configuration saved to {path}.")
+
+    def _create_device_controller(
+        self,
+        experiment_system: ExperimentSystem,
+    ) -> DeviceController:
+        control_system = experiment_system.control_system
+        control_params = experiment_system.control_params
+
+        device_controller = DeviceController()
+        qc = device_controller.qubecalib
+
+        qc.define_clockmaster(
+            ipaddr=control_system.clock_master_address,
+            reset=True,  # this option has no effect and will be removed in the future
+        )
+
+        for box in control_system.boxes:
+            qc.define_box(
+                box_name=box.id,
+                ipaddr_wss=box.address,
+                boxtype=box.type.value,
+            )
+
+            for port in box.ports:
+                if port.type == PortType.NOT_AVAILABLE:
+                    continue
+                qc.define_port(
+                    port_name=port.id,
+                    box_name=box.id,
+                    port_number=port.number,
+                )
+
+                for channel in port.channels:
+                    if port.type == PortType.READ_IN:
+                        mux = experiment_system.get_mux_by_readout_port(port)
+                        if mux is None:
+                            raise ValueError(
+                                f"No mux found for readout port: {port.id}"
+                            )
+                        ndelay_or_nwait = control_params.capture_delay[mux.index]
+                    else:
+                        ndelay_or_nwait = 0
+                    qc.define_channel(
+                        channel_name=channel.id,
+                        port_name=port.id,
+                        channel_number=channel.number,
+                        ndelay_or_nwait=ndelay_or_nwait,
+                    )
+
+        target_gen_channel_map = experiment_system.target_gen_channel_map
+        for target, gen_channel in target_gen_channel_map.items():
+            qc.define_target(
+                target_name=target.label,
+                channel_name=gen_channel.id,
+                target_frequency=target.frequency,
+            )
+        target_cap_channel_map = experiment_system.target_cap_channel_map
+        for target, cap_channel in target_cap_channel_map.items():
+            qc.define_target(
+                target_name=target.label,
+                channel_name=cap_channel.id,
+                target_frequency=target.frequency,
+            )
+        return device_controller
+
+    def _create_experiment_system(
+        self,
+        device_settings: dict,
+    ) -> ExperimentSystem:
+        experiment_system = deepcopy(self.experiment_system)
+        control_system = experiment_system.control_system
+        for box_id, box in device_settings.items():
+            for port_number, port in box["ports"].items():
+                direction = port["direction"]
+                lo_freq = int(port["lo_freq"])
+                cnco_freq = int(port["cnco_freq"])
+                if direction == "out":
+                    sideband = port["sideband"]
+                    fullscale_current = int(port["fullscale_current"])
+                    fnco_freqs = [
+                        int(channel["fnco_freq"])
+                        for channel in port["channels"].values()
+                    ]
+                elif direction == "in":
+                    sideband = None
+                    fullscale_current = None
+                    fnco_freqs = [
+                        int(channel["fnco_freq"]) for channel in port["runits"].values()
+                    ]
+                control_system.set_port_params(
+                    box_id=box_id,
+                    port_number=port_number,
+                    sideband=sideband,
+                    lo_freq=lo_freq,
+                    cnco_freq=cnco_freq,
+                    fnco_freqs=fnco_freqs,
+                    fullscale_current=fullscale_current,
+                )
+        return experiment_system

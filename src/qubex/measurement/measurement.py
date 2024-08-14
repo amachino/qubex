@@ -30,8 +30,8 @@ except ImportError:
 from ..backend import (
     SAMPLING_PERIOD,
     ConfigLoader,
-    QubeBackend,
-    QubeBackendResult,
+    DeviceController,
+    RawResult,
     Target,
 )
 from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
@@ -76,7 +76,7 @@ class Measurement:
         self._use_neopulse = use_neopulse
         config_loader = ConfigLoader(config_dir)
         config_path = config_loader.generate_system_settings(chip_id)
-        self._backend = QubeBackend(config_path)
+        self._backend = DeviceController(config_path)
         self._control_system = config_loader.get_control_system(chip_id)
         self._params = config_loader.get_params(chip_id)
         self.classifiers: dict[str, StateClassifier] = {}
@@ -708,7 +708,7 @@ class Measurement:
 
     def _create_measure_result(
         self,
-        backend_result: QubeBackendResult,
+        backend_result: RawResult,
         measure_mode: MeasureMode,
     ) -> MeasureResult:
         label_slice = slice(1, None)  # Remove the prefix "R"

@@ -14,7 +14,7 @@ from .control_system import (
     PortType,
 )
 from .model import Model
-from .quantum_system import Mux, QuantumSystem, Qubit, Resonator
+from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
 from .target import Target
 
 DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
@@ -31,6 +31,13 @@ class WiringInfo(Model):
     ctrl: list[tuple[Qubit, GenPort]]
     read_out: list[tuple[Mux, GenPort]]
     read_in: list[tuple[Mux, CapPort]]
+
+
+@dataclass
+class QubitPortSet(Model):
+    ctrl_port: GenPort
+    read_out_port: GenPort
+    read_in_port: CapPort
 
 
 @dataclass
@@ -103,153 +110,8 @@ class ExperimentSystem:
         )
         self._target_gen_channel_map: Final = self._create_target_gen_channel_map()
         self._target_cap_channel_map: Final = self._create_target_cap_channel_map()
+        self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
         self._configure_control_system()
-
-    def _create_ge_target_dict(self) -> dict[str, Target]:
-        targets = [
-            Target.ge_target(
-                label=qubit.label,
-                frequency=qubit.ge_frequency,
-            )
-            for qubit in self.qubits
-        ]
-        return {target.label: target for target in targets}
-
-    def _create_ef_target_dict(self) -> dict[str, Target]:
-        targets = [
-            Target.ef_target(
-                label=qubit.label,
-                frequency=qubit.ef_frequency,
-            )
-            for qubit in self.qubits
-        ]
-        return {target.label: target for target in targets}
-
-    def _calc_cr_target_frequency(self, qubit: Qubit) -> float:
-        spectator_qubits = self.get_spectator_qubits(qubit.label)
-        frequencies = [
-            spectator.ge_frequency
-            for spectator in spectator_qubits
-            if spectator.ge_frequency > 0
-        ]
-        if not frequencies:
-            return qubit.ge_frequency
-        return sum(frequencies) / len(frequencies)
-
-    def _create_cr_target_dict(self) -> dict[str, Target]:
-        targets = [
-            Target.cr_target(
-                label=qubit.label,
-                frequency=self._calc_cr_target_frequency(qubit),
-            )
-            for qubit in self.qubits
-        ]
-        return {target.label: target for target in targets}
-
-    def _create_readout_target_dict(self) -> dict[str, Target]:
-        targets = [
-            Target.readout_target(
-                label=resonator.label,
-                frequency=resonator.frequency,
-            )
-            for resonator in self.resonators
-        ]
-        return {target.label: target for target in targets}
-
-    def _create_target_gen_channel_map(self) -> dict[Target, GenChannel]:
-        target_gen_channel_map = {}
-        for box in self.boxes:
-            for port in box.ports:
-                if isinstance(port, GenPort):
-                    if port.type == PortType.CTRL:
-                        qubit = self.get_qubit_by_control_port(port)
-                        if qubit is None:
-                            continue
-                        targets = [
-                            self.get_ge_target(qubit.label),
-                            self.get_ef_target(qubit.label),
-                            self.get_cr_target(qubit.label),
-                        ]
-                        for target, channel in zip(targets, port.channels):
-                            target_gen_channel_map[target] = channel
-                    elif port.type == PortType.READ_OUT:
-                        mux = self.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        targets = [
-                            self.get_readout_target(resonator.label)
-                            for resonator in mux.resonators
-                        ]
-                        for target in targets:
-                            target_gen_channel_map[target] = port.channels[0]
-        return dict(
-            sorted(target_gen_channel_map.items(), key=lambda target: target[0].label)
-        )
-
-    def _create_target_cap_channel_map(self) -> dict[Target, CapChannel]:
-        target_cap_channel_map = {}
-        for box in self.boxes:
-            for port in box.ports:
-                if isinstance(port, CapPort):
-                    if port.type == PortType.READ_IN:
-                        mux = self.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        targets = [
-                            self.get_readout_target(resonator.label)
-                            for resonator in mux.resonators
-                        ]
-                        for target, channel in zip(targets, port.channels):
-                            target_cap_channel_map[target] = channel
-        return dict(
-            sorted(target_cap_channel_map.items(), key=lambda target: target[0].label)
-        )
-
-    def _configure_control_system(self):
-        params = self.control_params
-
-        for box in self.boxes:
-            for port in box.ports:
-                if isinstance(port, GenPort):
-                    port.rfswitch = "pass"
-                    if port.type == PortType.READ_OUT:
-                        mux = self.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
-                        port.lo_freq = lo
-                        port.cnco_freq = cnco
-                        port.sideband = "U"
-                        port.vatt = params.get_readout_vatt(mux.index)
-                        port.fullscale_current = params.get_readout_fsc(mux.index)
-                        port.channels[0].fnco_freq = fnco
-                    elif port.type == PortType.CTRL:
-                        qubit = self.get_qubit_by_control_port(port)
-                        if qubit is None:
-                            continue
-                        lo, cnco, fncos = self.find_control_lo_nco(
-                            qubit=qubit,
-                            n_channels=port.n_channels,
-                        )
-                        port.lo_freq = lo
-                        port.cnco_freq = cnco
-                        port.sideband = "L"
-                        port.vatt = params.get_control_vatt(qubit.label)
-                        port.fullscale_current = params.get_control_fsc(qubit.label)
-                        for idx, gen_channel in enumerate(port.channels):
-                            gen_channel.fnco_freq = fncos[idx]
-                elif isinstance(port, CapPort):
-                    port.rfswitch = "open"
-                    if port.type == PortType.READ_IN:
-                        mux = self.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
-                        port.lo_freq = lo
-                        port.cnco_freq = cnco
-                        for cap_channel in port.channels:
-                            cap_channel.fnco_freq = fnco
-                            cap_channel.ndelay = params.get_capture_delay(mux.index)
 
     @property
     def state(self) -> SystemState:
@@ -270,6 +132,10 @@ class ExperimentSystem:
     @property
     def control_params(self) -> ControlParams:
         return self._control_params
+
+    @property
+    def chip(self) -> Chip:
+        return self.quantum_system.chip
 
     @property
     def qubits(self) -> list[Qubit]:
@@ -345,13 +211,28 @@ class ExperimentSystem:
         label = Target.readout_label(label)
         return self.get_target(label)
 
+    def get_qubit_port_set(self, qubit: int | str) -> QubitPortSet:
+        if isinstance(qubit, int):
+            qubit = self.qubits[qubit].label
+        return self._qubit_port_set_map[qubit]
+
+    def get_base_frequency(self, label: str) -> int:
+        target = self.get_target(label)
+        channel = self.target_gen_channel_map[target]
+        port = self.control_system.get_port_by_id(channel.port_id)
+        if isinstance(port, GenPort):
+            return port.base_frequencies[channel.number]
+        raise ValueError("Port is not a GenPort.")
+
     def get_mux_by_readout_port(self, port: GenPort | CapPort) -> Mux | None:
-        for mux, cap_port in self.wiring_info.read_in:
-            if cap_port == port:
-                return mux
-        for mux, gen_port in self.wiring_info.read_out:
-            if gen_port == port:
-                return mux
+        if isinstance(port, CapPort):
+            for mux, cap_port in self.wiring_info.read_in:
+                if cap_port == port:
+                    return mux
+        elif isinstance(port, GenPort):
+            for mux, gen_port in self.wiring_info.read_out:
+                if gen_port == port:
+                    return mux
         return None
 
     def get_qubit_by_control_port(self, port: GenPort) -> Qubit | None:
@@ -548,3 +429,170 @@ class ExperimentSystem:
         fnco_cr = find_fnco(f_cr)
 
         return best_lo, cnco, (fnco_ge, fnco_ef, fnco_cr)
+
+    def _create_ge_target_dict(self) -> dict[str, Target]:
+        targets = [
+            Target.ge_target(
+                label=qubit.label,
+                frequency=qubit.ge_frequency,
+            )
+            for qubit in self.qubits
+        ]
+        return {target.label: target for target in targets}
+
+    def _create_ef_target_dict(self) -> dict[str, Target]:
+        targets = [
+            Target.ef_target(
+                label=qubit.label,
+                frequency=qubit.ef_frequency,
+            )
+            for qubit in self.qubits
+        ]
+        return {target.label: target for target in targets}
+
+    def _calc_cr_target_frequency(self, qubit: Qubit) -> float:
+        spectator_qubits = self.get_spectator_qubits(qubit.label)
+        frequencies = [
+            spectator.ge_frequency
+            for spectator in spectator_qubits
+            if spectator.ge_frequency > 0
+        ]
+        if not frequencies:
+            return qubit.ge_frequency
+        return sum(frequencies) / len(frequencies)
+
+    def _create_cr_target_dict(self) -> dict[str, Target]:
+        targets = [
+            Target.cr_target(
+                label=qubit.label,
+                frequency=self._calc_cr_target_frequency(qubit),
+            )
+            for qubit in self.qubits
+        ]
+        return {target.label: target for target in targets}
+
+    def _create_readout_target_dict(self) -> dict[str, Target]:
+        targets = [
+            Target.readout_target(
+                label=resonator.label,
+                frequency=resonator.frequency,
+            )
+            for resonator in self.resonators
+        ]
+        return {target.label: target for target in targets}
+
+    def _create_target_gen_channel_map(self) -> dict[Target, GenChannel]:
+        target_gen_channel_map = {}
+        for box in self.boxes:
+            for port in box.ports:
+                if isinstance(port, GenPort):
+                    if port.type == PortType.CTRL:
+                        qubit = self.get_qubit_by_control_port(port)
+                        if qubit is None:
+                            continue
+                        targets = [
+                            self.get_ge_target(qubit.label),
+                            self.get_ef_target(qubit.label),
+                            self.get_cr_target(qubit.label),
+                        ]
+                        for target, channel in zip(targets, port.channels):
+                            target_gen_channel_map[target] = channel
+                    elif port.type == PortType.READ_OUT:
+                        mux = self.get_mux_by_readout_port(port)
+                        if mux is None:
+                            continue
+                        targets = [
+                            self.get_readout_target(resonator.label)
+                            for resonator in mux.resonators
+                        ]
+                        for target in targets:
+                            target_gen_channel_map[target] = port.channels[0]
+        return dict(
+            sorted(target_gen_channel_map.items(), key=lambda target: target[0].label)
+        )
+
+    def _create_target_cap_channel_map(self) -> dict[Target, CapChannel]:
+        target_cap_channel_map = {}
+        for box in self.boxes:
+            for port in box.ports:
+                if isinstance(port, CapPort):
+                    if port.type == PortType.READ_IN:
+                        mux = self.get_mux_by_readout_port(port)
+                        if mux is None:
+                            continue
+                        targets = [
+                            self.get_readout_target(resonator.label)
+                            for resonator in mux.resonators
+                        ]
+                        for target, channel in zip(targets, port.channels):
+                            target_cap_channel_map[target] = channel
+        return dict(
+            sorted(target_cap_channel_map.items(), key=lambda target: target[0].label)
+        )
+
+    def _create_qubit_port_set_map(self) -> dict[str, QubitPortSet]:
+        ctrl_port_map: dict[str, GenPort] = {}
+        read_out_port_map: dict[str, GenPort] = {}
+        read_in_port_map: dict[str, CapPort] = {}
+        for qubit, gen_port in self.wiring_info.ctrl:
+            ctrl_port_map[qubit.label] = gen_port
+        for mux, gen_port in self.wiring_info.read_out:
+            for resonator in mux.resonators:
+                read_out_port_map[resonator.qubit] = gen_port
+        for mux, cap_port in self.wiring_info.read_in:
+            for resonator in mux.resonators:
+                read_in_port_map[resonator.qubit] = cap_port
+        return {
+            qubit: QubitPortSet(
+                ctrl_port=ctrl_port_map[qubit],
+                read_out_port=read_out_port_map[qubit],
+                read_in_port=read_in_port_map[qubit],
+            )
+            for qubit in ctrl_port_map
+        }
+
+    def _configure_control_system(self):
+        params = self.control_params
+
+        for box in self.boxes:
+            for port in box.ports:
+                if isinstance(port, GenPort):
+                    port.rfswitch = "pass"
+                    if port.type == PortType.READ_OUT:
+                        mux = self.get_mux_by_readout_port(port)
+                        if mux is None:
+                            continue
+                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
+                        port.lo_freq = lo
+                        port.cnco_freq = cnco
+                        port.sideband = "U"
+                        port.vatt = params.get_readout_vatt(mux.index)
+                        port.fullscale_current = params.get_readout_fsc(mux.index)
+                        port.channels[0].fnco_freq = fnco
+                    elif port.type == PortType.CTRL:
+                        qubit = self.get_qubit_by_control_port(port)
+                        if qubit is None:
+                            continue
+                        lo, cnco, fncos = self.find_control_lo_nco(
+                            qubit=qubit,
+                            n_channels=port.n_channels,
+                        )
+                        port.lo_freq = lo
+                        port.cnco_freq = cnco
+                        port.sideband = "L"
+                        port.vatt = params.get_control_vatt(qubit.label)
+                        port.fullscale_current = params.get_control_fsc(qubit.label)
+                        for idx, gen_channel in enumerate(port.channels):
+                            gen_channel.fnco_freq = fncos[idx]
+                elif isinstance(port, CapPort):
+                    port.rfswitch = "open"
+                    if port.type == PortType.READ_IN:
+                        mux = self.get_mux_by_readout_port(port)
+                        if mux is None:
+                            continue
+                        lo, cnco, fnco = self.find_readout_lo_nco(mux=mux)
+                        port.lo_freq = lo
+                        port.cnco_freq = cnco
+                        for cap_channel in port.channels:
+                            cap_channel.fnco_freq = fnco
+                            cap_channel.ndelay = params.get_capture_delay(mux.index)
