@@ -679,6 +679,19 @@ class Measurement:
         # get sampled sequences
         sampled_sequences = schedule.get_sampled_sequences()
 
+        # get readout ranges
+        readout_ranges = schedule.get_pulse_ranges(readout_targets)
+
+        # adjust the phase of the readout pulses
+        for target, ranges in readout_ranges.items():
+            if not ranges:
+                continue
+            seq = sampled_sequences[target]
+            omega = 2 * np.pi * self.diff_frequencies[target]
+            for rng in ranges:
+                offset = rng.start * SAMPLING_PERIOD
+                seq[rng] *= np.exp(-1j * omega * offset)
+
         # create GenSampledSequence
         gen_sequences: dict[str, pls.GenSampledSequence] = {}
         for target, waveform in sampled_sequences.items():
@@ -699,7 +712,6 @@ class Measurement:
 
         # create CapSampledSequence
         cap_sequences: dict[str, pls.CapSampledSequence] = {}
-        readout_ranges = schedule.get_pulse_ranges(readout_targets)
         for target, ranges in readout_ranges.items():
             if not ranges:
                 continue
