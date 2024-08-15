@@ -40,7 +40,7 @@ from ..backend import (
 from ..clifford import CliffordGroup
 from ..measurement import Measurement, MeasureResult, StateClassifier
 from ..measurement.measurement import (
-    DEFAULT_CAPTURE_OFFSET,
+    DEFAULT_CAPTURE_MARGIN,
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONTROL_WINDOW,
@@ -136,7 +136,7 @@ class Experiment:
         config_dir: str = DEFAULT_CONFIG_DIR,
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        capture_offset: int = DEFAULT_CAPTURE_OFFSET,
+        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = False,
     ):
@@ -145,7 +145,7 @@ class Experiment:
         self._config_dir: Final = config_dir
         self._control_window: Final = control_window
         self._capture_window: Final = capture_window
-        self._capture_offset: Final = capture_offset
+        self._capture_margin: Final = capture_margin
         self._readout_duration: Final = readout_duration
         self._rabi_params: Final[dict[str, RabiParam]] = {}
         self._measurement = Measurement(
@@ -730,7 +730,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
         capture_window: int | None = None,
-        capture_offset: int | None = None,
+        capture_margin: int | None = None,
         readout_duration: int | None = None,
         plot: bool = False,
     ) -> MeasureResult:
@@ -753,8 +753,8 @@ class Experiment:
             Control window. Defaults to None.
         capture_window : int, optional
             Capture window. Defaults to None.
-        capture_offset : int, optional
-            Capture offset. Defaults to None.
+        capture_margin : int, optional
+            Capture margin. Defaults to None.
         readout_duration : int, optional
             Readout duration. Defaults to None.
         plot : bool, optional
@@ -778,7 +778,7 @@ class Experiment:
         """
         control_window = control_window or self._control_window
         capture_window = capture_window or self._capture_window
-        capture_offset = capture_offset or self._capture_offset
+        capture_margin = capture_margin or self._capture_margin
         readout_duration = readout_duration or self._readout_duration
         waveforms = {}
 
@@ -799,7 +799,7 @@ class Experiment:
                 interval=interval,
                 control_window=control_window,
                 capture_window=capture_window,
-                capture_offset=capture_offset,
+                capture_margin=capture_margin,
                 readout_duration=readout_duration,
             )
         else:
@@ -811,7 +811,7 @@ class Experiment:
                     interval=interval,
                     control_window=control_window,
                     capture_window=capture_window,
-                    capture_offset=capture_offset,
+                    capture_margin=capture_margin,
                     readout_duration=readout_duration,
                 )
         if plot:
@@ -827,7 +827,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
         capture_window: int | None = None,
-        capture_offset: int | None = None,
+        capture_margin: int | None = None,
         readout_duration: int | None = None,
     ):
         """
@@ -847,8 +847,8 @@ class Experiment:
             Control window. Defaults to None.
         capture_window : int, optional
             Capture window. Defaults to None.
-        capture_offset : int, optional
-            Capture offset. Defaults to None.
+        capture_margin : int, optional
+            Capture margin. Defaults to None.
         readout_duration : int, optional
             Readout duration. Defaults to None.
 
@@ -871,7 +871,7 @@ class Experiment:
             interval=interval,
             control_window=control_window or self._control_window,
             capture_window=capture_window or self._capture_window,
-            capture_offset=capture_offset or self._capture_offset,
+            capture_margin=capture_margin or self._capture_margin,
             readout_duration=readout_duration or self._readout_duration,
         )
 
@@ -886,7 +886,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
         capture_window: int | None = None,
-        capture_offset: int | None = None,
+        capture_margin: int | None = None,
         readout_duration: int | None = None,
         plot: bool = False,
     ) -> MeasureResult:
@@ -907,8 +907,8 @@ class Experiment:
             Control window. Defaults to None.
         capture_window : int, optional
             Capture window. Defaults to None.
-        capture_offset : int, optional
-            Capture offset. Defaults to None.
+        capture_margin : int, optional
+            Capture margin. Defaults to None.
         readout_duration : int, optional
             Readout duration. Defaults to None.
         plot : bool, optional
@@ -958,7 +958,7 @@ class Experiment:
             interval=interval,
             control_window=control_window,
             capture_window=capture_window,
-            capture_offset=capture_offset,
+            capture_margin=capture_margin,
             readout_duration=readout_duration,
             plot=plot,
         )
@@ -1412,7 +1412,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         control_window: int | None = None,
         capture_window: int | None = None,
-        capture_offset: int | None = None,
+        capture_margin: int | None = None,
         plot: bool = True,
         title: str = "Sweep result",
         xaxis_title: str = "Sweep value",
@@ -1441,8 +1441,8 @@ class Experiment:
             Control window. Defaults to None.
         capture_window : int, optional
             Capture window. Defaults to None.
-        capture_offset : int, optional
-            Capture offset. Defaults to None.
+        capture_margin : int, optional
+            Capture margin. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         title : str, optional
@@ -1513,7 +1513,7 @@ class Experiment:
             interval=interval,
             control_window=control_window or self._control_window,
             capture_window=capture_window or self._capture_window,
-            capture_offset=capture_offset or self._capture_offset,
+            capture_margin=capture_margin or self._capture_margin,
         )
         signals = defaultdict(list)
         plotter = IQPlotter()
