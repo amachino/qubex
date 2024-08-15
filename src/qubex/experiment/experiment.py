@@ -1065,7 +1065,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: ArrayLike = np.arange(0, 201, 8),
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1095,6 +1095,9 @@ class Experiment:
         --------
         >>> result = ex.obtain_rabi_params(["Q00", "Q01"])
         """
+        if time_range is None:
+            time_range = np.arange(0, 201, 8)
+
         ampl = self.params.control_amplitude
         amplitudes = {target: ampl[target] for target in targets}
         result = self.rabi_experiment(
@@ -1111,7 +1114,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 201, 8),
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1123,7 +1126,7 @@ class Experiment:
         ----------
         targets : list[str]
             List of targets to check the Rabi oscillation.
-        time_range : NDArray, optional
+        time_range : ArrayLike, optional
             Time range of the experiment in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -1141,6 +1144,9 @@ class Experiment:
         --------
         >>> result = ex.obtain_ef_rabi_params(["Q00", "Q01"])
         """
+        if time_range is None:
+            time_range = np.arange(0, 201, 8)
+
         ef_labels = [Target.ef_label(target) for target in targets]
         ef_targets = [self.targets[ef] for ef in ef_labels]
 
@@ -1282,7 +1288,7 @@ class Experiment:
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: NDArray,
+        time_range: ArrayLike,
         detuning: float = 0.0,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1296,7 +1302,7 @@ class Experiment:
         ----------
         amplitudes : dict[str, float]
             Amplitudes of the control pulses.
-        time_range : NDArray
+        time_range : ArrayLike
             Time range of the experiment.
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.0.
@@ -1400,7 +1406,7 @@ class Experiment:
         self,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
-        sweep_range: NDArray,
+        sweep_range: ArrayLike,
         repetitions: int = 1,
         frequencies: Optional[dict[str, float]] = None,
         rabi_level: Literal["ge", "ef"] = "ge",
@@ -1423,7 +1429,7 @@ class Experiment:
         ----------
         sequence : ParametricPulseSchedule | ParametricWaveformMap
             Parametric sequence to sweep.
-        sweep_range : NDArray
+        sweep_range : ArrayLike
             Range of the parameter to sweep.
         repetitions : int, optional
             Number of repetitions. Defaults to 1.
@@ -1467,6 +1473,8 @@ class Experiment:
         ...     plot=True,
         ... )
         """
+        sweep_range = np.array(sweep_range)
+
         if rabi_level == "ge":
             rabi_params = self.ge_rabi_params
         elif rabi_level == "ef":
@@ -1599,8 +1607,8 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
-        time_range: NDArray = np.arange(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1613,9 +1621,9 @@ class Experiment:
         ----------
         targets : list[str]
             List of targets to check the Rabi oscillation.
-        detuning_range : NDArray
+        detuning_range : ArrayLike, optional
             Range of the detuning to sweep in GHz.
-        time_range : NDArray
+        time_range : ArrayLike, optional
             Time range of the experiment in ns.
         rabi_level : Literal["ge", "ef"], optional
             Rabi level to use. Defaults to "ge".
@@ -1644,6 +1652,14 @@ class Experiment:
         ...     time_range=np.arange(0, 101, 4),
         ... )
         """
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 15)
+        else:
+            detuning_range = np.array(detuning_range, dtype=np.float64)
+
+        if time_range is None:
+            time_range = np.arange(0, 101, 4)
+
         ampl = self.params.control_amplitude
         rabi_rates: dict[str, list[float]] = defaultdict(list)
         for detuning in detuning_range:
@@ -1702,8 +1718,8 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        amplitude_range: NDArray = np.linspace(0.01, 0.1, 10),
-        time_range: NDArray = np.arange(0, 201, 4),
+        amplitude_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1715,9 +1731,9 @@ class Experiment:
         ----------
         targets : list[str]
             List of targets to check the Rabi oscillation.
-        amplitude_range : NDArray
+        amplitude_range : ArrayLike, optional
             Range of the control amplitude to sweep.
-        time_range : NDArray
+        time_range : ArrayLike, optional
             Time range of the experiment in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -1744,6 +1760,13 @@ class Experiment:
         ...     time_range=np.arange(0, 201, 4),
         ... )
         """
+        if amplitude_range is None:
+            amplitude_range = np.linspace(0.01, 0.1, 10)
+        else:
+            amplitude_range = np.array(amplitude_range, dtype=np.float64)
+
+        if time_range is None:
+            time_range = np.arange(0, 201, 4)
 
         rabi_rates: dict[str, list[float]] = defaultdict(list)
         for amplitude in amplitude_range:
@@ -1777,7 +1800,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 1024, 128),
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1789,7 +1812,7 @@ class Experiment:
         ----------
         targets : list[str]
             List of targets to check the phase shift.
-        time_range : NDArray, optional
+        time_range : ArrayLike, optional
             The control window range to sweep in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -1808,6 +1831,11 @@ class Experiment:
         ...     time_range=np.arange(0, 1024, 128),
         ... )
         """
+        if time_range is None:
+            time_range = np.arange(0, 1024, 128)
+        else:
+            time_range = np.array(time_range, dtype=np.int64)
+
         iq_data = defaultdict(list)
         plotter = IQPlotter()
         for window in time_range:
@@ -1897,12 +1925,18 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
-        time_range: NDArray = np.arange(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 15)
+
+        if time_range is None:
+            time_range = np.arange(0, 101, 4)
+
         result = self.obtain_freq_rabi_relation(
             targets=targets,
             detuning_range=detuning_range,
@@ -1923,12 +1957,18 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
-        time_range: NDArray = np.arange(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 15)
+
+        if time_range is None:
+            time_range = np.arange(0, 101, 4)
+
         result = self.obtain_freq_rabi_relation(
             targets=targets,
             detuning_range=detuning_range,
@@ -1956,12 +1996,20 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        detuning_range: NDArray = np.linspace(-0.01, 0.01, 15),
-        time_range: NDArray = np.arange(0, 101, 8),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 15)
+        else:
+            detuning_range = np.array(detuning_range, dtype=np.float64)
+
+        if time_range is None:
+            time_range = np.arange(0, 101, 8)
+
         result = defaultdict(list)
         for detuning in detuning_range:
             modified_frequencies = {
@@ -2541,7 +2589,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = 2 ** np.arange(1, 18),
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2553,7 +2601,7 @@ class Experiment:
         ----------
         targets : list[str]
             List of qubits to check the T1 decay.
-        time_range : NDArray
+        time_range : ArrayLike, optional
             Time range of the experiment in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -2575,6 +2623,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
+
+        if time_range is None:
+            time_range = 2 ** np.arange(1, 18)
 
         def t1_sequence(T: int) -> PulseSchedule:
             with PulseSchedule(targets) as ps:
@@ -2620,7 +2671,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = 200 * 2 ** np.arange(10),
+        time_range: ArrayLike | None = None,
         n_cpmg: int = 1,
         pi_cpmg: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2634,7 +2685,7 @@ class Experiment:
         ----------
         targets : list[str]
             List of targets to check the T2 decay.
-        time_range : NDArray
+        time_range : ArrayLike, optional
             Time range of the experiment in ns.
         n_cpmg : int, optional
             Number of CPMG pulses. Defaults to 1.
@@ -2652,6 +2703,8 @@ class Experiment:
         ExperimentResult[T2Data]
             Result of the experiment.
         """
+        if time_range is None:
+            time_range = 200 * 2 ** np.arange(10)
 
         data: dict[str, T2Data] = {}
         for target in targets:
@@ -2697,7 +2750,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: NDArray = np.arange(0, 10001, 200),
+        time_range: ArrayLike | None = None,
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
@@ -2711,7 +2764,7 @@ class Experiment:
         ----------
         targets : list[str]
             List of targets to check the Ramsey oscillation.
-        time_range : NDArray
+        time_range : ArrayLike, optional
             Time range of the experiment in ns.
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.001 GHz.
@@ -2737,6 +2790,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
+        if time_range is None:
+            time_range = np.arange(0, 10001, 200)
+
         data: dict[str, RamseyData] = {}
         for target in targets:
 
@@ -2789,7 +2845,7 @@ class Experiment:
         self,
         target: str,
         *,
-        time_range: NDArray = np.arange(0, 10001, 200),
+        time_range: ArrayLike | None = None,
         detuning: float = 0.0005,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -2802,7 +2858,7 @@ class Experiment:
         ----------
         target : str
             Target qubit to check the Ramsey oscillation.
-        time_range : NDArray
+        time_range : ArrayLike, optional
             Time range of the experiment in ns.
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.0005 GHz.
@@ -2826,6 +2882,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
+        if time_range is None:
+            time_range = np.arange(0, 10001, 200)
+
         ramsey_freq_0 = (
             self.ramsey_experiment(
                 targets=[target],
@@ -3025,7 +3084,7 @@ class Experiment:
         self,
         *,
         target: str,
-        n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 50),
+        n_cliffords_range: ArrayLike | None = None,
         x90: Waveform | None = None,
         interleave_waveform: Waveform | None = None,
         interleave_map: dict[str, tuple[complex, str]] | None = None,
@@ -3042,7 +3101,7 @@ class Experiment:
         ----------
         target : str
             Target qubit.
-        n_cliffords_range : NDArray[np.int64], optional
+        n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to np.arange(0, 1001, 50).
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
@@ -3087,6 +3146,9 @@ class Experiment:
         ...     },
         ... )
         """
+
+        if n_cliffords_range is None:
+            n_cliffords_range = np.arange(0, 1001, 50)
 
         def rb_sequence(N: int) -> PulseSchedule:
             with PulseSchedule([target]) as ps:
@@ -3153,7 +3215,7 @@ class Experiment:
         self,
         target: str,
         *,
-        n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
+        n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: Waveform | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -3168,7 +3230,7 @@ class Experiment:
         ----------
         target : str
             Target qubit.
-        n_cliffords_range : NDArray[np.int64], optional
+        n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to np.arange(0, 1001, 100).
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
@@ -3190,6 +3252,11 @@ class Experiment:
         dict
             Results of the experiment.
         """
+        if n_cliffords_range is None:
+            n_cliffords_range = np.arange(0, 1001, 100)
+        else:
+            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
         self._validate_rabi_params()
 
         results = []
@@ -3239,7 +3306,7 @@ class Experiment:
         target: str,
         interleave_waveform: Waveform,
         interleave_map: dict[str, tuple[complex, str]],
-        n_cliffords_range: NDArray[np.int64] = np.arange(0, 1001, 100),
+        n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: Waveform | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -3259,7 +3326,7 @@ class Experiment:
             Waveform of the interleaved gate.
         interleave_map : dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
-        n_cliffords_range : NDArray[np.int64], optional
+        n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to np.arange(0, 1001, 100).
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
@@ -3281,6 +3348,11 @@ class Experiment:
         dict
             Results of the experiment.
         """
+        if n_cliffords_range is None:
+            n_cliffords_range = np.arange(0, 1001, 100)
+        else:
+            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
         rb_results = []
         irb_results = []
         seeds = np.random.randint(0, 2**32, n_trials)
@@ -3639,7 +3711,7 @@ class Experiment:
         self,
         target: str,
         *,
-        freq_range: NDArray[np.float64] = np.arange(9.8, 10.3, 0.002),
+        freq_range: ArrayLike | None = None,
         shots: int = 100,
         interval: int = 0,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -3650,7 +3722,7 @@ class Experiment:
         ----------
         target : str
             Target qubit connected to the resonator of interest.
-        freq_range : NDArray[np.float64], optional
+        freq_range : ArrayLike, optional
             Frequency range to scan in GHz. Defaults to np.arange(9.8, 10.3, 0.002).
         shots : int, optional
             Number of shots. Defaults to 100.
@@ -3662,6 +3734,11 @@ class Experiment:
         tuple[NDArray[np.float64], NDArray[np.float64]]
             Frequency range and phase difference.
         """
+        if freq_range is None:
+            freq_range = np.arange(9.8, 10.3, 0.002)
+        else:
+            freq_range = np.array(freq_range)
+
         readout = Target.readout_label(target)
 
         def measure_phases(freq_range, phase_shift=0.0) -> NDArray[np.float64]:
