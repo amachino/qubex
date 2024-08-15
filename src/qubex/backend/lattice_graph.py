@@ -54,7 +54,8 @@ class LatticeGraph:
         if mux_side_length**2 != n_muxes:
             raise ValueError("n_qubits must be a square number.")
         self.n_qubits: Final = n_qubits
-        self.max_digit: Final = len(str(self.n_qubits - 1))
+        self._max_digit: Final = len(str(self.n_qubits - 1))
+        self._max_mux_digit: Final = len(str(n_muxes - 1))
         self.edges: Final = self._create_edges(mux_side_length, mux_side_length)
 
     @property
@@ -103,7 +104,7 @@ class LatticeGraph:
         list[str]
             List of qubit labels.
         """
-        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in self.indices]
+        return [f"{prefix}{str(i).zfill(self._max_digit)}" for i in self.indices]
 
     @property
     def resonators(
@@ -123,7 +124,7 @@ class LatticeGraph:
         list[str]
             List of resonator labels.
         """
-        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in self.indices]
+        return [f"{prefix}{str(i).zfill(self._max_digit)}" for i in self.indices]
 
     @property
     def muxes(
@@ -143,7 +144,9 @@ class LatticeGraph:
         list[str]
             List of MUX labels.
         """
-        return [f"{prefix}{i}" for i in range(self.n_muxes)]
+        return [
+            f"{prefix}{str(i).zfill(self._max_mux_digit)}" for i in range(self.n_muxes)
+        ]
 
     @property
     def qubit_edges(
