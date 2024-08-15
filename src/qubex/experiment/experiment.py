@@ -108,7 +108,7 @@ class Experiment:
     ----------
     chip_id : str
         Identifier of the quantum chip.
-    qubits : list[str]
+    qubits : Sequence[str]
         List of qubits to use in the experiment.
     config_dir : str, optional
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
@@ -132,7 +132,7 @@ class Experiment:
         self,
         *,
         chip_id: str,
-        qubits: list[str],
+        qubits: Sequence[str],
         config_dir: str = DEFAULT_CONFIG_DIR,
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
@@ -141,7 +141,7 @@ class Experiment:
         use_neopulse: bool = False,
     ):
         self._chip_id: Final = chip_id
-        self._qubits: Final = qubits
+        self._qubits: Final = list(qubits)
         self._config_dir: Final = config_dir
         self._control_window: Final = control_window
         self._capture_window: Final = capture_window
@@ -150,6 +150,7 @@ class Experiment:
         self._rabi_params: Final[dict[str, RabiParam]] = {}
         self._measurement = Measurement(
             chip_id=chip_id,
+            qubits=qubits,
             config_dir=config_dir,
             use_neopulse=use_neopulse,
         )
@@ -171,7 +172,9 @@ class Experiment:
             qubit for qubit in self._qubits if qubit not in available_qubits
         ]
         if len(unavailable_qubits) > 0:
-            raise ValueError(f"Unavailable qubits: {unavailable_qubits}")
+            err_msg = f"Unavailable qubits: {unavailable_qubits}"
+            print(err_msg)
+            raise ValueError(err_msg)
 
     @property
     def tool(self):
@@ -524,8 +527,7 @@ class Experiment:
         print("config:", self.config_path)
         print("chip:", self.chip_id)
         print("qubits:", self.qubit_labels)
-        # print("control_window:", self._control_window, "ns")
-        self.print_boxes()
+        print("boxes:", self.box_ids)
 
     def print_boxes(self):
         """Print the box information."""

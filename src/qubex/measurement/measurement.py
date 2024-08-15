@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import typing
 from contextlib import contextmanager
 from functools import cached_property
-from typing import Final, Literal
+from typing import Final, Literal, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -42,8 +41,9 @@ MIN_DURATION: Final = 128  # ns
 class Measurement:
     def __init__(
         self,
-        chip_id: str,
         *,
+        chip_id: str,
+        qubits: Sequence[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         use_neopulse: bool = False,
     ):
@@ -54,17 +54,23 @@ class Measurement:
         ----------
         chip_id : str
             The quantum chip ID (e.g., "64Q").
+        qubits : Sequence[str], optional
+            The list of qubit labels, by default None.
         config_dir : str, optional
             The configuration directory, by default "./config".
 
         Examples
         --------
         >>> from qubex import Measurement
-        >>> meas = Measurement("64Q")
+        >>> meas = Measurement(
+        ...     chip_id="64Q",
+        ...     qubits=["Q00", "Q01"],
+        ... )
         """
         self._state_manager = StateManager.shared()
         self._state_manager.load(
             chip_id=chip_id,
+            qubits=qubits,
             config_dir=config_dir,
         )
         self._use_neopulse = use_neopulse
@@ -352,7 +358,7 @@ class Measurement:
 
     def measure_batch(
         self,
-        waveforms_list: typing.Sequence[TargetMap[IQArray]],
+        waveforms_list: Sequence[TargetMap[IQArray]],
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,

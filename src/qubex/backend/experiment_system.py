@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Sequence
 
 from pydantic.dataclasses import dataclass
 
@@ -171,7 +171,7 @@ class ExperimentSystem:
     def get_box(self, box_id: str) -> Box:
         return self.control_system.get_box(box_id)
 
-    def get_boxes_for_qubits(self, qubits: list[str]) -> list[Box]:
+    def get_boxes_for_qubits(self, qubits: Sequence[str]) -> list[Box]:
         box_ids = set()
         for qubit in qubits:
             ports = self.get_qubit_port_set(qubit)

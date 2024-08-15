@@ -189,6 +189,7 @@ class StateManager:
         self,
         *,
         chip_id: str,
+        qubits: Sequence[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         pull: bool = True,
     ):
@@ -199,6 +200,8 @@ class StateManager:
         ----------
         chip_id : str
             Chip ID.
+        qubits : Sequence[str], optional
+            Qubit IDs to load, by default None.
         config_dir : str, optional
             Configuration directory, by default DEFAULT_CONFIG_DIR.
         pull : bool, optional
@@ -208,25 +211,40 @@ class StateManager:
         self.experiment_system = config.get_experiment_system(chip_id)
         if pull:
             try:
-                self.pull()
+                if qubits is not None:
+                    boxes = self.experiment_system.get_boxes_for_qubits(qubits)
+                    box_ids = [box.id for box in boxes]
+                    self.pull(box_ids=box_ids)
+                else:
+                    self.pull()
             except Exception as e:
                 print("Failed to pull the hardware state.")
                 print(e)
 
-    def pull(self):
+    def pull(
+        self,
+        box_ids: Sequence[str] | None = None,
+    ):
         """
         Pull the hardware state to the software state.
 
         This method updates the software state to reflect the hardware state.
+
+        Parameters
+        ----------
+        box_ids : Sequence[str], optional
+            Box IDs to fetch, by default None.
         """
-        device_settings = self._fetch_device_settings()
+        boxes = self.experiment_system.boxes
+        if box_ids is not None:
+            boxes = [box for box in boxes if box.id in box_ids]
+
+        device_settings = self._fetch_device_settings(box_ids=box_ids)
         self.device_settings = device_settings
 
     def push(
         self,
         box_ids: Sequence[str] | None = None,
-        *,
-        exclude: Sequence[str] | None = None,
     ):
         """
         Push the software state to the hardware state.
@@ -237,17 +255,10 @@ class StateManager:
         ----------
         box_ids : Sequence[str], optional
             Box IDs to configure, by default None.
-
-        exclude : Sequence[str], optional
-            Box IDs to exclude from configuration, by default None.
         """
         boxes = self.experiment_system.boxes
-
         if box_ids is not None:
             boxes = [box for box in boxes if box.id in box_ids]
-
-        if exclude is not None:
-            boxes = [box for box in boxes if box.id not in exclude]
 
         boxes_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
         confirmed = Confirm.ask(
@@ -412,11 +423,14 @@ This operation will overwrite the existing device settings. Do you want to conti
             f.write(self.device_controller.system_config_json)
         print(f"Qubecalib configuration saved to {path}.")
 
-    def _fetch_device_settings(self) -> dict:
-        return {
-            box.id: self.device_controller.dump_box(box.id)
-            for box in self.experiment_system.boxes
-        }
+    def _fetch_device_settings(
+        self,
+        box_ids: Sequence[str] | None = None,
+    ) -> dict:
+        boxes = self.experiment_system.boxes
+        if box_ids is not None:
+            boxes = [box for box in boxes if box.id in box_ids]
+        return {box.id: self.device_controller.dump_box(box.id) for box in boxes}
 
     def _create_device_controller(
         self,
