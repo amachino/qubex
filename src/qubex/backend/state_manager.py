@@ -167,9 +167,17 @@ class StateManager:
         """Update the cached state."""
         self._cached_state = self.state
 
-    def is_synced(self) -> bool:
+    def is_synced(
+        self,
+        *,
+        box_ids: Sequence[str] | None = None,
+    ) -> bool:
         """
         Check if the state is synced.
+
+        Parameters
+        ----------
+        box_ids : Sequence[str], optional
 
         Returns
         -------
@@ -179,7 +187,7 @@ class StateManager:
         if self.state != self.cached_state:
             # print("Local state is changed.")
             return False
-        device_settings = self._fetch_device_settings()
+        device_settings = self._fetch_device_settings(box_ids=box_ids)
         if self.device_settings != device_settings:
             # print("Remote state is different.")
             return False
@@ -210,16 +218,12 @@ class StateManager:
         config = ConfigLoader(config_dir)
         self.experiment_system = config.get_experiment_system(chip_id)
         if pull:
-            try:
-                if qubits is not None:
-                    boxes = self.experiment_system.get_boxes_for_qubits(qubits)
-                    box_ids = [box.id for box in boxes]
-                    self.pull(box_ids=box_ids)
-                else:
-                    self.pull()
-            except Exception as e:
-                print("Failed to pull the hardware state.")
-                print(e)
+            if qubits is not None:
+                boxes = self.experiment_system.get_boxes_for_qubits(qubits)
+                box_ids = [box.id for box in boxes]
+                self.pull(box_ids=box_ids)
+            else:
+                self.pull()
 
     def pull(
         self,
@@ -430,7 +434,13 @@ This operation will overwrite the existing device settings. Do you want to conti
         boxes = self.experiment_system.boxes
         if box_ids is not None:
             boxes = [box for box in boxes if box.id in box_ids]
-        return {box.id: self.device_controller.dump_box(box.id) for box in boxes}
+        result = {}
+        for box in boxes:
+            try:
+                result[box.id] = self.device_controller.dump_box(box.id)
+            except Exception as e:
+                print(e)
+        return result
 
     def _create_device_controller(
         self,

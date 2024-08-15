@@ -559,7 +559,7 @@ class Experiment:
         print(clock_status["clocks"])
 
         # config status
-        config_status = self.state_manager.is_synced()
+        config_status = self.state_manager.is_synced(box_ids=self.box_ids)
         if config_status:
             print("Config status: OK")
         else:
