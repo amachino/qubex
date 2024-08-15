@@ -214,3 +214,7 @@ class PulseSequence(Waveform):
         new_sequence = deepcopy(self)
         new_sequence._sequence.append(obj)
         return new_sequence
+
+    def __repr__(self) -> str:
+        pulses = ", ".join([pulse.__class__.__name__ for pulse in self._sequence])
+        return f"PulseSequence([{pulses})]"

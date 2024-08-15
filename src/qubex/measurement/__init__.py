@@ -1,10 +1,6 @@
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .state_classifier import StateClassifier
-
-try:
-    from .measurement import Measurement
-except ImportError:
-    pass
+from .measurement import Measurement
 
 __all__ = [
     "Measurement",
