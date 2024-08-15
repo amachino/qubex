@@ -521,7 +521,7 @@ class Measurement:
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> Sequencer:
-        qubits = {Target.qubit_label(target) for target in waveforms.keys()}
+        qubits = {Target.qubit_label(target) for target in waveforms}
         control_length = max(len(waveform) for waveform in waveforms.values())
         control_length = (control_length // MIN_DURATION + 1) * MIN_DURATION
         offset_length = self._number_of_samples(capture_offset)

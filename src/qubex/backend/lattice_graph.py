@@ -48,11 +48,15 @@ class LatticeGraph:
         n_qubits: int,
     ):
         if n_qubits % MUX_SIZE != 0:
-            raise ValueError("n_qubits must be a multiple of MUX_SIZE.")
+            raise ValueError(
+                f"n_qubits ({n_qubits}) must be a multiple of MUX_SIZE ({MUX_SIZE})."
+            )
         n_muxes = n_qubits // MUX_SIZE
         mux_side_length = math.isqrt(n_muxes)
         if mux_side_length**2 != n_muxes:
-            raise ValueError("n_qubits must be a square number.")
+            raise ValueError(
+                f"n_qubits ({n_qubits}) must result in a square number of MUXes."
+            )
         self.n_qubits: Final = n_qubits
         self._max_digit: Final = len(str(self.n_qubits - 1))
         self._max_mux_digit: Final = len(str(n_muxes - 1))

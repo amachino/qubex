@@ -555,7 +555,7 @@ class ControlSystem:
         try:
             return self._box_dict[box_id]
         except KeyError:
-            raise KeyError(f"Box `{box_id}` not found.")
+            raise KeyError(f"Box `{box_id}` not found.") from None
 
     def get_port(self, box_id: str, port_number: int) -> GenPort | CapPort:
         box = self.get_box(box_id)
@@ -564,7 +564,7 @@ class ControlSystem:
         except StopIteration:
             raise IndexError(
                 f"Port number `{port_number}` not found in box `{box_id}`."
-            )
+            ) from None
 
     def get_port_by_id(self, port_id: str) -> GenPort | CapPort:
         for box in self.boxes:

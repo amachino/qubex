@@ -94,9 +94,12 @@ class ConfigLoader:
         try:
             with open(path, "r") as file:
                 result = yaml.safe_load(file)
-        except FileNotFoundError:
-            print(f"Configuration file not found: {path}")
-            raise
+        except FileNotFoundError as e:
+            print(f"Configuration file not found: {path}\n\n{e}")
+            raise e
+        except yaml.YAMLError as e:
+            print(f"Error loading configuration file: {path}\n\n{e}")
+            raise e
         return result
 
     def _load_quantum_system(self) -> dict[str, QuantumSystem]:
@@ -137,8 +140,7 @@ class ConfigLoader:
                 for id, box in self._box_dict.items()
                 if id in box_ids
             ]
-            control_system = ControlSystem(boxes=boxes)
-            control_system_dict[chip_id] = control_system
+            control_system_dict[chip_id] = ControlSystem(boxes=boxes)
         return control_system_dict
 
     def _load_wiring_info(self) -> dict[str, WiringInfo]:

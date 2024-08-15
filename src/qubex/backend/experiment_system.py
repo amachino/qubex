@@ -186,7 +186,7 @@ class ExperimentSystem:
         try:
             return self._target_dict[label]
         except KeyError:
-            raise KeyError(f"Target `{label}` not found.")
+            raise KeyError(f"Target `{label}` not found.") from None
 
     def get_ge_target(self, label: str) -> Target:
         label = Target.ge_label(label)

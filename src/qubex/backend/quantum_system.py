@@ -163,7 +163,7 @@ class QuantumSystem:
             else:
                 return self._qubit_dict[label]
         except KeyError:
-            raise KeyError(f"Qubit `{label}` not found.")
+            raise KeyError(f"Qubit `{label}` not found.") from None
 
     def get_resonator(
         self,
@@ -175,7 +175,7 @@ class QuantumSystem:
             else:
                 return self._resonator_dict[label]
         except KeyError:
-            raise KeyError(f"Resonator `{label}` not found.")
+            raise KeyError(f"Resonator `{label}` not found.") from None
 
     def get_mux(
         self,
@@ -187,7 +187,7 @@ class QuantumSystem:
             else:
                 return self._mux_dict[label]
         except KeyError:
-            raise KeyError(f"Mux `{label}` not found.")
+            raise KeyError(f"Mux `{label}` not found.") from None
 
     def get_qubits_in_mux(
         self,
