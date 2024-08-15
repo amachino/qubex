@@ -20,6 +20,9 @@ class Target:
     type: TargetType
     frequency: float
 
+    def __repr__(self) -> str:
+        return f"Target(label={self.label}, qubit={self.qubit}, type={self.type.value}, frequency={self.frequency})"
+
     @classmethod
     def ge_target(
         cls,
