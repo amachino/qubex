@@ -525,8 +525,6 @@ class Experiment:
         print("chip:", self.chip_id)
         print("qubits:", self.qubit_labels)
         # print("control_window:", self._control_window, "ns")
-        print("")
-        print("Following devices will be used:")
         self.print_boxes()
 
     def print_boxes(self):

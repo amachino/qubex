@@ -207,7 +207,11 @@ class StateManager:
         config = ConfigLoader(config_dir)
         self.experiment_system = config.get_experiment_system(chip_id)
         if pull:
-            self.pull()
+            try:
+                self.pull()
+            except Exception as e:
+                print("Failed to pull the hardware state.")
+                print(e)
 
     def pull(self):
         """
