@@ -45,7 +45,7 @@ class Measurement:
         chip_id: str,
         *,
         config_dir: str = DEFAULT_CONFIG_DIR,
-        use_neopulse: bool = True,
+        use_neopulse: bool = False,
     ):
         """
         Initialize the Measurement.
@@ -270,7 +270,7 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
@@ -292,7 +292,7 @@ class Measurement:
         interval : int, optional
             The interval in ns, by default DEFAULT_INTERVAL.
         control_window : int, optional
-            The control window in ns, by default DEFAULT_CONTROL_WINDOW.
+            The control window in ns, by default None.
         capture_window : int, optional
             The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
         capture_offset : int, optional
@@ -312,8 +312,12 @@ class Measurement:
         ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ... })
         """
+        control_length = max(len(waveform) for waveform in waveforms.values())
+        control_duration = int(control_length * SAMPLING_PERIOD)
+        if control_window is not None:
+            control_duration = max(control_duration, control_window)
         backend_interval = (
-            (control_window + capture_window + interval) // INTERVAL_STEP + 1
+            (control_duration + capture_window + interval) // INTERVAL_STEP + 1
         ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
@@ -353,7 +357,7 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
@@ -375,7 +379,7 @@ class Measurement:
         interval : int, optional
             The interval in ns, by default DEFAULT_INTERVAL.
         control_window : int, optional
-            The control window in ns, by default DEFAULT_CONTROL_WINDOW.
+            The control window in ns, by default None.
         capture_window : int, optional
             The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
         capture_offset : int, optional
@@ -388,8 +392,16 @@ class Measurement:
         MeasureResult
             The measurement results.
         """
+        control_length = max(
+            len(waveform)
+            for waveforms in waveforms_list
+            for waveform in waveforms.values()
+        )
+        control_duration = int(control_length * SAMPLING_PERIOD)
+        if control_window is not None:
+            control_duration = max(control_duration, control_window)
         backend_interval = (
-            (control_window + capture_window + interval) // INTERVAL_STEP + 1
+            (control_duration + capture_window + interval) // INTERVAL_STEP + 1
         ) * INTERVAL_STEP
 
         measure_mode = MeasureMode(mode)
@@ -474,11 +486,13 @@ class Measurement:
         self,
         *,
         waveforms: TargetMap[IQArray],
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
     ) -> pls.Sequence:
+        if control_window is None:
+            control_window = DEFAULT_CONTROL_WINDOW
         readout_amplitude = self.control_params.readout_amplitude
         capture = pls.Capture(duration=capture_window)
         qubits = {Target.qubit_label(target) for target in waveforms.keys()}
@@ -517,6 +531,7 @@ class Measurement:
         self,
         *,
         waveforms: TargetMap[IQArray],
+        control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_offset: int = DEFAULT_CAPTURE_OFFSET,
         readout_duration: int = DEFAULT_READOUT_DURATION,
@@ -524,6 +539,11 @@ class Measurement:
         qubits = {Target.qubit_label(target) for target in waveforms}
         control_length = max(len(waveform) for waveform in waveforms.values())
         control_length = (control_length // MIN_DURATION + 1) * MIN_DURATION
+        if control_window is not None:
+            control_length = max(
+                control_length,
+                self._number_of_samples(control_window),
+            )
         offset_length = self._number_of_samples(capture_offset)
         capture_length = self._number_of_samples(capture_window)
         readout_length = self._number_of_samples(readout_duration)
