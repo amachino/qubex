@@ -542,18 +542,29 @@ class Experiment:
 
     def check_status(self):
         """Check the status of the measurement system."""
+        # linnk status
         link_status = self._measurement.check_link_status(self.box_ids)
-        clock_status = self._measurement.check_clock_status(self.box_ids)
         if link_status["status"]:
-            console.print("Link status: OK", style="green")
+            print("Link status: OK")
         else:
-            console.print("Link status: NG", style="red")
-        console.print(link_status["links"])
+            print("Link status: NG")
+        print(link_status["links"])
+
+        # clock status
+        clock_status = self._measurement.check_clock_status(self.box_ids)
         if clock_status["status"]:
-            console.print("Clock status: OK", style="green")
+            print("Clock status: OK")
         else:
-            console.print("Clock status: NG", style="red")
-        console.print(clock_status["clocks"])
+            print("Clock status: NG")
+        print(clock_status["clocks"])
+
+        # config status
+        config_status = self.state_manager.is_synced()
+        if config_status:
+            print("Config status: OK")
+        else:
+            print("Config status: NG")
+        print(self.state_manager.device_settings)
 
     def linkup(
         self,
@@ -575,7 +586,6 @@ class Experiment:
         if box_ids is None:
             box_ids = self.box_ids
         self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
-        self.check_status()
 
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float] | None):

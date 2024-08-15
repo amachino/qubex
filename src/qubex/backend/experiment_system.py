@@ -72,14 +72,6 @@ class ControlParams(Model):
         return self.capture_delay.get(mux, DEFAULT_CAPTURE_DELAY)
 
 
-@dataclass
-class SystemState(Model):
-    quantum_system: int
-    control_system: int
-    wiring_info: int
-    control_params: int
-
-
 class ExperimentSystem:
     def __init__(
         self,
@@ -92,19 +84,20 @@ class ExperimentSystem:
         self._control_system: Final = control_system
         self._wiring_info: Final = wiring_info
         self._control_params: Final = control_params
-        self._system_state: Final = SystemState(
-            quantum_system=quantum_system.hash,
-            control_system=control_system.hash,
-            wiring_info=wiring_info.hash,
-            control_params=control_params.hash,
-        )
         self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
         self._initialize_targets()
         self._configure_control_system()
 
     @property
-    def state(self) -> SystemState:
-        return self._system_state
+    def hash(self) -> int:
+        return hash(
+            (
+                self.quantum_system.hash,
+                self.control_system.hash,
+                self.wiring_info.hash,
+                self.control_params.hash,
+            )
+        )
 
     @property
     def quantum_system(self) -> QuantumSystem:
@@ -215,6 +208,12 @@ class ExperimentSystem:
         if isinstance(qubit, int):
             qubit = self.qubits[qubit].label
         return self._qubit_port_set_map.get(qubit)
+
+    def get_control_port(self, qubit: int | str) -> GenPort:
+        ports = self.get_qubit_port_set(qubit)
+        if ports is None:
+            raise ValueError(f"Qubit `{qubit}` not found.")
+        return ports.ctrl_port
 
     def get_base_frequency(self, label: str) -> float:
         target = self.get_target(label)

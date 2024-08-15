@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 from rich.console import Console
@@ -16,7 +17,25 @@ from .experiment_system import ExperimentSystem
 console = Console()
 
 
+@dataclass
+class State:
+    system: int
+    controller: int
+    device: int
+
+
 class StateManager:
+    """
+    Singleton class that manages the state of the experiment system and the device controller.
+
+    Attributes
+    ----------
+    _instance : StateManager
+        Shared instance of the StateManager.
+    _initialized : bool
+        Whether the StateManager is initialized.
+    """
+
     _instance = None
     _initialized = False
 
@@ -27,87 +46,197 @@ class StateManager:
 
     @classmethod
     def shared(cls):
+        """
+        Get the shared instance of the StateManager.
+
+        Returns
+        -------
+
+        StateManager
+            Shared instance of the StateManager.
+        """
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
     @deprecated("Use StateManager.shared() instead.")
     def __init__(self):
+        """
+        Initialize the StateManager.
+
+        Notes
+        -----
+        This class is a singleton. Use `StateManager.shared()` to get the shared instance.
+        """
         if self._initialized:
             return
         self._experiment_system = None
         self._device_controller = DeviceController()
         self._device_settings = {}
+        self._cached_state = State(0, 0, 0)
         self._initialized = True
 
     @property
     def is_loaded(self) -> bool:
+        """Check if the experiment system is loaded."""
         return self.experiment_system is not None
 
     @property
     def experiment_system(self) -> ExperimentSystem:
+        """Get the experiment system."""
         if self._experiment_system is None:
             raise ValueError("Experiment system is not loaded.")
         return self._experiment_system
 
     @experiment_system.setter
     def experiment_system(self, experiment_system: ExperimentSystem):
+        """
+        Set the experiment system.
+
+        Parameters
+        ----------
+        experiment_system : ExperimentSystem
+            Experiment system to set.
+
+        Notes
+        -----
+        This method also updates the device controller to reflect the new experiment system.
+        """
         self._experiment_system = experiment_system
         # update device controller to reflect the new experiment system
         self._device_controller = self._create_device_controller(experiment_system)
+        self.update_cache()
 
     @property
     def device_controller(self) -> DeviceController:
+        """Get the device controller."""
         return self._device_controller
 
     @device_controller.setter
     def device_controller(self, device_controller: DeviceController):
+        """
+        Set the device controller.
+
+        Parameters
+        ----------
+        device_controller : DeviceController
+            Device controller to set.
+        """
         self._device_controller = device_controller
+        self.update_cache()
 
     @property
     def device_settings(self) -> dict:
+        """Get the device settings."""
         return self._device_settings or {}
 
     @device_settings.setter
     def device_settings(self, device_settings: dict):
+        """
+        Set the device settings.
+
+        Parameters
+        ----------
+        device_settings : dict
+            Device settings to set.
+
+        Notes
+        -----
+        This method also updates the experiment system to reflect the new device settings.
+        """
         self._device_settings = device_settings
         # update experiment system to reflect the new device settings
         self._experiment_system = self._create_experiment_system(device_settings)
+        self.update_cache()
 
     @property
-    def system_state(self) -> int:
-        return self.experiment_system.state.hash
+    def state(self) -> State:
+        """Get the current state."""
+        return State(
+            system=self.experiment_system.hash,
+            controller=self.device_controller.hash,
+            device=hash(str(self.device_settings)),
+        )
 
     @property
-    def controller_state(self) -> int:
-        return self.device_controller.hash
+    def cached_state(self) -> State:
+        """Get the cached state."""
+        return self._cached_state
 
-    @property
-    def device_state(self) -> int:
-        return hash(str(self.device_settings))
+    def update_cache(self):
+        """Update the cached state."""
+        self._cached_state = self.state
+
+    def is_synced(self) -> bool:
+        """
+        Check if the state is synced.
+
+        Returns
+        -------
+        bool
+            Whether the state is synced.
+        """
+        if self.state != self.cached_state:
+            # print("Local state is changed.")
+            return False
+        device_settings = self._fetch_device_settings()
+        if self.device_settings != device_settings:
+            # print("Remote state is different.")
+            return False
+        return True
 
     def load(
         self,
         *,
         chip_id: str,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        pull: bool = True,
     ):
+        """
+        Load the experiment system and the device controller.
+
+        Parameters
+        ----------
+        chip_id : str
+            Chip ID.
+        config_dir : str, optional
+            Configuration directory, by default DEFAULT_CONFIG_DIR.
+        pull : bool, optional
+            Whether to pull the hardware state, by default True.
+        """
         config = ConfigLoader(config_dir)
         self.experiment_system = config.get_experiment_system(chip_id)
+        if pull:
+            self.pull()
 
-    def pull_state(self):
-        device_settings = {
-            box.id: self.device_controller.dump_box(box.id)
-            for box in self.experiment_system.boxes
-        }
+    def pull(self):
+        """
+        Pull the hardware state to the software state.
+
+        This method updates the software state to reflect the hardware state.
+        """
+        device_settings = self._fetch_device_settings()
         self.device_settings = device_settings
 
-    def push_state(
+    def push(
         self,
         box_ids: Sequence[str] | None = None,
         *,
         exclude: Sequence[str] | None = None,
     ):
+        """
+        Push the software state to the hardware state.
+
+        This method updates the hardware state to reflect the software state.
+
+        Parameters
+        ----------
+        box_ids : Sequence[str], optional
+            Box IDs to configure, by default None.
+
+        exclude : Sequence[str], optional
+            Box IDs to exclude from configuration, by default None.
+        """
         boxes = self.experiment_system.boxes
 
         if box_ids is not None:
@@ -173,7 +302,6 @@ This operation will overwrite the existing device settings. Do you want to conti
                                 )
                         except Exception as e:
                             print(e, port.id)
-        # self.pull_state()
 
     def print_box_info(
         self,
@@ -181,11 +309,18 @@ This operation will overwrite the existing device settings. Do you want to conti
         *,
         fetch: bool = False,
     ) -> None:
+        """
+        Print the information of a box.
+
+        Parameters
+        ----------
+        box_id : str
+            Box ID.
+        fetch : bool, optional
+            Whether to fetch the device settings, by default False.
+        """
         if fetch:
-            device_settings = {
-                box.id: self.device_controller.dump_box(box.id)
-                for box in self.experiment_system.boxes
-            }
+            device_settings = self._fetch_device_settings()
             experiment_system = self._create_experiment_system(device_settings)
         else:
             experiment_system = self.experiment_system
@@ -259,11 +394,25 @@ This operation will overwrite the existing device settings. Do you want to conti
         self,
         path_to_save: str = "./qubecalib.json",
     ):
+        """
+        Save the Qubecalib configuration to a file.
+
+        Parameters
+        ----------
+        path_to_save : str, optional
+            Path to save the Qubecalib configuration, by default "./qubecalib.json".
+        """
         path = Path(path_to_save)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             f.write(self.device_controller.system_config_json)
         print(f"Qubecalib configuration saved to {path}.")
+
+    def _fetch_device_settings(self) -> dict:
+        return {
+            box.id: self.device_controller.dump_box(box.id)
+            for box in self.experiment_system.boxes
+        }
 
     def _create_device_controller(
         self,
