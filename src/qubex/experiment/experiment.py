@@ -590,6 +590,27 @@ class Experiment:
             box_ids = self.box_ids
         self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
 
+    def configure(self, box_ids: Optional[list[str]] = None) -> None:
+        """
+        Configure the measurement system from the config files.
+
+        Parameters
+        ----------
+        box_ids : Optional[list[str]], optional
+            List of the box IDs to configure. Defaults to None.
+
+        Examples
+        --------
+        >>> ex.configure()
+        """
+        if box_ids is None:
+            box_ids = self.box_ids
+        self.state_manager.load(
+            chip_id=self.chip_id,
+            config_dir=self.config_path,
+            state="push",
+        )
+
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float] | None):
         """

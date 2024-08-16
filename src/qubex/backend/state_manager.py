@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from rich.console import Console
 from rich.prompt import Confirm
@@ -199,7 +200,7 @@ class StateManager:
         chip_id: str,
         qubits: Sequence[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
-        pull: bool = True,
+        state: Literal["pull", "push"] | None = None,
     ):
         """
         Load the experiment system and the device controller.
@@ -212,18 +213,19 @@ class StateManager:
             Qubit IDs to load, by default None.
         config_dir : str, optional
             Configuration directory, by default DEFAULT_CONFIG_DIR.
-        pull : bool, optional
-            Whether to pull the hardware state, by default True.
+        state : Literal["pull", "push"], optional
+            Whether to pull or push the state, by default "pull".
         """
         config = ConfigLoader(config_dir)
         self.experiment_system = config.get_experiment_system(chip_id)
-        if pull:
-            if qubits is not None:
-                boxes = self.experiment_system.get_boxes_for_qubits(qubits)
-                box_ids = [box.id for box in boxes]
-                self.pull(box_ids=box_ids)
-            else:
-                self.pull()
+        box_ids = None
+        if qubits is not None:
+            boxes = self.experiment_system.get_boxes_for_qubits(qubits)
+            box_ids = [box.id for box in boxes]
+        if state == "pull":
+            self.pull(box_ids=box_ids)
+        elif state == "push":
+            self.push(box_ids=box_ids)
 
     def pull(
         self,

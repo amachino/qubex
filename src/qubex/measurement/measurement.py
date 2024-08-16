@@ -75,7 +75,7 @@ class Measurement:
             chip_id=chip_id,
             qubits=qubits,
             config_dir=config_dir,
-            pull=fetch_device_state,
+            state="pull" if fetch_device_state else None,
         )
         self._use_neopulse = use_neopulse
         self.classifiers: dict[str, StateClassifier] = {}

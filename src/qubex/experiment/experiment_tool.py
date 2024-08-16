@@ -45,16 +45,6 @@ def reboot_fpga(box_id: str) -> None:
     subprocess.run(reboot_command, shell=True)
 
 
-def configure_box(box_id: str) -> None:
-    """Configure the box."""
-    state_manager.push([box_id])
-
-
-def configure_boxes(box_ids: Sequence[str]) -> None:
-    """Configure the boxes."""
-    state_manager.push(box_ids)
-
-
 def relinkup_box(box_id: str) -> None:
     """Relink up the box."""
     relinkup_boxes([box_id])
