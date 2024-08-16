@@ -278,12 +278,12 @@ class Measurement:
         waveforms: TargetMap[IQArray],
         *,
         mode: Literal["single", "avg"] = "avg",
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: int | None = None,
         control_window: int | None = None,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
-        readout_duration: int = DEFAULT_READOUT_DURATION,
+        capture_window: int | None = None,
+        capture_margin: int | None = None,
+        readout_duration: int | None = None,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -322,6 +322,13 @@ class Measurement:
         ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ... })
         """
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if capture_window is None:
+            capture_window = DEFAULT_CAPTURE_WINDOW
+
         control_length = max(len(waveform) for waveform in waveforms.values())
         control_duration = int(control_length * SAMPLING_PERIOD)
         if control_window is not None:
@@ -365,12 +372,12 @@ class Measurement:
         waveforms_list: Sequence[TargetMap[IQArray]],
         *,
         mode: Literal["single", "avg"] = "avg",
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: int | None = None,
         control_window: int | None = None,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
-        readout_duration: int = DEFAULT_READOUT_DURATION,
+        capture_window: int | None = None,
+        capture_margin: int | None = None,
+        readout_duration: int | None = None,
     ):
         """
         Measure with the given control waveforms.
@@ -402,6 +409,13 @@ class Measurement:
         MeasureResult
             The measurement results.
         """
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if capture_window is None:
+            capture_window = DEFAULT_CAPTURE_WINDOW
+
         control_length = max(
             len(waveform)
             for waveforms in waveforms_list
@@ -447,9 +461,9 @@ class Measurement:
         schedule: PulseSchedule,
         *,
         mode: Literal["single", "avg"] = "avg",
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
+        shots: int | None = None,
+        interval: int | None = None,
+        capture_margin: int | None = None,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -474,6 +488,11 @@ class Measurement:
         MeasureResult
             The measurement results.
         """
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         backend_interval = (
             (int(schedule.duration) + interval) // INTERVAL_STEP + 1
         ) * INTERVAL_STEP
@@ -497,12 +516,19 @@ class Measurement:
         *,
         waveforms: TargetMap[IQArray],
         control_window: int | None = None,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
-        readout_duration: int = DEFAULT_READOUT_DURATION,
+        capture_window: int | None = None,
+        capture_margin: int | None = None,
+        readout_duration: int | None = None,
     ) -> pls.Sequence:
         if control_window is None:
             control_window = DEFAULT_CONTROL_WINDOW
+        if capture_window is None:
+            capture_window = DEFAULT_CAPTURE_WINDOW
+        if capture_margin is None:
+            capture_margin = DEFAULT_CAPTURE_MARGIN
+        if readout_duration is None:
+            readout_duration = DEFAULT_READOUT_DURATION
+
         readout_amplitude = self.control_params.readout_amplitude
         capture = pls.Capture(duration=capture_window)
         qubits = {Target.qubit_label(target) for target in waveforms}
@@ -542,10 +568,17 @@ class Measurement:
         *,
         waveforms: TargetMap[IQArray],
         control_window: int | None = None,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
-        readout_duration: int = DEFAULT_READOUT_DURATION,
+        capture_window: int | None = None,
+        capture_margin: int | None = None,
+        readout_duration: int | None = None,
     ) -> Sequencer:
+        if capture_window is None:
+            capture_window = DEFAULT_CAPTURE_WINDOW
+        if capture_margin is None:
+            capture_margin = DEFAULT_CAPTURE_MARGIN
+        if readout_duration is None:
+            readout_duration = DEFAULT_READOUT_DURATION
+
         qubits = {Target.qubit_label(target) for target in waveforms}
         control_length = max(len(waveform) for waveform in waveforms.values())
         control_length = (control_length // MIN_DURATION + 1) * MIN_DURATION
@@ -655,8 +688,11 @@ class Measurement:
         self,
         schedule: PulseSchedule,
         add_last_measurement: bool = False,
-        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
+        capture_margin: int | None = None,
     ) -> Sequencer:
+        if capture_margin is None:
+            capture_margin = DEFAULT_CAPTURE_MARGIN
+
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
 

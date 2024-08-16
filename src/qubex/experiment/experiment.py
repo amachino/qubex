@@ -43,7 +43,6 @@ from ..measurement.measurement import (
     DEFAULT_CAPTURE_MARGIN,
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
-    DEFAULT_CONTROL_WINDOW,
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
@@ -137,7 +136,7 @@ class Experiment:
         qubits: Sequence[str],
         config_dir: str = DEFAULT_CONFIG_DIR,
         fetch_device_state: bool = True,
-        control_window: int = DEFAULT_CONTROL_WINDOW,
+        control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
@@ -1513,6 +1512,10 @@ class Experiment:
                 ]
         else:
             raise ValueError("Invalid sequence.")
+
+        signals = defaultdict(list)
+        plotter = IQPlotter()
+
         generator = self._measure_batch(
             sequences=sequences,
             shots=shots,
@@ -1521,15 +1524,30 @@ class Experiment:
             capture_window=capture_window or self._capture_window,
             capture_margin=capture_margin or self._capture_margin,
         )
-        signals = defaultdict(list)
-        plotter = IQPlotter()
         with self.modified_frequencies(frequencies):
             for result in generator:
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
                 if plot:
                     plotter.update(signals)
-        data = {
+
+        # with self.modified_frequencies(frequencies):
+        #     for seq in sequences:
+        #         measure_result = self.measure(
+        #             sequence=seq,
+        #             mode="avg",
+        #             shots=shots,
+        #             interval=interval,
+        #             control_window=control_window,
+        #             capture_window=capture_window,
+        #             capture_margin=capture_margin,
+        #         )
+        #         for target, data in measure_result.data.items():
+        #             signals[target].append(complex(data.kerneled))
+        #         if plot:
+        #             plotter.update(signals)
+
+        sweep_data = {
             target: SweepData(
                 target=target,
                 data=np.array(values),
@@ -1543,7 +1561,7 @@ class Experiment:
             )
             for target, values in signals.items()
         }
-        result = ExperimentResult(data=data, rabi_params=self.rabi_params)
+        result = ExperimentResult(data=sweep_data, rabi_params=self.rabi_params)
         return result
 
     def repeat_sequence(
