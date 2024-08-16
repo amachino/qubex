@@ -360,7 +360,7 @@ class ExperimentSystem:
         fnco_max : int, optional
             The maximum FNCO frequency, by default +750_000_000.
         max_diff : int, optional
-            The maximum difference between CR and ge frequencies, by default 1_500_000_000.
+            The maximum difference between frequencies, by default 1_500_000_000.
 
         Returns
         -------
