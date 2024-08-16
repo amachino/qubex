@@ -460,22 +460,31 @@ class ExperimentSystem:
                         if qubit is None:
                             continue
 
-                        # ge
-                        ge_target = Target.ge_target(
-                            label=qubit.label,
-                            frequency=qubit.ge_frequency,
-                        )
-                        ge_target_dict[ge_target.label] = ge_target
-                        target_gen_channel_map[ge_target] = port.channels[0]
-
-                        if port.n_channels == 3:
+                        if port.n_channels == 1:
+                            # ge only
+                            ge_target = Target.ge_target(
+                                label=qubit.label,
+                                frequency=qubit.ge_frequency,
+                            )
+                            ge_target_dict[ge_target.label] = ge_target
+                            target_gen_channel_map[ge_target] = port.channels[0]
+                        elif port.n_channels == 3:
+                            # ge
+                            ge_target = Target.ge_target(
+                                label=qubit.label,
+                                frequency=qubit.ge_frequency,
+                            )
+                            ge_target_dict[ge_target.label] = ge_target
+                            ge_channel = port.channels[ge_target.channel_nuber]
+                            target_gen_channel_map[ge_target] = ge_channel
                             # ef
                             ef_target = Target.ef_target(
                                 label=qubit.label,
                                 frequency=qubit.ef_frequency,
                             )
                             ef_target_dict[ef_target.label] = ef_target
-                            target_gen_channel_map[ef_target] = port.channels[1]
+                            ef_channel = port.channels[ef_target.channel_nuber]
+                            target_gen_channel_map[ef_target] = ef_channel
 
                             # cr
                             cr_target = Target.cr_target(
@@ -483,7 +492,8 @@ class ExperimentSystem:
                                 frequency=self._calc_cr_target_frequency(qubit),
                             )
                             cr_target_dict[cr_target.label] = cr_target
-                            target_gen_channel_map[cr_target] = port.channels[2]
+                            cr_channel = port.channels[cr_target.channel_nuber]
+                            target_gen_channel_map[cr_target] = cr_channel
                     # readout ports
                     elif port.type == PortType.READ_OUT:
                         mux = self.get_mux_by_readout_port(port)
