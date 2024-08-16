@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Final, Sequence
+from typing import Final, Literal, Sequence
 
+import numpy as np
 from pydantic.dataclasses import dataclass
 
 from .control_system import (
@@ -165,6 +166,15 @@ class ExperimentSystem:
     def target_cap_channel_map(self) -> dict[Target, CapChannel]:
         return self._target_cap_channel_map
 
+    def get_mux(self, label: int | str) -> Mux:
+        return self.quantum_system.get_mux(label)
+
+    def get_qubit(self, label: int | str) -> Qubit:
+        return self.quantum_system.get_qubit(label)
+
+    def get_resonator(self, label: int | str) -> Resonator:
+        return self.quantum_system.get_resonator(label)
+
     def get_spectator_qubits(self, qubit: int | str) -> list[Qubit]:
         return self.quantum_system.get_spectator_qubits(qubit)
 
@@ -316,6 +326,7 @@ class ExperimentSystem:
         qubit: Qubit,
         n_channels: int,
         *,
+        mandatory: Sequence[Literal["ge", "ef"]] | None = None,
         lo_min: int = 8_000_000_000,
         lo_max: int = 11_000_000_000,
         lo_step: int = 500_000_000,
@@ -323,7 +334,7 @@ class ExperimentSystem:
         cnco: int = 2_250_000_000,
         fnco_min: int = -750_000_000,
         fnco_max: int = +750_000_000,
-        max_diff: int = 2_000_000_000,
+        max_diff: int = 1_500_000_000,
     ) -> tuple[int, int, tuple[int, int, int]]:
         """
         Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
@@ -357,43 +368,29 @@ class ExperimentSystem:
             The tuple (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) for the control qubit.
         """
 
-        if n_channels == 1:
-            ge_target = self.get_ge_target(qubit.label)
-            f_ge = ge_target.frequency * 1e9
-            f_target = f_ge
-        elif n_channels == 3:
-            ge_target = self.get_ge_target(qubit.label)
-            ef_target = self.get_ef_target(qubit.label)
-            cr_target = self.get_cr_target(qubit.label)
-            f_ge = ge_target.frequency * 1e9
-            f_ef = ef_target.frequency * 1e9
-            f_cr = cr_target.frequency * 1e9
-            targets = [
-                target
-                for target in [ge_target, ef_target, cr_target]
-                if target.frequency > 0
-            ]
-            if len(targets) > 0:
-                target_max = max(targets, key=lambda target: target.frequency)
-                target_min = min(targets, key=lambda target: target.frequency)
-                f_max = target_max.frequency * 1e9
-                f_min = target_min.frequency * 1e9
-                if f_max - f_min > max_diff:
-                    if f_ge < f_cr < f_ge + max_diff:
-                        f_target = (f_ge + f_cr) / 2
-                        # print(f"{ge_target.label}    : {f_ge * 1e-9:.3f} GHz")
-                        # print(f"{ef_target.label} : {f_ef * 1e-9:.3f} GHz <- ignored")
-                        # print(f"{cr_target.label} : {f_cr * 1e-9:.3f} GHz")
-                    else:
-                        f_target = (f_ge + f_ef) / 2
-                        # print(f"{ge_target.label}    : {f_ge * 1e-9:.3f} GHz")
-                        # print(f"{ef_target.label} : {f_ef * 1e-9:.3f} GHz")
-                        # print(f"{cr_target.label} : {f_cr * 1e-9:.3f} GHz <- ignored")
+        f = {
+            "ge": self.get_qubit(qubit.label).ge_frequency * 1e9,
+            "ef": self.get_qubit(qubit.label).ef_frequency * 1e9,
+            "CR": self._calc_cr_target_frequency(qubit) * 1e9,
+        }
 
-                else:
-                    f_target = (f_max + f_min) / 2
-            else:
-                f_target = 0
+        if n_channels == 1:
+            f_target = f["ge"]
+        elif n_channels == 3:
+            f_spectators = [
+                spectator.ge_frequency * 1e9
+                for spectator in self.get_spectator_qubits(qubit.label)
+                if spectator.ge_frequency > 0
+            ]
+            if mandatory is None:
+                mandatory = ["ge"]
+            mandatory_frequencies = [f[label] for label in mandatory]
+            frequencies = mandatory_frequencies + f_spectators
+            f_target = self.find_optimal_center_frequency(
+                frequencies=frequencies,
+                max_diff=max_diff,
+                mandatory_frequencies=mandatory_frequencies,
+            )
         else:
             raise ValueError("Invalid number of channels: ", n_channels)
 
@@ -421,17 +418,76 @@ class ExperimentSystem:
                 raise ValueError("No valid fnco value found for: ", target_frequency)
             return best_fnco
 
-        fnco_ge = find_fnco(f_ge)
+        fnco_ge = find_fnco(f["ge"])
 
         if n_channels == 1:
             return best_lo, cnco, (fnco_ge, 0, 0)
 
-        fnco_ef = find_fnco(f_ef)
-        fnco_cr = find_fnco(f_cr)
+        fnco_ef = find_fnco(f["ef"])
+        fnco_cr = find_fnco(f["CR"])
 
         return best_lo, cnco, (fnco_ge, fnco_ef, fnco_cr)
 
-    def _calc_cr_target_frequency(self, qubit: Qubit) -> float:
+    def find_optimal_center_frequency(
+        self,
+        frequencies: list[float],
+        max_diff: float,
+        *,
+        mandatory_frequencies: list[float] | None = None,
+    ) -> float:
+        """
+        Finds the optimal center frequency for the given frequencies.
+
+        Parameters
+        ----------
+        frequencies : list[float]
+            The list of frequencies.
+        max_diff : float
+            The maximum difference between the maximum and minimum frequencies.
+        mandatory_frequencies : list[float], optional
+            The list of mandatory frequencies, by default None.
+
+        Returns
+        -------
+        float
+            The optimal center frequency.
+        """
+        frequencies = [f for f in frequencies if f > 0]
+        if not frequencies:
+            return 0.0
+
+        f_max = max(frequencies)
+        f_min = min(frequencies)
+
+        # case 1: all frequencies can be covered by the max_diff
+        if f_max - f_min <= max_diff:
+            return (f_max + f_min) / 2
+
+        # case 2: find the frequency which covers the most frequencies
+        d = max_diff * 0.5
+        if mandatory_frequencies is not None:
+            mf_min = min(mandatory_frequencies)
+            mf_max = max(mandatory_frequencies)
+            if mf_max - mf_min > max_diff:
+                raise ValueError("Mandatory frequencies cannot be covered.")
+            search_points = np.array([mf_max - d, mf_min + d])
+        else:
+            freqs = np.array(frequencies)
+            search_points = np.concatenate([freqs - d, freqs + d])
+        center_freqs_by_count = [
+            (
+                np.sum([1 for f in frequencies if p - d <= f <= p + d]),
+                np.mean([f for f in frequencies if p - d <= f <= p + d] or [0]),
+            )
+            for p in search_points
+        ]
+        return float(max(center_freqs_by_count, key=lambda x: x[0])[1])
+
+    def _calc_cr_target_frequency(
+        self,
+        qubit: Qubit,
+        max_diff: float = 0.25,
+    ) -> float:
         spectator_qubits = self.get_spectator_qubits(qubit.label)
         frequencies = [
             spectator.ge_frequency
@@ -440,7 +496,8 @@ class ExperimentSystem:
         ]
         if not frequencies:
             return qubit.ge_frequency
-        return sum(frequencies) / len(frequencies)
+        cr_frequency = self.find_optimal_center_frequency(frequencies, max_diff)
+        return cr_frequency
 
     def _initialize_targets(self) -> None:
         ge_target_dict: dict[str, Target] = {}
@@ -485,7 +542,6 @@ class ExperimentSystem:
                             ef_target_dict[ef_target.label] = ef_target
                             ef_channel = port.channels[ef_target.channel_nuber]
                             target_gen_channel_map[ef_target] = ef_channel
-
                             # cr
                             cr_target = Target.cr_target(
                                 label=qubit.label,

@@ -45,6 +45,7 @@ class Measurement:
         chip_id: str,
         qubits: Sequence[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        fetch_device_state: bool = True,
         use_neopulse: bool = False,
     ):
         """
@@ -58,6 +59,8 @@ class Measurement:
             The list of qubit labels, by default None.
         config_dir : str, optional
             The configuration directory, by default "./config".
+        fetch_device_state : bool, optional
+            Whether to fetch the device state, by default True.
 
         Examples
         --------
@@ -72,6 +75,7 @@ class Measurement:
             chip_id=chip_id,
             qubits=qubits,
             config_dir=config_dir,
+            pull=fetch_device_state,
         )
         self._use_neopulse = use_neopulse
         self.classifiers: dict[str, StateClassifier] = {}

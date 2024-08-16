@@ -112,6 +112,8 @@ class Experiment:
         List of qubits to use in the experiment.
     config_dir : str, optional
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
+    fetch_device_state : bool, optional
+        Whether to fetch the device state. Defaults to True.
     control_window : int, optional
         Control window. Defaults to DEFAULT_CONTROL_WINDOW.
     capture_window : int, optional
@@ -134,6 +136,7 @@ class Experiment:
         chip_id: str,
         qubits: Sequence[str],
         config_dir: str = DEFAULT_CONFIG_DIR,
+        fetch_device_state: bool = True,
         control_window: int = DEFAULT_CONTROL_WINDOW,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
@@ -152,6 +155,7 @@ class Experiment:
             chip_id=chip_id,
             qubits=qubits,
             config_dir=config_dir,
+            fetch_device_state=fetch_device_state,
             use_neopulse=use_neopulse,
         )
         self._user_note: Final = ExperimentNote(
