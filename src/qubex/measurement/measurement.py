@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from functools import cached_property
 from typing import Final, Literal, Sequence
 
 import numpy as np
@@ -70,15 +69,38 @@ class Measurement:
         ...     qubits=["Q00", "Q01"],
         ... )
         """
-        self._state_manager = StateManager.shared()
-        self._state_manager.load(
-            chip_id=chip_id,
+        self._load_state(
+            chip_id,
             qubits=qubits,
             config_dir=config_dir,
-            state="pull" if fetch_device_state else None,
+            fetch_device_state=fetch_device_state,
         )
         self._use_neopulse = use_neopulse
-        self.classifiers: dict[str, StateClassifier] = {}
+        self._classifiers: dict[str, StateClassifier] = {}
+
+    def _load_state(
+        self,
+        chip_id: str,
+        qubits: Sequence[str] | None,
+        config_dir: str,
+        fetch_device_state: bool,
+    ):
+        self._state_manager = StateManager.shared()
+        self.state_manager.load(
+            chip_id=chip_id,
+            config_dir=config_dir,
+        )
+        if fetch_device_state:
+            box_ids = None
+            if qubits is not None:
+                boxes = self.experiment_system.get_boxes_for_qubits(qubits)
+                box_ids = [box.id for box in boxes]
+            self.state_manager.pull(box_ids=box_ids)
+
+    @property
+    def state_manager(self) -> StateManager:
+        """Get the state manager."""
+        return self._state_manager
 
     @property
     def experiment_system(self) -> ExperimentSystem:
@@ -100,12 +122,12 @@ class Measurement:
         """Get the chip ID."""
         return self.experiment_system.chip.id
 
-    @cached_property
+    @property
     def targets(self) -> dict[str, Target]:
         """Get the targets."""
         return {target.label: target for target in self.experiment_system.targets}
 
-    @cached_property
+    @property
     def base_frequencies(self) -> dict[str, float]:
         """Get the base frequencies."""
         return {
@@ -113,13 +135,23 @@ class Measurement:
             for target in self.experiment_system.targets
         }
 
-    @cached_property
+    @property
     def diff_frequencies(self) -> dict[str, float]:
         """Get the base frequencies."""
         return {
             target.label: self.experiment_system.get_diff_frequency(target.label)
             for target in self.experiment_system.targets
         }
+
+    @property
+    def classifiers(self) -> dict[str, StateClassifier]:
+        """Get the state classifiers."""
+        return self._classifiers
+
+    @classifiers.setter
+    def classifiers(self, classifiers: dict[str, StateClassifier]):
+        """Set the state classifiers."""
+        self._classifiers = classifiers
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """

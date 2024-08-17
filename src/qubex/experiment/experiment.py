@@ -590,7 +590,7 @@ class Experiment:
             box_ids = self.box_ids
         self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
 
-    def configure(self, box_ids: Optional[list[str]] = None) -> None:
+    def configure(self, box_ids: Optional[list[str]] = None):
         """
         Configure the measurement system from the config files.
 
@@ -603,12 +603,12 @@ class Experiment:
         --------
         >>> ex.configure()
         """
-        if box_ids is None:
-            box_ids = self.box_ids
         self.state_manager.load(
             chip_id=self.chip_id,
             config_dir=self.config_path,
-            state="push",
+        )
+        self.state_manager.push(
+            box_ids=box_ids or self.box_ids,
         )
 
     @contextmanager
@@ -1237,7 +1237,7 @@ class Experiment:
         --------
         >>> result = ex.rabi_experiment(
         ...     amplitudes={"Q00": 0.1},
-        ...     time_range=np.arange(0, 201, 4),
+        ...     time_range=range(0, 201, 4),
         ...     detuning=0.0,
         ...     shots=1024,
         ... )
@@ -1348,7 +1348,7 @@ class Experiment:
         --------
         >>> result = ex.ef_rabi_experiment(
         ...     amplitudes={"Q00": 0.1},
-        ...     time_range=np.arange(0, 201, 4),
+        ...     time_range=range(0, 201, 4),
         ...     detuning=0.0,
         ...     shots=1024,
         ... )
@@ -1692,7 +1692,7 @@ class Experiment:
         >>> result = ex.obtain_freq_rabi_relation(
         ...     targets=["Q00", "Q01"],
         ...     detuning_range=np.linspace(-0.01, 0.01, 11),
-        ...     time_range=np.arange(0, 101, 4),
+        ...     time_range=range(0, 101, 4),
         ... )
         """
         if detuning_range is None:
@@ -1800,7 +1800,7 @@ class Experiment:
         >>> result = ex.obtain_ampl_rabi_relation(
         ...     targets=["Q00", "Q01"],
         ...     amplitude_range=np.linspace(0.01, 0.1, 10),
-        ...     time_range=np.arange(0, 201, 4),
+        ...     time_range=range(0, 201, 4),
         ... )
         """
         if amplitude_range is None:
@@ -1871,7 +1871,7 @@ class Experiment:
         --------
         >>> result = ex.obtain_time_phase_relation(
         ...     targets=["Q00", "Q01"],
-        ...     time_range=np.arange(0, 1024, 128),
+        ...     time_range=range(0, 1024, 128),
         ... )
         """
         if time_range is None:
@@ -2829,7 +2829,7 @@ class Experiment:
         --------
         >>> result = ex.ramsey_experiment(
         ...     target="Q00",
-        ...     time_range=np.arange(0, 10000, 100),
+        ...     time_range=range(0, 10000, 100),
         ...     shots=1024,
         ... )
         """
@@ -2921,7 +2921,7 @@ class Experiment:
         --------
         >>> result = ex.obtain_true_control_frequency(
         ...     target="Q00",
-        ...     time_range=np.arange(0, 10000, 100),
+        ...     time_range=range(0, 10000, 100),
         ...     shots=1024,
         ... )
         """
@@ -3145,7 +3145,7 @@ class Experiment:
         target : str
             Target qubit.
         n_cliffords_range : ArrayLike, optional
-            Range of the number of Cliffords. Defaults to np.arange(0, 1001, 50).
+            Range of the number of Cliffords. Defaults to range(0, 1001, 50).
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
         interleave_waveform : Waveform, optional
@@ -3172,13 +3172,13 @@ class Experiment:
         --------
         >>> result = ex.rb_experiment(
         ...     target="Q00",
-        ...     n_cliffords_range=np.arange(0, 1001, 50),
+        ...     n_cliffords_range=range(0, 1001, 50),
         ...     x90=Rect(duration=30, amplitude=0.1),
         ... )
 
         >>> result = ex.rb_experiment(
         ...     target="Q00",
-        ...     n_cliffords_range=np.arange(0, 1001, 50),
+        ...     n_cliffords_range=range(0, 1001, 50),
         ...     x90=Rect(duration=30, amplitude=0.1),
         ...     interleave_waveform=Rect(duration=30, amplitude=0.1),
         ...     interleave_map={
@@ -3274,7 +3274,7 @@ class Experiment:
         target : str
             Target qubit.
         n_cliffords_range : ArrayLike, optional
-            Range of the number of Cliffords. Defaults to np.arange(0, 1001, 100).
+            Range of the number of Cliffords. Defaults to range(0, 1001, 100).
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
@@ -3370,7 +3370,7 @@ class Experiment:
         interleave_map : dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
         n_cliffords_range : ArrayLike, optional
-            Range of the number of Cliffords. Defaults to np.arange(0, 1001, 100).
+            Range of the number of Cliffords. Defaults to range(0, 1001, 100).
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
