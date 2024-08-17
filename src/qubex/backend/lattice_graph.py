@@ -405,34 +405,36 @@ class LatticeGraph:
 
         The nodes represent the qubits, and the edges represent the connections between them.
         """
+        n_mux_rows = self.n_mux_rows
+        n_mux_cols = self.n_mux_cols
         mux_size = 4
-        n_rows = self.n_mux_rows
-        n_cols = self.n_mux_cols
         dx = 1
         dy = 1
         marker_size = 36
 
-        node_xy = {}
-        for i in range(n_rows):
-            for j in range(n_cols):
-                mux = i * n_cols + j
+        qubit_xy = {}
+        mux_xy = {}
+        for i in range(n_mux_rows):
+            for j in range(n_mux_cols):
+                mux = i * n_mux_cols + j
                 idx = mux * mux_size
                 x = j * dx * 2
                 y = i * dy * 2
-                node_xy[idx + 0] = (x, y)
-                node_xy[idx + 1] = (x + dx, y)
-                node_xy[idx + 2] = (x, y + dy)
-                node_xy[idx + 3] = (x + dx, y + dy)
+                qubit_xy[idx + 0] = (x, y)
+                qubit_xy[idx + 1] = (x + dx, y)
+                qubit_xy[idx + 2] = (x, y + dy)
+                qubit_xy[idx + 3] = (x + dx, y + dy)
+                mux_xy[mux] = (x + dx / 2, y + dy / 2)
 
         edge_x = []
         edge_y = []
         for edge in self.edges:
-            x0, y0 = node_xy[edge[0]]
-            x1, y1 = node_xy[edge[1]]
+            x0, y0 = qubit_xy[edge[0]]
+            x1, y1 = qubit_xy[edge[1]]
             edge_x += [x0, x1, None]
             edge_y += [y0, y1, None]
 
-        edge_trace = go.Scatter(
+        trace_edge = go.Scatter(
             x=edge_x,
             y=edge_y,
             line=dict(width=2, color="black"),
@@ -440,21 +442,21 @@ class LatticeGraph:
             mode="lines",
         )
 
-        node_x = []
-        node_y = []
-        node_text = []
+        qubit_x = []
+        qubit_y = []
+        qubit_text = []
         for i in range(self.n_qubits):
-            x, y = node_xy[i]
-            node_x.append(x)
-            node_y.append(y)
-            node_text.append(self.qubits[i])
+            x, y = qubit_xy[i]
+            qubit_x.append(x)
+            qubit_y.append(y)
+            qubit_text.append(self.qubits[i])
 
-        node_trace = go.Scatter(
-            x=node_x,
-            y=node_y,
+        trace_qubit = go.Scatter(
+            x=qubit_x,
+            y=qubit_y,
             mode="markers+text",
             hoverinfo="text",
-            text=node_text,
+            text=qubit_text,
             marker=dict(
                 showscale=False,
                 color="white",
@@ -469,8 +471,30 @@ class LatticeGraph:
             textposition="middle center",
         )
 
+        mux_x = []
+        mux_y = []
+        mux_text = []
+        for mux, (x, y) in mux_xy.items():
+            mux_x.append(x)
+            mux_y.append(y)
+            mux_text.append(self.muxes[mux])
+
+        trace_mux = go.Scatter(
+            x=mux_x,
+            y=mux_y,
+            mode="text",
+            hoverinfo="none",
+            text=mux_text,
+            textfont=dict(
+                family="sans-serif",
+                color="black",
+                size=marker_size // 3,
+            ),
+            textposition="middle center",
+        )
+
         fig = go.Figure(
-            data=[edge_trace, node_trace],
+            data=[trace_edge, trace_qubit, trace_mux],
             layout=go.Layout(
                 showlegend=False,
                 hovermode="closest",
@@ -488,9 +512,8 @@ class LatticeGraph:
                     zeroline=False,
                     showticklabels=False,
                 ),
-                height=marker_size * 4 * n_rows,
-                width=marker_size * 4 * n_cols,
-                title="Lattice Graph",
+                height=marker_size * 4 * n_mux_rows,
+                width=marker_size * 4 * n_mux_cols,
             ),
         )
         fig.show()
