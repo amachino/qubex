@@ -3,11 +3,17 @@ from __future__ import annotations
 import subprocess
 from typing import Sequence
 
-from qubecalib import QubeCalib
-from quel_ic_config import Quel1Box
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
+
+try:
+    import quel_clock_master as qcm
+    from qubecalib import QubeCalib
+    from quel_ic_config import Quel1Box
+except ImportError:
+    pass
+
 
 from ..backend import LatticeGraph, StateManager
 
@@ -71,6 +77,16 @@ This operation will reset LO/NCO settings. Do you want to continue?
     print("Operation completed.")
 
 
+def reset_clockmaster(ipaddr: str = "10.3.0.255") -> bool:
+    """Reset the clock master."""
+    return qcm.QuBEMasterClient(ipaddr).reset()
+
+
+def resync_clocks(box_ids: Sequence[str]) -> bool:
+    """Resync the clocks of the boxes."""
+    return state_manager.device_controller.resync_clocks(list(box_ids))
+
+
 def print_chip_info() -> None:
     """Print the information of the chip."""
     chip = state_manager.experiment_system.chip
@@ -78,7 +94,7 @@ def print_chip_info() -> None:
     graph.plot_lattice()
 
 
-def print_wiring_info(qubits: list[str] | None = None) -> None:
+def print_wiring_info(qubits: Sequence[str] | None = None) -> None:
     """Print the wiring information of the chip."""
 
     experiment_system = state_manager.experiment_system
