@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 from typing import Final
 
+import plotly.graph_objects as go
+
 MUX_SIZE = 4
 
 PREFIX_QUBIT = "Q"
@@ -58,9 +60,11 @@ class LatticeGraph:
                 f"n_qubits ({n_qubits}) must result in a square number of MUXes."
             )
         self.n_qubits: Final = n_qubits
-        self._max_digit: Final = len(str(self.n_qubits - 1))
-        self._max_mux_digit: Final = len(str(n_muxes - 1))
-        self.edges: Final = self._create_edges(mux_side_length, mux_side_length)
+        self.n_mux_rows: Final = mux_side_length
+        self.n_mux_cols: Final = mux_side_length
+        self.max_digit: Final = len(str(self.n_qubits - 1))
+        self.max_mux_digit: Final = len(str(n_muxes - 1))
+        self.edges: Final = self._create_edges(self.n_mux_rows, self.n_mux_cols)
 
     @property
     def n_muxes(
@@ -108,7 +112,7 @@ class LatticeGraph:
         list[str]
             List of qubit labels.
         """
-        return [f"{prefix}{str(i).zfill(self._max_digit)}" for i in self.indices]
+        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in self.indices]
 
     @property
     def resonators(
@@ -128,7 +132,7 @@ class LatticeGraph:
         list[str]
             List of resonator labels.
         """
-        return [f"{prefix}{str(i).zfill(self._max_digit)}" for i in self.indices]
+        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in self.indices]
 
     @property
     def muxes(
@@ -149,7 +153,7 @@ class LatticeGraph:
             List of MUX labels.
         """
         return [
-            f"{prefix}{str(i).zfill(self._max_mux_digit)}" for i in range(self.n_muxes)
+            f"{prefix}{str(i).zfill(self.max_mux_digit)}" for i in range(self.n_muxes)
         ]
 
     @property
@@ -339,17 +343,17 @@ class LatticeGraph:
 
     def _create_edges(
         self,
-        n_row: int,
-        n_col: int,
+        n_rows: int,
+        n_cols: int,
     ) -> list[tuple[int, int]]:
         """
         Create edges of the lattice chip.
 
         Parameters
         ----------
-        n_row : int
+        n_rows : int
             Number of rows of MUXes.
-        n_col : int
+        n_cols : int
             Number of columns of MUXes.
 
         Returns
@@ -359,10 +363,10 @@ class LatticeGraph:
         """
         edge_set: set[tuple[int, int]] = set()
 
-        for row in range(n_row):
-            for col in range(n_col):
+        for row in range(n_rows):
+            for col in range(n_cols):
                 # MUX number
-                mux_number = row * n_col + col
+                mux_number = row * n_cols + col
 
                 # Base qubit of the MUX
                 base_qubit = mux_number * MUX_SIZE
@@ -378,15 +382,15 @@ class LatticeGraph:
 
                 # Connections to adjacent MUXes
                 # Right neighbor
-                if col < n_col - 1:
+                if col < n_cols - 1:
                     right_base_qubit = base_qubit + MUX_SIZE
                     right_qubits = [right_base_qubit + i for i in range(MUX_SIZE)]
                     edge_set.add((qubits[1], right_qubits[0]))
                     edge_set.add((qubits[3], right_qubits[2]))
 
                 # Down neighbor
-                if row < n_row - 1:
-                    down_base_qubit = base_qubit + n_col * MUX_SIZE
+                if row < n_rows - 1:
+                    down_base_qubit = base_qubit + n_cols * MUX_SIZE
                     down_qubits = [down_base_qubit + i for i in range(MUX_SIZE)]
                     edge_set.add((qubits[2], down_qubits[0]))
                     edge_set.add((qubits[3], down_qubits[1]))
@@ -394,3 +398,99 @@ class LatticeGraph:
         edge_list = list(edge_set)
         edge_list.sort()
         return edge_list
+
+    def plot_lattice(self):
+        """
+        Plot the lattice graph using Plotly.
+
+        The nodes represent the qubits, and the edges represent the connections between them.
+        """
+        mux_size = 4
+        n_rows = self.n_mux_rows
+        n_cols = self.n_mux_cols
+        dx = 1
+        dy = 1
+        marker_size = 36
+
+        node_xy = {}
+        for i in range(n_rows):
+            for j in range(n_cols):
+                mux = i * n_cols + j
+                idx = mux * mux_size
+                x = j * dx * 2
+                y = i * dy * 2
+                node_xy[idx + 0] = (x, y)
+                node_xy[idx + 1] = (x + dx, y)
+                node_xy[idx + 2] = (x, y + dy)
+                node_xy[idx + 3] = (x + dx, y + dy)
+
+        edge_x = []
+        edge_y = []
+        for edge in self.edges:
+            x0, y0 = node_xy[edge[0]]
+            x1, y1 = node_xy[edge[1]]
+            edge_x += [x0, x1, None]
+            edge_y += [y0, y1, None]
+
+        edge_trace = go.Scatter(
+            x=edge_x,
+            y=edge_y,
+            line=dict(width=2, color="black"),
+            hoverinfo="none",
+            mode="lines",
+        )
+
+        node_x = []
+        node_y = []
+        node_text = []
+        for i in range(self.n_qubits):
+            x, y = node_xy[i]
+            node_x.append(x)
+            node_y.append(y)
+            node_text.append(self.qubits[i])
+
+        node_trace = go.Scatter(
+            x=node_x,
+            y=node_y,
+            mode="markers+text",
+            hoverinfo="text",
+            text=node_text,
+            marker=dict(
+                showscale=False,
+                color="white",
+                size=marker_size,
+                line=dict(color="black", width=2),
+            ),
+            textfont=dict(
+                family="sans-serif",
+                color="black",
+                size=marker_size // 3,
+            ),
+            textposition="middle center",
+        )
+
+        fig = go.Figure(
+            data=[edge_trace, node_trace],
+            layout=go.Layout(
+                showlegend=False,
+                hovermode="closest",
+                margin=dict(b=0, l=0, r=0, t=0),
+                xaxis=dict(
+                    ticks="",
+                    showgrid=False,
+                    zeroline=False,
+                    showticklabels=False,
+                ),
+                yaxis=dict(
+                    ticks="",
+                    autorange="reversed",
+                    showgrid=False,
+                    zeroline=False,
+                    showticklabels=False,
+                ),
+                height=marker_size * 4 * n_rows,
+                width=marker_size * 4 * n_cols,
+                title="Lattice Graph",
+            ),
+        )
+        fig.show()

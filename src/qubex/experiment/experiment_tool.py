@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-from ..backend import StateManager
+from ..backend import LatticeGraph, StateManager
 
 console = Console()
 state_manager = StateManager.shared()
@@ -69,6 +69,13 @@ This operation will reset LO/NCO settings. Do you want to continue?
     state_manager.device_controller.relinkup_boxes(box_ids)
     state_manager.device_controller.sync_clocks(box_ids)
     print("Operation completed.")
+
+
+def print_chip_info() -> None:
+    """Print the information of the chip."""
+    chip = state_manager.experiment_system.chip
+    graph = LatticeGraph(chip.n_qubits)
+    graph.plot_lattice()
 
 
 def print_wiring_info(qubits: list[str] | None = None) -> None:
