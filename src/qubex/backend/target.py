@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from typing import Final
 
 
 class TargetType(Enum):
@@ -12,14 +11,6 @@ class TargetType(Enum):
     CTRL_CR = "CTRL_CR"
     READ = "READ"
     UNKNOWN = "UNKNOWN"
-
-
-TARGET_CHANNEL_MAP: Final = {
-    TargetType.CTRL_GE: 0,
-    TargetType.CTRL_EF: 1,
-    TargetType.CTRL_CR: 2,
-    TargetType.READ: 0,
-}
 
 
 @dataclass(frozen=True)
@@ -31,10 +22,6 @@ class Target:
 
     def __repr__(self) -> str:
         return f"Target(label={self.label}, qubit={self.qubit}, type={self.type.value}, frequency={self.frequency})"
-
-    @property
-    def channel_nuber(self) -> int:
-        return TARGET_CHANNEL_MAP[self.type]
 
     @classmethod
     def ge_target(
@@ -104,6 +91,9 @@ class Target:
             qubit = match.group(1)
             type = TargetType.CTRL_EF
         elif match := re.match(r"^(Q\d+)-CR$", label):
+            qubit = match.group(1)
+            type = TargetType.CTRL_CR
+        elif match := re.match(r"^(Q\d+)-(Q\d+)$", label):
             qubit = match.group(1)
             type = TargetType.CTRL_CR
         elif match := re.match(r"^(Q\d+)(-|_)[a-zA-Z0-9]+$", label):

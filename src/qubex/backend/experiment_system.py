@@ -16,7 +16,7 @@ from .control_system import (
 )
 from .model import Model
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
-from .target import Target
+from .target import Target, TargetType
 
 DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
 DEFAULT_READOUT_AMPLITUDE: Final = 0.01
@@ -612,7 +612,7 @@ class ExperimentSystem:
                                 frequency=qubit.ge_frequency,
                             )
                             ge_target_dict[ge_target.label] = ge_target
-                            ge_channel = port.channels[ge_target.channel_nuber]
+                            ge_channel = port.channels[0]
                             target_gen_channel_map[ge_target] = ge_channel
                             # ef
                             ef_target = Target.ef_target(
@@ -620,16 +620,27 @@ class ExperimentSystem:
                                 frequency=qubit.ef_frequency,
                             )
                             ef_target_dict[ef_target.label] = ef_target
-                            ef_channel = port.channels[ef_target.channel_nuber]
+                            ef_channel = port.channels[1]
                             target_gen_channel_map[ef_target] = ef_channel
                             # cr
                             cr_target = Target.cr_target(
                                 label=qubit.label,
-                                frequency=self._calc_cr_target_frequency(qubit),
+                                frequency=port.base_frequencies[2] * 1e-9,
                             )
                             cr_target_dict[cr_target.label] = cr_target
-                            cr_channel = port.channels[cr_target.channel_nuber]
+                            cr_channel = port.channels[2]
                             target_gen_channel_map[cr_target] = cr_channel
+                            for spectator in self.get_spectator_qubits(qubit.label):
+                                cr_target = Target(
+                                    label=f"{qubit.label}-{spectator.label}",
+                                    qubit=qubit.label,
+                                    type=TargetType.CTRL_CR,
+                                    frequency=spectator.ge_frequency,
+                                )
+                                cr_target_dict[cr_target.label] = cr_target
+                                cr_channel = port.channels[2]
+                                target_gen_channel_map[cr_target] = cr_channel
+
                     # readout ports
                     elif port.type == PortType.READ_OUT:
                         mux = self.get_mux_by_readout_port(port)
