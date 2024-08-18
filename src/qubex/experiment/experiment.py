@@ -3782,7 +3782,7 @@ class Experiment:
         else:
             freq_range = np.array(freq_range)
 
-        readout = Target.readout_label(target)
+        readout = Target.read_label(target)
 
         def measure_phases(freq_range, phase_shift=0.0) -> NDArray[np.float64]:
             widget = go.FigureWidget()
@@ -3902,7 +3902,7 @@ class Experiment:
         )
 
         qubit = target
-        resonator = Target.readout_label(target)
+        resonator = Target.read_label(target)
         control_pulse = Gaussian(
             duration=1024,
             amplitude=control_amplitude,

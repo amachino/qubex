@@ -142,37 +142,6 @@ def print_box_info(box_id: str, fetch: bool = False) -> None:
     state_manager.print_box_info(box_id, fetch=fetch)
 
 
-def print_base_frequencies(qubits: Sequence[str] | str) -> None:
-    """Print the base frequencies of the qubits."""
-    if isinstance(qubits, str):
-        qubits = [qubits]
-
-    table = Table(
-        show_header=True,
-        header_style="bold",
-        title="BASE FREQUENCIES",
-    )
-    table.add_column("QUBIT", justify="center")
-    table.add_column("READ", justify="center")
-    table.add_column("CTRL_0", justify="center")
-    table.add_column("CTRL_1", justify="center")
-    table.add_column("CTRL_2", justify="center")
-
-    for qubit in qubits:
-        port_set = state_manager.experiment_system.get_qubit_port_set(qubit)
-        if port_set is None:
-            continue
-        control = port_set.ctrl_port.base_frequencies
-        readout = port_set.read_out_port.base_frequencies
-
-        table.add_row(
-            qubit,
-            f"{readout[0] * 1e-9:.3f} GHz",
-            *[f"{f * 1e-9:.3f} GHz" for f in control],
-        )
-    console.print(table)
-
-
 def print_frequency_diffs(qubits: Sequence[str] | str) -> None:
     """Print the frequency differences of the target and base frequencies."""
     if isinstance(qubits, str):
@@ -189,22 +158,24 @@ def print_frequency_diffs(qubits: Sequence[str] | str) -> None:
         header_style="bold",
         title="BASE FREQUENCY DIFFS",
     )
-    table.add_column("TARGET", justify="left")
-    table.add_column("FREQ (GHz)", justify="right")
-    table.add_column("BASE (GHz)", justify="right")
+    table.add_column("LABEL", justify="left")
+    table.add_column("TARGET (GHz)", justify="right")
+    table.add_column("COARSE (GHz)", justify="right")
+    table.add_column("FINE (GHz)", justify="right")
     table.add_column("DIFF (MHz)", justify="right")
 
-    experiment_system = state_manager.experiment_system
     rows = []
     for target in targets:
-        freq = target.frequency
-        base_freq = experiment_system.get_base_frequency(target.label)
-        diff = freq - base_freq
+        tfreq = target.frequency
+        cfreq = target.coarse_frequency
+        ffreq = target.fine_frequency
+        diff = tfreq - ffreq
         rows.append(
             [
                 target.label,
-                f"{freq:.3f}",
-                f"{base_freq:.3f}",
+                f"{tfreq:.3f}",
+                f"{cfreq:.3f}",
+                f"{ffreq:.3f}",
                 f"{diff * 1e3:+.3f}",
             ]
         )

@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Final, Literal, Sequence, Union
 
+from pydantic import Field
 from pydantic.dataclasses import dataclass
 
 from .model import Model
@@ -287,15 +288,17 @@ def create_ports(
                 box_id=box_id,
                 number=port_num,
                 type=port_type,
-                channels=tuple(
-                    CapChannel(
-                        id=f"{port_id}{channel_num}",
-                        port_id=port_id,
-                        number=channel_num,
-                    )
-                    for channel_num in range(n_channels)
-                ),
+                channels=(),
             )
+            port.channels = tuple(
+                CapChannel(
+                    id=f"{port_id}{channel_num}",
+                    _port=port,
+                    number=channel_num,
+                )
+                for channel_num in range(n_channels)
+            )
+
         elif port_type == PortType.READ_OUT:
             port = GenPort(
                 id=port_id,
@@ -303,15 +306,17 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="U",
-                channels=tuple(
-                    GenChannel(
-                        id=f"{port_id}{channel_num}",
-                        port_id=port_id,
-                        number=channel_num,
-                    )
-                    for channel_num in range(n_channels)
-                ),
+                channels=(),
             )
+            port.channels = tuple(
+                GenChannel(
+                    id=f"{port_id}{channel_num}",
+                    _port=port,
+                    number=channel_num,
+                )
+                for channel_num in range(n_channels)
+            )
+
         elif port_type == PortType.MNTR_OUT:
             port = GenPort(
                 id=port_id,
@@ -319,15 +324,17 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="L",
-                channels=tuple(
-                    GenChannel(
-                        id=f"{port_id}{channel_num}",
-                        port_id=port_id,
-                        number=channel_num,
-                    )
-                    for channel_num in range(n_channels)
-                ),
+                channels=(),
             )
+            port.channels = tuple(
+                GenChannel(
+                    id=f"{port_id}{channel_num}",
+                    _port=port,
+                    number=channel_num,
+                )
+                for channel_num in range(n_channels)
+            )
+
         elif port_type == PortType.CTRL:
             port = GenPort(
                 id=port_id,
@@ -335,14 +342,15 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="L",
-                channels=tuple(
-                    GenChannel(
-                        id=f"{port_id}.CH{channel_num}",
-                        port_id=port_id,
-                        number=channel_num,
-                    )
-                    for channel_num in range(n_channels)
-                ),
+                channels=(),
+            )
+            port.channels = tuple(
+                GenChannel(
+                    id=f"{port_id}.CH{channel_num}",
+                    _port=port,
+                    number=channel_num,
+                )
+                for channel_num in range(n_channels)
             )
         elif port_type == PortType.PUMP:
             port = GenPort(
@@ -351,14 +359,15 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="L",
-                channels=tuple(
-                    GenChannel(
-                        id=f"{port_id}.CH{channel_num}",
-                        port_id=port_id,
-                        number=channel_num,
-                    )
-                    for channel_num in range(n_channels)
-                ),
+                channels=(),
+            )
+            port.channels = tuple(
+                GenChannel(
+                    id=f"{port_id}.CH{channel_num}",
+                    _port=port,
+                    number=channel_num,
+                )
+                for channel_num in range(n_channels)
             )
         else:
             raise ValueError(f"Invalid port type: {port_type}")
@@ -488,12 +497,7 @@ class GenPort(Port):
 
     @property
     def base_frequencies(self) -> tuple[int, ...]:
-        return tuple(
-            self.lo_freq + self.cnco_freq + channel.fnco_freq
-            if self.sideband == "U"
-            else self.lo_freq - self.cnco_freq - channel.fnco_freq
-            for channel in self.channels
-        )
+        return tuple(channel.coarse_frequency for channel in self.channels)
 
 
 @dataclass
@@ -507,20 +511,54 @@ class CapPort(Port):
 @dataclass
 class Channel(Model):
     id: str
-    port_id: str
     number: int
 
 
 @dataclass
 class GenChannel(Channel):
+    _port: GenPort = Field(exclude=True)
     fnco_freq: int = DEFAULT_FNCO_FREQ
     nwait: int = DEFAULT_NWAIT
+
+    @property
+    def port(self) -> GenPort:
+        return self._port
+
+    @property
+    def coarse_frequency(self) -> int:
+        sideband = self.port.sideband
+        lo = self.port.lo_freq
+        cnco = self.port.cnco_freq
+        if sideband == "U":
+            return lo + cnco
+        elif sideband == "L":
+            return lo - cnco
+        else:
+            raise ValueError(f"Invalid sideband: {sideband}")
+
+    @property
+    def fine_frequency(self) -> int:
+        sideband = self.port.sideband
+        lo = self.port.lo_freq
+        cnco = self.port.cnco_freq
+        fnco = self.fnco_freq
+        if sideband == "U":
+            return lo + cnco + fnco
+        elif sideband == "L":
+            return lo - cnco - fnco
+        else:
+            raise ValueError(f"Invalid sideband: {sideband}")
 
 
 @dataclass
 class CapChannel(Channel):
+    _port: CapPort = Field(exclude=True)
     fnco_freq: int = DEFAULT_FNCO_FREQ
     ndelay: int = DEFAULT_NDELAY
+
+    @property
+    def port(self) -> CapPort:
+        return self._port
 
 
 class ControlSystem:

@@ -292,7 +292,7 @@ class Measurement:
         >>> result = meas.measure_noise()
         """
         capture = pls.Capture(duration=duration)
-        readout_targets = {Target.readout_label(target) for target in targets}
+        readout_targets = {Target.read_label(target) for target in targets}
         with pls.Sequence() as sequence:
             with pls.Flushleft():
                 for target in readout_targets:
@@ -573,7 +573,7 @@ class Measurement:
                 pls.padding(capture_margin)
                 with pls.Flushleft():
                     for qubit in qubits:
-                        readout_target = Target.readout_label(qubit)
+                        readout_target = Target.read_label(qubit)
                         pls.RaisedCosFlatTop(
                             duration=readout_duration,
                             amplitude=readout_amplitude[qubit],
@@ -645,7 +645,7 @@ class Measurement:
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
-            readout_target = Target.readout_label(qubit)
+            readout_target = Target.read_label(qubit)
             omega = 2 * np.pi * self.diff_frequencies[readout_target]
             offset = readout_start * SAMPLING_PERIOD
             padded_waveform *= np.exp(-1j * omega * offset)
@@ -737,7 +737,7 @@ class Measurement:
         if add_last_measurement:
             # register all readout targets for the last measurement
             readout_targets = list(
-                {Target.readout_label(target) for target in schedule.targets}
+                {Target.read_label(target) for target in schedule.targets}
             )
             # create a new schedule with the last readout pulse
             with PulseSchedule(schedule.targets + readout_targets) as ps:

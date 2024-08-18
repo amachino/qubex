@@ -480,18 +480,10 @@ This operation will overwrite the existing device settings. Do you want to conti
                         ndelay_or_nwait=ndelay_or_nwait,
                     )
 
-        target_gen_channel_map = experiment_system.target_gen_channel_map
-        for target, gen_channel in target_gen_channel_map.items():
+        for target in experiment_system.targets:
             qc.define_target(
                 target_name=target.label,
-                channel_name=gen_channel.id,
-                target_frequency=target.frequency,
-            )
-        target_cap_channel_map = experiment_system.target_cap_channel_map
-        for target, cap_channel in target_cap_channel_map.items():
-            qc.define_target(
-                target_name=target.label,
-                channel_name=cap_channel.id,
+                channel_name=target.channel.id,
                 target_frequency=target.frequency,
             )
         return device_controller
