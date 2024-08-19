@@ -296,7 +296,7 @@ class ExperimentSystem:
         port.rfswitch = "pass"
         if port.type == PortType.READ_OUT:
             mux = self.get_mux_by_readout_port(port)
-            if mux is None:
+            if mux is None or not mux.is_valid:
                 return
             lo, cnco, fnco = self._find_readout_lo_nco(mux)
             port.lo_freq = lo
@@ -307,7 +307,7 @@ class ExperimentSystem:
             port.channels[0].fnco_freq = fnco
         elif port.type == PortType.CTRL:
             qubit = self.get_qubit_by_control_port(port)
-            if qubit is None:
+            if qubit is None or not qubit.is_valid:
                 return
             lo, cnco, fncos = self._find_control_lo_nco(
                 qubit=qubit,
@@ -329,7 +329,7 @@ class ExperimentSystem:
         port.rfswitch = "open"
         if port.type == PortType.READ_IN:
             mux = self.get_mux_by_readout_port(port)
-            if mux is None:
+            if mux is None or not mux.is_valid:
                 return
             lo, cnco, fnco = self._find_readout_lo_nco(mux)
             port.lo_freq = lo

@@ -1,15 +1,12 @@
 from __future__ import annotations
 
+import math
 from typing import Final
 
 from pydantic.dataclasses import dataclass
 
 from .lattice_graph import LatticeGraph
 from .model import Model
-
-DEFAULT_QUBIT_FREQUENCY: Final = 7.5
-DEFAULT_QUBIT_ANHARMONICITY: Final = -0.3
-DEFAULT_RESONATOR_FREQUENCY: Final = 10.5
 
 
 @dataclass
@@ -47,6 +44,8 @@ class Chip(Model):
                 label=label,
                 chip_id=id,
                 resonator=graph.resonators[index],
+                frequency=float("nan"),
+                anharmonicity=float("nan"),
             )
             for index, label in enumerate(graph.qubits)
         )
@@ -56,6 +55,7 @@ class Chip(Model):
                 label=label,
                 chip_id=id,
                 qubit=graph.qubits[index],
+                frequency=float("nan"),
             )
             for index, label in enumerate(graph.resonators)
         )
@@ -85,8 +85,8 @@ class Qubit(Model):
     label: str
     chip_id: str
     resonator: str
-    frequency: float = DEFAULT_QUBIT_FREQUENCY
-    anharmonicity: float = DEFAULT_QUBIT_ANHARMONICITY
+    frequency: float
+    anharmonicity: float
 
     @property
     def ge_frequency(self) -> float:
@@ -96,6 +96,10 @@ class Qubit(Model):
     def ef_frequency(self) -> float:
         return self.frequency + self.anharmonicity
 
+    @property
+    def is_valid(self) -> bool:
+        return not math.isnan(self.frequency) and not math.isnan(self.anharmonicity)
+
 
 @dataclass
 class Resonator(Model):
@@ -103,7 +107,11 @@ class Resonator(Model):
     label: str
     chip_id: str
     qubit: str
-    frequency: float = DEFAULT_RESONATOR_FREQUENCY
+    frequency: float
+
+    @property
+    def is_valid(self) -> bool:
+        return not math.isnan(self.frequency)
 
 
 @dataclass
@@ -112,6 +120,10 @@ class Mux(Model):
     label: str
     chip_id: str
     resonators: tuple[Resonator, ...]
+
+    @property
+    def is_valid(self) -> bool:
+        return all(resonator.is_valid for resonator in self.resonators)
 
 
 class QuantumSystem:

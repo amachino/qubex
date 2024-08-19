@@ -112,10 +112,16 @@ class ConfigLoader:
             )
             props = self._props_dict[chip_id]
             for qubit in chip.qubits:
-                qubit.frequency = props["qubit_frequency"][qubit.label]
-                qubit.anharmonicity = props["anharmonicity"][qubit.label]
+                qubit.frequency = props["qubit_frequency"].get(
+                    qubit.label, float("nan")
+                )
+                qubit.anharmonicity = props["anharmonicity"].get(
+                    qubit.label, float("nan")
+                )
             for resonator in chip.resonators:
-                resonator.frequency = props["resonator_frequency"][resonator.qubit]
+                resonator.frequency = props["resonator_frequency"].get(
+                    resonator.qubit, float("nan")
+                )
             quantum_system = QuantumSystem(chip=chip)
             quantum_system_dict[chip_id] = quantum_system
         return quantum_system_dict
