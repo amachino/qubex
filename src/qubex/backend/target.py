@@ -121,7 +121,7 @@ class Target:
         else:
             return cls(
                 label=Target.cr_label(control_qubit.label),
-                frequency=channel.coarse_frequency * 1e-9,
+                frequency=channel.fine_frequency * 1e-9,
                 object=control_qubit,
                 channel=channel,
                 type=TargetType.CTRL_CR,

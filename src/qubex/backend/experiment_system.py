@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from typing import Final, Sequence
+import math
+from typing import Final, Literal, Sequence
 
+import numpy as np
 from pydantic.dataclasses import dataclass
 
 from .control_system import (
@@ -22,6 +24,14 @@ DEFAULT_READOUT_VATT: Final = 2048
 DEFAULT_CONTROL_FSC: Final = 40527
 DEFAULT_READOUT_FSC: Final = 40527
 DEFAULT_CAPTURE_DELAY: Final = 7
+
+
+LO_STEP = 500_000_000
+NCO_STEP = 23_437_500
+CNCO_CTRL = 2_250_000_000
+CNCO_READ = 1_500_000_000
+FNCO_MAX = 750_000_000
+AWG_MAX = 250_000_000
 
 
 @dataclass
@@ -332,9 +342,8 @@ class ExperimentSystem:
         self,
         mux: Mux,
         *,
-        cnco: int = 1_500_000_000,
-        lo_step: int = 500_000_000,
-        nco_step: int = 23_437_500,
+        ssb: Literal["U", "L"] = "U",
+        cnco: int = CNCO_READ,
     ) -> tuple[int, int, int]:
         """
         Finds the (lo, cnco, fnco) values for the readout mux.
@@ -343,12 +352,10 @@ class ExperimentSystem:
         ----------
         mux : Mux
             The readout mux.
+        ssb : Literal["U", "L"], optional
+            The sideband, by default "U".
         cnco : int, optional
             The CNCO frequency, by default 1_500_000_000.
-        lo_step : int, optional
-            The LO frequency step, by default 500_000_000.
-        nco_step : int, optional
-            The NCO frequency step, by default 23_437_500.
 
         Returns
         -------
@@ -357,8 +364,8 @@ class ExperimentSystem:
         """
         freqs = [resonator.frequency * 1e9 for resonator in mux.resonators]
         f_target = (max(freqs) + min(freqs)) / 2
-        lo = round((f_target - cnco) / lo_step) * lo_step
-        fnco = round((f_target - lo - cnco) / nco_step) * nco_step
+        lo = self._calc_lo_for_f_as_nearest(f=f_target, ssb=ssb, cnco=cnco)
+        fnco = self._calc_fnco(f=f_target, lo=lo, ssb=ssb, cnco=cnco)
         return lo, cnco, fnco
 
     def _find_control_lo_nco(
@@ -366,10 +373,10 @@ class ExperimentSystem:
         qubit: Qubit,
         n_channels: int,
         *,
-        cnco: int = 2_250_000_000,
-        lo_step: int = 500_000_000,
-        nco_step: int = 23_437_500,
-        max_diff: int = 750_000_000,
+        ssb: Literal["U", "L"] = "L",
+        cnco: int = CNCO_CTRL,
+        fnco_max: int = FNCO_MAX,
+        awg_max: int = AWG_MAX,
     ) -> tuple[int, int, tuple[int, int, int]]:
         """
         Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
@@ -380,14 +387,10 @@ class ExperimentSystem:
             The control qubit.
         n_channels : int
             The number of channels.
+        ssb : Literal["U", "L"], optional
+            The sideband, by default "L".
         cnco : int, optional
             The CNCO frequency, by default 2_250_000_000.
-        lo_step : int, optional
-            The LO frequency step, by default 500_000_000.
-        nco_step : int, optional
-            The NCO frequency step, by default 23_437_500.
-        max_diff : int, optional
-            The maximum difference between frequencies, by default 750_000_000.
 
         Returns
         -------
@@ -396,28 +399,65 @@ class ExperimentSystem:
         """
         if n_channels == 1:
             f_target = qubit.ge_frequency * 1e9
-            lo = round((f_target + cnco) / lo_step) * lo_step
-            fnco = round((lo - cnco - f_target) / nco_step) * nco_step
+            lo = self._calc_lo_for_f_as_nearest(f=f_target, ssb=ssb, cnco=cnco)
+            fnco = self._calc_fnco(f=f_target, lo=lo, ssb=ssb, cnco=cnco)
             return lo, cnco, (fnco, 0, 0)
         elif n_channels != 3:
             raise ValueError("Invalid number of channels.")
 
         f_ge = qubit.ge_frequency * 1e9
         f_ef = qubit.ef_frequency * 1e9
-        f_spectators = [
+        f_CRs = [
             spectator.ge_frequency * 1e9
             for spectator in self.get_spectator_qubits(qubit.label)
             if spectator.ge_frequency > 0
         ]
-        f_cr = (max(f_spectators) + min(f_spectators)) / 2
-        freqs = [f_ge, f_ef] + f_spectators
-        f_target = (max(freqs) + min(freqs)) / 2
 
-        lo = round((f_target + cnco) / lo_step) * lo_step
-        fnco_ge = round((lo - cnco - f_ge) / nco_step) * nco_step
-        fnco_ef = round((lo - cnco - f_ef) / nco_step) * nco_step
-        fnco_cr = round((lo - cnco - f_cr) / nco_step) * nco_step
-        return lo, cnco, (fnco_ge, fnco_ef, fnco_cr)
+        if not f_CRs:
+            f_CR = f_ge
+
+        f_CR_max = max(f_CRs)
+        if f_CR_max > f_ge:
+            # if any CR is larger than GE, then let EF be the smallest
+            lo = self._calc_lo_for_f_as_smallest(f=f_ef, ssb=ssb, cnco=cnco)
+            f_CRs_valid = [
+                f for f in f_CRs if f_ge < f < lo - cnco + fnco_max + awg_max
+            ]
+            if not f_CRs_valid:
+                f_CRs_valid = [f_ge]
+        else:
+            # if all CRs are smaller than GE, then let GE be the largest
+            lo = self._calc_lo_for_f_as_largest(f=f_ge, ssb=ssb, cnco=cnco)
+            f_CRs_valid = [f for f in f_CRs if f > lo - cnco - fnco_max - awg_max]
+            if not f_CRs_valid:
+                f_CRs_valid = [f_ge]
+        f_CR = self._find_center_freq_for_cr(f_CRs=f_CRs_valid)
+
+        fnco_ge = self._calc_fnco(f=f_ge, lo=lo, ssb=ssb, cnco=cnco)
+        fnco_ef = self._calc_fnco(f=f_ef, lo=lo, ssb=ssb, cnco=cnco)
+        fnco_CR = self._calc_fnco(f=f_CR, lo=lo, ssb=ssb, cnco=cnco)
+        return (lo, cnco, (fnco_ge, fnco_ef, fnco_CR))
+
+    @staticmethod
+    def _find_center_freq_for_cr(
+        f_CRs: list[float],
+        nco_step: int = NCO_STEP,
+        awg_max: int = AWG_MAX,
+    ) -> int:
+        f_min = min(f_CRs)
+        f_max = max(f_CRs)
+        search_points = np.arange(f_min, f_max + 1, nco_step)
+        d = awg_max
+        center_freqs_by_count = [
+            (
+                np.sum([1 for f in f_CRs if p - d <= f <= p + d]),
+                np.median([f for f in f_CRs if p - d <= f <= p + d] or [0]).astype(int),
+            )
+            for p in search_points
+        ]
+        center_freq = max(center_freqs_by_count, key=lambda x: x[0])[1]
+        center_freq = round(center_freq / nco_step) * nco_step
+        return center_freq
 
     def _initialize_targets(self) -> None:
         ge_target_dict: dict[str, Target] = {}
@@ -491,3 +531,66 @@ class ExperimentSystem:
             | self._cr_target_dict
             | self._read_target_dict
         )
+
+    @staticmethod
+    def _calc_lo_for_f_as_nearest(
+        f: float,
+        ssb: Literal["U", "L"],
+        cnco: int = CNCO_CTRL,
+        lo_step: int = LO_STEP,
+    ) -> int:
+        if ssb == "L":
+            lo = round((f + cnco) / lo_step) * lo_step
+        elif ssb == "U":
+            lo = round((f - cnco) / lo_step) * lo_step
+        else:
+            raise ValueError("Invalid SSB")
+        return lo
+
+    @staticmethod
+    def _calc_lo_for_f_as_smallest(
+        f: float,
+        ssb: Literal["U", "L"],
+        cnco: int,
+        lo_step: int = LO_STEP,
+        fnco_max: int = FNCO_MAX,
+    ) -> int:
+        if ssb == "L":
+            lo = math.floor((f + cnco + fnco_max) / lo_step) * lo_step
+        elif ssb == "U":
+            lo = math.floor((f - cnco + fnco_max) / lo_step) * lo_step
+        else:
+            raise ValueError("Invalid SSB")
+        return lo
+
+    @staticmethod
+    def _calc_lo_for_f_as_largest(
+        f: float,
+        ssb: Literal["U", "L"],
+        cnco: int,
+        lo_step: int = LO_STEP,
+        fnco_max: int = FNCO_MAX,
+    ) -> int:
+        if ssb == "L":
+            lo = math.ceil((f + cnco - fnco_max) / lo_step) * lo_step
+        elif ssb == "U":
+            lo = math.ceil((f - cnco - fnco_max) / lo_step) * lo_step
+        else:
+            raise ValueError("Invalid SSB")
+        return lo
+
+    @staticmethod
+    def _calc_fnco(
+        f: float,
+        lo: int,
+        ssb: Literal["U", "L"],
+        cnco: int,
+        nco_step: int = NCO_STEP,
+    ) -> int:
+        if ssb == "L":
+            fnco = round(((lo - cnco) - f) / nco_step) * nco_step
+        elif ssb == "U":
+            fnco = round((f - (lo + cnco)) / nco_step) * nco_step
+        else:
+            raise ValueError("Invalid SSB")
+        return fnco
