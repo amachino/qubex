@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Union
 
-from .control_system import GenChannel
+from .control_system import CapChannel, GenChannel
 from .quantum_system import Qubit, Resonator
 
 
@@ -18,6 +18,30 @@ class TargetType(Enum):
 
 
 QuantumObject = Union[Qubit, Resonator]
+
+
+@dataclass(frozen=True)
+class CapTarget:
+    label: str
+    frequency: float
+    object: QuantumObject
+    channel: CapChannel
+    type: TargetType
+
+    @classmethod
+    def new_read_target(
+        cls,
+        *,
+        resonator: Resonator,
+        channel: CapChannel,
+    ) -> CapTarget:
+        return cls(
+            label=Target.read_label(resonator.label),
+            object=resonator,
+            frequency=resonator.frequency,
+            channel=channel,
+            type=TargetType.READ,
+        )
 
 
 @dataclass(frozen=True)

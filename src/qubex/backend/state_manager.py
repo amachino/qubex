@@ -480,7 +480,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                         ndelay_or_nwait=ndelay_or_nwait,
                     )
 
-        for target in experiment_system.targets:
+        for target in experiment_system.all_targets:
             qc.define_target(
                 target_name=target.label,
                 channel_name=target.channel.id,

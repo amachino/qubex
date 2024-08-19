@@ -15,7 +15,7 @@ from .control_system import (
 )
 from .model import Model
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
-from .target import Target
+from .target import CapTarget, Target
 
 DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
 DEFAULT_READOUT_AMPLITUDE: Final = 0.01
@@ -141,29 +141,37 @@ class ExperimentSystem:
 
     @property
     def ge_targets(self) -> list[Target]:
-        return list(self._ge_target_dict.values())
+        return list(self._ctrl_ge_target_dict.values())
 
     @property
     def ef_targets(self) -> list[Target]:
-        return list(self._ef_target_dict.values())
+        return list(self._ctrl_ef_target_dict.values())
 
     @property
     def cr_targets(self) -> list[Target]:
-        return list(self._cr_target_dict.values())
+        return list(self._ctrl_cr_target_dict.values())
 
     @property
-    def control_targets(self) -> list[Target]:
+    def ctrl_targets(self) -> list[Target]:
         return self.ge_targets + self.ef_targets + self.cr_targets
 
     @property
-    def readout_targets(self) -> list[Target]:
-        return list(self._read_target_dict.values())
+    def read_out_targets(self) -> list[Target]:
+        return list(self._read_out_target_dict.values())
 
     @property
     def targets(self) -> list[Target]:
         return (
-            self.ge_targets + self.ef_targets + self.cr_targets + self.readout_targets
+            self.ge_targets + self.ef_targets + self.cr_targets + self.read_out_targets
         )
+
+    @property
+    def read_in_targets(self) -> list[CapTarget]:
+        return list(self._read_in_target_dict.values())
+
+    @property
+    def all_targets(self) -> list[Target | CapTarget]:
+        return self.targets + self.read_in_targets
 
     def get_mux(self, label: int | str) -> Mux:
         return self.quantum_system.get_mux(label)
@@ -193,7 +201,7 @@ class ExperimentSystem:
 
     def get_target(self, label: str) -> Target:
         try:
-            return self._target_dict[label]
+            return self._gen_target_dict[label]
         except KeyError:
             raise KeyError(f"Target `{label}` not found.") from None
 
@@ -460,10 +468,11 @@ class ExperimentSystem:
         return center_freq
 
     def _initialize_targets(self) -> None:
-        ge_target_dict: dict[str, Target] = {}
-        ef_target_dict: dict[str, Target] = {}
-        cr_target_dict: dict[str, Target] = {}
-        read_target_dict: dict[str, Target] = {}
+        ctrl_ge_target_dict: dict[str, Target] = {}
+        ctrl_ef_target_dict: dict[str, Target] = {}
+        ctrl_cr_target_dict: dict[str, Target] = {}
+        read_out_target_dict: dict[str, Target] = {}
+        read_in_target_dict: dict[str, CapTarget] = {}
 
         for box in self.boxes:
             for port in box.ports:
@@ -481,33 +490,33 @@ class ExperimentSystem:
                                 qubit=qubit,
                                 channel=port.channels[0],
                             )
-                            ge_target_dict[ge_target.label] = ge_target
+                            ctrl_ge_target_dict[ge_target.label] = ge_target
                         elif port.n_channels == 3:
                             # ge
                             ge_target = Target.new_ge_target(
                                 qubit=qubit,
                                 channel=port.channels[0],
                             )
-                            ge_target_dict[ge_target.label] = ge_target
+                            ctrl_ge_target_dict[ge_target.label] = ge_target
                             # ef
                             ef_target = Target.new_ef_target(
                                 qubit=qubit,
                                 channel=port.channels[1],
                             )
-                            ef_target_dict[ef_target.label] = ef_target
+                            ctrl_ef_target_dict[ef_target.label] = ef_target
                             # cr
                             cr_target = Target.new_cr_target(
                                 control_qubit=qubit,
                                 channel=port.channels[2],
                             )
-                            cr_target_dict[cr_target.label] = cr_target
+                            ctrl_cr_target_dict[cr_target.label] = cr_target
                             for spectator in self.get_spectator_qubits(qubit.label):
                                 cr_target = Target.new_cr_target(
                                     control_qubit=qubit,
                                     target_qubit=spectator,
                                     channel=port.channels[2],
                                 )
-                                cr_target_dict[cr_target.label] = cr_target
+                                ctrl_cr_target_dict[cr_target.label] = cr_target
 
                     # readout ports
                     elif port.type == PortType.READ_OUT:
@@ -515,22 +524,38 @@ class ExperimentSystem:
                         if mux is None:
                             continue
                         for resonator in mux.resonators:
-                            readout_target = Target.new_read_target(
+                            read_out_target = Target.new_read_target(
                                 resonator=resonator,
                                 channel=port.channels[0],
                             )
-                            read_target_dict[readout_target.label] = readout_target
+                            read_out_target_dict[read_out_target.label] = (
+                                read_out_target
+                            )
 
-        self._ge_target_dict = dict(sorted(ge_target_dict.items()))
-        self._ef_target_dict = dict(sorted(ef_target_dict.items()))
-        self._cr_target_dict = dict(sorted(cr_target_dict.items()))
-        self._read_target_dict = dict(sorted(read_target_dict.items()))
-        self._target_dict = (
-            self._ge_target_dict
-            | self._ef_target_dict
-            | self._cr_target_dict
-            | self._read_target_dict
+                # cap ports
+                elif isinstance(port, CapPort):
+                    if port.type == PortType.READ_IN:
+                        mux = self.get_mux_by_readout_port(port)
+                        if mux is None:
+                            continue
+                        for idx, resonator in enumerate(mux.resonators):
+                            read_in_target = CapTarget.new_read_target(
+                                resonator=resonator,
+                                channel=port.channels[idx],
+                            )
+                            read_in_target_dict[read_in_target.label] = read_in_target
+
+        self._ctrl_ge_target_dict = dict(sorted(ctrl_ge_target_dict.items()))
+        self._ctrl_ef_target_dict = dict(sorted(ctrl_ef_target_dict.items()))
+        self._ctrl_cr_target_dict = dict(sorted(ctrl_cr_target_dict.items()))
+        self._read_out_target_dict = dict(sorted(read_out_target_dict.items()))
+        self._gen_target_dict = (
+            self._ctrl_ge_target_dict
+            | self._ctrl_ef_target_dict
+            | self._ctrl_cr_target_dict
+            | self._read_out_target_dict
         )
+        self._read_in_target_dict = dict(sorted(read_in_target_dict.items()))
 
     @staticmethod
     def _calc_lo_for_f_as_nearest(
