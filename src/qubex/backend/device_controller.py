@@ -335,6 +335,8 @@ class DeviceController:
     def add_sequence(
         self,
         sequence: Sequence,
+        *,
+        interval: float,
         time_offset: dict[str, int] = {},  # {box_name: time_offset}
         time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
     ):
@@ -348,6 +350,7 @@ class DeviceController:
         """
         self.qubecalib.add_sequence(
             sequence,
+            interval=interval,
             time_offset=time_offset,
             time_to_start=time_to_start,
         )
@@ -375,7 +378,6 @@ class DeviceController:
         self,
         *,
         repeats: int,
-        interval: int,
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
@@ -387,8 +389,6 @@ class DeviceController:
         ----------
         repeats : int
             Number of repeats of each sequence.
-        interval : int
-            Interval between sequences.
         integral_mode : {"integral", "single"}, optional
             Integral mode.
         dsp_demodulation : bool, optional
@@ -403,7 +403,6 @@ class DeviceController:
         """
         for status, data, config in self.qubecalib.step_execute(
             repeats=repeats,
-            interval=interval,
             integral_mode=integral_mode,
             dsp_demodulation=dsp_demodulation,
             software_demodulation=software_demodulation,
@@ -453,13 +452,13 @@ class DeviceController:
         self.clear_command_queue()
         self.add_sequence(
             sequence,
+            interval=interval,
             time_offset=time_offset,
             time_to_start=time_to_start,
         )
         return next(
             self.execute(
                 repeats=repeats,
-                interval=interval,
                 integral_mode=integral_mode,
                 dsp_demodulation=dsp_demodulation,
                 software_demodulation=software_demodulation,
@@ -471,7 +470,6 @@ class DeviceController:
         sequencer: Sequencer,
         *,
         repeats: int,
-        interval: int,
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
@@ -485,8 +483,6 @@ class DeviceController:
             The sequencer to execute.
         repeats : int
             Number of repeats of the sequence.
-        interval : int
-            Interval between sequences.
         integral_mode : {"integral", "single"}, optional
             Integral mode.
         dsp_demodulation : bool, optional
@@ -504,7 +500,6 @@ class DeviceController:
         return next(
             self.execute(
                 repeats=repeats,
-                interval=interval,
                 integral_mode=integral_mode,
                 dsp_demodulation=dsp_demodulation,
                 software_demodulation=software_demodulation,
