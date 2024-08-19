@@ -417,7 +417,7 @@ class Experiment:
         return {
             target: param
             for target, param in self.rabi_params.items()
-            if Target.is_ge_control(target)
+            if self.targets[target].is_ge
         }
 
     @property
@@ -426,7 +426,7 @@ class Experiment:
         return {
             Target.ge_label(target): param
             for target, param in self.rabi_params.items()
-            if Target.is_ef_control(target)
+            if self.targets[target].is_ef
         }
 
     @property
@@ -1940,9 +1940,9 @@ class Experiment:
             current_amplitudes = {}
             default_ampl = self.params.control_amplitude
             for target in current_rabi_params:
-                if Target.is_ge_control(target):
+                if self.targets[target].is_ge:
                     current_amplitudes[target] = default_ampl[target]
-                elif Target.is_ef_control(target):
+                elif self.targets[target].is_ef:
                     qubit = Target.qubit_label(target)
                     current_amplitudes[target] = default_ampl[qubit] / np.sqrt(2)
                 else:

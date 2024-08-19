@@ -54,6 +54,22 @@ class Target:
         else:
             raise ValueError("Invalid channel.")
 
+    @property
+    def is_ge(self) -> bool:
+        return self.type == TargetType.CTRL_GE
+
+    @property
+    def is_ef(self) -> bool:
+        return self.type == TargetType.CTRL_EF
+
+    @property
+    def is_cr(self) -> bool:
+        return self.type == TargetType.CTRL_CR
+
+    @property
+    def is_read(self) -> bool:
+        return self.type == TargetType.READ
+
     @classmethod
     def new_target(
         cls,
