@@ -667,12 +667,15 @@ class Measurement:
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
-                        post_blank=None,
                         repeats=1,
+                        post_blank=None,
+                        original_post_blank=None,
                     )
                 ],
             )
@@ -682,21 +685,26 @@ class Measurement:
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
-                        post_blank=None,
                         repeats=1,
+                        post_blank=None,
+                        original_post_blank=None,
                     )
                 ],
             )
             # add CapSampledSequence
             cap_sequences[target] = pls.CapSampledSequence(
                 target_name=target,
+                repeats=None,
                 prev_blank=0,
                 post_blank=None,
-                repeats=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     pls.CapSampledSubSequence(
                         capture_slots=[
@@ -707,11 +715,11 @@ class Measurement:
                                 original_post_blank=None,
                             )
                         ],
+                        repeats=None,
                         prev_blank=readout_start,
                         post_blank=None,
                         original_prev_blank=readout_start,
                         original_post_blank=None,
-                        repeats=None,
                     )
                 ],
             )
@@ -794,13 +802,16 @@ class Measurement:
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     # has only one GenSampledSubSequence
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
-                        post_blank=None,
                         repeats=1,
+                        post_blank=None,
+                        original_post_blank=None,
                     )
                 ],
             )
@@ -812,12 +823,12 @@ class Measurement:
                 continue
             cap_sub_sequence = pls.CapSampledSubSequence(
                 capture_slots=[],
+                repeats=None,
                 # prev_blank is the time to the first readout pulse
                 prev_blank=ranges[0].start,
                 post_blank=None,
                 original_prev_blank=ranges[0].start,
                 original_post_blank=None,
-                repeats=None,
             )
             for i in range(len(ranges) - 1):
                 current_range = ranges[i]
@@ -843,9 +854,11 @@ class Measurement:
             )
             cap_sequence = pls.CapSampledSequence(
                 target_name=target,
+                repeats=None,
                 prev_blank=0,
                 post_blank=None,
-                repeats=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     # has only one CapSampledSubSequence
                     cap_sub_sequence,
