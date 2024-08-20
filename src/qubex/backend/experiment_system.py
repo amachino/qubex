@@ -204,6 +204,12 @@ class ExperimentSystem:
         except KeyError:
             raise KeyError(f"Target `{label}` not found.") from None
 
+    def get_cap_target(self, label: str) -> CapTarget:
+        try:
+            return self._cap_target_dict[label]
+        except KeyError:
+            raise KeyError(f"CapTarget `{label}` not found.") from None
+
     def get_ge_target(self, label: str) -> Target:
         label = Target.ge_label(label)
         return self.get_target(label)
@@ -216,9 +222,12 @@ class ExperimentSystem:
         label = Target.cr_label(label)
         return self.get_target(label)
 
-    def get_readout_target(self, label: str) -> Target:
+    def get_read_out_target(self, label: str) -> Target:
         label = Target.read_label(label)
         return self.get_target(label)
+
+    def get_read_in_target(self, label: str) -> CapTarget:
+        return self.get_cap_target(label)
 
     def get_qubit_port_set(self, qubit: int | str) -> QubitPortSet | None:
         if isinstance(qubit, int):
@@ -264,6 +273,69 @@ class ExperimentSystem:
             if gen_mux.index == cap_mux.index:
                 return gen_port
         raise ValueError(f"No readout pair found for port: {port}")
+
+    def update_readout_port_params(
+        self,
+        label: str,
+        *,
+        lo_freq: int,
+        cnco_freq: int,
+        fnco_freq: int,
+    ):
+        cap_channel = self.get_read_in_target(label).channel
+        gen_channel = self.get_read_out_target(label).channel
+        original_values = (
+            cap_channel.port.lo_freq,
+            cap_channel.port.cnco_freq,
+            cap_channel.fnco_freq,
+        )
+        try:
+            cap_channel.port.lo_freq = lo_freq
+            cap_channel.port.cnco_freq = cnco_freq
+            cap_channel.fnco_freq = fnco_freq
+            gen_channel.port.lo_freq = lo_freq
+            gen_channel.port.cnco_freq = cnco_freq
+            gen_channel.fnco_freq = fnco_freq
+        except Exception as e:
+            # rollback
+            (
+                cap_channel.port.lo_freq,
+                cap_channel.port.cnco_freq,
+                cap_channel.fnco_freq,
+            ) = original_values
+            (
+                gen_channel.port.lo_freq,
+                gen_channel.port.cnco_freq,
+                gen_channel.fnco_freq,
+            ) = original_values
+            raise ValueError(f"Error setting readout port params: {e}") from None
+
+    def update_control_port_params(
+        self,
+        label: str,
+        *,
+        lo_freq: int,
+        cnco_freq: int,
+        fnco_freq: int,
+    ):
+        target = self.get_target(label)
+        original_values = (
+            target.channel.port.lo_freq,
+            target.channel.port.cnco_freq,
+            target.channel.fnco_freq,
+        )
+        try:
+            target.channel.port.lo_freq = lo_freq
+            target.channel.port.cnco_freq = cnco_freq
+            target.channel.fnco_freq = fnco_freq
+        except Exception as e:
+            # rollback
+            (
+                target.channel.port.lo_freq,
+                target.channel.port.cnco_freq,
+                target.channel.fnco_freq,
+            ) = original_values
+            raise ValueError(f"Error setting control port params: {e}") from None
 
     def _create_qubit_port_set_map(self) -> dict[str, QubitPortSet]:
         ctrl_port_map: dict[str, GenPort] = {}
@@ -593,6 +665,7 @@ class ExperimentSystem:
             | self._read_out_target_dict
         )
         self._read_in_target_dict = dict(sorted(read_in_target_dict.items()))
+        self._cap_target_dict = self._read_in_target_dict
 
 
 class MixingUtil:
