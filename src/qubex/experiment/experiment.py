@@ -31,6 +31,7 @@ from ..backend import (
     ControlParams,
     ControlSystem,
     ExperimentSystem,
+    MixingUtil,
     QuantumSystem,
     Qubit,
     Resonator,
@@ -3769,7 +3770,8 @@ class Experiment:
         self,
         target: str,
         *,
-        freq_range: ArrayLike | None = None,
+        center_frequency: float = 10.05,
+        frequency_step: float = 0.002,
         shots: int = 100,
         interval: int = 0,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -3780,8 +3782,10 @@ class Experiment:
         ----------
         target : str
             Target qubit connected to the resonator of interest.
-        freq_range : ArrayLike, optional
-            Frequency range to scan in GHz. Defaults to np.arange(9.8, 10.3, 0.002).
+        center_frequency : float
+            Center frequency of the readout pulse in GHz.
+        frequency_step : float, optional
+            Frequency step of the scan in GHz.
         shots : int, optional
             Number of shots. Defaults to 100.
         interval : int, optional
@@ -3792,10 +3796,23 @@ class Experiment:
         tuple[NDArray[np.float64], NDArray[np.float64]]
             Frequency range and phase difference.
         """
-        if freq_range is None:
-            freq_range = np.arange(9.8, 10.3, 0.002)
-        else:
-            freq_range = np.array(freq_range)
+        # calculate the LO/NCO for the scan
+        f_center = center_frequency * 1e9
+        lo, cnco, _ = MixingUtil.calc_lo_cnco(
+            f_center,
+            ssb="U",
+            cnco_center=1_500_000_000,
+        )
+        fnco, f_mix = MixingUtil.calc_fnco(
+            f_center,
+            ssb="U",
+            lo=lo,
+            cnco=cnco,
+        )
+
+        # scan range
+        f = f_mix * 1e-9
+        freq_range = np.arange(f - 0.25, f + 0.25, frequency_step)
 
         readout = Target.read_label(target)
 
@@ -3844,9 +3861,15 @@ class Experiment:
             print(f"phase_shift: {phase_shift} rad/GHz")
             return phase_shift
 
-        phase_shift = measure_phase_shift(freq_range[0:30])
-        phases = measure_phases(freq_range, phase_shift=phase_shift)
-        phases_diff = np.abs(np.diff(phases))
+        with self.state_manager.modified_device_settings(
+            label=Target.read_label(target),
+            lo_freq=lo,
+            cnco_freq=cnco,
+            fnco_freq=fnco,
+        ):
+            phase_shift = measure_phase_shift(freq_range[0:30])
+            phases = measure_phases(freq_range, phase_shift=phase_shift)
+            phases_diff = np.abs(np.diff(phases))
 
         fig = go.Figure()
         fig.add_scatter(
@@ -3900,6 +3923,7 @@ class Experiment:
         tuple[NDArray[np.float64], NDArray[np.float64]]
             Frequency range and phases.
         """
+        # prepare the plot
         widget = go.FigureWidget()
         widget.add_scatter(name=target, mode="markers+lines")
         widget.update_layout(
@@ -3910,13 +3934,31 @@ class Experiment:
         scatter: go.Scatter = widget.data[0]  # type: ignore
         display(widget)
         phases = []
+
+        # calculate the LO/NCO for the scan
+        f_center = center_frequency * 1e9
+        lo, cnco, _ = MixingUtil.calc_lo_cnco(
+            f_center,
+            ssb="L",
+            cnco_center=2_250_000_000,
+        )
+        fnco, f_mix = MixingUtil.calc_fnco(
+            f_center,
+            ssb="L",
+            lo=lo,
+            cnco=cnco,
+        )
+
+        # scan range
+        f = f_mix * 1e-9
         freq_range = np.arange(
-            center_frequency - 0.25,
-            center_frequency + 0.25,
+            f - 0.25,
+            f + 0.25,
             frequency_step,
         )
 
-        qubit = target
+        # control and readout pulses
+        qubit = Target.qubit_label(target)
         resonator = Target.read_label(target)
         control_pulse = Gaussian(
             duration=1024,
@@ -3928,22 +3970,30 @@ class Experiment:
             amplitude=readout_amplitude,
             tau=128,
         )
-        for idx, freq in enumerate(tqdm(freq_range)):
-            with self.modified_frequencies({qubit: freq}):
-                with PulseSchedule([qubit, resonator]) as ps:
-                    ps.add(qubit, control_pulse)
-                    ps.add(resonator, readout_pulse)
-                result = self.execute(
-                    schedule=ps,
-                    mode="avg",
-                    shots=shots,
-                    interval=interval,
-                )
-                iq = result.data[qubit].kerneled
-                angle = np.angle(iq)
-                phases.append(angle)
-                scatter.x = freq_range[: idx + 1]
-                scatter.y = np.unwrap(phases)
+
+        # scan the qubit frequency
+        with self.state_manager.modified_device_settings(
+            label=qubit,
+            lo_freq=lo,
+            cnco_freq=cnco,
+            fnco_freq=fnco,
+        ):
+            for idx, freq in enumerate(tqdm(freq_range)):
+                with self.modified_frequencies({qubit: freq}):
+                    with PulseSchedule([qubit, resonator]) as ps:
+                        ps.add(qubit, control_pulse)
+                        ps.add(resonator, readout_pulse)
+                    result = self.execute(
+                        schedule=ps,
+                        mode="avg",
+                        shots=shots,
+                        interval=interval,
+                    )
+                    iq = result.data[qubit].kerneled
+                    angle = np.angle(iq)
+                    phases.append(angle)
+                    scatter.x = freq_range[: idx + 1]
+                    scatter.y = np.unwrap(phases)
 
         return freq_range, np.unwrap(phases)
 
