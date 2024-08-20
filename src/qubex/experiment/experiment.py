@@ -3834,7 +3834,7 @@ class Experiment:
         f = f_mix * 1e-9
         freq_range = np.arange(f - 0.25, f + 0.25, frequency_step)
 
-        readout = Target.read_label(target)
+        read_label = Target.read_label(target)
 
         def measure_phases(freq_range, phase_shift=0.0) -> NDArray[np.float64]:
             widget = go.FigureWidget()
@@ -3848,7 +3848,7 @@ class Experiment:
             display(widget)
             phases = []
             for idx, freq in enumerate(tqdm(freq_range)):
-                with self.modified_frequencies({readout: freq}):
+                with self.modified_frequencies({read_label: freq}):
                     result = self.measure(
                         {target: np.zeros(0)},
                         mode="avg",
@@ -3882,7 +3882,7 @@ class Experiment:
             return phase_shift
 
         with self.state_manager.modified_device_settings(
-            label=Target.read_label(target),
+            label=read_label,
             lo_freq=lo,
             cnco_freq=cnco,
             fnco_freq=fnco,

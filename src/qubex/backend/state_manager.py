@@ -600,7 +600,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             cap_channel = self.experiment_system.get_cap_target(label).channel
             cap_port = cap_channel.port
             quel1_box.config_port(
-                port=port.number,
+                port=cap_port.number,
                 lo_freq=lo_freq,
                 cnco_freq=cnco_freq,
             )
