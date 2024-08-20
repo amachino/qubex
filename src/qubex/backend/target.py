@@ -20,7 +20,7 @@ class TargetType(Enum):
 QuantumObject = Union[Qubit, Resonator]
 
 
-@dataclass(frozen=True)
+@dataclass
 class CapTarget:
     label: str
     frequency: float
@@ -44,7 +44,7 @@ class CapTarget:
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class Target:
     label: str
     frequency: float

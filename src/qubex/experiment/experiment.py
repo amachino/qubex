@@ -4,7 +4,6 @@ import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
-from functools import cached_property
 from pathlib import Path
 from typing import Final, Literal, Optional, Sequence
 
@@ -220,7 +219,7 @@ class Experiment:
         """Get the list of qubit labels."""
         return self._qubits
 
-    @cached_property
+    @property
     def qubits(self) -> dict[str, Qubit]:
         """Get the available qubit dict."""
         return {
@@ -229,7 +228,7 @@ class Experiment:
             if qubit.label in self.qubit_labels
         }
 
-    @cached_property
+    @property
     def resonators(self) -> dict[str, Resonator]:
         """Get the available resonator dict."""
         return {
@@ -238,8 +237,17 @@ class Experiment:
             if resonator.qubit in self.qubit_labels
         }
 
-    @cached_property
+    @property
     def targets(self) -> dict[str, Target]:
+        """Get the target dict."""
+        return {
+            target.label: target
+            for target in self.experiment_system.targets
+            if target.qubit in self.qubit_labels
+        }
+
+    @property
+    def available_targets(self) -> dict[str, Target]:
         """Get the available target dict."""
         return {
             target.label: target
@@ -247,28 +255,40 @@ class Experiment:
             if target.qubit in self.qubit_labels and target.is_available
         }
 
-    @cached_property
+    @property
     def ge_targets(self) -> dict[str, Target]:
         """Get the available target dict."""
-        return {label: target for label, target in self.targets.items() if target.is_ge}
+        return {
+            label: target
+            for label, target in self.available_targets.items()
+            if target.is_ge
+        }
 
-    @cached_property
+    @property
     def ef_targets(self) -> dict[str, Target]:
         """Get the available target dict."""
-        return {label: target for label, target in self.targets.items() if target.is_ef}
+        return {
+            label: target
+            for label, target in self.available_targets.items()
+            if target.is_ef
+        }
 
-    @cached_property
+    @property
     def cr_targets(self) -> dict[str, Target]:
         """Get the available target dict."""
-        return {label: target for label, target in self.targets.items() if target.is_cr}
+        return {
+            label: target
+            for label, target in self.available_targets.items()
+            if target.is_cr
+        }
 
-    @cached_property
+    @property
     def boxes(self) -> dict[str, Box]:
         """Get the available box dict."""
         boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
         return {box.id: box for box in boxes}
 
-    @cached_property
+    @property
     def box_ids(self) -> list[str]:
         """Get the available box IDs."""
         return list(self.boxes.keys())
@@ -645,7 +665,7 @@ class Experiment:
         if frequencies is None:
             yield
         else:
-            with self._measurement.modified_frequencies(frequencies):
+            with self.state_manager.modified_frequencies(frequencies):
                 yield
 
     def print_defaults(self):

@@ -231,7 +231,7 @@ def fit_rabi(
         Data class containing the parameters of the Rabi oscillation.
     """
     print(f"Target: {target}")
-    data = np.array(data, dtype=np.complex128)
+    data = np.array(data, dtype=np.complex64)
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
     if len(data) < 2:
@@ -277,9 +277,9 @@ def fit_rabi(
                 (np.inf, np.inf, np.pi, np.inf, np.inf),
             )
             popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
-            print(
-                f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[4]:.3g}) * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
-            )
+            # print(
+            #     f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[4]:.3g}) * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
+            # )
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
@@ -287,9 +287,9 @@ def fit_rabi(
                 (np.inf, np.inf, np.pi, np.inf),
             )
             popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
-            print(
-                f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
-            )
+            # print(
+            #     f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
+            # )
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return RabiParam(target, 0.0, 0.0, 0.0, 0.0, noise, angle)
@@ -300,9 +300,9 @@ def fit_rabi(
     offset = popt[3]
     frequency = omega / (2 * np.pi)
 
-    print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
-    print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
-    print(f"Rabi period: {1 / frequency:.3g} ns")
+    # print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
+    print(f"Rabi frequency: {frequency * 1e3:.6g} MHz")
+    # print(f"Rabi period: {1 / frequency:.3g} ns")
 
     if plot:
         x_fine = np.linspace(np.min(x), np.max(x), 1000)

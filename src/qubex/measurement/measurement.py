@@ -256,16 +256,11 @@ class Measurement:
         ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ...     })
         """
-        original_frequencies = {
-            label: target.frequency
-            for label, target in self.targets.items()
-            if label in target_frequencies
-        }
-        self.device_controller.modify_target_frequencies(target_frequencies)
-        try:
+        if target_frequencies is None:
             yield
-        finally:
-            self.device_controller.modify_target_frequencies(original_frequencies)
+        else:
+            with self.state_manager.modified_frequencies(target_frequencies):
+                yield
 
     def measure_noise(
         self,
