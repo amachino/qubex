@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import math
-from typing import Callable, Final, Literal, Sequence
+from typing import Final, Literal, Sequence
 
 import numpy as np
 from pydantic.dataclasses import dataclass
@@ -446,7 +445,6 @@ class ExperimentSystem:
                 f=f_ef + FNCO_MAX,
                 ssb=ssb,
                 cnco_center=cnco_center,
-                rounding_func=math.ceil,
             )
             f_CRs_valid = [f for f in f_CRs if f < f_coarse + FNCO_MAX + AWG_MAX]
         else:
@@ -455,7 +453,6 @@ class ExperimentSystem:
                 f=f_ge - FNCO_MAX,
                 ssb=ssb,
                 cnco_center=cnco_center,
-                rounding_func=math.floor,
             )
             f_CRs_valid = [f for f in f_CRs if f > f_coarse - FNCO_MAX - AWG_MAX]
         f_CR = self._find_center_freq_for_cr(
@@ -606,14 +603,13 @@ class MixingUtil:
         cnco_center: int,
         lo_step: int = LO_STEP,
         nco_step: int = NCO_STEP,
-        rounding_func: Callable[[float], int] = round,
     ) -> tuple[int, int, int]:
         if ssb == "U":
             lo = round((f - cnco_center) / lo_step) * lo_step
-            cnco = rounding_func((f - lo) / nco_step) * nco_step
+            cnco = round((f - lo) / nco_step) * nco_step
         elif ssb == "L":
             lo = round((f + cnco_center) / lo_step) * lo_step
-            cnco = rounding_func((lo - f) / nco_step) * nco_step
+            cnco = round((lo - f) / nco_step) * nco_step
         else:
             raise ValueError("Invalid SSB")
         f_mix = lo + cnco if ssb == "U" else lo - cnco

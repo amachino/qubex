@@ -142,8 +142,8 @@ def print_box_info(box_id: str, fetch: bool = False) -> None:
     state_manager.print_box_info(box_id, fetch=fetch)
 
 
-def print_frequency_diffs(qubits: Sequence[str] | str) -> None:
-    """Print the frequency differences of the target and base frequencies."""
+def print_target_frequencies(qubits: Sequence[str] | str) -> None:
+    """Print the target frequencies of the qubits."""
     if isinstance(qubits, str):
         qubits = [qubits]
 
@@ -156,31 +156,51 @@ def print_frequency_diffs(qubits: Sequence[str] | str) -> None:
     table = Table(
         show_header=True,
         header_style="bold",
-        title="BASE FREQUENCY DIFFS",
+        title="TARGET FREQUENCIES",
     )
     table.add_column("LABEL", justify="left")
-    table.add_column("TARGET (GHz)", justify="right")
-    table.add_column("COARSE (GHz)", justify="right")
-    table.add_column("FINE (GHz)", justify="right")
-    table.add_column("DIFF (MHz)", justify="right")
+    table.add_column("TARGET", justify="right")
+    table.add_column("COARSE", justify="right")
+    table.add_column("FINE", justify="right")
+    # table.add_column("LO", justify="right")
+    table.add_column("NCO", justify="right")
+    table.add_column("FNCO", justify="right")
+    table.add_column("DIFF", justify="right")
 
     rows = []
     for target in targets:
+        qubit = target.qubit
         tfreq = target.frequency
         cfreq = target.coarse_frequency
         ffreq = target.fine_frequency
+        # lo = target.channel.lo_freq
+        nco = target.channel.nco_freq
+        fnco = target.channel.fnco_freq
         diff = tfreq - ffreq
         rows.append(
-            [
-                target.label,
-                f"{tfreq:.3f}",
-                f"{cfreq:.3f}",
-                f"{ffreq:.3f}",
-                f"{diff * 1e3:+.3f}",
-            ]
+            (
+                qubit,
+                [
+                    target.label,
+                    f"{tfreq * 1e3:.3f}",
+                    f"{cfreq * 1e3:.3f}",
+                    f"{ffreq * 1e3:.3f}",
+                    # f"{lo * 1e-6:.0f}",
+                    f"{nco * 1e-6:.3f}",
+                    f"{fnco * 1e-6:+.3f}",
+                    f"{diff * 1e3:+.3f}",
+                ],
+            )
         )
-    rows.sort(key=lambda x: x[0])
-    for row in rows:
+    rows.sort(key=lambda x: (x[0]))
+
+    current_qubit = None
+    for qubit, row in rows:
+        if qubit != current_qubit:
+            if current_qubit is not None:
+                table.add_section()
+            current_qubit = qubit
+
         abs_diff = abs(float(row[-1]))
         if abs_diff >= 250:
             style = "bold red"

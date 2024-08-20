@@ -52,8 +52,8 @@ class Target:
     channel: GenChannel
     type: TargetType
 
-    # def __repr__(self) -> str:
-    #     return f"Target(label={self.label}, frequency={self.frequency})"
+    def __repr__(self) -> str:
+        return f"Target(label={self.label}, frequency={self.frequency}, channel={self.channel.id}, object={self.object.label}, is_available={self.is_available})"
 
     @property
     def qubit(self) -> str:
@@ -77,6 +77,10 @@ class Target:
             return self.channel.fine_frequency * 1e-9
         else:
             raise ValueError("Invalid channel.")
+
+    @property
+    def is_available(self) -> bool:
+        return abs(self.frequency - self.fine_frequency) < 250 * 1e-3  # 250 MHz
 
     @property
     def is_ge(self) -> bool:

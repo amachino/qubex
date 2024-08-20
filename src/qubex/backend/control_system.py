@@ -525,6 +525,18 @@ class GenChannel(Channel):
         return self._port
 
     @property
+    def lo_freq(self) -> int:
+        return self.port.lo_freq
+
+    @property
+    def cnco_freq(self) -> int:
+        return self.port.cnco_freq
+
+    @property
+    def nco_freq(self) -> int:
+        return self.port.cnco_freq + self.fnco_freq
+
+    @property
     def coarse_frequency(self) -> int:
         sideband = self.port.sideband
         lo = self.port.lo_freq
