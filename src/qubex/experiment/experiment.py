@@ -243,8 +243,23 @@ class Experiment:
         return {
             target.label: target
             for target in self.experiment_system.targets
-            if target.qubit in self.qubit_labels
+            if target.qubit in self.qubit_labels and target.is_available
         }
+
+    @cached_property
+    def ge_targets(self) -> dict[str, Target]:
+        """Get the available target dict."""
+        return {label: target for label, target in self.targets.items() if target.is_ge}
+
+    @cached_property
+    def ef_targets(self) -> dict[str, Target]:
+        """Get the available target dict."""
+        return {label: target for label, target in self.targets.items() if target.is_ef}
+
+    @cached_property
+    def cr_targets(self) -> dict[str, Target]:
+        """Get the available target dict."""
+        return {label: target for label, target in self.targets.items() if target.is_cr}
 
     @cached_property
     def boxes(self) -> dict[str, Box]:

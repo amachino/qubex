@@ -213,3 +213,76 @@ def print_target_frequencies(qubits: Sequence[str] | str) -> None:
             style=style,
         )
     console.print(table)
+
+
+def print_cr_targets(qubits: Sequence[str] | str) -> None:
+    """Print the target frequencies of the qubits."""
+    if isinstance(qubits, str):
+        qubits = [qubits]
+
+    targets = [
+        target
+        for target in state_manager.experiment_system.cr_targets
+        if target.qubit in qubits and not target.label.endswith("-CR")
+    ]
+
+    table = Table(
+        show_header=True,
+        header_style="bold",
+        title="CROSS-RESONANCE TARGETS",
+    )
+    table.add_column("LABEL", justify="left")
+    table.add_column("FREQ", justify="right")
+    table.add_column("COARSE", justify="right")
+    table.add_column("FINE", justify="right")
+    # table.add_column("LO", justify="right")
+    table.add_column("NCO", justify="right")
+    table.add_column("FNCO", justify="right")
+    table.add_column("DIFF", justify="right")
+
+    rows = []
+    for target in targets:
+        qubit = target.qubit
+        tfreq = target.frequency
+        cfreq = target.coarse_frequency
+        ffreq = target.fine_frequency
+        # lo = target.channel.lo_freq
+        nco = target.channel.nco_freq
+        fnco = target.channel.fnco_freq
+        diff = tfreq - ffreq
+        rows.append(
+            (
+                qubit,
+                [
+                    target.label,
+                    f"{tfreq * 1e3:.3f}",
+                    f"{cfreq * 1e3:.3f}",
+                    f"{ffreq * 1e3:.3f}",
+                    # f"{lo * 1e-6:.0f}",
+                    f"{nco * 1e-6:.3f}",
+                    f"{fnco * 1e-6:+.3f}",
+                    f"{diff * 1e3:+.3f}",
+                ],
+            )
+        )
+    rows.sort(key=lambda x: (x[0]))
+
+    current_qubit = None
+    for qubit, row in rows:
+        if qubit != current_qubit:
+            if current_qubit is not None:
+                table.add_section()
+            current_qubit = qubit
+
+        abs_diff = abs(float(row[-1]))
+        if abs_diff >= 250:
+            style = "bold red"
+        elif abs_diff >= 200:
+            style = "bold yellow"
+        else:
+            style = None
+        table.add_row(
+            *row,
+            style=style,
+        )
+    console.print(table)

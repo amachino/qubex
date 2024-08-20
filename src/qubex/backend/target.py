@@ -53,7 +53,7 @@ class Target:
     type: TargetType
 
     def __repr__(self) -> str:
-        return f"Target(label={self.label}, frequency={self.frequency}, channel={self.channel.id}, object={self.object.label}, is_available={self.is_available})"
+        return f"Target(label={self.label}, frequency={self.frequency}, channel={self.channel.id}, object={self.object.label})"
 
     @property
     def qubit(self) -> str:
@@ -165,7 +165,7 @@ class Target:
         else:
             return cls(
                 label=Target.cr_label(control_qubit.label),
-                frequency=channel.fine_frequency * 1e-9,
+                frequency=round(channel.fine_frequency * 1e-9, 6),
                 object=control_qubit,
                 channel=channel,
                 type=TargetType.CTRL_CR,

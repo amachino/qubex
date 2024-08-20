@@ -94,7 +94,7 @@ class Qubit(Model):
 
     @property
     def ef_frequency(self) -> float:
-        return self.frequency + self.anharmonicity
+        return round(self.frequency + self.anharmonicity, 6)
 
     @property
     def is_valid(self) -> bool:
