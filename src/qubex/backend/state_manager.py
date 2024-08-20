@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -522,3 +523,104 @@ This operation will overwrite the existing device settings. Do you want to conti
                     fullscale_current=fullscale_current,
                 )
         return experiment_system
+
+    @contextmanager
+    def modified_device_settings(
+        self,
+        label: str,
+        *,
+        lo_freq: int,
+        cnco_freq: int,
+        fnco_freq: int,
+    ):
+        """
+        Temporarily modify the device settings.
+
+        Parameters
+        ----------
+        device_settings : dict[str, Any]
+            The device settings to be modified.
+
+        Examples
+        --------
+        >>> with state_manager.modified_device_settings(
+        ...     "Q00",
+        ...     lo_freq=10_000_000_000,
+        ...     cnco_freq=1_500,
+        ...     fnco_freq=750,
+        ... ):
+        ...     ...
+        """
+        target = self.experiment_system.get_target(label)
+        channel = target.channel
+        port = channel.port
+
+        original_lo_freq = port.lo_freq
+        original_cnco_freq = port.cnco_freq
+        original_fnco_freq = channel.fnco_freq
+
+        qc = self.device_controller.qubecalib
+        quel1_box = qc.create_box(port.box_id, reconnect=False)
+        quel1_box.reconnect()
+
+        quel1_box.config_port(
+            port=port.number,
+            lo_freq=lo_freq,
+            cnco_freq=cnco_freq,
+        )
+        quel1_box.config_channel(
+            port=port.number,
+            channel=channel.number,
+            fnco_freq=fnco_freq,
+        )
+        if target.is_read:
+            cap_channel = self.experiment_system.get_cap_target(label).channel
+            cap_port = cap_channel.port
+            quel1_box.config_port(
+                port=port.number,
+                lo_freq=lo_freq,
+                cnco_freq=cnco_freq,
+            )
+            quel1_box.config_runit(
+                port=cap_port.number,
+                runit=cap_channel.number,
+                fnco_freq=fnco_freq,
+            )
+
+        self.experiment_system.update_port_params(
+            label,
+            lo_freq=lo_freq,
+            cnco_freq=cnco_freq,
+            fnco_freq=fnco_freq,
+        )
+        try:
+            yield
+        finally:
+            # restore the original device settings
+            self.experiment_system.update_port_params(
+                label,
+                lo_freq=original_lo_freq,
+                cnco_freq=original_cnco_freq,
+                fnco_freq=original_fnco_freq,
+            )
+            quel1_box.config_port(
+                port=port.number,
+                lo_freq=original_lo_freq,
+                cnco_freq=original_cnco_freq,
+            )
+            quel1_box.config_channel(
+                port=port.number,
+                channel=channel.number,
+                fnco_freq=original_fnco_freq,
+            )
+            if target.is_read:
+                quel1_box.config_port(
+                    port=cap_port.number,
+                    lo_freq=original_lo_freq,
+                    cnco_freq=original_cnco_freq,
+                )
+                quel1_box.config_runit(
+                    port=cap_port.number,
+                    runit=cap_channel.number,
+                    fnco_freq=original_fnco_freq,
+                )

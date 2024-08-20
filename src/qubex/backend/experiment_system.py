@@ -274,43 +274,7 @@ class ExperimentSystem:
                 return gen_port
         raise ValueError(f"No readout pair found for port: {port}")
 
-    def update_readout_port_params(
-        self,
-        label: str,
-        *,
-        lo_freq: int,
-        cnco_freq: int,
-        fnco_freq: int,
-    ):
-        cap_channel = self.get_read_in_target(label).channel
-        gen_channel = self.get_read_out_target(label).channel
-        original_values = (
-            cap_channel.port.lo_freq,
-            cap_channel.port.cnco_freq,
-            cap_channel.fnco_freq,
-        )
-        try:
-            cap_channel.port.lo_freq = lo_freq
-            cap_channel.port.cnco_freq = cnco_freq
-            cap_channel.fnco_freq = fnco_freq
-            gen_channel.port.lo_freq = lo_freq
-            gen_channel.port.cnco_freq = cnco_freq
-            gen_channel.fnco_freq = fnco_freq
-        except Exception as e:
-            # rollback
-            (
-                cap_channel.port.lo_freq,
-                cap_channel.port.cnco_freq,
-                cap_channel.fnco_freq,
-            ) = original_values
-            (
-                gen_channel.port.lo_freq,
-                gen_channel.port.cnco_freq,
-                gen_channel.fnco_freq,
-            ) = original_values
-            raise ValueError(f"Error setting readout port params: {e}") from None
-
-    def update_control_port_params(
+    def update_port_params(
         self,
         label: str,
         *,
@@ -319,23 +283,35 @@ class ExperimentSystem:
         fnco_freq: int,
     ):
         target = self.get_target(label)
+        gen_channel = target.channel
         original_values = (
-            target.channel.port.lo_freq,
-            target.channel.port.cnco_freq,
-            target.channel.fnco_freq,
+            gen_channel.port.lo_freq,
+            gen_channel.port.cnco_freq,
+            gen_channel.fnco_freq,
         )
         try:
-            target.channel.port.lo_freq = lo_freq
-            target.channel.port.cnco_freq = cnco_freq
-            target.channel.fnco_freq = fnco_freq
+            gen_channel.port.lo_freq = lo_freq
+            gen_channel.port.cnco_freq = cnco_freq
+            gen_channel.fnco_freq = fnco_freq
+            if target.is_read:
+                cap_channel = self.get_read_in_target(label).channel
+                cap_channel.port.lo_freq = lo_freq
+                cap_channel.port.cnco_freq = cnco_freq
+                cap_channel.fnco_freq = fnco_freq
         except Exception as e:
             # rollback
             (
-                target.channel.port.lo_freq,
-                target.channel.port.cnco_freq,
-                target.channel.fnco_freq,
+                gen_channel.port.lo_freq,
+                gen_channel.port.cnco_freq,
+                gen_channel.fnco_freq,
             ) = original_values
-            raise ValueError(f"Error setting control port params: {e}") from None
+            if target.is_read:
+                (
+                    cap_channel.port.lo_freq,
+                    cap_channel.port.cnco_freq,
+                    cap_channel.fnco_freq,
+                ) = original_values
+            raise ValueError(f"Error setting readout port params: {e}") from None
 
     def _create_qubit_port_set_map(self) -> dict[str, QubitPortSet]:
         ctrl_port_map: dict[str, GenPort] = {}
