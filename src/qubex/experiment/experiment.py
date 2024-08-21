@@ -3835,12 +3835,14 @@ class Experiment:
         freq_range = np.arange(f - 0.25, f + 0.25, frequency_step)
 
         read_label = Target.read_label(target)
+        qubit_label = Target.qubit_label(target)
+        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
 
         def measure_phases(freq_range, phase_shift=0.0) -> NDArray[np.float64]:
             widget = go.FigureWidget()
             widget.add_scatter(name=target, mode="markers+lines")
             widget.update_layout(
-                title="Resonator frequency scan",
+                title=f"Resonator frequency scan : {mux.label}",
                 xaxis_title="Readout frequency (GHz)",
                 yaxis_title="Phase (rad)",
             )
@@ -3891,6 +3893,7 @@ class Experiment:
             phases = measure_phases(freq_range, phase_shift=phase_shift)
             phases_diff = np.abs(np.diff(phases))
 
+        mux = self.experiment_system.get_mux_by_qubit(Target.qubit_label(target))
         fig = go.Figure()
         fig.add_scatter(
             name=target,
@@ -3899,7 +3902,7 @@ class Experiment:
             y=phases_diff,
         )
         fig.update_layout(
-            title="Resonator frequency scan",
+            title=f"Resonator frequency scan : {mux.label}",
             xaxis_title="Readout frequency (GHz)",
             yaxis_title="Phase diff (rad)",
         )
@@ -3947,7 +3950,7 @@ class Experiment:
         widget = go.FigureWidget()
         widget.add_scatter(name=target, mode="markers+lines")
         widget.update_layout(
-            title="Qubit frequency scan",
+            title=f"Qubit frequency scan : {target}",
             xaxis_title="Control frequency (GHz)",
             yaxis_title="Phase (rad)",
         )

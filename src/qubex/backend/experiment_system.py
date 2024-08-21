@@ -263,6 +263,15 @@ class ExperimentSystem:
                 return qubit
         return None
 
+    def get_mux_by_qubit(self, label: str) -> Mux:
+        ports = self.get_qubit_port_set(label)
+        if ports is None:
+            raise ValueError(f"Qubit `{label}` not found.")
+        mux = self.get_mux_by_readout_port(ports.read_out_port)
+        if mux is None:
+            raise ValueError(f"No mux found for qubit `{label}`.")
+        return mux
+
     def get_readout_pair(self, port: CapPort) -> GenPort:
         cap_mux = self.get_mux_by_readout_port(port)
         if cap_mux is None:
