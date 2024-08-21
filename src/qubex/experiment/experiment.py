@@ -232,7 +232,7 @@ class Experiment:
     def resonators(self) -> dict[str, Resonator]:
         """Get the available resonator dict."""
         return {
-            resonator.label: resonator
+            resonator.qubit: resonator
             for resonator in self.experiment_system.resonators
             if resonator.qubit in self.qubit_labels
         }
@@ -1680,6 +1680,10 @@ class Experiment:
             plot=plot,
             xaxis_title="Number of repetitions",
         )
+
+        if plot:
+            result.plot(normalize=True)
+
         return result
 
     def obtain_freq_rabi_relation(
@@ -2014,7 +2018,7 @@ class Experiment:
             detuning_range = np.linspace(-0.01, 0.01, 15)
 
         if time_range is None:
-            time_range = np.arange(0, 101, 4)
+            time_range = np.arange(0, 101, 8)
 
         result = self.obtain_freq_rabi_relation(
             targets=targets,
@@ -2434,7 +2438,7 @@ class Experiment:
         self,
         targets: list[str],
         n_rotations: int = 8,
-        shots: int = 3000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2447,7 +2451,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 8.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2473,7 +2477,7 @@ class Experiment:
         self,
         targets: list[str],
         n_rotations: int = 8,
-        shots: int = 3000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2486,7 +2490,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 8.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2698,13 +2702,13 @@ class Experiment:
         --------
         >>> result = ex.t1_experiment(
         ...     target="Q00",
-        ...     time_range=2 ** np.arange(1, 18),
+        ...     time_range=2 ** np.arange(1, 19),
         ...     shots=1024,
         ... )
         """
 
         if time_range is None:
-            time_range = 2 ** np.arange(1, 18)
+            time_range = 2 ** np.arange(1, 19)
 
         def t1_sequence(T: int) -> PulseSchedule:
             with PulseSchedule(targets) as ps:
@@ -2783,7 +2787,7 @@ class Experiment:
             Result of the experiment.
         """
         if time_range is None:
-            time_range = 200 * 2 ** np.arange(10)
+            time_range = 200 * 2 ** np.arange(12)
 
         data: dict[str, T2Data] = {}
         for target in targets:
@@ -2865,7 +2869,7 @@ class Experiment:
         --------
         >>> result = ex.ramsey_experiment(
         ...     target="Q00",
-        ...     time_range=range(0, 10000, 100),
+        ...     time_range=range(0, 10000, 200),
         ...     shots=1024,
         ... )
         """
@@ -3262,7 +3266,7 @@ class Experiment:
             sweep_range=n_cliffords_range,
             shots=shots,
             interval=interval,
-            plot=plot,
+            plot=False,
         )
 
         sweep_data = sweep_result.data[target]
@@ -3276,6 +3280,7 @@ class Experiment:
             yaxis_title="Z expectation value",
             xaxis_type="linear",
             yaxis_type="linear",
+            plot=plot,
         )
 
         data = {
@@ -3426,6 +3431,27 @@ class Experiment:
         -------
         dict
             Results of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.interleaved_randomized_benchmarking(
+        ...     target="Q00",
+        ...     interleave_waveform=Rect(duration=30, amplitude=0.1),
+        ...     interleave_map={
+        ...         "I": (1, "I"),
+        ...         "X": (1, "X"),
+        ...         "Y": (1, "Z"),
+        ...         "Z": (-1, "Y"),
+        ...     },
+        ...     n_cliffords_range=range(0, 1001, 100),
+        ...     n_trials=30,
+        ...     x90=Rect(duration=30, amplitude=0.1),
+        ...     spectator_state="0",
+        ...     show_ref=True,
+        ...     shots=1024,
+        ...     interval=1024,
+        ...     plot=True,
+        ... )
         """
         if n_cliffords_range is None:
             n_cliffords_range = np.arange(0, 1001, 100)
@@ -3445,7 +3471,7 @@ class Experiment:
                     seed=seed,
                     shots=shots,
                     interval=interval,
-                    plot=plot,
+                    plot=False,
                 )
                 rb_results.append(rb_result.data[target].normalized)
             irb_result = self.rb_experiment(
@@ -3471,7 +3497,7 @@ class Experiment:
                 x=n_cliffords_range,
                 y=rb_mean,
                 error_y=rb_std,
-                plot=True,
+                plot=False,
                 title="Randomized benchmarking",
             )
             p_rb = rb_fit_result[0]
