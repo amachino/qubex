@@ -2878,12 +2878,20 @@ class Experiment:
 
         data: dict[str, RamseyData] = {}
         for target in targets:
+            spectators = self.get_spectators(target)
+            if spectator_state != "0":
+                targets = [target] + [
+                    spectator.label
+                    for spectator in spectators
+                    if spectator.label in self._qubits
+                ]
+            else:
+                targets = [target]
 
             def ramsey_sequence(T: int) -> PulseSchedule:
-                with PulseSchedule([target]) as ps:
+                with PulseSchedule(targets) as ps:
                     # Excite spectator qubits if needed
                     if spectator_state != "0":
-                        spectators = self.get_spectators(target)
                         for spectator in spectators:
                             if spectator.label in self._qubits:
                                 pulse = self.get_pulse_for_state(
