@@ -2141,8 +2141,8 @@ class Experiment:
         self,
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
-        n_rotations: int = 8,
-        shots: int = 3000,
+        n_rotations: int = 1,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2155,9 +2155,9 @@ class Experiment:
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2234,7 +2234,7 @@ class Experiment:
         self,
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
-        n_rotations: int = 2,
+        n_rotations: int = 1,
         shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -2248,7 +2248,7 @@ class Experiment:
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 2.
+            Number of rotations. Defaults to 1.
         shots : int, optional
             Number of shots. Defaults to 3000.
         interval : int, optional
@@ -2437,7 +2437,7 @@ class Experiment:
     def calibrate_hpi_pulse(
         self,
         targets: list[str],
-        n_rotations: int = 8,
+        n_rotations: int = 1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -2449,7 +2449,7 @@ class Experiment:
         target : str
             Target qubit to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 1.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2476,7 +2476,7 @@ class Experiment:
     def calibrate_pi_pulse(
         self,
         targets: list[str],
-        n_rotations: int = 8,
+        n_rotations: int = 1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -2488,7 +2488,7 @@ class Experiment:
         target : str
             Target qubit to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 1.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2515,7 +2515,7 @@ class Experiment:
     def calibrate_ef_hpi_pulse(
         self,
         targets: list[str],
-        n_rotations: int = 2,
+        n_rotations: int = 1,
         shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -2527,7 +2527,7 @@ class Experiment:
         target : str
             Target qubit to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 2.
+            Number of rotations. Defaults to 1.
         shots : int, optional
             Number of shots. Defaults to 3000.
         interval : int, optional
@@ -2554,7 +2554,7 @@ class Experiment:
     def calibrate_ef_pi_pulse(
         self,
         targets: list[str],
-        n_rotations: int = 2,
+        n_rotations: int = 1,
         shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -2566,7 +2566,7 @@ class Experiment:
         target : str
             Target qubit to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 2.
+            Number of rotations. Defaults to 1.
         shots : int, optional
             Number of shots. Defaults to 3000.
         interval : int, optional
