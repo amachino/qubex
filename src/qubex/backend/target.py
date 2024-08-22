@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from enum import Enum
 from typing import Union
 
+from pydantic.dataclasses import dataclass
 from .control_system import CapChannel, GenChannel
 from .quantum_system import Qubit, Resonator
+from .model import Model
 
 
 class TargetType(Enum):
@@ -21,7 +22,7 @@ QuantumObject = Union[Qubit, Resonator]
 
 
 @dataclass
-class CapTarget:
+class CapTarget(Model):
     label: str
     frequency: float
     object: QuantumObject
@@ -45,7 +46,7 @@ class CapTarget:
 
 
 @dataclass
-class Target:
+class Target(Model):
     label: str
     frequency: float
     object: QuantumObject
