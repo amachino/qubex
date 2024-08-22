@@ -267,6 +267,10 @@ class StateClassifier:
         unique_labels = np.unique(labels)
         colors = get_colors(alpha=0.8)
 
+        max_val = np.max(np.abs(data))
+        axis_range = [-max_val * 1.1, max_val * 1.1]
+        dtick = max_val / 2
+
         fig = go.Figure()
         for idx, label in enumerate(unique_labels):
             color = colors[idx % len(colors)]
@@ -306,6 +310,23 @@ class StateClassifier:
             width=500,
             height=400,
             margin=dict(l=120, r=120),
-            yaxis=dict(scaleanchor="x", scaleratio=1),
+            xaxis=dict(
+                range=axis_range,
+                dtick=dtick,
+                tickformat=".2g",
+                zeroline=True,
+                zerolinecolor="black",
+                showgrid=True,
+            ),
+            yaxis=dict(
+                range=axis_range,
+                dtick=dtick,
+                tickformat=".2g",
+                scaleanchor="x",
+                scaleratio=1,
+                zeroline=True,
+                zerolinecolor="black",
+                showgrid=True,
+            ),
         )
         fig.show(config=get_config())

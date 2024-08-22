@@ -207,6 +207,9 @@ def plot_state_distribution(
 ) -> None:
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
+    max_val = np.max([np.max(np.abs(data[qubit])) for qubit in data])
+    axis_range = [-max_val * 1.1, max_val * 1.1]
+    dtick = max_val / 2
     for idx, (qubit, iq) in enumerate(data.items()):
         color = colors[idx % len(colors)]
         scatter = go.Scatter(
@@ -227,7 +230,24 @@ def plot_state_distribution(
         width=500,
         height=400,
         margin=dict(l=120, r=120),
-        yaxis=dict(scaleanchor="x", scaleratio=1),
+        xaxis=dict(
+            range=axis_range,
+            dtick=dtick,
+            tickformat=".2g",
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        ),
+        yaxis=dict(
+            range=axis_range,
+            dtick=dtick,
+            tickformat=".2g",
+            scaleanchor="x",
+            scaleratio=1,
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        ),
     )
     fig.show(config=get_config())
 
@@ -240,6 +260,9 @@ def scatter_iq_data(
 ) -> None:
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
+    max_val = np.max([np.max(np.abs(data[qubit])) for qubit in data])
+    axis_range = [-max_val * 1.1, max_val * 1.1]
+    dtick = max_val / 2
     for idx, (qubit, iq) in enumerate(data.items()):
         color = colors[idx % len(colors)]
         scatter = go.Scatter(
@@ -260,7 +283,24 @@ def scatter_iq_data(
         width=500,
         height=400,
         margin=dict(l=120, r=120),
-        yaxis=dict(scaleanchor="x", scaleratio=1),
+        xaxis=dict(
+            range=axis_range,
+            dtick=dtick,
+            tickformat=".2g",
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        ),
+        yaxis=dict(
+            range=axis_range,
+            dtick=dtick,
+            tickformat=".2g",
+            scaleanchor="x",
+            scaleratio=1,
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        ),
     )
     fig.show(config=get_config())
 
