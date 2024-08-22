@@ -2115,9 +2115,7 @@ class Experiment:
                     rabi_result.fit()
                 clear_output(wait=True)
                 for qubit, data in rabi_result.data.items():
-                    # rabi_amplitude = data.rabi_param.amplitude
-                    value = data.rotated.imag
-                    rabi_amplitude = max(value) - min(value)
+                    rabi_amplitude = data.rabi_param.amplitude
                     result[qubit].append(rabi_amplitude)
 
         fit_data = {}

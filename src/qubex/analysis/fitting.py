@@ -237,21 +237,17 @@ def fit_rabi(
     if len(data) < 2:
         angle = 0.0
     else:
-        # angle of the |g> state
-        angle_0 = np.angle(data[0])
-        # rotate the |g> state to the +I axis
-        data_0 = data * np.exp(-1j * angle_0)
-        # convert to a 2D vector for PCA
-        data_0_vec = np.column_stack([data_0.real, data_0.imag])
-        # perform PCA
-        pca = PCA(n_components=2).fit(data_0_vec)
-        # get second component as the |g> + |e> vector
-        second_component = pca.components_[1]
-        # get the angle of the |g> + |e> vector (angle should be negative)
-        second_component *= -1 if second_component[1] > 0 else 1
-        angle_1 = np.arctan2(second_component[1], second_component[0])
-        # total angle to rotate the data
-        angle = angle_0 + angle_1
+        data_vec = np.column_stack([data.real, data.imag])
+        pca = PCA(n_components=2).fit(data_vec)
+        start_point = data_vec[0]
+        mean_point = pca.mean_
+        data_direction = mean_point - start_point
+        principal_component = pca.components_[0]
+        dot_product = np.dot(data_direction, principal_component)
+        ge_vector = principal_component if dot_product > 0 else -principal_component
+        angle_ge = np.arctan2(ge_vector[1], ge_vector[0])
+        angle = angle_ge + np.pi / 2
+
 
     rotated = data * np.exp(-1j * angle)
     noise = float(np.std(rotated.real))
