@@ -3084,8 +3084,8 @@ class Experiment:
         target: str,
         n: int,
         x90: Waveform | None = None,
-        interleave_waveform: Waveform | None = None,
-        interleave_map: dict[str, tuple[complex, str]] | None = None,
+        interleaved_waveform: Waveform | None = None,
+        interleaved_clifford_map: dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
     ) -> PulseSequence:
         """
@@ -3099,9 +3099,9 @@ class Experiment:
             Number of Clifford gates.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        interleave_waveform : Waveform, optional
+        interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
-        interleave_map : dict[str, tuple[complex, str]], optional
+        interleaved_clifford_map : dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
@@ -3123,8 +3123,8 @@ class Experiment:
         ...     target="Q00",
         ...     n=100,
         ...     x90=Rect(duration=30, amplitude=0.1),
-        ...     interleave_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleave_map={
+        ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
+        ...     interleaved_clifford_map={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (-1, "Y"),
@@ -3139,18 +3139,18 @@ class Experiment:
 
         clifford_group = CliffordGroup()
 
-        if interleave_waveform is None:
+        if interleaved_waveform is None:
             cliffords, inverse = clifford_group.create_rb_sequences(
                 n=n,
                 seed=seed,
             )
         else:
-            if interleave_map is None:
+            if interleaved_clifford_map is None:
                 raise ValueError("Interleave map must be provided.")
             cliffords, inverse = clifford_group.create_irb_sequences(
                 n=n,
                 seed=seed,
-                interleave=interleave_map,
+                interleave=interleaved_clifford_map,
             )
 
         for clifford in cliffords:
@@ -3159,8 +3159,8 @@ class Experiment:
                     sequence.append(x90)
                 elif gate == "Z90":
                     sequence.append(z90)
-            if interleave_waveform is not None:
-                sequence.append(interleave_waveform)
+            if interleaved_waveform is not None:
+                sequence.append(interleaved_waveform)
 
         for gate in inverse:
             if gate == "X90":
@@ -3175,8 +3175,8 @@ class Experiment:
         target: str,
         n_cliffords_range: ArrayLike | None = None,
         x90: Waveform | None = None,
-        interleave_waveform: Waveform | None = None,
-        interleave_map: dict[str, tuple[complex, str]] | None = None,
+        interleaved_waveform: Waveform | None = None,
+        interleaved_clifford_map: dict[str, tuple[complex, str]] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -3194,9 +3194,9 @@ class Experiment:
             Range of the number of Cliffords. Defaults to range(0, 1001, 50).
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        interleave_waveform : Waveform, optional
+        interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
-        interleave_map : dict[str, tuple[complex, str]], optional
+        interleaved_clifford_map : dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
@@ -3226,8 +3226,8 @@ class Experiment:
         ...     target="Q00",
         ...     n_cliffords_range=range(0, 1001, 50),
         ...     x90=Rect(duration=30, amplitude=0.1),
-        ...     interleave_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleave_map={
+        ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
+        ...     interleaved_clifford_map={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (-1, "Y"),
@@ -3260,8 +3260,8 @@ class Experiment:
                         target=target,
                         n=N,
                         x90=x90,
-                        interleave_waveform=interleave_waveform,
-                        interleave_map=interleave_map,
+                        interleaved_waveform=interleaved_waveform,
+                        interleaved_clifford_map=interleaved_clifford_map,
                         seed=seed,
                     ),
                 )
@@ -3394,8 +3394,8 @@ class Experiment:
         self,
         *,
         target: str,
-        interleave_waveform: Waveform,
-        interleave_map: dict[str, tuple[complex, str]],
+        interleaved_waveform: Waveform,
+        interleaved_clifford_map: dict[str, tuple[complex, str]],
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: Waveform | None = None,
@@ -3412,9 +3412,9 @@ class Experiment:
         ----------
         target : str
             Target qubit.
-        interleave_waveform : Waveform
+        interleaved_waveform : Waveform
             Waveform of the interleaved gate.
-        interleave_map : dict[str, tuple[complex, str]]
+        interleaved_clifford_map : dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 100).
@@ -3442,8 +3442,8 @@ class Experiment:
         --------
         >>> result = ex.interleaved_randomized_benchmarking(
         ...     target="Q00",
-        ...     interleave_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleave_map={
+        ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
+        ...     interleaved_clifford_map={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (1, "Z"),
@@ -3484,8 +3484,8 @@ class Experiment:
                 target=target,
                 n_cliffords_range=n_cliffords_range,
                 x90=x90,
-                interleave_waveform=interleave_waveform,
-                interleave_map=interleave_map,
+                interleaved_waveform=interleaved_waveform,
+                interleaved_clifford_map=interleaved_clifford_map,
                 spectator_state=spectator_state,
                 seed=seed,
                 shots=shots,
@@ -4179,15 +4179,17 @@ class Experiment:
                     mode=scatter_mode,
                     x=x,
                     y=probs,
-                    error_y=dict(
-                        type="data",
-                        array=result_errs[target][state],
-                        visible=True,
-                        thickness=1.5,
-                        width=3,
-                    )
-                    if show_error
-                    else None,
+                    error_y=(
+                        dict(
+                            type="data",
+                            array=result_errs[target][state],
+                            visible=True,
+                            thickness=1.5,
+                            width=3,
+                        )
+                        if show_error
+                        else None
+                    ),
                     marker=dict(size=5),
                 )
         fig.update_layout(
