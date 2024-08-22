@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from copy import copy
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -493,7 +493,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         self,
         device_settings: dict,
     ) -> ExperimentSystem:
-        experiment_system = copy(self.experiment_system)
+        experiment_system = deepcopy(self.experiment_system)
         control_system = experiment_system.control_system
         for box_id, box in device_settings.items():
             for port_number, port in box["ports"].items():
