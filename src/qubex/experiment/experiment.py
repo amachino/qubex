@@ -2030,6 +2030,7 @@ class Experiment:
         *,
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
+        amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2039,6 +2040,18 @@ class Experiment:
 
         if time_range is None:
             time_range = np.arange(0, 101, 8)
+
+        # store the original control amplitudes
+        original_control_amplitudes = deepcopy(self.params.control_amplitude)
+
+        if amplitudes is not None:
+            # modify the control amplitudes if necessary
+            for target, amplitude in amplitudes.items():
+                label = Target.qubit_label(target)
+                self.params.control_amplitude[label] = amplitude
+
+        # restore the original control amplitudes
+        self.params.control_amplitude = original_control_amplitudes
 
         result = self.obtain_freq_rabi_relation(
             targets=targets,
