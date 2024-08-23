@@ -287,13 +287,7 @@ class ExperimentSystem:
     ):
         for label, frequency in frequencies.items():
             target = self.get_target(label)
-            max_diff = 0.25
-            if abs(frequency - target.fine_frequency) <= max_diff:
-                target.frequency = frequency
-            else:
-                msg = f"Frequency ({frequency} GHz) is too far from the base frequency ({target.fine_frequency} GHz) for {label}. Max diff is {max_diff} GHz."
-                print(msg)
-                raise ValueError(msg)
+            target.frequency = frequency
 
     def update_port_params(
         self,
