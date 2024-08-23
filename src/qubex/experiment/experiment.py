@@ -1027,7 +1027,7 @@ class Experiment:
 
     def check_noise(
         self,
-        targets: list[str],
+        targets: list[str] | None = None,
         *,
         duration: int = 10240,
         plot: bool = True,
@@ -1037,8 +1037,8 @@ class Experiment:
 
         Parameters
         ----------
-        targets : list[str]
-            List of targets to check the noise.
+        targets : list[str], optional
+            List of targets to check the noise. Defaults to None.
         duration : int, optional
             Duration of the noise measurement. Defaults to 2048.
         plot : bool, optional
@@ -1053,6 +1053,9 @@ class Experiment:
         --------
         >>> result = ex.check_noise(["Q00", "Q01"])
         """
+        if targets is None:
+            targets = self.qubit_labels
+
         result = self._measurement.measure_noise(targets, duration)
         for target, data in result.data.items():
             if plot:
@@ -1066,7 +1069,7 @@ class Experiment:
 
     def check_waveform(
         self,
-        targets: list[str],
+        targets: list[str] | None = None,
         *,
         plot: bool = True,
     ) -> MeasureResult:
@@ -1075,7 +1078,7 @@ class Experiment:
 
         Parameters
         ----------
-        targets : list[str]
+        targets : list[str], optional
             List of targets to check the waveforms.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -1089,6 +1092,9 @@ class Experiment:
         --------
         >>> result = ex.check_waveform(["Q00", "Q01"])
         """
+        if targets is None:
+            targets = self.qubit_labels
+
         result = self.measure(sequence={target: np.zeros(0) for target in targets})
         if plot:
             result.plot()
@@ -1096,7 +1102,7 @@ class Experiment:
 
     def check_rabi(
         self,
-        targets: list[str],
+        targets: list[str] | None = None,
         *,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
@@ -1105,7 +1111,7 @@ class Experiment:
 
         Parameters
         ----------
-        targets : list[str]
+        targets : list[str], optional
             List of targets to check the Rabi oscillation.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -1119,6 +1125,9 @@ class Experiment:
         --------
         >>> result = ex.check_rabi(["Q00", "Q01"])
         """
+        if targets is None:
+            targets = self.qubit_labels
+
         return self.obtain_rabi_params(targets, plot=plot)
 
     def obtain_rabi_params(
