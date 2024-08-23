@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from collections import defaultdict
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Final, Literal, Optional, Sequence
@@ -218,6 +219,15 @@ class Experiment:
     def qubit_labels(self) -> list[str]:
         """Get the list of qubit labels."""
         return self._qubits
+
+    @property
+    def mux_labels(self) -> list[str]:
+        """Get the list of mux labels."""
+        mux_set = set()
+        for qubit in self.qubit_labels:
+            mux = self.experiment_system.get_mux_by_qubit(qubit)
+            mux_set.add(mux.label)
+        return sorted(list(mux_set))
 
     @property
     def qubits(self) -> dict[str, Qubit]:
@@ -556,16 +566,17 @@ class Experiment:
         """Print the environment information."""
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         print("python:", sys.version.split()[0])
-        print("env:", sys.prefix)
         if verbose:
             print("numpy:", get_package_version("numpy"))
             print("quel_ic_config:", get_package_version("quel_ic_config"))
             print("quel_clock_master:", get_package_version("quel_clock_master"))
             print("qubecalib:", get_package_version("qubecalib"))
         print("qubex:", get_package_version("qubex"))
+        print("env:", sys.prefix)
         print("config:", self.config_path)
         print("chip:", self.chip_id)
         print("qubits:", self.qubit_labels)
+        print("muxes:", self.mux_labels)
         print("boxes:", self.box_ids)
 
     def print_boxes(self):
@@ -2090,6 +2101,7 @@ class Experiment:
         *,
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2102,6 +2114,9 @@ class Experiment:
         if time_range is None:
             time_range = np.arange(0, 101, 8)
 
+        # store the original readout amplitudes
+        original_readout_amplitudes = deepcopy(self.params.readout_amplitude)
+
         result = defaultdict(list)
         for detuning in detuning_range:
             modified_frequencies = {
@@ -2109,6 +2124,12 @@ class Experiment:
                 for resonator in self.resonators.values()
             }
             with self.modified_frequencies(modified_frequencies):
+                if readout_amplitudes is not None:
+                    # modify the readout amplitudes if necessary
+                    for target, amplitude in readout_amplitudes.items():
+                        label = Target.qubit_label(target)
+                        self.params.readout_amplitude[label] = amplitude
+
                 rabi_result = self.rabi_experiment(
                     time_range=time_range,
                     amplitudes={
@@ -2126,6 +2147,9 @@ class Experiment:
                 for qubit, data in rabi_result.data.items():
                     rabi_amplitude = data.rabi_param.amplitude
                     result[qubit].append(rabi_amplitude)
+
+        # restore the original readout amplitudes
+        self.params.readout_amplitude = original_readout_amplitudes
 
         fit_data = {}
         for target, values in result.items():
