@@ -233,7 +233,7 @@ def print_cr_targets(qubits: Sequence[str] | str) -> None:
         title="CROSS-RESONANCE TARGETS",
     )
     table.add_column("LABEL", justify="left")
-    table.add_column("FREQ", justify="right")
+    table.add_column("TARGET", justify="right")
     table.add_column("COARSE", justify="right")
     table.add_column("FINE", justify="right")
     # table.add_column("LO", justify="right")
