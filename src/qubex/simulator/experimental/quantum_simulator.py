@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Final, Literal, Mapping, Optional, Sequence
+from typing import Final, Literal, Mapping, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -470,16 +470,14 @@ class QuantumSimulator:
             )
 
         dt = control.sampling_period / control.steps_per_sample
-        H_sys = self.system.hamiltonian
-        N = self.system.number_matrix
         frame_frequency = control.frequency
-        omega_rot = 2 * np.pi * frame_frequency
-        H_rot = H_sys - omega_rot * N
         unitaries = [self.system.identity_matrix]
         for idx in range(control.length):
-            H = H_rot
+            H = self.system.hamiltonian
             for object in self.system.objects:
                 label = object.label
+                N = self.system.get_number_operator(label)
+                H -= 2 * np.pi * frame_frequency * N
                 if label in control.frequencies:
                     a = self.system.get_lowering_operator(label)
                     ad = self.system.get_raising_operator(label)
