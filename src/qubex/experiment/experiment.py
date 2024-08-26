@@ -3868,8 +3868,7 @@ class Experiment:
         self,
         target: str,
         *,
-        center_frequency: float = 10.05,
-        frequency_step: float = 0.002,
+        frequency_range: ArrayLike | None = None,
         shots: int = 100,
         interval: int = 0,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -3880,10 +3879,8 @@ class Experiment:
         ----------
         target : str
             Target qubit connected to the resonator of interest.
-        center_frequency : float
-            Center frequency of the readout pulse in GHz.
-        frequency_step : float, optional
-            Frequency step of the scan in GHz.
+        frequency_range : ArrayLike, optional
+            Frequency range of the scan in GHz.
         shots : int, optional
             Number of shots. Defaults to 100.
         interval : int, optional
@@ -3894,6 +3891,25 @@ class Experiment:
         tuple[NDArray[np.float64], NDArray[np.float64]]
             Frequency range and phase difference.
         """
+        # set the frequency range for the scan
+        if frequency_range is None:
+            center_frequency = 10.05
+            frequency_step = 0.002
+            frequency_width = 0.5
+            frequency_range = np.arange(
+                center_frequency - 0.5 * frequency_width,
+                center_frequency + 0.5 * frequency_width,
+                frequency_step,
+            )
+        else:
+            frequency_range = np.array(frequency_range)
+            center_frequency = np.mean(frequency_range).astype(float)
+            frequency_step = (frequency_range[1] - frequency_range[0]).astype(float)
+            frequency_width = (frequency_range[-1] - frequency_range[0]).astype(float)
+
+        if frequency_width > 0.5:
+            raise ValueError("Frequency scan range must be less than 0.5 GHz.")
+
         # calculate the LO/NCO for the scan
         f_center = center_frequency * 1e9
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
@@ -3908,9 +3924,12 @@ class Experiment:
             cnco=cnco,
         )
 
-        # scan range
         f = f_mix * 1e-9
-        freq_range = np.arange(f - 0.25, f + 0.25, frequency_step)
+        freq_range = np.arange(
+            f - 0.5 * frequency_width,
+            f + 0.5 * frequency_width,
+            frequency_step,
+        )
 
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
@@ -3992,8 +4011,7 @@ class Experiment:
         self,
         target: str,
         *,
-        center_frequency: float,
-        frequency_step: float = 0.005,
+        frequency_range: ArrayLike | None = None,
         control_amplitude: float = 0.01,
         readout_amplitude: float = 0.01,
         shots: int = 1000,
@@ -4006,10 +4024,8 @@ class Experiment:
         ----------
         target : str
             Target qubit.
-        center_frequency : float
-            Center frequency of the control pulse in GHz.
-        frequency_step : float, optional
-            Frequency step of the scan in GHz.
+        frequency_range : ArrayLike, optional
+            Frequency range of the scan in GHz.
         control_amplitude : float, optional
             Amplitude of the control pulse. Defaults to 0.01.
         readout_amplitude : float, optional
@@ -4024,6 +4040,25 @@ class Experiment:
         tuple[NDArray[np.float64], NDArray[np.float64]]
             Frequency range and phases.
         """
+        # set the frequency range for the scan
+        if frequency_range is None:
+            center_frequency = 7.5
+            frequency_step = 0.005
+            frequency_width = 0.5
+            frequency_range = np.arange(
+                center_frequency - 0.5 * frequency_width,
+                center_frequency + 0.5 * frequency_width,
+                frequency_step,
+            )
+        else:
+            frequency_range = np.array(frequency_range)
+            center_frequency = np.mean(frequency_range).astype(float)
+            frequency_step = (frequency_range[1] - frequency_range[0]).astype(float)
+            frequency_width = (frequency_range[-1] - frequency_range[0]).astype(float)
+
+        if frequency_width > 0.5:
+            raise ValueError("Frequency scan range must be less than 0.5 GHz.")
+
         # prepare the plot
         widget = go.FigureWidget()
         widget.add_scatter(name=target, mode="markers+lines")
@@ -4053,8 +4088,8 @@ class Experiment:
         # scan range
         f = f_mix * 1e-9
         freq_range = np.arange(
-            f - 0.25,
-            f + 0.25,
+            f - 0.5 * frequency_width,
+            f + 0.5 * frequency_width,
             frequency_step,
         )
 
