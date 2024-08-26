@@ -49,7 +49,7 @@ def reboot_fpga(box_id: str) -> None:
     box = experiment_system.get_box(box_id)
     adapter = box.adapter
     reboot_command = f"quel_reboot_fpga --port 3121 --adapter {adapter}"
-    subprocess.run(reboot_command, shell=True)
+    subprocess.run(reboot_command.split())
 
 
 def relinkup_box(box_id: str) -> None:
