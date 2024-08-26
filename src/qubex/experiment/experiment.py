@@ -2924,16 +2924,16 @@ class Experiment:
         for target in targets:
             spectators = self.get_spectators(target)
             if spectator_state != "0":
-                targets = [target] + [
+                target_list = [target] + [
                     spectator.label
                     for spectator in spectators
                     if spectator.label in self._qubits
                 ]
             else:
-                targets = [target]
+                target_list = [target]
 
             def ramsey_sequence(T: int) -> PulseSchedule:
-                with PulseSchedule(targets) as ps:
+                with PulseSchedule(target_list) as ps:
                     # Excite spectator qubits if needed
                     if spectator_state != "0":
                         for spectator in spectators:
