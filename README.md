@@ -15,7 +15,7 @@ pip install git+https://github.com/amachino/qubex.git@v1.1.0
 ### Client and backend
 
 ```bash
-pip install "git+https://github.com/amachino/qubex.git@v1.1.0#egg=qubex[backend]"
+pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@v1.1.0"
 ```
 
 Check available versions on the [release page](https://github.com/amachino/qubex/releases).
