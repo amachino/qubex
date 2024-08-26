@@ -441,7 +441,7 @@ class Box(Model):
         except StopIteration:
             raise IndexError(
                 f"Port number `{port_number}` not found in box `{self.id}`."
-            )
+            ) from None
 
 
 @dataclass
