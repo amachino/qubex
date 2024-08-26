@@ -256,16 +256,11 @@ class Measurement:
         ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ...     })
         """
-        original_frequencies = {
-            label: target.frequency
-            for label, target in self.targets.items()
-            if label in target_frequencies
-        }
-        self.device_controller.modify_target_frequencies(target_frequencies)
-        try:
+        if target_frequencies is None:
             yield
-        finally:
-            self.device_controller.modify_target_frequencies(original_frequencies)
+        else:
+            with self.state_manager.modified_frequencies(target_frequencies):
+                yield
 
     def measure_noise(
         self,
@@ -304,6 +299,21 @@ class Measurement:
             integral_mode="single",
         )
         return self._create_measure_result(backend_result, MeasureMode.SINGLE)
+
+    def _calc_backend_interval(
+        self,
+        waveforms: TargetMap[IQArray],
+        interval: int,
+        control_window: int | None,
+        capture_window: int,
+    ) -> int:
+        control_length = max(len(waveform) for waveform in waveforms.values())
+        control_duration = int(control_length * SAMPLING_PERIOD)
+        if control_window is not None:
+            control_duration = max(control_duration, control_window)
+        return (
+            (control_duration + capture_window + interval) // INTERVAL_STEP + 1
+        ) * INTERVAL_STEP
 
     def measure(
         self,
@@ -361,14 +371,12 @@ class Measurement:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
 
-        control_length = max(len(waveform) for waveform in waveforms.values())
-        control_duration = int(control_length * SAMPLING_PERIOD)
-        if control_window is not None:
-            control_duration = max(control_duration, control_window)
-        backend_interval = (
-            (control_duration + capture_window + interval) // INTERVAL_STEP + 1
-        ) * INTERVAL_STEP
-
+        backend_interval = self._calc_backend_interval(
+            waveforms=waveforms,
+            interval=interval,
+            control_window=control_window,
+            capture_window=capture_window,
+        )
         measure_mode = MeasureMode(mode)
         if self._use_neopulse:
             sequence = self._create_sequence(
@@ -387,6 +395,7 @@ class Measurement:
         else:
             sequencer = self._create_sequencer(
                 waveforms=waveforms,
+                interval=backend_interval,
                 capture_window=capture_window,
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
@@ -394,7 +403,6 @@ class Measurement:
             backend_result = self.device_controller.execute_sequencer(
                 sequencer=sequencer,
                 repeats=shots,
-                interval=backend_interval,
                 integral_mode=measure_mode.integral_mode,
             )
         return self._create_measure_result(backend_result, measure_mode)
@@ -448,21 +456,15 @@ class Measurement:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
 
-        control_length = max(
-            len(waveform)
-            for waveforms in waveforms_list
-            for waveform in waveforms.values()
-        )
-        control_duration = int(control_length * SAMPLING_PERIOD)
-        if control_window is not None:
-            control_duration = max(control_duration, control_window)
-        backend_interval = (
-            (control_duration + capture_window + interval) // INTERVAL_STEP + 1
-        ) * INTERVAL_STEP
-
         measure_mode = MeasureMode(mode)
         self.device_controller.clear_command_queue()
         for waveforms in waveforms_list:
+            backend_interval = self._calc_backend_interval(
+                waveforms=waveforms,
+                interval=interval,
+                control_window=control_window,
+                capture_window=capture_window,
+            )
             if self._use_neopulse:
                 sequence = self._create_sequence(
                     waveforms=waveforms,
@@ -471,10 +473,14 @@ class Measurement:
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
                 )
-                self.device_controller.add_sequence(sequence)
+                self.device_controller.add_sequence(
+                    sequence=sequence,
+                    interval=backend_interval,
+                )
             else:
                 sequencer = self._create_sequencer(
                     waveforms=waveforms,
+                    interval=backend_interval,
                     capture_window=capture_window,
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
@@ -482,7 +488,6 @@ class Measurement:
                 self.device_controller.add_sequencer(sequencer)
         backend_results = self.device_controller.execute(
             repeats=shots,
-            interval=backend_interval,
             integral_mode=measure_mode.integral_mode,
         )
         for backend_result in backend_results:
@@ -525,20 +530,16 @@ class Measurement:
         if interval is None:
             interval = DEFAULT_INTERVAL
 
-        backend_interval = (
-            (int(schedule.duration) + interval) // INTERVAL_STEP + 1
-        ) * INTERVAL_STEP
-
         measure_mode = MeasureMode(mode)
         sequencer = self._create_sequencer_from_schedule(
             schedule=schedule,
+            interval=interval,
             add_last_measurement=False,
             capture_margin=capture_margin,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
             repeats=shots,
-            interval=backend_interval,
             integral_mode=measure_mode.integral_mode,
         )
         return self._create_measure_result(backend_result, measure_mode)
@@ -599,6 +600,7 @@ class Measurement:
         self,
         *,
         waveforms: TargetMap[IQArray],
+        interval: int,
         control_window: int | None = None,
         capture_window: int | None = None,
         capture_margin: int | None = None,
@@ -660,12 +662,15 @@ class Measurement:
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
-                        post_blank=None,
                         repeats=1,
+                        post_blank=None,
+                        original_post_blank=None,
                     )
                 ],
             )
@@ -675,32 +680,41 @@ class Measurement:
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
-                        post_blank=None,
                         repeats=1,
+                        post_blank=None,
+                        original_post_blank=None,
                     )
                 ],
             )
             # add CapSampledSequence
             cap_sequences[target] = pls.CapSampledSequence(
                 target_name=target,
+                repeats=None,
                 prev_blank=0,
                 post_blank=None,
-                repeats=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     pls.CapSampledSubSequence(
                         capture_slots=[
                             pls.CaptureSlots(
                                 duration=capture_length,
                                 post_blank=None,
+                                original_duration=capture_window,
+                                original_post_blank=None,
                             )
                         ],
+                        repeats=None,
                         prev_blank=readout_start,
                         post_blank=None,
-                        repeats=None,
+                        original_prev_blank=readout_start,
+                        original_post_blank=None,
                     )
                 ],
             )
@@ -714,11 +728,13 @@ class Measurement:
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore
+            interval=interval,
         )
 
     def _create_sequencer_from_schedule(
         self,
         schedule: PulseSchedule,
+        interval: int,
         add_last_measurement: bool = False,
         capture_margin: int | None = None,
     ) -> Sequencer:
@@ -727,6 +743,10 @@ class Measurement:
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
+
+        backend_interval = (
+            (int(schedule.duration) + interval) // INTERVAL_STEP + 1
+        ) * INTERVAL_STEP
 
         # readout targets in the provided schedule
         readout_targets = [
@@ -777,13 +797,16 @@ class Measurement:
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     # has only one GenSampledSubSequence
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
                         imag=np.imag(waveform),
-                        post_blank=None,
                         repeats=1,
+                        post_blank=None,
+                        original_post_blank=None,
                     )
                 ],
             )
@@ -795,10 +818,12 @@ class Measurement:
                 continue
             cap_sub_sequence = pls.CapSampledSubSequence(
                 capture_slots=[],
+                repeats=None,
                 # prev_blank is the time to the first readout pulse
                 prev_blank=ranges[0].start,
                 post_blank=None,
-                repeats=None,
+                original_prev_blank=ranges[0].start,
+                original_post_blank=None,
             )
             for i in range(len(ranges) - 1):
                 current_range = ranges[i]
@@ -808,6 +833,8 @@ class Measurement:
                         duration=len(current_range),
                         # post_blank is the time to the next readout pulse
                         post_blank=next_range.start - current_range.stop,
+                        original_duration=len(current_range),
+                        original_post_blank=next_range.start - current_range.stop,
                     )
                 )
             last_range = ranges[-1]
@@ -816,13 +843,17 @@ class Measurement:
                     duration=len(last_range),
                     # post_blank is the time to the end of the schedule
                     post_blank=schedule.length - last_range.stop,
+                    original_duration=len(last_range),
+                    original_post_blank=schedule.length - last_range.stop,
                 )
             )
             cap_sequence = pls.CapSampledSequence(
                 target_name=target,
+                repeats=None,
                 prev_blank=0,
                 post_blank=None,
-                repeats=None,
+                original_prev_blank=0,
+                original_post_blank=None,
                 sub_sequences=[
                     # has only one CapSampledSubSequence
                     cap_sub_sequence,
@@ -838,6 +869,7 @@ class Measurement:
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore
+            interval=backend_interval,
         )
 
     def _create_measure_result(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import subprocess
 from typing import Sequence
 
@@ -202,7 +203,7 @@ def print_target_frequencies(qubits: Sequence[str] | str) -> None:
             current_qubit = qubit
 
         abs_diff = abs(float(row[-1]))
-        if abs_diff >= 250:
+        if abs_diff >= 250 or math.isnan(abs_diff):
             style = "bold red"
         elif abs_diff >= 200:
             style = "bold yellow"
@@ -232,7 +233,7 @@ def print_cr_targets(qubits: Sequence[str] | str) -> None:
         title="CROSS-RESONANCE TARGETS",
     )
     table.add_column("LABEL", justify="left")
-    table.add_column("FREQ", justify="right")
+    table.add_column("TARGET", justify="right")
     table.add_column("COARSE", justify="right")
     table.add_column("FINE", justify="right")
     # table.add_column("LO", justify="right")
@@ -275,7 +276,7 @@ def print_cr_targets(qubits: Sequence[str] | str) -> None:
             current_qubit = qubit
 
         abs_diff = abs(float(row[-1]))
-        if abs_diff >= 250:
+        if abs_diff >= 250 or math.isnan(abs_diff):
             style = "bold red"
         elif abs_diff >= 200:
             style = "bold yellow"

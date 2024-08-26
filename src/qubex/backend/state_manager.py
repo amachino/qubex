@@ -525,6 +525,29 @@ This operation will overwrite the existing device settings. Do you want to conti
         return experiment_system
 
     @contextmanager
+    def modified_frequencies(self, target_frequencies: dict[str, float]):
+        """
+        Temporarily modify the target frequencies.
+
+        Parameters
+        ----------
+        target_frequencies : dict[str, float]
+            The target frequencies to be modified.
+        """
+        original_frequencies = {
+            target.label: target.frequency
+            for target in self.experiment_system.targets
+            if target.label in target_frequencies
+        }
+        self.experiment_system.modify_target_frequencies(target_frequencies)
+        self.device_controller.modify_target_frequencies(target_frequencies)
+        try:
+            yield
+        finally:
+            self.experiment_system.modify_target_frequencies(original_frequencies)
+            self.device_controller.modify_target_frequencies(original_frequencies)
+
+    @contextmanager
     def modified_device_settings(
         self,
         label: str,
@@ -577,7 +600,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             cap_channel = self.experiment_system.get_cap_target(label).channel
             cap_port = cap_channel.port
             quel1_box.config_port(
-                port=port.number,
+                port=cap_port.number,
                 lo_freq=lo_freq,
                 cnco_freq=cnco_freq,
             )

@@ -140,15 +140,15 @@ class ExperimentSystem:
 
     @property
     def ge_targets(self) -> list[Target]:
-        return list(self._ctrl_ge_target_dict.values())
+        return [target for target in self._gen_target_dict.values() if target.is_ge]
 
     @property
     def ef_targets(self) -> list[Target]:
-        return list(self._ctrl_ef_target_dict.values())
+        return [target for target in self._gen_target_dict.values() if target.is_ef]
 
     @property
     def cr_targets(self) -> list[Target]:
-        return list(self._ctrl_cr_target_dict.values())
+        return [target for target in self._gen_target_dict.values() if target.is_cr]
 
     @property
     def ctrl_targets(self) -> list[Target]:
@@ -156,17 +156,15 @@ class ExperimentSystem:
 
     @property
     def read_out_targets(self) -> list[Target]:
-        return list(self._read_out_target_dict.values())
+        return [target for target in self._gen_target_dict.values() if target.is_read]
 
     @property
     def targets(self) -> list[Target]:
-        return (
-            self.ge_targets + self.ef_targets + self.cr_targets + self.read_out_targets
-        )
+        return [target for target in self._gen_target_dict.values()]
 
     @property
     def read_in_targets(self) -> list[CapTarget]:
-        return list(self._read_in_target_dict.values())
+        return list(self._cap_target_dict.values())
 
     @property
     def all_targets(self) -> list[Target | CapTarget]:
@@ -265,6 +263,15 @@ class ExperimentSystem:
                 return qubit
         return None
 
+    def get_mux_by_qubit(self, label: str) -> Mux:
+        ports = self.get_qubit_port_set(label)
+        if ports is None:
+            raise ValueError(f"Qubit `{label}` not found.")
+        mux = self.get_mux_by_readout_port(ports.read_out_port)
+        if mux is None:
+            raise ValueError(f"No mux found for qubit `{label}`.")
+        return mux
+
     def get_readout_pair(self, port: CapPort) -> GenPort:
         cap_mux = self.get_mux_by_readout_port(port)
         if cap_mux is None:
@@ -273,6 +280,14 @@ class ExperimentSystem:
             if gen_mux.index == cap_mux.index:
                 return gen_port
         raise ValueError(f"No readout pair found for port: {port}")
+
+    def modify_target_frequencies(
+        self,
+        frequencies: dict[str, float],
+    ):
+        for label, frequency in frequencies.items():
+            target = self.get_target(label)
+            target.frequency = frequency
 
     def update_port_params(
         self,
@@ -553,11 +568,8 @@ class ExperimentSystem:
         return center_freq
 
     def _initialize_targets(self) -> None:
-        ctrl_ge_target_dict: dict[str, Target] = {}
-        ctrl_ef_target_dict: dict[str, Target] = {}
-        ctrl_cr_target_dict: dict[str, Target] = {}
-        read_out_target_dict: dict[str, Target] = {}
-        read_in_target_dict: dict[str, CapTarget] = {}
+        self._gen_target_dict: dict[str, Target] = {}
+        self._cap_target_dict: dict[str, CapTarget] = {}
 
         for box in self.boxes:
             for port in box.ports:
@@ -575,33 +587,33 @@ class ExperimentSystem:
                                 qubit=qubit,
                                 channel=port.channels[0],
                             )
-                            ctrl_ge_target_dict[ge_target.label] = ge_target
+                            self._gen_target_dict[ge_target.label] = ge_target
                         elif port.n_channels == 3:
                             # ge
                             ge_target = Target.new_ge_target(
                                 qubit=qubit,
                                 channel=port.channels[0],
                             )
-                            ctrl_ge_target_dict[ge_target.label] = ge_target
+                            self._gen_target_dict[ge_target.label] = ge_target
                             # ef
                             ef_target = Target.new_ef_target(
                                 qubit=qubit,
                                 channel=port.channels[1],
                             )
-                            ctrl_ef_target_dict[ef_target.label] = ef_target
+                            self._gen_target_dict[ef_target.label] = ef_target
                             # cr
                             cr_target = Target.new_cr_target(
                                 control_qubit=qubit,
                                 channel=port.channels[2],
                             )
-                            ctrl_cr_target_dict[cr_target.label] = cr_target
+                            self._gen_target_dict[cr_target.label] = cr_target
                             for spectator in self.get_spectator_qubits(qubit.label):
                                 cr_target = Target.new_cr_target(
                                     control_qubit=qubit,
                                     target_qubit=spectator,
                                     channel=port.channels[2],
                                 )
-                                ctrl_cr_target_dict[cr_target.label] = cr_target
+                                self._gen_target_dict[cr_target.label] = cr_target
 
                     # readout ports
                     elif port.type == PortType.READ_OUT:
@@ -613,7 +625,7 @@ class ExperimentSystem:
                                 resonator=resonator,
                                 channel=port.channels[0],
                             )
-                            read_out_target_dict[read_out_target.label] = (
+                            self._gen_target_dict[read_out_target.label] = (
                                 read_out_target
                             )
 
@@ -628,20 +640,10 @@ class ExperimentSystem:
                                 resonator=resonator,
                                 channel=port.channels[idx],
                             )
-                            read_in_target_dict[read_in_target.label] = read_in_target
+                            self._cap_target_dict[read_in_target.label] = read_in_target
 
-        self._ctrl_ge_target_dict = dict(sorted(ctrl_ge_target_dict.items()))
-        self._ctrl_ef_target_dict = dict(sorted(ctrl_ef_target_dict.items()))
-        self._ctrl_cr_target_dict = dict(sorted(ctrl_cr_target_dict.items()))
-        self._read_out_target_dict = dict(sorted(read_out_target_dict.items()))
-        self._gen_target_dict = (
-            self._ctrl_ge_target_dict
-            | self._ctrl_ef_target_dict
-            | self._ctrl_cr_target_dict
-            | self._read_out_target_dict
-        )
-        self._read_in_target_dict = dict(sorted(read_in_target_dict.items()))
-        self._cap_target_dict = self._read_in_target_dict
+        self._gen_target_dict = dict(sorted(self._gen_target_dict.items()))
+        self._cap_target_dict = dict(sorted(self._cap_target_dict.items()))
 
 
 class MixingUtil:

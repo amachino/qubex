@@ -1,11 +1,15 @@
-from .simulator import Control, MultiControl, Simulator
-from .system import Coupling, System, Transmon
+from .pulse_optimizer import PulseOptimizer
+from .quantum_simulator import Control, MultiControl, QuantumSimulator
+from .quantum_system import Coupling, QuantumSystem, Qubit, Resonator, Transmon
 
 __all__ = [
     "Control",
     "Coupling",
     "MultiControl",
-    "Simulator",
-    "System",
+    "PulseOptimizer",
+    "QuantumSimulator",
+    "QuantumSystem",
+    "Qubit",
+    "Resonator",
     "Transmon",
 ]

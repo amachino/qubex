@@ -231,27 +231,22 @@ def fit_rabi(
         Data class containing the parameters of the Rabi oscillation.
     """
     print(f"Target: {target}")
-    data = np.array(data, dtype=np.complex128)
+    data = np.array(data, dtype=np.complex64)
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
     if len(data) < 2:
         angle = 0.0
     else:
-        # angle of the |g> state
-        angle_0 = np.angle(data[0])
-        # rotate the |g> state to the +I axis
-        data_0 = data * np.exp(-1j * angle_0)
-        # convert to a 2D vector for PCA
-        data_0_vec = np.column_stack([data_0.real, data_0.imag])
-        # perform PCA
-        pca = PCA(n_components=2).fit(data_0_vec)
-        # get second component as the |g> + |e> vector
-        second_component = pca.components_[1]
-        # get the angle of the |g> + |e> vector (angle should be negative)
-        second_component *= -1 if second_component[1] > 0 else 1
-        angle_1 = np.arctan2(second_component[1], second_component[0])
-        # total angle to rotate the data
-        angle = angle_0 + angle_1
+        data_vec = np.column_stack([data.real, data.imag])
+        pca = PCA(n_components=2).fit(data_vec)
+        start_point = data_vec[0]
+        mean_point = pca.mean_
+        data_direction = mean_point - start_point
+        principal_component = pca.components_[0]
+        dot_product = np.dot(data_direction, principal_component)
+        ge_vector = principal_component if dot_product > 0 else -principal_component
+        angle_ge = np.arctan2(ge_vector[1], ge_vector[0])
+        angle = angle_ge + np.pi / 2
 
     rotated = data * np.exp(-1j * angle)
     noise = float(np.std(rotated.real))
@@ -277,9 +272,9 @@ def fit_rabi(
                 (np.inf, np.inf, np.pi, np.inf, np.inf),
             )
             popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
-            print(
-                f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[4]:.3g}) * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
-            )
+            # print(
+            #     f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[4]:.3g}) * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
+            # )
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
@@ -287,9 +282,9 @@ def fit_rabi(
                 (np.inf, np.inf, np.pi, np.inf),
             )
             popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
-            print(
-                f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
-            )
+            # print(
+            #     f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
+            # )
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return RabiParam(target, 0.0, 0.0, 0.0, 0.0, noise, angle)
@@ -300,9 +295,9 @@ def fit_rabi(
     offset = popt[3]
     frequency = omega / (2 * np.pi)
 
-    print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
-    print(f"Rabi frequency: {frequency * 1e3:.3g} MHz")
-    print(f"Rabi period: {1 / frequency:.3g} ns")
+    # print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
+    print(f"Rabi frequency: {frequency * 1e3:.6g} MHz")
+    # print(f"Rabi period: {1 / frequency:.3g} ns")
 
     if plot:
         x_fine = np.linspace(np.min(x), np.max(x), 1000)
@@ -376,7 +371,11 @@ def fit_detuned_rabi(
     def func(f_control, f_resonance, f_rabi):
         return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
 
-    popt, _ = curve_fit(func, control_frequencies, rabi_frequencies)
+    try:
+        popt, _ = curve_fit(func, control_frequencies, rabi_frequencies)
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return 0.0, 0.0
 
     f_resonance = popt[0]
     f_rabi = popt[1]
@@ -485,7 +484,11 @@ def fit_ramsey(
             (np.inf, omega_est * 1.1, np.pi, np.inf, np.inf),
         )
 
-    popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+    try:
+        popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return 0.0, 0.0
 
     A = popt[0]
     omega = popt[1]
@@ -597,7 +600,12 @@ def fit_exp_decay(
             (np.inf, np.inf, np.inf),
         )
 
-    popt, _ = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
+    try:
+        popt, _ = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return 0.0
+
     A = popt[0]
     tau = popt[1]
     C = popt[2]
@@ -703,7 +711,12 @@ def fit_rb(
     def func_rb(n: npt.NDArray[np.float64], p: float):
         return (1 - p) ** n
 
-    popt, _ = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
+    try:
+        popt, _ = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return 0.0, 0.0, 0.0
+
     depolarizing_rate = popt[0]
     r = 1 - depolarizing_rate
     avg_gate_error = (2 - 1) / 2 * (1 - r)
@@ -900,12 +913,13 @@ def fit_ampl_calib_data(
 
     try:
         popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
-        print(
-            f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
-        )
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return 0.0
+
+    print(
+        f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
+    )
 
     result = minimize(
         cos_func,
@@ -993,7 +1007,11 @@ def fit_lorentzian(
             np.min(data),
         )
 
-    popt, _ = curve_fit(func_lorentzian, freq_range, data, p0=p0)
+    try:
+        popt, _ = curve_fit(func_lorentzian, freq_range, data, p0=p0)
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return 0.0
 
     A = popt[0]
     f0 = popt[1]
