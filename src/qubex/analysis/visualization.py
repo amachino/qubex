@@ -207,6 +207,9 @@ def plot_state_distribution(
 ) -> None:
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
+    max_val = np.max([np.max(np.abs(data[qubit])) for qubit in data])
+    axis_range = [-max_val * 1.1, max_val * 1.1]
+    dtick = max_val / 2
     for idx, (qubit, iq) in enumerate(data.items()):
         color = colors[idx % len(colors)]
         scatter = go.Scatter(
@@ -227,7 +230,26 @@ def plot_state_distribution(
         width=500,
         height=400,
         margin=dict(l=120, r=120),
-        yaxis=dict(scaleanchor="x", scaleratio=1),
+        xaxis=dict(
+            range=axis_range,
+            dtick=dtick,
+            tickformat=".2g",
+            showticklabels=True,
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        ),
+        yaxis=dict(
+            range=axis_range,
+            scaleanchor="x",
+            scaleratio=1,
+            dtick=dtick,
+            tickformat=".2g",
+            showticklabels=True,
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        ),
     )
     fig.show(config=get_config())
 
@@ -240,6 +262,9 @@ def scatter_iq_data(
 ) -> None:
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
+    max_val = np.max([np.max(np.abs(data[qubit])) for qubit in data])
+    axis_range = [-max_val * 1.1, max_val * 1.1]
+    dtick = max_val / 2
     for idx, (qubit, iq) in enumerate(data.items()):
         color = colors[idx % len(colors)]
         scatter = go.Scatter(
@@ -260,7 +285,26 @@ def scatter_iq_data(
         width=500,
         height=400,
         margin=dict(l=120, r=120),
-        yaxis=dict(scaleanchor="x", scaleratio=1),
+        xaxis=dict(
+            range=axis_range,
+            dtick=dtick,
+            tickformat=".2g",
+            showticklabels=True,
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        ),
+        yaxis=dict(
+            range=axis_range,
+            scaleanchor="x",
+            scaleratio=1,
+            dtick=dtick,
+            tickformat=".2g",
+            showticklabels=True,
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        ),
     )
     fig.show(config=get_config())
 
@@ -276,7 +320,22 @@ class IQPlotter:
             width=500,
             height=400,
             margin=dict(l=120, r=120),
-            yaxis=dict(scaleanchor="x", scaleratio=1),
+            xaxis=dict(
+                zeroline=True,
+                zerolinecolor="black",
+                tickformat=".2g",
+                showticklabels=True,
+                showgrid=True,
+            ),
+            yaxis=dict(
+                scaleanchor="x",
+                scaleratio=1,
+                tickformat=".2g",
+                showticklabels=True,
+                zeroline=True,
+                zerolinecolor="black",
+                showgrid=True,
+            ),
             showlegend=True,
         )
 
@@ -288,6 +347,22 @@ class IQPlotter:
             self._num_scatters = len(data)
         if len(data) != self._num_scatters:
             raise ValueError("Number of scatters does not match")
+
+        max_val = np.max([np.max(np.abs(data[qubit])) for qubit in data])
+        axis_range = [-max_val * 1.1, max_val * 1.1]
+        dtick = max_val / 2
+
+        self._widget.update_layout(
+            xaxis=dict(
+                range=axis_range,
+                dtick=dtick,
+            ),
+            yaxis=dict(
+                range=axis_range,
+                dtick=dtick,
+            ),
+        )
+
         for idx, qubit in enumerate(data):
             scatter: go.Scatter = self._widget.data[idx]  # type: ignore
             scatter.x = np.real(data[qubit])

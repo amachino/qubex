@@ -27,6 +27,7 @@ class Qubit(Object):
         frequency: float,
         relaxation_rate: float = 0.0,
         dephasing_rate: float = 0.0,
+        **kwargs,
     ):
         super().__init__(
             label=label,
@@ -39,7 +40,6 @@ class Qubit(Object):
 
 
 class Resonator(Object):
-
     def __init__(
         self,
         *,
@@ -48,6 +48,7 @@ class Resonator(Object):
         frequency: float,
         relaxation_rate: float = 0.0,
         dephasing_rate: float = 0.0,
+        **kwargs,
     ):
         super().__init__(
             label=label,
@@ -60,7 +61,6 @@ class Resonator(Object):
 
 
 class Transmon(Object):
-
     def __init__(
         self,
         *,
@@ -70,6 +70,7 @@ class Transmon(Object):
         anharmonicity: float,
         relaxation_rate: float = 0.0,
         dephasing_rate: float = 0.0,
+        **kwargs,
     ):
         super().__init__(
             label=label,
@@ -92,7 +93,6 @@ class Coupling:
 
 
 class QuantumSystem:
-
     def __init__(
         self,
         *,
