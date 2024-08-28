@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objs as go
 import qctrlvisualizer as qcv
 from IPython.display import display
+from ipywidgets import Output
 from numpy.typing import ArrayLike, NDArray
 
 from ..style import get_colors, get_config
@@ -312,6 +313,7 @@ def scatter_iq_data(
 class IQPlotter:
     def __init__(self):
         self._num_scatters = None
+        self._output = Output()
         self._widget = go.FigureWidget()
         self._widget.update_layout(
             title="I/Q plane",
@@ -341,7 +343,9 @@ class IQPlotter:
 
     def update(self, data: TargetMap[IQArray]):
         if self._num_scatters is None:
-            display(self._widget)
+            display(self._output)
+            with self._output:
+                display(self._widget)
             for qubit in data:
                 self._widget.add_scatter(name=qubit, mode="markers")
             self._num_scatters = len(data)
@@ -367,6 +371,14 @@ class IQPlotter:
             scatter: go.Scatter = self._widget.data[idx]  # type: ignore
             scatter.x = np.real(data[qubit])
             scatter.y = np.imag(data[qubit])
+
+    def clear(self):
+        self._output.clear_output()
+        self._output.close()
+
+    def show(self):
+        self.clear()
+        self._widget.show(config=get_config())
 
 
 class IQPlotterPolar:

@@ -228,6 +228,8 @@ class SweepData(TargetData):
         normalize: bool = False,
         xaxis_type: str | None = None,
         yaxis_type: str | None = None,
+        xaxis_title: str | None = None,
+        yaxis_title: str | None = None,
     ):
         if normalize:
             param = self.rabi_param
@@ -249,9 +251,9 @@ class SweepData(TargetData):
             )
             fig.update_layout(
                 title=f"{self.title} : {self.target}",
-                xaxis_title=self.xaxis_title,
+                xaxis_title=xaxis_title or self.xaxis_title,
                 xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=self.yaxis_title,
+                yaxis_title=yaxis_title or self.yaxis_title,
                 yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()
@@ -275,9 +277,9 @@ class SweepData(TargetData):
             )
             fig.update_layout(
                 title=f"{self.title} : {self.target}",
-                xaxis_title=self.xaxis_title,
+                xaxis_title=xaxis_title or self.xaxis_title,
                 xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=self.yaxis_title,
+                yaxis_title=yaxis_title or self.yaxis_title,
                 yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()

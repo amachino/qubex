@@ -1624,6 +1624,9 @@ class Experiment:
         #         if plot:
         #             plotter.update(signals)
 
+        if plot:
+            plotter.show()
+
         sweep_data = {
             target: SweepData(
                 target=target,

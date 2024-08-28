@@ -195,7 +195,7 @@ class PulseSchedule:
     def plot(
         self,
         *,
-        width: int = 1000,
+        width: int = 800,
         time_unit: Literal["ns", "samples"] = "ns",
     ):
         """
