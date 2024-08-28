@@ -92,7 +92,10 @@ def print_chip_info() -> None:
     """Print the information of the chip."""
     chip = state_manager.experiment_system.chip
     graph = LatticeGraph(chip.n_qubits)
-    graph.plot_lattice()
+    graph.plot_graph()
+
+    frequencies = [f"{qubit.frequency:.3f}" for qubit in chip.qubits]
+    graph.plot_lattice(text=frequencies)
 
 
 def print_wiring_info(qubits: Sequence[str] | None = None) -> None:

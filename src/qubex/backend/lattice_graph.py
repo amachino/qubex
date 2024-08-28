@@ -65,6 +65,7 @@ class LatticeGraph:
         self.max_digit: Final = len(str(self.n_qubits - 1))
         self.max_mux_digit: Final = len(str(n_muxes - 1))
         self.edges: Final = self._create_edges(self.n_mux_rows, self.n_mux_cols)
+        self.visualizer: Final = Visualizer(self)
 
     @property
     def n_muxes(
@@ -399,17 +400,40 @@ class LatticeGraph:
         edge_list.sort()
         return edge_list
 
-    def plot_lattice(self):
-        """
-        Plot the lattice graph using Plotly.
+    def plot_graph(
+        self,
+        hovertext: list[str] | None = None,
+    ):
+        fig = self.visualizer.create_graph_figure(
+            hovertext=hovertext,
+        )
+        fig.show()
 
-        The nodes represent the qubits, and the edges represent the connections between them.
-        """
-        n_mux_rows = self.n_mux_rows
-        n_mux_cols = self.n_mux_cols
+    def plot_lattice(
+        self,
+        text: list[str] | None = None,
+        hovertext: list[str] | None = None,
+    ):
+        fig = self.visualizer.create_lattice_figure(
+            text=text,
+            hovertext=hovertext,
+        )
+        fig.show()
+
+
+class Visualizer:
+    def __init__(self, graph: LatticeGraph):
+        self.graph = graph
+
+    def create_graph_figure(
+        self,
+        hovertext: list[str] | None = None,
+    ) -> go.Figure:
+        n_mux_rows = self.graph.n_mux_rows
+        n_mux_cols = self.graph.n_mux_cols
         mux_size = 4
-        dx = 1
-        dy = 1
+        dx = 1.0
+        dy = 1.0
         marker_size = 36
 
         qubit_xy = {}
@@ -428,7 +452,7 @@ class LatticeGraph:
 
         edge_x = []
         edge_y = []
-        for edge in self.edges:
+        for edge in self.graph.edges:
             x0, y0 = qubit_xy[edge[0]]
             x1, y1 = qubit_xy[edge[1]]
             edge_x += [x0, x1, None]
@@ -445,18 +469,19 @@ class LatticeGraph:
         qubit_x = []
         qubit_y = []
         qubit_text = []
-        for i in range(self.n_qubits):
+        for i in range(self.graph.n_qubits):
             x, y = qubit_xy[i]
             qubit_x.append(x)
             qubit_y.append(y)
-            qubit_text.append(self.qubits[i])
+            qubit_text.append(self.graph.qubits[i])
 
         trace_qubit = go.Scatter(
             x=qubit_x,
             y=qubit_y,
             mode="markers+text",
-            hoverinfo="text",
             text=qubit_text,
+            hoverinfo="text",
+            hovertext=hovertext or qubit_text,
             marker=dict(
                 showscale=False,
                 color="white",
@@ -477,7 +502,7 @@ class LatticeGraph:
         for mux, (x, y) in mux_xy.items():
             mux_x.append(x)
             mux_y.append(y)
-            mux_text.append(self.muxes[mux])
+            mux_text.append(self.graph.muxes[mux])
 
         trace_mux = go.Scatter(
             x=mux_x,
@@ -516,4 +541,138 @@ class LatticeGraph:
                 width=marker_size * 4 * n_mux_cols,
             ),
         )
-        fig.show()
+        return fig
+
+    def create_lattice_figure(
+        self,
+        text: list[str] | None = None,
+        hovertext: list[str] | None = None,
+    ) -> go.Figure:
+        n_mux_rows = self.graph.n_mux_rows
+        n_mux_cols = self.graph.n_mux_cols
+        mux_size = 4
+        dx = 1.0
+        dy = 1.0
+        marker_size = 36
+        mux_line_width = 2
+        qubit_line_width = 1
+
+        qubit_xy = {}
+        shapes = []
+        for i in range(n_mux_rows):
+            for j in range(n_mux_cols):
+                mux = i * n_mux_cols + j
+                idx = mux * mux_size
+                x = j * dx * 2
+                y = i * dy * 2
+
+                # muxes
+                shapes.append(
+                    go.layout.Shape(
+                        type="rect",
+                        x0=x,
+                        y0=y,
+                        x1=x + 2 * dx,
+                        y1=y + 2 * dy,
+                        line=dict(color="black", width=mux_line_width),
+                    )
+                )
+
+                # qubits
+                shapes.append(
+                    go.layout.Shape(
+                        type="rect",
+                        x0=x,
+                        y0=y,
+                        x1=x + dx,
+                        y1=y + dy,
+                        line=dict(color="black", width=qubit_line_width),
+                    )
+                )
+                shapes.append(
+                    go.layout.Shape(
+                        type="rect",
+                        x0=x + dx,
+                        y0=y,
+                        x1=x + 2 * dx,
+                        y1=y + dy,
+                        line=dict(color="black", width=qubit_line_width),
+                    )
+                )
+                shapes.append(
+                    go.layout.Shape(
+                        type="rect",
+                        x0=x,
+                        y0=y + dy,
+                        x1=x + dx,
+                        y1=y + 2 * dy,
+                        line=dict(color="black", width=qubit_line_width),
+                    )
+                )
+                shapes.append(
+                    go.layout.Shape(
+                        type="rect",
+                        x0=x + dx,
+                        y0=y + dy,
+                        x1=x + 2 * dx,
+                        y1=y + 2 * dy,
+                        line=dict(color="black", width=qubit_line_width),
+                    )
+                )
+
+                qubit_xy[idx + 0] = (x + 0.5, y + 0.5)
+                qubit_xy[idx + 1] = (x + dx + 0.5, y + 0.5)
+                qubit_xy[idx + 2] = (x + 0.5, y + dy + 0.5)
+                qubit_xy[idx + 3] = (x + dx + 0.5, y + dy + 0.5)
+
+        qubit_x = []
+        qubit_y = []
+        qubit_text = []
+        for i in range(self.graph.n_qubits):
+            x, y = qubit_xy[i]
+            qubit_x.append(x)
+            qubit_y.append(y)
+            qubit_text.append(self.graph.qubits[i])
+
+        trace_qubit = go.Scatter(
+            x=qubit_x,
+            y=qubit_y,
+            mode="text",
+            text=text or qubit_text,
+            hoverinfo="text",
+            hovertext=hovertext or qubit_text,
+            textfont=dict(
+                family="sans-serif",
+                color="black",
+                size=marker_size // 3,
+            ),
+            textposition="middle center",
+        )
+
+        fig = go.Figure(
+            data=[trace_qubit],
+            layout=go.Layout(
+                shapes=shapes,
+                showlegend=False,
+                hovermode="closest",
+                margin=dict(b=10, l=10, r=10, t=10),
+                xaxis=dict(
+                    ticks="",
+                    showline=False,
+                    showgrid=False,
+                    zeroline=False,
+                    showticklabels=False,
+                ),
+                yaxis=dict(
+                    ticks="",
+                    autorange="reversed",
+                    showline=False,
+                    showgrid=False,
+                    zeroline=False,
+                    showticklabels=False,
+                ),
+                height=marker_size * 4 * n_mux_rows,
+                width=marker_size * 4 * n_mux_cols,
+            ),
+        )
+        return fig
