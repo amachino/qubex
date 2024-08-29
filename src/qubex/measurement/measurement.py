@@ -632,6 +632,8 @@ class Measurement:
         # |<- control_length -><- margin_length -><- capture_length ->|
         control_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for target, waveform in waveforms.items():
+            if waveform is None or len(waveform) == 0:
+                continue
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             left_padding = control_length - len(waveform)
             control_slice = slice(left_padding, control_length)

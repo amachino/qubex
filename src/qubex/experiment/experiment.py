@@ -3952,7 +3952,7 @@ class Experiment:
             for idx, freq in enumerate(tqdm(freq_range)):
                 with self.modified_frequencies({read_label: freq}):
                     result = self.measure(
-                        {target: np.zeros(0)},
+                        {qubit_label: np.zeros(0)},
                         mode="avg",
                         shots=shots,
                         interval=interval,
@@ -3993,7 +3993,6 @@ class Experiment:
             phases = measure_phases(freq_range, phase_shift=phase_shift)
             phases_diff = np.abs(np.diff(phases))
 
-        mux = self.experiment_system.get_mux_by_qubit(Target.qubit_label(target))
         fig = go.Figure()
         fig.add_scatter(
             name=target,
