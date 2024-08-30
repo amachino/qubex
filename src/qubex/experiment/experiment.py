@@ -2425,7 +2425,7 @@ class Experiment:
                 pulse = Drag(
                     duration=DRAG_HPI_DURATION,
                     amplitude=1,
-                    beta=-DRAG_HPI_LAMBDA / self.qubits[target].anharmonicity,
+                    beta=-DRAG_HPI_LAMBDA / self.qubits[target].alpha,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
@@ -2433,7 +2433,7 @@ class Experiment:
                 pulse = Drag(
                     duration=DRAG_PI_DURATION,
                     amplitude=1,
-                    beta=-DRAG_PI_LAMBDA / self.qubits[target].anharmonicity,
+                    beta=-DRAG_PI_LAMBDA / self.qubits[target].alpha,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
