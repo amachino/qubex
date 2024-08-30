@@ -93,11 +93,12 @@ PI_AMPLITUDE = "pi_amplitude"
 PI_DURATION = 30
 PI_RISETIME = 10
 DRAG_HPI_AMPLITUDE = "drag_hpi_amplitude"
+DRAG_HPI_BETA = "drag_hpi_beta"
 DRAG_HPI_DURATION = 16
-DRAG_HPI_LAMBDA = 0.5
 DRAG_PI_AMPLITUDE = "drag_pi_amplitude"
+DRAG_PI_BETA = "drag_pi_beta"
 DRAG_PI_DURATION = 16
-DRAG_PI_LAMBDA = 0.5
+DRAG_COEFF = 0.5
 
 
 class Experiment:
@@ -377,13 +378,15 @@ class Experiment:
             DRAG π/2 pulse.
         """
         calib_amplitude: dict[str, float] = self._system_note.get(DRAG_HPI_AMPLITUDE)
-        if calib_amplitude is None:
-            raise ValueError("DRAG HPI amplitude is not stored.")
+        calib_beta: dict[str, float] = self._system_note.get(DRAG_HPI_BETA)
+
+        if calib_amplitude is None or calib_beta is None:
+            raise ValueError("DRAG HPI amplitude or beta is not stored.")
         return {
             target: Drag(
                 duration=DRAG_HPI_DURATION,
                 amplitude=calib_amplitude[target],
-                beta=-DRAG_HPI_LAMBDA / self.qubits[target].anharmonicity,
+                beta=calib_beta[target],
             )
             for target in self._qubits
         }
@@ -399,13 +402,14 @@ class Experiment:
             DRAG π pulse.
         """
         calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
-        if calib_amplitude is None:
-            raise ValueError("DRAG PI amplitude is not stored.")
+        calib_beta: dict[str, float] = self._system_note.get(DRAG_PI_BETA)
+        if calib_amplitude is None or calib_beta is None:
+            raise ValueError("DRAG PI amplitude or beta is not stored.")
         return {
             target: Drag(
                 duration=DRAG_PI_DURATION,
                 amplitude=calib_amplitude[target],
-                beta=-DRAG_PI_LAMBDA / self.qubits[target].anharmonicity,
+                beta=calib_beta[target],
             )
             for target in self._qubits
         }
@@ -2282,7 +2286,7 @@ class Experiment:
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 1,
-        shots: int = 3000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2297,7 +2301,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2391,8 +2395,9 @@ class Experiment:
         self,
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
-        n_rotations: int = 8,
-        shots: int = 3000,
+        n_rotations: int = 4,
+        drag_coeff: float = DRAG_COEFF,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2405,9 +2410,11 @@ class Experiment:
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 4.
+        drag_coeff : float, optional
+            DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2425,7 +2432,7 @@ class Experiment:
                 pulse = Drag(
                     duration=DRAG_HPI_DURATION,
                     amplitude=1,
-                    beta=-DRAG_HPI_LAMBDA / self.qubits[target].alpha,
+                    beta=-drag_coeff / self.qubits[target].alpha,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
@@ -2433,7 +2440,7 @@ class Experiment:
                 pulse = Drag(
                     duration=DRAG_PI_DURATION,
                     amplitude=1,
-                    beta=-DRAG_PI_LAMBDA / self.qubits[target].alpha,
+                    beta=-drag_coeff / self.qubits[target].alpha,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -2563,7 +2570,7 @@ class Experiment:
         self,
         targets: list[str],
         n_rotations: int = 1,
-        shots: int = 3000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2576,7 +2583,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2602,7 +2609,7 @@ class Experiment:
         self,
         targets: list[str],
         n_rotations: int = 1,
-        shots: int = 3000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2615,7 +2622,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2640,8 +2647,9 @@ class Experiment:
     def calibrate_drag_hpi_pulse(
         self,
         targets: list[str],
-        n_rotations: int = 8,
-        shots: int = 3000,
+        n_rotations: int = 4,
+        shots: int = DEFAULT_SHOTS,
+        drag_coeff: float = DRAG_COEFF,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2652,9 +2660,11 @@ class Experiment:
         target : str
             Target qubit to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 4.
+        drag_coeff : float, optional
+            DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2672,15 +2682,18 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
+        beta = {target: -drag_coeff / self.qubits[target].alpha for target in targets}
         self._system_note.put(DRAG_HPI_AMPLITUDE, ampl)
+        self._system_note.put(DRAG_HPI_BETA, beta)
 
         return result
 
     def calibrate_drag_pi_pulse(
         self,
         targets: list[str],
-        n_rotations: int = 8,
-        shots: int = 3000,
+        n_rotations: int = 4,
+        drag_coeff: float = DRAG_COEFF,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2691,9 +2704,11 @@ class Experiment:
         target : str
             Target qubit to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 4.
+        drag_coeff : float, optional
+            DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2711,7 +2726,9 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
+        beta = {target: -drag_coeff / self.qubits[target].alpha for target in targets}
         self._system_note.put(DRAG_PI_AMPLITUDE, ampl)
+        self._system_note.put(DRAG_PI_BETA, beta)
 
         return result
 
