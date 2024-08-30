@@ -288,17 +288,22 @@ class Measurement:
         """
         capture = pls.Capture(duration=duration)
         readout_targets = {Target.read_label(target) for target in targets}
+        shots = 1
         with pls.Sequence() as sequence:
             with pls.Flushleft():
                 for target in readout_targets:
                     capture.target(target)
         backend_result = self.device_controller.execute_sequence(
             sequence=sequence,
-            repeats=1,
+            repeats=shots,
             interval=DEFAULT_INTERVAL,
             integral_mode="single",
         )
-        return self._create_measure_result(backend_result, MeasureMode.SINGLE)
+        return self._create_measure_result(
+            backend_result=backend_result,
+            measure_mode=MeasureMode.SINGLE,
+            shots=shots,
+        )
 
     def _calc_backend_interval(
         self,
@@ -405,7 +410,11 @@ class Measurement:
                 repeats=shots,
                 integral_mode=measure_mode.integral_mode,
             )
-        return self._create_measure_result(backend_result, measure_mode)
+        return self._create_measure_result(
+            backend_result=backend_result,
+            measure_mode=measure_mode,
+            shots=shots,
+        )
 
     def measure_batch(
         self,
@@ -491,7 +500,11 @@ class Measurement:
             integral_mode=measure_mode.integral_mode,
         )
         for backend_result in backend_results:
-            yield self._create_measure_result(backend_result, measure_mode)
+            yield self._create_measure_result(
+                backend_result=backend_result,
+                measure_mode=measure_mode,
+                shots=shots,
+            )
 
     def execute(
         self,
@@ -542,7 +555,11 @@ class Measurement:
             repeats=shots,
             integral_mode=measure_mode.integral_mode,
         )
-        return self._create_measure_result(backend_result, measure_mode)
+        return self._create_measure_result(
+            backend_result=backend_result,
+            measure_mode=measure_mode,
+            shots=shots,
+        )
 
     def _create_sequence(
         self,
@@ -878,6 +895,7 @@ class Measurement:
         self,
         backend_result: RawResult,
         measure_mode: MeasureMode,
+        shots: int,
     ) -> MeasureResult:
         label_slice = slice(1, None)  # Remove the prefix "R"
         capture_index = 0
@@ -898,7 +916,7 @@ class Measurement:
             elif measure_mode == MeasureMode.AVG:
                 # iqs: ndarray[duration, 1]
                 raw = iqs[capture_index].squeeze()
-                kerneled = np.mean(iqs) * 2 ** (-32)
+                kerneled = np.mean(iqs) * 2 ** (-32) / shots
                 classified_data = None
             else:
                 raise ValueError(f"Invalid measure mode: {measure_mode}")
