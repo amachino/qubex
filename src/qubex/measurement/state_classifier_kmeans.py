@@ -5,25 +5,25 @@ from dataclasses import dataclass
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
+from sklearn.cluster import KMeans
 from sklearn.metrics import confusion_matrix
-from sklearn.mixture import GaussianMixture
 
 from ..style import get_colors, get_config
 
 
 @dataclass
-class StateClassifierGMM:
+class StateClassifierKMeans:
     """
-    A state classifier model that uses Gaussian Mixture Model (GMM) to classify data.
+    A state classifier model that uses k-means to classify data.
 
     Attributes
     ----------
     dataset : dict[int, NDArray[np.float32]]
         A dictionary of state labels and preprocessed data.
-    model : GaussianMixture
-        The fitted GMM model.
+    model : KMeans
+        The fitted k-means model.
     label_map : dict[int, int]
-        A mapping from GMM component labels to state labels.
+        A mapping from k-means cluster labels to state labels.
     confusion_matrix : NDArray
         The confusion matrix of the classifier.
     centers : dict[int, complex]
@@ -31,7 +31,7 @@ class StateClassifierGMM:
     """
 
     dataset: dict[int, NDArray[np.float32]]
-    model: GaussianMixture
+    model: KMeans
     label_map: dict[int, int]
     confusion_matrix: NDArray
 
@@ -44,16 +44,10 @@ class StateClassifierGMM:
     def centers(self) -> dict[int, complex]:
         """The center of each state."""
         centers = {}
-        centers_arr = np.asarray(self.model.means_)
+        centers_arr = np.asarray(self.model.cluster_centers_)
         for label in range(len(centers_arr)):
             centers[label] = complex(centers_arr[label][0], centers_arr[label][1])
         return centers
-
-    @property
-    def weights(self) -> dict[int, float]:
-        """The weights of each state."""
-        weights_arr = np.asarray(self.model.weights_)
-        return {label: weight for label, weight in enumerate(weights_arr)}
 
     @classmethod
     def fit(
@@ -61,22 +55,22 @@ class StateClassifierGMM:
         data: dict[int, NDArray[np.complex64]],
         n_init: int = 10,
         random_state: int = 42,
-    ) -> StateClassifierGMM:
+    ) -> StateClassifierKMeans:
         """
-        Fit a Gaussian Mixture Model (GMM) to the provided data.
+        Fit a k-means model to the provided data.
 
         Parameters
         ----------
         data : dict[int, NDArray[np.complex64]]
             A dictionary of state labels and complex data.
         n_init : int, optional
-            Number of initializations to perform, by default 10.
+            Number of time the k-means algorithm will be run with different center seeds, by default 10.
         random_state : int, optional
             The random state for the model, by default 42.
 
         Returns
         -------
-        StateClassifierGMM
+        StateClassifier
             A state classifier model.
         """
         # Validate input data
@@ -93,14 +87,13 @@ class StateClassifierGMM:
             for state in data
         }
 
-        # Fit GMM model
+        # Fit k-means model
         concat_data = np.concatenate(list(dataset.values()))
-        n_components = len(dataset)
-        model = GaussianMixture(
-            n_components=n_components,
+        n_clusters = len(dataset)
+        model = KMeans(
+            n_clusters=n_clusters,
             n_init=n_init,
             random_state=random_state,
-            covariance_type="spherical",
         )
         model.fit(concat_data)
 
@@ -120,23 +113,23 @@ class StateClassifierGMM:
 
     @staticmethod
     def _create_label_map(
-        model: GaussianMixture,
+        model: KMeans,
         dataset: dict[int, NDArray[np.float32]],
     ) -> dict[int, int]:
         """
-        Create a mapping from GMM component labels to state labels.
+        Create a mapping from k-means cluster labels to state labels.
 
         Parameters
         ----------
-        model : GaussianMixture
-            The fitted GMM model.
+        model : KMeans
+            The fitted k-means model.
         dataset : dict[int, NDArray[np.float32]]
             The preprocessed dataset.
 
         Returns
         -------
         dict[int, int]
-            A mapping from GMM component labels to state labels.
+            A mapping from k-means cluster labels to state labels.
         """
         n_clusters = len(dataset)
         label_map = {label: -1 for label in range(n_clusters)}
@@ -151,7 +144,7 @@ class StateClassifierGMM:
 
     @staticmethod
     def _create_confusion_matrix(
-        model: GaussianMixture,
+        model: KMeans,
         dataset: dict[int, NDArray[np.float32]],
         label_map: dict[int, int],
     ) -> NDArray:
@@ -160,12 +153,12 @@ class StateClassifierGMM:
 
         Parameters
         ----------
-        model : GaussianMixture
-            The fitted GMM model.
+        model : KMeans
+            The fitted k-means model.
         dataset : dict[int, NDArray[np.float32]]
             The preprocessed dataset.
         label_map : dict[int, int]
-            A mapping from GMM component labels to state labels.
+            A mapping from k-means cluster labels to state labels.
 
         Returns
         -------
@@ -199,10 +192,10 @@ class StateClassifierGMM:
         """
         # Convert complex data to real-valued features
         real_imag_data = np.column_stack([np.real(data), np.imag(data)])
-        # Predict GMM component labels
-        component_labels = self.model.predict(real_imag_data)
-        # Convert GMM component labels to state labels
-        state_labels = np.array([self.label_map[label] for label in component_labels])
+        # Predict k-means cluster labels
+        cluster_labels = self.model.predict(real_imag_data)
+        # Convert k-means cluster labels to state labels
+        state_labels = np.array([self.label_map[label] for label in cluster_labels])
 
         return state_labels
 

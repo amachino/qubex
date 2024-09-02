@@ -39,7 +39,7 @@ from ..backend import (
     Target,
 )
 from ..clifford import CliffordGroup
-from ..measurement import Measurement, MeasureResult, StateClassifierGMM
+from ..measurement import Measurement, MeasureResult, StateClassifier
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_MARGIN,
     DEFAULT_CAPTURE_WINDOW,
@@ -480,7 +480,7 @@ class Experiment:
         }
 
     @property
-    def classifiers(self) -> dict[str, StateClassifierGMM]:
+    def classifiers(self) -> dict[str, StateClassifier]:
         """Get the classifiers."""
         return self._measurement.classifiers
 
@@ -3125,9 +3125,7 @@ class Experiment:
             }
             for target in targets
         }
-        classifiers = {
-            target: StateClassifierGMM.fit(data[target]) for target in targets
-        }
+        classifiers = {target: StateClassifier.fit(data[target]) for target in targets}
         self._measurement.classifiers = classifiers
 
         for target in targets:
