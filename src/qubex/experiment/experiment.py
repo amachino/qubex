@@ -1595,7 +1595,7 @@ class Experiment:
             raise ValueError("Invalid sequence.")
 
         signals = defaultdict(list)
-        plotter = IQPlotter()
+        plotter = IQPlotter(self.state_centroids)
 
         generator = self._measure_batch(
             sequences=sequences,
