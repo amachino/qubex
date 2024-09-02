@@ -313,7 +313,7 @@ def scatter_iq_data(
 class IQPlotter:
     def __init__(
         self,
-        state_centroids: TargetMap[dict[int, complex]] | None = None,
+        state_centers: TargetMap[dict[int, complex]] | None = None,
     ):
         self._colors = [f"rgba{color}" for color in get_colors(alpha=0.8)]
         self._num_scatters = -1
@@ -345,17 +345,17 @@ class IQPlotter:
             showlegend=True,
         )
 
-        if state_centroids is not None:
-            for idx, (label, centroids) in enumerate(state_centroids.items()):
-                centroid_values = list(centroids.values())
-                x = np.real(centroid_values)
-                y = np.imag(centroid_values)
+        if state_centers is not None:
+            for idx, (label, centers) in enumerate(state_centers.items()):
+                center_values = list(centers.values())
+                x = np.real(center_values)
+                y = np.imag(center_values)
                 self._widget.add_trace(
                     go.Scatter(
                         x=x,
                         y=y,
                         mode="text+markers",
-                        text=[f"|{state}〉" for state in centroids],
+                        text=[f"|{state}〉" for state in centers],
                         name=f"{label} states",
                         hoverinfo="name",
                         showlegend=False,

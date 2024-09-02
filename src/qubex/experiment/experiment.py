@@ -39,7 +39,7 @@ from ..backend import (
     Target,
 )
 from ..clifford import CliffordGroup
-from ..measurement import Measurement, MeasureResult, StateClassifier
+from ..measurement import Measurement, MeasureResult, StateClassifierGMM
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_MARGIN,
     DEFAULT_CAPTURE_WINDOW,
@@ -480,15 +480,15 @@ class Experiment:
         }
 
     @property
-    def classifiers(self) -> dict[str, StateClassifier]:
+    def classifiers(self) -> dict[str, StateClassifierGMM]:
         """Get the classifiers."""
         return self._measurement.classifiers
 
     @property
-    def state_centroids(self) -> dict[str, dict[int, complex]]:
-        """Get the state centroids."""
+    def state_centers(self) -> dict[str, dict[int, complex]]:
+        """Get the state centers."""
         return {
-            target: classifier.centroids
+            target: classifier.centers
             for target, classifier in self.classifiers.items()
         }
 
@@ -1595,7 +1595,7 @@ class Experiment:
             raise ValueError("Invalid sequence.")
 
         signals = defaultdict(list)
-        plotter = IQPlotter(self.state_centroids)
+        plotter = IQPlotter(self.state_centers)
 
         generator = self._measure_batch(
             sequences=sequences,
@@ -3125,7 +3125,9 @@ class Experiment:
             }
             for target in targets
         }
-        classifiers = {target: StateClassifier.fit(data[target]) for target in targets}
+        classifiers = {
+            target: StateClassifierGMM.fit(data[target]) for target in targets
+        }
         self._measurement.classifiers = classifiers
 
         for target in targets:

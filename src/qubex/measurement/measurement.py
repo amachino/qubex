@@ -25,7 +25,7 @@ from ..backend import (
 from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
-from .state_classifier import StateClassifier
+from .state_classifier_gmm import StateClassifierGMM
 
 DEFAULT_SHOTS: Final = 1024
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
@@ -76,7 +76,7 @@ class Measurement:
             fetch_device_state=fetch_device_state,
         )
         self._use_neopulse = use_neopulse
-        self._classifiers: dict[str, StateClassifier] = {}
+        self._classifiers: dict[str, StateClassifierGMM] = {}
 
     def _load_state(
         self,
@@ -144,12 +144,12 @@ class Measurement:
         }
 
     @property
-    def classifiers(self) -> dict[str, StateClassifier]:
+    def classifiers(self) -> dict[str, StateClassifierGMM]:
         """Get the state classifiers."""
         return self._classifiers
 
     @classifiers.setter
-    def classifiers(self, classifiers: dict[str, StateClassifier]):
+    def classifiers(self, classifiers: dict[str, StateClassifierGMM]):
         """Set the state classifiers."""
         self._classifiers = classifiers
 
