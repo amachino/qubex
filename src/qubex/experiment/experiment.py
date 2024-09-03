@@ -4,6 +4,7 @@ import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Final, Literal, Optional, Sequence
@@ -85,6 +86,9 @@ console = Console()
 
 USER_NOTE_PATH = ".user_note.json"
 SYSTEM_NOTE_PATH = ".system_note.json"
+
+RABI_PARAMS = "rabi_params"
+STATE_CENTERS = "state_centers"
 
 HPI_AMPLITUDE = "hpi_amplitude"
 HPI_DURATION = 30
@@ -464,6 +468,14 @@ class Experiment:
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
         """Get the Rabi parameters."""
+        params: dict[str, dict] | None
+        params = self._system_note.get(RABI_PARAMS)
+        if params is not None:
+            rabi_params = {
+                target: RabiParam(**param) for target, param in params.items()
+            }
+            self._rabi_params.update(rabi_params)
+
         return self._rabi_params
 
     @property
@@ -492,6 +504,17 @@ class Experiment:
     @property
     def state_centers(self) -> dict[str, dict[int, complex]]:
         """Get the state centers."""
+        centers: dict[str, dict[int, list[float]]] | None
+        centers = self._system_note.get(STATE_CENTERS)
+        if centers is not None:
+            return {
+                target: {
+                    state: complex(center[0], center[1])
+                    for state, center in centers.items()
+                }
+                for target, centers in centers.items()
+            }
+
         return {
             target: classifier.centers
             for target, classifier in self.classifiers.items()
@@ -521,9 +544,14 @@ class Experiment:
         """
         if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
             self._rabi_params.update(rabi_params)
-        else:
-            if Confirm.ask("Overwrite the existing Rabi parameters?"):
-                self._rabi_params.update(rabi_params)
+        # else:
+        #     if not Confirm.ask("Overwrite the existing Rabi parameters?"):
+        #         return
+
+        self._system_note.put(
+            RABI_PARAMS,
+            {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
+        )
         console.print("Rabi parameters are stored.")
 
     def get_pulse_for_state(
@@ -3180,6 +3208,17 @@ class Experiment:
                 print(
                     f"  Average readout fidelity : {np.mean(fidelity) * 100:.2f}%\n\n"
                 )
+
+        self._system_note.put(
+            STATE_CENTERS,
+            {
+                target: {
+                    str(state): (center.real, center.imag)
+                    for state, center in classifiers[target].centers.items()
+                }
+                for target in targets
+            },
+        )
 
     def rb_sequence(
         self,
