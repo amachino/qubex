@@ -1113,6 +1113,10 @@ class Experiment:
         self,
         targets: list[str] | None = None,
         *,
+        time_range: ArrayLike | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        store_params: bool = True,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -1122,6 +1126,14 @@ class Experiment:
         ----------
         targets : list[str], optional
             List of targets to check the Rabi oscillation.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        store_params : bool, optional
+            Whether to store the Rabi parameters. Defaults to True.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -1136,8 +1148,19 @@ class Experiment:
         """
         if targets is None:
             targets = self.qubit_labels
-
-        return self.obtain_rabi_params(targets, plot=plot)
+        if time_range is None:
+            time_range = np.arange(0, 201, 8)
+        ampl = self.params.control_amplitude
+        amplitudes = {target: ampl[target] for target in targets}
+        result = self.rabi_experiment(
+            amplitudes=amplitudes,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            store_params=store_params,
+            plot=plot,
+        )
+        return result
 
     def obtain_rabi_params(
         self,
