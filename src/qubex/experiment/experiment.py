@@ -747,22 +747,35 @@ class Experiment:
 
     def normalize(
         self,
-        data: IQArray,
-        rabi_param: RabiParam,
-    ) -> NDArray[np.float64]:
+        data: TargetMap[IQArray],
+    ) -> dict[str, NDArray]:
         """
-        Normalize the measured data.
+        Normalize the measured data to [-1, 1].
+        """
+        if not self.rabi_params:
+            raise ValueError("Rabi parameters are not stored.")
 
-        Parameters
-        ----------
-        data : IQArray
-            Measured data.
-        rabi_param : RabiParam
-            Rabi parameters.
-        """
-        values = data * np.exp(-1j * rabi_param.angle)
-        values_normalized = (np.imag(values) - rabi_param.offset) / rabi_param.amplitude
-        return values_normalized
+        points_normalized: dict[str, NDArray] = {}
+        if len(self.state_centers) > 1:
+            for target, values in data.items():
+                points = np.array(values, dtype=np.complex128)
+                g = self.state_centers[target][0]
+                e = self.state_centers[target][1]
+                v_ge = e - g
+                v_gp = points - g
+                v_gp_proj = np.real(v_gp * np.conj(v_ge)) / np.abs(v_ge)
+                normalized = 1 - 2 * np.abs(v_gp_proj) / np.abs(v_ge)
+                points_normalized[target] = normalized
+        else:
+            for target, values in data.items():
+                points = np.array(values, dtype=np.complex128)
+                rabi_param = self.rabi_params[target]
+                rotated = points * np.exp(-1j * rabi_param.angle)
+                normalized = (
+                    np.imag(rotated) - rabi_param.offset
+                ) / rabi_param.amplitude
+                points_normalized[target] = normalized
+        return points_normalized
 
     def execute(
         self,
