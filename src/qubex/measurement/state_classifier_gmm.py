@@ -50,6 +50,15 @@ class StateClassifierGMM:
         return centers
 
     @property
+    def stddevs(self) -> dict[int, float]:
+        """The standard deviation of each state."""
+        stddevs = {}
+        stddevs_arr = np.asarray(self.model.covariances_)
+        for label in range(len(stddevs_arr)):
+            stddevs[label] = np.sqrt(stddevs_arr[label])
+        return stddevs
+
+    @property
     def weights(self) -> dict[int, float]:
         """The weights of each state."""
         weights_arr = np.asarray(self.model.weights_)
@@ -138,11 +147,11 @@ class StateClassifierGMM:
         dict[int, int]
             A mapping from GMM component labels to state labels.
         """
-        n_clusters = len(dataset)
-        label_map = {label: -1 for label in range(n_clusters)}
+        n_components = len(dataset)
+        label_map = {label: -1 for label in range(n_components)}
         for state, data in dataset.items():
             result = model.predict(data)
-            count = np.bincount(result, minlength=n_clusters)
+            count = np.bincount(result, minlength=n_components)
             for label in np.argsort(count)[::-1]:
                 if label_map[label] == -1:
                     label_map[label] = state
@@ -282,7 +291,7 @@ class StateClassifierGMM:
                     y=[center.imag],
                     mode="markers",
                     name=f"|{label}⟩",
-                    showlegend=False,
+                    showlegend=True,
                     marker=dict(
                         size=10,
                         color="black",
@@ -290,6 +299,26 @@ class StateClassifierGMM:
                     ),
                 )
             )
+        for label, center in self.centers.items():
+            sigma = self.stddevs[label]
+            theta = np.linspace(0, 2 * np.pi, 100)
+            x_circle = center.real + 2 * sigma * np.cos(theta)
+            y_circle = center.imag + 2 * sigma * np.sin(theta)
+            fig.add_trace(
+                go.Scatter(
+                    x=x_circle,
+                    y=y_circle,
+                    mode="lines",
+                    name=f"|{label}⟩ ± 2σ",
+                    showlegend=True,
+                    line=dict(
+                        color="black",
+                        width=2,
+                        dash="dot",
+                    ),
+                )
+            )
+
         fig.update_layout(
             title=f"State classification of {target}",
             xaxis_title="In-Phase (arb. units)",

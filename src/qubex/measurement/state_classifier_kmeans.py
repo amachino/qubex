@@ -275,7 +275,7 @@ class StateClassifierKMeans:
                     y=[center.imag],
                     mode="markers",
                     name=f"|{label}⟩",
-                    showlegend=False,
+                    showlegend=True,
                     marker=dict(
                         size=10,
                         color="black",

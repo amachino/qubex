@@ -425,6 +425,8 @@ class Experiment:
             π/2 pulse.
         """
         amplitude = self._system_note.get(HPI_AMPLITUDE)
+        if amplitude is None:
+            raise ValueError("EF π/2 amplitude is not stored.")
         ef_labels = [Target.ef_label(target) for target in self._qubits]
         return {
             target: FlatTop(
@@ -446,7 +448,10 @@ class Experiment:
             π/2 pulse.
         """
         amplitude = self._system_note.get(PI_AMPLITUDE)
+        if amplitude is None:
+            raise ValueError("EF π amplitude is not stored.")
         ef_labels = [Target.ef_label(target) for target in self._qubits]
+
         return {
             target: FlatTop(
                 duration=PI_DURATION,
@@ -489,6 +494,14 @@ class Experiment:
         """Get the state centers."""
         return {
             target: classifier.centers
+            for target, classifier in self.classifiers.items()
+        }
+
+    @property
+    def state_stddevs(self) -> dict[str, dict[int, float]]:
+        """Get the state standard deviations."""
+        return {
+            target: classifier.stddevs
             for target, classifier in self.classifiers.items()
         }
 
@@ -3082,6 +3095,7 @@ class Experiment:
     def measure_state_distribution(
         self,
         targets: list[str],
+        *,
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3110,11 +3124,17 @@ class Experiment:
     def build_classifier(
         self,
         targets: list[str],
+        *,
         n_states: Literal[2, 3] = 2,
+        shots: int = 1000,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
     ):
         results = self.measure_state_distribution(
             targets=targets,
             n_states=n_states,
+            shots=shots,
+            interval=interval,
             plot=False,
         )
 
@@ -3130,19 +3150,30 @@ class Experiment:
 
         for target in targets:
             clf = classifiers[target]
-            classified = [
-                clf.classify(target, data[target][state]) for state in range(n_states)
-            ]
+            classified = []
+            for state in range(n_states):
+                if plot:
+                    print(f"{target} prepared as |{state}⟩:")
+                result = clf.classify(
+                    target,
+                    data[target][state],
+                    plot=plot,
+                )
+                classified.append(result)
             fidelity = [
                 classified[state][state] / sum(classified[state].values())
                 for state in range(n_states)
             ]
-            print(f"Readout fidelity of {target}:")
-            for state in range(n_states):
+            if plot:
+                print(f"{target}:")
+                print(f"  Total shots: {shots}")
+                for state in range(n_states):
+                    print(
+                        f"  |{state}⟩ → {classified[state]}, f_{state}: {fidelity[state] * 100:.2f}%"
+                    )
                 print(
-                    f"|{state}⟩ → {classified[state]}, fidelity: {fidelity[state] * 100:.2f}%"
+                    f"  Average readout fidelity : {np.mean(fidelity) * 100:.2f}%\n\n"
                 )
-            print(f"Average readout fidelity: {np.mean(fidelity) * 100:.2f}%")
 
     def rb_sequence(
         self,
