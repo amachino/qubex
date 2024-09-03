@@ -98,10 +98,13 @@ class RabiData(TargetData):
         Time range of the experiment.
     rabi_param : RabiParam
         Parameters of the Rabi oscillation.
+    state_centers : dict[int, complex], optional
+        Centers of the states.
     """
 
     time_range: NDArray
     rabi_param: RabiParam
+    state_centers: dict[int, complex] | None = None
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
@@ -111,7 +114,7 @@ class RabiData(TargetData):
     @property
     def normalized(self) -> NDArray[np.float64]:
         param = self.rabi_param
-        return fitting.normalize(self.data, param)
+        return fitting.normalize(self.data, param, self.state_centers)
 
     def plot(
         self,
@@ -186,6 +189,8 @@ class SweepData(TargetData):
         Sweep range of the experiment.
     rabi_param : RabiParam, optional
         Parameters of the Rabi oscillation.
+    state_centers : dict[int, complex], optional
+        Centers of the states.
     title : str, optional
         Title of the plot.
     xaxis_title : str, optional
@@ -200,6 +205,7 @@ class SweepData(TargetData):
 
     sweep_range: NDArray
     rabi_param: RabiParam | None = None
+    state_centers: dict[int, complex] | None = None
     title: str = "Sweep result"
     xaxis_title: str = "Sweep value"
     yaxis_title: str = "Measured value"
@@ -218,9 +224,7 @@ class SweepData(TargetData):
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
-        values = self.data * np.exp(-1j * param.angle)
-        values_normalized = (values.imag - param.offset) / param.amplitude
-        return values_normalized
+        return fitting.normalize(self.data, param, self.state_centers)
 
     def plot(
         self,
