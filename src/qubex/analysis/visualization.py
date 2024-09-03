@@ -356,9 +356,9 @@ class IQPlotter:
                         y=y,
                         mode="text+markers",
                         text=[f"|{state}〉" for state in centers],
-                        name=f"{label} states",
+                        name=f"{label}",
                         hoverinfo="name",
-                        showlegend=False,
+                        showlegend=True,
                         marker=dict(
                             symbol="circle",
                             size=30,
@@ -368,6 +368,7 @@ class IQPlotter:
                             size=12,
                             color="black",
                         ),
+                        legendgroup="state",
                     )
                 )
 
@@ -379,8 +380,10 @@ class IQPlotter:
             for idx, qubit in enumerate(data):
                 self._widget.add_scatter(
                     name=qubit,
+                    meta=qubit,
                     mode="markers",
                     marker=dict(size=4, color=self._colors[idx]),
+                    legendrank=idx,
                 )
             self._num_scatters = len(data)
         if len(data) != self._num_scatters:
@@ -404,7 +407,7 @@ class IQPlotter:
         for qubit in data:
             for trace in self._widget.data:
                 scatter: go.Scatter = trace  # type: ignore
-                if scatter.name == qubit:
+                if scatter.meta == qubit:
                     scatter.x = np.real(data[qubit])
                     scatter.y = np.imag(data[qubit])
 
