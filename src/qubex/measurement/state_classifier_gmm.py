@@ -46,7 +46,9 @@ class StateClassifierGMM:
         centers = {}
         centers_arr = np.asarray(self.model.means_)
         for label in range(len(centers_arr)):
-            centers[label] = complex(centers_arr[label][0], centers_arr[label][1])
+            centers[self.label_map[label]] = complex(
+                centers_arr[label][0], centers_arr[label][1]
+            )
         return centers
 
     @property
