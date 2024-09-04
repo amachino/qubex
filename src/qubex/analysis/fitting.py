@@ -92,16 +92,18 @@ def normalize(
     npt.NDArray
         Normalized I/Q value.
     """
-    if centers is not None:
-        p = np.array(values, dtype=np.complex128)
-        g, e = centers[0], centers[1]
-        v_ge = e - g
-        v_gp = p - g
-        v_gp_proj = np.real(v_gp * np.conj(v_ge)) / np.abs(v_ge)
-        normalized = 1 - 2 * np.abs(v_gp_proj) / np.abs(v_ge)
-    else:
-        rotated = values * np.exp(-1j * param.angle)
-        normalized = (np.imag(rotated) - param.offset) / param.amplitude
+    # if centers is not None:
+    #     p = np.array(values, dtype=np.complex128)
+    #     g, e = centers[0], centers[1]
+    #     v_ge = e - g
+    #     v_gp = p - g
+    #     v_gp_proj = np.real(v_gp * np.conj(v_ge)) / np.abs(v_ge)
+    #     normalized = 1 - 2 * np.abs(v_gp_proj) / np.abs(v_ge)
+    # else:
+    #     rotated = values * np.exp(-1j * param.angle)
+    #     normalized = (np.imag(rotated) - param.offset) / param.amplitude
+    rotated = values * np.exp(-1j * param.angle)
+    normalized = (np.imag(rotated) - param.offset) / param.amplitude
     return normalized
 
 
