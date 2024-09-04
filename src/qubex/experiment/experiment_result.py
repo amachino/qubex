@@ -139,6 +139,7 @@ class RabiData(TargetData):
                 title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
                 xaxis_title="Drive duration (ns)",
                 yaxis_title="Normalized value",
+                yaxis_range=[-1.1, 1.1],
             )
             fig.show()
         else:
@@ -259,6 +260,7 @@ class SweepData(TargetData):
                 xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
                 yaxis_title=yaxis_title or self.yaxis_title,
                 yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+                yaxis_range=[-1.1, 1.1],
             )
             fig.show()
         else:
