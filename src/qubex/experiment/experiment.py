@@ -506,12 +506,12 @@ class Experiment:
     @property
     def state_centers(self) -> dict[str, dict[int, complex]]:
         """Get the state centers."""
-        centers: dict[str, dict[int, list[float]]] | None
+        centers: dict[str, dict[str, list[float]]] | None
         centers = self._system_note.get(STATE_CENTERS)
         if centers is not None:
             return {
                 target: {
-                    state: complex(center[0], center[1])
+                    int(state): complex(center[0], center[1])
                     for state, center in centers.items()
                 }
                 for target, centers in centers.items()
@@ -520,14 +520,6 @@ class Experiment:
 
         return {
             target: classifier.centers
-            for target, classifier in self.classifiers.items()
-        }
-
-    @property
-    def state_stddevs(self) -> dict[str, dict[int, float]]:
-        """Get the state standard deviations."""
-        return {
-            target: classifier.stddevs
             for target, classifier in self.classifiers.items()
         }
 
