@@ -472,7 +472,9 @@ class Experiment:
         params = self._system_note.get(RABI_PARAMS)
         if params is not None:
             rabi_params = {
-                target: RabiParam(**param) for target, param in params.items()
+                target: RabiParam(**param)
+                for target, param in params.items()
+                if target in self.qubit_labels
             }
             self._rabi_params.update(rabi_params)
 
@@ -513,6 +515,7 @@ class Experiment:
                     for state, center in centers.items()
                 }
                 for target, centers in centers.items()
+                if target in self.qubit_labels
             }
 
         return {
