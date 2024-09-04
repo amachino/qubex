@@ -4347,8 +4347,8 @@ class Experiment:
             target: np.array(buffer_errs[target]).T for target in buffer_errs
         }
 
-        fig = go.Figure()
         for target in result_pops:
+            fig = go.Figure()
             for state, probs in enumerate(result_pops[target]):
                 fig.add_scatter(
                     name=f"|{state}⟩",
@@ -4368,12 +4368,12 @@ class Experiment:
                     ),
                     marker=dict(size=5),
                 )
-        fig.update_layout(
-            title=f"Population dynamics : {target}",
-            xaxis_title=xlabel,
-            yaxis_title="Probability",
-            yaxis_range=[0, 1],
-        )
-        fig.show()
+            fig.update_layout(
+                title=f"Population dynamics : {target}",
+                xaxis_title=xlabel,
+                yaxis_title="Probability",
+                yaxis_range=[0, 1],
+            )
+            fig.show()
 
         return result_pops, result_errs
