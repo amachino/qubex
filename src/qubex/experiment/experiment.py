@@ -3157,13 +3157,16 @@ class Experiment:
 
     def build_classifier(
         self,
-        targets: list[str],
+        targets: list[str] | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         shots: int = 1000,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
+        if targets is None:
+            targets = self.qubit_labels
+
         results = self.measure_state_distribution(
             targets=targets,
             n_states=n_states,
