@@ -34,6 +34,7 @@ class StateClassifierGMM:
     model: GaussianMixture
     label_map: dict[int, int]
     confusion_matrix: NDArray
+    scale: float
 
     @property
     def n_clusters(self) -> int:
@@ -45,19 +46,20 @@ class StateClassifierGMM:
         """The center of each state."""
         centers = {}
         centers_arr = np.asarray(self.model.means_)
-        for label in range(len(centers_arr)):
-            centers[self.label_map[label]] = complex(
-                centers_arr[label][0], centers_arr[label][1]
-            )
+        for idx, center in enumerate(centers_arr):
+            state = self.label_map[idx]
+            centers[state] = complex(center[0], center[1]) / self.scale
+        centers = dict(sorted(centers.items()))
         return centers
 
     @property
     def stddevs(self) -> dict[int, float]:
         """The standard deviation of each state."""
         stddevs = {}
-        stddevs_arr = np.asarray(self.model.covariances_)
-        for label in range(len(stddevs_arr)):
-            stddevs[label] = np.sqrt(stddevs_arr[label])
+        covariances_arr = np.asarray(self.model.covariances_)
+        for idx, covariance in enumerate(covariances_arr):
+            state = self.label_map[idx]
+            stddevs[state] = np.sqrt(covariance) / self.scale
         return stddevs
 
     @property
@@ -104,22 +106,41 @@ class StateClassifierGMM:
             for state in data
         }
 
-        # Fit GMM model
-        concat_data = np.concatenate(list(dataset.values()))
+        # Number of components
         n_components = len(dataset)
+
+        # Concatenate data
+        concat_data = np.concatenate(list(dataset.values()))
+
+        # Scale data
+        range_x = np.max(concat_data[:, 0]) - np.min(concat_data[:, 0])
+        range_y = np.max(concat_data[:, 1]) - np.min(concat_data[:, 1])
+        scale = 1 / max(range_x, range_y).astype(float)
+
+        # Scale dataset
+        scaled_dataset = {state: scale * data for state, data in dataset.items()}
+
+        # Scale concatenated data
+        scaled_concat_data = np.concatenate(list(scaled_dataset.values()))
+
+        # Fit GMM model
         model = GaussianMixture(
             n_components=n_components,
             n_init=n_init,
             random_state=random_state,
             covariance_type="spherical",
         )
-        model.fit(concat_data)
+        model.fit(scaled_concat_data)
 
         # Create label map
-        label_map = cls._create_label_map(model, dataset)
+        label_map = cls._create_label_map(model, scaled_dataset)
 
         # Create confusion matrix
-        confusion_matrix = cls._create_confusion_matrix(model, dataset, label_map)
+        confusion_matrix = cls._create_confusion_matrix(
+            model,
+            scaled_dataset,
+            label_map,
+        )
 
         # Return state classifier model
         return cls(
@@ -127,6 +148,7 @@ class StateClassifierGMM:
             model=model,
             label_map=label_map,
             confusion_matrix=confusion_matrix,
+            scale=scale,
         )
 
     @staticmethod
@@ -208,8 +230,10 @@ class StateClassifierGMM:
         NDArray
             An array of predicted state labels based on the fitted model.
         """
+        # Scale data
+        scaled_data = data * self.scale
         # Convert complex data to real-valued features
-        real_imag_data = np.column_stack([np.real(data), np.imag(data)])
+        real_imag_data = np.column_stack([np.real(scaled_data), np.imag(scaled_data)])
         # Predict GMM component labels
         component_labels = self.model.predict(real_imag_data)
         # Convert GMM component labels to state labels
