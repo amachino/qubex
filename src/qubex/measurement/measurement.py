@@ -76,7 +76,7 @@ class Measurement:
             fetch_device_state=fetch_device_state,
         )
         self._use_neopulse = use_neopulse
-        self._classifiers: dict[str, StateClassifier] = {}
+        self._classifiers: TargetMap[StateClassifier] = {}
 
     def _load_state(
         self,
@@ -144,12 +144,12 @@ class Measurement:
         }
 
     @property
-    def classifiers(self) -> dict[str, StateClassifier]:
+    def classifiers(self) -> TargetMap[StateClassifier]:
         """Get the state classifiers."""
         return self._classifiers
 
     @classifiers.setter
-    def classifiers(self, classifiers: dict[str, StateClassifier]):
+    def classifiers(self, classifiers: TargetMap[StateClassifier]):
         """Set the state classifiers."""
         self._classifiers = classifiers
 

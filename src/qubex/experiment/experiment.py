@@ -40,7 +40,13 @@ from ..backend import (
     Target,
 )
 from ..clifford import CliffordGroup
-from ..measurement import Measurement, MeasureResult, StateClassifier
+from ..measurement import (
+    Measurement,
+    MeasureResult,
+    StateClassifier,
+    StateClassifierGMM,
+    StateClassifierKMeans,
+)
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_MARGIN,
     DEFAULT_CAPTURE_WINDOW,
@@ -147,6 +153,7 @@ class Experiment:
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = False,
+        classifier_type: Literal["kmeans", "gmm"] = "kmeans",
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = list(qubits)
@@ -155,6 +162,7 @@ class Experiment:
         self._capture_window: Final = capture_window
         self._capture_margin: Final = capture_margin
         self._readout_duration: Final = readout_duration
+        self._classifier_type: Final = classifier_type
         self._rabi_params: Final[dict[str, RabiParam]] = {}
         self._measurement = Measurement(
             chip_id=chip_id,
@@ -499,7 +507,7 @@ class Experiment:
         }
 
     @property
-    def classifiers(self) -> dict[str, StateClassifier]:
+    def classifiers(self) -> TargetMap[StateClassifier]:
         """Get the classifiers."""
         return self._measurement.classifiers
 
@@ -3177,7 +3185,18 @@ class Experiment:
             }
             for target in targets
         }
-        classifiers = {target: StateClassifier.fit(data[target]) for target in targets}
+
+        classifiers: TargetMap[StateClassifier]
+        if self._classifier_type == "kmeans":
+            classifiers = {
+                target: StateClassifierKMeans.fit(data[target]) for target in targets
+            }
+        elif self._classifier_type == "gmm":
+            classifiers = {
+                target: StateClassifierGMM.fit(data[target]) for target in targets
+            }
+        else:
+            raise ValueError("Invalid classifier type.")
         self._measurement.classifiers = classifiers
 
         for target in targets:

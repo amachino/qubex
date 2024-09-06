@@ -9,10 +9,11 @@ from sklearn.metrics import confusion_matrix
 from sklearn.mixture import GaussianMixture
 
 from ..style import get_colors, get_config
+from .state_classifier import StateClassifier
 
 
 @dataclass
-class StateClassifierGMM:
+class StateClassifierGMM(StateClassifier):
     """
     A state classifier model that uses Gaussian Mixture Model (GMM) to classify data.
 
@@ -37,8 +38,8 @@ class StateClassifierGMM:
     scale: float
 
     @property
-    def n_clusters(self) -> int:
-        """The number of clusters in the model."""
+    def n_states(self) -> int:
+        """The number of states in the model."""
         return len(self.dataset)
 
     @property
@@ -265,7 +266,7 @@ class StateClassifierGMM:
         predicted_labels = self.predict(data)
         if plot:
             self.plot(target, data, predicted_labels)
-        count = np.bincount(predicted_labels, minlength=self.n_clusters)
+        count = np.bincount(predicted_labels, minlength=self.n_states)
         state = {label: count[label] for label in range(len(count))}
         return state
 

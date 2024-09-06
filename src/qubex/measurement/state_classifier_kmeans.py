@@ -9,10 +9,11 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import confusion_matrix
 
 from ..style import get_colors, get_config
+from .state_classifier import StateClassifier
 
 
 @dataclass
-class StateClassifierKMeans:
+class StateClassifierKMeans(StateClassifier):
     """
     A state classifier model that uses k-means to classify data.
 
@@ -36,8 +37,8 @@ class StateClassifierKMeans:
     confusion_matrix: NDArray
 
     @property
-    def n_clusters(self) -> int:
-        """The number of clusters in the model."""
+    def n_states(self) -> int:
+        """The number of states in the model."""
         return len(self.dataset)
 
     @property
@@ -225,7 +226,7 @@ class StateClassifierKMeans:
         predicted_labels = self.predict(data)
         if plot:
             self.plot(target, data, predicted_labels)
-        count = np.bincount(predicted_labels, minlength=self.n_clusters)
+        count = np.bincount(predicted_labels, minlength=self.n_states)
         state = {label: count[label] for label in range(len(count))}
         return state
 
