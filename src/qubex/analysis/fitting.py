@@ -73,6 +73,7 @@ class RabiParam:
 def normalize(
     values: npt.NDArray,
     param: RabiParam,
+    centers: dict[int, complex] | None = None,
 ) -> npt.NDArray:
     """
     Normalizes the measured I/Q value.
@@ -83,15 +84,27 @@ def normalize(
         Measured I/Q value.
     param : RabiParam
         Parameters of the Rabi oscillation.
+    centers : dict[int, complex], optional
+        Centers of the |g> and |e> states.
 
     Returns
     -------
     npt.NDArray
         Normalized I/Q value.
     """
-    values_rotated = values * np.exp(-1j * param.angle)
-    values_normalized = (np.imag(values_rotated) - param.offset) / param.amplitude
-    return values_normalized
+    # if centers is not None:
+    #     p = np.array(values, dtype=np.complex128)
+    #     g, e = centers[0], centers[1]
+    #     v_ge = e - g
+    #     v_gp = p - g
+    #     v_gp_proj = np.real(v_gp * np.conj(v_ge)) / np.abs(v_ge)
+    #     normalized = 1 - 2 * np.abs(v_gp_proj) / np.abs(v_ge)
+    # else:
+    #     rotated = values * np.exp(-1j * param.angle)
+    #     normalized = (np.imag(rotated) - param.offset) / param.amplitude
+    rotated = values * np.exp(-1j * param.angle)
+    normalized = (np.imag(rotated) - param.offset) / param.amplitude
+    return normalized
 
 
 def func_cos(
@@ -206,6 +219,8 @@ def fit_rabi(
     wave_count: float | None = None,
     plot: bool = True,
     is_damped: bool = False,
+    yaxis_title: str | None = None,
+    yaxis_range: tuple[float, float] | None = None,
 ) -> RabiParam:
     """
     Fit Rabi oscillation data to a cosine function and plot the results.
@@ -326,7 +341,8 @@ def fit_rabi(
         fig.update_layout(
             title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
             xaxis_title="Drive duration (ns)",
-            yaxis_title="Amplitude (arb. units)",
+            yaxis_title=yaxis_title or "Amplitude (arb. units)",
+            yaxis_range=yaxis_range,
         )
         fig.show(config=_plotly_config(f"rabi_{target}"))
 

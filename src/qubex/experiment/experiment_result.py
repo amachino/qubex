@@ -68,8 +68,12 @@ class ExperimentResult(Generic[T]):
         for target in self.data:
             self.data[target].plot(*args, **kwargs)
 
-    def fit(self) -> TargetMap[Any]:
-        return {target: self.data[target].fit() for target in self.data}
+    def fit(
+        self,
+        *args,
+        **kwargs,
+    ) -> TargetMap[Any]:
+        return {target: self.data[target].fit(*args, **kwargs) for target in self.data}
 
     def save(
         self,
@@ -98,10 +102,13 @@ class RabiData(TargetData):
         Time range of the experiment.
     rabi_param : RabiParam
         Parameters of the Rabi oscillation.
+    state_centers : dict[int, complex], optional
+        Centers of the states.
     """
 
     time_range: NDArray
     rabi_param: RabiParam
+    state_centers: dict[int, complex] | None = None
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
@@ -111,14 +118,42 @@ class RabiData(TargetData):
     @property
     def normalized(self) -> NDArray[np.float64]:
         param = self.rabi_param
-        return fitting.normalize(self.data, param)
+        return fitting.normalize(self.data, param, self.state_centers)
+
+    @property
+    def zvalues(self) -> NDArray[np.float64]:
+        if self.state_centers is None:
+            raise ValueError("state_centers must be provided for zvalues.")
+        p = np.array(self.data, dtype=np.complex128)
+        g, e = self.state_centers[0], self.state_centers[1]
+        v_ge = e - g
+        v_gp = p - g
+        v_gp_proj = np.real(v_gp * np.conj(v_ge)) / np.abs(v_ge)
+        return 1 - 2 * np.abs(v_gp_proj) / np.abs(v_ge)
 
     def plot(
         self,
         *,
         normalize: bool = False,
+        use_zvalue: bool = False,
     ):
-        if normalize:
+        if use_zvalue:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    mode="markers+lines",
+                    x=self.time_range,
+                    y=self.zvalues,
+                )
+            )
+            fig.update_layout(
+                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                xaxis_title="Drive duration (ns)",
+                yaxis_title="Z value",
+                yaxis_range=[-1.2, 1.2],
+            )
+            fig.show()
+        elif normalize:
             values = self.normalized
             fig = go.Figure()
             fig.add_trace(
@@ -163,11 +198,16 @@ class RabiData(TargetData):
             )
             fig.show()
 
-    def fit(self) -> RabiParam:
+    def fit(
+        self,
+        use_zvalue: bool = False,
+        yaxis_range: tuple[float, float] | None = None,
+    ) -> RabiParam:
         return fitting.fit_rabi(
             target=self.target,
             times=self.time_range,
-            data=self.data,
+            data=self.data if not use_zvalue else self.zvalues + 0j,
+            yaxis_range=yaxis_range if not use_zvalue else (-1.2, 1.2),
         )
 
 
@@ -186,6 +226,8 @@ class SweepData(TargetData):
         Sweep range of the experiment.
     rabi_param : RabiParam, optional
         Parameters of the Rabi oscillation.
+    state_centers : dict[int, complex], optional
+        Centers of the states.
     title : str, optional
         Title of the plot.
     xaxis_title : str, optional
@@ -200,6 +242,7 @@ class SweepData(TargetData):
 
     sweep_range: NDArray
     rabi_param: RabiParam | None = None
+    state_centers: dict[int, complex] | None = None
     title: str = "Sweep result"
     xaxis_title: str = "Sweep value"
     yaxis_title: str = "Measured value"
@@ -218,18 +261,48 @@ class SweepData(TargetData):
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
-        values = self.data * np.exp(-1j * param.angle)
-        values_normalized = (values.imag - param.offset) / param.amplitude
-        return values_normalized
+        return fitting.normalize(self.data, param, self.state_centers)
+
+    @property
+    def zvalues(self) -> NDArray[np.float64]:
+        if self.state_centers is None:
+            raise ValueError("state_centers must be provided for zvalues.")
+        p = np.array(self.data, dtype=np.complex128)
+        g, e = self.state_centers[0], self.state_centers[1]
+        v_ge = e - g
+        v_gp = p - g
+        v_gp_proj = np.real(v_gp * np.conj(v_ge)) / np.abs(v_ge)
+        return 1 - 2 * np.abs(v_gp_proj) / np.abs(v_ge)
 
     def plot(
         self,
         *,
         normalize: bool = False,
+        use_zvalue: bool = False,
         xaxis_type: str | None = None,
         yaxis_type: str | None = None,
+        xaxis_title: str | None = None,
+        yaxis_title: str | None = None,
     ):
-        if normalize:
+        if use_zvalue:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    mode="markers+lines",
+                    x=self.sweep_range,
+                    y=self.zvalues,
+                )
+            )
+            fig.update_layout(
+                title=f"{self.title} : {self.target}",
+                xaxis_title=xaxis_title or self.xaxis_title,
+                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
+                yaxis_title=yaxis_title or "Z value",
+                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+                yaxis_range=[-1.2, 1.2],
+            )
+            fig.show()
+        elif normalize:
             param = self.rabi_param
             if param is None:
                 print("rabi_param must be provided for normalization.")
@@ -249,9 +322,9 @@ class SweepData(TargetData):
             )
             fig.update_layout(
                 title=f"{self.title} : {self.target}",
-                xaxis_title=self.xaxis_title,
+                xaxis_title=xaxis_title or self.xaxis_title,
                 xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=self.yaxis_title,
+                yaxis_title=yaxis_title or self.yaxis_title,
                 yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()
@@ -275,9 +348,9 @@ class SweepData(TargetData):
             )
             fig.update_layout(
                 title=f"{self.title} : {self.target}",
-                xaxis_title=self.xaxis_title,
+                xaxis_title=xaxis_title or self.xaxis_title,
                 xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=self.yaxis_title,
+                yaxis_title=yaxis_title or self.yaxis_title,
                 yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()

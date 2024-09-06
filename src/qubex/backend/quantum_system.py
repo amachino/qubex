@@ -97,6 +97,10 @@ class Qubit(Model):
         return round(self.frequency + self.anharmonicity, 6)
 
     @property
+    def alpha(self) -> float:
+        return 2 * math.pi * self.anharmonicity
+
+    @property
     def is_valid(self) -> bool:
         return not math.isnan(self.frequency) and not math.isnan(self.anharmonicity)
 

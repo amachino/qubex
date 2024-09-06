@@ -4,6 +4,7 @@ import sys
 from collections import defaultdict
 from contextlib import contextmanager
 from copy import deepcopy
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Final, Literal, Optional, Sequence
@@ -39,7 +40,13 @@ from ..backend import (
     Target,
 )
 from ..clifford import CliffordGroup
-from ..measurement import Measurement, MeasureResult, StateClassifier
+from ..measurement import (
+    Measurement,
+    MeasureResult,
+    StateClassifier,
+    StateClassifierGMM,
+    StateClassifierKMeans,
+)
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_MARGIN,
     DEFAULT_CAPTURE_WINDOW,
@@ -86,6 +93,9 @@ console = Console()
 USER_NOTE_PATH = ".user_note.json"
 SYSTEM_NOTE_PATH = ".system_note.json"
 
+RABI_PARAMS = "rabi_params"
+STATE_CENTERS = "state_centers"
+
 HPI_AMPLITUDE = "hpi_amplitude"
 HPI_DURATION = 30
 HPI_RISETIME = 10
@@ -93,11 +103,12 @@ PI_AMPLITUDE = "pi_amplitude"
 PI_DURATION = 30
 PI_RISETIME = 10
 DRAG_HPI_AMPLITUDE = "drag_hpi_amplitude"
+DRAG_HPI_BETA = "drag_hpi_beta"
 DRAG_HPI_DURATION = 16
-DRAG_HPI_LAMBDA = 0.5
 DRAG_PI_AMPLITUDE = "drag_pi_amplitude"
+DRAG_PI_BETA = "drag_pi_beta"
 DRAG_PI_DURATION = 16
-DRAG_PI_LAMBDA = 0.5
+DRAG_COEFF = 0.5
 
 
 class Experiment:
@@ -142,6 +153,7 @@ class Experiment:
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = False,
+        classifier_type: Literal["kmeans", "gmm"] = "kmeans",
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = list(qubits)
@@ -150,6 +162,7 @@ class Experiment:
         self._capture_window: Final = capture_window
         self._capture_margin: Final = capture_margin
         self._readout_duration: Final = readout_duration
+        self._classifier_type: Final = classifier_type
         self._rabi_params: Final[dict[str, RabiParam]] = {}
         self._measurement = Measurement(
             chip_id=chip_id,
@@ -377,13 +390,15 @@ class Experiment:
             DRAG π/2 pulse.
         """
         calib_amplitude: dict[str, float] = self._system_note.get(DRAG_HPI_AMPLITUDE)
-        if calib_amplitude is None:
-            raise ValueError("DRAG HPI amplitude is not stored.")
+        calib_beta: dict[str, float] = self._system_note.get(DRAG_HPI_BETA)
+
+        if calib_amplitude is None or calib_beta is None:
+            raise ValueError("DRAG HPI amplitude or beta is not stored.")
         return {
             target: Drag(
                 duration=DRAG_HPI_DURATION,
                 amplitude=calib_amplitude[target],
-                beta=-DRAG_HPI_LAMBDA / self.qubits[target].anharmonicity,
+                beta=calib_beta[target],
             )
             for target in self._qubits
         }
@@ -399,13 +414,14 @@ class Experiment:
             DRAG π pulse.
         """
         calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
-        if calib_amplitude is None:
-            raise ValueError("DRAG PI amplitude is not stored.")
+        calib_beta: dict[str, float] = self._system_note.get(DRAG_PI_BETA)
+        if calib_amplitude is None or calib_beta is None:
+            raise ValueError("DRAG PI amplitude or beta is not stored.")
         return {
             target: Drag(
                 duration=DRAG_PI_DURATION,
                 amplitude=calib_amplitude[target],
-                beta=-DRAG_PI_LAMBDA / self.qubits[target].anharmonicity,
+                beta=calib_beta[target],
             )
             for target in self._qubits
         }
@@ -421,6 +437,8 @@ class Experiment:
             π/2 pulse.
         """
         amplitude = self._system_note.get(HPI_AMPLITUDE)
+        if amplitude is None:
+            raise ValueError("EF π/2 amplitude is not stored.")
         ef_labels = [Target.ef_label(target) for target in self._qubits]
         return {
             target: FlatTop(
@@ -442,7 +460,10 @@ class Experiment:
             π/2 pulse.
         """
         amplitude = self._system_note.get(PI_AMPLITUDE)
+        if amplitude is None:
+            raise ValueError("EF π amplitude is not stored.")
         ef_labels = [Target.ef_label(target) for target in self._qubits]
+
         return {
             target: FlatTop(
                 duration=PI_DURATION,
@@ -455,6 +476,16 @@ class Experiment:
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
         """Get the Rabi parameters."""
+        params: dict[str, dict] | None
+        params = self._system_note.get(RABI_PARAMS)
+        if params is not None:
+            rabi_params = {
+                target: RabiParam(**param)
+                for target, param in params.items()
+                if target in self.qubit_labels
+            }
+            self._rabi_params.update(rabi_params)
+
         return self._rabi_params
 
     @property
@@ -476,15 +507,27 @@ class Experiment:
         }
 
     @property
-    def classifiers(self) -> dict[str, StateClassifier]:
+    def classifiers(self) -> TargetMap[StateClassifier]:
         """Get the classifiers."""
         return self._measurement.classifiers
 
     @property
-    def state_centroids(self) -> dict[str, dict[int, complex]]:
-        """Get the state centroids."""
+    def state_centers(self) -> dict[str, dict[int, complex]]:
+        """Get the state centers."""
+        centers: dict[str, dict[str, list[float]]] | None
+        centers = self._system_note.get(STATE_CENTERS)
+        if centers is not None:
+            return {
+                target: {
+                    int(state): complex(center[0], center[1])
+                    for state, center in centers.items()
+                }
+                for target, centers in centers.items()
+                if target in self.qubit_labels
+            }
+
         return {
-            target: classifier.centroids
+            target: classifier.centers
             for target, classifier in self.classifiers.items()
         }
 
@@ -504,9 +547,14 @@ class Experiment:
         """
         if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
             self._rabi_params.update(rabi_params)
-        else:
-            if Confirm.ask("Overwrite the existing Rabi parameters?"):
-                self._rabi_params.update(rabi_params)
+        # else:
+        #     if not Confirm.ask("Overwrite the existing Rabi parameters?"):
+        #         return
+
+        self._system_note.put(
+            RABI_PARAMS,
+            {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
+        )
         console.print("Rabi parameters are stored.")
 
     def get_pulse_for_state(
@@ -727,25 +775,6 @@ class Experiment:
         print(f"description: {record.description}")
         print(f"created_at: {record.created_at}")
         return record
-
-    def normalize(
-        self,
-        data: IQArray,
-        rabi_param: RabiParam,
-    ) -> NDArray[np.float64]:
-        """
-        Normalize the measured data.
-
-        Parameters
-        ----------
-        data : IQArray
-            Measured data.
-        rabi_param : RabiParam
-            Rabi parameters.
-        """
-        values = data * np.exp(-1j * rabi_param.angle)
-        values_normalized = (np.imag(values) - rabi_param.offset) / rabi_param.amplitude
-        return values_normalized
 
     def execute(
         self,
@@ -1115,6 +1144,10 @@ class Experiment:
         self,
         targets: list[str] | None = None,
         *,
+        time_range: ArrayLike | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        store_params: bool = True,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -1124,6 +1157,14 @@ class Experiment:
         ----------
         targets : list[str], optional
             List of targets to check the Rabi oscillation.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        store_params : bool, optional
+            Whether to store the Rabi parameters. Defaults to True.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -1138,8 +1179,19 @@ class Experiment:
         """
         if targets is None:
             targets = self.qubit_labels
-
-        return self.obtain_rabi_params(targets, plot=plot)
+        if time_range is None:
+            time_range = np.arange(0, 201, 8)
+        ampl = self.params.control_amplitude
+        amplitudes = {target: ampl[target] for target in targets}
+        result = self.rabi_experiment(
+            amplitudes=amplitudes,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            store_params=store_params,
+            plot=plot,
+        )
+        return result
 
     def obtain_rabi_params(
         self,
@@ -1351,6 +1403,7 @@ class Experiment:
                 data=data.data,
                 time_range=time_range,
                 rabi_param=rabi_params[target],
+                state_centers=self.state_centers.get(target),
             )
             for target, data in sweep_data.items()
         }
@@ -1591,7 +1644,7 @@ class Experiment:
             raise ValueError("Invalid sequence.")
 
         signals = defaultdict(list)
-        plotter = IQPlotter()
+        plotter = IQPlotter(self.state_centers)
 
         generator = self._measure_batch(
             sequences=sequences,
@@ -1624,12 +1677,16 @@ class Experiment:
         #         if plot:
         #             plotter.update(signals)
 
+        if plot:
+            plotter.show()
+
         sweep_data = {
             target: SweepData(
                 target=target,
                 data=np.array(values),
                 sweep_range=sweep_range,
                 rabi_param=rabi_params.get(target),
+                state_centers=self.state_centers.get(target),
                 title=title,
                 xaxis_title=xaxis_title,
                 yaxis_title=yaxis_title,
@@ -2279,7 +2336,7 @@ class Experiment:
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 1,
-        shots: int = 3000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2294,7 +2351,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2388,8 +2445,9 @@ class Experiment:
         self,
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
-        n_rotations: int = 8,
-        shots: int = 3000,
+        n_rotations: int = 4,
+        drag_coeff: float = DRAG_COEFF,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2402,9 +2460,11 @@ class Experiment:
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 4.
+        drag_coeff : float, optional
+            DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2422,7 +2482,7 @@ class Experiment:
                 pulse = Drag(
                     duration=DRAG_HPI_DURATION,
                     amplitude=1,
-                    beta=-DRAG_HPI_LAMBDA / self.qubits[target].anharmonicity,
+                    beta=-drag_coeff / self.qubits[target].alpha,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
@@ -2430,7 +2490,7 @@ class Experiment:
                 pulse = Drag(
                     duration=DRAG_PI_DURATION,
                     amplitude=1,
-                    beta=-DRAG_PI_LAMBDA / self.qubits[target].anharmonicity,
+                    beta=-drag_coeff / self.qubits[target].alpha,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -2560,7 +2620,7 @@ class Experiment:
         self,
         targets: list[str],
         n_rotations: int = 1,
-        shots: int = 3000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2573,7 +2633,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2599,7 +2659,7 @@ class Experiment:
         self,
         targets: list[str],
         n_rotations: int = 1,
-        shots: int = 3000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2612,7 +2672,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2637,8 +2697,9 @@ class Experiment:
     def calibrate_drag_hpi_pulse(
         self,
         targets: list[str],
-        n_rotations: int = 8,
-        shots: int = 3000,
+        n_rotations: int = 4,
+        shots: int = DEFAULT_SHOTS,
+        drag_coeff: float = DRAG_COEFF,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2649,9 +2710,11 @@ class Experiment:
         target : str
             Target qubit to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 4.
+        drag_coeff : float, optional
+            DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2669,15 +2732,18 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
+        beta = {target: -drag_coeff / self.qubits[target].alpha for target in targets}
         self._system_note.put(DRAG_HPI_AMPLITUDE, ampl)
+        self._system_note.put(DRAG_HPI_BETA, beta)
 
         return result
 
     def calibrate_drag_pi_pulse(
         self,
         targets: list[str],
-        n_rotations: int = 8,
-        shots: int = 3000,
+        n_rotations: int = 4,
+        drag_coeff: float = DRAG_COEFF,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -2688,9 +2754,11 @@ class Experiment:
         target : str
             Target qubit to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 8.
+            Number of rotations. Defaults to 4.
+        drag_coeff : float, optional
+            DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -2708,7 +2776,9 @@ class Experiment:
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
+        beta = {target: -drag_coeff / self.qubits[target].alpha for target in targets}
         self._system_note.put(DRAG_PI_AMPLITUDE, ampl)
+        self._system_note.put(DRAG_PI_BETA, beta)
 
         return result
 
@@ -3062,6 +3132,7 @@ class Experiment:
     def measure_state_distribution(
         self,
         targets: list[str],
+        *,
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3089,12 +3160,21 @@ class Experiment:
 
     def build_classifier(
         self,
-        targets: list[str],
+        targets: list[str] | None = None,
+        *,
         n_states: Literal[2, 3] = 2,
+        shots: int = 1000,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
     ):
+        if targets is None:
+            targets = self.qubit_labels
+
         results = self.measure_state_distribution(
             targets=targets,
             n_states=n_states,
+            shots=shots,
+            interval=interval,
             plot=False,
         )
 
@@ -3105,24 +3185,57 @@ class Experiment:
             }
             for target in targets
         }
-        classifiers = {target: StateClassifier.fit(data[target]) for target in targets}
+
+        classifiers: TargetMap[StateClassifier]
+        if self._classifier_type == "kmeans":
+            classifiers = {
+                target: StateClassifierKMeans.fit(data[target]) for target in targets
+            }
+        elif self._classifier_type == "gmm":
+            classifiers = {
+                target: StateClassifierGMM.fit(data[target]) for target in targets
+            }
+        else:
+            raise ValueError("Invalid classifier type.")
         self._measurement.classifiers = classifiers
 
         for target in targets:
             clf = classifiers[target]
-            classified = [
-                clf.classify(target, data[target][state]) for state in range(n_states)
-            ]
+            classified = []
+            for state in range(n_states):
+                if plot:
+                    print(f"{target} prepared as |{state}⟩:")
+                result = clf.classify(
+                    target,
+                    data[target][state],
+                    plot=plot,
+                )
+                classified.append(result)
             fidelity = [
                 classified[state][state] / sum(classified[state].values())
                 for state in range(n_states)
             ]
-            print(f"Readout fidelity of {target}:")
-            for state in range(n_states):
+            if plot:
+                print(f"{target}:")
+                print(f"  Total shots: {shots}")
+                for state in range(n_states):
+                    print(
+                        f"  |{state}⟩ → {classified[state]}, f_{state}: {fidelity[state] * 100:.2f}%"
+                    )
                 print(
-                    f"|{state}⟩ → {classified[state]}, fidelity: {fidelity[state] * 100:.2f}%"
+                    f"  Average readout fidelity : {np.mean(fidelity) * 100:.2f}%\n\n"
                 )
-            print(f"Average readout fidelity: {np.mean(fidelity) * 100:.2f}%")
+
+        self._system_note.put(
+            STATE_CENTERS,
+            {
+                target: {
+                    str(state): (center.real, center.imag)
+                    for state, center in classifiers[target].centers.items()
+                }
+                for target in targets
+            },
+        )
 
     def rb_sequence(
         self,
@@ -3949,7 +4062,7 @@ class Experiment:
             for idx, freq in enumerate(tqdm(freq_range)):
                 with self.modified_frequencies({read_label: freq}):
                     result = self.measure(
-                        {target: np.zeros(0)},
+                        {qubit_label: np.zeros(0)},
                         mode="avg",
                         shots=shots,
                         interval=interval,
@@ -3990,7 +4103,6 @@ class Experiment:
             phases = measure_phases(freq_range, phase_shift=phase_shift)
             phases_diff = np.abs(np.diff(phases))
 
-        mux = self.experiment_system.get_mux_by_qubit(Target.qubit_label(target))
         fig = go.Figure()
         fig.add_scatter(
             name=target,
@@ -4252,8 +4364,8 @@ class Experiment:
             target: np.array(buffer_errs[target]).T for target in buffer_errs
         }
 
-        fig = go.Figure()
         for target in result_pops:
+            fig = go.Figure()
             for state, probs in enumerate(result_pops[target]):
                 fig.add_scatter(
                     name=f"|{state}⟩",
@@ -4273,12 +4385,12 @@ class Experiment:
                     ),
                     marker=dict(size=5),
                 )
-        fig.update_layout(
-            title=f"Population dynamics : {target}",
-            xaxis_title=xlabel,
-            yaxis_title="Probability",
-            yaxis_range=[0, 1],
-        )
-        fig.show()
+            fig.update_layout(
+                title=f"Population dynamics : {target}",
+                xaxis_title=xlabel,
+                yaxis_title="Probability",
+                yaxis_range=[0, 1],
+            )
+            fig.show()
 
         return result_pops, result_errs

@@ -76,7 +76,7 @@ pio.templates["qubex"] = go.layout.Template(
             t=MARGIN_T,
         ),
         colorway=COLORS,
-        plot_bgcolor="white",
+        plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="white",
     ),
     data=dict(
