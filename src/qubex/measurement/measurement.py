@@ -95,7 +95,10 @@ class Measurement:
             if qubits is not None:
                 boxes = self.experiment_system.get_boxes_for_qubits(qubits)
                 box_ids = [box.id for box in boxes]
-            self.state_manager.pull(box_ids=box_ids)
+            try:
+                self.state_manager.pull(box_ids=box_ids)
+            except Exception:
+                print("Failed to fetch the device state.")
 
     @property
     def state_manager(self) -> StateManager:
