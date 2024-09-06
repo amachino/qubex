@@ -68,8 +68,12 @@ class ExperimentResult(Generic[T]):
         for target in self.data:
             self.data[target].plot(*args, **kwargs)
 
-    def fit(self) -> TargetMap[Any]:
-        return {target: self.data[target].fit() for target in self.data}
+    def fit(
+        self,
+        *args,
+        **kwargs,
+    ) -> TargetMap[Any]:
+        return {target: self.data[target].fit(*args, **kwargs) for target in self.data}
 
     def save(
         self,
@@ -194,11 +198,16 @@ class RabiData(TargetData):
             )
             fig.show()
 
-    def fit(self) -> RabiParam:
+    def fit(
+        self,
+        use_zvalue: bool = False,
+        yaxis_range: tuple[float, float] | None = None,
+    ) -> RabiParam:
         return fitting.fit_rabi(
             target=self.target,
             times=self.time_range,
-            data=self.data,
+            data=self.data if not use_zvalue else self.zvalues + 0j,
+            yaxis_range=yaxis_range,
         )
 
 

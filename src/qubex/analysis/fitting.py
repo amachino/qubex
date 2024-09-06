@@ -219,6 +219,8 @@ def fit_rabi(
     wave_count: float | None = None,
     plot: bool = True,
     is_damped: bool = False,
+    yaxis_title: str | None = None,
+    yaxis_range: tuple[float, float] | None = None,
 ) -> RabiParam:
     """
     Fit Rabi oscillation data to a cosine function and plot the results.
@@ -339,7 +341,8 @@ def fit_rabi(
         fig.update_layout(
             title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
             xaxis_title="Drive duration (ns)",
-            yaxis_title="Amplitude (arb. units)",
+            yaxis_title=yaxis_title or "Amplitude (arb. units)",
+            yaxis_range=yaxis_range,
         )
         fig.show(config=_plotly_config(f"rabi_{target}"))
 
