@@ -45,10 +45,10 @@ class StateClassifierKMeans:
         """The center of each state."""
         centers = {}
         centers_arr = np.asarray(self.model.cluster_centers_)
-        for label in range(len(centers_arr)):
-            centers[self.label_map[label]] = complex(
-                centers_arr[label][0], centers_arr[label][1]
-            )
+        for idx, center in enumerate(centers_arr):
+            state = self.label_map[idx]
+            centers[state] = complex(center[0], center[1])
+        centers = dict(sorted(centers.items()))
         return centers
 
     @classmethod
