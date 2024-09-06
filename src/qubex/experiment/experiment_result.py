@@ -207,7 +207,7 @@ class RabiData(TargetData):
             target=self.target,
             times=self.time_range,
             data=self.data if not use_zvalue else self.zvalues + 0j,
-            yaxis_range=yaxis_range,
+            yaxis_range=yaxis_range if not use_zvalue else (-1.2, 1.2),
         )
 
 
