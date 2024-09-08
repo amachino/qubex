@@ -315,6 +315,7 @@ class IQPlotter:
         self,
         state_centers: TargetMap[dict[int, complex]] | None = None,
     ):
+        self._state_centers = state_centers or {}
         self._colors = [f"rgba{color}" for color in get_colors(alpha=0.8)]
         self._num_scatters = -1
         self._output = Output()
@@ -378,6 +379,8 @@ class IQPlotter:
             with self._output:
                 display(self._widget)
             for idx, qubit in enumerate(data):
+                if qubit in self._state_centers:
+                    idx = list(self._state_centers.keys()).index(qubit)
                 self._widget.add_scatter(
                     name=qubit,
                     meta=qubit,
