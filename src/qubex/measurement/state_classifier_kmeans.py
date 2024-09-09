@@ -112,6 +112,7 @@ class StateClassifierKMeans(StateClassifier):
             model=model,
             label_map=label_map,
             confusion_matrix=confusion_matrix,
+            scale=1.0,
         )
 
     @staticmethod
