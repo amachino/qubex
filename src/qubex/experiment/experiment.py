@@ -4409,7 +4409,7 @@ class Experiment:
                 title=f"Population dynamics : {target}",
                 xaxis_title=xlabel,
                 yaxis_title="Probability",
-                yaxis_range=[0, 1],
+                yaxis_range=[-0.1, 1.1],
             )
             fig.show()
 
