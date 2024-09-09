@@ -3734,7 +3734,9 @@ class Experiment:
         elif not isinstance(sequence, Waveform):
             raise ValueError("Invalid sequence.")
 
-        x90 = x90 or self.hpi_pulse[target]
+        qubit = Target.qubit_label(target)
+
+        x90 = x90 or self.hpi_pulse[qubit]
         y90m = x90.shifted(-np.pi / 2)
 
         if basis == "X":
