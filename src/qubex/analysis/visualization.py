@@ -347,7 +347,9 @@ class IQPlotter:
         )
 
         if state_centers is not None:
+            colors = get_colors(alpha=0.1)
             for idx, (label, centers) in enumerate(state_centers.items()):
+                color = colors[idx % len(colors)]
                 center_values = list(centers.values())
                 x = np.real(center_values)
                 y = np.imag(center_values)
@@ -363,7 +365,7 @@ class IQPlotter:
                         marker=dict(
                             symbol="circle",
                             size=30,
-                            color=f"rgba{get_colors(alpha=0.1)[idx]}",
+                            color=f"rgba{color}",
                         ),
                         textfont=dict(
                             size=12,
@@ -381,11 +383,12 @@ class IQPlotter:
             for idx, qubit in enumerate(data):
                 if qubit in self._state_centers:
                     idx = list(self._state_centers.keys()).index(qubit)
+                color = self._colors[idx % len(self._colors)]
                 self._widget.add_scatter(
                     name=qubit,
                     meta=qubit,
                     mode="markers",
-                    marker=dict(size=4, color=self._colors[idx]),
+                    marker=dict(size=4, color=color),
                     legendrank=idx,
                 )
             self._num_scatters = len(data)
