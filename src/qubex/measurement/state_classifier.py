@@ -28,6 +28,18 @@ class StateClassifier(ABC):
 
     @property
     @abstractmethod
+    def means(self) -> NDArray:
+        """The means of the model."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def covariances(self) -> NDArray:
+        """The covariances of the model."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
     def centers(self) -> dict[int, complex]:
         """The center of each state."""
         raise NotImplementedError
@@ -131,5 +143,26 @@ class StateClassifier(ABC):
             An array of complex numbers representing the data.
         labels : NDArray
             An array of predicted state labels.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def estimate_weights(
+        self,
+        data: NDArray,
+        max_iter: int = 100,
+    ) -> NDArray:
+        """
+        Parameters
+        ----------
+        data : NDArray
+            The mixed gaussian data to estimate the weights.
+        max_iter : int, optional
+            The maximum number of iterations, by default 100.
+
+        Returns
+        -------
+        NDArray
+            The estimated weights of the mixed gaussian data.
         """
         raise NotImplementedError
