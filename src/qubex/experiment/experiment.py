@@ -153,7 +153,7 @@ class Experiment:
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = False,
-        classifier_type: Literal["kmeans", "gmm"] = "kmeans",
+        classifier_type: Literal["kmeans", "gmm"] = "gmm",
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = list(qubits)
