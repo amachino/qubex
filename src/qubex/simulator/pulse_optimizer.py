@@ -83,7 +83,6 @@ class OptimizationResult:
 
 
 class PulseOptimizer:
-
     def __init__(
         self,
         *,
@@ -127,6 +126,14 @@ class PulseOptimizer:
     @cached_property
     def system_hamiltonian(self) -> Array:
         return jnp.asarray(self.quantum_system.hamiltonian.full())
+
+    @cached_property
+    def rotating_system_hamiltonian(self) -> Array:
+        H = self.system_hamiltonian
+        for target in self.quantum_system.object_labels:
+            N = self.number_operator(target)
+            H -= 2 * np.pi * self.frame_frequency * N
+        return H
 
     @cached_property
     def target_unitary_dagger(self) -> Array:
@@ -189,6 +196,11 @@ class PulseOptimizer:
         ad = self.quantum_system.get_raising_operator(target)
         return jnp.asarray(ad.full())
 
+    @cache
+    def number_operator(self, target) -> Array:
+        N = self.quantum_system.get_number_operator(target)
+        return jnp.asarray(N.full())
+
     @partial(jax.jit, static_argnums=0)
     def loss_fn(self, params: dict[str, Array]) -> Array:
         U = self.evolve(params)
@@ -199,7 +211,7 @@ class PulseOptimizer:
         dt = self.segment_duration
         U = self.identity
         for index in range(self.segment_count):
-            H = self.system_hamiltonian
+            H = self.rotating_system_hamiltonian
             for target, iq_array in params.items():
                 a = self.lowering_operator(target)
                 ad = self.raising_operator(target)

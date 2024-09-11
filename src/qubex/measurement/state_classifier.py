@@ -18,16 +18,43 @@ class StateClassifier(ABC):
     model: Any
     label_map: dict[int, int]
     confusion_matrix: NDArray
+    scale: float
 
     @property
     @abstractmethod
     def n_states(self) -> int:
         """The number of states in the model."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def means(self) -> NDArray:
+        """The means of the model."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def covariances(self) -> NDArray:
+        """The covariances of the model."""
+        raise NotImplementedError
 
     @property
     @abstractmethod
     def centers(self) -> dict[int, complex]:
         """The center of each state."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def stddevs(self) -> dict[int, float]:
+        """The standard deviation of each state."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def weights(self) -> dict[int, float]:
+        """The weights of each state."""
+        raise NotImplementedError
 
     @classmethod
     @abstractmethod
@@ -54,6 +81,7 @@ class StateClassifier(ABC):
         StateClassifier
             A state classifier model.
         """
+        raise NotImplementedError
 
     @abstractmethod
     def predict(
@@ -73,6 +101,7 @@ class StateClassifier(ABC):
         NDArray
             An array of predicted state labels based on the fitted model.
         """
+        raise NotImplementedError
 
     @abstractmethod
     def classify(
@@ -96,6 +125,7 @@ class StateClassifier(ABC):
         dict[int, int]
             A dictionary of state labels and their counts.
         """
+        raise NotImplementedError
 
     @abstractmethod
     def plot(
@@ -114,3 +144,25 @@ class StateClassifier(ABC):
         labels : NDArray
             An array of predicted state labels.
         """
+        raise NotImplementedError
+
+    @abstractmethod
+    def estimate_weights(
+        self,
+        data: NDArray,
+        max_iter: int = 100,
+    ) -> NDArray:
+        """
+        Parameters
+        ----------
+        data : NDArray
+            The mixed gaussian data to estimate the weights.
+        max_iter : int, optional
+            The maximum number of iterations, by default 100.
+
+        Returns
+        -------
+        NDArray
+            The estimated weights of the mixed gaussian data.
+        """
+        raise NotImplementedError

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
+from scipy.stats import multivariate_normal
 from sklearn.metrics import confusion_matrix
 from sklearn.mixture import GaussianMixture
 
@@ -43,25 +44,40 @@ class StateClassifierGMM(StateClassifier):
         return len(self.dataset)
 
     @property
+    def means(self) -> NDArray:
+        """The means of the model."""
+        means_ = np.asarray(self.model.means_)
+        means = np.zeros_like(means_)
+        for idx, mean in enumerate(means_):
+            state = self.label_map[idx]
+            means[state] = mean
+        return means
+
+    @property
+    def covariances(self) -> NDArray:
+        """The covariances of the model."""
+        covariances_ = np.asarray(self.model.covariances_)
+        covariances = np.zeros_like(covariances_)
+        for idx, covariance in enumerate(covariances_):
+            state = self.label_map[idx]
+            covariances[state] = covariance
+        return covariances
+
+    @property
     def centers(self) -> dict[int, complex]:
         """The center of each state."""
-        centers = {}
-        centers_arr = np.asarray(self.model.means_)
-        for idx, center in enumerate(centers_arr):
-            state = self.label_map[idx]
-            centers[state] = complex(center[0], center[1]) / self.scale
-        centers = dict(sorted(centers.items()))
-        return centers
+        return {
+            state: complex(mean[0], mean[1]) / self.scale
+            for state, mean in enumerate(self.means)
+        }
 
     @property
     def stddevs(self) -> dict[int, float]:
         """The standard deviation of each state."""
-        stddevs = {}
-        covariances_arr = np.asarray(self.model.covariances_)
-        for idx, covariance in enumerate(covariances_arr):
-            state = self.label_map[idx]
-            stddevs[state] = np.sqrt(covariance) / self.scale
-        return stddevs
+        return {
+            state: np.sqrt(covariance) / self.scale
+            for state, covariance in enumerate(self.covariances)
+        }
 
     @property
     def weights(self) -> dict[int, float]:
@@ -376,3 +392,39 @@ class StateClassifierGMM(StateClassifier):
             ),
         )
         fig.show(config=get_config())
+
+    def estimate_weights(
+        self,
+        data: NDArray,
+        max_iter: int = 100,
+    ) -> NDArray:
+        """
+        Parameters
+        ----------
+        data : NDArray
+            The mixed gaussian data to estimate the weights.
+        max_iter : int, optional
+            The maximum number of iterations, by default 100.
+
+        Returns
+        -------
+        NDArray
+            The estimated weights of the mixed gaussian data.
+        """
+        N = self.n_states
+        scaled_data = np.column_stack([np.real(data), np.imag(data)]) * self.scale
+        weights = np.ones(len(self.means)) / N
+
+        # Expectation-Maximization (EM) algorithm
+        for _ in range(max_iter):
+            responsibilities = np.zeros((scaled_data.shape[0], N))
+            for k in range(N):
+                responsibilities[:, k] = weights[k] * multivariate_normal.pdf(
+                    scaled_data,
+                    mean=self.means[k],
+                    cov=self.covariances[k],
+                )
+            responsibilities /= responsibilities.sum(axis=1, keepdims=True)
+            weights = responsibilities.mean(axis=0)
+
+        return weights

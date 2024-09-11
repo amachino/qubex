@@ -153,7 +153,7 @@ class Experiment:
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = False,
-        classifier_type: Literal["kmeans", "gmm"] = "kmeans",
+        classifier_type: Literal["kmeans", "gmm"] = "gmm",
     ):
         self._chip_id: Final = chip_id
         self._qubits: Final = list(qubits)
@@ -3734,7 +3734,9 @@ class Experiment:
         elif not isinstance(sequence, Waveform):
             raise ValueError("Invalid sequence.")
 
-        x90 = x90 or self.hpi_pulse[target]
+        qubit = Target.qubit_label(target)
+
+        x90 = x90 or self.hpi_pulse[qubit]
         y90m = x90.shifted(-np.pi / 2)
 
         if basis == "X":
@@ -4249,6 +4251,7 @@ class Experiment:
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
+        fit_gmm: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
@@ -4259,6 +4262,8 @@ class Experiment:
         ----------
         sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Sequence to measure for each target.
+        fit_gmm : bool, optional
+            Whether to fit the data with a Gaussian mixture model. Defaults to False
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -4275,7 +4280,7 @@ class Experiment:
         ...     "Q00": ex.hpi_pulse["Q00"],
         ...     "Q01": ex.hpi_pulse["Q01"],
         ... }
-        >>> probs = ex.measure_population(sequence)
+        >>> result = ex.measure_population(sequence)
         """
         if self.classifiers is None:
             raise ValueError("Classifiers are not built. Run `build_classifier` first.")
@@ -4286,12 +4291,23 @@ class Experiment:
             shots=shots,
             interval=interval,
         )
-        probabilities = {
-            target: data.probabilities for target, data in result.data.items()
-        }
-        standard_deviations = {
-            target: data.standard_deviations for target, data in result.data.items()
-        }
+        if fit_gmm:
+            probabilities = {
+                target: self.classifiers[target].estimate_weights(
+                    result.data[target].kerneled
+                )
+                for target in result.data
+            }
+            standard_deviations = {
+                target: np.zeros_like(probabilities[target]) for target in probabilities
+            }
+        else:
+            probabilities = {
+                target: data.probabilities for target, data in result.data.items()
+            }
+            standard_deviations = {
+                target: data.standard_deviations for target, data in result.data.items()
+            }
         return probabilities, standard_deviations
 
     def measure_population_dynamics(
@@ -4299,6 +4315,7 @@ class Experiment:
         *,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
         params_list: Sequence | NDArray,
+        fit_gmm: bool = False,
         xlabel: str = "Index",
         scatter_mode: str = "lines+markers",
         show_error: bool = True,
@@ -4314,6 +4331,8 @@ class Experiment:
             Parametric sequence to measure.
         params_list : Sequence | NDArray
             List of parameters.
+        fit_gmm : bool, optional
+            Whether to fit the data with a Gaussian mixture model. Defaults to False.
         xlabel : str, optional
             Label of the x-axis. Defaults to "Index".
         shots : int, optional
@@ -4332,7 +4351,7 @@ class Experiment:
         ...     "Q00": ex.hpi_pulse["Q00"].scaled(x),
         ...     "Q01": ex.hpi_pulse["Q01"].scaled(x),
         >>> params_list = np.linspace(0.5, 1.5, 100)
-        >>> probs = ex.measure_popultion_dynamics(sequence, params_list)
+        >>> result = ex.measure_popultion_dynamics(sequence, params_list)
         """
         if isinstance(params_list[0], int):
             x = params_list
@@ -4349,6 +4368,7 @@ class Experiment:
         for params in tqdm(params_list):
             prob_dict, err_dict = self.measure_population(
                 sequence=sequence(params),
+                fit_gmm=fit_gmm,
                 shots=shots,
                 interval=interval,
             )
@@ -4389,7 +4409,7 @@ class Experiment:
                 title=f"Population dynamics : {target}",
                 xaxis_title=xlabel,
                 yaxis_title="Probability",
-                yaxis_range=[0, 1],
+                yaxis_range=[-0.1, 1.1],
             )
             fig.show()
 
