@@ -834,6 +834,7 @@ class Experiment:
         capture_window: int | None = None,
         capture_margin: int | None = None,
         readout_duration: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -859,6 +860,8 @@ class Experiment:
             Capture margin. Defaults to None.
         readout_duration : int, optional
             Readout duration. Defaults to None.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -903,6 +906,7 @@ class Experiment:
                 capture_window=capture_window,
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
+                readout_amplitudes=readout_amplitudes,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -915,6 +919,7 @@ class Experiment:
                     capture_window=capture_window,
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
+                    readout_amplitudes=readout_amplitudes,
                 )
         if plot:
             result.plot()
@@ -931,6 +936,7 @@ class Experiment:
         capture_window: int | None = None,
         capture_margin: int | None = None,
         readout_duration: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ):
         """
         Measures the signals using the given sequences.
@@ -953,6 +959,8 @@ class Experiment:
             Capture margin. Defaults to None.
         readout_duration : int, optional
             Readout duration. Defaults to None.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target. Defaults to None.
 
         Yields
         ------
@@ -975,6 +983,7 @@ class Experiment:
             capture_window=capture_window or self._capture_window,
             capture_margin=capture_margin or self._capture_margin,
             readout_duration=readout_duration or self._readout_duration,
+            readout_amplitudes=readout_amplitudes,
         )
 
     def measure_state(
@@ -3984,6 +3993,7 @@ class Experiment:
         target: str,
         *,
         frequency_range: ArrayLike | None = None,
+        amplitude: float = 0.01,
         shots: int = 100,
         interval: int = 0,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -4066,6 +4076,7 @@ class Experiment:
                     result = self.measure(
                         {qubit_label: np.zeros(0)},
                         mode="avg",
+                        readout_amplitudes={qubit_label: amplitude},
                         shots=shots,
                         interval=interval,
                     )
@@ -4095,6 +4106,7 @@ class Experiment:
             print(f"phase_shift: {phase_shift} rad/GHz")
             return phase_shift
 
+        # measure phases with temporarily modified device settings
         with self.state_manager.modified_device_settings(
             label=read_label,
             lo_freq=lo,
@@ -4105,6 +4117,7 @@ class Experiment:
             phases = measure_phases(freq_range, phase_shift=phase_shift)
             phases_diff = np.abs(np.diff(phases))
 
+        # plot the phase difference
         fig = go.Figure()
         fig.add_scatter(
             name=target,
