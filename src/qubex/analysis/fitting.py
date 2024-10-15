@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from scipy.fft import fft, fftfreq
-from scipy.optimize import curve_fit, minimize
+from scipy.optimize import curve_fit, least_squares, minimize
 from sklearn.decomposition import PCA
 
 COLORS = [
@@ -209,6 +209,26 @@ def func_lorentzian(
         Vertical offset of the Lorentzian function.
     """
     return A / (1 + ((f - f0) / gamma) ** 2) + C
+
+
+def func_resonance(f, f_r, kappa_ex, kappa_in, A, phi):
+    """
+    Calculate a resonance function with given parameters.
+
+    Parameters
+    ----------
+    f : npt.NDArray[np.float64]
+        Frequency points for the function evaluation.
+    f_r : float
+        Resonance frequency.
+    kappa_ex : float
+        External loss rate.
+    kappa_in : float
+        Internal loss rate.
+    """
+    numerator = (f - f_r) * 1j + (-kappa_ex + kappa_in) / 2
+    denominator = (f - f_r) * 1j + (kappa_ex + kappa_in) / 2
+    return A * np.exp(1j * phi) * (numerator / denominator)
 
 
 def fit_rabi(
@@ -1077,89 +1097,218 @@ def fit_lorentzian(
     return f0
 
 
-def fit_chevron(
-    center_frequency: float,
+def fit_reflection_coefficient(
+    target: str,
     freq_range: npt.NDArray[np.float64],
-    time_range: npt.NDArray[np.float64],
-    signals: list[npt.NDArray[np.float64]],
-):
+    data: npt.NDArray[np.complex128],
+    p0=None,
+    bounds=None,
+    title: str = "Reflection coefficient",
+) -> tuple[float, float, float]:
     """
-    Plot Chevron patterns, perform Fourier analysis, and fit the data.
+    Fit reflection coefficient data and obtain the resonance frequency and loss rates.
 
     Parameters
     ----------
-    center_frequency : float
-        Central frequency around which the Chevron patterns are analyzed.
+    target : str
+        Identifier of the target.
     freq_range : npt.NDArray[np.float64]
-        Frequency range for the Chevron analysis.
-    time_range : npt.NDArray[np.float64]
-        Time range for the Chevron analysis.
-    signals : list[npt.NDArray[np.float64]]
-        Signal data for different frequencies in the Chevron analysis.
+        Frequency range for the reflection coefficient data.
+    data : npt.NDArray[np.complex128]
+        Complex reflection coefficient data.
+    p0 : optional
+        Initial guess for the fitting parameters.
 
     Returns
     -------
-    None
-        The function plots the Chevron patterns and their Fourier analysis.
+    tuple[float, float, float]
+        Resonance frequency, external loss rate, and internal loss rate.
     """
-    time, freq = np.meshgrid(time_range, center_frequency + freq_range * 1e6)
-    plt.pcolor(time, freq * 1e-6, signals)
-    plt.xlabel("Pulse length (ns)")
-    plt.ylabel("Drive frequency (MHz)")
-    plt.show()
 
-    length = 2**10
-    dt = (time_range[1] - time_range[0]) * 1e-9
-    freq_rabi_range = np.linspace(0, 0.5 / dt, length // 2)
+    if p0 is None:
+        p0 = (
+            (np.max(freq_range) + np.min(freq_range)) / 2,
+            0.0,
+            0.0,
+            np.mean(np.abs(data)),
+            0.0,
+        )
 
-    fourier_values = []
+    if bounds is None:
+        bounds = (
+            (np.min(freq_range), 0, 0, 0, -np.pi),
+            (np.max(freq_range), 1.0, 1.0, 1.0, np.pi),
+        )
 
-    for s in signals:
-        s = s - np.average(s)
-        signal_zero_filled = np.append(s, np.zeros(length - len(s)))
-        fourier = np.abs(np.fft.fft(signal_zero_filled))[: length // 2]
-        fourier_values.append(fourier)
+    def residuals(params, f, y):
+        f_r, kappa_ex, kappa_in, A, phi = params
+        y_model = func_resonance(f, f_r, kappa_ex, kappa_in, A, phi)
+        return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
-    freq_ctrl_range = center_frequency + freq_range * 1e6
-    grid_rabi, grid_ctrl = np.meshgrid(freq_rabi_range, freq_ctrl_range)
-    plt.pcolor(grid_rabi * 1e-6, grid_ctrl * 1e-6, fourier_values)
-    plt.xlabel("Rabi frequency (MHz)")
-    plt.ylabel("Drive frequency (MHz)")
-    plt.show()
-
-    buf = []
-    for f in fourier_values:
-        max_index = np.argmax(f)
-        buf.append(freq_rabi_range[max_index])
-    freq_rabi = np.array(buf)
-
-    def func(f_ctrl, f_rabi, f_reso, coeff):
-        return coeff * np.sqrt(f_rabi**2 + (f_ctrl - f_reso) ** 2)
-
-    p0 = [10.0e6, 8000.0e6, 1.0]
-
-    freq_ctrl = center_frequency + freq_range * 1e6
-
-    popt, _ = curve_fit(func, freq_ctrl, freq_rabi, p0=p0, maxfev=100000)
-
-    f_rabi = popt[0]
-    f_reso = popt[1]
-    coeff = popt[2]  # ge: 1, ef: sqrt(2)
-
-    print(
-        f"f_reso = {f_reso * 1e-6:.2f} MHz, f_rabi = {f_rabi * 1e-6:.2f} MHz, coeff = {coeff:.2f}"
+    result = least_squares(
+        residuals,
+        p0,
+        bounds=bounds,
+        args=(freq_range, data),
     )
 
-    freq_ctrl_fine = np.linspace(np.min(freq_ctrl), np.max(freq_ctrl), 1000)
-    freq_rabi_fit = func(freq_ctrl_fine, *popt)
+    fitted_params = result.x
 
-    plt.scatter(freq_ctrl * 1e-6, freq_rabi * 1e-6, label="Data")
-    plt.plot(freq_ctrl_fine * 1e-6, freq_rabi_fit * 1e-6, label="Fit")
+    f_r = fitted_params[0]
+    kappa_ex = fitted_params[1]
+    kappa_in = fitted_params[2]
+    # A = fitted_params[3]
+    # phi = fitted_params[4]
 
-    plt.xlabel("Drive frequency (MHz)")
-    plt.ylabel("Rabi frequency (MHz)")
-    plt.legend()
-    plt.show()
+    # print(
+    #     f"Fitted function:\n  {A:.3g} * exp(1j * {phi:.3g}) * (({f_r:.3g} - f) * 1j + (-{kappa_ex:.3g} + {kappa_in:.3g}) / 2) / (({f_r:.3g} - f) * 1j + ({kappa_ex:.3g} + {kappa_in:.3g}) / 2)"
+    # )
+
+    print(f"Resonance frequency:\n  {f_r:.6f} GHz")
+    print(f"External loss rate:\n  {kappa_ex:.6f} GHz")
+    print(f"Internal loss rate:\n  {kappa_in:.6f} GHz")
+
+    x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
+    y_fine = func_resonance(x_fine, *fitted_params)
+
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        column_widths=[0.5, 0.5],
+        row_heights=[1.0, 1.0],
+        specs=[
+            [{"rowspan": 2}, {}],
+            [None, {}],
+        ],
+        shared_xaxes=False,
+        vertical_spacing=0.05,
+        horizontal_spacing=0.125,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=np.real(data),
+            y=np.imag(data),
+            mode="markers",
+            name="I/Q (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=np.real(y_fine),
+            y=np.imag(y_fine),
+            mode="lines",
+            name="I/Q (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=freq_range,
+            y=np.real(data),
+            mode="markers",
+            name="Re (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=1,
+        col=2,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=np.real(y_fine),
+            mode="lines",
+            name="Re (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=1,
+        col=2,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=freq_range,
+            y=np.imag(data),
+            mode="markers",
+            name="Im (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=2,
+        col=2,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=np.imag(y_fine),
+            mode="lines",
+            name="Im (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=2,
+        col=2,
+    )
+
+    fig.update_layout(
+        title=f"{title} : {target}",
+        height=450,
+        width=800,
+        showlegend=False,
+    )
+
+    fig.update_xaxes(
+        title_text="Re",
+        row=1,
+        col=1,
+        tickformat=".2g",
+        showticklabels=True,
+        zeroline=True,
+        zerolinecolor="black",
+        showgrid=True,
+    )
+    fig.update_yaxes(
+        title_text="Im",
+        row=1,
+        col=1,
+        scaleanchor="x",
+        scaleratio=1,
+        tickformat=".2g",
+        showticklabels=True,
+        zeroline=True,
+        zerolinecolor="black",
+        showgrid=True,
+    )
+    fig.update_xaxes(
+        row=1,
+        col=2,
+        showticklabels=False,
+        matches="x2",
+    )
+    fig.update_yaxes(
+        title_text="Re",
+        row=1,
+        col=2,
+    )
+    fig.update_xaxes(
+        title_text="Frequency (GHz)",
+        row=2,
+        col=2,
+        matches="x2",
+    )
+    fig.update_yaxes(
+        title_text="Im",
+        row=2,
+        col=2,
+    )
+
+    fig.show()
+
+    return f_r, kappa_ex, kappa_in
 
 
 def rotate(
