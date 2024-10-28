@@ -4140,7 +4140,6 @@ class Experiment:
         if phase_shift is None:
             phase_shift = self.measure_phase_shift_by_transmission_line(
                 target,
-                frequency_range=frequency_range,
                 amplitude=amplitude,
                 shots=shots,
                 interval=interval,
