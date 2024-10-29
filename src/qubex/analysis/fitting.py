@@ -1128,7 +1128,7 @@ def fit_reflection_coefficient(
     if p0 is None:
         p0 = (
             (np.max(freq_range) + np.min(freq_range)) / 2,
-            0.0,
+            0.005,
             0.0,
             np.mean(np.abs(data)),
             0.0,
@@ -1161,7 +1161,7 @@ def fit_reflection_coefficient(
     # phi = fitted_params[4]
 
     # print(
-    #     f"Fitted function:\n  {A:.3g} * exp(1j * {phi:.3g}) * (({f_r:.3g} - f) * 1j + (-{kappa_ex:.3g} + {kappa_in:.3g}) / 2) / (({f_r:.3g} - f) * 1j + ({kappa_ex:.3g} + {kappa_in:.3g}) / 2)"
+    #     f"Fitted function:\n  {A:.3g} * exp(1j * {phi:.3g}) * ((f - {f_r:.3g}) * 1j + (-{kappa_ex:.3g} + {kappa_in:.3g}) / 2) / ((f - {f_r:.3g}) * 1j + ({kappa_ex:.3g} + {kappa_in:.3g}) / 2)"
     # )
 
     print(f"Resonance frequency:\n  {f_r:.6f} GHz")
