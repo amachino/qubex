@@ -783,3 +783,44 @@ class TimePhaseData(TargetData):
             yaxis_title="Phase (rad)",
         )
         fig.show()
+
+
+@dataclass
+class ResonatorFreqData(TargetData):
+    """
+
+    Attributes
+    ----------
+    target : str
+        Target of the experiment.
+    data : NDArray
+        Measured data.
+    """
+
+    frequency_range: NDArray
+    phase_shift: float
+
+    @property
+    def phases(self) -> NDArray[np.float64]:
+        return np.angle(self.data)
+
+    @property
+    def phase_diffs(self) -> NDArray[np.float64]:
+        delta_phases = np.diff(self.phases)
+        delta_phases[delta_phases < 0] += 2 * np.pi
+        return delta_phases
+
+    def plot(self):
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=self.frequency_range,
+                y=self.phases,
+            )
+        )
+        fig.update_layout(
+            title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/128ns",
+            xaxis_title="Control window (ns)",
+            yaxis_title="Phase (rad)",
+        )
+        fig.show()

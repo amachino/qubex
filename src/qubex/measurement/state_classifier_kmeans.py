@@ -52,6 +52,26 @@ class StateClassifierKMeans(StateClassifier):
         centers = dict(sorted(centers.items()))
         return centers
 
+    @property
+    def means(self) -> NDArray:
+        """The means of the model."""
+        raise NotImplementedError
+
+    @property
+    def covariances(self) -> NDArray:
+        """The covariances of the model."""
+        raise NotImplementedError
+
+    @property
+    def stddevs(self) -> dict[int, float]:
+        """The standard deviation of each state."""
+        raise NotImplementedError
+
+    @property
+    def weights(self) -> dict[int, float]:
+        """The weights of each state."""
+        raise NotImplementedError
+
     @classmethod
     def fit(
         cls,
@@ -317,3 +337,23 @@ class StateClassifierKMeans(StateClassifier):
             ),
         )
         fig.show(config=get_config())
+
+    def estimate_weights(
+        self,
+        data: NDArray,
+        max_iter: int = 100,
+    ) -> NDArray:
+        """
+        Parameters
+        ----------
+        data : NDArray
+            The mixed gaussian data to estimate the weights.
+        max_iter : int, optional
+            The maximum number of iterations, by default 100.
+
+        Returns
+        -------
+        NDArray
+            The estimated weights of the mixed gaussian data.
+        """
+        raise NotImplementedError

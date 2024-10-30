@@ -334,6 +334,7 @@ class Measurement:
         capture_window: int | None = None,
         capture_margin: int | None = None,
         readout_duration: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -359,6 +360,8 @@ class Measurement:
             The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
         readout_duration : int, optional
             The readout duration in ns, by default DEFAULT_READOUT_DURATION.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit, by default None.
 
         Returns
         -------
@@ -393,6 +396,7 @@ class Measurement:
                 capture_window=capture_window,
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
+                readout_amplitudes=readout_amplitudes,
             )
             backend_result = self.device_controller.execute_sequence(
                 sequence=sequence,
@@ -407,6 +411,7 @@ class Measurement:
                 capture_window=capture_window,
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
+                readout_amplitudes=readout_amplitudes,
             )
             backend_result = self.device_controller.execute_sequencer(
                 sequencer=sequencer,
@@ -430,6 +435,7 @@ class Measurement:
         capture_window: int | None = None,
         capture_margin: int | None = None,
         readout_duration: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ):
         """
         Measure with the given control waveforms.
@@ -455,6 +461,8 @@ class Measurement:
             The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
         readout_duration : int, optional
             The readout duration in ns, by default DEFAULT_READOUT_DURATION.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit, by default None.
 
         Yields
         ------
@@ -484,6 +492,7 @@ class Measurement:
                     capture_window=capture_window,
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
+                    readout_amplitudes=readout_amplitudes,
                 )
                 self.device_controller.add_sequence(
                     sequence=sequence,
@@ -496,6 +505,7 @@ class Measurement:
                     capture_window=capture_window,
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
+                    readout_amplitudes=readout_amplitudes,
                 )
                 self.device_controller.add_sequencer(sequencer)
         backend_results = self.device_controller.execute(
@@ -572,6 +582,7 @@ class Measurement:
         capture_window: int | None = None,
         capture_margin: int | None = None,
         readout_duration: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> pls.Sequence:
         if control_window is None:
             control_window = DEFAULT_CONTROL_WINDOW
@@ -581,8 +592,9 @@ class Measurement:
             capture_margin = DEFAULT_CAPTURE_MARGIN
         if readout_duration is None:
             readout_duration = DEFAULT_READOUT_DURATION
+        if readout_amplitudes is None:
+            readout_amplitudes = self.control_params.readout_amplitude
 
-        readout_amplitude = self.control_params.readout_amplitude
         capture = pls.Capture(duration=capture_window)
         qubits = {Target.qubit_label(target) for target in waveforms}
         with pls.Sequence() as sequence:
@@ -597,7 +609,7 @@ class Measurement:
                         readout_target = Target.read_label(qubit)
                         pls.RaisedCosFlatTop(
                             duration=readout_duration,
-                            amplitude=readout_amplitude[qubit],
+                            amplitude=readout_amplitudes[qubit],
                             rise_time=32,
                         ).target(readout_target)
                         capture.target(readout_target)
@@ -607,12 +619,14 @@ class Measurement:
         self,
         target: str,
         duration: int = DEFAULT_READOUT_DURATION,
+        amplitude: float | None = None,
     ) -> FlatTop:
         qubit = Target.qubit_label(target)
-        readout_amplitude = self.control_params.readout_amplitude
+        if amplitude is None:
+            amplitude = self.control_params.readout_amplitude[qubit]
         return FlatTop(
             duration=duration,
-            amplitude=readout_amplitude[qubit],
+            amplitude=amplitude,
             tau=32,
         )
 
@@ -625,6 +639,7 @@ class Measurement:
         capture_window: int | None = None,
         capture_margin: int | None = None,
         readout_duration: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> Sequencer:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
@@ -632,6 +647,8 @@ class Measurement:
             capture_margin = DEFAULT_CAPTURE_MARGIN
         if readout_duration is None:
             readout_duration = DEFAULT_READOUT_DURATION
+        if readout_amplitudes is None:
+            readout_amplitudes = self.control_params.readout_amplitude
 
         qubits = {Target.qubit_label(target) for target in waveforms}
         control_length = max(len(waveform) for waveform in waveforms.values())
@@ -665,7 +682,11 @@ class Measurement:
         # |<- control_length -><- margin_length -><- capture_length ->|
         readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for qubit in qubits:
-            readout_pulse = self._readout_pulse(qubit, readout_duration)
+            readout_pulse = self._readout_pulse(
+                target=qubit,
+                duration=readout_duration,
+                amplitude=readout_amplitudes.get(qubit),
+            )
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
