@@ -329,34 +329,224 @@ class Clifford:
     @classmethod
     def ZX90(cls) -> Clifford:
         """
-        Create the two-qubit Clifford transformation for a 90-degree rotation around the Z-axis of the first qubit
-        and the X-axis of the second qubit.
+        Create the two-qubit Clifford transformation by ZX90.
 
         Returns
         -------
         Clifford
-            A Clifford representing a 90-degree rotation around the Z-axis of the first qubit
-            and the X-axis of the second qubit.
+            A Clifford transformation by ZX90.
         """
         return Clifford(
             name="ZX90",
             map={
                 "II": Pauli(1, "II"),
                 "IX": Pauli(1, "IX"),
-                "IY": Pauli(1, "IZ"),
-                "IZ": Pauli(-1, "IY"),
-                "XI": Pauli(1, "YI"),
-                "XX": Pauli(1, "YX"),
+                "IY": Pauli(1, "ZZ"),
+                "IZ": Pauli(-1, "ZY"),
+                "XI": Pauli(1, "YX"),
+                "XX": Pauli(1, "YI"),
+                "XY": Pauli(1, "XY"),
+                "XZ": Pauli(1, "XZ"),
+                "YI": Pauli(-1, "XX"),
+                "YX": Pauli(-1, "XI"),
+                "YY": Pauli(1, "YY"),
+                "YZ": Pauli(1, "YZ"),
+                "ZI": Pauli(1, "ZI"),
+                "ZX": Pauli(1, "ZX"),
+                "ZY": Pauli(1, "IZ"),
+                "ZZ": Pauli(-1, "IY"),
+            },
+        )
+
+    @classmethod
+    def ZZ90(cls) -> Clifford:
+        """
+        Create the two-qubit Clifford transformation by ZZ90.
+
+        Returns
+        -------
+        Clifford
+            A Clifford transformation by ZZ90.
+        """
+        return Clifford(
+            name="ZZ90",
+            map={
+                "II": Pauli(1, "II"),
+                "IX": Pauli(1, "ZY"),
+                "IY": Pauli(-1, "ZX"),
+                "IZ": Pauli(1, "IZ"),
+                "XI": Pauli(1, "YZ"),
+                "XX": Pauli(1, "XX"),
+                "XY": Pauli(1, "XY"),
+                "XZ": Pauli(1, "YI"),
+                "YI": Pauli(-1, "XZ"),
+                "YX": Pauli(1, "YX"),
+                "YY": Pauli(1, "YY"),
+                "YZ": Pauli(-1, "XI"),
+                "ZI": Pauli(1, "ZI"),
+                "ZX": Pauli(1, "IY"),
+                "ZY": Pauli(-1, "IX"),
+                "ZZ": Pauli(1, "ZZ"),
+            },
+        )
+
+    @classmethod
+    def CNOT(cls) -> Clifford:
+        """
+        Create the two-qubit Clifford transformation by CNOT.
+
+        Returns
+        -------
+        Clifford
+            A Clifford transformation by CNOT.
+        """
+        return Clifford(
+            name="CNOT",
+            map={
+                "II": Pauli(1, "II"),
+                "IX": Pauli(1, "IX"),
+                "IY": Pauli(1, "ZY"),
+                "IZ": Pauli(1, "ZZ"),
+                "XI": Pauli(1, "XX"),
+                "XX": Pauli(1, "XI"),
                 "XY": Pauli(1, "YZ"),
                 "XZ": Pauli(-1, "YY"),
-                "YI": Pauli(-1, "XI"),
-                "YX": Pauli(-1, "XX"),
+                "YI": Pauli(1, "YX"),
+                "YX": Pauli(1, "YI"),
                 "YY": Pauli(-1, "XZ"),
                 "YZ": Pauli(1, "XY"),
                 "ZI": Pauli(1, "ZI"),
                 "ZX": Pauli(1, "ZX"),
-                "ZY": Pauli(1, "ZZ"),
-                "ZZ": Pauli(-1, "ZY"),
+                "ZY": Pauli(1, "IY"),
+                "ZZ": Pauli(1, "IZ"),
+            },
+        )
+
+    @classmethod
+    def CZ(cls) -> Clifford:
+        """
+        Create the two-qubit Clifford transformation by CZ.
+
+        Returns
+        -------
+        Clifford
+            A Clifford transformation by CZ.
+        """
+        return Clifford(
+            name="CZ",
+            map={
+                "II": Pauli(1, "II"),
+                "IX": Pauli(1, "ZX"),
+                "IY": Pauli(1, "ZY"),
+                "IZ": Pauli(1, "IZ"),
+                "XI": Pauli(1, "XZ"),
+                "XX": Pauli(1, "YY"),
+                "XY": Pauli(-1, "YX"),
+                "XZ": Pauli(1, "XI"),
+                "YI": Pauli(1, "YZ"),
+                "YX": Pauli(-1, "XY"),
+                "YY": Pauli(1, "XX"),
+                "YZ": Pauli(1, "YI"),
+                "ZI": Pauli(1, "ZI"),
+                "ZX": Pauli(1, "IX"),
+                "ZY": Pauli(1, "IY"),
+                "ZZ": Pauli(1, "ZZ"),
+            },
+        )
+
+    @classmethod
+    def SWAP(cls) -> Clifford:
+        """
+        Create the two-qubit Clifford transformation by SWAP.
+
+        Returns
+        -------
+        Clifford
+            A Clifford transformation by SWAP.
+        """
+        return Clifford(
+            name="SWAP",
+            map={
+                "II": Pauli(1, "II"),
+                "IX": Pauli(1, "XI"),
+                "IY": Pauli(1, "YI"),
+                "IZ": Pauli(1, "ZI"),
+                "XI": Pauli(1, "IX"),
+                "XX": Pauli(1, "XX"),
+                "XY": Pauli(1, "YX"),
+                "XZ": Pauli(1, "ZX"),
+                "YI": Pauli(1, "IY"),
+                "YX": Pauli(1, "XY"),
+                "YY": Pauli(1, "YY"),
+                "YZ": Pauli(1, "ZY"),
+                "ZI": Pauli(1, "IZ"),
+                "ZX": Pauli(1, "XZ"),
+                "ZY": Pauli(1, "YZ"),
+                "ZZ": Pauli(1, "ZZ"),
+            },
+        )
+
+    @classmethod
+    def ISWAP(cls) -> Clifford:
+        """
+        Create the two-qubit Clifford transformation by ISWAP.
+
+        Returns
+        -------
+        Clifford
+            A Clifford transformation by ISWAP.
+        """
+        return Clifford(
+            name="ISWAP",
+            map={
+                "II": Pauli(1, "II"),
+                "IX": Pauli(1, "YZ"),
+                "IY": Pauli(-1, "XZ"),
+                "IZ": Pauli(1, "ZI"),
+                "XI": Pauli(1, "ZY"),
+                "XX": Pauli(1, "XX"),
+                "XY": Pauli(1, "YX"),
+                "XZ": Pauli(1, "IY"),
+                "YI": Pauli(-1, "ZX"),
+                "YX": Pauli(1, "XY"),
+                "YY": Pauli(1, "YY"),
+                "YZ": Pauli(-1, "IX"),
+                "ZI": Pauli(1, "IZ"),
+                "ZX": Pauli(1, "YI"),
+                "ZY": Pauli(-1, "XI"),
+                "ZZ": Pauli(1, "ZZ"),
+            },
+        )
+
+    @classmethod
+    def BSWAP(cls) -> Clifford:
+        """
+        Create the two-qubit Clifford transformation by BSWAP.
+
+        Returns
+        -------
+        Clifford
+            A Clifford transformation by BSWAP.
+        """
+        return Clifford(
+            name="BSWAP",
+            map={
+                "II": Pauli(1, "II"),
+                "IX": Pauli(-1, "YZ"),
+                "IY": Pauli(-1, "XZ"),
+                "IZ": Pauli(-1, "ZI"),
+                "XI": Pauli(-1, "ZY"),
+                "XX": Pauli(1, "XX"),
+                "XY": Pauli(-1, "YX"),
+                "XZ": Pauli(1, "IY"),
+                "YI": Pauli(-1, "ZX"),
+                "YX": Pauli(-1, "XY"),
+                "YY": Pauli(1, "YY"),
+                "YZ": Pauli(1, "IX"),
+                "ZI": Pauli(-1, "IZ"),
+                "ZX": Pauli(1, "YI"),
+                "ZY": Pauli(1, "XI"),
+                "ZZ": Pauli(1, "ZZ"),
             },
         )
 
@@ -530,23 +720,25 @@ class CliffordSequence:
 
     def compose(
         self,
-        other: Clifford,
+        other: Clifford | CliffordSequence,
     ) -> CliffordSequence:
         """
         Compose a Clifford transformation with the current sequence.
 
         Parameters
         ----------
-        other : Clifford
-            The Clifford transformation to compose with the sequence.
+        other : Clifford | CliffordSequence
+            The Clifford transformation to compose with the current sequence.
 
         Returns
         -------
         CliffordSequence
             The resulting Clifford sequence after composing the input transformation.
         """
-        composed_sequence = self.sequence + [other]
-        composed_clifford = self.clifford.compose(other)
+        if isinstance(other, Clifford):
+            other = CliffordSequence(sequence=[other], clifford=other)
+        composed_sequence = self.sequence + other.sequence
+        composed_clifford = self.clifford.compose(other.clifford)
         return CliffordSequence(sequence=composed_sequence, clifford=composed_clifford)
 
     def __hash__(self) -> int:
@@ -738,7 +930,7 @@ class CliffordGroup:
     def generate_1q_cliffords(
         self,
         max_gates: int = 7,
-    ):
+    ) -> dict[Clifford, CliffordSequence]:
         """
         Generate unique Clifford sequences up to a specified gate count.
 
@@ -749,8 +941,8 @@ class CliffordGroup:
 
         Returns
         -------
-        set[CliffordSequence]
-            The set of unique Clifford sequences up to the specified gate count.
+        dict[Clifford, CliffordSequence]
+            A dictionary of unique Clifford operators and their sequences.
         """
         # Start with the identity Clifford
         identity = CliffordSequence.I()
@@ -796,10 +988,111 @@ class CliffordGroup:
         self._clifford_1q = found_cliffords
         print(f"Generated {len(found_cliffords)} unique Clifford sequences.")
         print(
-            f"Maximum gate count: {max(sequence.length for sequence in found_cliffords.values())}"
+            f"Maximum gate count: {max(sequence.length for sequence in self._clifford_1q.values())}"
         )
+        return self._clifford_1q
 
-        return found_cliffords
+    def generate_1q1q_cliffords(
+        self,
+    ) -> dict[Clifford, CliffordSequence]:
+        """
+        Generate unique 1Qx1Q Clifford sequences.
+
+        Returns
+        -------
+        dict[Clifford, CliffordSequence]
+            A dictionary of unique 1Qx1Q Clifford operators and their sequences.
+        """
+        clifford_sequences_1q = self.get_clifford_sequences("1Q")
+        for seq_1q_1 in clifford_sequences_1q:
+            seq_2q_1 = CliffordSequence.II()
+            for seq in seq_1q_1.sequence:
+                if seq.name == "X90":
+                    seq_2q_1 = seq_2q_1.compose(Clifford.XI90())
+                elif seq.name == "Z90":
+                    seq_2q_1 = seq_2q_1.compose(Clifford.ZI90())
+                else:
+                    raise ValueError("Invalid 1Q Clifford sequence.")
+            for seq_1q_2 in clifford_sequences_1q:
+                seq_2q_2 = CliffordSequence.II()
+                for seq in seq_1q_2.sequence:
+                    if seq.name == "X90":
+                        seq_2q_2 = seq_2q_2.compose(Clifford.IX90())
+                    elif seq.name == "Z90":
+                        seq_2q_2 = seq_2q_2.compose(Clifford.IZ90())
+                    else:
+                        raise ValueError("Invalid 1Q Clifford sequence.")
+                seq_2q = seq_2q_1.compose(seq_2q_2)
+                self._clifford_1q1q[seq_2q.clifford] = seq_2q
+
+        print(f"Generated {len(self._clifford_1q1q)} unique 1Qx1Q Clifford sequences.")
+        print(
+            f"Maximum gate count: {max(sequence.length for sequence in self._clifford_1q1q.values())}"
+        )
+        return self._clifford_1q1q
+
+    def generate_2q_cliffords(
+        self,
+        two_qubit_gate: Clifford = Clifford.ZX90(),
+    ) -> dict[Clifford, CliffordSequence]:
+        """
+        Generate unique 2Q Clifford sequences.
+
+        Returns
+        -------
+        dict[Clifford, CliffordSequence]
+            A dictionary of unique 2Q Clifford operators and their sequences.
+        """
+        clifford_sequences_1q1q = self.get_clifford_sequences("1Qx1Q")
+        found_cliffords_1: dict[Clifford, CliffordSequence] = {
+            seq.clifford: seq for seq in clifford_sequences_1q1q
+        }
+        print(f"1. 1Qx1Q : {len(found_cliffords_1)}")
+
+        found_cliffords_2: dict[Clifford, CliffordSequence] = {} | found_cliffords_1
+        for found_sequence_0 in found_cliffords_1.values():
+            composed = found_sequence_0.compose(two_qubit_gate)
+            if composed.clifford not in found_cliffords_2:
+                found_cliffords_2[composed.clifford] = composed
+        print(f"2. 1Qx1Q - 2Q : {len(found_cliffords_2)}")
+
+        found_cliffords_3: dict[Clifford, CliffordSequence] = {} | found_cliffords_2
+        for found_sequence_1 in found_cliffords_2.values():
+            for seq in clifford_sequences_1q1q:
+                composed = found_sequence_1.compose(seq)
+                if composed.clifford not in found_cliffords_3:
+                    found_cliffords_3[composed.clifford] = composed
+        print(f"3. 1Qx1Q - 2Q - 1Qx1Q : {len(found_cliffords_3)}")
+
+        found_cliffords_4: dict[Clifford, CliffordSequence] = {} | found_cliffords_3
+        for found_sequence_2 in found_cliffords_3.values():
+            composed = found_sequence_2.compose(two_qubit_gate)
+            if composed.clifford not in found_cliffords_4:
+                found_cliffords_4[composed.clifford] = composed
+        print(f"4. 1Qx1Q - 2Q - 1Qx1Q - 2Q : {len(found_cliffords_4)}")
+
+        found_cliffords_5: dict[Clifford, CliffordSequence] = {} | found_cliffords_4
+        for found_sequence_3 in found_cliffords_4.values():
+            for seq in clifford_sequences_1q1q:
+                composed = found_sequence_3.compose(seq)
+                if composed.clifford not in found_cliffords_5:
+                    found_cliffords_5[composed.clifford] = composed
+        print(f"5. 1Qx1Q - 2Q - 1Qx1Q - 2Q - 1Qx1Q : {len(found_cliffords_5)}")
+
+        found_cliffords_6: dict[Clifford, CliffordSequence] = {} | found_cliffords_5
+        for found_sequence_4 in found_cliffords_5.values():
+            composed = found_sequence_4.compose(two_qubit_gate)
+            if composed.clifford not in found_cliffords_6:
+                found_cliffords_6[composed.clifford] = composed
+        print(f"6. 1Qx1Q - 2Q - 1Qx1Q - 2Q - 1Qx1Q - 2Q : {len(found_cliffords_6)}")
+
+        self._clifford_2q = found_cliffords_6
+        print(f"Generated {len(self._clifford_2q)} unique 2Q Clifford sequences.")
+
+        print(
+            f"Maximum gate count: {max(sequence.length for sequence in self._clifford_2q.values())}"
+        )
+        return self._clifford_2q
 
     def get_file_path(
         self,
@@ -821,7 +1114,7 @@ class CliffordGroup:
         file_path = self.get_file_path(type)
         clifford_list = self.get_clifford_list(type)
         with open(file_path, "w") as file:
-            json.dump(clifford_list, file, indent=2)
+            json.dump(clifford_list, file, indent=4)
 
     def load(
         self,
