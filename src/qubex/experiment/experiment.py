@@ -39,7 +39,7 @@ from ..backend import (
     StateManager,
     Target,
 )
-from ..clifford import CliffordGroup
+from ..clifford import CliffordGenerator
 from ..measurement import (
     Measurement,
     MeasureResult,
@@ -3305,7 +3305,7 @@ class Experiment:
 
         sequence: list[Waveform | VirtualZ] = []
 
-        clifford_group = CliffordGroup()
+        clifford_group = CliffordGenerator()
 
         if interleaved_waveform is None:
             cliffords, inverse = clifford_group.create_rb_sequences(

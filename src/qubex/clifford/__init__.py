@@ -1,8 +1,11 @@
-from .clifford_group import Clifford, CliffordGroup, CliffordSequence, Pauli
+from .clifford import Clifford
+from .clifford_generator import CliffordGenerator
+from .clifford_sequence import CliffordSequence
+from .pauli import Pauli
 
 __all__ = [
     "Clifford",
-    "CliffordGroup",
+    "CliffordGenerator",
     "CliffordSequence",
     "Pauli",
 ]
