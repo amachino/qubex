@@ -35,7 +35,7 @@ backend = ["qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.1"]
 version = { attr = "qubex.version.get_version" }
 
 [tool.setuptools.package-data]
-qubex = ["py.typed", "clifford/*.json"]
+qubex = ["py.typed", "clifford/**/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
