@@ -421,87 +421,103 @@ class CliffordGenerator:
         dict[Clifford, CliffordSequence]
             A dictionary of unique 2Q Clifford operators and their sequences.
         """
+
+        IX90 = Clifford.IX90()
+        XI90 = Clifford.XI90()
+        GATE_2Q = two_qubit_gate
+
         clifford_sequences_1q1q = self.get_clifford_sequences("1Q1Q")
-        found_cliffords_1: dict[Clifford, CliffordSequence] = {
-            seq.clifford: seq for seq in clifford_sequences_1q1q
-        }
+
+        def count_1q_gate(seq: CliffordSequence) -> int:
+            return seq.count(IX90) + seq.count(XI90)
+
+        def count_2q_gate(seq: CliffordSequence) -> int:
+            return seq.count(GATE_2Q)
+
+        def choose_sequence(
+            seq1: CliffordSequence,
+            seq2: CliffordSequence,
+        ) -> CliffordSequence:
+            seq1_2q_count = count_2q_gate(seq1)
+            seq2_2q_count = count_2q_gate(seq2)
+            if seq2_2q_count < seq1_2q_count:
+                return seq2
+            elif seq2_2q_count == seq1_2q_count:
+                seq1_1q_count = count_1q_gate(seq1)
+                seq2_1q_count = count_1q_gate(seq2)
+                if seq2_1q_count < seq1_1q_count:
+                    return seq2
+            return seq1
+
+        def apply_1q1q_clifford(
+            cliffords: dict[Clifford, CliffordSequence],
+        ) -> dict[Clifford, CliffordSequence]:
+            new_cliffords: dict[Clifford, CliffordSequence] = {} | cliffords
+            for seq in cliffords.values():
+                for c_1q1q in clifford_sequences_1q1q:
+                    composed = seq.compose(c_1q1q)
+                    clifford = composed.clifford
+                    if clifford not in new_cliffords:
+                        new_cliffords[clifford] = composed
+                    else:
+                        existing = new_cliffords[clifford]
+                        new_cliffords[clifford] = choose_sequence(existing, composed)
+            return new_cliffords
+
+        def apply_2q_clifford(
+            cliffords: dict[Clifford, CliffordSequence],
+        ) -> dict[Clifford, CliffordSequence]:
+            new_cliffords: dict[Clifford, CliffordSequence] = {} | cliffords
+            for seq in cliffords.values():
+                composed = seq.compose(GATE_2Q)
+                clifford = composed.clifford
+                if clifford not in new_cliffords:
+                    new_cliffords[clifford] = composed
+                else:
+                    existing = new_cliffords[clifford]
+                    new_cliffords[clifford] = choose_sequence(existing, composed)
+            return new_cliffords
+
+        found_cliffords_1 = self.get_cliffords("1Q1Q")
         print(f"1. 1Q1Q : {len(found_cliffords_1)}")
 
-        found_cliffords_2: dict[Clifford, CliffordSequence] = {} | found_cliffords_1
-        for found_sequence_0 in found_cliffords_1.values():
-            composed = found_sequence_0.compose(two_qubit_gate)
-            if composed.clifford not in found_cliffords_2:
-                found_cliffords_2[composed.clifford] = composed
+        found_cliffords_2 = apply_2q_clifford(found_cliffords_1)
         print(f"2. 1Q1Q - 2Q : {len(found_cliffords_2)}")
 
-        found_cliffords_3: dict[Clifford, CliffordSequence] = {} | found_cliffords_2
-        for found_sequence_1 in found_cliffords_2.values():
-            for seq in clifford_sequences_1q1q:
-                composed = found_sequence_1.compose(seq)
-                if composed.clifford not in found_cliffords_3:
-                    found_cliffords_3[composed.clifford] = composed
+        found_cliffords_3 = apply_1q1q_clifford(found_cliffords_2)
         print(f"3. 1Q1Q - 2Q - 1Q1Q : {len(found_cliffords_3)}")
 
-        found_cliffords_4: dict[Clifford, CliffordSequence] = {} | found_cliffords_3
-        for found_sequence_2 in found_cliffords_3.values():
-            composed = found_sequence_2.compose(two_qubit_gate)
-            if composed.clifford not in found_cliffords_4:
-                found_cliffords_4[composed.clifford] = composed
+        found_cliffords_4 = apply_2q_clifford(found_cliffords_3)
         print(f"4. 1Q1Q - 2Q - 1Q1Q - 2Q : {len(found_cliffords_4)}")
 
-        found_cliffords_5: dict[Clifford, CliffordSequence] = {} | found_cliffords_4
-        for found_sequence_3 in found_cliffords_4.values():
-            for seq in clifford_sequences_1q1q:
-                composed = found_sequence_3.compose(seq)
-                if composed.clifford not in found_cliffords_5:
-                    found_cliffords_5[composed.clifford] = composed
+        found_cliffords_5 = apply_1q1q_clifford(found_cliffords_4)
         print(f"5. 1Q1Q - 2Q - 1Q1Q - 2Q - 1Q1Q : {len(found_cliffords_5)}")
 
-        found_cliffords_6: dict[Clifford, CliffordSequence] = {} | found_cliffords_5
-        for found_sequence_4 in found_cliffords_5.values():
-            composed = found_sequence_4.compose(two_qubit_gate)
-            if composed.clifford not in found_cliffords_6:
-                found_cliffords_6[composed.clifford] = composed
+        found_cliffords_6 = apply_2q_clifford(found_cliffords_5)
         print(f"6. 1Q1Q - 2Q - 1Q1Q - 2Q - 1Q1Q - 2Q : {len(found_cliffords_6)}")
 
         self._cliffords_2q = found_cliffords_6
 
         found_clifford_list = list(self._cliffords_2q.values())
-
         list_count = len(found_clifford_list)
-
         max_gate_count = max(sequence.length for sequence in found_clifford_list)
-
-        max_x90_count = max(
-            sequence.count(Clifford.IX90()) + sequence.count(Clifford.XI90())
-            for sequence in found_clifford_list
-        )
-        sum_x90_count = sum(
-            sequence.count(Clifford.IX90()) + sequence.count(Clifford.XI90())
-            for sequence in found_clifford_list
-        )
-        avg_x90_count = sum_x90_count / list_count
-
-        max_zx90_count = max(
-            sequence.count(Clifford.ZX90()) for sequence in found_clifford_list
-        )
-        sum_zx90_count = sum(
-            sequence.count(Clifford.ZX90()) for sequence in found_clifford_list
-        )
-        max_zx90_count = max(
-            sequence.count(Clifford.ZX90()) for sequence in found_clifford_list
-        )
-        avg_zx90_count = sum_zx90_count / list_count
+        max_1q_count = max(count_1q_gate(sequence) for sequence in found_clifford_list)
+        sum_1q_count = sum(count_1q_gate(sequence) for sequence in found_clifford_list)
+        avg_1q_count = sum_1q_count / list_count
+        max_2q_count = max(count_2q_gate(sequence) for sequence in found_clifford_list)
+        sum_2q_count = sum(count_2q_gate(sequence) for sequence in found_clifford_list)
+        max_2q_count = max(count_2q_gate(sequence) for sequence in found_clifford_list)
+        avg_2q_count = sum_2q_count / list_count
 
         print(f"Generated {list_count} unique 2Q Clifford sequences.")
         print()
         print(f"  Maximum gate count per Clifford: {max_gate_count}")
-        print(f"  Maximum X90 count per Clifford: {max_x90_count}")
-        print(f"  Total X90 count: {sum_x90_count}")
-        print(f"  Average X90 count: {avg_x90_count}")
-        print(f"  Maximum ZX90 count per Clifford: {max_zx90_count}")
-        print(f"  Total ZX90 count: {sum_zx90_count}")
-        print(f"  Average ZX90 count: {avg_zx90_count}")
+        print(f"  Maximum 1Q gate count per Clifford: {max_1q_count}")
+        print(f"  Total 1Q gate count: {sum_1q_count}")
+        print(f"  Average 1Q gate count: {avg_1q_count}")
+        print(f"  Maximum 2Q gate count per Clifford: {max_2q_count}")
+        print(f"  Total 2Q gate count: {sum_2q_count}")
+        print(f"  Average 2Q gate count: {avg_2q_count}")
 
         return self._cliffords_2q
 
