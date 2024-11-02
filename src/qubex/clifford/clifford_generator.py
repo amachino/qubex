@@ -524,21 +524,24 @@ class CliffordGenerator:
     def get_file_path(
         self,
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
+        file_name: str | None = None,
     ):
         dir = Path(__file__).parent / CLIFFORD_LIST_DIR
         if type == "1Q":
-            return dir / f"{CLIFFORD_LIST_1Q}.json"
+            file_name = file_name or CLIFFORD_LIST_1Q
         elif type == "1Q1Q":
-            return dir / f"{CLIFFORD_LIST_1Q1Q}.json"
+            file_name = file_name or CLIFFORD_LIST_1Q1Q
         else:
-            return dir / f"{CLIFFORD_LIST_2Q}.json"
+            file_name = file_name or CLIFFORD_LIST_2Q
+        return dir / f"{file_name}.json"
 
     def save(
         self,
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
+        file_name: str | None = None,
     ):
         """Save the Clifford group to a JSON file."""
-        file_path = self.get_file_path(type)
+        file_path = self.get_file_path(type, file_name)
         clifford_list = self.get_clifford_list(type)
         with open(file_path, "w") as file:
             json.dump(clifford_list, file, indent=4)
@@ -546,9 +549,10 @@ class CliffordGenerator:
     def load(
         self,
         type: Literal["1Q", "1Q1Q", "2Q"],
+        file_name: str | None = None,
     ):
         """Load the Clifford group from a JSON file."""
-        file_path = self.get_file_path(type)
+        file_path = self.get_file_path(type, file_name)
         with open(file_path, "r") as file:
             data = json.load(file)
 
