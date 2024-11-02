@@ -39,7 +39,7 @@ from ..backend import (
     StateManager,
     Target,
 )
-from ..clifford import CliffordGenerator
+from ..clifford import Clifford, CliffordGenerator
 from ..measurement import (
     Measurement,
     MeasureResult,
@@ -3253,7 +3253,9 @@ class Experiment:
         n: int,
         x90: Waveform | None = None,
         interleaved_waveform: Waveform | None = None,
-        interleaved_clifford_map: dict[str, tuple[complex, str]] | None = None,
+        interleaved_clifford_map: Clifford
+        | dict[str, tuple[complex, str]]
+        | None = None,
         seed: int | None = None,
     ) -> PulseSequence:
         """
@@ -3269,7 +3271,7 @@ class Experiment:
             π/2 pulse. Defaults to None.
         interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
-        interleaved_clifford_map : dict[str, tuple[complex, str]], optional
+        interleaved_clifford_map : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
@@ -3305,20 +3307,22 @@ class Experiment:
 
         sequence: list[Waveform | VirtualZ] = []
 
-        clifford_group = CliffordGenerator()
+        generator = CliffordGenerator()
 
         if interleaved_waveform is None:
-            cliffords, inverse = clifford_group.create_rb_sequences(
+            cliffords, inverse = generator.create_rb_sequences(
                 n=n,
+                type="1Q",
                 seed=seed,
             )
         else:
             if interleaved_clifford_map is None:
                 raise ValueError("Interleave map must be provided.")
-            cliffords, inverse = clifford_group.create_irb_sequences(
+            cliffords, inverse = generator.create_irb_sequences(
                 n=n,
-                seed=seed,
                 interleave=interleaved_clifford_map,
+                type="1Q",
+                seed=seed,
             )
 
         for clifford in cliffords:
