@@ -4052,10 +4052,13 @@ class Experiment:
             display(widget)
 
         # result buffer
-        phases = []
-
+        phases: list[float] = []
         # measure phase shift
         idx = 0
+
+        # phase offset to avoid the phase jump after changing the LO/NCO frequency
+        phase_offset = 0.0
+
         for subrange in subranges:
             # change LO/NCO frequency to the center of the subrange
             f_center = (subrange[0] + subrange[-1]) / 2
@@ -4066,7 +4069,24 @@ class Experiment:
                 cnco_freq=cnco,
                 fnco_freq=fnco,
             ):
-                for freq in tqdm(subrange):
+                for sub_idx, freq in enumerate(tqdm(subrange)):
+                    if idx > 0 and sub_idx == 0:
+                        # measure the phase at the previous frequency with the new LO/NCO settings
+                        with self.modified_frequencies(
+                            {read_label: frequency_range[idx - 1]}
+                        ):
+                            new_result = self.measure(
+                                {qubit_label: np.zeros(0)},
+                                mode="avg",
+                                readout_amplitudes={qubit_label: amplitude},
+                                shots=shots,
+                                interval=interval,
+                                plot=False,
+                            )
+                            new_signal = new_result.data[target].kerneled
+                            new_phase = np.angle(new_signal)
+                            phase_offset = new_phase - phases[-1]  # type: ignore
+
                     with self.modified_frequencies({read_label: freq}):
                         result = self.measure(
                             {qubit_label: np.zeros(0)},
@@ -4076,12 +4096,15 @@ class Experiment:
                             interval=interval,
                             plot=False,
                         )
-                        iq = result.data[target].kerneled
-                        angle = np.angle(iq)
-                        phases.append(angle)
+                        signal = result.data[target].kerneled
+                        phase = np.angle(signal)
+                        phase = phase - phase_offset
+                        phases.append(phase)  # type: ignore
+
                         idx += 1
+
                         if plot:
-                            scatter.x = frequency_range[: idx + 1]
+                            scatter.x = frequency_range[:idx]
                             scatter.y = np.unwrap(phases)
 
         # fit the phase shift
@@ -4190,10 +4213,12 @@ class Experiment:
             scatter_amplitude: go.Scatter = widget.data[1]  # type: ignore
             display(widget)
 
-        phases = []
-        signals = []
+        phases: list[float] = []
+        signals: list[complex] = []
 
         idx = 0
+        phase_offset = 0.0
+
         for subrange in subranges:
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, fnco = ExperimentUtil.calc_readout_lo_nco(f_center)
@@ -4203,7 +4228,21 @@ class Experiment:
                 cnco_freq=cnco,
                 fnco_freq=fnco,
             ):
-                for freq in tqdm(subrange):
+                for sub_idx, freq in enumerate(tqdm(subrange)):
+                    if idx > 0 and sub_idx == 0:
+                        prev_freq = frequency_range[idx - 1]
+                        with self.modified_frequencies({read_label: prev_freq}):
+                            new_result = self.measure(
+                                {qubit_label: np.zeros(0)},
+                                mode="avg",
+                                readout_amplitudes={qubit_label: amplitude},
+                                shots=shots,
+                                interval=interval,
+                            )
+                            new_signal = new_result.data[target].kerneled
+                            new_phase = np.angle(new_signal) - prev_freq * phase_shift
+                            phase_offset = new_phase - phases[-1]  # type: ignore
+
                     with self.modified_frequencies({read_label: freq}):
                         result = self.measure(
                             {qubit_label: np.zeros(0)},
@@ -4212,16 +4251,20 @@ class Experiment:
                             shots=shots,
                             interval=interval,
                         )
+
                         signal = result.data[target].kerneled
-                        signals.append(signal)
+                        signals.append(signal)  # type: ignore
                         phase = np.angle(signal)
                         phase = phase - freq * phase_shift
-                        phases.append(phase)
+                        phase = phase - phase_offset
+                        phases.append(phase)  # type: ignore
+
                         idx += 1
+
                         if plot:
-                            scatter_phase.x = frequency_range[: idx + 1]
+                            scatter_phase.x = frequency_range[:idx]
                             scatter_phase.y = np.unwrap(phases)
-                            scatter_amplitude.x = frequency_range[: idx + 1]
+                            scatter_amplitude.x = frequency_range[:idx]
                             scatter_amplitude.y = np.abs(signals)
 
         phases_unwrap = np.unwrap(phases)
