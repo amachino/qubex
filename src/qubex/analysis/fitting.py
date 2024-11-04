@@ -1165,8 +1165,8 @@ def fit_reflection_coefficient(
     # )
 
     print(f"Resonance frequency:\n  {f_r:.6f} GHz")
-    print(f"External loss rate:\n  {kappa_ex:.6f} GHz")
-    print(f"Internal loss rate:\n  {kappa_in:.6f} GHz")
+    print(f"External loss rate:\n  {kappa_ex * 1e3:.6f} MHz")
+    print(f"Internal loss rate:\n  {kappa_in * 1e3:.6f} MHz")
 
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonance(x_fine, *fitted_params)

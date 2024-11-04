@@ -4329,6 +4329,7 @@ class Experiment:
         amplitude: float = 0.01,
         shots: int = 100,
         interval: int = 0,
+        plot: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.complex128], float, float, float]:
         """
         Scans the readout frequencies to find the resonator frequencies.
@@ -4347,6 +4348,8 @@ class Experiment:
             Number of shots. Defaults to 100.
         interval : int, optional
             Interval between shots. Defaults to 0.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
@@ -4357,34 +4360,25 @@ class Experiment:
         center_frequency = np.mean(freq_range).astype(float)
         frequency_width = (freq_range[-1] - freq_range[0]).astype(float)
 
-        if frequency_width > 0.5:
-            raise ValueError("Frequency scan range must be less than 0.5 GHz.")
+        if frequency_width > 0.4:
+            raise ValueError("Frequency scan range must be less than 400 MHz.")
 
-        f_center = center_frequency * 1e9
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f_center,
-            ssb="U",
-            cnco_center=1_500_000_000,
-        )
-        fnco, _ = MixingUtil.calc_fnco(
-            f_center,
-            ssb="U",
-            lo=lo,
-            cnco=cnco,
-        )
+        lo, cnco, fnco = ExperimentUtil.calc_readout_lo_nco(center_frequency)
 
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
 
-        widget = go.FigureWidget()
-        widget.add_scatter(name=target, mode="markers+lines")
-        widget.update_layout(
-            title=f"Phase of reflection wave : {qubit_label}",
-            xaxis_title="Frequency (GHz)",
-            yaxis_title="Phase (rad)",
-        )
-        scatter: go.Scatter = widget.data[0]  # type: ignore
-        display(widget)
+        if plot:
+            widget = go.FigureWidget()
+            widget.add_scatter(name=target, mode="markers+lines")
+            widget.update_layout(
+                title=f"Phase of reflection wave : {qubit_label}",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Phase (rad)",
+            )
+            scatter: go.Scatter = widget.data[0]  # type: ignore
+            display(widget)
+
         signals = []
 
         with self.state_manager.modified_device_settings(
@@ -4402,11 +4396,12 @@ class Experiment:
                         shots=shots,
                         interval=interval,
                     )
-                    iq = result.data[target].kerneled
-                    signal = iq * np.exp(-1j * freq * phase_shift)
+                    signal = result.data[target].kerneled
+                    signal = signal * np.exp(-1j * freq * phase_shift)
                     signals.append(signal)
-                    scatter.x = freq_range[: idx + 1]
-                    scatter.y = np.unwrap(np.angle(signals))
+                    if plot:
+                        scatter.x = freq_range[: idx + 1]
+                        scatter.y = np.unwrap(np.angle(signals))
 
         phi = (np.angle(signals[0]) + np.angle(signals[-1])) / 2
         coeffs = np.array(signals) * np.exp(-1j * phi)
