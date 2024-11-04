@@ -13,6 +13,7 @@ import numpy as np
 import plotly.graph_objects as go
 from IPython.display import clear_output, display
 from numpy.typing import ArrayLike, NDArray
+from plotly.subplots import make_subplots
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
@@ -3998,6 +3999,7 @@ class Experiment:
         *,
         frequency_range: ArrayLike = np.arange(10.05, 10.1, 0.002),
         amplitude: float = 0.01,
+        subrange_width: float = 0.3,
         shots: int = 100,
         interval: int = 0,
         plot: bool = True,
@@ -4031,7 +4033,10 @@ class Experiment:
 
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
-        subranges = ExperimentUtil.split_frequency_range(frequency_range)
+        subranges = ExperimentUtil.split_frequency_range(
+            frequency_range=frequency_range,
+            range_width=subrange_width,
+        )
 
         # create a figure widget
         if plot:
@@ -4108,10 +4113,11 @@ class Experiment:
         frequency_range: ArrayLike | None = np.arange(10.1, 10.7, 0.002),
         phase_shift: float | None = None,
         amplitude: float = 0.01,
+        subrange_width: float = 0.3,
         shots: int = 100,
         interval: int = 0,
         plot: bool = True,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.complex128]]:
         """
         Scans the readout frequencies to find the resonator frequencies.
 
@@ -4125,6 +4131,8 @@ class Experiment:
             Phase shift in rad/GHz. If None, it will be measured.
         amplitude : float, optional
             Amplitude of the readout pulse. Defaults to 0.01.
+        subrange_width : float, optional
+            Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
             Number of shots. Defaults to 100.
         interval : int, optional
@@ -4134,8 +4142,8 @@ class Experiment:
 
         Returns
         -------
-        tuple[NDArray[np.float64], NDArray[np.float64]]
-            Frequency range and phase difference.
+        tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.complex128]]
+            Frequency range, phase difference and raw complex signals.
         """
         # measure phase shift if not provided
         if phase_shift is None:
@@ -4153,20 +4161,37 @@ class Experiment:
 
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
-        subranges = ExperimentUtil.split_frequency_range(frequency_range)
+        subranges = ExperimentUtil.split_frequency_range(
+            frequency_range=frequency_range,
+            range_width=subrange_width,
+        )
 
         if plot:
-            widget = go.FigureWidget()
-            widget.add_scatter(name=target, mode="markers+lines")
+            fig = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+                # subplot_titles=["Phase", "Amplitude"],
+            )
+            widget = go.FigureWidget(fig)
+
+            widget.add_scatter(name=target, mode="markers+lines", row=1, col=1)
+            widget.add_scatter(name=target, mode="markers+lines", row=2, col=1)
+            widget.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+            widget.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+            widget.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
             widget.update_layout(
                 title=f"Resonator frequency scan : {mux.label}",
-                xaxis_title="Readout frequency (GHz)",
-                yaxis_title="Phase (rad)",
+                height=450,
+                showlegend=False,
             )
-            scatter: go.Scatter = widget.data[0]  # type: ignore
+            scatter_phase: go.Scatter = widget.data[0]  # type: ignore
+            scatter_amplitude: go.Scatter = widget.data[1]  # type: ignore
             display(widget)
 
         phases = []
+        signals = []
 
         idx = 0
         for subrange in subranges:
@@ -4187,34 +4212,70 @@ class Experiment:
                             shots=shots,
                             interval=interval,
                         )
-                        iq = result.data[target].kerneled
-                        angle = np.angle(iq)
-                        angle = np.angle(iq) - freq * phase_shift
-                        phases.append(angle)
+                        signal = result.data[target].kerneled
+                        signals.append(signal)
+                        phase = np.angle(signal)
+                        phase = phase - freq * phase_shift
+                        phases.append(phase)
                         idx += 1
                         if plot:
-                            scatter.x = frequency_range[: idx + 1]
-                            scatter.y = np.unwrap(phases)
+                            scatter_phase.x = frequency_range[: idx + 1]
+                            scatter_phase.y = np.unwrap(phases)
+                            scatter_amplitude.x = frequency_range[: idx + 1]
+                            scatter_amplitude.y = np.abs(signals)
 
         phases_unwrap = np.unwrap(phases)
         phases_diff = np.abs(np.diff(phases_unwrap))
 
         if plot:
-            fig = go.Figure()
-            fig.add_scatter(
+            fig1 = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+                # subplot_titles=["Phase", "Amplitude"],
+            )
+            fig1.add_scatter(
+                name=target,
+                mode="markers+lines",
+                row=1,
+                col=1,
+                x=frequency_range,
+                y=phases_unwrap,
+            )
+            fig1.add_scatter(
+                name=target,
+                mode="markers+lines",
+                row=2,
+                col=1,
+                x=frequency_range,
+                y=np.abs(signals),
+            )
+            fig1.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+            fig1.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+            fig1.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+            fig1.update_layout(
+                title=f"Resonator frequency scan : {mux.label}",
+                height=450,
+                showlegend=False,
+            )
+            fig1.show()
+
+            fig2 = go.Figure()
+            fig2.add_scatter(
                 name=target,
                 mode="markers+lines",
                 x=frequency_range,
                 y=phases_diff,
             )
-            fig.update_layout(
+            fig2.update_layout(
                 title=f"Resonator frequency scan : {mux.label}",
                 xaxis_title="Readout frequency (GHz)",
                 yaxis_title="Phase diff (rad)",
             )
-            fig.show()
+            fig2.show()
 
-        return frequency_range, phases_diff
+        return frequency_range, phases_diff, np.array(signals)
 
     def measure_reflection_coefficient(
         self,
