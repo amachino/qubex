@@ -4035,7 +4035,7 @@ class Experiment:
         frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
             frequency_range=frequency_range,
-            range_width=subrange_width,
+            subrange_width=subrange_width,
         )
 
         # create a figure widget
@@ -4062,12 +4062,16 @@ class Experiment:
         for subrange in subranges:
             # change LO/NCO frequency to the center of the subrange
             f_center = (subrange[0] + subrange[-1]) / 2
-            lo, cnco, fnco = ExperimentUtil.calc_readout_lo_nco(f_center)
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_center * 1e9,
+                ssb="U",
+                cnco_center=1_500_000_000,
+            )
             with self.state_manager.modified_device_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
-                fnco_freq=fnco,
+                fnco_freq=0,
             ):
                 for sub_idx, freq in enumerate(tqdm(subrange)):
                     if idx > 0 and sub_idx == 0:
@@ -4186,7 +4190,7 @@ class Experiment:
         frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
             frequency_range=frequency_range,
-            range_width=subrange_width,
+            subrange_width=subrange_width,
         )
 
         if plot:
@@ -4198,7 +4202,6 @@ class Experiment:
                 # subplot_titles=["Phase", "Amplitude"],
             )
             widget = go.FigureWidget(fig)
-
             widget.add_scatter(name=target, mode="markers+lines", row=1, col=1)
             widget.add_scatter(name=target, mode="markers+lines", row=2, col=1)
             widget.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
@@ -4221,12 +4224,16 @@ class Experiment:
 
         for subrange in subranges:
             f_center = (subrange[0] + subrange[-1]) / 2
-            lo, cnco, fnco = ExperimentUtil.calc_readout_lo_nco(f_center)
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_center * 1e9,
+                ssb="U",
+                cnco_center=1_500_000_000,
+            )
             with self.state_manager.modified_device_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
-                fnco_freq=fnco,
+                fnco_freq=0,
             ):
                 for sub_idx, freq in enumerate(tqdm(subrange)):
                     if idx > 0 and sub_idx == 0:
@@ -4363,8 +4370,6 @@ class Experiment:
         if frequency_width > 0.4:
             raise ValueError("Frequency scan range must be less than 400 MHz.")
 
-        lo, cnco, fnco = ExperimentUtil.calc_readout_lo_nco(center_frequency)
-
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
 
@@ -4379,13 +4384,19 @@ class Experiment:
             scatter: go.Scatter = widget.data[0]  # type: ignore
             display(widget)
 
+        lo, cnco, _ = MixingUtil.calc_lo_cnco(
+            center_frequency * 1e9,
+            ssb="U",
+            cnco_center=1_500_000_000,
+        )
+
         signals = []
 
         with self.state_manager.modified_device_settings(
             label=read_label,
             lo_freq=lo,
             cnco_freq=cnco,
-            fnco_freq=fnco,
+            fnco_freq=0,
         ):
             for idx, freq in enumerate(tqdm(freq_range)):
                 with self.modified_frequencies({read_label: freq}):
@@ -4421,9 +4432,11 @@ class Experiment:
         frequency_range: ArrayLike | None = None,
         control_amplitude: float = 0.01,
         readout_amplitude: float = 0.01,
+        subrange_width: float = 0.3,
         shots: int = 1000,
         interval: int = 0,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        plot: bool = True,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
         """
         Scans the control frequencies to find the qubit frequencies.
 
@@ -4437,69 +4450,20 @@ class Experiment:
             Amplitude of the control pulse. Defaults to 0.01.
         readout_amplitude : float, optional
             Amplitude of the readout pulse. Defaults to 0.01.
+        subrange_width : float, optional
+            Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
             Number of shots.
         interval : int, optional
             Interval between shots.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
-        tuple[NDArray[np.float64], NDArray[np.float64]]
-            Frequency range and phases.
+        tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]
+            Frequency range, unwrapped phase and amplitude.
         """
-        # set the frequency range for the scan
-        if frequency_range is None:
-            center_frequency = 7.5
-            frequency_step = 0.005
-            frequency_width = 0.5
-            frequency_range = np.arange(
-                center_frequency - 0.5 * frequency_width,
-                center_frequency + 0.5 * frequency_width,
-                frequency_step,
-            )
-        else:
-            frequency_range = np.array(frequency_range)
-            center_frequency = np.mean(frequency_range).astype(float)
-            frequency_step = (frequency_range[1] - frequency_range[0]).astype(float)
-            frequency_width = (frequency_range[-1] - frequency_range[0]).astype(float)
-
-        if frequency_width > 0.5:
-            raise ValueError("Frequency scan range must be less than 0.5 GHz.")
-
-        # prepare the plot
-        widget = go.FigureWidget()
-        widget.add_scatter(name=target, mode="markers+lines")
-        widget.update_layout(
-            title=f"Qubit frequency scan : {target}",
-            xaxis_title="Control frequency (GHz)",
-            yaxis_title="Phase (rad)",
-        )
-        scatter: go.Scatter = widget.data[0]  # type: ignore
-        display(widget)
-        phases = []
-
-        # calculate the LO/NCO for the scan
-        f_center = center_frequency * 1e9
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f_center,
-            ssb="L",
-            cnco_center=2_250_000_000,
-        )
-        fnco, f_mix = MixingUtil.calc_fnco(
-            f_center,
-            ssb="L",
-            lo=lo,
-            cnco=cnco,
-        )
-
-        # scan range
-        f = f_mix * 1e-9
-        freq_range = np.arange(
-            f - 0.5 * frequency_width,
-            f + 0.5 * frequency_width,
-            frequency_step,
-        )
-
         # control and readout pulses
         qubit = Target.qubit_label(target)
         resonator = Target.read_label(target)
@@ -4514,31 +4478,111 @@ class Experiment:
             tau=128,
         )
 
-        # scan the qubit frequency
-        with self.state_manager.modified_device_settings(
-            label=qubit,
-            lo_freq=lo,
-            cnco_freq=cnco,
-            fnco_freq=fnco,
-        ):
-            for idx, freq in enumerate(tqdm(freq_range)):
-                with self.modified_frequencies({qubit: freq}):
-                    with PulseSchedule([qubit, resonator]) as ps:
-                        ps.add(qubit, control_pulse)
-                        ps.add(resonator, readout_pulse)
-                    result = self.execute(
-                        schedule=ps,
-                        mode="avg",
-                        shots=shots,
-                        interval=interval,
-                    )
-                    iq = result.data[qubit].kerneled
-                    angle = np.angle(iq)
-                    phases.append(angle)
-                    scatter.x = freq_range[: idx + 1]
-                    scatter.y = np.unwrap(phases)
+        # prepare the plot
+        if plot:
+            fig = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+            )
+            widget = go.FigureWidget(fig)
+            widget.add_scatter(name=target, mode="markers+lines", row=1, col=1)
+            widget.add_scatter(name=target, mode="markers+lines", row=2, col=1)
+            widget.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
+            widget.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+            widget.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+            widget.update_layout(
+                title=f"Control frequency scan : {qubit}",
+                height=450,
+                showlegend=False,
+            )
+            scatter_phase: go.Scatter = widget.data[0]  # type: ignore
+            scatter_amplitude: go.Scatter = widget.data[1]  # type: ignore
+            display(widget)
 
-        return freq_range, np.unwrap(phases)
+        # split frequency range to avoid the frequency sweep range limit
+        frequency_range = np.array(frequency_range)
+        subranges = ExperimentUtil.split_frequency_range(
+            frequency_range=frequency_range,
+            subrange_width=subrange_width,
+        )
+
+        # result buffer
+        phases = []
+        amplitudes = []
+
+        idx = 0
+        for subrange in subranges:
+            f_center = (subrange[0] + subrange[-1]) / 2
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_center * 1e9,
+                ssb="L",
+                cnco_center=2_250_000_000,
+            )
+            with self.state_manager.modified_device_settings(
+                label=qubit,
+                lo_freq=lo,
+                cnco_freq=cnco,
+                fnco_freq=0,
+            ):
+                for freq in tqdm(subrange):
+                    with self.modified_frequencies({qubit: freq}):
+                        with PulseSchedule([qubit, resonator]) as ps:
+                            ps.add(qubit, control_pulse)
+                            ps.add(resonator, readout_pulse)
+                        result = self.execute(
+                            schedule=ps,
+                            mode="avg",
+                            shots=shots,
+                            interval=interval,
+                        )
+                        signal = result.data[qubit].kerneled
+                        phases.append(np.angle(signal))
+                        amplitudes.append(np.abs(signal))
+
+                        idx += 1
+
+                        if plot:
+                            scatter_phase.x = frequency_range[:idx]
+                            scatter_phase.y = np.unwrap(phases)
+                            scatter_amplitude.x = frequency_range[:idx]
+                            scatter_amplitude.y = amplitudes
+
+        if plot:
+            fig = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+            )
+            fig.add_scatter(
+                name=target,
+                mode="markers+lines",
+                row=1,
+                col=1,
+                x=frequency_range,
+                y=np.unwrap(phases),
+            )
+            fig.add_scatter(
+                name=target,
+                mode="markers+lines",
+                row=2,
+                col=1,
+                x=frequency_range,
+                y=amplitudes,
+            )
+            fig.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+            fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+            fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+            fig.update_layout(
+                title=f"Control frequency scan : {qubit}",
+                height=450,
+                showlegend=False,
+            )
+            fig.show()
+
+        return frequency_range, np.unwrap(phases), np.asarray(amplitudes)
 
     def measure_population(
         self,
@@ -4713,7 +4757,7 @@ class ExperimentUtil:
     @staticmethod
     def split_frequency_range(
         frequency_range: ArrayLike,
-        range_width: float = 0.3,
+        subrange_width: float = 0.3,
     ) -> list[NDArray[np.float64]]:
         """
         Splits the frequency range into sub-ranges.
@@ -4722,7 +4766,7 @@ class ExperimentUtil:
         ----------
         frequency_range : ArrayLike
             Frequency range to split in GHz.
-        range_width : float, optional
+        ubrange_width : float, optional
             Width of the sub-ranges. Defaults to 0.3 GHz.
 
         Returns
@@ -4731,41 +4775,6 @@ class ExperimentUtil:
             Sub-ranges.
         """
         frequency_range = np.array(frequency_range)
-        range_count = (frequency_range[-1] - frequency_range[0]) // range_width + 1
+        range_count = (frequency_range[-1] - frequency_range[0]) // subrange_width + 1
         sub_ranges = np.array_split(frequency_range, range_count)
         return sub_ranges
-
-    @staticmethod
-    def calc_readout_lo_nco(
-        frequency: float,
-        *,
-        cnco_center: int = 1_500_000_000,
-    ) -> tuple[int, int, int]:
-        """
-        Calculates the LO/NCO frequencies for the readout.
-
-        Parameters
-        ----------
-        frequency : float
-            Target frequency in GHz.
-        cnco_center : int, optional
-            CNCO center frequency in Hz. Defaults to 1_500_000_000.
-
-        Returns
-        -------
-        tuple[int, int, int]
-            LO, CNCO, and FNCO frequencies.
-        """
-        f_Hz = frequency * 1e9
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f_Hz,
-            ssb="U",
-            cnco_center=cnco_center,
-        )
-        fnco, _ = MixingUtil.calc_fnco(
-            f_Hz,
-            ssb="U",
-            lo=lo,
-            cnco=cnco,
-        )
-        return lo, cnco, fnco
