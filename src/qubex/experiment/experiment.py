@@ -4441,6 +4441,7 @@ class Experiment:
         frequency_range: ArrayLike | None = None,
         control_amplitude: float = 0.01,
         readout_amplitude: float = 0.01,
+        readout_frequency: float | None = None,
         subrange_width: float = 0.3,
         shots: int = 1000,
         interval: int = 0,
@@ -4517,10 +4518,14 @@ class Experiment:
             subrange_width=subrange_width,
         )
 
+        # readout frequency
+        readout_frequency = readout_frequency or self.targets[resonator].frequency
+
         # result buffer
         phases = []
         amplitudes = []
 
+        # measure the phase and amplitude
         idx = 0
         for subrange in subranges:
             f_center = (subrange[0] + subrange[-1]) / 2
@@ -4535,8 +4540,13 @@ class Experiment:
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
-                for freq in tqdm(subrange):
-                    with self.modified_frequencies({qubit: freq}):
+                for control_frequency in tqdm(subrange):
+                    with self.modified_frequencies(
+                        {
+                            qubit: control_frequency,
+                            resonator: readout_frequency,
+                        }
+                    ):
                         with PulseSchedule([qubit, resonator]) as ps:
                             ps.add(qubit, control_pulse)
                             ps.add(resonator, readout_pulse)
