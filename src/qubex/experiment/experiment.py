@@ -2238,6 +2238,7 @@ class Experiment:
                 target=target,
                 freq_range=detuning_range + freq,
                 data=np.array(values),
+                plot=plot,
                 title="Readout frequency calibration",
                 xaxis_title="Readout frequency (GHz)",
             )
@@ -2253,6 +2254,7 @@ class Experiment:
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 1,
+        plot: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -2267,6 +2269,8 @@ class Experiment:
             Type of the pulse to calibrate.
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2321,6 +2325,7 @@ class Experiment:
                 target=target,
                 amplitude_range=ampl_range,
                 data=-sweep_data.normalized,
+                plot=plot,
                 title=f"{pulse_type} pulse calibration",
             )
 
@@ -2858,6 +2863,7 @@ class Experiment:
                 target=target,
                 x=data.sweep_range,
                 y=0.5 * (1 - data.normalized),
+                plot=plot,
                 title="T1",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
@@ -2944,6 +2950,7 @@ class Experiment:
                 target=target,
                 x=sweep_data.sweep_range,
                 y=0.5 * (1 - sweep_data.normalized),
+                plot=plot,
                 title="T2",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
@@ -3046,6 +3053,7 @@ class Experiment:
                 target=target,
                 x=sweep_data.sweep_range,
                 y=sweep_data.normalized,
+                plot=plot,
             )
             ramsey_data = RamseyData.new(
                 sweep_data=sweep_data,
@@ -4421,6 +4429,7 @@ class Experiment:
             target=target,
             freq_range=freq_range,
             data=coeffs,
+            plot=plot,
         )
 
         return freq_range, coeffs, f_r, kappa_ex, kappa_in
