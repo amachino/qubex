@@ -3,14 +3,13 @@ from __future__ import annotations
 import os
 import re
 from functools import cached_property
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import httpx
 import numpy as np
-import numpy.typing as npt
 
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
-from qubex.pulse import Waveform
+from qubex.pulse import PulseSchedule, Waveform
 
 API_BASE_URL = "https://qiqb.ngrok.dev"
 
@@ -77,7 +76,7 @@ class PulseAPI:
 
     def measure(
         self,
-        waveforms: dict[str, list | npt.NDArray | Waveform],
+        waveforms: dict[str, Any] | PulseSchedule,
         *,
         frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
@@ -90,7 +89,7 @@ class PulseAPI:
 
         Parameters
         ----------
-        waveforms: dict[str, list | npt.NDArray | Waveform]
+        waveforms: dict[str, Any] | PulseSchedule
             The control waveforms for each qubit.
         frequencies: dict[str, float], optional
             The frequencies of the qubits.
@@ -108,6 +107,9 @@ class PulseAPI:
         MeasureResult
             The measurement result.
         """
+        if isinstance(waveforms, PulseSchedule):
+            waveforms = waveforms.get_sampled_sequences()
+
         if not all(label in self.targets for label in waveforms):
             raise ValueError(
                 f"Invalid qubit labels: {set(waveforms) - set(self.targets)}"
