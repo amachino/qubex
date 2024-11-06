@@ -5,9 +5,10 @@ from enum import Enum
 from typing import Union
 
 from pydantic.dataclasses import dataclass
+
 from .control_system import CapChannel, GenChannel
-from .quantum_system import Qubit, Resonator
 from .model import Model
+from .quantum_system import Qubit, Resonator
 
 
 class TargetType(Enum):

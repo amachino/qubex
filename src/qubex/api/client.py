@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+from functools import cached_property
 from typing import Literal, Optional
 
 import httpx
@@ -18,6 +20,7 @@ class PulseAPI:
         self,
         *,
         chip_id: str,
+        qubits: list[str],
         api_key: str | None = None,
         api_base_url: str | None = None,
     ):
@@ -29,12 +32,15 @@ class PulseAPI:
         ----------
         chip_id: str
             The quantum chip ID.
+        qubits: list[str]
+            The qubits to measure.
         api_key: str
             The API key to use.
         api_base_url: str
             The base URL of the API.
         """
         self.chip_id = chip_id
+        self.qubits = qubits
         self.api_key = self._get_api_key(api_key)
         self.api_base_url = api_base_url or API_BASE_URL
         self.headers = {"X-API-Key": self.api_key}
@@ -49,14 +55,25 @@ class PulseAPI:
             raise ValueError("API key is required.")
         return api_key
 
-    @property
+    @cached_property
     def targets(self) -> dict:
         """Get the available targets."""
-        return self._request(
+        result = self._request(
             "GET",
             "/api/targets",
             params={"chip_id": self.chip_id},
         )
+        targets = {}
+        for label, target in result.items():
+            if target["qubit"] in self.qubits:
+                if target["type"] == "CTRL_CR":
+                    if match := re.match(r"^(Q\d+)-(Q\d+)$", label):
+                        cr_target_qubit = match.group(2)
+                        if cr_target_qubit in self.qubits:
+                            targets[label] = target
+                else:
+                    targets[label] = target
+        return targets
 
     def measure(
         self,
@@ -91,6 +108,10 @@ class PulseAPI:
         MeasureResult
             The measurement result.
         """
+        if not all(label in self.targets for label in waveforms):
+            raise ValueError(
+                f"Invalid qubit labels: {set(waveforms) - set(self.targets)}"
+            )
 
         control_waveforms = {}
         for qubit, waveform in waveforms.items():
