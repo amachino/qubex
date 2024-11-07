@@ -4592,7 +4592,7 @@ class Experiment:
                 x=frequency_range,
                 y=amplitudes,
             )
-            fig.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+            fig.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
             fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
             fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
             fig.update_layout(
