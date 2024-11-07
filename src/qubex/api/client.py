@@ -55,6 +55,16 @@ class PulseAPI:
         return api_key
 
     @cached_property
+    def params(self) -> dict:
+        """Get parameters of the control system."""
+        result = self._request(
+            "GET",
+            "/api/params",
+            params={"chip_id": self.chip_id},
+        )
+        return result
+
+    @cached_property
     def targets(self) -> dict:
         """Get the available targets."""
         result = self._request(
