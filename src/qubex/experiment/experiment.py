@@ -13,6 +13,7 @@ import numpy as np
 import plotly.graph_objects as go
 from IPython.display import clear_output, display
 from numpy.typing import ArrayLike, NDArray
+from plotly.subplots import make_subplots
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
@@ -39,7 +40,7 @@ from ..backend import (
     StateManager,
     Target,
 )
-from ..clifford import CliffordGroup
+from ..clifford import Clifford, CliffordGenerator
 from ..measurement import (
     Measurement,
     MeasureResult,
@@ -2237,6 +2238,7 @@ class Experiment:
                 target=target,
                 freq_range=detuning_range + freq,
                 data=np.array(values),
+                plot=plot,
                 title="Readout frequency calibration",
                 xaxis_title="Readout frequency (GHz)",
             )
@@ -2252,6 +2254,7 @@ class Experiment:
         targets: list[str],
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 1,
+        plot: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -2266,6 +2269,8 @@ class Experiment:
             Type of the pulse to calibrate.
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2320,6 +2325,7 @@ class Experiment:
                 target=target,
                 amplitude_range=ampl_range,
                 data=-sweep_data.normalized,
+                plot=plot,
                 title=f"{pulse_type} pulse calibration",
             )
 
@@ -2857,6 +2863,7 @@ class Experiment:
                 target=target,
                 x=data.sweep_range,
                 y=0.5 * (1 - data.normalized),
+                plot=plot,
                 title="T1",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
@@ -2943,6 +2950,7 @@ class Experiment:
                 target=target,
                 x=sweep_data.sweep_range,
                 y=0.5 * (1 - sweep_data.normalized),
+                plot=plot,
                 title="T2",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
@@ -3045,6 +3053,7 @@ class Experiment:
                 target=target,
                 x=sweep_data.sweep_range,
                 y=sweep_data.normalized,
+                plot=plot,
             )
             ramsey_data = RamseyData.new(
                 sweep_data=sweep_data,
@@ -3253,7 +3262,9 @@ class Experiment:
         n: int,
         x90: Waveform | None = None,
         interleaved_waveform: Waveform | None = None,
-        interleaved_clifford_map: dict[str, tuple[complex, str]] | None = None,
+        interleaved_clifford_map: Clifford
+        | dict[str, tuple[complex, str]]
+        | None = None,
         seed: int | None = None,
     ) -> PulseSequence:
         """
@@ -3269,7 +3280,7 @@ class Experiment:
             π/2 pulse. Defaults to None.
         interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
-        interleaved_clifford_map : dict[str, tuple[complex, str]], optional
+        interleaved_clifford_map : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
@@ -3305,20 +3316,22 @@ class Experiment:
 
         sequence: list[Waveform | VirtualZ] = []
 
-        clifford_group = CliffordGroup()
+        generator = CliffordGenerator()
 
         if interleaved_waveform is None:
-            cliffords, inverse = clifford_group.create_rb_sequences(
+            cliffords, inverse = generator.create_rb_sequences(
                 n=n,
+                type="1Q",
                 seed=seed,
             )
         else:
             if interleaved_clifford_map is None:
                 raise ValueError("Interleave map must be provided.")
-            cliffords, inverse = clifford_group.create_irb_sequences(
+            cliffords, inverse = generator.create_irb_sequences(
                 n=n,
-                seed=seed,
                 interleave=interleaved_clifford_map,
+                type="1Q",
+                seed=seed,
             )
 
         for clifford in cliffords:
@@ -3992,10 +4005,12 @@ class Experiment:
         self,
         target: str,
         *,
-        frequency_range: ArrayLike | None = None,
+        frequency_range: ArrayLike = np.arange(10.05, 10.1, 0.002),
         amplitude: float = 0.01,
+        subrange_width: float = 0.3,
         shots: int = 100,
         interval: int = 0,
+        plot: bool = True,
     ) -> float:
         """
         Measures the phase shift caused by the length of the transmission line.
@@ -4012,94 +4027,116 @@ class Experiment:
             Number of shots. Defaults to 100.
         interval : int, optional
             Interval between shots. Defaults to 0.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
         float
             Phase shift in rad/GHz.
         """
-        if frequency_range is None:
-            center_frequency = 9.9
-            frequency_step = 0.002
-            frequency_width = 0.06
-            frequency_range = np.arange(
-                center_frequency - 0.5 * frequency_width,
-                center_frequency + 0.5 * frequency_width,
-                frequency_step,
-            )
-        else:
-            frequency_range = np.array(frequency_range)
-            center_frequency = np.mean(frequency_range).astype(float)
-            frequency_step = (frequency_range[1] - frequency_range[0]).astype(float)
-            frequency_width = (frequency_range[-1] - frequency_range[0]).astype(float)
-
-        if frequency_width > 0.5:
-            raise ValueError("Frequency scan range must be less than 0.5 GHz.")
-
-        f_center = center_frequency * 1e9
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f_center,
-            ssb="U",
-            cnco_center=1_500_000_000,
-        )
-        fnco, _ = MixingUtil.calc_fnco(
-            f_center,
-            ssb="U",
-            lo=lo,
-            cnco=cnco,
-        )
-
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
 
-        widget = go.FigureWidget()
-        widget.add_scatter(name=target, mode="markers+lines")
-        widget.update_layout(
-            title=f"Phase shift by transmission line : {mux.label}",
-            xaxis_title="Frequency (GHz)",
-            yaxis_title="Unwrapped phase (rad)",
-            showlegend=False,
+        # split frequency range to avoid the frequency sweep range limit
+        frequency_range = np.array(frequency_range)
+        subranges = ExperimentUtil.split_frequency_range(
+            frequency_range=frequency_range,
+            subrange_width=subrange_width,
         )
-        scatter: go.Scatter = widget.data[0]  # type: ignore
-        display(widget)
 
-        phases = []
+        # create a figure widget
+        if plot:
+            widget = go.FigureWidget()
+            widget.add_scatter(name=target, mode="markers+lines")
+            widget.update_layout(
+                title=f"Phase shift by transmission line : {mux.label}",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
+                showlegend=False,
+            )
+            scatter: go.Scatter = widget.data[0]  # type: ignore
+            display(widget)
 
-        with self.state_manager.modified_device_settings(
-            label=read_label,
-            lo_freq=lo,
-            cnco_freq=cnco,
-            fnco_freq=fnco,
-        ):
-            for idx, freq in enumerate(tqdm(frequency_range)):
-                with self.modified_frequencies({read_label: freq}):
-                    result = self.measure(
-                        {qubit_label: np.zeros(0)},
-                        mode="avg",
-                        readout_amplitudes={qubit_label: amplitude},
-                        shots=shots,
-                        interval=interval,
-                    )
-                    iq = result.data[target].kerneled
-                    angle = np.angle(iq)
-                    phases.append(angle)
-                    scatter.x = frequency_range[: idx + 1]
-                    scatter.y = np.unwrap(phases)
+        # result buffer
+        phases: list[float] = []
+        # measure phase shift
+        idx = 0
 
+        # phase offset to avoid the phase jump after changing the LO/NCO frequency
+        phase_offset = 0.0
+
+        for subrange in subranges:
+            # change LO/NCO frequency to the center of the subrange
+            f_center = (subrange[0] + subrange[-1]) / 2
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_center * 1e9,
+                ssb="U",
+                cnco_center=1_500_000_000,
+            )
+            with self.state_manager.modified_device_settings(
+                label=read_label,
+                lo_freq=lo,
+                cnco_freq=cnco,
+                fnco_freq=0,
+            ):
+                for sub_idx, freq in enumerate(tqdm(subrange)):
+                    if idx > 0 and sub_idx == 0:
+                        # measure the phase at the previous frequency with the new LO/NCO settings
+                        with self.modified_frequencies(
+                            {read_label: frequency_range[idx - 1]}
+                        ):
+                            new_result = self.measure(
+                                {qubit_label: np.zeros(0)},
+                                mode="avg",
+                                readout_amplitudes={qubit_label: amplitude},
+                                shots=shots,
+                                interval=interval,
+                                plot=False,
+                            )
+                            new_signal = new_result.data[target].kerneled
+                            new_phase = np.angle(new_signal)
+                            phase_offset = new_phase - phases[-1]  # type: ignore
+
+                    with self.modified_frequencies({read_label: freq}):
+                        result = self.measure(
+                            {qubit_label: np.zeros(0)},
+                            mode="avg",
+                            readout_amplitudes={qubit_label: amplitude},
+                            shots=shots,
+                            interval=interval,
+                            plot=False,
+                        )
+                        signal = result.data[target].kerneled
+                        phase = np.angle(signal)
+                        phase = phase - phase_offset
+                        phases.append(phase)  # type: ignore
+
+                        idx += 1
+
+                        if plot:
+                            scatter.x = frequency_range[:idx]
+                            scatter.y = np.unwrap(phases)
+
+        # fit the phase shift
         x, y = frequency_range, np.unwrap(phases)
         coefficients = np.polyfit(x, y, 1)
         y_fit = np.polyval(coefficients, x)
-        fig = go.Figure()
-        fig.add_scatter(name="data", mode="markers", x=x, y=y)
-        fig.add_scatter(name="fit", mode="lines", x=x, y=y_fit)
-        fig.update_layout(
-            title=f"Phase shift by transmission line : {mux.label}",
-            xaxis_title="Frequency (GHz)",
-            yaxis_title="Unwrapped phase (rad)",
-            showlegend=True,
-        )
-        fig.show()
+
+        if plot:
+            fig = go.Figure()
+            fig.add_scatter(name="data", mode="markers", x=x, y=y)
+            fig.add_scatter(name="fit", mode="lines", x=x, y=y_fit)
+            fig.update_layout(
+                title=f"Phase shift by transmission line : {mux.label}",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
+                showlegend=True,
+            )
+            fig.show()
+
+        # return the phase shift
         phase_shift = coefficients[0]
         print(f"phase_shift: {phase_shift} [rad/GHz]")
         return phase_shift
@@ -4108,12 +4145,14 @@ class Experiment:
         self,
         target: str,
         *,
-        frequency_range: ArrayLike | None = None,
+        frequency_range: ArrayLike | None = np.arange(10.1, 10.7, 0.002),
         phase_shift: float | None = None,
         amplitude: float = 0.01,
+        subrange_width: float = 0.3,
         shots: int = 100,
         interval: int = 0,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        plot: bool = True,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.complex128]]:
         """
         Scans the readout frequencies to find the resonator frequencies.
 
@@ -4127,117 +4166,175 @@ class Experiment:
             Phase shift in rad/GHz. If None, it will be measured.
         amplitude : float, optional
             Amplitude of the readout pulse. Defaults to 0.01.
+        subrange_width : float, optional
+            Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
             Number of shots. Defaults to 100.
         interval : int, optional
             Interval between shots. Defaults to 0.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
-        tuple[NDArray[np.float64], NDArray[np.float64]]
-            Frequency range and phase difference.
+        tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.complex128]]
+            Frequency range, phase difference and raw complex signals.
         """
+        # measure phase shift if not provided
         if phase_shift is None:
             phase_shift = self.measure_phase_shift_by_transmission_line(
                 target,
                 amplitude=amplitude,
                 shots=shots,
                 interval=interval,
+                plot=False,
             )
-
-        if frequency_range is None:
-            center_frequency = 10.05
-            frequency_step = 0.002
-            frequency_width = 0.5
-            frequency_range = np.arange(
-                center_frequency - 0.5 * frequency_width,
-                center_frequency + 0.5 * frequency_width,
-                frequency_step,
-            )
-        else:
-            frequency_range = np.array(frequency_range)
-            center_frequency = np.mean(frequency_range).astype(float)
-            frequency_step = (frequency_range[1] - frequency_range[0]).astype(float)
-            frequency_width = (frequency_range[-1] - frequency_range[0]).astype(float)
-
-        if frequency_width > 0.5:
-            raise ValueError("Frequency scan range must be less than 0.5 GHz.")
-
-        f_center = center_frequency * 1e9
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f_center,
-            ssb="U",
-            cnco_center=1_500_000_000,
-        )
-        fnco, f_mix = MixingUtil.calc_fnco(
-            f_center,
-            ssb="U",
-            lo=lo,
-            cnco=cnco,
-        )
-
-        f = f_mix * 1e-9
-        freq_range = np.arange(
-            f - 0.5 * frequency_width,
-            f + 0.5 * frequency_width,
-            frequency_step,
-        )
 
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
 
-        widget = go.FigureWidget()
-        widget.add_scatter(name=target, mode="markers+lines")
-        widget.update_layout(
-            title=f"Resonator frequency scan : {mux.label}",
-            xaxis_title="Readout frequency (GHz)",
-            yaxis_title="Phase (rad)",
+        # split frequency range to avoid the frequency sweep range limit
+        frequency_range = np.array(frequency_range)
+        subranges = ExperimentUtil.split_frequency_range(
+            frequency_range=frequency_range,
+            subrange_width=subrange_width,
         )
-        scatter: go.Scatter = widget.data[0]  # type: ignore
-        display(widget)
-        phases = []
 
-        with self.state_manager.modified_device_settings(
-            label=read_label,
-            lo_freq=lo,
-            cnco_freq=cnco,
-            fnco_freq=fnco,
-        ):
-            for idx, freq in enumerate(tqdm(freq_range)):
-                with self.modified_frequencies({read_label: freq}):
-                    result = self.measure(
-                        {qubit_label: np.zeros(0)},
-                        mode="avg",
-                        readout_amplitudes={qubit_label: amplitude},
-                        shots=shots,
-                        interval=interval,
-                    )
-                    iq = result.data[target].kerneled
-                    angle = np.angle(iq)
-                    angle = np.angle(iq) - freq * phase_shift
-                    phases.append(angle)
-                    scatter.x = freq_range[: idx + 1]
-                    scatter.y = np.unwrap(phases)
+        if plot:
+            fig = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+                # subplot_titles=["Phase", "Amplitude"],
+            )
+            widget = go.FigureWidget(fig)
+            widget.add_scatter(name=target, mode="markers+lines", row=1, col=1)
+            widget.add_scatter(name=target, mode="markers+lines", row=2, col=1)
+            widget.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+            widget.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+            widget.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+            widget.update_layout(
+                title=f"Resonator frequency scan : {mux.label}",
+                height=450,
+                showlegend=False,
+            )
+            scatter_phase: go.Scatter = widget.data[0]  # type: ignore
+            scatter_amplitude: go.Scatter = widget.data[1]  # type: ignore
+            display(widget)
+
+        phases: list[float] = []
+        signals: list[complex] = []
+
+        idx = 0
+        phase_offset = 0.0
+
+        for subrange in subranges:
+            f_center = (subrange[0] + subrange[-1]) / 2
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_center * 1e9,
+                ssb="U",
+                cnco_center=1_500_000_000,
+            )
+            with self.state_manager.modified_device_settings(
+                label=read_label,
+                lo_freq=lo,
+                cnco_freq=cnco,
+                fnco_freq=0,
+            ):
+                for sub_idx, freq in enumerate(tqdm(subrange)):
+                    if idx > 0 and sub_idx == 0:
+                        prev_freq = frequency_range[idx - 1]
+                        with self.modified_frequencies({read_label: prev_freq}):
+                            new_result = self.measure(
+                                {qubit_label: np.zeros(0)},
+                                mode="avg",
+                                readout_amplitudes={qubit_label: amplitude},
+                                shots=shots,
+                                interval=interval,
+                            )
+                            new_signal = new_result.data[target].kerneled
+                            new_phase = np.angle(new_signal) - prev_freq * phase_shift
+                            phase_offset = new_phase - phases[-1]  # type: ignore
+
+                    with self.modified_frequencies({read_label: freq}):
+                        result = self.measure(
+                            {qubit_label: np.zeros(0)},
+                            mode="avg",
+                            readout_amplitudes={qubit_label: amplitude},
+                            shots=shots,
+                            interval=interval,
+                        )
+
+                        raw = result.data[target].kerneled
+                        ampl = np.abs(raw)
+                        phase = np.angle(raw)
+                        phase = phase - freq * phase_shift - phase_offset
+                        signal = ampl * np.exp(1j * phase)
+                        signals.append(signal)
+                        phases.append(phase)  # type: ignore
+
+                        idx += 1
+
+                        if plot:
+                            scatter_phase.x = frequency_range[:idx]
+                            scatter_phase.y = np.unwrap(phases)
+                            scatter_amplitude.x = frequency_range[:idx]
+                            scatter_amplitude.y = np.abs(signals)
 
         phases_unwrap = np.unwrap(phases)
         phases_diff = np.abs(np.diff(phases_unwrap))
 
-        fig = go.Figure()
-        fig.add_scatter(
-            name=target,
-            mode="markers+lines",
-            x=freq_range,
-            y=phases_diff,
-        )
-        fig.update_layout(
-            title=f"Resonator frequency scan : {mux.label}",
-            xaxis_title="Readout frequency (GHz)",
-            yaxis_title="Phase diff (rad)",
-        )
-        fig.show()
+        if plot:
+            fig1 = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+                # subplot_titles=["Phase", "Amplitude"],
+            )
+            fig1.add_scatter(
+                name=target,
+                mode="markers+lines",
+                row=1,
+                col=1,
+                x=frequency_range,
+                y=phases_unwrap,
+            )
+            fig1.add_scatter(
+                name=target,
+                mode="markers+lines",
+                row=2,
+                col=1,
+                x=frequency_range,
+                y=np.abs(signals),
+            )
+            fig1.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+            fig1.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+            fig1.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+            fig1.update_layout(
+                title=f"Resonator frequency scan : {mux.label}",
+                height=450,
+                showlegend=False,
+            )
+            fig1.show()
 
-        return freq_range, phases_diff
+            fig2 = go.Figure()
+            fig2.add_scatter(
+                name=target,
+                mode="markers+lines",
+                x=frequency_range,
+                y=phases_diff,
+            )
+            fig2.update_layout(
+                title=f"Resonator frequency scan : {mux.label}",
+                xaxis_title="Readout frequency (GHz)",
+                yaxis_title="Phase diff (rad)",
+            )
+            fig2.show()
+
+        return frequency_range, phases_diff, np.array(signals)
 
     def measure_reflection_coefficient(
         self,
@@ -4248,6 +4345,7 @@ class Experiment:
         amplitude: float = 0.01,
         shots: int = 100,
         interval: int = 0,
+        plot: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.complex128], float, float, float]:
         """
         Scans the readout frequencies to find the resonator frequencies.
@@ -4266,6 +4364,8 @@ class Experiment:
             Number of shots. Defaults to 100.
         interval : int, optional
             Interval between shots. Defaults to 0.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
@@ -4276,41 +4376,36 @@ class Experiment:
         center_frequency = np.mean(freq_range).astype(float)
         frequency_width = (freq_range[-1] - freq_range[0]).astype(float)
 
-        if frequency_width > 0.5:
-            raise ValueError("Frequency scan range must be less than 0.5 GHz.")
-
-        f_center = center_frequency * 1e9
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f_center,
-            ssb="U",
-            cnco_center=1_500_000_000,
-        )
-        fnco, _ = MixingUtil.calc_fnco(
-            f_center,
-            ssb="U",
-            lo=lo,
-            cnco=cnco,
-        )
+        if frequency_width > 0.4:
+            raise ValueError("Frequency scan range must be less than 400 MHz.")
 
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
 
-        widget = go.FigureWidget()
-        widget.add_scatter(name=target, mode="markers+lines")
-        widget.update_layout(
-            title=f"Phase of reflection wave : {qubit_label}",
-            xaxis_title="Frequency (GHz)",
-            yaxis_title="Phase (rad)",
+        if plot:
+            widget = go.FigureWidget()
+            widget.add_scatter(name=target, mode="markers+lines")
+            widget.update_layout(
+                title=f"Phase of reflection wave : {qubit_label}",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Phase (rad)",
+            )
+            scatter: go.Scatter = widget.data[0]  # type: ignore
+            display(widget)
+
+        lo, cnco, _ = MixingUtil.calc_lo_cnco(
+            center_frequency * 1e9,
+            ssb="U",
+            cnco_center=1_500_000_000,
         )
-        scatter: go.Scatter = widget.data[0]  # type: ignore
-        display(widget)
+
         signals = []
 
         with self.state_manager.modified_device_settings(
             label=read_label,
             lo_freq=lo,
             cnco_freq=cnco,
-            fnco_freq=fnco,
+            fnco_freq=0,
         ):
             for idx, freq in enumerate(tqdm(freq_range)):
                 with self.modified_frequencies({read_label: freq}):
@@ -4321,11 +4416,12 @@ class Experiment:
                         shots=shots,
                         interval=interval,
                     )
-                    iq = result.data[target].kerneled
-                    signal = iq * np.exp(-1j * freq * phase_shift)
+                    signal = result.data[target].kerneled
+                    signal = signal * np.exp(-1j * freq * phase_shift)
                     signals.append(signal)
-                    scatter.x = freq_range[: idx + 1]
-                    scatter.y = np.unwrap(np.angle(signals))
+                    if plot:
+                        scatter.x = freq_range[: idx + 1]
+                        scatter.y = np.unwrap(np.angle(signals))
 
         phi = (np.angle(signals[0]) + np.angle(signals[-1])) / 2
         coeffs = np.array(signals) * np.exp(-1j * phi)
@@ -4334,6 +4430,7 @@ class Experiment:
             target=target,
             freq_range=freq_range,
             data=coeffs,
+            plot=plot,
         )
 
         return freq_range, coeffs, f_r, kappa_ex, kappa_in
@@ -4345,9 +4442,12 @@ class Experiment:
         frequency_range: ArrayLike | None = None,
         control_amplitude: float = 0.01,
         readout_amplitude: float = 0.01,
+        readout_frequency: float | None = None,
+        subrange_width: float = 0.3,
         shots: int = 1000,
         interval: int = 0,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        plot: bool = True,
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
         """
         Scans the control frequencies to find the qubit frequencies.
 
@@ -4361,69 +4461,20 @@ class Experiment:
             Amplitude of the control pulse. Defaults to 0.01.
         readout_amplitude : float, optional
             Amplitude of the readout pulse. Defaults to 0.01.
+        subrange_width : float, optional
+            Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
             Number of shots.
         interval : int, optional
             Interval between shots.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
-        tuple[NDArray[np.float64], NDArray[np.float64]]
-            Frequency range and phases.
+        tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]
+            Frequency range, unwrapped phase and amplitude.
         """
-        # set the frequency range for the scan
-        if frequency_range is None:
-            center_frequency = 7.5
-            frequency_step = 0.005
-            frequency_width = 0.5
-            frequency_range = np.arange(
-                center_frequency - 0.5 * frequency_width,
-                center_frequency + 0.5 * frequency_width,
-                frequency_step,
-            )
-        else:
-            frequency_range = np.array(frequency_range)
-            center_frequency = np.mean(frequency_range).astype(float)
-            frequency_step = (frequency_range[1] - frequency_range[0]).astype(float)
-            frequency_width = (frequency_range[-1] - frequency_range[0]).astype(float)
-
-        if frequency_width > 0.5:
-            raise ValueError("Frequency scan range must be less than 0.5 GHz.")
-
-        # prepare the plot
-        widget = go.FigureWidget()
-        widget.add_scatter(name=target, mode="markers+lines")
-        widget.update_layout(
-            title=f"Qubit frequency scan : {target}",
-            xaxis_title="Control frequency (GHz)",
-            yaxis_title="Phase (rad)",
-        )
-        scatter: go.Scatter = widget.data[0]  # type: ignore
-        display(widget)
-        phases = []
-
-        # calculate the LO/NCO for the scan
-        f_center = center_frequency * 1e9
-        lo, cnco, _ = MixingUtil.calc_lo_cnco(
-            f_center,
-            ssb="L",
-            cnco_center=2_250_000_000,
-        )
-        fnco, f_mix = MixingUtil.calc_fnco(
-            f_center,
-            ssb="L",
-            lo=lo,
-            cnco=cnco,
-        )
-
-        # scan range
-        f = f_mix * 1e-9
-        freq_range = np.arange(
-            f - 0.5 * frequency_width,
-            f + 0.5 * frequency_width,
-            frequency_step,
-        )
-
         # control and readout pulses
         qubit = Target.qubit_label(target)
         resonator = Target.read_label(target)
@@ -4438,31 +4489,120 @@ class Experiment:
             tau=128,
         )
 
-        # scan the qubit frequency
-        with self.state_manager.modified_device_settings(
-            label=qubit,
-            lo_freq=lo,
-            cnco_freq=cnco,
-            fnco_freq=fnco,
-        ):
-            for idx, freq in enumerate(tqdm(freq_range)):
-                with self.modified_frequencies({qubit: freq}):
-                    with PulseSchedule([qubit, resonator]) as ps:
-                        ps.add(qubit, control_pulse)
-                        ps.add(resonator, readout_pulse)
-                    result = self.execute(
-                        schedule=ps,
-                        mode="avg",
-                        shots=shots,
-                        interval=interval,
-                    )
-                    iq = result.data[qubit].kerneled
-                    angle = np.angle(iq)
-                    phases.append(angle)
-                    scatter.x = freq_range[: idx + 1]
-                    scatter.y = np.unwrap(phases)
+        # prepare the plot
+        if plot:
+            fig = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+            )
+            widget = go.FigureWidget(fig)
+            widget.add_scatter(name=target, mode="markers+lines", row=1, col=1)
+            widget.add_scatter(name=target, mode="markers+lines", row=2, col=1)
+            widget.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
+            widget.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+            widget.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+            widget.update_layout(
+                title=f"Control frequency scan : {qubit}",
+                height=450,
+                showlegend=False,
+            )
+            scatter_phase: go.Scatter = widget.data[0]  # type: ignore
+            scatter_amplitude: go.Scatter = widget.data[1]  # type: ignore
+            display(widget)
 
-        return freq_range, np.unwrap(phases)
+        # split frequency range to avoid the frequency sweep range limit
+        frequency_range = np.array(frequency_range)
+        subranges = ExperimentUtil.split_frequency_range(
+            frequency_range=frequency_range,
+            subrange_width=subrange_width,
+        )
+
+        # readout frequency
+        readout_frequency = readout_frequency or self.targets[resonator].frequency
+
+        # result buffer
+        phases = []
+        amplitudes = []
+
+        # measure the phase and amplitude
+        idx = 0
+        for subrange in subranges:
+            f_center = (subrange[0] + subrange[-1]) / 2
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_center * 1e9,
+                ssb="L",
+                cnco_center=2_250_000_000,
+            )
+            with self.state_manager.modified_device_settings(
+                label=qubit,
+                lo_freq=lo,
+                cnco_freq=cnco,
+                fnco_freq=0,
+            ):
+                for control_frequency in tqdm(subrange):
+                    with self.modified_frequencies(
+                        {
+                            qubit: control_frequency,
+                            resonator: readout_frequency,
+                        }
+                    ):
+                        with PulseSchedule([qubit, resonator]) as ps:
+                            ps.add(qubit, control_pulse)
+                            ps.add(resonator, readout_pulse)
+                        result = self.execute(
+                            schedule=ps,
+                            mode="avg",
+                            shots=shots,
+                            interval=interval,
+                        )
+                        signal = result.data[qubit].kerneled
+                        phases.append(np.angle(signal))
+                        amplitudes.append(np.abs(signal))
+
+                        idx += 1
+
+                        if plot:
+                            scatter_phase.x = frequency_range[:idx]
+                            scatter_phase.y = np.unwrap(phases)
+                            scatter_amplitude.x = frequency_range[:idx]
+                            scatter_amplitude.y = amplitudes
+
+        if plot:
+            fig = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.05,
+            )
+            fig.add_scatter(
+                name=target,
+                mode="markers+lines",
+                row=1,
+                col=1,
+                x=frequency_range,
+                y=np.unwrap(phases),
+            )
+            fig.add_scatter(
+                name=target,
+                mode="markers+lines",
+                row=2,
+                col=1,
+                x=frequency_range,
+                y=amplitudes,
+            )
+            fig.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+            fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+            fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+            fig.update_layout(
+                title=f"Control frequency scan : {qubit}",
+                height=450,
+                showlegend=False,
+            )
+            fig.show()
+
+        return frequency_range, np.unwrap(phases), np.asarray(amplitudes)
 
     def measure_population(
         self,
@@ -4631,3 +4771,30 @@ class Experiment:
             fig.show()
 
         return result_pops, result_errs
+
+
+class ExperimentUtil:
+    @staticmethod
+    def split_frequency_range(
+        frequency_range: ArrayLike,
+        subrange_width: float = 0.3,
+    ) -> list[NDArray[np.float64]]:
+        """
+        Splits the frequency range into sub-ranges.
+
+        Parameters
+        ----------
+        frequency_range : ArrayLike
+            Frequency range to split in GHz.
+        ubrange_width : float, optional
+            Width of the sub-ranges. Defaults to 0.3 GHz.
+
+        Returns
+        -------
+        list[NDArray[np.float64]]
+            Sub-ranges.
+        """
+        frequency_range = np.array(frequency_range)
+        range_count = (frequency_range[-1] - frequency_range[0]) // subrange_width + 1
+        sub_ranges = np.array_split(frequency_range, range_count)
+        return sub_ranges

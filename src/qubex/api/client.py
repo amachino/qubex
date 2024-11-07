@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import os
-from typing import Literal, Optional
+import re
+from functools import cached_property
+from typing import Any, Literal, Optional
 
 import httpx
 import numpy as np
-import numpy.typing as npt
 
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
-from qubex.pulse import Waveform
+from qubex.pulse import PulseSchedule, Waveform
 
 API_BASE_URL = "https://qiqb.ngrok.dev"
 
@@ -18,6 +19,7 @@ class PulseAPI:
         self,
         *,
         chip_id: str,
+        qubits: list[str],
         api_key: str | None = None,
         api_base_url: str | None = None,
     ):
@@ -29,12 +31,15 @@ class PulseAPI:
         ----------
         chip_id: str
             The quantum chip ID.
+        qubits: list[str]
+            The qubits to measure.
         api_key: str
             The API key to use.
         api_base_url: str
             The base URL of the API.
         """
         self.chip_id = chip_id
+        self.qubits = qubits
         self.api_key = self._get_api_key(api_key)
         self.api_base_url = api_base_url or API_BASE_URL
         self.headers = {"X-API-Key": self.api_key}
@@ -49,31 +54,57 @@ class PulseAPI:
             raise ValueError("API key is required.")
         return api_key
 
-    @property
+    @cached_property
+    def params(self) -> dict:
+        """Get parameters of the control system."""
+        result = self._request(
+            "GET",
+            "/api/params",
+            params={"chip_id": self.chip_id},
+        )
+        return result
+
+    @cached_property
     def targets(self) -> dict:
         """Get the available targets."""
-        return self._request(
+        result = self._request(
             "GET",
             "/api/targets",
             params={"chip_id": self.chip_id},
         )
+        targets = {}
+        for label, target in result.items():
+            if target["qubit"] in self.qubits:
+                if target["type"] == "CTRL_CR":
+                    if match := re.match(r"^(Q\d+)-(Q\d+)$", label):
+                        cr_target_qubit = match.group(2)
+                        if cr_target_qubit in self.qubits:
+                            targets[label] = target
+                else:
+                    targets[label] = target
+        return targets
 
     def measure(
         self,
-        waveforms: dict[str, list | npt.NDArray | Waveform],
+        waveforms: dict[str, Any] | PulseSchedule,
         *,
         frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = 1024,
         interval: int = 100 * 1024,
-        control_window: int = 1024,
+        control_window: int | None = None,
+        capture_window: int | None = None,
+        capture_margin: int | None = None,
+        readout_duration: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_frequencies: dict[str, float] | None = None,
     ) -> MeasureResult:
         """
         Measure the qubits using the control waveforms.
 
         Parameters
         ----------
-        waveforms: dict[str, list | npt.NDArray | Waveform]
+        waveforms: dict[str, Any] | PulseSchedule
             The control waveforms for each qubit.
         frequencies: dict[str, float], optional
             The frequencies of the qubits.
@@ -83,14 +114,31 @@ class PulseAPI:
             The number of shots.
         interval: int, optional
             The interval between measurements in ns.
-        control_window: int, optional
-            The control window in ns.
+        control_window : int, optional
+            The control window in ns, by default None.
+        capture_window : int, optional
+            The capture window in ns, by default None.
+        capture_margin : int, optional
+            The capture margin in ns, by default None.
+        readout_duration : int, optional
+            The readout duration in ns, by default None.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit, by default None.
+        readout_frequencies : dict[str, float], optional
+            The readout frequency for each qubit, by default None.
 
         Returns
         -------
         MeasureResult
             The measurement result.
         """
+        if isinstance(waveforms, PulseSchedule):
+            waveforms = waveforms.get_sampled_sequences()
+
+        if not all(label in self.targets for label in waveforms):
+            raise ValueError(
+                f"Invalid qubit labels: {set(waveforms) - set(self.targets)}"
+            )
 
         control_waveforms = {}
         for qubit, waveform in waveforms.items():
@@ -112,6 +160,11 @@ class PulseAPI:
                 "shots": shots,
                 "interval": interval,
                 "control_window": control_window,
+                "capture_window": capture_window,
+                "capture_margin": capture_margin,
+                "readout_duration": readout_duration,
+                "readout_amplitudes": readout_amplitudes,
+                "readout_frequencies": readout_frequencies,
             },
         )
 

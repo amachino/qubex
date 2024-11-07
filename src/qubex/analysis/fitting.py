@@ -467,6 +467,7 @@ def fit_ramsey(
     y: npt.NDArray[np.float64],
     p0=None,
     bounds=None,
+    plot: bool = True,
     title: str = "Ramsey fringe",
     xaxis_title: str = "Time (μs)",
     yaxis_title: str = "Amplitude (arb. units)",
@@ -488,6 +489,8 @@ def fit_ramsey(
         Initial guess for the fitting parameters.
     bounds : optional
         Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
     xaxis_title : str, optional
@@ -542,39 +545,40 @@ def fit_ramsey(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine * 1e-3,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
+    if plot:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine * 1e-3,
+                y=y_fine,
+                mode="lines",
+                name="Fit",
+            )
         )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x * 1e-3,
-            y=y,
-            mode="markers",
-            name="Data",
+        fig.add_trace(
+            go.Scatter(
+                x=x * 1e-3,
+                y=y,
+                mode="markers",
+                name="Data",
+            )
         )
-    )
-    fig.add_annotation(
-        xref="paper",
-        yref="paper",
-        x=0.95,
-        y=0.95,
-        text=f"τ = {tau * 1e-3:.3g} μs, f = {f * 1e3:.3g} MHz",
-        showarrow=False,
-    )
-    fig.update_layout(
-        title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
-        xaxis_type=xaxis_type,
-        yaxis_type=yaxis_type,
-    )
-    fig.show(config=_plotly_config(f"ramsey_{target}"))
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"τ = {tau * 1e-3:.3g} μs, f = {f * 1e3:.3g} MHz",
+            showarrow=False,
+        )
+        fig.update_layout(
+            title=f"{title} : {target}",
+            xaxis_title=xaxis_title,
+            yaxis_title=yaxis_title,
+            xaxis_type=xaxis_type,
+            yaxis_type=yaxis_type,
+        )
+        fig.show(config=_plotly_config(f"ramsey_{target}"))
 
     return tau, f
 
@@ -586,6 +590,7 @@ def fit_exp_decay(
     y: npt.NDArray[np.float64],
     p0=None,
     bounds=None,
+    plot: bool = True,
     title: str = "Decay time",
     xaxis_title: str = "Time (μs)",
     yaxis_title: str = "Amplitude (arb. units)",
@@ -607,6 +612,8 @@ def fit_exp_decay(
         Initial guess for the fitting parameters.
     bounds : optional
         Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
     xaxis_title : str, optional
@@ -651,39 +658,40 @@ def fit_exp_decay(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine * 1e-3,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
+    if plot:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine * 1e-3,
+                y=y_fine,
+                mode="lines",
+                name="Fit",
+            )
         )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x * 1e-3,
-            y=y,
-            mode="markers",
-            name="Data",
+        fig.add_trace(
+            go.Scatter(
+                x=x * 1e-3,
+                y=y,
+                mode="markers",
+                name="Data",
+            )
         )
-    )
-    fig.add_annotation(
-        xref="paper",
-        yref="paper",
-        x=0.95,
-        y=0.95,
-        text=f"τ = {tau * 1e-3:.3g} μs",
-        showarrow=False,
-    )
-    fig.update_layout(
-        title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
-        xaxis_type=xaxis_type,
-        yaxis_type=yaxis_type,
-    )
-    fig.show(config=_plotly_config(f"exp_decay_{target}"))
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"τ = {tau * 1e-3:.3g} μs",
+            showarrow=False,
+        )
+        fig.update_layout(
+            title=f"{title} : {target}",
+            xaxis_title=xaxis_title,
+            yaxis_title=yaxis_title,
+            xaxis_type=xaxis_type,
+            yaxis_type=yaxis_type,
+        )
+        fig.show(config=_plotly_config(f"exp_decay_{target}"))
 
     return tau
 
@@ -910,6 +918,7 @@ def fit_ampl_calib_data(
     amplitude_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],
     p0=None,
+    plot: bool = True,
     title: str = "Amplitude calibration",
     xaxis_title: str = "Amplitude (arb. units)",
     yaxis_title: str = "Measured value (arb. units)",
@@ -929,6 +938,8 @@ def fit_ampl_calib_data(
         Measured values for the calibration data.
     p0 : optional
         Initial guess for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
 
     Returns
     -------
@@ -969,38 +980,39 @@ def fit_ampl_calib_data(
     x_fine = np.linspace(np.min(amplitude_range), np.max(amplitude_range), 1000)
     y_fine = cos_func(x_fine, *popt)
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
+    if plot:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=y_fine,
+                mode="lines",
+                name="Fit",
+            )
         )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=amplitude_range,
-            y=data,
-            mode="markers",
-            name="Data",
+        fig.add_trace(
+            go.Scatter(
+                x=amplitude_range,
+                y=data,
+                mode="markers",
+                name="Data",
+            )
         )
-    )
-    fig.add_annotation(
-        x=min_x,
-        y=min_y,
-        text=f"min: {min_x:.6g}",
-        showarrow=True,
-        arrowhead=1,
-    )
-    fig.update_layout(
-        title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
-        xaxis_type=xaxis_type,
-        yaxis_type=yaxis_type,
-    )
-    fig.show(config=_plotly_config(f"ampl_calib_{target}"))
+        fig.add_annotation(
+            x=min_x,
+            y=min_y,
+            text=f"min: {min_x:.6g}",
+            showarrow=True,
+            arrowhead=1,
+        )
+        fig.update_layout(
+            title=f"{title} : {target}",
+            xaxis_title=xaxis_title,
+            yaxis_title=yaxis_title,
+            xaxis_type=xaxis_type,
+            yaxis_type=yaxis_type,
+        )
+        fig.show(config=_plotly_config(f"ampl_calib_{target}"))
 
     print(f"Calibrated amplitude: {min_x:.6g}")
 
@@ -1012,6 +1024,7 @@ def fit_lorentzian(
     freq_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],
     p0=None,
+    plot: bool = True,
     title: str = "Lorentzian fit",
     xaxis_title: str = "Frequency (GHz)",
     yaxis_title: str = "Amplitude (arb. units)",
@@ -1029,6 +1042,10 @@ def fit_lorentzian(
         Frequency range for the Lorentzian data.
     data : npt.NDArray[np.float64]
         Amplitude data for the Lorentzian data.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
 
     Returns
     -------
@@ -1061,38 +1078,39 @@ def fit_lorentzian(
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_lorentzian(x_fine, *popt)
 
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=y_fine,
-            mode="lines",
-            name="Fit",
+    if plot:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=y_fine,
+                mode="lines",
+                name="Fit",
+            )
         )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=freq_range,
-            y=data,
-            mode="markers",
-            name="Data",
+        fig.add_trace(
+            go.Scatter(
+                x=freq_range,
+                y=data,
+                mode="markers",
+                name="Data",
+            )
         )
-    )
-    fig.add_annotation(
-        x=f0,
-        y=A,
-        text=f"max: {f0:.6g}",
-        showarrow=True,
-        arrowhead=1,
-    )
-    fig.update_layout(
-        title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
-        xaxis_type=xaxis_type,
-        yaxis_type=yaxis_type,
-    )
-    fig.show(config=_plotly_config(f"lorentzian_{target}"))
+        fig.add_annotation(
+            x=f0,
+            y=A,
+            text=f"max: {f0:.6g}",
+            showarrow=True,
+            arrowhead=1,
+        )
+        fig.update_layout(
+            title=f"{title} : {target}",
+            xaxis_title=xaxis_title,
+            yaxis_title=yaxis_title,
+            xaxis_type=xaxis_type,
+            yaxis_type=yaxis_type,
+        )
+        fig.show(config=_plotly_config(f"lorentzian_{target}"))
 
     return f0
 
@@ -1103,6 +1121,7 @@ def fit_reflection_coefficient(
     data: npt.NDArray[np.complex128],
     p0=None,
     bounds=None,
+    plot: bool = True,
     title: str = "Reflection coefficient",
 ) -> tuple[float, float, float]:
     """
@@ -1118,6 +1137,10 @@ def fit_reflection_coefficient(
         Complex reflection coefficient data.
     p0 : optional
         Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
 
     Returns
     -------
@@ -1165,148 +1188,149 @@ def fit_reflection_coefficient(
     # )
 
     print(f"Resonance frequency:\n  {f_r:.6f} GHz")
-    print(f"External loss rate:\n  {kappa_ex:.6f} GHz")
-    print(f"Internal loss rate:\n  {kappa_in:.6f} GHz")
+    print(f"External loss rate:\n  {kappa_ex * 1e3:.6f} MHz")
+    print(f"Internal loss rate:\n  {kappa_in * 1e3:.6f} MHz")
 
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonance(x_fine, *fitted_params)
 
-    fig = make_subplots(
-        rows=2,
-        cols=2,
-        column_widths=[0.5, 0.5],
-        row_heights=[1.0, 1.0],
-        specs=[
-            [{"rowspan": 2}, {}],
-            [None, {}],
-        ],
-        shared_xaxes=False,
-        vertical_spacing=0.05,
-        horizontal_spacing=0.125,
-    )
+    if plot:
+        fig = make_subplots(
+            rows=2,
+            cols=2,
+            column_widths=[0.5, 0.5],
+            row_heights=[1.0, 1.0],
+            specs=[
+                [{"rowspan": 2}, {}],
+                [None, {}],
+            ],
+            shared_xaxes=False,
+            vertical_spacing=0.05,
+            horizontal_spacing=0.125,
+        )
 
-    fig.add_trace(
-        go.Scatter(
-            x=np.real(data),
-            y=np.imag(data),
-            mode="markers",
-            name="I/Q (Data)",
-            marker=dict(color=COLORS[0]),
-        ),
-        row=1,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=np.real(y_fine),
-            y=np.imag(y_fine),
-            mode="lines",
-            name="I/Q (Fit)",
-            marker=dict(color=COLORS[1]),
-        ),
-        row=1,
-        col=1,
-    )
+        fig.add_trace(
+            go.Scatter(
+                x=np.real(data),
+                y=np.imag(data),
+                mode="markers",
+                name="I/Q (Data)",
+                marker=dict(color=COLORS[0]),
+            ),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=np.real(y_fine),
+                y=np.imag(y_fine),
+                mode="lines",
+                name="I/Q (Fit)",
+                marker=dict(color=COLORS[1]),
+            ),
+            row=1,
+            col=1,
+        )
 
-    fig.add_trace(
-        go.Scatter(
-            x=freq_range,
-            y=np.real(data),
-            mode="markers",
-            name="Re (Data)",
-            marker=dict(color=COLORS[0]),
-        ),
-        row=1,
-        col=2,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=np.real(y_fine),
-            mode="lines",
-            name="Re (Fit)",
-            marker=dict(color=COLORS[1]),
-        ),
-        row=1,
-        col=2,
-    )
+        fig.add_trace(
+            go.Scatter(
+                x=freq_range,
+                y=np.real(data),
+                mode="markers",
+                name="Re (Data)",
+                marker=dict(color=COLORS[0]),
+            ),
+            row=1,
+            col=2,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=np.real(y_fine),
+                mode="lines",
+                name="Re (Fit)",
+                marker=dict(color=COLORS[1]),
+            ),
+            row=1,
+            col=2,
+        )
 
-    fig.add_trace(
-        go.Scatter(
-            x=freq_range,
-            y=np.imag(data),
-            mode="markers",
-            name="Im (Data)",
-            marker=dict(color=COLORS[0]),
-        ),
-        row=2,
-        col=2,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=x_fine,
-            y=np.imag(y_fine),
-            mode="lines",
-            name="Im (Fit)",
-            marker=dict(color=COLORS[1]),
-        ),
-        row=2,
-        col=2,
-    )
+        fig.add_trace(
+            go.Scatter(
+                x=freq_range,
+                y=np.imag(data),
+                mode="markers",
+                name="Im (Data)",
+                marker=dict(color=COLORS[0]),
+            ),
+            row=2,
+            col=2,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=np.imag(y_fine),
+                mode="lines",
+                name="Im (Fit)",
+                marker=dict(color=COLORS[1]),
+            ),
+            row=2,
+            col=2,
+        )
 
-    fig.update_layout(
-        title=f"{title} : {target}",
-        height=450,
-        width=800,
-        showlegend=False,
-    )
+        fig.update_layout(
+            title=f"{title} : {target}",
+            height=450,
+            width=800,
+            showlegend=False,
+        )
 
-    fig.update_xaxes(
-        title_text="Re",
-        row=1,
-        col=1,
-        tickformat=".2g",
-        showticklabels=True,
-        zeroline=True,
-        zerolinecolor="black",
-        showgrid=True,
-    )
-    fig.update_yaxes(
-        title_text="Im",
-        row=1,
-        col=1,
-        scaleanchor="x",
-        scaleratio=1,
-        tickformat=".2g",
-        showticklabels=True,
-        zeroline=True,
-        zerolinecolor="black",
-        showgrid=True,
-    )
-    fig.update_xaxes(
-        row=1,
-        col=2,
-        showticklabels=False,
-        matches="x2",
-    )
-    fig.update_yaxes(
-        title_text="Re",
-        row=1,
-        col=2,
-    )
-    fig.update_xaxes(
-        title_text="Frequency (GHz)",
-        row=2,
-        col=2,
-        matches="x2",
-    )
-    fig.update_yaxes(
-        title_text="Im",
-        row=2,
-        col=2,
-    )
+        fig.update_xaxes(
+            title_text="Re",
+            row=1,
+            col=1,
+            tickformat=".2g",
+            showticklabels=True,
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        )
+        fig.update_yaxes(
+            title_text="Im",
+            row=1,
+            col=1,
+            scaleanchor="x",
+            scaleratio=1,
+            tickformat=".2g",
+            showticklabels=True,
+            zeroline=True,
+            zerolinecolor="black",
+            showgrid=True,
+        )
+        fig.update_xaxes(
+            row=1,
+            col=2,
+            showticklabels=False,
+            matches="x2",
+        )
+        fig.update_yaxes(
+            title_text="Re",
+            row=1,
+            col=2,
+        )
+        fig.update_xaxes(
+            title_text="Frequency (GHz)",
+            row=2,
+            col=2,
+            matches="x2",
+        )
+        fig.update_yaxes(
+            title_text="Im",
+            row=2,
+            col=2,
+        )
 
-    fig.show()
+        fig.show()
 
     return f_r, kappa_ex, kappa_in
 
