@@ -92,7 +92,12 @@ class PulseAPI:
         mode: Literal["single", "avg"] = "avg",
         shots: int = 1024,
         interval: int = 100 * 1024,
-        control_window: int = 1024,
+        control_window: int | None = None,
+        capture_window: int | None = None,
+        capture_margin: int | None = None,
+        readout_duration: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_frequencies: dict[str, float] | None = None,
     ) -> MeasureResult:
         """
         Measure the qubits using the control waveforms.
@@ -109,8 +114,18 @@ class PulseAPI:
             The number of shots.
         interval: int, optional
             The interval between measurements in ns.
-        control_window: int, optional
-            The control window in ns.
+        control_window : int, optional
+            The control window in ns, by default None.
+        capture_window : int, optional
+            The capture window in ns, by default None.
+        capture_margin : int, optional
+            The capture margin in ns, by default None.
+        readout_duration : int, optional
+            The readout duration in ns, by default None.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit, by default None.
+        readout_frequencies : dict[str, float], optional
+            The readout frequency for each qubit, by default None.
 
         Returns
         -------
@@ -145,6 +160,11 @@ class PulseAPI:
                 "shots": shots,
                 "interval": interval,
                 "control_window": control_window,
+                "capture_window": capture_window,
+                "capture_margin": capture_margin,
+                "readout_duration": readout_duration,
+                "readout_amplitudes": readout_amplitudes,
+                "readout_frequencies": readout_frequencies,
             },
         )
 
