@@ -4267,11 +4267,12 @@ class Experiment:
                             interval=interval,
                         )
 
-                        signal = result.data[target].kerneled
-                        signals.append(signal)  # type: ignore
-                        phase = np.angle(signal)
-                        phase = phase - freq * phase_shift
-                        phase = phase - phase_offset
+                        raw = result.data[target].kerneled
+                        ampl = np.abs(raw)
+                        phase = np.angle(raw)
+                        phase = phase - freq * phase_shift - phase_offset
+                        signal = ampl * np.exp(1j * phase)
+                        signals.append(signal)
                         phases.append(phase)  # type: ignore
 
                         idx += 1
