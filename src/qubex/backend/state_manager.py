@@ -199,6 +199,7 @@ class StateManager:
         *,
         chip_id: str,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        targets_to_exclude: list[str] | None = None,
     ):
         """
         Load the experiment system and the device controller.
@@ -210,7 +211,7 @@ class StateManager:
         config_dir : str, optional
             Configuration directory, by default DEFAULT_CONFIG_DIR.
         """
-        config = ConfigLoader(config_dir)
+        config = ConfigLoader(config_dir, targets_to_exclude=targets_to_exclude)
         self.experiment_system = config.get_experiment_system(chip_id)
 
     def pull(

@@ -686,7 +686,11 @@ class Experiment:
             box_ids = self.box_ids
         self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
 
-    def configure(self, box_ids: Optional[list[str]] = None):
+    def configure(
+        self,
+        box_ids: Optional[list[str]] = None,
+        exclude: Optional[list[str]] = None,
+    ):
         """
         Configure the measurement system from the config files.
 
@@ -702,6 +706,7 @@ class Experiment:
         self.state_manager.load(
             chip_id=self.chip_id,
             config_dir=self.config_path,
+            targets_to_exclude=exclude,
         )
         self.state_manager.push(
             box_ids=box_ids or self.box_ids,

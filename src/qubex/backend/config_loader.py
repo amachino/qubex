@@ -28,6 +28,7 @@ class ConfigLoader:
         wiring_file: str = WIRING_FILE,
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
+        targets_to_exclude: list[str] | None = None,
     ):
         """
         Initializes the ConfigLoader object.
@@ -46,6 +47,8 @@ class ConfigLoader:
             The name of the properties configuration file, by default "props.yaml".
         params_file : str, optional
             The name of the parameters configuration file, by default "params.yaml".
+        targets_to_exclude : list[str], optional
+            The list of target labels to exclude, by default None.
 
         Examples
         --------
@@ -61,7 +64,9 @@ class ConfigLoader:
         self._control_system_dict = self._load_control_system()
         self._wiring_info_dict = self._load_wiring_info()
         self._control_params_dict = self._load_control_params()
-        self._experiment_system_dict = self._load_experiment_system()
+        self._experiment_system_dict = self._load_experiment_system(
+            targets_to_exclude=targets_to_exclude
+        )
 
     @property
     def config_path(self) -> Path:
@@ -199,7 +204,10 @@ class ConfigLoader:
             control_params_dict[chip_id] = control_params
         return control_params_dict
 
-    def _load_experiment_system(self) -> dict[str, ExperimentSystem]:
+    def _load_experiment_system(
+        self,
+        targets_to_exclude: list[str] | None = None,
+    ) -> dict[str, ExperimentSystem]:
         experiment_system_dict = {}
         for chip_id in self._chip_dict:
             quantum_system = self._quantum_system_dict[chip_id]
@@ -211,6 +219,7 @@ class ConfigLoader:
                 control_system=control_system,
                 wiring_info=wiring_info,
                 control_params=control_params,
+                targets_to_exclude=targets_to_exclude,
             )
             experiment_system_dict[chip_id] = experiment_system
         return experiment_system_dict
