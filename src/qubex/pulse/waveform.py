@@ -175,6 +175,7 @@ class Waveform(ABC):
         title=None,
         xlabel="Time (ns)",
         ylabel="Amplitude (arb. units)",
+        devide_by_two_pi=False,
     ):
         """
         Plots the waveform with I/Q values.
@@ -195,6 +196,10 @@ class Waveform(ABC):
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
+
+        if devide_by_two_pi:
+            real /= 2 * np.pi
+            imag /= 2 * np.pi
 
         fig = go.Figure()
         fig.add_trace(
