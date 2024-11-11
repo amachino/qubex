@@ -10,6 +10,7 @@ import numpy.typing as npt
 import qctrlvisualizer as qv
 import qutip as qt
 
+from ..analysis import plot_state_vectors
 from ..pulse import Pulse
 from .quantum_system import QuantumSystem
 
@@ -164,6 +165,20 @@ class SimulationResult:
             populations,
             figure=figure,
         )
+
+    def plot_state_vectors(
+        self,
+        label: str,
+    ) -> None:
+        substates = self.substates(label)
+        vectors = []
+        for substate in substates:
+            rho = qt.Qobj(substate.full()[:2, :2])
+            x = (rho * qt.sigmax()).tr().real
+            y = (rho * qt.sigmay()).tr().real
+            z = (rho * qt.sigmaz()).tr().real
+            vectors.append([x, y, z])
+        plot_state_vectors(self.times, np.asarray(vectors))
 
 
 class QuantumSimulator:
