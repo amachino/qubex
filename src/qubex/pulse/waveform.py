@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Final, Literal
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -23,7 +23,7 @@ class Waveform(ABC):
         Phase shift of the waveform in rad.
     """
 
-    SAMPLING_PERIOD: Final[float] = 2.0  # ns
+    SAMPLING_PERIOD: float = 2.0  # ns
 
     def __init__(
         self,
