@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Final, Literal, Mapping, Optional
+from typing import Final, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,20 +10,18 @@ import numpy.typing as npt
 import qctrlvisualizer as qv
 import qutip as qt
 
+from ..pulse import Pulse
 from .quantum_system import QuantumSystem
-
-SAMPLING_PERIOD: float = 2.0  # ns
-STEP_PER_SAMPLE: int = 4
 
 
 class Control:
+    SAMPLING_PERIOD: float = 0.1
+
     def __init__(
         self,
         target: str,
         frequency: float,
         waveform: list | npt.NDArray,
-        sampling_period: float = SAMPLING_PERIOD,
-        steps_per_sample: int = STEP_PER_SAMPLE,
     ):
         """
         A control signal for a single qubit.
@@ -36,255 +34,26 @@ class Control:
             The frequency of the control signal.
         waveform : list | npt.NDArray
             The waveform of the control signal.
-        sampling_period : float, optional
-            The sampling period of the control signal, by default 2.0 ns.
-        steps_per_sample : int, optional
-            The number of steps per sample, by default 4.
         """
         self.target = target
         self.frequency = frequency
-        self.waveform = waveform
-        self.sampling_period = sampling_period
-        self.steps_per_sample = steps_per_sample
-
-    @property
-    def values(self) -> npt.NDArray[np.complex128]:
-        """
-        The piecewise constant values of the control signal.
-
-        Returns
-        -------
-        npt.NDArray[np.complex128]
-            The values of the control signal.
-
-        Notes
-        -----
-        The values are constant during each sample period and repeat `steps_per_sample` times.
-
-        Examples
-        --------
-        >>> control = Control(
-        ...     target="Q01",
-        ...     frequency=5.0e9,
-        ...     waveform=[1, 2, 3],
-        ...     steps_per_sample=4,
-        ... )
-        >>> control.values
-        array([1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3])
-        """
-        return np.repeat(self.waveform, self.steps_per_sample).astype(np.complex128)
+        self.waveform = np.asarray(waveform).astype(np.complex128)
 
     @property
     def length(self) -> int:
-        """
-        The length of the control signal.
-
-        Returns
-        -------
-        int
-            The length of the control signal.
-        """
-        return len(self.values)
+        return len(self.waveform)
 
     @property
-    def times(self) -> npt.NDArray[np.float64]:
-        """
-        The time points of the control signal.
+    def times(self) -> np.ndarray:
+        return np.linspace(0.0, self.length * self.SAMPLING_PERIOD, self.length + 1)
 
-        Returns
-        -------
-        npt.NDArray[np.float64]
-            The time points of the control signal.
-        """
-        length = len(self.values)
-        return np.linspace(
-            0.0,
-            length * self.sampling_period / self.steps_per_sample,
-            length + 1,
-        )
-
-    @property
-    def sampling_rate(self) -> float:
-        """
-        The sampling rate of the control signal.
-
-        Returns
-        -------
-        float
-            The sampling rate of the control signal in GHz.
-        """
-        return self.steps_per_sample / self.sampling_period
-
-    def plot(
-        self,
-        polar: bool = False,
-    ) -> None:
-        """
-        Plot the control signal.
-
-        Parameters
-        ----------
-        polar : bool, optional
-            Whether to plot the control signal in polar coordinates, by default False.
-        """
-        durations = [self.sampling_period * 1e-9] * len(self.waveform)
-        values = np.array(self.waveform, dtype=np.complex128) * 1e9
-        qv.plot_controls(
-            controls={
-                self.target: {"durations": durations, "values": values},
-            },
-            polar=polar,
-            figure=plt.figure(),
-        )
-
-
-class MultiControl:
-
-    def __init__(
-        self,
-        frequencies: Mapping[str, float],
-        waveforms: Mapping[str, list | npt.NDArray],
-        sampling_period: float = SAMPLING_PERIOD,
-        steps_per_sample: int = STEP_PER_SAMPLE,
-    ):
-        """
-        Parameters
-        ----------
-        frequencies : Mapping[str, float]
-            The frequencies of the control signals.
-        waveforms : Mapping[str, list | npt.NDArray]
-            The waveforms of the control signals.
-        sampling_period : float, optional
-            The sampling period of the control signals, by default 2.0 ns.
-        steps_per_sample : int, optional
-            The number of steps per sample, by default 4.
-
-        Raises
-        ------
-        ValueError
-            If the keys of frequencies and waveforms do not match.
-            If the waveforms have different lengths.
-
-        Examples
-        --------
-        >>> control = MultiControl(
-        ...     frequencies={"Q01": 5.0e9, "Q02": 6.0e9},
-        ...     waveforms={"Q01": [0.5, 0.5], "Q02": [0.5, -0.5]},
-        ... )
-
-        Notes
-        -----
-        Specify `step_per_sample` to sufficiently resolve the frequency difference of the control pulses.
-        """
-        if set(frequencies.keys()) != set(waveforms.keys()):
-            raise ValueError("The keys of frequencies and waveforms must match.")
-
-        if len(set(len(waveform) for waveform in waveforms.values())) > 1:
-            raise ValueError("All waveforms must have the same length.")
-
-        self.frequencies = frequencies
-        self.waveforms = waveforms
-        self.sampling_period = sampling_period
-        self.steps_per_sample = steps_per_sample
-
-    @property
-    def frequency(self) -> float:
-        """
-        The average frequency of the control signals.
-
-        Returns
-        -------
-        float
-            The average frequency of the control signals in GHz.
-
-        Notes
-        -----
-        This frequency is used to calculate the rotating frame of the control signals.
-        """
-        return sum(self.frequencies.values()) / len(self.frequencies)
-
-    @property
-    def values(self) -> dict[str, npt.NDArray[np.complex128]]:
-        """
-        The piecewise constant values of the control signals.
-
-        Returns
-        -------
-        dict[str, npt.NDArray[np.complex128]]
-            The values of the control signals.
-
-        Notes
-        -----
-        The values are constant during each sample period and repeat `steps_per_sample` times.
-
-        Examples
-        --------
-        >>> control = MultiControl(
-        ...     frequencies={"Q01": 5.0e9, "Q02": 6.0e9},
-        ...     waveforms={"Q01": [1, 2], "Q02": [3, 4]},
-        ...     steps_per_sample=6,
-        ... )
-        >>> control.values
-        {
-            'Q01': array([1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2]),
-            'Q02': array([3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4]),
-        }
-        """
-        waveforms = {
-            target: np.repeat(waveform, self.steps_per_sample).astype(np.complex128)
-            for target, waveform in self.waveforms.items()
-        }
-        return waveforms
-
-    @property
-    def length(self) -> int:
-        """
-        The length of the control signals.
-
-        Returns
-        -------
-        int
-            The length of the control signals.
-        """
-        return len(next(iter(self.values.values())))
-
-    @property
-    def times(self) -> npt.NDArray[np.float64]:
-        """
-        The time points of the control signals.
-
-        Returns
-        -------
-        npt.NDArray[np.float64]
-            The time points of the control signals.
-        """
-        return np.linspace(
-            0.0,
-            self.length * self.sampling_period / self.steps_per_sample,
-            self.length + 1,
-        )
-
-    def plot(
-        self,
-        polar: bool = False,
-    ) -> None:
-        """
-        Plot the control signals.
-
-        Parameters
-        ----------
-        polar : bool, optional
-            Whether to plot the control signals in polar coordinates, by default False.
-        """
-        controls = {}
-        for target, waveform in self.waveforms.items():
-            durations = [self.sampling_period * 1e-9] * len(waveform)
-            values = np.array(waveform, dtype=np.complex128) * 1e9
-            controls[target] = {"durations": durations, "values": values}
-        qv.plot_controls(
-            controls=controls,
-            polar=polar,
-            figure=plt.figure(),
+    def plot(self):
+        Pulse.SAMPLING_PERIOD = self.SAMPLING_PERIOD
+        pulse = Pulse(self.waveform * 1e3)
+        pulse.plot_xy(
+            title=f"{self.target} : {self.frequency} GHz",
+            ylabel="Amplitude (MHz)",
+            devide_by_two_pi=True,
         )
 
 
@@ -297,8 +66,10 @@ class SimulationResult:
     ----------
     system : QuantumSystem
         The quantum system.
-    control : Control | MultiControl
-        The control signal.
+    times : npt.NDArray
+        The time points of the simulation.
+    controls : list[Control]
+        The control signals.
     states : list[qt.Qobj]
         The states of the quantum system at each time point.
     unitaries : list[qt.Qobj]
@@ -306,14 +77,14 @@ class SimulationResult:
     """
 
     system: QuantumSystem
-    control: Control | MultiControl
+    times: npt.NDArray
+    controls: list[Control]
     states: list[qt.Qobj]
     unitaries: list[qt.Qobj]
 
     def substates(
         self,
         label: str,
-        frame: Literal["qubit", "drive"] = "qubit",
     ) -> list[qt.Qobj]:
         """
         Extract the substates of a qubit from the states.
@@ -322,8 +93,6 @@ class SimulationResult:
         ----------
         label : str
             The label of the qubit.
-        frame : Literal["qubit", "drive"], optional
-            The frame of the substates, by default "qubit".
 
         Returns
         -------
@@ -332,25 +101,11 @@ class SimulationResult:
         """
         index = self.system.get_index(label)
         substates = [state.ptrace(index) for state in self.states]
-
-        if frame == "qubit":
-            # rotate the states to the qubit frame
-            times = self.control.times
-            qubit = self.system.get_object(label)
-            f_drive = self.control.frequency
-            f_qubit = qubit.frequency
-            delta = 2 * np.pi * (f_qubit - f_drive)
-            dim = qubit.dimension
-            N = qt.num(dim)
-            U = lambda t: (-1j * delta * N * t).expm()
-            substates = [U(t).dag() * rho * U(t) for t, rho in zip(times, substates)]
-
         return substates
 
     def display_bloch_sphere(
         self,
         label: str,
-        frame: Literal["qubit", "drive"] = "qubit",
     ) -> None:
         """
         Display the Bloch sphere of a qubit.
@@ -359,12 +114,9 @@ class SimulationResult:
         ----------
         label : str
             The label of the qubit.
-        frame : Literal["qubit", "drive"], optional
-            The frame of the Bloch sphere, by default "qubit".
         """
-        substates = self.substates(label, frame)
+        substates = self.substates(label)
         rho = np.array([substate.full() for substate in substates])[:, :2, :2]
-        print(f"{label} in the {frame} frame")
         qv.display_bloch_sphere_from_density_matrices(rho)
 
     def show_last_population(
@@ -408,7 +160,7 @@ class SimulationResult:
         figure = plt.figure()
         figure.suptitle(f"Population dynamics of {label}")
         qv.plot_population_dynamics(
-            self.control.times * 1e-9,
+            self.times * 1e-9,
             populations,
             figure=figure,
         )
@@ -429,18 +181,29 @@ class QuantumSimulator:
         """
         self.system: Final = system
 
+    def _validate_controls(
+        self,
+        controls: list[Control],
+    ):
+        if len(controls) == 0:
+            raise ValueError("At least one control signal is required.")
+        if len(set([control.length for control in controls])) != 1:
+            raise ValueError("The waveforms must have the same length.")
+        if len(set([control.SAMPLING_PERIOD for control in controls])) != 1:
+            raise ValueError("The sampling periods must be the same.")
+
     def simulate(
         self,
-        control: Control | MultiControl,
+        controls: list[Control],
         initial_state: qt.Qobj,
-    ) -> SimulationResult:
+    ):
         """
         Simulate the dynamics of the quantum system.
 
         Parameters
         ----------
-        control : Control | MultiControl
-            The control signal.
+        controls : list[Control]
+            The control signals.
 
         Returns
         -------
@@ -449,45 +212,38 @@ class QuantumSimulator:
         """
         if not isinstance(initial_state, qt.Qobj):
             initial_state = self.system.state(initial_state)
-
         if initial_state.dims[0] != self.system.object_dimensions:
             raise ValueError("The dims of the initial state do not match the system.")
 
-        if isinstance(control, Control):
-            control = MultiControl(
-                frequencies={control.target: control.frequency},
-                waveforms={control.target: control.waveform},
-                sampling_period=control.sampling_period,
-                steps_per_sample=control.steps_per_sample,
-            )
+        self._validate_controls(controls)
 
-        if len(control.times) == 0:
+        length = controls[0].length
+        times = controls[0].times
+        dt = controls[0].SAMPLING_PERIOD
+
+        if length == 0:
             return SimulationResult(
                 system=self.system,
-                control=control,
+                times=times,
+                controls=controls,
                 states=[],
                 unitaries=[],
             )
 
-        dt = control.sampling_period / control.steps_per_sample
-        frame_frequency = control.frequency
         unitaries = [self.system.identity_matrix]
-        for idx in range(control.length):
-            H = self.system.hamiltonian
-            for object in self.system.objects:
-                label = object.label
-                N = self.system.get_number_operator(label)
-                H -= 2 * np.pi * frame_frequency * N
-                if label in control.frequencies:
-                    a = self.system.get_lowering_operator(label)
-                    ad = self.system.get_raising_operator(label)
-                    control_frequency = control.frequencies[label]
-                    delta = 2 * np.pi * (control_frequency - frame_frequency)
-                    Omega = 0.5 * control.values[label][idx]
-                    t = control.times[idx]
-                    gamma = Omega * np.exp(-1j * delta * t)
-                    H_ctrl = gamma * ad + np.conj(gamma) * a
-                    H += H_ctrl
+        for idx in range(length):
+            t = times[idx]
+            H = self.system.get_rotating_hamiltonian(t)
+            for control in controls:
+                target = control.target
+                frame_frequency = self.system.get_object(target).frequency
+                a = self.system.get_lowering_operator(target)
+                ad = self.system.get_raising_operator(target)
+                delta = 2 * np.pi * (control.frequency - frame_frequency)
+                Omega = 0.5 * control.waveform[idx]
+                gamma = Omega * np.exp(-1j * delta * t)
+                H_ctrl = gamma * ad + np.conj(gamma) * a
+                H += H_ctrl
             U = (-1j * H * dt).expm() * unitaries[-1]
             unitaries.append(U)
 
@@ -496,14 +252,15 @@ class QuantumSimulator:
 
         return SimulationResult(
             system=self.system,
-            control=control,
+            times=times,
+            controls=controls,
             states=states,
             unitaries=unitaries,
         )
 
     def mesolve(
         self,
-        control: Control | MultiControl,
+        controls: list[Control],
         initial_state: qt.Qobj,
     ) -> SimulationResult:
         """
@@ -511,8 +268,10 @@ class QuantumSimulator:
 
         Parameters
         ----------
-        control : Control | MultiControl
-            The control signal.
+        controls : list[Control]
+            The control signals.
+        initial_state : qt.Qobj
+            The initial state of the quantum system.
 
         Returns
         -------
@@ -521,50 +280,59 @@ class QuantumSimulator:
         """
         if not isinstance(initial_state, qt.Qobj):
             initial_state = self.system.state(initial_state)
-
         if initial_state.dims[0] != self.system.object_dimensions:
             raise ValueError("The dims of the initial state do not match the system.")
 
-        if isinstance(control, Control):
-            control = MultiControl(
-                frequencies={control.target: control.frequency},
-                waveforms={control.target: control.waveform},
-                sampling_period=control.sampling_period,
-                steps_per_sample=control.steps_per_sample,
-            )
+        self._validate_controls(controls)
 
-        if len(control.times) == 0:
+        length = controls[0].length
+        times = controls[0].times
+
+        if length == 0:
             return SimulationResult(
                 system=self.system,
-                control=control,
+                times=times,
+                controls=controls,
                 states=[],
                 unitaries=[],
             )
 
-        static_hamiltonian = self.system.hamiltonian
+        static_hamiltonian = self.system.zero_matrix
         dynamic_hamiltonian: list = []
         collapse_operators: list = []
 
+        # Add static terms
+        for label in self.system.object_labels:
+            static_hamiltonian += self.system.get_rotating_object_hamiltonian(label)
+
+        # Add coupling terms
+        for coupling in self.system.couplings:
+            ad_0 = self.system.get_raising_operator(coupling.pair[0])
+            a_1 = self.system.get_lowering_operator(coupling.pair[1])
+            op = ad_0 * a_1
+            g = 2 * np.pi * coupling.strength
+            Delta = self.system.get_coupling_detuning(coupling.label)
+            coeffs = g * np.exp(-1j * Delta * times)
+            dynamic_hamiltonian.append([op, coeffs])
+            dynamic_hamiltonian.append([op.dag(), np.conj(coeffs)])
+
+        # Add control terms
+        for control in controls:
+            target = control.target
+            object = self.system.get_object(target)
+            a = self.system.get_lowering_operator(target)
+            ad = self.system.get_raising_operator(target)
+            delta = 2 * np.pi * (control.frequency - object.frequency)
+            waveform = control.waveform
+            Omega = 0.5 * np.concatenate([waveform, [waveform[-1]]])
+            gamma = Omega * np.exp(-1j * delta * control.times)
+            dynamic_hamiltonian.append([ad, gamma])
+            dynamic_hamiltonian.append([a, np.conj(gamma)])
+
+        # Add collapse operators
         for object in self.system.objects:
-            label = object.label
-            a = self.system.get_lowering_operator(label)
-            ad = self.system.get_raising_operator(label)
-            N = self.system.get_number_operator(label)
-
-            # rotating frame of the control frequency
-            frame_frequency = control.frequency
-            static_hamiltonian -= 2 * np.pi * frame_frequency * N
-
-            if label in control.frequencies:
-                control_frequency = control.frequencies[label]
-                delta = 2 * np.pi * (control_frequency - frame_frequency)
-                values = control.values[label]
-                values = np.concatenate([values, [values[-1]]])
-                Omega = 0.5 * values
-                gamma = Omega * np.exp(-1j * delta * control.times)
-                dynamic_hamiltonian.append([ad, gamma])
-                dynamic_hamiltonian.append([a, np.conj(gamma)])
-
+            a = self.system.get_lowering_operator(object.label)
+            N = self.system.get_number_operator(object.label)
             relaxation_operator = np.sqrt(object.relaxation_rate) * a
             dephasing_operator = np.sqrt(object.dephasing_rate) * N
             collapse_operators.append(relaxation_operator)
@@ -574,20 +342,21 @@ class QuantumSimulator:
 
         H = qt.QobjEvo(  # type: ignore
             total_hamiltonian,
-            tlist=control.times,
+            tlist=times,
             order=0,  # 0th order for piecewise constant control
         )
 
         result = qt.mesolve(
             H=H,
             rho0=initial_state,
-            tlist=control.times,
+            tlist=times,
             c_ops=collapse_operators,
         )
 
         return SimulationResult(
             system=self.system,
-            control=control,
+            times=times,
+            controls=controls,
             states=result.states,
             unitaries=[],
         )

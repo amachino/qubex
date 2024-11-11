@@ -36,6 +36,18 @@ class Waveform(ABC):
         self._detuning = detuning
         self._phase_shift = phase_shift
 
+    @staticmethod
+    def set_sampling_period(sampling_period: float):
+        """
+        Sets the sampling period of the waveform.
+
+        Parameters
+        ----------
+        sampling_period : float
+            Sampling period in ns.
+        """
+        Waveform.SAMPLING_PERIOD = sampling_period
+
     @property
     @abstractmethod
     def length(self) -> int:
