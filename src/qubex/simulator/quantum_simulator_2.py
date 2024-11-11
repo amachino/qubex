@@ -15,7 +15,7 @@ from .quantum_system import QuantumSystem
 
 
 class Control:
-    sampling_period: float = 2.0
+    sampling_period: float = 0.1
 
     @classmethod
     def set_sampling_period(cls, sampling_period: float):
@@ -42,7 +42,6 @@ class Control:
         self.target = target
         self.frequency = frequency
         self.waveform = np.asarray(waveform).astype(np.complex128)
-        self.sampling_period = self.sampling_period
 
     @property
     def length(self) -> int:
@@ -53,6 +52,7 @@ class Control:
         return np.linspace(0.0, self.length * self.sampling_period, self.length + 1)
 
     def plot(self):
+        Pulse.SAMPLING_PERIOD = self.sampling_period
         pulse = Pulse(self.waveform * 1e3)
         pulse.plot_xy(
             title=f"{self.target} : {self.frequency} GHz",
@@ -330,7 +330,6 @@ class QuantumSimulator:
             waveform = control.waveform
             Omega = 0.5 * np.concatenate([waveform, [waveform[-1]]])
             gamma = Omega * np.exp(-1j * delta * control.times)
-            gamma = Omega
             dynamic_hamiltonian.append([ad, gamma])
             dynamic_hamiltonian.append([a, np.conj(gamma)])
 
