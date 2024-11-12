@@ -128,7 +128,7 @@ def plot_fft(
 
 def plot_bloch_vectors(
     times: NDArray[np.float64],
-    state_vectors: NDArray[np.float64],
+    bloch_vectors: NDArray[np.float64],
     *,
     title: str = "State evolution",
     xlabel: str = "Time (ns)",
@@ -138,7 +138,7 @@ def plot_bloch_vectors(
     fig.add_trace(
         go.Scatter(
             x=times,
-            y=state_vectors[:, 0],
+            y=bloch_vectors[:, 0],
             mode="lines+markers",
             name="X",
         )
@@ -146,7 +146,7 @@ def plot_bloch_vectors(
     fig.add_trace(
         go.Scatter(
             x=times,
-            y=state_vectors[:, 1],
+            y=bloch_vectors[:, 1],
             mode="lines+markers",
             name="Y",
         )
@@ -154,7 +154,7 @@ def plot_bloch_vectors(
     fig.add_trace(
         go.Scatter(
             x=times,
-            y=state_vectors[:, 2],
+            y=bloch_vectors[:, 2],
             mode="lines+markers",
             name="Z",
         )

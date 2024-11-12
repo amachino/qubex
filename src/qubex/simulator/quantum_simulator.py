@@ -11,7 +11,7 @@ import qctrlvisualizer as qv
 import qutip as qt
 
 from ..analysis import plot_bloch_vectors
-from ..pulse import Pulse
+from ..pulse import Pulse, PulseSchedule
 from .quantum_system import QuantumSystem
 
 
@@ -25,12 +25,12 @@ class Control:
         waveform: list | npt.NDArray,
     ):
         """
-        A control signal for a single qubit.
+        A control signal for a quantum system.
 
         Parameters
         ----------
         target : str
-            The label of the qubit to control.
+            The target object of the control signal.
         frequency : float
             The frequency of the control signal.
         waveform : list | npt.NDArray
@@ -193,7 +193,11 @@ class SimulationResult:
         all_data = np.asarray(vectors)
         sampled_data = self._sample_data(all_data, n_max_points)
         sampled_times = self._sample_data(self.times, n_max_points)
-        plot_bloch_vectors(sampled_times, sampled_data)
+        plot_bloch_vectors(
+            times=sampled_times,
+            bloch_vectors=sampled_data,
+            title=f"State evolution : {label}",
+        )
 
     @staticmethod
     def _sample_data(
@@ -255,6 +259,9 @@ class QuantumSimulator:
         if initial_state.dims[0] != self.system.object_dimensions:
             raise ValueError("The dims of the initial state do not match the system.")
 
+        if isinstance(controls, PulseSchedule):
+            controls = self._convert_pulse_schedule_to_controls(controls)
+
         self._validate_controls(controls)
 
         length = controls[0].length
@@ -300,7 +307,7 @@ class QuantumSimulator:
 
     def mesolve(
         self,
-        controls: list[Control],
+        controls: list[Control] | PulseSchedule,
         initial_state: qt.Qobj,
     ) -> SimulationResult:
         """
@@ -322,6 +329,9 @@ class QuantumSimulator:
             initial_state = self.system.state(initial_state)
         if initial_state.dims[0] != self.system.object_dimensions:
             raise ValueError("The dims of the initial state do not match the system.")
+
+        if isinstance(controls, PulseSchedule):
+            controls = self._convert_pulse_schedule_to_controls(controls)
 
         self._validate_controls(controls)
 
@@ -400,3 +410,30 @@ class QuantumSimulator:
             states=result.states,
             unitaries=[],
         )
+
+    @staticmethod
+    def _convert_pulse_schedule_to_controls(
+        pulse_schedule: PulseSchedule,
+    ) -> list[Control]:
+        waveforms = pulse_schedule.sampled_sequences
+        frequencies = {}
+        objects = {}
+        for label in waveforms:
+            if frequency := pulse_schedule.frequencies.get(label):
+                frequencies[label] = frequency
+            else:
+                raise ValueError(f"Frequency for {label} is not provided.")
+            if object := pulse_schedule.objects.get(label):
+                objects[label] = object
+            else:
+                raise ValueError(f"Object for {label} is not provided.")
+        controls = []
+        for label, waveform in waveforms.items():
+            controls.append(
+                Control(
+                    target=objects[label],
+                    frequency=frequencies[label],
+                    waveform=waveform,
+                )
+            )
+        return controls

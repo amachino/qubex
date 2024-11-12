@@ -4000,7 +4000,7 @@ class Experiment:
             for target, states in result.items():
                 plot_bloch_vectors(
                     times=pulses.popitem()[1].times,
-                    state_vectors=states,
+                    bloch_vectors=states,
                     title=f"State evolution of {target}",
                 )
 
