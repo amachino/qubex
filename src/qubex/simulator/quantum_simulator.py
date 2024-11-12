@@ -107,6 +107,7 @@ class SimulationResult:
     def display_bloch_sphere(
         self,
         label: str,
+        n_max_points: int = 256,
     ) -> None:
         """
         Display the Bloch sphere of a qubit.
@@ -118,7 +119,8 @@ class SimulationResult:
         """
         substates = self.substates(label)
         rho = np.array([substate.full() for substate in substates])[:, :2, :2]
-        qv.display_bloch_sphere_from_density_matrices(rho)
+        sampled_rho = self._sample_data(rho, n_max_points)
+        qv.display_bloch_sphere_from_density_matrices(sampled_rho)
 
     def show_last_population(
         self,
@@ -141,6 +143,7 @@ class SimulationResult:
     def plot_population_dynamics(
         self,
         label: Optional[str] = None,
+        n_max_points: int = 256,
     ) -> None:
         """
         Plot the population dynamics of the states.
@@ -154,21 +157,29 @@ class SimulationResult:
         populations = defaultdict(list)
         for state in states:
             population = np.abs(state.diag())
+            population[population > 1] = 1.0
             for idx, prob in enumerate(population):
                 basis = self.system.basis_labels[idx] if label is None else str(idx)
                 populations[rf"$|{basis}\rangle$"].append(prob)
 
+        sampled_times = self._sample_data(self.times, n_max_points)
+        sampled_populations = {
+            key: self._sample_data(np.asarray(value), n_max_points)
+            for key, value in populations.items()
+        }
+
         figure = plt.figure()
         figure.suptitle(f"Population dynamics of {label}")
         qv.plot_population_dynamics(
-            self.times * 1e-9,
-            populations,
+            sampled_times * 1e-9,
+            sampled_populations,
             figure=figure,
         )
 
     def plot_bloch_vectors(
         self,
         label: str,
+        n_max_points: int = 256,
     ) -> None:
         substates = self.substates(label)
         vectors = []
@@ -178,7 +189,21 @@ class SimulationResult:
             y = (rho * qt.sigmay()).tr().real
             z = (rho * qt.sigmaz()).tr().real
             vectors.append([x, y, z])
-        plot_bloch_vectors(self.times, np.asarray(vectors))
+
+        all_data = np.asarray(vectors)
+        sampled_data = self._sample_data(all_data, n_max_points)
+        sampled_times = self._sample_data(self.times, n_max_points)
+        plot_bloch_vectors(sampled_times, sampled_data)
+
+    @staticmethod
+    def _sample_data(
+        data: npt.NDArray,
+        n_max_points: int,
+    ) -> npt.NDArray:
+        if len(data) <= n_max_points:
+            return data
+        indices = np.linspace(0, len(data) - 1, n_max_points).astype(int)
+        return data[indices]
 
 
 class QuantumSimulator:

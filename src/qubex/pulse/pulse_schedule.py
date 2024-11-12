@@ -13,9 +13,13 @@ from .pulse_sequence import PhaseShift, PulseSequence
 
 
 class PulseSchedule:
+
     def __init__(
         self,
         targets: list[str],
+        *,
+        frequencies: dict[str, float | None] | None = None,
+        objects: dict[str, str | None] | None = None,
     ):
         """
         A class to represent a pulse schedule.
@@ -23,7 +27,11 @@ class PulseSchedule:
         Parameters
         ----------
         targets : list[str]
-            The target qubits.
+            The target labels.
+        frequencies : dict[str, float | None], optional
+            The frequencies of the sequences.
+        objects : dict[str, str | None], optional
+            The target objects of the sequences.
 
         Examples
         --------
@@ -39,8 +47,39 @@ class PulseSchedule:
         """
         # Remove duplicates while preserving order
         self.targets = list(dict.fromkeys(targets))
+
         self._sequences = {target: PulseSequence() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
+        self._frequencies = frequencies or {target: None for target in targets}
+        self._objects = objects or {target: None for target in targets}
+
+    @property
+    def frequencies(self) -> dict[str, float | None]:
+        """
+        Returns the frequencies of the sequences.
+        """
+        return self._frequencies.copy()
+
+    @property
+    def objects(self) -> dict[str, str | None]:
+        """
+        Returns the targets of the sequences.
+        """
+        return self._objects.copy()
+
+    @property
+    def sequences(self) -> dict[str, PulseSequence]:
+        """
+        Returns the pulse sequences.
+        """
+        return self._sequences.copy()
+
+    @property
+    def sampled_sequences(self) -> dict[str, npt.NDArray[np.complex128]]:
+        """
+        Returns the sampled pulse sequences.
+        """
+        return self.get_sampled_sequences()
 
     def __enter__(self):
         """
@@ -97,7 +136,7 @@ class PulseSchedule:
         Parameters
         ----------
         target : str
-            The target qubit.
+            The target label.
         obj : Waveform | PhaseShift
             The waveform or phase shift to add.
 
@@ -129,7 +168,7 @@ class PulseSchedule:
         Parameters
         ----------
         targets : list[str], optional
-            The target qubits to add the barrier to.
+            The target labels to add the barrier to.
 
         Examples
         --------
@@ -278,6 +317,23 @@ class PulseSchedule:
                 title_text=target,
                 range=[-1.1 * y_max, 1.1 * y_max],
             )
+            annotations = []
+            if self.frequencies.get(target) is not None:
+                annotations.append(f"{self.frequencies[target]:.2f} GHz")
+            if self.objects.get(target) is not None:
+                annotations.append(f"{self.objects[target]}")
+            fig.add_annotation(
+                x=0.02,
+                y=0.06,
+                xref="x domain",
+                yref="y domain",
+                text=" → ".join(annotations),
+                showarrow=False,
+                row=i + 1,
+                col=1,
+                # set bg color to white
+                bgcolor="rgba(255, 255, 255, 0.8)",
+            )
         fig.show()
 
     def is_valid(self) -> bool:
@@ -348,7 +404,7 @@ class PulseSchedule:
         Parameters
         ----------
         targets : list[str], optional
-            The target qubits.
+            The target labels.
 
         Returns
         -------
