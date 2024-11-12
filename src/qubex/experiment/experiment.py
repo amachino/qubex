@@ -24,8 +24,8 @@ from ..analysis import (
     RabiParam,
     display_bloch_sphere,
     fitting,
+    plot_bloch_vectors,
     plot_state_distribution,
-    plot_state_vectors,
     plot_waveform,
 )
 from ..backend import (
@@ -3267,9 +3267,9 @@ class Experiment:
         n: int,
         x90: Waveform | None = None,
         interleaved_waveform: Waveform | None = None,
-        interleaved_clifford_map: Clifford
-        | dict[str, tuple[complex, str]]
-        | None = None,
+        interleaved_clifford_map: (
+            Clifford | dict[str, tuple[complex, str]] | None
+        ) = None,
         seed: int | None = None,
     ) -> PulseSequence:
         """
@@ -3998,7 +3998,7 @@ class Experiment:
 
         if plot:
             for target, states in result.items():
-                plot_state_vectors(
+                plot_bloch_vectors(
                     times=pulses.popitem()[1].times,
                     state_vectors=states,
                     title=f"State evolution of {target}",

@@ -126,7 +126,7 @@ def plot_fft(
     fig.show()
 
 
-def plot_state_vectors(
+def plot_bloch_vectors(
     times: NDArray[np.float64],
     state_vectors: NDArray[np.float64],
     *,

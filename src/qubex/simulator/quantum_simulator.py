@@ -10,7 +10,7 @@ import numpy.typing as npt
 import qctrlvisualizer as qv
 import qutip as qt
 
-from ..analysis import plot_state_vectors
+from ..analysis import plot_bloch_vectors
 from ..pulse import Pulse
 from .quantum_system import QuantumSystem
 
@@ -166,7 +166,7 @@ class SimulationResult:
             figure=figure,
         )
 
-    def plot_state_vectors(
+    def plot_bloch_vectors(
         self,
         label: str,
     ) -> None:
@@ -178,7 +178,7 @@ class SimulationResult:
             y = (rho * qt.sigmay()).tr().real
             z = (rho * qt.sigmaz()).tr().real
             vectors.append([x, y, z])
-        plot_state_vectors(self.times, np.asarray(vectors))
+        plot_bloch_vectors(self.times, np.asarray(vectors))
 
 
 class QuantumSimulator:
