@@ -176,6 +176,7 @@ class Waveform(ABC):
         xlabel="Time (ns)",
         ylabel="Amplitude (arb. units)",
         devide_by_two_pi=False,
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
         Plots the waveform with I/Q values.
@@ -208,7 +209,7 @@ class Waveform(ABC):
                 y=real,
                 mode="lines",
                 name="I",
-                line_shape="hv",
+                line_shape=line_shape,
             )
         )
         fig.add_trace(
@@ -217,7 +218,7 @@ class Waveform(ABC):
                 y=imag,
                 mode="lines",
                 name="Q",
-                line_shape="hv",
+                line_shape=line_shape,
             )
         )
         fig.update_layout(
@@ -241,6 +242,7 @@ class Waveform(ABC):
         xlabel="Time (ns)",
         ylabel_1="Amplitude (arb. units)",
         ylabel_2="Phase (rad)",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
         Plots the waveform with amplitude and phase.
@@ -274,7 +276,7 @@ class Waveform(ABC):
                 y=ampl,
                 mode="lines",
                 name="Amplitude",
-                line_shape="hv",
+                line_shape=line_shape,
             ),
             row=1,
             col=1,
@@ -285,7 +287,7 @@ class Waveform(ABC):
                 y=phase,
                 mode="lines",
                 name="Phase",
-                line_shape="hv",
+                line_shape=line_shape,
             ),
             row=2,
             col=1,

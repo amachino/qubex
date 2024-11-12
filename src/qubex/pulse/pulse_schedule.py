@@ -235,7 +235,9 @@ class PulseSchedule:
         self,
         *,
         width: int = 800,
+        n_max_points: int = 1024,
         time_unit: Literal["ns", "samples"] = "ns",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "spline",
     ):
         """
         Plots the pulse schedule.
@@ -273,13 +275,19 @@ class PulseSchedule:
                 times = np.arange(seq.length + 1)
             real = np.append(seq.real, seq.real[-1])
             imag = np.append(seq.imag, seq.imag[-1])
+
+            if len(times) > n_max_points:
+                times = self._downsample(times, n_max_points)
+                real = self._downsample(real, n_max_points)
+                imag = self._downsample(imag, n_max_points)
+
             fig.add_trace(
                 go.Scatter(
                     x=times,
                     y=real,
                     name="I",
                     mode="lines",
-                    line_shape="hv",
+                    line_shape=line_shape,
                     line=dict(color=COLORS[0]),
                     showlegend=(i == 0),
                 ),
@@ -292,7 +300,7 @@ class PulseSchedule:
                     y=imag,
                     name="Q",
                     mode="lines",
-                    line_shape="hv",
+                    line_shape=line_shape,
                     line=dict(color=COLORS[1]),
                     showlegend=(i == 0),
                 ),
@@ -432,3 +440,13 @@ class PulseSchedule:
             offsets = [self._offsets[target] for target in targets]
 
         return max(offsets, default=0.0)
+
+    @staticmethod
+    def _downsample(
+        data: npt.NDArray,
+        n_max_points: int,
+    ) -> npt.NDArray:
+        if len(data) <= n_max_points:
+            return data
+        indices = np.linspace(0, len(data) - 1, n_max_points).astype(int)
+        return data[indices]

@@ -119,7 +119,7 @@ class SimulationResult:
         """
         substates = self.substates(label)
         rho = np.array([substate.full() for substate in substates])[:, :2, :2]
-        sampled_rho = self._sample_data(rho, n_max_points)
+        sampled_rho = self._downsample(rho, n_max_points)
         qv.display_bloch_sphere_from_density_matrices(sampled_rho)
 
     def show_last_population(
@@ -162,9 +162,9 @@ class SimulationResult:
                 basis = self.system.basis_labels[idx] if label is None else str(idx)
                 populations[rf"$|{basis}\rangle$"].append(prob)
 
-        sampled_times = self._sample_data(self.times, n_max_points)
+        sampled_times = self._downsample(self.times, n_max_points)
         sampled_populations = {
-            key: self._sample_data(np.asarray(value), n_max_points)
+            key: self._downsample(np.asarray(value), n_max_points)
             for key, value in populations.items()
         }
 
@@ -191,8 +191,8 @@ class SimulationResult:
             vectors.append([x, y, z])
 
         all_data = np.asarray(vectors)
-        sampled_data = self._sample_data(all_data, n_max_points)
-        sampled_times = self._sample_data(self.times, n_max_points)
+        sampled_data = self._downsample(all_data, n_max_points)
+        sampled_times = self._downsample(self.times, n_max_points)
         plot_bloch_vectors(
             times=sampled_times,
             bloch_vectors=sampled_data,
@@ -200,7 +200,7 @@ class SimulationResult:
         )
 
     @staticmethod
-    def _sample_data(
+    def _downsample(
         data: npt.NDArray,
         n_max_points: int,
     ) -> npt.NDArray:
