@@ -237,7 +237,7 @@ class PulseSchedule:
         width: int = 800,
         n_max_points: int = 1024,
         time_unit: Literal["ns", "samples"] = "ns",
-        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "spline",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "linear",
     ):
         """
         Plots the pulse schedule.

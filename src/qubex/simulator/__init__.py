@@ -1,5 +1,5 @@
 from .pulse_optimizer import PulseOptimizer
-from .quantum_simulator import Control, QuantumSimulator
+from .quantum_simulator import Control, QuantumSimulator, SimulationResult
 from .quantum_system import Coupling, QuantumSystem, Qubit, Resonator, Transmon
 
 __all__ = [
@@ -9,6 +9,7 @@ __all__ = [
     "QuantumSimulator",
     "QuantumSystem",
     "Qubit",
+    "SimulationResult",
     "Resonator",
     "Transmon",
 ]

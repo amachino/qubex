@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Final, Optional
+from typing import Final, Literal, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +11,7 @@ import qctrlvisualizer as qv
 import qutip as qt
 
 from ..analysis import plot_bloch_vectors
-from ..pulse import Pulse, PulseSchedule
+from ..pulse import Pulse, PulseSchedule, Waveform
 from .quantum_system import QuantumSystem
 
 
@@ -22,7 +22,7 @@ class Control:
         self,
         target: str,
         frequency: float,
-        waveform: list | npt.NDArray,
+        waveform: list | npt.NDArray | Waveform,
     ):
         """
         A control signal for a quantum system.
@@ -33,12 +33,16 @@ class Control:
             The target object of the control signal.
         frequency : float
             The frequency of the control signal.
-        waveform : list | npt.NDArray
+        waveform : list | npt.NDArray | Waveform
             The waveform of the control signal.
         """
         self.target = target
         self.frequency = frequency
-        self.waveform = np.asarray(waveform).astype(np.complex128)
+        self.waveform = (
+            waveform.values
+            if isinstance(waveform, Waveform)
+            else np.asarray(waveform).astype(np.complex128)
+        )
 
     @property
     def length(self) -> int:
@@ -48,13 +52,19 @@ class Control:
     def times(self) -> np.ndarray:
         return np.linspace(0.0, self.length * self.SAMPLING_PERIOD, self.length + 1)
 
-    def plot(self):
+    def plot(
+        self,
+        n_max_points: int = 256,
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "linear",
+    ) -> None:
         Pulse.SAMPLING_PERIOD = self.SAMPLING_PERIOD
         pulse = Pulse(self.waveform * 1e3)
         pulse.plot_xy(
+            n_max_points=n_max_points,
+            devide_by_two_pi=True,
             title=f"{self.target} : {self.frequency} GHz",
             ylabel="Amplitude (MHz)",
-            devide_by_two_pi=True,
+            line_shape=line_shape,
         )
 
 
@@ -83,7 +93,7 @@ class SimulationResult:
     states: list[qt.Qobj]
     unitaries: list[qt.Qobj]
 
-    def substates(
+    def get_substates(
         self,
         label: str,
     ) -> list[qt.Qobj]:
@@ -104,9 +114,110 @@ class SimulationResult:
         substates = [state.ptrace(index) for state in self.states]
         return substates
 
+    def get_times(
+        self,
+        *,
+        n_max_points: int | None = None,
+    ) -> npt.NDArray:
+        """
+        Extract the time points of the simulation.
+
+        Returns
+        -------
+        npt.NDArray
+            The time points of the simulation.
+        """
+        times = self.times
+        if n_max_points is not None:
+            times = self._downsample(self.times, n_max_points)
+        return times
+
+    def get_bloch_vectors(
+        self,
+        label: str,
+        *,
+        n_max_points: int | None = None,
+    ) -> npt.NDArray:
+        """
+        Extract the block vectors of a qubit from the states.
+
+        Parameters
+        ----------
+        label : str
+            The label of the qubit.
+
+        Returns
+        -------
+        list[qt.Qobj]
+            The substates of the qubit.
+        """
+        X = qt.sigmax()
+        Y = qt.sigmay()
+        Z = qt.sigmaz()
+        substates = self.get_substates(label)
+        buffer = []
+        for substate in substates:
+            rho = qt.Qobj(substate.full()[:2, :2])
+            x = qt.expect(X, rho)
+            y = qt.expect(Y, rho)
+            z = qt.expect(Z, rho)
+            buffer.append([x, y, z])
+        vectors = np.array(buffer)
+        if n_max_points is not None:
+            vectors = self._downsample(vectors, n_max_points)
+        return vectors
+
+    def get_density_matrices(
+        self,
+        label: str,
+        *,
+        dim: int = 2,
+        n_max_points: int | None = None,
+    ) -> npt.NDArray:
+        """
+        Extract the density matrices of a qubit from the states.
+
+        Parameters
+        ----------
+        label : str
+            The label of the qubit.
+        dim : int, optional
+            The dimension of the qubit, by default 2
+
+        Returns
+        -------
+        list[qt.Qobj]
+            The density matrices of the qubit.
+        """
+        substates = self.get_substates(label)
+        rho = np.array([substate.full() for substate in substates])[:, :dim, :dim]
+        if n_max_points is not None:
+            rho = self._downsample(rho, n_max_points)
+        return rho
+
+    def plot_bloch_vectors(
+        self,
+        label: str,
+        *,
+        n_max_points: int = 256,
+    ) -> None:
+        vectors = self.get_bloch_vectors(
+            label,
+            n_max_points=n_max_points,
+        )
+        times = self.get_times(
+            n_max_points=n_max_points,
+        )
+        plot_bloch_vectors(
+            times=times,
+            bloch_vectors=vectors,
+            title=f"State evolution : {label}",
+        )
+
     def display_bloch_sphere(
         self,
         label: str,
+        *,
         n_max_points: int = 256,
     ) -> None:
         """
@@ -117,10 +228,11 @@ class SimulationResult:
         label : str
             The label of the qubit.
         """
-        substates = self.substates(label)
-        rho = np.array([substate.full() for substate in substates])[:, :2, :2]
-        sampled_rho = self._downsample(rho, n_max_points)
-        qv.display_bloch_sphere_from_density_matrices(sampled_rho)
+        rho = self.get_density_matrices(
+            label,
+            n_max_points=n_max_points,
+        )
+        qv.display_bloch_sphere_from_density_matrices(rho)
 
     def show_last_population(
         self,
@@ -134,7 +246,7 @@ class SimulationResult:
         label : Optional[str], optional
             The label of the qubit, by default
         """
-        states = self.states if label is None else self.substates(label)
+        states = self.states if label is None else self.get_substates(label)
         population = states[-1].diag()
         for idx, prob in enumerate(population):
             basis = self.system.basis_labels[idx] if label is None else str(idx)
@@ -153,7 +265,7 @@ class SimulationResult:
         label : Optional[str], optional
             The label of the qubit, by default
         """
-        states = self.states if label is None else self.substates(label)
+        states = self.states if label is None else self.get_substates(label)
         populations = defaultdict(list)
         for state in states:
             population = np.abs(state.diag())
@@ -162,7 +274,7 @@ class SimulationResult:
                 basis = self.system.basis_labels[idx] if label is None else str(idx)
                 populations[rf"$|{basis}\rangle$"].append(prob)
 
-        sampled_times = self._downsample(self.times, n_max_points)
+        sampled_times = self.get_times(n_max_points=n_max_points)
         sampled_populations = {
             key: self._downsample(np.asarray(value), n_max_points)
             for key, value in populations.items()
@@ -174,29 +286,6 @@ class SimulationResult:
             sampled_times * 1e-9,
             sampled_populations,
             figure=figure,
-        )
-
-    def plot_bloch_vectors(
-        self,
-        label: str,
-        n_max_points: int = 256,
-    ) -> None:
-        substates = self.substates(label)
-        vectors = []
-        for substate in substates:
-            rho = qt.Qobj(substate.full()[:2, :2])
-            x = (rho * qt.sigmax()).tr().real
-            y = (rho * qt.sigmay()).tr().real
-            z = (rho * qt.sigmaz()).tr().real
-            vectors.append([x, y, z])
-
-        all_data = np.asarray(vectors)
-        sampled_data = self._downsample(all_data, n_max_points)
-        sampled_times = self._downsample(self.times, n_max_points)
-        plot_bloch_vectors(
-            times=sampled_times,
-            bloch_vectors=sampled_data,
-            title=f"State evolution : {label}",
         )
 
     @staticmethod
@@ -233,8 +322,6 @@ class QuantumSimulator:
             raise ValueError("At least one control signal is required.")
         if len(set([control.length for control in controls])) != 1:
             raise ValueError("The waveforms must have the same length.")
-        if len(set([control.SAMPLING_PERIOD for control in controls])) != 1:
-            raise ValueError("The sampling periods must be the same.")
 
     def simulate(
         self,
