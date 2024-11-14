@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -16,22 +16,15 @@ class PulseSchedule:
 
     def __init__(
         self,
-        targets: list[str],
-        *,
-        frequencies: dict[str, float | None] | None = None,
-        objects: dict[str, str | None] | None = None,
+        targets: list[str] | dict[str, Any],
     ):
         """
         A class to represent a pulse schedule.
 
         Parameters
         ----------
-        targets : list[str]
-            The target labels.
-        frequencies : dict[str, float | None], optional
-            The frequencies of the sequences.
-        objects : dict[str, str | None], optional
-            The target objects of the sequences.
+        targets : list[str] | dict[str, Any]
+            The control targets.
 
         Examples
         --------
@@ -45,27 +38,42 @@ class PulseSchedule:
         ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
-        # Remove duplicates while preserving order
-        self.targets = list(dict.fromkeys(targets))
+        if isinstance(targets, list):
+            self.targets = {
+                target: {
+                    "frequency": None,
+                    "object": None,
+                }
+                for target in targets
+            }
+        else:
+            self.targets = targets
 
         self._sequences = {target: PulseSequence() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
-        self._frequencies = frequencies or {target: None for target in targets}
-        self._objects = objects or {target: None for target in targets}
+
+    @property
+    def labels(self) -> list[str]:
+        """
+        Returns the target labels.
+        """
+        return list(self.targets.keys())
 
     @property
     def frequencies(self) -> dict[str, float | None]:
         """
-        Returns the frequencies of the sequences.
+        Returns the target frequencies of the sequences.
         """
-        return self._frequencies.copy()
+        return {
+            target: props.get("frequency") for target, props in self.targets.items()
+        }
 
     @property
     def objects(self) -> dict[str, str | None]:
         """
-        Returns the targets of the sequences.
+        Returns the target objects of the sequences.
         """
-        return self._objects.copy()
+        return {target: props.get("object") for target, props in self.targets.items()}
 
     @property
     def sequences(self) -> dict[str, PulseSequence]:
@@ -176,7 +184,7 @@ class PulseSchedule:
         ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         ...     ps.barrier()
         """
-        targets = targets or self.targets
+        targets = targets or list(self.targets.keys())
         for target in targets:
             self.add(
                 target,
@@ -217,7 +225,7 @@ class PulseSchedule:
             if target not in self.targets:
                 raise ValueError(f"The target {target} is not in the current schedule.")
 
-        self.barrier(schedule.targets)
+        self.barrier(schedule.labels)
         sequences = schedule.get_sequences()
         for target, sequence in sequences.items():
             self.add(target, sequence)
@@ -254,6 +262,10 @@ class PulseSchedule:
         ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
+        if self._max_offset() == 0.0:
+            print("No data to plot.")
+            return
+
         n_targets = len(self.targets)
 
         if n_targets == 0:
@@ -419,7 +431,7 @@ class PulseSchedule:
         dict[str, list[range]]
             The pulse ranges.
         """
-        targets = targets or self.targets
+        targets = targets or self.labels
         ranges: dict[str, list[range]] = {target: [] for target in targets}
         for target in targets:
             current_offset = 0
