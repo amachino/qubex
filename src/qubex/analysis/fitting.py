@@ -1345,7 +1345,7 @@ def fit_rotation3d(
     title: str = "State evolution",
     xlabel: str = "Time (ns)",
     ylabel: str = "Expectation value",
-):
+) -> npt.NDArray[np.float64]:
     """
     Fit 3D rotation data to a rotation matrix and plot the results.
 
@@ -1364,7 +1364,7 @@ def fit_rotation3d(
 
     Returns
     -------
-    tuple[float, float, float]
+    npt.NDArray[np.float64]
         Rotation rates in the x, y, and z directions.
     """
     if data.ndim != 2 or data.shape[1] != 3:
@@ -1559,7 +1559,7 @@ def fit_rotation3d(
         )
         fig3d.show()
 
-    return Omega_x, Omega_y, Omega_z
+    return np.array([Omega_x, Omega_y, Omega_z])
 
 
 def rotate(

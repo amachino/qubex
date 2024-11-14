@@ -54,13 +54,13 @@ class Control:
 
     def plot(
         self,
-        n_max_points: int = 256,
+        n_samples: int = 256,
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "linear",
     ) -> None:
         Pulse.SAMPLING_PERIOD = self.SAMPLING_PERIOD
         pulse = Pulse(self.waveform * 1e3)
         pulse.plot_xy(
-            n_max_points=n_max_points,
+            n_samples=n_samples,
             devide_by_two_pi=True,
             title=f"{self.target} : {self.frequency} GHz",
             ylabel="Amplitude (MHz)",
@@ -117,7 +117,7 @@ class SimulationResult:
     def get_times(
         self,
         *,
-        n_max_points: int | None = None,
+        n_samples: int | None = None,
     ) -> npt.NDArray:
         """
         Extract the time points of the simulation.
@@ -128,15 +128,15 @@ class SimulationResult:
             The time points of the simulation.
         """
         times = self.times
-        if n_max_points is not None:
-            times = self._downsample(self.times, n_max_points)
+        if n_samples is not None:
+            times = self._downsample(self.times, n_samples)
         return times
 
     def get_bloch_vectors(
         self,
         label: str,
         *,
-        n_max_points: int | None = None,
+        n_samples: int | None = None,
     ) -> npt.NDArray:
         """
         Extract the block vectors of a qubit from the states.
@@ -163,8 +163,8 @@ class SimulationResult:
             z = qt.expect(Z, rho)
             buffer.append([x, y, z])
         vectors = np.array(buffer)
-        if n_max_points is not None:
-            vectors = self._downsample(vectors, n_max_points)
+        if n_samples is not None:
+            vectors = self._downsample(vectors, n_samples)
         return vectors
 
     def get_density_matrices(
@@ -172,7 +172,7 @@ class SimulationResult:
         label: str,
         *,
         dim: int = 2,
-        n_max_points: int | None = None,
+        n_samples: int | None = None,
     ) -> npt.NDArray:
         """
         Extract the density matrices of a qubit from the states.
@@ -191,22 +191,22 @@ class SimulationResult:
         """
         substates = self.get_substates(label)
         rho = np.array([substate.full() for substate in substates])[:, :dim, :dim]
-        if n_max_points is not None:
-            rho = self._downsample(rho, n_max_points)
+        if n_samples is not None:
+            rho = self._downsample(rho, n_samples)
         return rho
 
     def plot_bloch_vectors(
         self,
         label: str,
         *,
-        n_max_points: int = 256,
+        n_samples: int = 256,
     ) -> None:
         vectors = self.get_bloch_vectors(
             label,
-            n_max_points=n_max_points,
+            n_samples=n_samples,
         )
         times = self.get_times(
-            n_max_points=n_max_points,
+            n_samples=n_samples,
         )
         plot_bloch_vectors(
             times=times,
@@ -218,7 +218,7 @@ class SimulationResult:
         self,
         label: str,
         *,
-        n_max_points: int = 256,
+        n_samples: int = 256,
     ) -> None:
         """
         Display the Bloch sphere of a qubit.
@@ -230,7 +230,7 @@ class SimulationResult:
         """
         rho = self.get_density_matrices(
             label,
-            n_max_points=n_max_points,
+            n_samples=n_samples,
         )
         qv.display_bloch_sphere_from_density_matrices(rho)
 
@@ -255,7 +255,7 @@ class SimulationResult:
     def plot_population_dynamics(
         self,
         label: Optional[str] = None,
-        n_max_points: int = 256,
+        n_samples: int = 256,
     ) -> None:
         """
         Plot the population dynamics of the states.
@@ -274,9 +274,9 @@ class SimulationResult:
                 basis = self.system.basis_labels[idx] if label is None else str(idx)
                 populations[rf"$|{basis}\rangle$"].append(prob)
 
-        sampled_times = self.get_times(n_max_points=n_max_points)
+        sampled_times = self.get_times(n_samples=n_samples)
         sampled_populations = {
-            key: self._downsample(np.asarray(value), n_max_points)
+            key: self._downsample(np.asarray(value), n_samples)
             for key, value in populations.items()
         }
 
@@ -291,11 +291,11 @@ class SimulationResult:
     @staticmethod
     def _downsample(
         data: npt.NDArray,
-        n_max_points: int,
+        n_samples: int,
     ) -> npt.NDArray:
-        if len(data) <= n_max_points:
+        if len(data) <= n_samples:
             return data
-        indices = np.linspace(0, len(data) - 1, n_max_points).astype(int)
+        indices = np.linspace(0, len(data) - 1, n_samples).astype(int)
         return data[indices]
 
 

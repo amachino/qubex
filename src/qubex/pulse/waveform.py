@@ -172,7 +172,7 @@ class Waveform(ABC):
     def plot_xy(
         self,
         *,
-        n_max_points: int | None = None,
+        n_samples: int | None = None,
         devide_by_two_pi=False,
         title=None,
         xlabel="Time (ns)",
@@ -199,8 +199,8 @@ class Waveform(ABC):
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
 
-        if n_max_points is not None and len(times) > n_max_points:
-            indices = np.linspace(0, len(times) - 1, n_max_points).astype(int)
+        if n_samples is not None and len(times) > n_samples:
+            indices = np.linspace(0, len(times) - 1, n_samples).astype(int)
             times = times[indices]
             real = real[indices]
             imag = imag[indices]
