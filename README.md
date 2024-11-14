@@ -1,3 +1,8 @@
+## qubex
+
+A Python library for quantum control experiments.
+
+
 ## Requirements
 
 - Python 3.9 or higher
@@ -6,19 +11,20 @@
 
 ## Installation
 
-### Client only
+### qubex
 
 ```bash
 pip install git+https://github.com/amachino/qubex.git
 ```
 
-### Client and backend (only for Linux)
+### qubex with backend (only for Linux)
 
 ```bash
 pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
 
 Check available versions on the [release page](https://github.com/amachino/qubex/releases).
+
 
 ## Usage
 
