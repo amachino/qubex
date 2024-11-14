@@ -2810,6 +2810,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        xaxis_type: Literal["linear", "log"] = "log",
     ) -> ExperimentResult[T1Data]:
         """
         Conducts a T1 experiment in parallel.
@@ -2860,7 +2861,7 @@ class Experiment:
             title="T1 decay",
             xaxis_title="Time (μs)",
             yaxis_title="Measured value",
-            xaxis_type="log",
+            xaxis_type=xaxis_type,
         )
 
         t1_value = {
@@ -2872,7 +2873,7 @@ class Experiment:
                 title="T1",
                 xaxis_title="Time (μs)",
                 yaxis_title="Population",
-                xaxis_type="log",
+                xaxis_type=xaxis_type,
                 yaxis_type="linear",
             )
             for target, data in sweep_result.data.items()
