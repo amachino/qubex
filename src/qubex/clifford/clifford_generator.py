@@ -544,7 +544,7 @@ class CliffordGenerator:
         file_path = self.get_file_path(type, file_name)
         clifford_list = self.get_clifford_list(type)
         with open(file_path, "w") as file:
-            json.dump(clifford_list, file, indent=4)
+            json.dump(clifford_list, file, separators=(",", ":"))
 
     def load(
         self,
