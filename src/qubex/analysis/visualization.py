@@ -140,7 +140,7 @@ def plot_bloch_vectors(
             x=times,
             y=bloch_vectors[:, 0],
             mode="lines+markers",
-            name="X",
+            name="〈X〉",
         )
     )
     fig.add_trace(
@@ -148,7 +148,7 @@ def plot_bloch_vectors(
             x=times,
             y=bloch_vectors[:, 1],
             mode="lines+markers",
-            name="Y",
+            name="〈Y〉",
         )
     )
     fig.add_trace(
@@ -156,7 +156,7 @@ def plot_bloch_vectors(
             x=times,
             y=bloch_vectors[:, 2],
             mode="lines+markers",
-            name="Z",
+            name="〈Z〉",
         )
     )
     fig.update_layout(
