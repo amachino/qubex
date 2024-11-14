@@ -1335,6 +1335,233 @@ def fit_reflection_coefficient(
     return f_r, kappa_ex, kappa_in
 
 
+def fit_rotation3d(
+    times: npt.NDArray[np.float64],
+    data: npt.NDArray[np.float64],
+    r0: npt.NDArray[np.float64] = np.array([0, 0, 1]),
+    p0=None,
+    bounds=None,
+    plot: bool = True,
+    title: str = "State evolution",
+    xlabel: str = "Time (ns)",
+    ylabel: str = "Expectation value",
+):
+    """
+    Fit 3D rotation data to a rotation matrix and plot the results.
+
+    Parameters
+    ----------
+    times : npt.NDArray[np.float64]
+        Time points for the rotation data.
+    data : npt.NDArray[np.float64]
+        Expectation value data for the rotation.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+
+    Returns
+    -------
+    tuple[float, float, float]
+        Rotation rates in the x, y, and z directions.
+    """
+    if data.ndim != 2 or data.shape[1] != 3:
+        raise ValueError("Data must be a 2D array with 3 columns.")
+
+    G_x = np.array([[0, 0, 0], [0, 0, -1], [0, 1, 0]])
+    G_y = np.array([[0, 0, 1], [0, 0, 0], [-1, 0, 0]])
+    G_z = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 0]])
+
+    def rotation_matrix(
+        t: float,
+        omega: float,
+        n: tuple[float, float, float],
+    ) -> npt.NDArray[np.float64]:
+        G = n[0] * G_x + n[1] * G_y + n[2] * G_z
+        return np.eye(3) + np.sin(omega * t) * G + (1 - np.cos(omega * t)) * G @ G
+
+    def simulate_rotation(
+        times: npt.NDArray[np.float64],
+        omega: float,
+        theta: float,
+        phi: float,
+    ) -> npt.NDArray[np.float64]:
+        n_x = np.sin(theta) * np.cos(phi)
+        n_y = np.sin(theta) * np.sin(phi)
+        n_z = np.cos(theta)
+        return np.array(
+            [rotation_matrix(t, omega, (n_x, n_y, n_z)) @ r0 for t in times]
+        )
+
+    def residuals(params, times, data):
+        return (simulate_rotation(times, *params) - data).flatten()
+
+    if p0 is None:
+        N = len(times)
+        dt = times[1] - times[0]
+        F = np.array(fft(data[:, 2]))
+        f = np.array(fftfreq(N, dt)[1 : N // 2])
+        i = np.argmax(np.abs(F[1 : N // 2]))
+        dominant_freq = np.abs(f[i])
+        omega_est = 2 * np.pi * dominant_freq
+        theta_est = np.pi / 2
+        phi_est = 0.0
+        p0 = (omega_est, theta_est, phi_est)
+
+    if bounds is None:
+        bounds = (
+            (0, 0, -np.pi),
+            (np.inf, np.pi, np.pi),
+        )
+
+    result = least_squares(
+        residuals,
+        p0,
+        bounds=bounds,
+        args=(times, data),
+    )
+
+    fitted_params = result.x
+    Omega = fitted_params[0]
+    theta = fitted_params[1]
+    phi = fitted_params[2]
+    Omega_x = Omega * np.sin(theta) * np.cos(phi)
+    Omega_y = Omega * np.sin(theta) * np.sin(phi)
+    Omega_z = Omega * np.cos(theta)
+
+    print(f"Omega: ({Omega_x:.6f}, {Omega_y:.6f}, {Omega_z:.6f})")
+
+    fit = simulate_rotation(times, *fitted_params)
+
+    if plot:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=data[:, 0],
+                mode="markers",
+                name="X (data)",
+                marker=dict(color=COLORS[0]),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=fit[:, 0],
+                mode="lines",
+                name="X (fit)",
+                line=dict(color=COLORS[0]),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=data[:, 1],
+                mode="markers",
+                name="Y (data)",
+                marker=dict(color=COLORS[1]),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=fit[:, 1],
+                mode="lines",
+                name="Y (fit)",
+                line=dict(color=COLORS[1]),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=data[:, 2],
+                mode="markers",
+                name="Z (data)",
+                marker=dict(color=COLORS[2]),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=fit[:, 2],
+                mode="lines",
+                name="Z (fit)",
+                line=dict(color=COLORS[2]),
+            )
+        )
+        fig.update_layout(
+            title=title,
+            xaxis_title=xlabel,
+            yaxis_title=ylabel,
+            yaxis=dict(range=[-1.1, 1.1]),
+        )
+        fig.show()
+
+        fig3d = go.Figure()
+        # data
+        fig3d.add_trace(
+            go.Scatter3d(
+                name="data",
+                x=data[:, 0],
+                y=data[:, 1],
+                z=data[:, 2],
+                mode="markers",
+                marker=dict(size=3),
+                hoverinfo="skip",
+            )
+        )
+
+        # fit
+        fig3d.add_trace(
+            go.Scatter3d(
+                name="fit",
+                x=fit[:, 0],
+                y=fit[:, 1],
+                z=fit[:, 2],
+                mode="lines",
+                line=dict(width=4),
+                hoverinfo="skip",
+            )
+        )
+        # sphere
+        theta = np.linspace(0, np.pi, 50)
+        phi = np.linspace(0, 2 * np.pi, 50)
+        theta, phi = np.meshgrid(theta, phi)
+        r = 1
+        x = r * np.sin(theta) * np.cos(phi)
+        y = r * np.sin(theta) * np.sin(phi)
+        z = r * np.cos(theta)
+        fig3d.add_trace(
+            go.Surface(
+                x=x,
+                y=y,
+                z=z,
+                opacity=0.05,
+                showscale=False,
+                colorscale="gray",
+                hoverinfo="skip",
+            )
+        )
+        # layout
+        fig3d.update_layout(
+            scene=dict(
+                xaxis=dict(title="〈X〉", visible=True),
+                yaxis=dict(title="〈Y〉", visible=True),
+                zaxis=dict(title="〈Z〉", visible=True),
+                aspectmode="cube",
+            ),
+            width=400,
+            height=400,
+            margin=dict(l=0, r=0, b=0, t=0),
+            showlegend=False,
+        )
+        fig3d.show()
+
+    return Omega_x, Omega_y, Omega_z
+
+
 def rotate(
     data: npt.ArrayLike,
     angle: float,
