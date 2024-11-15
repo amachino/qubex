@@ -800,10 +800,10 @@ class Measurement:
         if add_last_measurement:
             # register all readout targets for the last measurement
             readout_targets = list(
-                {Target.read_label(target) for target in schedule.targets}
+                {Target.read_label(target) for target in schedule.labels}
             )
             # create a new schedule with the last readout pulse
-            with PulseSchedule(schedule.targets + readout_targets) as ps:
+            with PulseSchedule(schedule.labels + readout_targets) as ps:
                 ps.call(schedule)
                 ps.barrier()
                 for target in readout_targets:
@@ -905,7 +905,7 @@ class Measurement:
             cap_sequences[target] = cap_sequence
 
         # create resource map
-        resource_map = self.device_controller.get_resource_map(schedule.targets)
+        resource_map = self.device_controller.get_resource_map(schedule.labels)
 
         # return Sequencer
         return Sequencer(
