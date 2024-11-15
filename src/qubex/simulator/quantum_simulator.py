@@ -61,7 +61,7 @@ class Control:
         pulse = Pulse(self.waveform * 1e3)
         pulse.plot_xy(
             n_samples=n_samples,
-            devide_by_two_pi=True,
+            divide_by_two_pi=True,
             title=f"{self.target} : {self.frequency} GHz",
             ylabel="Amplitude (MHz)",
             line_shape=line_shape,

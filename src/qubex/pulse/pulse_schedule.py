@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Literal
 
 import numpy as np
@@ -230,6 +231,39 @@ class PulseSchedule:
         for target, sequence in sequences.items():
             self.add(target, sequence)
 
+    def copy(self) -> PulseSchedule:
+        """
+        Returns a copy of the pulse schedule.
+        """
+        return deepcopy(self)
+
+    def scaled(self, scale: float) -> PulseSchedule:
+        """
+        Returns a scaled pulse schedule.
+        """
+        new = PulseSchedule(self.targets)
+        for target, sequence in self._sequences.items():
+            new.add(target, sequence.scaled(scale))
+        return new
+
+    def detuned(self, detuning: float) -> PulseSchedule:
+        """
+        Returns a detuned pulse schedule.
+        """
+        new = PulseSchedule(self.targets)
+        for target, sequence in self._sequences.items():
+            new.add(target, sequence.detuned(detuning))
+        return new
+
+    def shifted(self, phase: float) -> PulseSchedule:
+        """
+        Returns a shifted pulse schedule.
+        """
+        new = PulseSchedule(self.targets)
+        for target, sequence in self._sequences.items():
+            new.add(target, sequence.shifted(phase))
+        return new
+
     def repeated(self, n: int) -> PulseSchedule:
         """
         Returns a repeated pulse schedule.
@@ -242,8 +276,10 @@ class PulseSchedule:
     def plot(
         self,
         *,
+        title: str = "Pulse Schedule",
         width: int = 800,
-        n_max_points: int = 1024,
+        n_samples: int = 1024,
+        divide_by_two_pi: bool = False,
         time_unit: Literal["ns", "samples"] = "ns",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "linear",
     ):
@@ -288,10 +324,14 @@ class PulseSchedule:
             real = np.append(seq.real, seq.real[-1])
             imag = np.append(seq.imag, seq.imag[-1])
 
-            if len(times) > n_max_points:
-                times = self._downsample(times, n_max_points)
-                real = self._downsample(real, n_max_points)
-                imag = self._downsample(imag, n_max_points)
+            if len(times) > n_samples:
+                times = self._downsample(times, n_samples)
+                real = self._downsample(real, n_samples)
+                imag = self._downsample(imag, n_samples)
+
+            if divide_by_two_pi:
+                real /= 2 * np.pi * 1e-3
+                imag /= 2 * np.pi * 1e-3
 
             fig.add_trace(
                 go.Scatter(
@@ -320,7 +360,7 @@ class PulseSchedule:
                 col=1,
             )
         fig.update_layout(
-            title="Pulse Schedule",
+            title=title,
             height=80 * n_targets + 140,
             width=width,
         )
@@ -331,6 +371,8 @@ class PulseSchedule:
         )
         for i, (target, seq) in enumerate(sequences.items()):
             y_max = np.max(seq.abs)
+            if divide_by_two_pi:
+                y_max /= 2 * np.pi * 1e-3
             fig.update_yaxes(
                 row=i + 1,
                 col=1,

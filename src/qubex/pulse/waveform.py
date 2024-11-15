@@ -151,6 +151,8 @@ class Waveform(ABC):
         *,
         polar=False,
         title=None,
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
+        divide_by_two_pi: bool = False,
     ):
         """
         Plots the waveform.
@@ -165,18 +167,25 @@ class Waveform(ABC):
         if title is None:
             title = f"Waveform ({self.duration} ns)"
         if polar:
-            self.plot_polar(title=title)
+            self.plot_polar(
+                title=title,
+                line_shape=line_shape,
+            )
         else:
-            self.plot_xy(title=title)
+            self.plot_xy(
+                title=title,
+                line_shape=line_shape,
+                divide_by_two_pi=divide_by_two_pi,
+            )
 
     def plot_xy(
         self,
         *,
         n_samples: int | None = None,
-        devide_by_two_pi=False,
-        title=None,
-        xlabel="Time (ns)",
-        ylabel="Amplitude (arb. units)",
+        divide_by_two_pi: bool = False,
+        title: str | None = None,
+        xlabel: str = "Time (ns)",
+        ylabel: str = "Amplitude (arb. units)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
@@ -205,9 +214,9 @@ class Waveform(ABC):
             real = real[indices]
             imag = imag[indices]
 
-        if devide_by_two_pi:
-            real /= 2 * np.pi
-            imag /= 2 * np.pi
+        if divide_by_two_pi:
+            real /= 2 * np.pi * 1e-3
+            imag /= 2 * np.pi * 1e-3
 
         fig = go.Figure()
         fig.add_trace(
@@ -231,7 +240,7 @@ class Waveform(ABC):
         fig.update_layout(
             title=title,
             xaxis_title=xlabel,
-            yaxis_title=ylabel,
+            yaxis_title="Amplitude (MHz)" if divide_by_two_pi else ylabel,
         )
         fig.show(
             config={
@@ -245,10 +254,10 @@ class Waveform(ABC):
     def plot_polar(
         self,
         *,
-        title="",
-        xlabel="Time (ns)",
-        ylabel_1="Amplitude (arb. units)",
-        ylabel_2="Phase (rad)",
+        title: str = "",
+        xlabel: str = "Time (ns)",
+        ylabel_1: str = "Amplitude (arb. units)",
+        ylabel_2: str = "Phase (rad)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
