@@ -84,6 +84,15 @@ class PulseAPI:
                     targets[label] = target
         return targets
 
+    def reset(self) -> dict:
+        """Restart the control system."""
+        result = self._request(
+            "GET",
+            "/api/reset",
+            params={"chip_id": self.chip_id},
+        )
+        return result
+
     def measure(
         self,
         waveforms: dict[str, Any] | PulseSchedule,
@@ -95,7 +104,7 @@ class PulseAPI:
         control_window: int | None = None,
         capture_window: int | None = None,
         capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_frequencies: dict[str, float] | None = None,
         readout_waveforms: dict[str, Any] | None = None,
