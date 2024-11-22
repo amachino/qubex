@@ -23,8 +23,8 @@ class Control:
         self,
         target: str,
         frequency: float,
-        rabi_rates: list | npt.NDArray | Waveform,
-        durations: list | npt.NDArray,
+        waveform: list | npt.NDArray | Waveform,
+        durations: list | npt.NDArray | None = None,
         interpolation: str = "previous",
     ):
         """
@@ -33,30 +33,34 @@ class Control:
         Parameters
         ----------
         target : str
-            The target object of the control signal.
+            The target object.
         frequency : float
             The control frequency in GHz.
-        durations : list | npt.NDArray
-            The durations of each segment in ns.
-        rabi_rates : list | npt.NDArray | Waveform
-            The Rabi rates for each segment in rad/ns.
+        waveform : list | npt.NDArray | Waveform
+            The I/Q values of each segment in rad/ns.
+        durations : list | npt.NDArray | None, optional
+            The durations of each segment in ns, by default None
         """
         self.target = target
         self.frequency = frequency
-        self.rabi_rates = (
-            rabi_rates.values
-            if isinstance(rabi_rates, Waveform)
-            else np.asarray(rabi_rates).astype(np.complex128)
+        self.waveform = (
+            waveform.values
+            if isinstance(waveform, Waveform)
+            else np.asarray(waveform).astype(np.complex128)
         )
-        self.durations = np.asarray(durations).astype(np.float64)
+        self.durations = (
+            np.asarray(durations).astype(np.float64)
+            if durations is not None
+            else np.full(len(self.waveform), Waveform.SAMPLING_PERIOD)
+        )
         self.interpolation = interpolation
 
-        if len(self.rabi_rates) != len(self.durations):
+        if len(self.waveform) != len(self.durations):
             raise ValueError("The lengths of rabi_rates and durations do not match.")
 
     @property
     def n_segments(self) -> int:
-        return len(self.rabi_rates)
+        return len(self.waveform)
 
     @property
     def duration(self) -> float:
@@ -68,7 +72,7 @@ class Control:
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
-        return np.append(self.rabi_rates, self.rabi_rates[-1])
+        return np.append(self.waveform, self.waveform[-1])
 
     @property
     def interpolator(self) -> interp1d:
@@ -79,7 +83,10 @@ class Control:
             fill_value="extrapolate",  # type: ignore
         )
 
-    def get_samples(self, times: npt.NDArray[np.float64]) -> npt.NDArray[np.complex128]:
+    def get_samples(
+        self,
+        times: npt.NDArray[np.float64],
+    ) -> npt.NDArray[np.complex128]:
         return self.interpolator(times)
 
     def plot(
@@ -193,9 +200,7 @@ class SimulationResult:
         npt.NDArray
             The time points of the simulation.
         """
-        times = self.times
-        if n_samples is not None:
-            times = self._downsample(self.times, n_samples)
+        times = self._downsample(self.times, n_samples)
         return times
 
     def get_bloch_vectors(
@@ -229,8 +234,7 @@ class SimulationResult:
             z = qt.expect(Z, rho)
             buffer.append([x, y, z])
         vectors = np.array(buffer)
-        if n_samples is not None:
-            vectors = self._downsample(vectors, n_samples)
+        vectors = self._downsample(vectors, n_samples)
         return vectors
 
     def get_density_matrices(
@@ -257,8 +261,7 @@ class SimulationResult:
         """
         substates = self.get_substates(label)
         rho = np.array([substate.full() for substate in substates])[:, :dim, :dim]
-        if n_samples is not None:
-            rho = self._downsample(rho, n_samples)
+        rho = self._downsample(rho, n_samples)
         return rho
 
     def plot_bloch_vectors(
@@ -284,7 +287,7 @@ class SimulationResult:
         self,
         label: str,
         *,
-        n_samples: int = 256,
+        n_samples: int | None = None,
     ) -> None:
         """
         Display the Bloch sphere of a qubit.
@@ -321,6 +324,7 @@ class SimulationResult:
     def plot_population_dynamics(
         self,
         label: Optional[str] = None,
+        *,
         n_samples: int | None = None,
     ) -> None:
         """
@@ -593,7 +597,7 @@ class QuantumSimulator:
                 Control(
                     target=objects[label],
                     frequency=frequencies[label],
-                    rabi_rates=waveform,
+                    waveform=waveform,
                     durations=durations,
                 )
             )
