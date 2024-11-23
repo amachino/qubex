@@ -154,22 +154,22 @@ class SimulationResult:
         The time points of the simulation.
     controls : list[Control]
         The control signals.
-    states : list[qt.Qobj]
+    states : npt.NDArray
         The states of the quantum system at each time point.
-    unitaries : list[qt.Qobj]
+    unitaries : npt.NDArray
         The unitaries of the quantum system at each time point.
     """
 
     system: QuantumSystem
     times: npt.NDArray
     controls: list[Control]
-    states: list[qt.Qobj]
-    unitaries: list[qt.Qobj]
+    states: npt.NDArray
+    unitaries: npt.NDArray
 
     def get_substates(
         self,
         label: str,
-    ) -> list[qt.Qobj]:
+    ) -> npt.NDArray:
         """
         Extract the substates of a qubit from the states.
 
@@ -184,7 +184,7 @@ class SimulationResult:
             The substates of the qubit.
         """
         index = self.system.get_index(label)
-        substates = [state.ptrace(index) for state in self.states]
+        substates = np.array([state.ptrace(index) for state in self.states])
         return substates
 
     def get_times(
@@ -200,7 +200,7 @@ class SimulationResult:
         npt.NDArray
             The time points of the simulation.
         """
-        times = self._downsample(self.times, n_samples)
+        times = downsample(self.times, n_samples)
         return times
 
     def get_bloch_vectors(
@@ -233,8 +233,8 @@ class SimulationResult:
             y = qt.expect(Y, rho)
             z = qt.expect(Z, rho)
             buffer.append([x, y, z])
-        vectors = np.array(buffer)
-        vectors = self._downsample(vectors, n_samples)
+        vectors = np.real(buffer)
+        vectors = downsample(vectors, n_samples)
         return vectors
 
     def get_density_matrices(
@@ -261,7 +261,7 @@ class SimulationResult:
         """
         substates = self.get_substates(label)
         rho = np.array([substate.full() for substate in substates])[:, :dim, :dim]
-        rho = self._downsample(rho, n_samples)
+        rho = downsample(rho, n_samples)
         return rho
 
     def plot_bloch_vectors(
@@ -346,7 +346,7 @@ class SimulationResult:
 
         sampled_times = self.get_times(n_samples=n_samples)
         sampled_populations = {
-            key: self._downsample(np.asarray(value), n_samples)
+            key: downsample(np.asarray(value), n_samples)
             for key, value in populations.items()
         }
 
@@ -357,18 +357,6 @@ class SimulationResult:
             sampled_populations,
             figure=figure,
         )
-
-    @staticmethod
-    def _downsample(
-        data: npt.NDArray,
-        n_samples: int | None,
-    ) -> npt.NDArray:
-        if n_samples is None:
-            return data
-        if len(data) <= n_samples:
-            return data
-        indices = np.linspace(0, len(data) - 1, n_samples).astype(int)
-        return data[indices]
 
 
 class QuantumSimulator:
@@ -400,6 +388,7 @@ class QuantumSimulator:
         controls: list[Control] | PulseSchedule,
         initial_state: qt.Qobj,
         dt: float = 0.1,
+        n_samples: int | None = None,
     ) -> SimulationResult:
         """
         Simulate the dynamics of the quantum system.
@@ -408,6 +397,12 @@ class QuantumSimulator:
         ----------
         controls : list[Control] | PulseSchedule
             The control signals.
+        initial_state : qt.Qobj
+            The initial state of the quantum system.
+        dt : float, optional
+            The time step of the simulation, by default 0.1
+        n_samples : int | None, optional
+            The number of samples to return, by default None
 
         Returns
         -------
@@ -433,13 +428,13 @@ class QuantumSimulator:
                 system=self.system,
                 times=times,
                 controls=controls,
-                states=[initial_state],
-                unitaries=[self.system.identity_matrix],
+                states=np.array([initial_state]),
+                unitaries=np.array([self.system.identity_matrix]),
             )
 
         control_samples = [control.get_samples(times) for control in controls]
 
-        unitaries = [self.system.identity_matrix]
+        U_list = [self.system.identity_matrix]
         for idx in range(N):
             t = times[idx]
             H = self.system.get_rotating_hamiltonian(t)
@@ -453,11 +448,17 @@ class QuantumSimulator:
                 gamma = Omega * np.exp(-1j * delta * t)  # continuous
                 H_ctrl = gamma * ad + np.conj(gamma) * a
                 H += H_ctrl
-            U = (-1j * H * dt).expm() * unitaries[-1]
-            unitaries.append(U)
+            U = (-1j * H * dt).expm() * U_list[-1]
+            U_list.append(U)
 
         rho0 = qt.ket2dm(initial_state)
-        states = [U * rho0 * U.dag() for U in unitaries]
+        states = np.array([U * rho0 * U.dag() for U in U_list])
+        unitaries = np.array(U_list)
+
+        if n_samples is not None:
+            times = downsample(times, n_samples)
+            states = downsample(states, n_samples)
+            unitaries = downsample(unitaries, n_samples)
 
         return SimulationResult(
             system=self.system,
@@ -472,6 +473,7 @@ class QuantumSimulator:
         controls: list[Control] | PulseSchedule,
         initial_state: qt.Qobj,
         dt: float = 0.1,
+        n_samples: int | None = None,
     ) -> SimulationResult:
         """
         Simulate the dynamics of the quantum system using the `mesolve` function.
@@ -484,6 +486,8 @@ class QuantumSimulator:
             The initial state of the quantum system.
         dt : float, optional
             The time step of the simulation, by default 0.1
+        n_samples : int | None, optional
+            The number of samples to return, by default None
 
         Returns
         -------
@@ -509,8 +513,8 @@ class QuantumSimulator:
                 system=self.system,
                 times=times,
                 controls=controls,
-                states=[initial_state],
-                unitaries=[self.system.identity_matrix],
+                states=np.array([initial_state]),
+                unitaries=np.array([self.system.identity_matrix]),
             )
 
         static_hamiltonian = self.system.zero_matrix
@@ -566,12 +570,18 @@ class QuantumSimulator:
             c_ops=collapse_operators,
         )
 
+        states = np.array(result.states)
+
+        if n_samples is not None:
+            times = downsample(times, n_samples)
+            states = downsample(states, n_samples)
+
         return SimulationResult(
             system=self.system,
             times=times,
             controls=controls,
-            states=result.states,
-            unitaries=[],
+            states=states,
+            unitaries=np.array([]),
         )
 
     @staticmethod
@@ -602,3 +612,15 @@ class QuantumSimulator:
                 )
             )
         return controls
+
+
+def downsample(
+    data: npt.NDArray,
+    n_samples: int | None,
+) -> npt.NDArray:
+    if n_samples is None:
+        return data
+    if len(data) <= n_samples:
+        return data
+    indices = np.linspace(0, len(data) - 1, n_samples).astype(int)
+    return data[indices]
