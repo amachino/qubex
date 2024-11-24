@@ -71,6 +71,10 @@ class FlatTop(Pulse):
         tau: float,
         **kwargs,
     ):
+        if duration == 0:
+            super().__init__([], **kwargs)
+            return
+
         flattime = duration - 2 * tau
 
         if flattime < 0:
