@@ -331,7 +331,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             Whether to fetch the device settings, by default False.
         """
         if fetch:
-            device_settings = self._fetch_device_settings()
+            device_settings = self._fetch_device_settings([box_id])
             experiment_system = self._create_experiment_system(device_settings)
         else:
             experiment_system = self.experiment_system
@@ -422,16 +422,20 @@ This operation will overwrite the existing device settings. Do you want to conti
     def _fetch_device_settings(
         self,
         box_ids: Sequence[str] | None = None,
-    ) -> dict:
+    ):
         boxes = self.experiment_system.boxes
         if box_ids is not None:
             boxes = [box for box in boxes if box.id in box_ids]
-        result = {}
+        result: dict = {}
         for box in boxes:
-            try:
-                result[box.id] = self.device_controller.dump_box(box.id)
-            except Exception as e:
-                print(e)
+            for port in box.ports:
+                try:
+                    result[box.id] = {"ports": {}}
+                    result[box.id]["ports"][port.number] = (
+                        self.device_controller.dump_port(box.id, port.number)
+                    )
+                except Exception as e:
+                    print(e)
         return result
 
     def _create_device_controller(
