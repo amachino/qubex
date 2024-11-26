@@ -3266,7 +3266,7 @@ class Experiment:
         *,
         target: str,
         n: int,
-        x90: Waveform | None = None,
+        x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: Waveform | None = None,
         interleaved_clifford_map: (
             Clifford | dict[str, tuple[complex, str]] | None
@@ -3282,8 +3282,8 @@ class Experiment:
             Target qubit.
         n : int
             Number of Clifford gates.
-        x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
+        x90 : Waveform | dict[str, Waveform], optional
+            π/2 pulse used for the experiment. Defaults to None.
         interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
         interleaved_clifford_map : Clifford | dict[str, tuple[complex, str]], optional
@@ -3317,6 +3317,8 @@ class Experiment:
         ...     },
         ... )
         """
+        if isinstance(x90, dict):
+            x90 = x90.get(target)
         x90 = x90 or self.hpi_pulse[target]
         z90 = VirtualZ(np.pi / 2)
 
@@ -3356,12 +3358,132 @@ class Experiment:
                 sequence.append(z90)
         return PulseSequence(sequence)
 
+    def rb_sequence_2q(
+        self,
+        *,
+        target: str,
+        n: int,
+        x90: dict[str, Waveform] | None = None,
+        interleaved_waveform: dict[str, Waveform] | None = None,
+        interleaved_clifford_map: (
+            Clifford | dict[str, tuple[complex, str]] | None
+        ) = None,
+        seed: int | None = None,
+    ) -> dict[str, PulseSequence]:
+        """
+        Generates a 2Q randomized benchmarking sequence.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        n : int
+            Number of Clifford gates.
+        x90 : Waveform | dict[str, Waveform], optional
+            π/2 pulse used for the experiment. Defaults to None.
+        interleaved_waveform : dict[str, Waveform], optional
+            Waveform of the interleaved gate. Defaults to None.
+        interleaved_clifford_map : Clifford | dict[str, tuple[complex, str]], optional
+            Clifford map of the interleaved gate. Defaults to None.
+        seed : int, optional
+            Random seed.
+
+        Returns
+        -------
+        dict[str, PulseSequence]
+            Randomized benchmarking sequence.
+
+        Examples
+        --------
+        >>> sequence = ex.rb_sequence_2q(
+        ...     target="Q00-Q01",
+        ...     n=100,
+        ...     x90={
+        ...         "Q00": Rect(duration=30, amplitude=0.1),
+        ...         "Q01": Rect(duration=30, amplitude=0.1),
+        ...     },
+        ... )
+
+        >>> sequence = ex.rb_sequence_2q(
+        ...     target="Q00-Q01",
+        ...     n=100,
+        ...     x90={
+        ...         "Q00": Rect(duration=30, amplitude=0.1),
+        ...         "Q01": Rect(duration=30, amplitude=0.1),
+        ...     },
+        ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
+        ...     interleaved_clifford_map=Clifford.CNOT(),
+        ... )
+        """
+        target_object = self.experiment_system.get_target(target)
+        if not target_object.is_cr:
+            raise ValueError(f"`{target}` is not a 2Q target.")
+        control_qubit, target_qubit = Target.cr_qubit_pair(target)
+        if isinstance(x90, dict):
+            xi90 = x90.get(control_qubit) or self.hpi_pulse[control_qubit]
+            ix90 = x90.get(target_qubit) or self.hpi_pulse[target_qubit]
+        z90 = VirtualZ(np.pi / 2)
+
+        generator = CliffordGenerator()
+
+        if interleaved_waveform is None:
+            cliffords, inverse = generator.create_rb_sequences(
+                n=n,
+                type="2Q",
+                seed=seed,
+            )
+        else:
+            if interleaved_clifford_map is None:
+                raise ValueError("Interleave map must be provided.")
+            cliffords, inverse = generator.create_irb_sequences(
+                n=n,
+                interleave=interleaved_clifford_map,
+                type="2Q",
+                seed=seed,
+            )
+
+        control_sequence: list[Waveform | VirtualZ] = []
+        target_sequence: list[Waveform | VirtualZ] = []
+
+        for clifford in cliffords:
+            for gate in clifford:
+                if gate == "XI90":
+                    control_sequence.append(xi90)
+                elif gate == "IX90":
+                    target_sequence.append(ix90)
+                elif gate == "ZI90":
+                    control_sequence.append(z90)
+                elif gate == "IZ90":
+                    target_sequence.append(z90)
+                else:
+                    raise ValueError("Invalid gate.")
+            if isinstance(interleaved_waveform, dict):
+                control_sequence.append(interleaved_waveform[control_qubit])
+                target_sequence.append(interleaved_waveform[target_qubit])
+
+        for gate in inverse:
+            if gate == "XI90":
+                control_sequence.append(xi90)
+            elif gate == "IX90":
+                target_sequence.append(ix90)
+            elif gate == "ZI90":
+                control_sequence.append(z90)
+            elif gate == "IZ90":
+                target_sequence.append(z90)
+            else:
+                raise ValueError("Invalid gate.")
+
+        return {
+            control_qubit: PulseSequence(control_sequence),
+            target_qubit: PulseSequence(target_sequence),
+        }
+
     def rb_experiment(
         self,
         *,
         target: str,
         n_cliffords_range: ArrayLike | None = None,
-        x90: Waveform | None = None,
+        x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: Waveform | None = None,
         interleaved_clifford_map: dict[str, tuple[complex, str]] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -3380,7 +3502,7 @@ class Experiment:
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 50).
         x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse used for the experiment. Defaults to None.
         interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
         interleaved_clifford_map : dict[str, tuple[complex, str]], optional
@@ -3422,7 +3544,6 @@ class Experiment:
         ...     },
         ... )
         """
-
         if n_cliffords_range is None:
             n_cliffords_range = np.arange(0, 1001, 50)
 
@@ -3441,16 +3562,20 @@ class Experiment:
                     ps.barrier()
 
                 # Randomized benchmarking sequence
-                ps.add(
-                    target,
-                    self.rb_sequence(
+                if not self.experiment_system.get_target(target).is_cr:
+                    rb_sequence = self.rb_sequence(
                         target=target,
                         n=N,
                         x90=x90,
                         interleaved_waveform=interleaved_waveform,
                         interleaved_clifford_map=interleaved_clifford_map,
                         seed=seed,
-                    ),
+                    )
+                else:
+                    raise ValueError("Randomized benchmarking is not supported for CR.")
+                ps.add(
+                    target,
+                    rb_sequence,
                 )
             return ps
 
@@ -3494,7 +3619,7 @@ class Experiment:
         *,
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
-        x90: Waveform | None = None,
+        x90: Waveform | dict[str, Waveform] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3511,8 +3636,8 @@ class Experiment:
             Range of the number of Cliffords. Defaults to range(0, 1001, 100).
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
-        x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
+        x90 : Waveform | dict[str, Waveform], optional
+            π/2 pulse used for the experiment. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         seed : int, optional
