@@ -579,5 +579,3 @@ class CliffordGenerator:
                 self._cliffords_1q1q[clifford_sequence.clifford] = clifford_sequence
             else:
                 self._cliffords_2q[clifford_sequence.clifford] = clifford_sequence
-
-        print(f"Loaded {len(data)} Clifford sequences.")

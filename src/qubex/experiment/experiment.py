@@ -172,6 +172,7 @@ class Experiment:
             fetch_device_state=fetch_device_state,
             use_neopulse=use_neopulse,
         )
+        self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(
             file_path=USER_NOTE_PATH,
         )
@@ -531,6 +532,13 @@ class Experiment:
             target: classifier.centers
             for target, classifier in self.classifiers.items()
         }
+
+    @property
+    def clifford_generator(self) -> CliffordGenerator:
+        """Get the Clifford generator."""
+        if self._clifford_generator is None:
+            self._clifford_generator = CliffordGenerator()
+        return self._clifford_generator
 
     def _validate_rabi_params(self):
         """Check if the Rabi parameters are stored."""
@@ -3324,10 +3332,8 @@ class Experiment:
 
         sequence: list[Waveform | VirtualZ] = []
 
-        generator = CliffordGenerator()
-
         if interleaved_waveform is None:
-            cliffords, inverse = generator.create_rb_sequences(
+            cliffords, inverse = self.clifford_generator.create_rb_sequences(
                 n=n,
                 type="1Q",
                 seed=seed,
@@ -3335,7 +3341,7 @@ class Experiment:
         else:
             if interleaved_clifford_map is None:
                 raise ValueError("Interleave map must be provided.")
-            cliffords, inverse = generator.create_irb_sequences(
+            cliffords, inverse = self.clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford_map,
                 type="1Q",
@@ -3364,12 +3370,13 @@ class Experiment:
         target: str,
         n: int,
         x90: dict[str, Waveform] | None = None,
+        zx90: dict[str, Waveform] | None = None,
         interleaved_waveform: dict[str, Waveform] | None = None,
         interleaved_clifford_map: (
             Clifford | dict[str, tuple[complex, str]] | None
         ) = None,
         seed: int | None = None,
-    ) -> dict[str, PulseSequence]:
+    ) -> PulseSchedule:
         """
         Generates a 2Q randomized benchmarking sequence.
 
@@ -3390,7 +3397,7 @@ class Experiment:
 
         Returns
         -------
-        dict[str, PulseSequence]
+        PulseSchedule
             Randomized benchmarking sequence.
 
         Examples
@@ -3419,15 +3426,16 @@ class Experiment:
         if not target_object.is_cr:
             raise ValueError(f"`{target}` is not a 2Q target.")
         control_qubit, target_qubit = Target.cr_qubit_pair(target)
+        xi90, ix90 = None, None
         if isinstance(x90, dict):
-            xi90 = x90.get(control_qubit) or self.hpi_pulse[control_qubit]
-            ix90 = x90.get(target_qubit) or self.hpi_pulse[target_qubit]
+            xi90 = x90.get(control_qubit)
+            ix90 = x90.get(target_qubit)
+        xi90 = xi90 or self.hpi_pulse[control_qubit]
+        ix90 = ix90 or self.hpi_pulse[target_qubit]
         z90 = VirtualZ(np.pi / 2)
 
-        generator = CliffordGenerator()
-
         if interleaved_waveform is None:
-            cliffords, inverse = generator.create_rb_sequences(
+            cliffords, inverse = self.clifford_generator.create_rb_sequences(
                 n=n,
                 type="2Q",
                 seed=seed,
@@ -3435,48 +3443,56 @@ class Experiment:
         else:
             if interleaved_clifford_map is None:
                 raise ValueError("Interleave map must be provided.")
-            cliffords, inverse = generator.create_irb_sequences(
+            cliffords, inverse = self.clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford_map,
                 type="2Q",
                 seed=seed,
             )
 
-        control_sequence: list[Waveform | VirtualZ] = []
-        target_sequence: list[Waveform | VirtualZ] = []
+        with PulseSchedule([control_qubit, target_qubit]) as ps:
+            for clifford in cliffords:
+                for gate in clifford:
+                    if gate == "XI90":
+                        ps.add(control_qubit, xi90)
+                    elif gate == "IX90":
+                        ps.add(target_qubit, ix90)
+                    elif gate == "ZI90":
+                        ps.add(control_qubit, z90)
+                    elif gate == "IZ90":
+                        ps.add(target_qubit, z90)
+                    elif gate == "ZX90":
+                        if zx90 is not None:
+                            # TODO:
+                            ps.add(control_qubit, zx90[control_qubit])
+                            ps.add(target_qubit, zx90[target_qubit])
+                        ps.barrier()
+                    else:
+                        raise ValueError("Invalid gate.")
+                if interleaved_waveform is not None and isinstance(
+                    interleaved_waveform, dict
+                ):
+                    ps.add(control_qubit, interleaved_waveform[control_qubit])
+                    ps.add(target_qubit, interleaved_waveform[target_qubit])
 
-        for clifford in cliffords:
-            for gate in clifford:
+            for gate in inverse:
                 if gate == "XI90":
-                    control_sequence.append(xi90)
+                    ps.add(control_qubit, xi90)
                 elif gate == "IX90":
-                    target_sequence.append(ix90)
+                    ps.add(target_qubit, ix90)
                 elif gate == "ZI90":
-                    control_sequence.append(z90)
+                    ps.add(control_qubit, z90)
                 elif gate == "IZ90":
-                    target_sequence.append(z90)
+                    ps.add(target_qubit, z90)
+                elif gate == "ZX90":
+                    if zx90 is not None:
+                        # TODO:
+                        ps.add(control_qubit, zx90[control_qubit])
+                        ps.add(target_qubit, zx90[target_qubit])
+                    ps.barrier()
                 else:
                     raise ValueError("Invalid gate.")
-            if isinstance(interleaved_waveform, dict):
-                control_sequence.append(interleaved_waveform[control_qubit])
-                target_sequence.append(interleaved_waveform[target_qubit])
-
-        for gate in inverse:
-            if gate == "XI90":
-                control_sequence.append(xi90)
-            elif gate == "IX90":
-                target_sequence.append(ix90)
-            elif gate == "ZI90":
-                control_sequence.append(z90)
-            elif gate == "IZ90":
-                target_sequence.append(z90)
-            else:
-                raise ValueError("Invalid gate.")
-
-        return {
-            control_qubit: PulseSequence(control_sequence),
-            target_qubit: PulseSequence(target_sequence),
-        }
+        return ps
 
     def rb_experiment(
         self,
