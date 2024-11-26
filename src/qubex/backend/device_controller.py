@@ -332,6 +332,37 @@ class DeviceController:
             box_config = {}
         return box_config
 
+    def dump_port(self, box_name: str, port_number: int) -> dict:
+        """
+        Dump the port configuration.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+        port_number : int
+            Port number.
+
+        Returns
+        -------
+        dict
+            Dictionary of port configuration.
+
+        Raises
+        ------
+        ValueError
+            If the box is not in the available boxes.
+        """
+        self._check_box_availabilty(box_name)
+        try:
+            box = self.qubecalib.create_box(box_name, reconnect=False)
+            box.reconnect()
+            port_config = box.dump_port(port_number)
+        except Exception as e:
+            print(f"Failed to dump port {port_number} of box {box_name}. Error: {e}")
+            port_config = {}
+        return port_config
+
     def add_sequence(
         self,
         sequence: Sequence,
