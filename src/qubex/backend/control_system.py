@@ -249,6 +249,7 @@ NUMBER_OF_CHANNELS: Final = {
 def create_ports(
     box_id: str,
     box_type: BoxType,
+    port_numbers: Sequence[int] | None = None,
 ) -> tuple[Union[GenPort, CapPort], ...]:
     ports: list[Union[GenPort, CapPort]] = []
     port_index = {
@@ -261,6 +262,8 @@ def create_ports(
         PortType.MNTR_OUT: 0,
     }
     for port_num, port_type in PORT_MAPPING[box_type].items():
+        if port_numbers is not None and port_num not in port_numbers:
+            continue
         index = port_index[port_type]
         if port_type == PortType.NOT_AVAILABLE:
             port_id = f"{box_id}.NA{index}"
@@ -400,6 +403,7 @@ class Box(Model):
         type: BoxType | str,
         address: str,
         adapter: str,
+        port_numbers: Sequence[int] | None = None,
     ) -> Box:
         type = BoxType(type) if isinstance(type, str) else type
         return cls(
@@ -408,7 +412,7 @@ class Box(Model):
             type=type,
             address=address,
             adapter=adapter,
-            ports=create_ports(id, type),
+            ports=create_ports(id, type, port_numbers),
         )
 
     @property

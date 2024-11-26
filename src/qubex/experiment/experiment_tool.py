@@ -40,6 +40,11 @@ def dump_box(box_id: str) -> dict:
     return state_manager.device_controller.dump_box(box_id)
 
 
+def dump_port(box_id: str, port_number: int) -> dict:
+    """Dump the information of a port."""
+    return state_manager.device_controller.dump_port(box_id, port_number)
+
+
 def reboot_fpga(box_id: str) -> None:
     """Reboot the FPGA."""
     # Run the following commands in the terminal.

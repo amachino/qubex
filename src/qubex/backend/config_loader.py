@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 from typing import Final
 
@@ -134,12 +135,15 @@ class ConfigLoader:
     def _load_control_system(self) -> dict[str, ControlSystem]:
         control_system_dict = {}
         for chip_id in self._chip_dict:
-            box_ids = []
+            box_ports = defaultdict(list)
             for wiring in self._wiring_dict[chip_id]:
-                box_ids.append(wiring["read_out"].split("-")[0])
-                box_ids.append(wiring["read_in"].split("-")[0])
+                box, port = wiring["read_out"].split("-")
+                box_ports[box].append(int(port))
+                box, port = wiring["read_in"].split("-")
+                box_ports[box].append(int(port))
                 for ctrl in wiring["ctrl"]:
-                    box_ids.append(ctrl.split("-")[0])
+                    box, port = ctrl.split("-")
+                    box_ports[box].append(int(port))
             boxes = [
                 Box.new(
                     id=id,
@@ -147,9 +151,10 @@ class ConfigLoader:
                     type=box["type"],
                     address=box["address"],
                     adapter=box["adapter"],
+                    port_numbers=box_ports[id],
                 )
                 for id, box in self._box_dict.items()
-                if id in box_ids
+                if id in box_ports
             ]
             control_system_dict[chip_id] = ControlSystem(boxes=boxes)
         return control_system_dict
