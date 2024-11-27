@@ -117,6 +117,24 @@ class MeasureResult:
         counts = {key: counts[key] for key in sorted(counts.keys())}
         return counts
 
+    @property
+    def probabilities(self) -> dict[str, float]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        total = sum(self.counts.values())
+        return {key: count / total for key, count in self.counts.items()}
+
+    @property
+    def standard_deviations(self) -> dict[str, float]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        return {
+            key: np.sqrt(prob * (1 - prob) / total)
+            for key, prob, total in zip(
+                self.counts.keys(), self.probabilities.values(), self.counts.values()
+            )
+        }
+
     def plot(self):
         if self.mode == MeasureMode.SINGLE:
             data = {qubit: data.kerneled for qubit, data in self.data.items()}
