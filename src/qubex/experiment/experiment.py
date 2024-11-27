@@ -3274,11 +3274,53 @@ class Experiment:
         *,
         target: str,
         n: int,
+        x90: dict[str, Waveform] | None = None,
+        zx90: PulseSchedule | dict[str, Waveform] | None = None,
+        interleaved_waveform: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_clifford: Clifford | None = None,
+        seed: int | None = None,
+    ) -> PulseSchedule:
+        target_object = self.experiment_system.get_target(target)
+        if target_object.is_cr:
+            sched = self.rb_sequence_2q(
+                target=target,
+                n=n,
+                x90=x90,
+                zx90=zx90,
+                interleaved_waveform=interleaved_waveform,
+                interleaved_clifford=interleaved_clifford,
+                seed=seed,
+            )
+            return sched
+        else:
+            if isinstance(interleaved_waveform, PulseSchedule):
+                interleaved_waveform = interleaved_waveform.get_sequences()
+            seq = self.rb_sequence_1q(
+                target=target,
+                n=n,
+                x90=x90,
+                interleaved_waveform=interleaved_waveform,
+                interleaved_clifford=interleaved_clifford,
+                seed=seed,
+            )
+            with PulseSchedule([target]) as ps:
+                ps.add(target, seq)
+            return ps
+
+    def rb_sequence_1q(
+        self,
+        *,
+        target: str,
+        n: int,
         x90: Waveform | dict[str, Waveform] | None = None,
-        interleaved_waveform: Waveform | None = None,
-        interleaved_clifford_map: (
-            Clifford | dict[str, tuple[complex, str]] | None
-        ) = None,
+        interleaved_waveform: Waveform
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
     ) -> PulseSequence:
         """
@@ -3292,9 +3334,9 @@ class Experiment:
             Number of Clifford gates.
         x90 : Waveform | dict[str, Waveform], optional
             π/2 pulse used for the experiment. Defaults to None.
-        interleaved_waveform : Waveform, optional
+        interleaved_waveform : Waveform | dict[str, PulseSequence] | dict[str, Waveform], optional
             Waveform of the interleaved gate. Defaults to None.
-        interleaved_clifford_map : Clifford | dict[str, tuple[complex, str]], optional
+        interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
@@ -3317,7 +3359,7 @@ class Experiment:
         ...     n=100,
         ...     x90=Rect(duration=30, amplitude=0.1),
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford_map={
+        ...     interleaved_clifford={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (-1, "Y"),
@@ -3339,29 +3381,34 @@ class Experiment:
                 seed=seed,
             )
         else:
-            if interleaved_clifford_map is None:
-                raise ValueError("Interleave map must be provided.")
+            if interleaved_clifford is None:
+                raise ValueError("`interleaved_clifford` must be provided.")
             cliffords, inverse = self.clifford_generator.create_irb_sequences(
                 n=n,
-                interleave=interleaved_clifford_map,
+                interleave=interleaved_clifford,
                 type="1Q",
                 seed=seed,
             )
 
-        for clifford in cliffords:
-            for gate in clifford:
-                if gate == "X90":
-                    sequence.append(x90)
-                elif gate == "Z90":
-                    sequence.append(z90)
-            if interleaved_waveform is not None:
-                sequence.append(interleaved_waveform)
-
-        for gate in inverse:
+        def add_gate(gate: str):
             if gate == "X90":
                 sequence.append(x90)
             elif gate == "Z90":
                 sequence.append(z90)
+            else:
+                raise ValueError("Invalid gate.")
+
+        for clifford in cliffords:
+            for gate in clifford:
+                add_gate(gate)
+            if isinstance(interleaved_waveform, dict):
+                interleaved_waveform = interleaved_waveform.get(target)
+            if interleaved_waveform is not None:
+                sequence.append(interleaved_waveform)
+
+        for gate in inverse:
+            add_gate(gate)
+
         return PulseSequence(sequence)
 
     def rb_sequence_2q(
@@ -3370,11 +3417,15 @@ class Experiment:
         target: str,
         n: int,
         x90: dict[str, Waveform] | None = None,
-        zx90: dict[str, Waveform] | None = None,
-        interleaved_waveform: dict[str, Waveform] | None = None,
-        interleaved_clifford_map: (
-            Clifford | dict[str, tuple[complex, str]] | None
-        ) = None,
+        zx90: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_waveform: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
         """
@@ -3387,10 +3438,12 @@ class Experiment:
         n : int
             Number of Clifford gates.
         x90 : Waveform | dict[str, Waveform], optional
-            π/2 pulse used for the experiment. Defaults to None.
-        interleaved_waveform : dict[str, Waveform], optional
+            π/2 pulse used for 1Q gates. Defaults to None.
+        zx90 : PulseSchedule | dict[str, Waveform], optional
+            ZX90 pulses used for 2Q gates. Defaults to None.
+        interleaved_waveform : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
             Waveform of the interleaved gate. Defaults to None.
-        interleaved_clifford_map : Clifford | dict[str, tuple[complex, str]], optional
+        interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
@@ -3419,7 +3472,7 @@ class Experiment:
         ...         "Q01": Rect(duration=30, amplitude=0.1),
         ...     },
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford_map=Clifford.CNOT(),
+        ...     interleaved_clifford=Clifford.CNOT(),
         ... )
         """
         target_object = self.experiment_system.get_target(target)
@@ -3441,41 +3494,18 @@ class Experiment:
                 seed=seed,
             )
         else:
-            if interleaved_clifford_map is None:
+            if interleaved_clifford is None:
                 raise ValueError("Interleave map must be provided.")
             cliffords, inverse = self.clifford_generator.create_irb_sequences(
                 n=n,
-                interleave=interleaved_clifford_map,
+                interleave=interleaved_clifford,
                 type="2Q",
                 seed=seed,
             )
 
         with PulseSchedule([control_qubit, target_qubit]) as ps:
-            for clifford in cliffords:
-                for gate in clifford:
-                    if gate == "XI90":
-                        ps.add(control_qubit, xi90)
-                    elif gate == "IX90":
-                        ps.add(target_qubit, ix90)
-                    elif gate == "ZI90":
-                        ps.add(control_qubit, z90)
-                    elif gate == "IZ90":
-                        ps.add(target_qubit, z90)
-                    elif gate == "ZX90":
-                        if zx90 is not None:
-                            # TODO:
-                            ps.add(control_qubit, zx90[control_qubit])
-                            ps.add(target_qubit, zx90[target_qubit])
-                        ps.barrier()
-                    else:
-                        raise ValueError("Invalid gate.")
-                if interleaved_waveform is not None and isinstance(
-                    interleaved_waveform, dict
-                ):
-                    ps.add(control_qubit, interleaved_waveform[control_qubit])
-                    ps.add(target_qubit, interleaved_waveform[target_qubit])
 
-            for gate in inverse:
+            def add_gate(gate: str):
                 if gate == "XI90":
                     ps.add(control_qubit, xi90)
                 elif gate == "IX90":
@@ -3486,12 +3516,30 @@ class Experiment:
                     ps.add(target_qubit, z90)
                 elif gate == "ZX90":
                     if zx90 is not None:
-                        # TODO:
-                        ps.add(control_qubit, zx90[control_qubit])
-                        ps.add(target_qubit, zx90[target_qubit])
-                    ps.barrier()
+                        ps.barrier()
+                        if isinstance(zx90, dict):
+                            ps.add(control_qubit, zx90[control_qubit])
+                            ps.add(target_qubit, zx90[target_qubit])
+                        elif isinstance(zx90, PulseSchedule):
+                            ps.call(zx90)
+                        ps.barrier()
                 else:
                     raise ValueError("Invalid gate.")
+
+            for clifford in cliffords:
+                for gate in clifford:
+                    add_gate(gate)
+                if interleaved_waveform is not None:
+                    ps.barrier()
+                    if isinstance(interleaved_waveform, dict):
+                        ps.add(control_qubit, interleaved_waveform[control_qubit])
+                        ps.add(target_qubit, interleaved_waveform[target_qubit])
+                    elif isinstance(interleaved_waveform, PulseSchedule):
+                        ps.call(interleaved_waveform)
+                    ps.barrier()
+
+            for gate in inverse:
+                add_gate(gate)
         return ps
 
     def rb_experiment(
@@ -3501,7 +3549,7 @@ class Experiment:
         n_cliffords_range: ArrayLike | None = None,
         x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: Waveform | None = None,
-        interleaved_clifford_map: dict[str, tuple[complex, str]] | None = None,
+        interleaved_clifford: dict[str, tuple[complex, str]] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -3521,7 +3569,7 @@ class Experiment:
             π/2 pulse used for the experiment. Defaults to None.
         interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
-        interleaved_clifford_map : dict[str, tuple[complex, str]], optional
+        interleaved_clifford : dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
@@ -3552,7 +3600,7 @@ class Experiment:
         ...     n_cliffords_range=range(0, 1001, 50),
         ...     x90=Rect(duration=30, amplitude=0.1),
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford_map={
+        ...     interleaved_clifford={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (-1, "Y"),
@@ -3579,12 +3627,12 @@ class Experiment:
 
                 # Randomized benchmarking sequence
                 if not self.experiment_system.get_target(target).is_cr:
-                    rb_sequence = self.rb_sequence(
+                    rb_sequence = self.rb_sequence_1q(
                         target=target,
                         n=N,
                         x90=x90,
                         interleaved_waveform=interleaved_waveform,
-                        interleaved_clifford_map=interleaved_clifford_map,
+                        interleaved_clifford=interleaved_clifford,
                         seed=seed,
                     )
                 else:
@@ -3723,7 +3771,7 @@ class Experiment:
         *,
         target: str,
         interleaved_waveform: Waveform,
-        interleaved_clifford_map: dict[str, tuple[complex, str]],
+        interleaved_clifford: dict[str, tuple[complex, str]],
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: Waveform | None = None,
@@ -3742,7 +3790,7 @@ class Experiment:
             Target qubit.
         interleaved_waveform : Waveform
             Waveform of the interleaved gate.
-        interleaved_clifford_map : dict[str, tuple[complex, str]]
+        interleaved_clifford : dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 100).
@@ -3771,7 +3819,7 @@ class Experiment:
         >>> result = ex.interleaved_randomized_benchmarking(
         ...     target="Q00",
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford_map={
+        ...     interleaved_clifford={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (1, "Z"),
@@ -3813,7 +3861,7 @@ class Experiment:
                 n_cliffords_range=n_cliffords_range,
                 x90=x90,
                 interleaved_waveform=interleaved_waveform,
-                interleaved_clifford_map=interleaved_clifford_map,
+                interleaved_clifford=interleaved_clifford,
                 spectator_state=spectator_state,
                 seed=seed,
                 shots=shots,
