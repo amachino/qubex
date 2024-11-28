@@ -3666,6 +3666,10 @@ class Experiment:
         if n_cliffords_range is None:
             n_cliffords_range = np.arange(0, 1001, 50)
 
+        target_object = self.experiment_system.get_target(target)
+        if target_object.is_cr:
+            raise ValueError(f"`{target}` is not a 1Q target.")
+
         def rb_sequence(N: int) -> PulseSchedule:
             with PulseSchedule([target]) as ps:
                 # Excite spectator qubits if needed
@@ -3681,17 +3685,14 @@ class Experiment:
                     ps.barrier()
 
                 # Randomized benchmarking sequence
-                if not self.experiment_system.get_target(target).is_cr:
-                    rb_sequence = self.rb_sequence_1q(
-                        target=target,
-                        n=N,
-                        x90=x90,
-                        interleaved_waveform=interleaved_waveform,
-                        interleaved_clifford=interleaved_clifford,
-                        seed=seed,
-                    )
-                else:
-                    raise ValueError("Randomized benchmarking is not supported for CR.")
+                rb_sequence = self.rb_sequence_1q(
+                    target=target,
+                    n=N,
+                    x90=x90,
+                    interleaved_waveform=interleaved_waveform,
+                    interleaved_clifford=interleaved_clifford,
+                    seed=seed,
+                )
                 ps.add(
                     target,
                     rb_sequence,
@@ -3731,6 +3732,103 @@ class Experiment:
         }
 
         return ExperimentResult(data=data)
+
+    def rb_experiment_2q(
+        self,
+        *,
+        target: str,
+        n_cliffords_range: ArrayLike | None = None,
+        x90: dict[str, Waveform] | None = None,
+        zx90: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_waveform: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        seed: int | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        if n_cliffords_range is None:
+            n_cliffords_range = np.arange(0, 1001, 50)
+        else:
+            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
+        target_object = self.experiment_system.get_target(target)
+        if not target_object.is_cr:
+            raise ValueError(f"`{target}` is not a 2Q target.")
+        control_qubit, target_qubit = Target.cr_qubit_pair(target)
+
+        def rb_sequence(N: int) -> PulseSchedule:
+            with PulseSchedule([control_qubit, target_qubit]) as ps:
+                # Excite spectator qubits if needed
+                if spectator_state != "0":
+                    control_spectators = {
+                        qubit.label for qubit in self.get_spectators(control_qubit)
+                    }
+                    target_spectators = {
+                        qubit.label for qubit in self.get_spectators(target_qubit)
+                    }
+                    spectators = (control_spectators | target_spectators) - {
+                        control_qubit,
+                        target_qubit,
+                    }
+                    for spectator in spectators:
+                        if spectator in self._qubits:
+                            pulse = self.get_pulse_for_state(
+                                target=spectator,
+                                state=spectator_state,
+                            )
+                            ps.add(spectator, pulse)
+                    ps.barrier()
+
+                # Randomized benchmarking sequence
+                rb_sequence = self.rb_sequence_2q(
+                    target=target,
+                    n=N,
+                    x90=x90,
+                    zx90=zx90,
+                    interleaved_waveform=interleaved_waveform,
+                    interleaved_clifford=interleaved_clifford,
+                    seed=seed,
+                )
+                ps.call(rb_sequence)
+            return ps
+
+        fidelities = []
+
+        for n_clifford in n_cliffords_range:
+            result = self.measure(
+                sequence=rb_sequence(n_clifford),
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            p00 = result.probabilities["00"]
+            fidelities.append(p00)
+
+        fit_data = fitting.fit_rb(
+            target=target,
+            x=n_cliffords_range,
+            y=np.array(fidelities),
+            title="Randomized benchmarking",
+            xaxis_title="Number of Cliffords",
+            yaxis_title="Probability of |00⟩",
+            xaxis_type="linear",
+            yaxis_type="linear",
+            plot=plot,
+        )
+
+        return {
+            "depolarizing_rate": fit_data[0],
+            "avg_gate_error": fit_data[1],
+            "avg_gate_fidelity": fit_data[2],
+        }
 
     def randomized_benchmarking(
         self,
