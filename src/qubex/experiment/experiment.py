@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
+from functools import reduce
 from pathlib import Path
 from typing import Final, Literal, Optional, Sequence
 
@@ -618,6 +619,60 @@ class Experiment:
             List of the spectators.
         """
         return self.quantum_system.get_spectator_qubits(qubit)
+
+    def get_confusion_matrix(
+        self,
+        targets: Sequence[str],
+    ) -> NDArray:
+        """
+        Get the confusion matrix of the given targets.
+
+        Parameters
+        ----------
+        targets : Sequence[str]
+            List of the targets.
+
+        Returns
+        -------
+        NDArray
+            Confusion matrix (rows: true, columns: predicted).
+        """
+        confusion_matrices = []
+        for target in targets:
+            cm = self.classifiers[target].confusion_matrix
+            n_shots = cm[0].sum()
+            confusion_matrices.append(cm / n_shots)
+        return reduce(np.kron, confusion_matrices)
+
+    def get_inverse_confusion_matrix(
+        self,
+        targets: Sequence[str],
+    ) -> NDArray:
+        """
+        Get the inverse confusion matrix of the given targets.
+
+        Parameters
+        ----------
+        targets : Sequence[str]
+            List of the targets.
+
+        Returns
+        -------
+        NDArray
+            Inverse confusion matrix.
+
+        Notes
+        -----
+        The inverse confusion matrix should be multiplied from the right.
+
+        Examples
+        --------
+        >>> cm_inv = ex.get_inverse_confusion_matrix(["Q00", "Q01"])
+        >>> observed = np.array([300, 200, 200, 300])
+        >>> predicted = observed @ cm_inv
+        """
+        confusion_matrix = self.get_confusion_matrix(targets)
+        return np.linalg.inv(confusion_matrix)
 
     def print_environment(self, verbose: bool = False):
         """Print the environment information."""
