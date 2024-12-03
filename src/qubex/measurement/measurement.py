@@ -45,6 +45,7 @@ class Measurement:
         qubits: Sequence[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         fetch_device_state: bool = True,
+        connect_devices: bool = False,
         use_neopulse: bool = False,
     ):
         """
@@ -77,6 +78,18 @@ class Measurement:
         )
         self._use_neopulse = use_neopulse
         self._classifiers: TargetMap[StateClassifier] = {}
+        if connect_devices:
+            self._connect_devices(qubits)
+
+    def _connect_devices(
+        self,
+        qubits: Sequence[str] | None = None,
+        box_ids: list[str] | None = None,
+    ):
+        if box_ids is None and qubits is not None:
+            boxes = self.experiment_system.get_boxes_for_qubits(qubits)
+            box_ids = [box.id for box in boxes]
+        self.device_controller.connect(box_ids)
 
     def _load_state(
         self,

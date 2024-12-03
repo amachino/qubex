@@ -150,6 +150,7 @@ class Experiment:
         qubits: Sequence[str],
         config_dir: str = DEFAULT_CONFIG_DIR,
         fetch_device_state: bool = True,
+        connect_devices: bool = True,
         control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
@@ -172,6 +173,7 @@ class Experiment:
             config_dir=config_dir,
             fetch_device_state=fetch_device_state,
             use_neopulse=use_neopulse,
+            connect_devices=connect_devices,
         )
         self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(
@@ -4358,7 +4360,7 @@ class Experiment:
         subrange_width: float = 0.3,
         shots: int = 100,
         interval: int = 0,
-        plot: bool = True,
+        plot: bool = False,
     ) -> float:
         """
         Measures the phase shift caused by the length of the transmission line.
@@ -4376,7 +4378,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
+            Whether to plot the measured signals. Defaults to False.
 
         Returns
         -------
@@ -4393,19 +4395,6 @@ class Experiment:
             frequency_range=frequency_range,
             subrange_width=subrange_width,
         )
-
-        # create a figure widget
-        if plot:
-            widget = go.FigureWidget()
-            widget.add_scatter(name=target, mode="markers+lines")
-            widget.update_layout(
-                title=f"Phase shift by transmission line : {mux.label}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Unwrapped phase (rad)",
-                showlegend=False,
-            )
-            scatter: go.Scatter = widget.data[0]  # type: ignore
-            display(widget)
 
         # result buffer
         phases: list[float] = []
@@ -4429,7 +4418,7 @@ class Experiment:
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
-                for sub_idx, freq in enumerate(tqdm(subrange)):
+                for sub_idx, freq in enumerate(subrange):
                     if idx > 0 and sub_idx == 0:
                         # measure the phase at the previous frequency with the new LO/NCO settings
                         with self.modified_frequencies(
@@ -4463,10 +4452,6 @@ class Experiment:
 
                         idx += 1
 
-                        if plot:
-                            scatter.x = frequency_range[:idx]
-                            scatter.y = np.unwrap(phases)
-
         # fit the phase shift
         x, y = frequency_range, np.unwrap(phases)
         coefficients = np.polyfit(x, y, 1)
@@ -4486,14 +4471,13 @@ class Experiment:
 
         # return the phase shift
         phase_shift = coefficients[0]
-        print(f"phase_shift: {phase_shift} [rad/GHz]")
         return phase_shift
 
     def scan_resonator_frequencies(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike | None = np.arange(10.1, 10.7, 0.002),
+        frequency_range: ArrayLike | None = np.arange(9.75, 10.75, 0.002),
         phase_shift: float | None = None,
         amplitude: float = 0.01,
         subrange_width: float = 0.3,
@@ -4549,29 +4533,6 @@ class Experiment:
             subrange_width=subrange_width,
         )
 
-        if plot:
-            fig = make_subplots(
-                rows=2,
-                cols=1,
-                shared_xaxes=True,
-                vertical_spacing=0.05,
-                # subplot_titles=["Phase", "Amplitude"],
-            )
-            widget = go.FigureWidget(fig)
-            widget.add_scatter(name=target, mode="markers+lines", row=1, col=1)
-            widget.add_scatter(name=target, mode="markers+lines", row=2, col=1)
-            widget.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
-            widget.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
-            widget.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
-            widget.update_layout(
-                title=f"Resonator frequency scan : {mux.label}",
-                height=450,
-                showlegend=False,
-            )
-            scatter_phase: go.Scatter = widget.data[0]  # type: ignore
-            scatter_amplitude: go.Scatter = widget.data[1]  # type: ignore
-            display(widget)
-
         phases: list[float] = []
         signals: list[complex] = []
 
@@ -4591,7 +4552,7 @@ class Experiment:
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
-                for sub_idx, freq in enumerate(tqdm(subrange)):
+                for sub_idx, freq in enumerate(subrange):
                     if idx > 0 and sub_idx == 0:
                         prev_freq = frequency_range[idx - 1]
                         with self.modified_frequencies({read_label: prev_freq}):
@@ -4624,12 +4585,6 @@ class Experiment:
                         phases.append(phase)  # type: ignore
 
                         idx += 1
-
-                        if plot:
-                            scatter_phase.x = frequency_range[:idx]
-                            scatter_phase.y = np.unwrap(phases)
-                            scatter_amplitude.x = frequency_range[:idx]
-                            scatter_amplitude.y = np.abs(signals)
 
         phases_unwrap = np.unwrap(phases)
         phases_diff = np.abs(np.diff(phases_unwrap))
@@ -4683,6 +4638,87 @@ class Experiment:
             fig2.show()
 
         return frequency_range, phases_diff, np.array(signals)
+
+    def resonator_spectroscopy(
+        self,
+        target: str,
+        *,
+        phase_shift: float,
+        frequency_range: ArrayLike = np.arange(9.75, 10.75, 0.002),
+        power_range: ArrayLike = np.arange(-60, 5, 5),
+        shots: int = 100,
+        interval: int = 0,
+        plot: bool = True,
+    ) -> NDArray[np.float64]:
+        """
+        Conducts a resonator spectroscopy experiment.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit connected to the resonator of interest.
+        phase_shift : float
+            Phase shift in rad/GHz.
+        frequency_range : ArrayLike, optional
+            Frequency range of the scan in GHz. Defaults to np.arange(9.75, 10.75, 0.002).
+        power_range : ArrayLike, optional
+            Power range in dB. Defaults to np.arange(-60, 5, 5).
+        shots : int, optional
+            Number of shots. Defaults to 100.
+        interval : int, optional
+            Interval between shots. Defaults to 0.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Phase shift in rad.
+        """
+        power_range = np.array(power_range)
+        qubit_label = Target.qubit_label(target)
+        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+
+        result = []
+        for power in tqdm(power_range):
+            power_linear = 10 ** (power / 10)
+            amplitude = np.sqrt(power_linear)
+            _, phase_diff, _ = self.scan_resonator_frequencies(
+                target,
+                frequency_range=frequency_range,
+                phase_shift=phase_shift,
+                amplitude=amplitude,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            phase_diff = np.append(phase_diff, phase_diff[-1])
+            result.append(phase_diff)
+        if plot:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Heatmap(
+                    x=frequency_range,
+                    y=power_range,
+                    z=result,
+                    colorscale="Viridis",
+                    colorbar=dict(
+                        title=dict(
+                            text="Phase shift (rad)",
+                            side="right",
+                        ),
+                    ),
+                )
+            )
+            fig.update_layout(
+                title=f"Resonator spectroscopy : {mux.label}",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Power (dB)",
+                width=800,
+                height=400,
+            )
+            fig.show()
+        return np.array(result)
 
     def measure_reflection_coefficient(
         self,
@@ -4837,29 +4873,6 @@ class Experiment:
             tau=128,
         )
 
-        # prepare the plot
-        if plot:
-            fig = make_subplots(
-                rows=2,
-                cols=1,
-                shared_xaxes=True,
-                vertical_spacing=0.05,
-            )
-            widget = go.FigureWidget(fig)
-            widget.add_scatter(name=target, mode="markers+lines", row=1, col=1)
-            widget.add_scatter(name=target, mode="markers+lines", row=2, col=1)
-            widget.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
-            widget.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
-            widget.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
-            widget.update_layout(
-                title=f"Control frequency scan : {qubit}",
-                height=450,
-                showlegend=False,
-            )
-            scatter_phase: go.Scatter = widget.data[0]  # type: ignore
-            scatter_amplitude: go.Scatter = widget.data[1]  # type: ignore
-            display(widget)
-
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
@@ -4889,7 +4902,7 @@ class Experiment:
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
-                for control_frequency in tqdm(subrange):
+                for control_frequency in subrange:
                     with self.modified_frequencies(
                         {
                             qubit: control_frequency,
@@ -4910,12 +4923,6 @@ class Experiment:
                         amplitudes.append(np.abs(signal))
 
                         idx += 1
-
-                        if plot:
-                            scatter_phase.x = frequency_range[:idx]
-                            scatter_phase.y = np.unwrap(phases)
-                            scatter_amplitude.x = frequency_range[:idx]
-                            scatter_amplitude.y = amplitudes
 
         if plot:
             fig = make_subplots(
@@ -4951,6 +4958,86 @@ class Experiment:
             fig.show()
 
         return frequency_range, np.unwrap(phases), np.asarray(amplitudes)
+
+    def qubit_spectroscopy(
+        self,
+        target: str,
+        frequency_range: ArrayLike = np.arange(6.5, 9.5, 0.005),
+        power_range: ArrayLike = np.arange(-60, 5, 5),
+        readout_amplitude: float = 0.01,
+        readout_frequency: float | None = None,
+        shots: int = 1000,
+        interval: int = 0,
+        plot: bool = True,
+    ) -> NDArray[np.float64]:
+        """
+        Conducts a qubit spectroscopy experiment.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        frequency_range : ArrayLike, optional
+            Frequency range of the scan in GHz. Defaults to np.arange(6.5, 9.5, 0.005).
+        power_range : ArrayLike, optional
+            Power range in dB. Defaults to np.arange(-60, 5, 5).
+        readout_amplitude : float, optional
+            Amplitude of the readout pulse. Defaults to 0.01.
+        readout_frequency : float, optional
+            Readout frequency. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to 1000.
+        interval : int, optional
+            Interval between shots. Defaults to 0.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Phase in rad.
+        """
+        power_range = np.array(power_range)
+        result = []
+        for power in tqdm(power_range):
+            power_linear = 10 ** (power / 10)
+            amplitude = np.sqrt(power_linear)
+            _, phase, _ = self.scan_qubit_frequencies(
+                target,
+                frequency_range=frequency_range,
+                control_amplitude=amplitude,
+                readout_amplitude=readout_amplitude,
+                readout_frequency=readout_frequency,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            result.append(phase)
+        if plot:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Heatmap(
+                    x=frequency_range,
+                    y=power_range,
+                    z=result,
+                    colorscale="Viridis",
+                    colorbar=dict(
+                        title=dict(
+                            text="Phase (rad)",
+                            side="right",
+                        )
+                    ),
+                )
+            )
+            fig.update_layout(
+                title=f"Qubit spectroscopy : {target}",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Power (dB)",
+                width=800,
+                height=400,
+            )
+            fig.show()
+        return np.array(result)
 
     def measure_population(
         self,
