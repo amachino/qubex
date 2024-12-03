@@ -7,22 +7,25 @@ from typing import Final, Literal, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+import plotly.graph_objects as go
 import qctrlvisualizer as qv
 import qutip as qt
+from scipy.interpolate import interp1d
 
 from ..analysis import plot_bloch_vectors
-from ..pulse import Pulse, PulseSchedule, Waveform
+from ..pulse import PulseSchedule, Waveform
 from .quantum_system import QuantumSystem
 
 
 class Control:
-    SAMPLING_PERIOD: float = 0.1
 
     def __init__(
         self,
         target: str,
         frequency: float,
         waveform: list | npt.NDArray | Waveform,
+        durations: list | npt.NDArray | None = None,
+        interpolation: str = "previous",
     ):
         """
         A control signal for a quantum system.
@@ -30,11 +33,13 @@ class Control:
         Parameters
         ----------
         target : str
-            The target object of the control signal.
+            The target object.
         frequency : float
-            The frequency of the control signal.
+            The control frequency in GHz.
         waveform : list | npt.NDArray | Waveform
-            The waveform of the control signal.
+            The I/Q values of each segment in rad/ns.
+        durations : list | npt.NDArray | None, optional
+            The durations of each segment in ns, by default None
         """
         self.target = target
         self.frequency = frequency
@@ -43,29 +48,97 @@ class Control:
             if isinstance(waveform, Waveform)
             else np.asarray(waveform).astype(np.complex128)
         )
+        self.durations = (
+            np.asarray(durations).astype(np.float64)
+            if durations is not None
+            else np.full(len(self.waveform), Waveform.SAMPLING_PERIOD)
+        )
+        self.interpolation = interpolation
+
+        if len(self.waveform) != len(self.durations):
+            raise ValueError("The lengths of rabi_rates and durations do not match.")
 
     @property
-    def length(self) -> int:
+    def n_segments(self) -> int:
         return len(self.waveform)
 
     @property
-    def times(self) -> np.ndarray:
-        return np.linspace(0.0, self.length * self.SAMPLING_PERIOD, self.length + 1)
+    def duration(self) -> float:
+        return float(np.sum(self.durations))
+
+    @property
+    def times(self) -> npt.NDArray[np.float64]:
+        return np.concatenate(([0], np.cumsum(self.durations)))
+
+    @property
+    def values(self) -> npt.NDArray[np.complex128]:
+        return np.append(self.waveform, self.waveform[-1])
+
+    @property
+    def interpolator(self) -> interp1d:
+        return interp1d(
+            x=self.times,
+            y=self.values,
+            kind=self.interpolation,
+            fill_value="extrapolate",  # type: ignore
+        )
+
+    def get_samples(
+        self,
+        times: npt.NDArray[np.float64],
+    ) -> npt.NDArray[np.complex128]:
+        return self.interpolator(times)
 
     def plot(
         self,
-        n_samples: int = 256,
-        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "linear",
+        times: npt.NDArray[np.float64] | None = None,
+        n_samples: int | None = None,
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ) -> None:
-        Pulse.SAMPLING_PERIOD = self.SAMPLING_PERIOD
-        pulse = Pulse(self.waveform * 1e3)
-        pulse.plot_xy(
-            n_samples=n_samples,
-            divide_by_two_pi=True,
-            title=f"{self.target} : {self.frequency} GHz",
-            ylabel="Amplitude (MHz)",
-            line_shape=line_shape,
+        if self.n_segments == 0:
+            print("Waveform is empty.")
+            return
+
+        if times is None:
+            times = self.times
+            real = self.values.real / (2 * np.pi * 1e-3)
+            imag = self.values.imag / (2 * np.pi * 1e-3)
+        else:
+            samples = self.get_samples(times)
+            real = samples.real / (2 * np.pi * 1e-3)
+            imag = samples.imag / (2 * np.pi * 1e-3)
+
+        if n_samples is not None and len(times) > n_samples:
+            indices = np.linspace(0, len(times) - 1, n_samples).astype(int)
+            times = times[indices]
+            real = real[indices]
+            imag = imag[indices]
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=real,
+                mode="lines",
+                name="I",
+                line_shape=line_shape,
+            )
         )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=imag,
+                mode="lines",
+                name="Q",
+                line_shape=line_shape,
+            )
+        )
+        fig.update_layout(
+            title="Control signal",
+            xaxis_title="Time (ns)",
+            yaxis_title="Amplitude (MHz)",
+        )
+        fig.show()
 
 
 @dataclass
@@ -81,22 +154,22 @@ class SimulationResult:
         The time points of the simulation.
     controls : list[Control]
         The control signals.
-    states : list[qt.Qobj]
+    states : npt.NDArray
         The states of the quantum system at each time point.
-    unitaries : list[qt.Qobj]
+    unitaries : npt.NDArray
         The unitaries of the quantum system at each time point.
     """
 
     system: QuantumSystem
     times: npt.NDArray
     controls: list[Control]
-    states: list[qt.Qobj]
-    unitaries: list[qt.Qobj]
+    states: npt.NDArray
+    unitaries: npt.NDArray
 
     def get_substates(
         self,
         label: str,
-    ) -> list[qt.Qobj]:
+    ) -> npt.NDArray:
         """
         Extract the substates of a qubit from the states.
 
@@ -111,7 +184,7 @@ class SimulationResult:
             The substates of the qubit.
         """
         index = self.system.get_index(label)
-        substates = [state.ptrace(index) for state in self.states]
+        substates = np.array([state.ptrace(index) for state in self.states])
         return substates
 
     def get_times(
@@ -127,9 +200,7 @@ class SimulationResult:
         npt.NDArray
             The time points of the simulation.
         """
-        times = self.times
-        if n_samples is not None:
-            times = self._downsample(self.times, n_samples)
+        times = downsample(self.times, n_samples)
         return times
 
     def get_bloch_vectors(
@@ -162,9 +233,8 @@ class SimulationResult:
             y = qt.expect(Y, rho)
             z = qt.expect(Z, rho)
             buffer.append([x, y, z])
-        vectors = np.array(buffer)
-        if n_samples is not None:
-            vectors = self._downsample(vectors, n_samples)
+        vectors = np.real(buffer)
+        vectors = downsample(vectors, n_samples)
         return vectors
 
     def get_density_matrices(
@@ -191,15 +261,14 @@ class SimulationResult:
         """
         substates = self.get_substates(label)
         rho = np.array([substate.full() for substate in substates])[:, :dim, :dim]
-        if n_samples is not None:
-            rho = self._downsample(rho, n_samples)
+        rho = downsample(rho, n_samples)
         return rho
 
     def plot_bloch_vectors(
         self,
         label: str,
         *,
-        n_samples: int = 256,
+        n_samples: int | None = None,
     ) -> None:
         vectors = self.get_bloch_vectors(
             label,
@@ -218,7 +287,7 @@ class SimulationResult:
         self,
         label: str,
         *,
-        n_samples: int = 256,
+        n_samples: int | None = None,
     ) -> None:
         """
         Display the Bloch sphere of a qubit.
@@ -255,7 +324,8 @@ class SimulationResult:
     def plot_population_dynamics(
         self,
         label: Optional[str] = None,
-        n_samples: int = 256,
+        *,
+        n_samples: int | None = None,
     ) -> None:
         """
         Plot the population dynamics of the states.
@@ -276,7 +346,7 @@ class SimulationResult:
 
         sampled_times = self.get_times(n_samples=n_samples)
         sampled_populations = {
-            key: self._downsample(np.asarray(value), n_samples)
+            key: downsample(np.asarray(value), n_samples)
             for key, value in populations.items()
         }
 
@@ -287,16 +357,6 @@ class SimulationResult:
             sampled_populations,
             figure=figure,
         )
-
-    @staticmethod
-    def _downsample(
-        data: npt.NDArray,
-        n_samples: int,
-    ) -> npt.NDArray:
-        if len(data) <= n_samples:
-            return data
-        indices = np.linspace(0, len(data) - 1, n_samples).astype(int)
-        return data[indices]
 
 
 class QuantumSimulator:
@@ -320,25 +380,33 @@ class QuantumSimulator:
     ):
         if len(controls) == 0:
             raise ValueError("At least one control signal is required.")
-        if len(set([control.length for control in controls])) != 1:
+        if len(set([control.n_segments for control in controls])) != 1:
             raise ValueError("The waveforms must have the same length.")
 
     def simulate(
         self,
-        controls: list[Control],
+        controls: list[Control] | PulseSchedule,
         initial_state: qt.Qobj,
-    ):
+        dt: float = 0.1,
+        n_samples: int | None = None,
+    ) -> SimulationResult:
         """
         Simulate the dynamics of the quantum system.
 
         Parameters
         ----------
-        controls : list[Control]
+        controls : list[Control] | PulseSchedule
             The control signals.
+        initial_state : qt.Qobj
+            The initial state of the quantum system.
+        dt : float, optional
+            The time step of the simulation, by default 0.1
+        n_samples : int | None, optional
+            The number of samples to return, by default None
 
         Returns
         -------
-        Result
+        SimulationResult
             The result of the simulation.
         """
         if not isinstance(initial_state, qt.Qobj):
@@ -351,38 +419,46 @@ class QuantumSimulator:
 
         self._validate_controls(controls)
 
-        length = controls[0].length
-        times = controls[0].times
-        dt = controls[0].SAMPLING_PERIOD
+        control = controls[0]
+        N = int(control.duration / dt)
+        times = np.linspace(0, control.duration, N + 1)
 
-        if length == 0:
+        if control.n_segments == 0:
             return SimulationResult(
                 system=self.system,
                 times=times,
                 controls=controls,
-                states=[],
-                unitaries=[],
+                states=np.array([initial_state]),
+                unitaries=np.array([self.system.identity_matrix]),
             )
 
-        unitaries = [self.system.identity_matrix]
-        for idx in range(length):
+        control_samples = [control.get_samples(times) for control in controls]
+
+        U_list = [self.system.identity_matrix]
+        for idx in range(N):
             t = times[idx]
             H = self.system.get_rotating_hamiltonian(t)
-            for control in controls:
+            for control, samples in zip(controls, control_samples):
                 target = control.target
                 frame_frequency = self.system.get_object(target).frequency
                 a = self.system.get_lowering_operator(target)
                 ad = self.system.get_raising_operator(target)
                 delta = 2 * np.pi * (control.frequency - frame_frequency)
-                Omega = 0.5 * control.waveform[idx]
-                gamma = Omega * np.exp(-1j * delta * t)
+                Omega = 0.5 * samples[idx]  # discrete
+                gamma = Omega * np.exp(-1j * delta * t)  # continuous
                 H_ctrl = gamma * ad + np.conj(gamma) * a
                 H += H_ctrl
-            U = (-1j * H * dt).expm() * unitaries[-1]
-            unitaries.append(U)
+            U = (-1j * H * dt).expm() * U_list[-1]
+            U_list.append(U)
 
         rho0 = qt.ket2dm(initial_state)
-        states = [U * rho0 * U.dag() for U in unitaries]
+        states = np.array([U * rho0 * U.dag() for U in U_list])
+        unitaries = np.array(U_list)
+
+        if n_samples is not None:
+            times = downsample(times, n_samples)
+            states = downsample(states, n_samples)
+            unitaries = downsample(unitaries, n_samples)
 
         return SimulationResult(
             system=self.system,
@@ -396,20 +472,26 @@ class QuantumSimulator:
         self,
         controls: list[Control] | PulseSchedule,
         initial_state: qt.Qobj,
+        dt: float = 0.1,
+        n_samples: int | None = None,
     ) -> SimulationResult:
         """
         Simulate the dynamics of the quantum system using the `mesolve` function.
 
         Parameters
         ----------
-        controls : list[Control]
+        controls : list[Control] | PulseSchedule
             The control signals.
         initial_state : qt.Qobj
             The initial state of the quantum system.
+        dt : float, optional
+            The time step of the simulation, by default 0.1
+        n_samples : int | None, optional
+            The number of samples to return, by default None
 
         Returns
         -------
-        Result
+        SimulationResult
             The result of the simulation.
         """
         if not isinstance(initial_state, qt.Qobj):
@@ -422,20 +504,22 @@ class QuantumSimulator:
 
         self._validate_controls(controls)
 
-        length = controls[0].length
-        times = controls[0].times
+        control = controls[0]
+        N = int(control.duration / dt)
+        times = np.linspace(0, control.duration, N + 1)
 
-        if length == 0:
+        if control.n_segments == 0:
             return SimulationResult(
                 system=self.system,
                 times=times,
                 controls=controls,
-                states=[],
-                unitaries=[],
+                states=np.array([initial_state]),
+                unitaries=np.array([self.system.identity_matrix]),
             )
 
         static_hamiltonian = self.system.zero_matrix
-        dynamic_hamiltonian: list = []
+        coupling_hamiltonian: list = []
+        control_hamiltonian: list = []
         collapse_operators: list = []
 
         # Add static terms
@@ -449,9 +533,9 @@ class QuantumSimulator:
             op = ad_0 * a_1
             g = 2 * np.pi * coupling.strength
             Delta = self.system.get_coupling_detuning(coupling.label)
-            coeffs = g * np.exp(-1j * Delta * times)
-            dynamic_hamiltonian.append([op, coeffs])
-            dynamic_hamiltonian.append([op.dag(), np.conj(coeffs)])
+            coeffs = g * np.exp(-1j * Delta * times)  # continuous
+            coupling_hamiltonian.append([op, coeffs])
+            coupling_hamiltonian.append([op.dag(), np.conj(coeffs)])
 
         # Add control terms
         for control in controls:
@@ -460,11 +544,14 @@ class QuantumSimulator:
             a = self.system.get_lowering_operator(target)
             ad = self.system.get_raising_operator(target)
             delta = 2 * np.pi * (control.frequency - object.frequency)
-            waveform = control.waveform
-            Omega = 0.5 * np.concatenate([waveform, [waveform[-1]]])
-            gamma = Omega * np.exp(-1j * delta * control.times)
-            dynamic_hamiltonian.append([ad, gamma])
-            dynamic_hamiltonian.append([a, np.conj(gamma)])
+            samples = control.get_samples(times)
+            Omega = 0.5 * samples  # discrete
+            gamma = Omega * np.exp(-1j * delta * times)  # continuous
+            control_hamiltonian.append([ad, gamma])
+            control_hamiltonian.append([a, np.conj(gamma)])
+
+        # Total Hamiltonian
+        H = [static_hamiltonian] + coupling_hamiltonian + control_hamiltonian
 
         # Add collapse operators
         for object in self.system.objects:
@@ -475,14 +562,7 @@ class QuantumSimulator:
             collapse_operators.append(relaxation_operator)
             collapse_operators.append(dephasing_operator)
 
-        total_hamiltonian = [static_hamiltonian] + dynamic_hamiltonian
-
-        H = qt.QobjEvo(  # type: ignore
-            total_hamiltonian,
-            tlist=times,
-            order=0,  # 0th order for piecewise constant control
-        )
-
+        # Run the simulation
         result = qt.mesolve(
             H=H,
             rho0=initial_state,
@@ -490,22 +570,29 @@ class QuantumSimulator:
             c_ops=collapse_operators,
         )
 
+        states = np.array(result.states)
+
+        if n_samples is not None:
+            times = downsample(times, n_samples)
+            states = downsample(states, n_samples)
+
         return SimulationResult(
             system=self.system,
             times=times,
             controls=controls,
-            states=result.states,
-            unitaries=[],
+            states=states,
+            unitaries=np.array([]),
         )
 
     @staticmethod
     def _convert_pulse_schedule_to_controls(
         pulse_schedule: PulseSchedule,
     ) -> list[Control]:
-        waveforms = pulse_schedule.sampled_sequences
+        rabi_rates = pulse_schedule.sampled_sequences
+        durations = [Waveform.SAMPLING_PERIOD] * pulse_schedule.length
         frequencies = {}
         objects = {}
-        for label in waveforms:
+        for label in rabi_rates:
             if frequency := pulse_schedule.frequencies.get(label):
                 frequencies[label] = frequency
             else:
@@ -515,12 +602,25 @@ class QuantumSimulator:
             else:
                 raise ValueError(f"Object for {label} is not provided.")
         controls = []
-        for label, waveform in waveforms.items():
+        for label, waveform in rabi_rates.items():
             controls.append(
                 Control(
                     target=objects[label],
                     frequency=frequencies[label],
                     waveform=waveform,
+                    durations=durations,
                 )
             )
         return controls
+
+
+def downsample(
+    data: npt.NDArray,
+    n_samples: int | None,
+) -> npt.NDArray:
+    if n_samples is None:
+        return data
+    if len(data) <= n_samples:
+        return data
+    indices = np.linspace(0, len(data) - 1, n_samples).astype(int)
+    return data[indices]
