@@ -652,3 +652,6 @@ This operation will overwrite the existing device settings. Do you want to conti
                     runit=cap_channel.number,
                     fnco_freq=original_fnco_freq,
                 )
+
+            # clear the cache
+            self.device_controller.clear_cache()
