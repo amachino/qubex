@@ -4592,10 +4592,9 @@ class Experiment:
                         idx += 1
 
         phases_unwrap = np.unwrap(phases)
-        phases_avg = np.average(phases_unwrap)
-        if phases_avg < 0:
+        if np.min(phases_unwrap) < 0:
             phases_unwrap += 2 * np.pi
-        elif phases_avg > 2 * np.pi:
+        elif np.max(phases_unwrap) > 2 * np.pi:
             phases_unwrap -= 2 * np.pi
 
         if plot:
