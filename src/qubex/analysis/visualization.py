@@ -49,6 +49,7 @@ def save_image(
         height=height,
         scale=scale,
     )
+    print(f"Image saved to {file_path}")
 
 
 def display_bloch_sphere(bloch_vectors: NDArray[np.float64]):

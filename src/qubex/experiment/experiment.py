@@ -4015,7 +4015,7 @@ class Experiment:
         subrange_width: float = 0.3,
         shots: int = 100,
         interval: int = 0,
-        plot: bool = False,
+        plot: bool = True,
     ) -> float:
         """
         Measures the phase shift caused by the length of the transmission line.
@@ -4033,7 +4033,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
-            Whether to plot the measured signals. Defaults to False.
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------
