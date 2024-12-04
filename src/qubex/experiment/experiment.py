@@ -22,12 +22,9 @@ from tqdm import tqdm
 from ..analysis import (
     IQPlotter,
     RabiParam,
-    display_bloch_sphere,
     fitting,
-    plot_bloch_vectors,
-    plot_state_distribution,
-    plot_waveform,
 )
+from ..analysis import visualization as vis
 from ..backend import (
     Box,
     ControlParams,
@@ -1116,7 +1113,7 @@ class Experiment:
         result = self._measurement.measure_noise(targets, duration)
         for target, data in result.data.items():
             if plot:
-                plot_waveform(
+                vis.plot_waveform(
                     np.array(data.raw, dtype=np.complex64) * 2 ** (-32),
                     title=f"Readout noise of {target}",
                     xlabel="Capture time (μs)",
@@ -3178,7 +3175,7 @@ class Experiment:
                 f"|{state}⟩": result[state].data[target].kerneled for state in states
             }
             if plot:
-                plot_state_distribution(
+                vis.plot_state_distribution(
                     data=data,
                     title=f"State distribution of {target}",
                 )
@@ -3906,7 +3903,7 @@ class Experiment:
         if plot:
             for target, states in result.items():
                 print(f"State evolution of {target}")
-                display_bloch_sphere(states)
+                vis.display_bloch_sphere(states)
 
         return result
 
@@ -4001,7 +3998,7 @@ class Experiment:
 
         if plot:
             for target, states in result.items():
-                plot_bloch_vectors(
+                vis.plot_bloch_vectors(
                     times=pulses.popitem()[1].times,
                     bloch_vectors=states,
                     title=f"State evolution of {target}",
@@ -4307,6 +4304,7 @@ class Experiment:
         shots: int = 100,
         interval: int = 0,
         plot: bool = True,
+        save_image: bool = True,
     ) -> NDArray[np.float64]:
         """
         Conducts a resonator spectroscopy experiment.
@@ -4327,6 +4325,8 @@ class Experiment:
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the image. Defaults to True.
 
         Returns
         -------
@@ -4372,10 +4372,19 @@ class Experiment:
                 title=f"Resonator spectroscopy : {mux.label}",
                 xaxis_title="Frequency (GHz)",
                 yaxis_title="Power (dB)",
-                width=800,
-                height=400,
+                width=600,
+                height=300,
             )
             fig.show()
+
+        if save_image:
+            vis.save_image(
+                fig,
+                name="resonator_spectroscopy",
+                width=600,
+                height=300,
+            )
+
         return np.array(result)
 
     def measure_reflection_coefficient(
@@ -4582,6 +4591,10 @@ class Experiment:
 
                         idx += 1
 
+        phases_unwrap = np.unwrap(phases)
+        if np.average(phases_unwrap) < 0:
+            phases_unwrap += 2 * np.pi
+
         if plot:
             fig = make_subplots(
                 rows=2,
@@ -4595,7 +4608,7 @@ class Experiment:
                 row=1,
                 col=1,
                 x=frequency_range,
-                y=np.unwrap(phases),
+                y=phases_unwrap,
             )
             fig.add_scatter(
                 name=target,
@@ -4615,7 +4628,7 @@ class Experiment:
             )
             fig.show()
 
-        return frequency_range, np.unwrap(phases), np.asarray(amplitudes)
+        return frequency_range, phases_unwrap, np.asarray(amplitudes)
 
     def qubit_spectroscopy(
         self,
@@ -4624,9 +4637,10 @@ class Experiment:
         power_range: ArrayLike = np.arange(-60, 5, 5),
         readout_amplitude: float = 0.01,
         readout_frequency: float | None = None,
-        shots: int = 1000,
+        shots: int = 500,
         interval: int = 0,
         plot: bool = True,
+        save_image: bool = True,
     ) -> NDArray[np.float64]:
         """
         Conducts a qubit spectroscopy experiment.
@@ -4644,11 +4658,13 @@ class Experiment:
         readout_frequency : float, optional
             Readout frequency. Defaults to None.
         shots : int, optional
-            Number of shots. Defaults to 1000.
+            Number of shots. Defaults to 500.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the image. Defaults to True.
 
         Returns
         -------
@@ -4691,10 +4707,19 @@ class Experiment:
                 title=f"Qubit spectroscopy : {target}",
                 xaxis_title="Frequency (GHz)",
                 yaxis_title="Power (dB)",
-                width=800,
-                height=400,
+                width=600,
+                height=300,
             )
             fig.show()
+
+        if save_image:
+            vis.save_image(
+                fig,
+                name="qubit_spectroscopy",
+                width=600,
+                height=300,
+            )
+
         return np.array(result)
 
     def measure_population(
