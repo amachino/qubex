@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 import os
 from dataclasses import dataclass
-from typing import Any, Final, TypeVar, Generic
+from typing import Any, Final, Generic, TypeVar
 
 import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
@@ -73,11 +73,11 @@ class ExperimentRecord(Generic[T]):
         )
 
         while os.path.exists(file_path):
+            counter += 1
             file_path = os.path.join(
                 data_path,
                 f"{current_date}_{self.name}_{counter}{extension}",
             )
-            counter += 1
 
         with open(file_path, "w") as f:
             encoded = jsonpickle.encode(self, unpicklable=True)

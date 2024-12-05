@@ -11,10 +11,12 @@ description = "Quantum Experiment Tools using QuBE"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
+    "cma ~= 4.0",
     "httpx ~= 0.0",
     "jax ~= 0.0",
     "jsonpickle ~= 3.0",
     "jupyter ~= 1.0",
+    "kaleido ~= 0.0",
     "matplotlib ~= 3.0",
     "networkx ~= 3.0",
     "numpy ~= 1.0",

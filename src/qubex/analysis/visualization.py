@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+import os
 from typing import Literal, Mapping
 
 import numpy as np
@@ -11,6 +13,43 @@ from numpy.typing import ArrayLike, NDArray
 
 from ..style import get_colors, get_config
 from ..typing import IQArray, TargetMap
+
+
+def save_image(
+    fig: go.Figure,
+    *,
+    images_dir: str = "./images",
+    name: str = "image",
+    format: Literal["png", "svg", "jpeg", "webp"] = "png",
+    width: int | None = None,
+    height: int | None = None,
+    scale: int = 3,
+):
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
+
+    counter = 1
+    current_date = datetime.datetime.now().strftime("%Y%m%d")
+    file_path = os.path.join(
+        images_dir,
+        f"{current_date}_{name}_{counter}.{format}",
+    )
+
+    while os.path.exists(file_path):
+        counter += 1
+        file_path = os.path.join(
+            images_dir,
+            f"{current_date}_{name}_{counter}.{format}",
+        )
+
+    fig.write_image(
+        file_path,
+        format=format,
+        width=width,
+        height=height,
+        scale=scale,
+    )
+    print(f"Image saved to {file_path}")
 
 
 def display_bloch_sphere(bloch_vectors: NDArray[np.float64]):

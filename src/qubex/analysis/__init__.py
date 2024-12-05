@@ -10,6 +10,7 @@ from .visualization import (
     plot_xy,
     plot_xy_square,
     plot_y,
+    save_image,
     scatter_iq_data,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "plot_xy",
     "plot_xy_square",
     "plot_y",
+    "save_image",
     "scatter_iq_data",
 ]
