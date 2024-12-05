@@ -4071,63 +4071,11 @@ class Experiment:
             "std": irb_std,
         }
 
-    def state_tomography_sequence(
-        self,
-        *,
-        target: str,
-        sequence: IQArray | Waveform,
-        basis: str,
-        x90: Waveform | None = None,
-    ) -> PulseSequence:
-        """
-        Generates a state tomography sequence.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit.
-        sequence : IQArray | Waveform
-            Sequence to measure.
-        basis : str
-            Measurement basis. "X", "Y", or "Z".
-        x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
-
-        Returns
-        -------
-        PulseSequence
-            State tomography sequence.
-        """
-        if isinstance(sequence, list) or isinstance(sequence, np.ndarray):
-            sequence = Pulse(sequence)
-        elif not isinstance(sequence, Waveform):
-            raise ValueError("Invalid sequence.")
-
-        qubit = Target.qubit_label(target)
-
-        x90 = x90 or self.hpi_pulse[qubit]
-        y90m = x90.shifted(-np.pi / 2)
-
-        if basis == "X":
-            if isinstance(sequence, PulseSequence):
-                return sequence.added(y90m)
-            else:
-                return PulseSequence([sequence, y90m])
-        elif basis == "Y":
-            if isinstance(sequence, PulseSequence):
-                return sequence.added(x90)
-            else:
-                return PulseSequence([sequence, x90])
-        elif basis == "Z":
-            return PulseSequence([sequence])
-        else:
-            raise ValueError("Invalid basis.")
-
     def state_tomography(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        x90: Waveform | None = None,
+        x90: TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
@@ -4139,7 +4087,7 @@ class Experiment:
         ----------
         sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Sequence to measure for each target.
-        x90 : Waveform, optional
+        x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -4153,36 +4101,49 @@ class Experiment:
         dict[str, tuple[float, float, float]]
             Results of the experiment.
         """
-        buffer: dict[str, list[float]] = defaultdict(list)
-
         if isinstance(sequence, PulseSchedule):
             sequence = sequence.get_sequences()
+        else:
+            sequence = {
+                target: Pulse(waveform)
+                if not isinstance(waveform, Waveform)
+                else waveform
+                for target, waveform in sequence.items()
+            }
+
+        x90 = x90 or self.hpi_pulse
+
+        buffer: dict[str, list[float]] = defaultdict(list)
 
         for basis in ["X", "Y", "Z"]:
-            measure_result = self.measure(
-                {
-                    target: self.state_tomography_sequence(
-                        target=target,
-                        sequence=sequence,
-                        basis=basis,
-                        x90=x90,
-                    )
-                    for target, sequence in sequence.items()
-                },
-                shots=shots,
-                interval=interval,
-                plot=plot,
-            )
-            for target, data in measure_result.data.items():
-                rabi_param = self.rabi_params[target]
-                if rabi_param is None:
-                    raise ValueError("Rabi parameters are not stored.")
-                values = data.kerneled
-                values_rotated = values * np.exp(-1j * rabi_param.angle)
-                values_normalized = (
-                    np.imag(values_rotated) - rabi_param.offset
-                ) / rabi_param.amplitude
-                buffer[target] += [values_normalized]
+            for target, waveform in sequence.items():
+                qubit = Target.qubit_label(target)
+                x90p = x90[qubit]
+                y90m = x90p.shifted(-np.pi / 2)
+                with PulseSchedule(list({target, qubit})) as ps:
+                    ps.add(target, waveform)
+                    ps.barrier()
+                    if basis == "X":
+                        ps.add(qubit, y90m)
+                    elif basis == "Y":
+                        ps.add(qubit, x90p)
+
+                measure_result = self.measure(
+                    ps,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+                for target, data in measure_result.data.items():
+                    rabi_param = self.rabi_params[target]
+                    if rabi_param is None:
+                        raise ValueError("Rabi parameters are not stored.")
+                    values = data.kerneled
+                    values_rotated = values * np.exp(-1j * rabi_param.angle)
+                    values_normalized = (
+                        np.imag(values_rotated) - rabi_param.offset
+                    ) / rabi_param.amplitude
+                    buffer[target] += [values_normalized]
 
         result = {
             target: (
@@ -4202,7 +4163,7 @@ class Experiment:
             | Sequence[TargetMap[Waveform]]
             | Sequence[PulseSchedule]
         ),
-        x90: Waveform | None = None,
+        x90: TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -4214,7 +4175,7 @@ class Experiment:
         ----------
         sequences : Sequence[TargetMap[IQArray]] | Sequence[TargetMap[Waveform]] | Sequence[PulseSchedule]
             Sequences to measure for each target.
-        x90 : Waveform, optional
+        x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
@@ -4253,7 +4214,7 @@ class Experiment:
         self,
         waveforms: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        x90: Waveform | None = None,
+        x90: TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -4265,7 +4226,7 @@ class Experiment:
         ----------
         waveforms : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Waveforms to measure for each target.
-        x90 : Waveform, optional
+        x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
