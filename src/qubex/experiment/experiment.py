@@ -569,7 +569,7 @@ class Experiment:
     def get_pulse_for_state(
         self,
         target: str,
-        state: Literal["0", "1", "+", "-", "+i", "-i"],
+        state: str,  # Literal["0", "1", "+", "-", "+i", "-i"],
     ) -> Waveform:
         """
         Get the pulse to prepare the given state from the ground state.
@@ -4076,6 +4076,7 @@ class Experiment:
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
@@ -4089,6 +4090,8 @@ class Experiment:
             Sequence to measure for each target.
         x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
+        initial_state : TargetMap[str], optional
+            Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -4121,6 +4124,14 @@ class Experiment:
                 x90p = x90[qubit]
                 y90m = x90p.shifted(-np.pi / 2)
                 with PulseSchedule(list({target, qubit})) as ps:
+                    if initial_state is not None:
+                        if qubit in initial_state:
+                            init_pulse = self.get_pulse_for_state(
+                                target=qubit,
+                                state=initial_state[qubit],
+                            )
+                            ps.add(qubit, init_pulse)
+                            ps.barrier()
                     ps.add(target, waveform)
                     ps.barrier()
                     if basis == "X":
@@ -4164,6 +4175,7 @@ class Experiment:
             | Sequence[PulseSchedule]
         ),
         x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -4177,6 +4189,8 @@ class Experiment:
             Sequences to measure for each target.
         x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
+        initial_state : TargetMap[str], optional
+            Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -4194,6 +4208,7 @@ class Experiment:
             state_vectors = self.state_tomography(
                 sequence=sequence,
                 x90=x90,
+                initial_state=initial_state,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -4215,6 +4230,7 @@ class Experiment:
         waveforms: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -4228,6 +4244,8 @@ class Experiment:
             Waveforms to measure for each target.
         x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
+        initial_state : TargetMap[str], optional
+            Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -4294,6 +4312,7 @@ class Experiment:
         result = self.state_evolution_tomography(
             sequences=sequences,
             x90=x90,
+            initial_state=initial_state,
             shots=shots,
             interval=interval,
             plot=plot,
