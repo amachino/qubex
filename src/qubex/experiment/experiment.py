@@ -4118,13 +4118,13 @@ class Experiment:
 
         buffer: dict[str, list[float]] = defaultdict(list)
 
+        qubits = set(Target.qubit_label(target) for target in sequence)
+        targets = list(qubits | sequence.keys())
+
         for basis in ["X", "Y", "Z"]:
-            for target, waveform in sequence.items():
-                qubit = Target.qubit_label(target)
-                x90p = x90[qubit]
-                y90m = x90p.shifted(-np.pi / 2)
-                with PulseSchedule(list({target, qubit})) as ps:
-                    if initial_state is not None:
+            with PulseSchedule(targets) as ps:
+                if initial_state is not None:
+                    for qubit in qubits:
                         if qubit in initial_state:
                             init_pulse = self.get_pulse_for_state(
                                 target=qubit,
@@ -4132,37 +4132,41 @@ class Experiment:
                             )
                             ps.add(qubit, init_pulse)
                             ps.barrier()
+                for target, waveform in sequence.items():
                     ps.add(target, waveform)
                     ps.barrier()
+                for qubit in qubits:
+                    x90p = x90[qubit]
+                    y90m = x90p.shifted(-np.pi / 2)
                     if basis == "X":
                         ps.add(qubit, y90m)
                     elif basis == "Y":
                         ps.add(qubit, x90p)
 
-                measure_result = self.measure(
-                    ps,
-                    shots=shots,
-                    interval=interval,
-                    plot=plot,
-                )
-                for target, data in measure_result.data.items():
-                    rabi_param = self.rabi_params[target]
-                    if rabi_param is None:
-                        raise ValueError("Rabi parameters are not stored.")
-                    values = data.kerneled
-                    values_rotated = values * np.exp(-1j * rabi_param.angle)
-                    values_normalized = (
-                        np.imag(values_rotated) - rabi_param.offset
-                    ) / rabi_param.amplitude
-                    buffer[target] += [values_normalized]
+            measure_result = self.measure(
+                ps,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+            for qubit, data in measure_result.data.items():
+                rabi_param = self.rabi_params[qubit]
+                if rabi_param is None:
+                    raise ValueError("Rabi parameters are not stored.")
+                values = data.kerneled
+                values_rotated = values * np.exp(-1j * rabi_param.angle)
+                values_normalized = (
+                    np.imag(values_rotated) - rabi_param.offset
+                ) / rabi_param.amplitude
+                buffer[qubit] += [values_normalized]
 
         result = {
-            target: (
+            qubit: (
                 values[0],  # X
                 values[1],  # Y
                 values[2],  # Z
             )
-            for target, values in buffer.items()
+            for qubit, values in buffer.items()
         }
         return result
 
