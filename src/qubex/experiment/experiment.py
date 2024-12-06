@@ -4235,6 +4235,7 @@ class Experiment:
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
+        n_samples: int = 100,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -4308,9 +4309,14 @@ class Experiment:
             else:
                 return Pulse(waveform.values[0:index])
 
+        if n_samples < pulse_length:
+            indices = np.linspace(0, pulse_length - 1, n_samples).astype(int)
+        else:
+            indices = np.arange(pulse_length)
+
         sequences = [
             {target: partial_waveform(pulse, i) for target, pulse in pulses.items()}
-            for i in range(pulse_length + 1)
+            for i in indices
         ]
 
         result = self.state_evolution_tomography(
@@ -4323,9 +4329,10 @@ class Experiment:
         )
 
         if plot:
+            times = pulses.popitem()[1].times[indices]
             for target, states in result.items():
                 vis.plot_bloch_vectors(
-                    times=pulses.popitem()[1].times,
+                    times=times,
                     bloch_vectors=states,
                     title=f"State evolution of {target}",
                 )
