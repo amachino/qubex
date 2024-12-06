@@ -33,7 +33,7 @@ class MeasureData:
     raw: NDArray
     kerneled: NDArray
     classified: NDArray
-    n_states: int | None
+    n_states: int | None = None
 
     @property
     def length(self) -> int:
