@@ -1444,7 +1444,7 @@ def fit_rotation(
         n_z = np.cos(theta)
         return np.array(
             [
-                rotation_matrix(t, -delta, (0, 0, 1))
+                rotation_matrix(t, delta, (0, 0, 1))
                 @ rotation_matrix(t, omega, (n_x, n_y, n_z))
                 @ r0
                 for t in times
