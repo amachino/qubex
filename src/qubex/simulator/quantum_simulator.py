@@ -4,7 +4,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Final, Literal, Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
@@ -18,7 +17,6 @@ from .quantum_system import QuantumSystem
 
 
 class Control:
-
     def __init__(
         self,
         target: str,
@@ -280,6 +278,7 @@ class SimulationResult:
         plot_bloch_vectors(
             times=times,
             bloch_vectors=vectors,
+            mode="lines",
             title=f"State evolution : {label}",
         )
 
@@ -342,7 +341,7 @@ class SimulationResult:
             population[population > 1] = 1.0
             for idx, prob in enumerate(population):
                 basis = self.system.basis_labels[idx] if label is None else str(idx)
-                populations[rf"$|{basis}\rangle$"].append(prob)
+                populations[f"|{basis}〉"].append(prob)
 
         sampled_times = self.get_times(n_samples=n_samples)
         sampled_populations = {
@@ -350,13 +349,24 @@ class SimulationResult:
             for key, value in populations.items()
         }
 
-        figure = plt.figure()
-        figure.suptitle(f"Population dynamics of {label}")
-        qv.plot_population_dynamics(
-            sampled_times * 1e-9,
-            sampled_populations,
-            figure=figure,
+        fig = go.Figure()
+        for key, value in sampled_populations.items():
+            fig.add_trace(
+                go.Scatter(
+                    x=sampled_times,
+                    y=value,
+                    mode="lines",
+                    name=key,
+                )
+            )
+        fig.update_layout(
+            title="Population dynamics"
+            if label is None
+            else f"Population dynamics : {label}",
+            xaxis_title="Time (ns)",
+            yaxis_title="Population",
         )
+        fig.show()
 
 
 class QuantumSimulator:

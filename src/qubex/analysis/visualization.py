@@ -172,13 +172,14 @@ def plot_bloch_vectors(
     title: str = "State evolution",
     xlabel: str = "Time (ns)",
     ylabel: str = "Expectation value",
+    mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
 ):
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=times,
             y=bloch_vectors[:, 0],
-            mode="lines+markers",
+            mode=mode,
             name="〈X〉",
         )
     )
@@ -186,7 +187,7 @@ def plot_bloch_vectors(
         go.Scatter(
             x=times,
             y=bloch_vectors[:, 1],
-            mode="lines+markers",
+            mode=mode,
             name="〈Y〉",
         )
     )
@@ -194,7 +195,7 @@ def plot_bloch_vectors(
         go.Scatter(
             x=times,
             y=bloch_vectors[:, 2],
-            mode="lines+markers",
+            mode=mode,
             name="〈Z〉",
         )
     )
