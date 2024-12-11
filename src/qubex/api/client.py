@@ -84,6 +84,15 @@ class PulseAPI:
                     targets[label] = target
         return targets
 
+    def reset(self) -> dict:
+        """Restart the control system."""
+        result = self._request(
+            "GET",
+            "/api/reset",
+            params={"chip_id": self.chip_id},
+        )
+        return result
+
     def measure(
         self,
         waveforms: dict[str, Any] | PulseSchedule,
@@ -95,9 +104,10 @@ class PulseAPI:
         control_window: int | None = None,
         capture_window: int | None = None,
         capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_frequencies: dict[str, float] | None = None,
+        readout_waveforms: dict[str, Any] | None = None,
     ) -> MeasureResult:
         """
         Measure the qubits using the control waveforms.
@@ -126,6 +136,8 @@ class PulseAPI:
             The readout amplitude for each qubit, by default None.
         readout_frequencies : dict[str, float], optional
             The readout frequency for each qubit, by default None.
+        readout_waveforms : dict[str, Any], optional
+            The readout waveforms for each qubit, by default None.
 
         Returns
         -------
@@ -149,6 +161,18 @@ class PulseAPI:
                 "Q": np.imag(waveform).tolist(),
             }
 
+        if readout_waveforms is not None:
+            readout_waveforms_iq = {}
+            for qubit, waveform in readout_waveforms.items():
+                if isinstance(waveform, Waveform):
+                    waveform = waveform.values
+                readout_waveforms_iq[qubit] = {
+                    "I": np.real(waveform).tolist(),
+                    "Q": np.imag(waveform).tolist(),
+                }
+        else:
+            readout_waveforms_iq = None
+
         response = self._request(
             "POST",
             "/api/measure",
@@ -165,6 +189,7 @@ class PulseAPI:
                 "readout_duration": readout_duration,
                 "readout_amplitudes": readout_amplitudes,
                 "readout_frequencies": readout_frequencies,
+                "readout_waveforms": readout_waveforms_iq,
             },
         )
 
