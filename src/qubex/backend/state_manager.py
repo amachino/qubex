@@ -237,6 +237,7 @@ class StateManager:
     def push(
         self,
         box_ids: Sequence[str] | None = None,
+        confirm: bool = True,
     ):
         """
         Push the software state to the hardware state.
@@ -253,18 +254,20 @@ class StateManager:
             boxes = [box for box in boxes if box.id in box_ids]
 
         boxes_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
-        confirmed = Confirm.ask(
-            f"""
+
+        if confirm:
+            confirmed = Confirm.ask(
+                f"""
 You are going to configure the following boxes:
 
 [bold bright_green]{boxes_str}[/bold bright_green]
 
 This operation will overwrite the existing device settings. Do you want to continue?
 """
-        )
-        if not confirmed:
-            print("Operation cancelled.")
-            return
+            )
+            if not confirmed:
+                print("Operation cancelled.")
+                return
 
         qc = self.device_controller.qubecalib
 
