@@ -430,9 +430,9 @@ This operation will overwrite the existing device settings. Do you want to conti
             boxes = [box for box in boxes if box.id in box_ids]
         result: dict = {}
         for box in boxes:
+            result[box.id] = {"ports": {}}
             for port in box.ports:
                 try:
-                    result[box.id] = {"ports": {}}
                     result[box.id]["ports"][port.number] = (
                         self.device_controller.dump_port(box.id, port.number)
                     )
