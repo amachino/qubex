@@ -542,7 +542,7 @@ class Experiment:
 
     def _validate_rabi_params(self):
         """Check if the Rabi parameters are stored."""
-        if len(self._rabi_params) == 0:
+        if len(self.rabi_params) == 0:
             raise ValueError("Rabi parameters are not stored.")
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
