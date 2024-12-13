@@ -8,7 +8,7 @@ from dataclasses import asdict
 from datetime import datetime
 from functools import reduce
 from pathlib import Path
-from typing import Final, Literal, Optional, Sequence
+from typing import Collection, Final, Literal, Optional, Sequence
 
 import numpy as np
 import plotly.graph_objects as go
@@ -144,7 +144,9 @@ class Experiment:
         self,
         *,
         chip_id: str,
-        qubits: Sequence[str],
+        muxes: Collection[str | int] | None = None,
+        qubits: Collection[str | int] | None = None,
+        exclude_qubits: Collection[str | int] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         fetch_device_state: bool = True,
         connect_devices: bool = True,
@@ -155,8 +157,15 @@ class Experiment:
         use_neopulse: bool = False,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
     ):
+        qubits = self._create_qubit_labels(
+            chip_id=chip_id,
+            muxes=muxes,
+            qubits=qubits,
+            exclude_qubits=exclude_qubits,
+            config_dir=config_dir,
+        )
         self._chip_id: Final = chip_id
-        self._qubits: Final = list(qubits)
+        self._qubits: Final = qubits
         self._config_dir: Final = config_dir
         self._control_window: Final = control_window
         self._capture_window: Final = capture_window
@@ -167,7 +176,7 @@ class Experiment:
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
-            config_dir=config_dir,
+            config_dir=self._config_dir,
             fetch_device_state=fetch_device_state,
             use_neopulse=use_neopulse,
             connect_devices=connect_devices,
@@ -181,6 +190,38 @@ class Experiment:
         )
         self._validate()
         self.print_environment()
+
+    def _create_qubit_labels(
+        self,
+        chip_id: str,
+        muxes: Collection[str | int] | None,
+        qubits: Collection[str | int] | None,
+        exclude_qubits: Collection[str | int] | None,
+        config_dir: str,
+    ) -> list[str]:
+        state_manager = StateManager.shared()
+        state_manager.load(
+            chip_id=chip_id,
+            config_dir=config_dir,
+        )
+        quantum_system = state_manager.experiment_system.quantum_system
+        qubit_labels = []
+        if muxes is not None:
+            for mux in muxes:
+                labels = [
+                    qubit.label for qubit in quantum_system.get_qubits_in_mux(mux)
+                ]
+                qubit_labels.extend(labels)
+        if qubits is not None:
+            for qubit in qubits:
+                qubit_labels.append(quantum_system.get_qubit(qubit).label)
+        if exclude_qubits is not None:
+            for qubit in exclude_qubits:
+                label = quantum_system.get_qubit(qubit).label
+                if label in qubit_labels:
+                    qubit_labels.remove(label)
+        qubit_labels = sorted(list(set(qubit_labels)))
+        return qubit_labels
 
     def _validate(self):
         """Check if the experiment is valid."""
