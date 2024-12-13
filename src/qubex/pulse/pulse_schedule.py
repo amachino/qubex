@@ -14,7 +14,6 @@ from .pulse_sequence import PhaseShift, PulseSequence
 
 
 class PulseSchedule:
-
     def __init__(
         self,
         targets: list[str] | dict[str, Any],
@@ -281,7 +280,7 @@ class PulseSchedule:
         n_samples: int = 1024,
         divide_by_two_pi: bool = False,
         time_unit: Literal["ns", "samples"] = "ns",
-        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "linear",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
         Plots the pulse schedule.

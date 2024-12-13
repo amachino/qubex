@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 
@@ -31,7 +32,8 @@ class MeasureData:
     mode: MeasureMode
     raw: NDArray
     kerneled: NDArray
-    classified: dict[int, int] | None
+    classified: NDArray
+    n_states: int | None = None
 
     @property
     def length(self) -> int:
@@ -47,20 +49,27 @@ class MeasureData:
             raise ValueError(f"Invalid mode: {self.mode}")
 
     @property
-    def probabilities(self) -> NDArray[np.float64]:
-        if self.classified is None:
+    def counts(self) -> dict[str, int]:
+        if len(self.classified) == 0 or self.n_states is None:
             raise ValueError("No classification data available")
-        total = sum(self.classified.values())
-        return np.array([count / total for count in self.classified.values()])
+        classified_labels = self.classified
+        count = np.bincount(classified_labels, minlength=self.n_states)
+        state = {str(label): count[label] for label in range(len(count))}
+        return state
+
+    @property
+    def probabilities(self) -> NDArray[np.float64]:
+        if len(self.classified) == 0:
+            raise ValueError("No classification data available")
+        total = sum(self.counts.values())
+        return np.array([count / total for count in self.counts.values()])
 
     @property
     def standard_deviations(self) -> NDArray[np.float64]:
-        if self.classified is None:
+        if len(self.classified) == 0:
             raise ValueError("No classification data available")
         return np.sqrt(
-            self.probabilities
-            * (1 - self.probabilities)
-            / sum(self.classified.values())
+            self.probabilities * (1 - self.probabilities) / sum(self.counts.values())
         )
 
     def plot(self):
@@ -93,6 +102,38 @@ class MeasureResult:
     mode: MeasureMode
     data: dict[str, MeasureData]
     config: dict
+
+    @property
+    def counts(self) -> dict[str, int]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        classified_data = np.column_stack(
+            [data.classified for data in self.data.values()]
+        )
+        classified_labels = np.array(
+            ["".join(map(str, row)) for row in classified_data]
+        )
+        counts = dict(Counter(classified_labels))
+        counts = {key: counts[key] for key in sorted(counts.keys())}
+        return counts
+
+    @property
+    def probabilities(self) -> dict[str, float]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        total = sum(self.counts.values())
+        return {key: count / total for key, count in self.counts.items()}
+
+    @property
+    def standard_deviations(self) -> dict[str, float]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        return {
+            key: np.sqrt(prob * (1 - prob) / total)
+            for key, prob, total in zip(
+                self.counts.keys(), self.probabilities.values(), self.counts.values()
+            )
+        }
 
     def plot(self):
         if self.mode == MeasureMode.SINGLE:

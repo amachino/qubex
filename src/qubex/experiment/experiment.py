@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
+from functools import reduce
 from pathlib import Path
 from typing import Final, Literal, Optional, Sequence
 
@@ -171,6 +172,7 @@ class Experiment:
             use_neopulse=use_neopulse,
             connect_devices=connect_devices,
         )
+        self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(
             file_path=USER_NOTE_PATH,
         )
@@ -531,9 +533,16 @@ class Experiment:
             for target, classifier in self.classifiers.items()
         }
 
+    @property
+    def clifford_generator(self) -> CliffordGenerator:
+        """Get the Clifford generator."""
+        if self._clifford_generator is None:
+            self._clifford_generator = CliffordGenerator()
+        return self._clifford_generator
+
     def _validate_rabi_params(self):
         """Check if the Rabi parameters are stored."""
-        if len(self._rabi_params) == 0:
+        if len(self.rabi_params) == 0:
             raise ValueError("Rabi parameters are not stored.")
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
@@ -560,7 +569,7 @@ class Experiment:
     def get_pulse_for_state(
         self,
         target: str,
-        state: Literal["0", "1", "+", "-", "+i", "-i"],
+        state: str,  # Literal["0", "1", "+", "-", "+i", "-i"],
     ) -> Waveform:
         """
         Get the pulse to prepare the given state from the ground state.
@@ -609,6 +618,60 @@ class Experiment:
             List of the spectators.
         """
         return self.quantum_system.get_spectator_qubits(qubit)
+
+    def get_confusion_matrix(
+        self,
+        targets: Sequence[str],
+    ) -> NDArray:
+        """
+        Get the confusion matrix of the given targets.
+
+        Parameters
+        ----------
+        targets : Sequence[str]
+            List of the targets.
+
+        Returns
+        -------
+        NDArray
+            Confusion matrix (rows: true, columns: predicted).
+        """
+        confusion_matrices = []
+        for target in targets:
+            cm = self.classifiers[target].confusion_matrix
+            n_shots = cm[0].sum()
+            confusion_matrices.append(cm / n_shots)
+        return reduce(np.kron, confusion_matrices)
+
+    def get_inverse_confusion_matrix(
+        self,
+        targets: Sequence[str],
+    ) -> NDArray:
+        """
+        Get the inverse confusion matrix of the given targets.
+
+        Parameters
+        ----------
+        targets : Sequence[str]
+            List of the targets.
+
+        Returns
+        -------
+        NDArray
+            Inverse confusion matrix.
+
+        Notes
+        -----
+        The inverse confusion matrix should be multiplied from the right.
+
+        Examples
+        --------
+        >>> cm_inv = ex.get_inverse_confusion_matrix(["Q00", "Q01"])
+        >>> observed = np.array([300, 200, 200, 300])
+        >>> predicted = observed @ cm_inv
+        """
+        confusion_matrix = self.get_confusion_matrix(targets)
+        return np.linalg.inv(confusion_matrix)
 
     def print_environment(self, verbose: bool = False):
         """Print the environment information."""
@@ -3265,11 +3328,53 @@ class Experiment:
         *,
         target: str,
         n: int,
-        x90: Waveform | None = None,
-        interleaved_waveform: Waveform | None = None,
-        interleaved_clifford_map: (
-            Clifford | dict[str, tuple[complex, str]] | None
-        ) = None,
+        x90: dict[str, Waveform] | None = None,
+        zx90: PulseSchedule | dict[str, Waveform] | None = None,
+        interleaved_waveform: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_clifford: Clifford | None = None,
+        seed: int | None = None,
+    ) -> PulseSchedule:
+        target_object = self.experiment_system.get_target(target)
+        if target_object.is_cr:
+            sched = self.rb_sequence_2q(
+                target=target,
+                n=n,
+                x90=x90,
+                zx90=zx90,
+                interleaved_waveform=interleaved_waveform,
+                interleaved_clifford=interleaved_clifford,
+                seed=seed,
+            )
+            return sched
+        else:
+            if isinstance(interleaved_waveform, PulseSchedule):
+                interleaved_waveform = interleaved_waveform.get_sequences()
+            seq = self.rb_sequence_1q(
+                target=target,
+                n=n,
+                x90=x90,
+                interleaved_waveform=interleaved_waveform,
+                interleaved_clifford=interleaved_clifford,
+                seed=seed,
+            )
+            with PulseSchedule([target]) as ps:
+                ps.add(target, seq)
+            return ps
+
+    def rb_sequence_1q(
+        self,
+        *,
+        target: str,
+        n: int,
+        x90: Waveform | dict[str, Waveform] | None = None,
+        interleaved_waveform: Waveform
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
     ) -> PulseSequence:
         """
@@ -3281,11 +3386,11 @@ class Experiment:
             Target qubit.
         n : int
             Number of Clifford gates.
-        x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
-        interleaved_waveform : Waveform, optional
+        x90 : Waveform | dict[str, Waveform], optional
+            π/2 pulse used for the experiment. Defaults to None.
+        interleaved_waveform : Waveform | dict[str, PulseSequence] | dict[str, Waveform], optional
             Waveform of the interleaved gate. Defaults to None.
-        interleaved_clifford_map : Clifford | dict[str, tuple[complex, str]], optional
+        interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         seed : int, optional
             Random seed.
@@ -3308,7 +3413,7 @@ class Experiment:
         ...     n=100,
         ...     x90=Rect(duration=30, amplitude=0.1),
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford_map={
+        ...     interleaved_clifford={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (-1, "Y"),
@@ -3316,53 +3421,189 @@ class Experiment:
         ...     },
         ... )
         """
+        if isinstance(x90, dict):
+            x90 = x90.get(target)
         x90 = x90 or self.hpi_pulse[target]
         z90 = VirtualZ(np.pi / 2)
 
         sequence: list[Waveform | VirtualZ] = []
 
-        generator = CliffordGenerator()
-
         if interleaved_waveform is None:
-            cliffords, inverse = generator.create_rb_sequences(
+            cliffords, inverse = self.clifford_generator.create_rb_sequences(
                 n=n,
                 type="1Q",
                 seed=seed,
             )
         else:
-            if interleaved_clifford_map is None:
-                raise ValueError("Interleave map must be provided.")
-            cliffords, inverse = generator.create_irb_sequences(
+            if interleaved_clifford is None:
+                raise ValueError("`interleaved_clifford` must be provided.")
+            cliffords, inverse = self.clifford_generator.create_irb_sequences(
                 n=n,
-                interleave=interleaved_clifford_map,
+                interleave=interleaved_clifford,
                 type="1Q",
                 seed=seed,
             )
 
-        for clifford in cliffords:
-            for gate in clifford:
-                if gate == "X90":
-                    sequence.append(x90)
-                elif gate == "Z90":
-                    sequence.append(z90)
-            if interleaved_waveform is not None:
-                sequence.append(interleaved_waveform)
-
-        for gate in inverse:
+        def add_gate(gate: str):
             if gate == "X90":
                 sequence.append(x90)
             elif gate == "Z90":
                 sequence.append(z90)
+            else:
+                raise ValueError("Invalid gate.")
+
+        for clifford in cliffords:
+            for gate in clifford:
+                add_gate(gate)
+            if isinstance(interleaved_waveform, dict):
+                interleaved_waveform = interleaved_waveform.get(target)
+            if interleaved_waveform is not None:
+                sequence.append(interleaved_waveform)
+
+        for gate in inverse:
+            add_gate(gate)
+
         return PulseSequence(sequence)
+
+    def rb_sequence_2q(
+        self,
+        *,
+        target: str,
+        n: int,
+        x90: dict[str, Waveform] | None = None,
+        zx90: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_waveform: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
+        seed: int | None = None,
+    ) -> PulseSchedule:
+        """
+        Generates a 2Q randomized benchmarking sequence.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        n : int
+            Number of Clifford gates.
+        x90 : Waveform | dict[str, Waveform], optional
+            π/2 pulse used for 1Q gates. Defaults to None.
+        zx90 : PulseSchedule | dict[str, Waveform], optional
+            ZX90 pulses used for 2Q gates. Defaults to None.
+        interleaved_waveform : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+            Waveform of the interleaved gate. Defaults to None.
+        interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
+            Clifford map of the interleaved gate. Defaults to None.
+        seed : int, optional
+            Random seed.
+
+        Returns
+        -------
+        PulseSchedule
+            Randomized benchmarking sequence.
+
+        Examples
+        --------
+        >>> sequence = ex.rb_sequence_2q(
+        ...     target="Q00-Q01",
+        ...     n=100,
+        ...     x90={
+        ...         "Q00": Rect(duration=30, amplitude=0.1),
+        ...         "Q01": Rect(duration=30, amplitude=0.1),
+        ...     },
+        ... )
+
+        >>> sequence = ex.rb_sequence_2q(
+        ...     target="Q00-Q01",
+        ...     n=100,
+        ...     x90={
+        ...         "Q00": Rect(duration=30, amplitude=0.1),
+        ...         "Q01": Rect(duration=30, amplitude=0.1),
+        ...     },
+        ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
+        ...     interleaved_clifford=Clifford.CNOT(),
+        ... )
+        """
+        target_object = self.experiment_system.get_target(target)
+        if not target_object.is_cr:
+            raise ValueError(f"`{target}` is not a 2Q target.")
+        control_qubit, target_qubit = Target.cr_qubit_pair(target)
+        xi90, ix90 = None, None
+        if isinstance(x90, dict):
+            xi90 = x90.get(control_qubit)
+            ix90 = x90.get(target_qubit)
+        xi90 = xi90 or self.hpi_pulse[control_qubit]
+        ix90 = ix90 or self.hpi_pulse[target_qubit]
+        z90 = VirtualZ(np.pi / 2)
+
+        if interleaved_waveform is None:
+            cliffords, inverse = self.clifford_generator.create_rb_sequences(
+                n=n,
+                type="2Q",
+                seed=seed,
+            )
+        else:
+            if interleaved_clifford is None:
+                raise ValueError("Interleave map must be provided.")
+            cliffords, inverse = self.clifford_generator.create_irb_sequences(
+                n=n,
+                interleave=interleaved_clifford,
+                type="2Q",
+                seed=seed,
+            )
+
+        with PulseSchedule([control_qubit, target_qubit]) as ps:
+
+            def add_gate(gate: str):
+                if gate == "XI90":
+                    ps.add(control_qubit, xi90)
+                elif gate == "IX90":
+                    ps.add(target_qubit, ix90)
+                elif gate == "ZI90":
+                    ps.add(control_qubit, z90)
+                elif gate == "IZ90":
+                    ps.add(target_qubit, z90)
+                elif gate == "ZX90":
+                    if zx90 is not None:
+                        ps.barrier()
+                        if isinstance(zx90, dict):
+                            ps.add(control_qubit, zx90[control_qubit])
+                            ps.add(target_qubit, zx90[target_qubit])
+                        elif isinstance(zx90, PulseSchedule):
+                            ps.call(zx90)
+                        ps.barrier()
+                else:
+                    raise ValueError("Invalid gate.")
+
+            for clifford in cliffords:
+                for gate in clifford:
+                    add_gate(gate)
+                if interleaved_waveform is not None:
+                    ps.barrier()
+                    if isinstance(interleaved_waveform, dict):
+                        ps.add(control_qubit, interleaved_waveform[control_qubit])
+                        ps.add(target_qubit, interleaved_waveform[target_qubit])
+                    elif isinstance(interleaved_waveform, PulseSchedule):
+                        ps.call(interleaved_waveform)
+                    ps.barrier()
+
+            for gate in inverse:
+                add_gate(gate)
+        return ps
 
     def rb_experiment(
         self,
         *,
         target: str,
         n_cliffords_range: ArrayLike | None = None,
-        x90: Waveform | None = None,
+        x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: Waveform | None = None,
-        interleaved_clifford_map: dict[str, tuple[complex, str]] | None = None,
+        interleaved_clifford: dict[str, tuple[complex, str]] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -3379,10 +3620,10 @@ class Experiment:
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 50).
         x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse used for the experiment. Defaults to None.
         interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
-        interleaved_clifford_map : dict[str, tuple[complex, str]], optional
+        interleaved_clifford : dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
@@ -3413,7 +3654,7 @@ class Experiment:
         ...     n_cliffords_range=range(0, 1001, 50),
         ...     x90=Rect(duration=30, amplitude=0.1),
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford_map={
+        ...     interleaved_clifford={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (-1, "Y"),
@@ -3421,9 +3662,12 @@ class Experiment:
         ...     },
         ... )
         """
-
         if n_cliffords_range is None:
             n_cliffords_range = np.arange(0, 1001, 50)
+
+        target_object = self.experiment_system.get_target(target)
+        if target_object.is_cr:
+            raise ValueError(f"`{target}` is not a 1Q target.")
 
         def rb_sequence(N: int) -> PulseSchedule:
             with PulseSchedule([target]) as ps:
@@ -3440,16 +3684,17 @@ class Experiment:
                     ps.barrier()
 
                 # Randomized benchmarking sequence
+                rb_sequence = self.rb_sequence_1q(
+                    target=target,
+                    n=N,
+                    x90=x90,
+                    interleaved_waveform=interleaved_waveform,
+                    interleaved_clifford=interleaved_clifford,
+                    seed=seed,
+                )
                 ps.add(
                     target,
-                    self.rb_sequence(
-                        target=target,
-                        n=N,
-                        x90=x90,
-                        interleaved_waveform=interleaved_waveform,
-                        interleaved_clifford_map=interleaved_clifford_map,
-                        seed=seed,
-                    ),
+                    rb_sequence,
                 )
             return ps
 
@@ -3487,13 +3732,110 @@ class Experiment:
 
         return ExperimentResult(data=data)
 
+    def rb_experiment_2q(
+        self,
+        *,
+        target: str,
+        n_cliffords_range: ArrayLike | None = None,
+        x90: dict[str, Waveform] | None = None,
+        zx90: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_waveform: PulseSchedule
+        | dict[str, PulseSequence]
+        | dict[str, Waveform]
+        | None = None,
+        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        seed: int | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        if n_cliffords_range is None:
+            n_cliffords_range = np.arange(0, 1001, 50)
+        else:
+            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
+        target_object = self.experiment_system.get_target(target)
+        if not target_object.is_cr:
+            raise ValueError(f"`{target}` is not a 2Q target.")
+        control_qubit, target_qubit = Target.cr_qubit_pair(target)
+
+        def rb_sequence(N: int) -> PulseSchedule:
+            with PulseSchedule([control_qubit, target_qubit]) as ps:
+                # Excite spectator qubits if needed
+                if spectator_state != "0":
+                    control_spectators = {
+                        qubit.label for qubit in self.get_spectators(control_qubit)
+                    }
+                    target_spectators = {
+                        qubit.label for qubit in self.get_spectators(target_qubit)
+                    }
+                    spectators = (control_spectators | target_spectators) - {
+                        control_qubit,
+                        target_qubit,
+                    }
+                    for spectator in spectators:
+                        if spectator in self._qubits:
+                            pulse = self.get_pulse_for_state(
+                                target=spectator,
+                                state=spectator_state,
+                            )
+                            ps.add(spectator, pulse)
+                    ps.barrier()
+
+                # Randomized benchmarking sequence
+                rb_sequence = self.rb_sequence_2q(
+                    target=target,
+                    n=N,
+                    x90=x90,
+                    zx90=zx90,
+                    interleaved_waveform=interleaved_waveform,
+                    interleaved_clifford=interleaved_clifford,
+                    seed=seed,
+                )
+                ps.call(rb_sequence)
+            return ps
+
+        fidelities = []
+
+        for n_clifford in n_cliffords_range:
+            result = self.measure(
+                sequence=rb_sequence(n_clifford),
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            p00 = result.probabilities["00"]
+            fidelities.append(p00)
+
+        fit_data = fitting.fit_rb(
+            target=target,
+            x=n_cliffords_range,
+            y=np.array(fidelities),
+            title="Randomized benchmarking",
+            xaxis_title="Number of Cliffords",
+            yaxis_title="Probability of |00⟩",
+            xaxis_type="linear",
+            yaxis_type="linear",
+            plot=plot,
+        )
+
+        return {
+            "depolarizing_rate": fit_data[0],
+            "avg_gate_error": fit_data[1],
+            "avg_gate_fidelity": fit_data[2],
+        }
+
     def randomized_benchmarking(
         self,
         target: str,
         *,
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
-        x90: Waveform | None = None,
+        x90: Waveform | dict[str, Waveform] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3510,8 +3852,8 @@ class Experiment:
             Range of the number of Cliffords. Defaults to range(0, 1001, 100).
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
-        x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
+        x90 : Waveform | dict[str, Waveform], optional
+            π/2 pulse used for the experiment. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         seed : int, optional
@@ -3581,7 +3923,7 @@ class Experiment:
         *,
         target: str,
         interleaved_waveform: Waveform,
-        interleaved_clifford_map: dict[str, tuple[complex, str]],
+        interleaved_clifford: dict[str, tuple[complex, str]],
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: Waveform | None = None,
@@ -3600,7 +3942,7 @@ class Experiment:
             Target qubit.
         interleaved_waveform : Waveform
             Waveform of the interleaved gate.
-        interleaved_clifford_map : dict[str, tuple[complex, str]]
+        interleaved_clifford : dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 100).
@@ -3629,7 +3971,7 @@ class Experiment:
         >>> result = ex.interleaved_randomized_benchmarking(
         ...     target="Q00",
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford_map={
+        ...     interleaved_clifford={
         ...         "I": (1, "I"),
         ...         "X": (1, "X"),
         ...         "Y": (1, "Z"),
@@ -3671,7 +4013,7 @@ class Experiment:
                 n_cliffords_range=n_cliffords_range,
                 x90=x90,
                 interleaved_waveform=interleaved_waveform,
-                interleaved_clifford_map=interleaved_clifford_map,
+                interleaved_clifford=interleaved_clifford,
                 spectator_state=spectator_state,
                 seed=seed,
                 shots=shots,
@@ -3729,63 +4071,12 @@ class Experiment:
             "std": irb_std,
         }
 
-    def state_tomography_sequence(
-        self,
-        *,
-        target: str,
-        sequence: IQArray | Waveform,
-        basis: str,
-        x90: Waveform | None = None,
-    ) -> PulseSequence:
-        """
-        Generates a state tomography sequence.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit.
-        sequence : IQArray | Waveform
-            Sequence to measure.
-        basis : str
-            Measurement basis. "X", "Y", or "Z".
-        x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
-
-        Returns
-        -------
-        PulseSequence
-            State tomography sequence.
-        """
-        if isinstance(sequence, list) or isinstance(sequence, np.ndarray):
-            sequence = Pulse(sequence)
-        elif not isinstance(sequence, Waveform):
-            raise ValueError("Invalid sequence.")
-
-        qubit = Target.qubit_label(target)
-
-        x90 = x90 or self.hpi_pulse[qubit]
-        y90m = x90.shifted(-np.pi / 2)
-
-        if basis == "X":
-            if isinstance(sequence, PulseSequence):
-                return sequence.added(y90m)
-            else:
-                return PulseSequence([sequence, y90m])
-        elif basis == "Y":
-            if isinstance(sequence, PulseSequence):
-                return sequence.added(x90)
-            else:
-                return PulseSequence([sequence, x90])
-        elif basis == "Z":
-            return PulseSequence([sequence])
-        else:
-            raise ValueError("Invalid basis.")
-
     def state_tomography(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        x90: Waveform | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
@@ -3797,8 +4088,10 @@ class Experiment:
         ----------
         sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Sequence to measure for each target.
-        x90 : Waveform, optional
+        x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
+        initial_state : TargetMap[str], optional
+            Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -3811,28 +4104,53 @@ class Experiment:
         dict[str, tuple[float, float, float]]
             Results of the experiment.
         """
-        buffer: dict[str, list[float]] = defaultdict(list)
-
         if isinstance(sequence, PulseSchedule):
             sequence = sequence.get_sequences()
+        else:
+            sequence = {
+                target: Pulse(waveform)
+                if not isinstance(waveform, Waveform)
+                else waveform
+                for target, waveform in sequence.items()
+            }
+
+        x90 = x90 or self.hpi_pulse
+
+        buffer: dict[str, list[float]] = defaultdict(list)
+
+        qubits = set(Target.qubit_label(target) for target in sequence)
+        targets = list(qubits | sequence.keys())
 
         for basis in ["X", "Y", "Z"]:
+            with PulseSchedule(targets) as ps:
+                if initial_state is not None:
+                    for qubit in qubits:
+                        if qubit in initial_state:
+                            init_pulse = self.get_pulse_for_state(
+                                target=qubit,
+                                state=initial_state[qubit],
+                            )
+                            ps.add(qubit, init_pulse)
+                            ps.barrier()
+                for target, waveform in sequence.items():
+                    ps.add(target, waveform)
+                    ps.barrier()
+                for qubit in qubits:
+                    x90p = x90[qubit]
+                    y90m = x90p.shifted(-np.pi / 2)
+                    if basis == "X":
+                        ps.add(qubit, y90m)
+                    elif basis == "Y":
+                        ps.add(qubit, x90p)
+
             measure_result = self.measure(
-                {
-                    target: self.state_tomography_sequence(
-                        target=target,
-                        sequence=sequence,
-                        basis=basis,
-                        x90=x90,
-                    )
-                    for target, sequence in sequence.items()
-                },
+                ps,
                 shots=shots,
                 interval=interval,
                 plot=plot,
             )
-            for target, data in measure_result.data.items():
-                rabi_param = self.rabi_params[target]
+            for qubit, data in measure_result.data.items():
+                rabi_param = self.rabi_params[qubit]
                 if rabi_param is None:
                     raise ValueError("Rabi parameters are not stored.")
                 values = data.kerneled
@@ -3840,15 +4158,15 @@ class Experiment:
                 values_normalized = (
                     np.imag(values_rotated) - rabi_param.offset
                 ) / rabi_param.amplitude
-                buffer[target] += [values_normalized]
+                buffer[qubit] += [values_normalized]
 
         result = {
-            target: (
+            qubit: (
                 values[0],  # X
                 values[1],  # Y
                 values[2],  # Z
             )
-            for target, values in buffer.items()
+            for qubit, values in buffer.items()
         }
         return result
 
@@ -3860,7 +4178,8 @@ class Experiment:
             | Sequence[TargetMap[Waveform]]
             | Sequence[PulseSchedule]
         ),
-        x90: Waveform | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -3872,8 +4191,10 @@ class Experiment:
         ----------
         sequences : Sequence[TargetMap[IQArray]] | Sequence[TargetMap[Waveform]] | Sequence[PulseSchedule]
             Sequences to measure for each target.
-        x90 : Waveform, optional
+        x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
+        initial_state : TargetMap[str], optional
+            Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -3891,6 +4212,7 @@ class Experiment:
             state_vectors = self.state_tomography(
                 sequence=sequence,
                 x90=x90,
+                initial_state=initial_state,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -3911,7 +4233,9 @@ class Experiment:
         self,
         waveforms: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        x90: Waveform | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
+        n_samples: int = 100,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -3923,8 +4247,10 @@ class Experiment:
         ----------
         waveforms : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Waveforms to measure for each target.
-        x90 : Waveform, optional
+        x90 : TargetMap[Waveform], optional
             π/2 pulse. Defaults to None.
+        initial_state : TargetMap[str], optional
+            Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -3983,23 +4309,30 @@ class Experiment:
             else:
                 return Pulse(waveform.values[0:index])
 
+        if n_samples < pulse_length:
+            indices = np.linspace(0, pulse_length - 1, n_samples).astype(int)
+        else:
+            indices = np.arange(pulse_length)
+
         sequences = [
             {target: partial_waveform(pulse, i) for target, pulse in pulses.items()}
-            for i in range(pulse_length + 1)
+            for i in indices
         ]
 
         result = self.state_evolution_tomography(
             sequences=sequences,
             x90=x90,
+            initial_state=initial_state,
             shots=shots,
             interval=interval,
             plot=plot,
         )
 
         if plot:
+            times = pulses.popitem()[1].times[indices]
             for target, states in result.items():
                 vis.plot_bloch_vectors(
-                    times=pulses.popitem()[1].times,
+                    times=times,
                     bloch_vectors=states,
                     title=f"State evolution of {target}",
                 )
@@ -4015,7 +4348,7 @@ class Experiment:
         subrange_width: float = 0.3,
         shots: int = 100,
         interval: int = 0,
-        plot: bool = True,
+        plot: bool = False,
     ) -> float:
         """
         Measures the phase shift caused by the length of the transmission line.
@@ -4033,7 +4366,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
+            Whether to plot the measured signals. Defaults to False.
 
         Returns
         -------

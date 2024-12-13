@@ -940,21 +940,21 @@ class Measurement:
         measure_data = {}
         for target, iqs in backend_result.data.items():
             qubit = target[label_slice]
+            classified_data = np.array([])
+            n_states = None
 
             if measure_mode == MeasureMode.SINGLE:
                 # iqs: ndarray[duration, shots]
                 raw = iqs[capture_index].T.squeeze()
                 kerneled = np.mean(iqs[capture_index], axis=0) * 2 ** (-32)
                 classifier = self.classifiers.get(qubit)
-                if classifier is None:
-                    classified_data = None
-                else:
-                    classified_data = classifier.classify(qubit, kerneled, plot=False)
+                if classifier is not None:
+                    classified_data = classifier.predict(kerneled)
+                    n_states = classifier.n_states
             elif measure_mode == MeasureMode.AVG:
                 # iqs: ndarray[duration, 1]
                 raw = iqs[capture_index].squeeze()
                 kerneled = np.mean(iqs) * 2 ** (-32) / shots
-                classified_data = None
             else:
                 raise ValueError(f"Invalid measure mode: {measure_mode}")
 
@@ -964,6 +964,7 @@ class Measurement:
                 raw=raw,
                 kerneled=kerneled,
                 classified=classified_data,
+                n_states=n_states,
             )
 
         return MeasureResult(
