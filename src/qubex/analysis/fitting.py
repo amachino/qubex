@@ -1187,10 +1187,6 @@ def fit_reflection_coefficient(
     #     f"Fitted function:\n  {A:.3g} * exp(1j * {phi:.3g}) * ((f - {f_r:.3g}) * 1j + (-{kappa_ex:.3g} + {kappa_in:.3g}) / 2) / ((f - {f_r:.3g}) * 1j + ({kappa_ex:.3g} + {kappa_in:.3g}) / 2)"
     # )
 
-    print(f"Resonance frequency:\n  {f_r:.6f} GHz")
-    print(f"External loss rate:\n  {kappa_ex * 1e3:.6f} MHz")
-    print(f"Internal loss rate:\n  {kappa_in * 1e3:.6f} MHz")
-
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonance(x_fine, *fitted_params)
 
@@ -1331,6 +1327,12 @@ def fit_reflection_coefficient(
         )
 
         fig.show()
+
+    print(f"{target}\n--------------------")
+    print(f"Resonance frequency:\n  {f_r:.6f} GHz")
+    print(f"External loss rate:\n  {kappa_ex * 1e3:.6f} MHz")
+    print(f"Internal loss rate:\n  {kappa_in * 1e3:.6f} MHz")
+    print("--------------------\n")
 
     return f_r, kappa_ex, kappa_in
 

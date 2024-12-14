@@ -2203,19 +2203,13 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        detuning_range: ArrayLike | None = None,
-        time_range: ArrayLike | None = None,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 15),
+        time_range: ArrayLike = range(0, 101, 8),
         amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
-        if detuning_range is None:
-            detuning_range = np.linspace(-0.01, 0.01, 15)
-
-        if time_range is None:
-            time_range = np.arange(0, 101, 8)
-
         # store the original control amplitudes
         original_control_amplitudes = deepcopy(self.params.control_amplitude)
 
@@ -2287,20 +2281,14 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        detuning_range: ArrayLike | None = None,
-        time_range: ArrayLike | None = None,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 15),
+        time_range: ArrayLike = range(0, 101, 8),
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
-        if detuning_range is None:
-            detuning_range = np.linspace(-0.01, 0.01, 15)
-        else:
-            detuning_range = np.array(detuning_range, dtype=np.float64)
-
-        if time_range is None:
-            time_range = np.arange(0, 101, 8)
+        detuning_range = np.array(detuning_range, dtype=np.float64)
 
         # store the original readout amplitudes
         original_readout_amplitudes = deepcopy(self.params.readout_amplitude)
@@ -4807,17 +4795,6 @@ class Experiment:
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
 
-        if plot:
-            widget = go.FigureWidget()
-            widget.add_scatter(name=target, mode="markers+lines")
-            widget.update_layout(
-                title=f"Phase of reflection wave : {qubit_label}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Phase (rad)",
-            )
-            scatter: go.Scatter = widget.data[0]  # type: ignore
-            display(widget)
-
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
             center_frequency * 1e9,
             ssb="U",
@@ -4832,7 +4809,7 @@ class Experiment:
             cnco_freq=cnco,
             fnco_freq=0,
         ):
-            for idx, freq in enumerate(tqdm(freq_range)):
+            for freq in freq_range:
                 with self.modified_frequencies({read_label: freq}):
                     result = self.measure(
                         {qubit_label: np.zeros(0)},
@@ -4844,9 +4821,22 @@ class Experiment:
                     signal = result.data[target].kerneled
                     signal = signal * np.exp(-1j * freq * phase_shift)
                     signals.append(signal)
-                    if plot:
-                        scatter.x = freq_range[: idx + 1]
-                        scatter.y = np.unwrap(np.angle(signals))
+
+        # if plot:
+        #     fig = go.Figure()
+        #     fig.add_trace(
+        #         go.Scatter(
+        #             x=freq_range,
+        #             y=np.unwrap(np.angle(signals)),
+        #             mode="markers+lines",
+        #         )
+        #     )
+        #     fig.update_layout(
+        #         title=f"Phase of reflection wave : {qubit_label}",
+        #         xaxis_title="Frequency (GHz)",
+        #         yaxis_title="Phase (rad)",
+        #     )
+        #     fig.show()
 
         phi = (np.angle(signals[0]) + np.angle(signals[-1])) / 2
         coeffs = np.array(signals) * np.exp(-1j * phi)
@@ -4864,12 +4854,12 @@ class Experiment:
         self,
         target: str,
         *,
-        frequency_range: ArrayLike | None = None,
-        control_amplitude: float = 0.01,
+        frequency_range: ArrayLike = np.arange(6.5, 9.5, 0.002),
+        control_amplitude: float = 0.1,
         readout_amplitude: float = 0.01,
         readout_frequency: float | None = None,
         subrange_width: float = 0.3,
-        shots: int = 1000,
+        shots: int = DEFAULT_SHOTS,
         interval: int = 0,
         plot: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
@@ -4883,7 +4873,7 @@ class Experiment:
         frequency_range : ArrayLike, optional
             Frequency range of the scan in GHz.
         control_amplitude : float, optional
-            Amplitude of the control pulse. Defaults to 0.01.
+            Amplitude of the control pulse. Defaults to 0.1.
         readout_amplitude : float, optional
             Amplitude of the readout pulse. Defaults to 0.01.
         subrange_width : float, optional
@@ -5009,11 +4999,11 @@ class Experiment:
     def qubit_spectroscopy(
         self,
         target: str,
-        frequency_range: ArrayLike = np.arange(6.5, 9.5, 0.005),
+        frequency_range: ArrayLike = np.arange(6.5, 9.5, 0.002),
         power_range: ArrayLike = np.arange(-60, 5, 5),
         readout_amplitude: float = 0.01,
         readout_frequency: float | None = None,
-        shots: int = 500,
+        shots: int = DEFAULT_SHOTS,
         interval: int = 0,
         plot: bool = True,
         save_image: bool = True,
@@ -5026,7 +5016,7 @@ class Experiment:
         target : str
             Target qubit.
         frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz. Defaults to np.arange(6.5, 9.5, 0.005).
+            Frequency range of the scan in GHz. Defaults to np.arange(6.5, 9.5, 0.002).
         power_range : ArrayLike, optional
             Power range in dB. Defaults to np.arange(-60, 5, 5).
         readout_amplitude : float, optional
@@ -5034,7 +5024,7 @@ class Experiment:
         readout_frequency : float, optional
             Readout frequency. Defaults to None.
         shots : int, optional
-            Number of shots. Defaults to 500.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
