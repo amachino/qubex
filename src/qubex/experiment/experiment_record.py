@@ -31,6 +31,8 @@ class ExperimentRecord(Generic[T]):
         A description of the experiment.
     created_at : str
         The date and time when the record was created.
+    file_name : str
+        The path to the file where the record is saved.
 
     Methods
     -------
@@ -46,6 +48,7 @@ class ExperimentRecord(Generic[T]):
     name: str
     description: str = ""
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    file_name: str = ""
 
     def save(self, data_path=DEFAULT_DATA_DIR):
         """
@@ -74,15 +77,15 @@ class ExperimentRecord(Generic[T]):
 
         while os.path.exists(file_path):
             counter += 1
-            file_path = os.path.join(
-                data_path,
-                f"{current_date}_{self.name}_{counter}{extension}",
-            )
+            file_name = f"{current_date}_{self.name}_{counter}{extension}"
+            file_path = os.path.join(data_path, file_name)
 
         with open(file_path, "w") as f:
             encoded = jsonpickle.encode(self, unpicklable=True)
             f.write(encoded)  # type: ignore
+
         print(f"Data saved to {file_path}")
+        self.file_name = file_name
 
     @staticmethod
     def create(
