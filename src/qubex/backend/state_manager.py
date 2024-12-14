@@ -105,7 +105,7 @@ class StateManager:
         """
         self._experiment_system = experiment_system
         # update device controller to reflect the new experiment system
-        self._device_controller = self._create_device_controller(experiment_system)
+        self._update_device_controller(experiment_system)
         self.update_cache()
 
     @property
@@ -441,15 +441,14 @@ This operation will overwrite the existing device settings. Do you want to conti
                     print(e)
         return result
 
-    def _create_device_controller(
+    def _update_device_controller(
         self,
         experiment_system: ExperimentSystem,
-    ) -> DeviceController:
+    ):
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
 
-        device_controller = DeviceController()
-        qc = device_controller.qubecalib
+        qc = self.device_controller.qubecalib
 
         qc.define_clockmaster(
             ipaddr=control_system.clock_master_address,
@@ -495,7 +494,6 @@ This operation will overwrite the existing device settings. Do you want to conti
                 channel_name=target.channel.id,
                 target_frequency=target.frequency,
             )
-        return device_controller
 
     def _create_experiment_system(
         self,
