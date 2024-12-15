@@ -596,7 +596,7 @@ def fit_exp_decay(
     yaxis_title: str = "Amplitude (arb. units)",
     xaxis_type: Literal["linear", "log"] = "log",
     yaxis_type: Literal["linear", "log"] = "linear",
-) -> float:
+) -> dict:
     """
     Fit decay data to an exponential decay function and plot the results.
 
@@ -627,13 +627,14 @@ def fit_exp_decay(
 
     Returns
     -------
-    float
-        Decay time of the exponential decay in microseconds.
+    dict
+        Dictionary containing the fitted parameters and the plot.
     """
     if p0 is None:
+        tau_guess = 20_000
         p0 = (
             np.abs(np.max(y) - np.min(y)),
-            10_000,
+            tau_guess,
             np.min(y),
         )
 
@@ -644,16 +645,13 @@ def fit_exp_decay(
         )
 
     try:
-        popt, _ = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
+        popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return np.nan
+        return {}
 
-    A = popt[0]
-    tau = popt[1]
-    C = popt[2]
-    print(f"Fitted function: {A:.3g} * exp(-t/{tau:.3g}) + {C:.3g}")
-    print(f"Decay time: {tau * 1e-3:.3g} μs")
+    A, tau, C = popt
+    A_err, tau_err, C_err = np.sqrt(np.diag(pcov))
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
@@ -681,7 +679,7 @@ def fit_exp_decay(
             yref="paper",
             x=0.95,
             y=0.95,
-            text=f"τ = {tau * 1e-3:.3g} μs",
+            text=f"τ = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs",
             showarrow=False,
         )
         fig.update_layout(
@@ -693,7 +691,19 @@ def fit_exp_decay(
         )
         fig.show(config=_plotly_config(f"exp_decay_{target}"))
 
-    return tau
+    print(f"Target: {target}")
+    print("Fit: A * exp(-t / tau) + C")
+    print(f"  A = {A:.2f} ± {A_err:.2f}")
+    print(f"  tau = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs")
+    print(f"  C = {C:.2f} ± {C_err:.2f}")
+
+    return {
+        "tau": tau,
+        "tau_err": tau_err,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
 
 
 def fit_rb(

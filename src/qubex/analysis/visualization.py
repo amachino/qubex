@@ -21,8 +21,8 @@ def save_image(
     images_dir: str = "./images",
     name: str = "image",
     format: Literal["png", "svg", "jpeg", "webp"] = "png",
-    width: int | None = None,
-    height: int | None = None,
+    width: int = 600,
+    height: int = 300,
     scale: int = 3,
 ):
     if not os.path.exists(images_dir):

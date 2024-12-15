@@ -587,10 +587,17 @@ class Experiment:
             self._clifford_generator = CliffordGenerator()
         return self._clifford_generator
 
-    def _validate_rabi_params(self):
+    def _validate_rabi_params(
+        self,
+        targets: Collection[str] | None = None,
+    ):
         """Check if the Rabi parameters are stored."""
         if len(self.rabi_params) == 0:
             raise ValueError("Rabi parameters are not stored.")
+        if targets is not None:
+            for target in targets:
+                if target not in self.rabi_params:
+                    raise ValueError(f"Rabi parameters for {target} are not stored.")
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
         """
@@ -2901,12 +2908,13 @@ class Experiment:
 
     def t1_experiment(
         self,
-        targets: list[str],
+        targets: Collection[str],
         *,
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = False,
         xaxis_type: Literal["linear", "log"] = "log",
     ) -> ExperimentResult[T1Data]:
         """
@@ -2914,8 +2922,8 @@ class Experiment:
 
         Parameters
         ----------
-        targets : list[str]
-            List of qubits to check the T1 decay.
+        targets : Collection[str]
+            Collection of qubits to check the T1 decay.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
         shots : int, optional
@@ -2924,6 +2932,8 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to False.
 
         Returns
         -------
@@ -2938,6 +2948,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
+        targets = list(targets)
+
+        self._validate_rabi_params(targets)
 
         if time_range is None:
             time_range = self.util.discretize_time_range(
@@ -2978,7 +2991,7 @@ class Experiment:
                 yaxis_title="Normalized value",
                 xaxis_type=xaxis_type,
                 yaxis_type="linear",
-            )
+            )["tau"]
             for target, data in sweep_result.data.items()
         }
 
@@ -2991,7 +3004,7 @@ class Experiment:
 
     def t2_experiment(
         self,
-        targets: list[str],
+        targets: Collection[str],
         *,
         time_range: ArrayLike | None = None,
         n_cpmg: int = 1,
@@ -2999,14 +3012,15 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = False,
     ) -> ExperimentResult[T2Data]:
         """
         Conducts a T2 experiment in series.
 
         Parameters
         ----------
-        targets : list[str]
-            List of targets to check the T2 decay.
+        targets : Collection[str]
+            Collection of targets to check the T2 decay.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
         n_cpmg : int, optional
@@ -3019,17 +3033,23 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to False.
 
         Returns
         -------
         ExperimentResult[T2Data]
             Result of the experiment.
         """
+        targets = list(targets)
+
+        self._validate_rabi_params(targets)
+
         if time_range is None:
             time_range = self.util.discretize_time_range(
                 np.logspace(
-                    np.log10(0.5 * 300),
-                    np.log10(0.5 * 100 * 1000),
+                    np.log10(300),
+                    np.log10(100 * 1000),
                     51,
                 ),
                 2 * SAMPLING_PERIOD,
@@ -3062,17 +3082,25 @@ class Experiment:
                 interval=interval,
                 plot=plot,
             ).data[target]
-            t2 = fitting.fit_exp_decay(
+            fit_result = fitting.fit_exp_decay(
                 target=target,
                 x=sweep_data.sweep_range,
                 y=0.5 * (1 - sweep_data.normalized),
                 plot=plot,
-                title="T2",
+                title="T2 echo",
                 xaxis_title="Time (μs)",
                 yaxis_title="Normalized value",
             )
+            t2 = fit_result["tau"]
             t2_data = T2Data.new(sweep_data, t2=t2)
             data[target] = t2_data
+
+            if save_image:
+                fig = fit_result["fig"]
+                vis.save_image(
+                    fig,
+                    name=f"t2_echo_{target}",
+                )
 
         return ExperimentResult(data=data)
 
@@ -3080,7 +3108,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: ArrayLike | None = None,
+        time_range: ArrayLike = np.arange(0, 50001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
@@ -3120,8 +3148,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
-        if time_range is None:
-            time_range = np.arange(0, 10001, 200)
+        self._validate_rabi_params()
+
+        time_range = np.asarray(time_range)
 
         data: dict[str, RamseyData] = {}
         for target in targets:
@@ -4761,9 +4790,7 @@ class Experiment:
         if save_image:
             vis.save_image(
                 fig,
-                name="resonator_spectroscopy",
-                width=600,
-                height=300,
+                name=f"resonator_spectroscopy_{mux.label}",
             )
 
         return np.array(result)
@@ -5100,7 +5127,7 @@ class Experiment:
         if save_image:
             vis.save_image(
                 fig,
-                name="qubit_spectroscopy",
+                name=f"qubit_spectroscopy_{target}",
                 width=600,
                 height=300,
             )
