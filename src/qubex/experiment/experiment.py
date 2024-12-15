@@ -587,10 +587,17 @@ class Experiment:
             self._clifford_generator = CliffordGenerator()
         return self._clifford_generator
 
-    def _validate_rabi_params(self):
+    def _validate_rabi_params(
+        self,
+        targets: Collection[str] | None = None,
+    ):
         """Check if the Rabi parameters are stored."""
         if len(self.rabi_params) == 0:
             raise ValueError("Rabi parameters are not stored.")
+        if targets is not None:
+            for target in targets:
+                if target not in self.rabi_params:
+                    raise ValueError(f"Rabi parameters for {target} are not stored.")
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
         """
@@ -2901,7 +2908,7 @@ class Experiment:
 
     def t1_experiment(
         self,
-        targets: list[str],
+        targets: Collection[str],
         *,
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2914,8 +2921,8 @@ class Experiment:
 
         Parameters
         ----------
-        targets : list[str]
-            List of qubits to check the T1 decay.
+        targets : Collection[str]
+            Collection of qubits to check the T1 decay.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
         shots : int, optional
@@ -2938,6 +2945,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
+        targets = list(targets)
+
+        self._validate_rabi_params(targets)
 
         if time_range is None:
             time_range = self.util.discretize_time_range(
@@ -2978,7 +2988,7 @@ class Experiment:
                 yaxis_title="Normalized value",
                 xaxis_type=xaxis_type,
                 yaxis_type="linear",
-            )
+            )["tau"]
             for target, data in sweep_result.data.items()
         }
 
@@ -2991,7 +3001,7 @@ class Experiment:
 
     def t2_experiment(
         self,
-        targets: list[str],
+        targets: Collection[str],
         *,
         time_range: ArrayLike | None = None,
         n_cpmg: int = 1,
@@ -3005,8 +3015,8 @@ class Experiment:
 
         Parameters
         ----------
-        targets : list[str]
-            List of targets to check the T2 decay.
+        targets : Collection[str]
+            Collection of targets to check the T2 decay.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
         n_cpmg : int, optional
@@ -3025,6 +3035,10 @@ class Experiment:
         ExperimentResult[T2Data]
             Result of the experiment.
         """
+        targets = list(targets)
+
+        self._validate_rabi_params(targets)
+
         if time_range is None:
             time_range = self.util.discretize_time_range(
                 np.logspace(
@@ -3067,10 +3081,10 @@ class Experiment:
                 x=sweep_data.sweep_range,
                 y=0.5 * (1 - sweep_data.normalized),
                 plot=plot,
-                title="T2",
+                title="T2 echo",
                 xaxis_title="Time (μs)",
                 yaxis_title="Normalized value",
-            )
+            )["tau"]
             t2_data = T2Data.new(sweep_data, t2=t2)
             data[target] = t2_data
 
@@ -3080,7 +3094,7 @@ class Experiment:
         self,
         targets: list[str],
         *,
-        time_range: ArrayLike | None = None,
+        time_range: ArrayLike = np.arange(0, 50001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
@@ -3120,8 +3134,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
-        if time_range is None:
-            time_range = np.arange(0, 10001, 200)
+        self._validate_rabi_params()
+
+        time_range = np.asarray(time_range)
 
         data: dict[str, RamseyData] = {}
         for target in targets:
@@ -4762,8 +4777,6 @@ class Experiment:
             vis.save_image(
                 fig,
                 name="resonator_spectroscopy",
-                width=600,
-                height=300,
             )
 
         return np.array(result)

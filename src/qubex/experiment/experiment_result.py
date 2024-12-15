@@ -467,7 +467,7 @@ class T1Data(SweepData):
             yaxis_title="Population",
             xaxis_type="log",
             yaxis_type="linear",
-        )
+        )["tau"]
         return tau
 
 
@@ -525,7 +525,7 @@ class T2Data(SweepData):
             title="T2",
             xaxis_title="Time (μs)",
             yaxis_title="Population",
-        )
+        )["tau"]
         return tau
 
 
