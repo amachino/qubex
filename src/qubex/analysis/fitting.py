@@ -322,7 +322,7 @@ def fit_rabi(
             # )
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return RabiParam(target, 0.0, 0.0, 0.0, 0.0, noise, angle)
+        return RabiParam(target, np.nan, np.nan, np.nan, np.nan, noise, angle)
 
     amplitude = popt[0]
     omega = popt[1]
@@ -411,7 +411,7 @@ def fit_detuned_rabi(
         popt, _ = curve_fit(func, control_frequencies, rabi_frequencies)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return 0.0, 0.0
+        return np.nan, np.nan
 
     f_resonance = popt[0]
     f_rabi = popt[1]
@@ -527,7 +527,7 @@ def fit_ramsey(
         popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return 0.0, 0.0
+        return np.nan, np.nan
 
     A = popt[0]
     omega = popt[1]
@@ -632,9 +632,9 @@ def fit_exp_decay(
     """
     if p0 is None:
         p0 = (
-            np.abs(np.max(y) - np.min(y)) / 2,
+            np.abs(np.max(y) - np.min(y)),
             10_000,
-            (np.max(y) + np.min(y)) / 2,
+            np.min(y),
         )
 
     if bounds is None:
@@ -647,7 +647,7 @@ def fit_exp_decay(
         popt, _ = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return 0.0
+        return np.nan
 
     A = popt[0]
     tau = popt[1]
@@ -759,7 +759,7 @@ def fit_rb(
         popt, _ = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return 0.0, 0.0, 0.0
+        return np.nan, np.nan, np.nan
 
     depolarizing_rate = popt[0]
     r = 1 - depolarizing_rate
@@ -962,7 +962,7 @@ def fit_ampl_calib_data(
         popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return 0.0
+        return np.nan
 
     print(
         f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
@@ -1064,7 +1064,7 @@ def fit_lorentzian(
         popt, _ = curve_fit(func_lorentzian, freq_range, data, p0=p0)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return 0.0
+        return np.nan
 
     A = popt[0]
     f0 = popt[1]

@@ -27,6 +27,7 @@ from ..analysis import (
 )
 from ..analysis import visualization as vis
 from ..backend import (
+    SAMPLING_PERIOD,
     Box,
     ControlParams,
     ControlSystem,
@@ -240,6 +241,11 @@ class Experiment:
     def tool(self):
         """Get the experiment tool."""
         return experiment_tool
+
+    @property
+    def util(self):
+        """Get the experiment util."""
+        return ExperimentUtil
 
     @property
     def state_manager(self) -> StateManager:
@@ -2934,7 +2940,13 @@ class Experiment:
         """
 
         if time_range is None:
-            time_range = 2 ** np.arange(1, 19)
+            time_range = self.util.discretize_time_range(
+                np.logspace(
+                    np.log10(100),
+                    np.log10(100 * 1000),
+                    51,
+                )
+            )
 
         def t1_sequence(T: int) -> PulseSchedule:
             with PulseSchedule(targets) as ps:
@@ -2963,7 +2975,7 @@ class Experiment:
                 plot=plot,
                 title="T1",
                 xaxis_title="Time (μs)",
-                yaxis_title="Population",
+                yaxis_title="Normalized value",
                 xaxis_type=xaxis_type,
                 yaxis_type="linear",
             )
@@ -3014,7 +3026,14 @@ class Experiment:
             Result of the experiment.
         """
         if time_range is None:
-            time_range = 200 * 2 ** np.arange(12)
+            time_range = self.util.discretize_time_range(
+                np.logspace(
+                    np.log10(0.5 * 300),
+                    np.log10(0.5 * 100 * 1000),
+                    51,
+                ),
+                2 * SAMPLING_PERIOD,
+            )
 
         data: dict[str, T2Data] = {}
         for target in targets:
@@ -3050,7 +3069,7 @@ class Experiment:
                 plot=plot,
                 title="T2",
                 xaxis_title="Time (μs)",
-                yaxis_title="Population",
+                yaxis_title="Normalized value",
             )
             t2_data = T2Data.new(sweep_data, t2=t2)
             data[target] = t2_data
@@ -4375,7 +4394,7 @@ class Experiment:
         frequency_range: ArrayLike = np.arange(10.05, 10.1, 0.002),
         amplitude: float = 0.01,
         subrange_width: float = 0.3,
-        shots: int = 100,
+        shots: int = 128,
         interval: int = 0,
         plot: bool = False,
     ) -> float:
@@ -4391,7 +4410,7 @@ class Experiment:
         amplitude : float, optional
             Amplitude of the readout pulse. Defaults to 0.01.
         shots : int, optional
-            Number of shots. Defaults to 100.
+            Number of shots. Defaults to 128.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
@@ -4498,7 +4517,7 @@ class Experiment:
         phase_shift: float | None = None,
         amplitude: float = 0.01,
         subrange_width: float = 0.3,
-        shots: int = 100,
+        shots: int = 128,
         interval: int = 0,
         plot: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.complex128]]:
@@ -4518,7 +4537,7 @@ class Experiment:
         subrange_width : float, optional
             Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
-            Number of shots. Defaults to 100.
+            Number of shots. Defaults to 128.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
@@ -4663,7 +4682,7 @@ class Experiment:
         phase_shift: float,
         frequency_range: ArrayLike = np.arange(9.75, 10.75, 0.002),
         power_range: ArrayLike = np.arange(-60, 5, 5),
-        shots: int = 100,
+        shots: int = 128,
         interval: int = 0,
         plot: bool = True,
         save_image: bool = True,
@@ -4682,7 +4701,7 @@ class Experiment:
         power_range : ArrayLike, optional
             Power range in dB. Defaults to np.arange(-60, 5, 5).
         shots : int, optional
-            Number of shots. Defaults to 100.
+            Number of shots. Defaults to 128.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
@@ -4756,7 +4775,7 @@ class Experiment:
         frequency_range: ArrayLike,
         phase_shift: float,
         amplitude: float = 0.01,
-        shots: int = 100,
+        shots: int = 128,
         interval: int = 0,
         plot: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.complex128], float, float, float]:
@@ -4774,7 +4793,7 @@ class Experiment:
         amplitude : float, optional
             Amplitude of the readout pulse. Defaults to 0.01.
         shots : int, optional
-            Number of shots. Defaults to 100.
+            Number of shots. Defaults to 128.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
@@ -5258,6 +5277,32 @@ class Experiment:
 
 
 class ExperimentUtil:
+    @staticmethod
+    def discretize_time_range(
+        time_range: ArrayLike,
+        sampling_period: float = SAMPLING_PERIOD,
+    ) -> NDArray[np.float64]:
+        """
+        Discretizes the time range.
+
+        Parameters
+        ----------
+        time_range : ArrayLike
+            Time range to discretize in ns.
+        sampling_period : float, optional
+            Sampling period in ns. Defaults to SAMPLING_PERIOD.
+
+        Returns
+        -------
+        NDArray[np.float64]
+            Discretized time range.
+        """
+        discretized_range = np.array(time_range)
+        discretized_range = (
+            np.round(discretized_range / sampling_period) * sampling_period
+        )
+        return discretized_range
+
     @staticmethod
     def split_frequency_range(
         frequency_range: ArrayLike,
