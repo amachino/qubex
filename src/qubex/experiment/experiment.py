@@ -2949,7 +2949,7 @@ class Experiment:
         Examples
         --------
         >>> result = ex.t1_experiment(
-        ...     target="Q00",
+        ...     targets=["Q00", "Q01", "Q02", "Q03"]
         ...     time_range=2 ** np.arange(1, 19),
         ...     shots=1024,
         ... )
@@ -2970,6 +2970,8 @@ class Experiment:
         data: dict[str, T1Data] = {}
 
         for subgroup in self.util.create_qubit_subgroups(targets):
+            if len(subgroup) == 0:
+                continue
 
             def t1_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
@@ -3059,13 +3061,12 @@ class Experiment:
         Examples
         --------
         >>> result = ex.t2_experiment(
-        ...     target="Q00",
+        ...     targets=["Q00", "Q01", "Q02", "Q03"]
         ...     time_range=2 ** np.arange(1, 19),
         ...     shots=1024,
         ... )
         """
         targets = list(targets)
-
         self._validate_rabi_params(targets)
 
         if time_range is None:
@@ -3082,6 +3083,8 @@ class Experiment:
         data: dict[str, T2Data] = {}
 
         for subgroup in self.util.create_qubit_subgroups(targets):
+            if len(subgroup) == 0:
+                continue
 
             def t2_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
@@ -3134,24 +3137,25 @@ class Experiment:
 
     def ramsey_experiment(
         self,
-        targets: list[str],
+        targets: Collection[str],
         *,
-        time_range: ArrayLike = np.arange(0, 50001, 100),
+        time_range: ArrayLike = np.arange(0, 30001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = False,
     ) -> ExperimentResult[RamseyData]:
         """
         Conducts a Ramsey experiment in series.
 
         Parameters
         ----------
-        targets : list[str]
-            List of targets to check the Ramsey oscillation.
+        targets : Collection[str]
+            Collection of targets to check the Ramsey oscillation.
         time_range : ArrayLike, optional
-            Time range of the experiment in ns. Defaults to np.arange(0, 50001, 100).
+            Time range of the experiment in ns. Defaults to np.arange(0, 30001, 100).
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.001 GHz.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
@@ -3162,6 +3166,8 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to False.
 
         Returns
         -------
@@ -3171,13 +3177,13 @@ class Experiment:
         Examples
         --------
         >>> result = ex.ramsey_experiment(
-        ...     target="Q00",
+        ...     targets=["Q00", "Q01", "Q02", "Q03"]
         ...     time_range=range(0, 10_000, 100),
         ...     shots=1024,
         ... )
         """
+        targets = list(targets)
         time_range = np.asarray(time_range)
-
         self._validate_rabi_params()
 
         target_groups = self.util.create_qubit_subgroups(targets)
@@ -3190,6 +3196,9 @@ class Experiment:
                 target_list = targets + spectators
             else:
                 target_list = targets
+
+            if len(target_list) == 0:
+                continue
 
             def ramsey_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(target_list) as ps:
@@ -3240,29 +3249,36 @@ class Experiment:
                     )
                     data[target] = ramsey_data
 
+                    if save_image:
+                        fig = fit_result["fig"]
+                        vis.save_image(
+                            fig,
+                            name=f"ramsey_{target}",
+                        )
+
         return ExperimentResult(data=data)
 
     def obtain_effective_control_frequency(
         self,
-        target: str,
+        targets: Collection[str],
         *,
         time_range: ArrayLike | None = None,
-        detuning: float = 0.0005,
+        detuning: float = 0.001,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> float:
+    ) -> dict[str, float]:
         """
         Obtains the effective control frequency of the qubit.
 
         Parameters
         ----------
-        target : str
-            Target qubit to check the Ramsey oscillation.
+        targets : Collection[str]
+            Target qubits to check the Ramsey oscillation.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
         detuning : float, optional
-            Detuning of the control frequency. Defaults to 0.0005 GHz.
+            Detuning of the control frequency. Defaults to 0.001 GHz.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -3272,56 +3288,64 @@ class Experiment:
 
         Returns
         -------
-        float
+        dict[str, float]
             Effective control frequency.
 
         Examples
         --------
         >>> result = ex.obtain_true_control_frequency(
-        ...     target="Q00",
+        ...     targets=["Q00", "Q01", "Q02", "Q03"]
         ...     time_range=range(0, 10000, 100),
         ...     shots=1024,
         ... )
         """
         if time_range is None:
-            time_range = np.arange(0, 10001, 200)
+            time_range = np.arange(0, 30001, 100)
 
-        ramsey_freq_0 = (
-            self.ramsey_experiment(
-                targets=[target],
-                time_range=time_range,
-                detuning=detuning,
-                spectator_state="0",
-                shots=shots,
-                interval=interval,
-                plot=plot,
-            )
-            .data[target]
-            .ramsey_freq
+        result_0 = self.ramsey_experiment(
+            targets=targets,
+            time_range=time_range,
+            detuning=detuning,
+            spectator_state="0",
+            shots=shots,
+            interval=interval,
+            plot=plot,
         )
 
-        ramsey_freq_1 = (
-            self.ramsey_experiment(
-                targets=[target],
-                time_range=time_range,
-                detuning=detuning,
-                spectator_state="1",
-                shots=shots,
-                interval=interval,
-                plot=plot,
-            )
-            .data[target]
-            .ramsey_freq
+        result_1 = self.ramsey_experiment(
+            targets=targets,
+            time_range=time_range,
+            detuning=detuning,
+            spectator_state="1",
+            shots=shots,
+            interval=interval,
+            plot=plot,
         )
 
-        bare_freq_0 = self.targets[target].frequency + detuning - ramsey_freq_0
-        bare_freq_1 = self.targets[target].frequency + detuning - ramsey_freq_1
-        effective_freq = (bare_freq_0 + bare_freq_1) / 2
+        bare_freq_0 = {
+            target: self.targets[target].frequency
+            + detuning
+            - result_0.data[target].ramsey_freq
+            for target in targets
+        }
+        bare_freq_1 = {
+            target: self.targets[target].frequency
+            + detuning
+            - result_1.data[target].ramsey_freq
+            for target in targets
+        }
+        effective_freq = {
+            target: (bare_freq_0[target] + bare_freq_1[target]) / 2
+            for target in targets
+        }
 
-        print(f"Original frequency: {self.targets[target].frequency:.6f}")
-        print(f"Bare frequency with spectator state 0: {bare_freq_0:.6f}")
-        print(f"Bare frequency with spectator state 1: {bare_freq_1:.6f}")
-        print(f"Effective control frequency: {effective_freq:.6f}")
+        for target in targets:
+            print(f"Target: {target}")
+            print(f"  Original frequency: {self.targets[target].frequency:.6f}")
+            print(f"  Bare frequency with |0>: {bare_freq_0[target]:.6f}")
+            print(f"  Bare frequency with |1>: {bare_freq_1[target]:.6f}")
+            print(f"  Effective control frequency: {effective_freq[target]:.6f}")
+            print("")
 
         return effective_freq
 
