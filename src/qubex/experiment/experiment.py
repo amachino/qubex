@@ -3184,7 +3184,7 @@ class Experiment:
         """
         targets = list(targets)
         time_range = np.asarray(time_range)
-        self._validate_rabi_params()
+        self._validate_rabi_params(targets)
 
         target_groups = self.util.create_qubit_subgroups(targets)
         spectator_groups = reversed(target_groups)  # TODO: make it more general
@@ -3262,7 +3262,7 @@ class Experiment:
         self,
         targets: Collection[str],
         *,
-        time_range: ArrayLike | None = None,
+        time_range: ArrayLike = np.arange(0, 30001, 100),
         detuning: float = 0.001,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3299,8 +3299,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
-        if time_range is None:
-            time_range = np.arange(0, 30001, 100)
+        targets = list(targets)
+        time_range = np.asarray(time_range)
+        self._validate_rabi_params(targets)
 
         result_0 = self.ramsey_experiment(
             targets=targets,
