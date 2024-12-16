@@ -2955,7 +2955,6 @@ class Experiment:
         ... )
         """
         targets = list(targets)
-
         self._validate_rabi_params(targets)
 
         if time_range is None:
@@ -2966,6 +2965,7 @@ class Experiment:
                     51,
                 )
             )
+        time_range = np.asarray(time_range)
 
         data: dict[str, T1Data] = {}
 
@@ -3077,6 +3077,7 @@ class Experiment:
                 ),
                 2 * SAMPLING_PERIOD,
             )
+        time_range = np.asarray(time_range)
 
         data: dict[str, T2Data] = {}
 
@@ -3179,61 +3180,65 @@ class Experiment:
 
         self._validate_rabi_params()
 
+        target_groups = self.util.create_qubit_subgroups(targets)
+        spectator_groups = reversed(target_groups)  # TODO: make it more general
+
         data: dict[str, RamseyData] = {}
 
-        for target in targets:
-            spectators = self.get_spectators(target)
+        for targets, spectators in zip(target_groups, spectator_groups):
             if spectator_state != "0":
-                target_list = [target] + [
-                    spectator.label
-                    for spectator in spectators
-                    if spectator.label in self._qubits
-                ]
+                target_list = targets + spectators
             else:
-                target_list = [target]
+                target_list = targets
 
             def ramsey_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(target_list) as ps:
                     # Excite spectator qubits if needed
                     if spectator_state != "0":
                         for spectator in spectators:
-                            if spectator.label in self._qubits:
+                            if spectator in self._qubits:
                                 pulse = self.get_pulse_for_state(
-                                    target=spectator.label,
+                                    target=spectator,
                                     state=spectator_state,
                                 )
-                                ps.add(spectator.label, pulse)
+                                ps.add(spectator, pulse)
                         ps.barrier()
 
                     # Ramsey sequence for the target qubit
-                    hpi = self.hpi_pulse[target]
-                    ps.add(target, hpi)
-                    ps.add(target, Blank(T))
-                    ps.add(target, hpi.shifted(np.pi))
+                    for target in targets:
+                        hpi = self.hpi_pulse[target]
+                        ps.add(target, hpi)
+                        ps.add(target, Blank(T))
+                        ps.add(target, hpi.shifted(np.pi))
                 return ps
 
-            detuned_frequency = self.qubits[target].frequency + detuning
+            detuned_frequencies = {
+                target: self.qubits[target].frequency + detuning for target in targets
+            }
 
-            sweep_data = self.sweep_parameter(
+            sweep_result = self.sweep_parameter(
                 sequence=ramsey_sequence,
                 sweep_range=time_range,
-                frequencies={target: detuned_frequency},
+                frequencies=detuned_frequencies,
                 shots=shots,
                 interval=interval,
                 plot=plot,
-            ).data[target]
-            t2, ramsey_freq = fitting.fit_ramsey(
-                target=target,
-                x=sweep_data.sweep_range,
-                y=sweep_data.normalized,
-                plot=plot,
             )
-            ramsey_data = RamseyData.new(
-                sweep_data=sweep_data,
-                t2=t2,
-                ramsey_freq=ramsey_freq,
-            )
-            data[target] = ramsey_data
+
+            for target, sweep_data in sweep_result.data.items():
+                if target in targets:
+                    fit_result = fitting.fit_ramsey(
+                        target=target,
+                        x=sweep_data.sweep_range,
+                        y=sweep_data.normalized,
+                        plot=plot,
+                    )
+                    ramsey_data = RamseyData.new(
+                        sweep_data=sweep_data,
+                        t2=fit_result["tau"],
+                        ramsey_freq=fit_result["f"],
+                    )
+                    data[target] = ramsey_data
 
         return ExperimentResult(data=data)
 

@@ -473,7 +473,7 @@ def fit_ramsey(
     yaxis_title: str = "Amplitude (arb. units)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
-) -> tuple[float, float]:
+) -> dict:
     """
     Fit Ramsey fringe using a damped cosine function and plot the results.
 
@@ -524,23 +524,15 @@ def fit_ramsey(
         )
 
     try:
-        popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+        popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return np.nan, np.nan
+        return {}
 
-    A = popt[0]
-    omega = popt[1]
-    phi = popt[2]
-    C = popt[3]
-    tau = popt[4]
+    A, omega, phi, C, tau = popt
+    A_err, omega_err, phi_err, C_err, tau_err = np.sqrt(np.diag(pcov))
     f = omega / (2 * np.pi)
-
-    print(
-        f"Fitted function: {A:.3g} * exp(-t/{tau:.3g}) * cos({omega:.3g} * t + {phi:.3g}) + {C:.3g}"
-    )
-    print(f"Decay time: {tau * 1e-3:.3g} μs")
-    print(f"Frequency: {f * 1e3:.3g} MHz")
+    f_err = omega_err / (2 * np.pi)
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
@@ -568,7 +560,7 @@ def fit_ramsey(
             yref="paper",
             x=0.95,
             y=0.95,
-            text=f"τ = {tau * 1e-3:.3g} μs, f = {f * 1e3:.3g} MHz",
+            text=f"τ = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs, f = {f * 1e3:.3f} ± {f_err * 1e3:.3f} MHz",
             showarrow=False,
         )
         fig.update_layout(
@@ -579,8 +571,28 @@ def fit_ramsey(
             yaxis_type=yaxis_type,
         )
         fig.show(config=_plotly_config(f"ramsey_{target}"))
+    else:
+        fig = None
 
-    return tau, f
+    print(f"Target: {target}")
+    print("Fit: A * exp(-t / tau) * cos(omega * t + phi) + C")
+    print(f"  A = {A:.2f} ± {A_err:.2f}")
+    print(f"  omega = {omega * 1e3:.2f} ± {omega_err * 1e3:.2f} rad/μs")
+    print(f"  phi = {phi:.2f} ± {phi_err:.2f} rad")
+    print(f"  tau = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs")
+    print(f"  C = {C:.2f} ± {C_err:.2f}")
+    print(f"f = {f * 1e3:.3f} ± {f_err * 1e3:.3f} MHz")
+    print("")
+
+    return {
+        "tau": tau,
+        "tau_err": tau_err,
+        "f": f,
+        "f_err": f_err,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
 
 
 def fit_exp_decay(
@@ -690,12 +702,15 @@ def fit_exp_decay(
             yaxis_type=yaxis_type,
         )
         fig.show(config=_plotly_config(f"exp_decay_{target}"))
+    else:
+        fig = None
 
     print(f"Target: {target}")
     print("Fit: A * exp(-t / tau) + C")
     print(f"  A = {A:.2f} ± {A_err:.2f}")
     print(f"  tau = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs")
     print(f"  C = {C:.2f} ± {C_err:.2f}")
+    print("")
 
     return {
         "tau": tau,
