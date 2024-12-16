@@ -2957,9 +2957,6 @@ class Experiment:
         targets = list(targets)
 
         self._validate_rabi_params(targets)
-        targets = list(targets)
-
-        self._validate_rabi_params(targets)
 
         if time_range is None:
             time_range = self.util.discretize_time_range(
@@ -3058,11 +3055,15 @@ class Experiment:
         -------
         ExperimentResult[T2Data]
             Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.t2_experiment(
+        ...     target="Q00",
+        ...     time_range=2 ** np.arange(1, 19),
+        ...     shots=1024,
+        ... )
         """
-        targets = list(targets)
-
-        self._validate_rabi_params(targets)
-
         targets = list(targets)
 
         self._validate_rabi_params(targets)
@@ -3149,7 +3150,7 @@ class Experiment:
         targets : list[str]
             List of targets to check the Ramsey oscillation.
         time_range : ArrayLike, optional
-            Time range of the experiment in ns.
+            Time range of the experiment in ns. Defaults to np.arange(0, 50001, 100).
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.001 GHz.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
@@ -3170,18 +3171,16 @@ class Experiment:
         --------
         >>> result = ex.ramsey_experiment(
         ...     target="Q00",
-        ...     time_range=range(0, 10000, 200),
+        ...     time_range=range(0, 10_000, 100),
         ...     shots=1024,
         ... )
         """
-        self._validate_rabi_params()
-
         time_range = np.asarray(time_range)
-        self._validate_rabi_params()
 
-        time_range = np.asarray(time_range)
+        self._validate_rabi_params()
 
         data: dict[str, RamseyData] = {}
+
         for target in targets:
             spectators = self.get_spectators(target)
             if spectator_state != "0":
