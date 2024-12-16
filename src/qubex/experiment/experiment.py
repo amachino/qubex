@@ -2970,44 +2970,51 @@ class Experiment:
                 )
             )
 
-        def t1_sequence(T: int) -> PulseSchedule:
-            with PulseSchedule(targets) as ps:
-                for target in targets:
-                    ps.add(target, self.pi_pulse[target])
-                    ps.add(target, Blank(T))
-            return ps
+        data: dict[str, T1Data] = {}
 
-        sweep_result = self.sweep_parameter(
-            sequence=t1_sequence,
-            sweep_range=time_range,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-            title="T1 decay",
-            xaxis_title="Time (μs)",
-            yaxis_title="Measured value",
-            xaxis_type=xaxis_type,
-        )
+        for subgroup in self.util.create_qubit_subgroups(targets):
 
-        t1_value = {
-            target: fitting.fit_exp_decay(
-                target=target,
-                x=data.sweep_range,
-                y=0.5 * (1 - data.normalized),
+            def t1_sequence(T: int) -> PulseSchedule:
+                with PulseSchedule(subgroup) as ps:
+                    for target in subgroup:
+                        ps.add(target, self.pi_pulse[target])
+                        ps.add(target, Blank(T))
+                return ps
+
+            sweep_result = self.sweep_parameter(
+                sequence=t1_sequence,
+                sweep_range=time_range,
+                shots=shots,
+                interval=interval,
                 plot=plot,
-                title="T1",
+                title="T1 decay",
                 xaxis_title="Time (μs)",
-                yaxis_title="Normalized value",
+                yaxis_title="Measured value",
                 xaxis_type=xaxis_type,
-                yaxis_type="linear",
-            )["tau"]
-            for target, data in sweep_result.data.items()
-        }
+            )
 
-        data = {
-            target: T1Data.new(data, t1_value[target])
-            for target, data in sweep_result.data.items()
-        }
+            for target, sweep_data in sweep_result.data.items():
+                fit_result = fitting.fit_exp_decay(
+                    target=target,
+                    x=sweep_data.sweep_range,
+                    y=0.5 * (1 - sweep_data.normalized),
+                    plot=plot,
+                    title="T1",
+                    xaxis_title="Time (μs)",
+                    yaxis_title="Normalized value",
+                    xaxis_type=xaxis_type,
+                    yaxis_type="linear",
+                )
+                t1 = fit_result["tau"]
+                t1_data = T1Data.new(sweep_data, t1=t1)
+                data[target] = t1_data
+
+                if save_image:
+                    fig = fit_result["fig"]
+                    vis.save_image(
+                        fig,
+                        name=f"t1_{target}",
+                    )
 
         return ExperimentResult(data=data)
 
@@ -3071,51 +3078,55 @@ class Experiment:
             )
 
         data: dict[str, T2Data] = {}
-        for target in targets:
+
+        for subgroup in self.util.create_qubit_subgroups(targets):
 
             def t2_sequence(T: int) -> PulseSchedule:
-                with PulseSchedule([target]) as ps:
-                    hpi = self.hpi_pulse[target]
-                    pi = pi_cpmg or hpi.repeated(2)
-                    ps.add(target, hpi)
-                    if T > 0:
-                        ps.add(
-                            target,
-                            CPMG(
-                                tau=(T - pi.duration * n_cpmg) // (2 * n_cpmg),
-                                pi=pi,
-                                n=n_cpmg,
-                            ),
-                        )
-                    ps.add(target, hpi.shifted(np.pi))
+                with PulseSchedule(subgroup) as ps:
+                    for target in subgroup:
+                        hpi = self.hpi_pulse[target]
+                        pi = pi_cpmg or hpi.repeated(2)
+                        ps.add(target, hpi)
+                        if T > 0:
+                            ps.add(
+                                target,
+                                CPMG(
+                                    tau=(T - pi.duration * n_cpmg) // (2 * n_cpmg),
+                                    pi=pi,
+                                    n=n_cpmg,
+                                ),
+                            )
+                        ps.add(target, hpi.shifted(np.pi))
                 return ps
 
-            sweep_data = self.sweep_parameter(
+            sweep_result = self.sweep_parameter(
                 sequence=t2_sequence,
                 sweep_range=time_range,
                 shots=shots,
                 interval=interval,
                 plot=plot,
-            ).data[target]
-            fit_result = fitting.fit_exp_decay(
-                target=target,
-                x=sweep_data.sweep_range,
-                y=0.5 * (1 - sweep_data.normalized),
-                plot=plot,
-                title="T2 echo",
-                xaxis_title="Time (μs)",
-                yaxis_title="Normalized value",
             )
-            t2 = fit_result["tau"]
-            t2_data = T2Data.new(sweep_data, t2=t2)
-            data[target] = t2_data
 
-            if save_image:
-                fig = fit_result["fig"]
-                vis.save_image(
-                    fig,
-                    name=f"t2_echo_{target}",
+            for target, sweep_data in sweep_result.data.items():
+                fit_result = fitting.fit_exp_decay(
+                    target=target,
+                    x=sweep_data.sweep_range,
+                    y=0.5 * (1 - sweep_data.normalized),
+                    plot=plot,
+                    title="T2 echo",
+                    xaxis_title="Time (μs)",
+                    yaxis_title="Normalized value",
                 )
+                t2 = fit_result["tau"]
+                t2_data = T2Data.new(sweep_data, t2=t2)
+                data[target] = t2_data
+
+                if save_image:
+                    fig = fit_result["fig"]
+                    vis.save_image(
+                        fig,
+                        name=f"t2_echo_{target}",
+                    )
 
         return ExperimentResult(data=data)
 
@@ -5372,3 +5383,28 @@ class ExperimentUtil:
         range_count = (frequency_range[-1] - frequency_range[0]) // subrange_width + 1
         sub_ranges = np.array_split(frequency_range, range_count)
         return sub_ranges
+
+    @staticmethod
+    def create_qubit_subgroups(
+        qubits: Collection[str],
+    ) -> list[list[str]]:
+        """
+        Creates subgroups of qubits.
+
+        Parameters
+        ----------
+        qubits : Collection[str]
+            Collection of qubits.
+
+        Returns
+        -------
+        list[list[str]]
+            Subgroups of qubits.
+        """
+        # TODO: Implement a more general method
+        qubit_labels = list(qubits)
+        system = StateManager.shared().experiment_system
+        qubit_objects = [system.get_qubit(qubit) for qubit in qubit_labels]
+        group03 = [qubit.label for qubit in qubit_objects if qubit.index % 4 in [0, 3]]
+        group12 = [qubit.label for qubit in qubit_objects if qubit.index % 4 in [1, 2]]
+        return [group03, group12]
