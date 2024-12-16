@@ -598,6 +598,10 @@ class Experiment:
             for target in targets:
                 if target not in self.rabi_params:
                     raise ValueError(f"Rabi parameters for {target} are not stored.")
+        if targets is not None:
+            for target in targets:
+                if target not in self.rabi_params:
+                    raise ValueError(f"Rabi parameters for {target} are not stored.")
 
     def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
         """
@@ -2924,6 +2928,8 @@ class Experiment:
         ----------
         targets : Collection[str]
             Collection of qubits to check the T1 decay.
+        targets : Collection[str]
+            Collection of qubits to check the T1 decay.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
         shots : int, optional
@@ -2948,6 +2954,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
+        targets = list(targets)
+
+        self._validate_rabi_params(targets)
         targets = list(targets)
 
         self._validate_rabi_params(targets)
@@ -3021,6 +3030,8 @@ class Experiment:
         ----------
         targets : Collection[str]
             Collection of targets to check the T2 decay.
+        targets : Collection[str]
+            Collection of targets to check the T2 decay.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
         n_cpmg : int, optional
@@ -3041,6 +3052,10 @@ class Experiment:
         ExperimentResult[T2Data]
             Result of the experiment.
         """
+        targets = list(targets)
+
+        self._validate_rabi_params(targets)
+
         targets = list(targets)
 
         self._validate_rabi_params(targets)
@@ -3148,6 +3163,9 @@ class Experiment:
         ...     shots=1024,
         ... )
         """
+        self._validate_rabi_params()
+
+        time_range = np.asarray(time_range)
         self._validate_rabi_params()
 
         time_range = np.asarray(time_range)
