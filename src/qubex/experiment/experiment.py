@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import sys
 from collections import defaultdict
 from contextlib import contextmanager
@@ -20,11 +21,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 from tqdm import tqdm
 
-from ..analysis import (
-    IQPlotter,
-    RabiParam,
-    fitting,
-)
+from ..analysis import IQPlotter, RabiParam, fitting
 from ..analysis import visualization as vis
 from ..backend import (
     SAMPLING_PERIOD,
@@ -1898,6 +1895,123 @@ class Experiment:
 
         return result
 
+    def chevron_pattern(
+        self,
+        targets: Collection[str],
+        *,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
+        time_range: ArrayLike = np.arange(0, 201, 4),
+        rabi_level: Literal["ge", "ef"] = "ge",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict[str, NDArray]:
+        """
+        Obtains the relation between the detuning and the Rabi frequency.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            Collection of targets to check the Rabi oscillation.
+        detuning_range : ArrayLike, optional
+            Range of the detuning to sweep in GHz.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns.
+        rabi_level : Literal["ge", "ef"], optional
+            Rabi level to use. Defaults to "ge".
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the image. Defaults to True.
+
+        Examples
+        --------
+        >>> result = ex.chevron_pattern(
+        ...     targets=["Q00", "Q01"],
+        ...     detuning_range=np.linspace(-0.01, 0.01, 11),
+        ...     time_range=range(0, 101, 4),
+        ... )
+        """
+        detuning_range = np.array(detuning_range, dtype=np.float64)
+        time_range = np.array(time_range, dtype=np.float64)
+
+        ampl = self.params.control_amplitude
+        rabi_rates: dict[str, list[float]] = defaultdict(list)
+        buffer: dict[str, list[NDArray]] = defaultdict(list)
+        for detuning in tqdm(detuning_range):
+            with self.util.no_output():
+                if rabi_level == "ge":
+                    rabi_result = self.rabi_experiment(
+                        time_range=time_range,
+                        amplitudes={target: ampl[target] for target in targets},
+                        detuning=detuning,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                elif rabi_level == "ef":
+                    rabi_result = self.ef_rabi_experiment(
+                        time_range=time_range,
+                        amplitudes={
+                            target: ampl[target] / np.sqrt(2) for target in targets
+                        },
+                        detuning=detuning,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                else:
+                    raise ValueError("Invalid rabi_level.")
+
+            for target, data in rabi_result.data.items():
+                rabi_rate = data.rabi_param.frequency
+                rabi_rates[target].append(rabi_rate)
+                buffer[target].append(data.normalized)
+
+        chevron_data = {label: np.array(data).T for label, data in buffer.items()}
+
+        for target, data in chevron_data.items():
+            fig = go.Figure()
+            fig.add_trace(
+                go.Heatmap(
+                    x=detuning_range + self.targets[target].frequency,
+                    y=time_range,
+                    z=data,
+                    colorscale="Viridis",
+                )
+            )
+            fig.update_layout(
+                title=f"Chevron pattern : {target}",
+                xaxis_title="Drive frequency (GHz)",
+                yaxis_title="Time (ns)",
+                width=600,
+                height=400,
+            )
+            if plot:
+                fig.show()
+
+            if save_image:
+                vis.save_image(
+                    fig,
+                    name=f"chevron_pattern_{target}",
+                    width=600,
+                    height=400,
+                )
+
+        for target, rabi_rate in rabi_rates.items():
+            fitting.fit_detuned_rabi(
+                target=target,
+                control_frequencies=detuning_range + self.targets[target].frequency,
+                rabi_frequencies=np.array(rabi_rate),
+            )
+
+        return chevron_data
+
     def obtain_freq_rabi_relation(
         self,
         targets: list[str],
@@ -2221,7 +2335,7 @@ class Experiment:
         targets: list[str],
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 15),
-        time_range: ArrayLike = range(0, 101, 8),
+        time_range: ArrayLike = range(0, 101, 4),
         amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -2299,7 +2413,7 @@ class Experiment:
         targets: list[str],
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 15),
-        time_range: ArrayLike = range(0, 101, 8),
+        time_range: ArrayLike = range(0, 101, 4),
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3465,10 +3579,9 @@ class Experiment:
         n: int,
         x90: dict[str, Waveform] | None = None,
         zx90: PulseSchedule | dict[str, Waveform] | None = None,
-        interleaved_waveform: PulseSchedule
-        | dict[str, PulseSequence]
-        | dict[str, Waveform]
-        | None = None,
+        interleaved_waveform: (
+            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+        ) = None,
         interleaved_clifford: Clifford | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
@@ -3505,10 +3618,9 @@ class Experiment:
         target: str,
         n: int,
         x90: Waveform | dict[str, Waveform] | None = None,
-        interleaved_waveform: Waveform
-        | dict[str, PulseSequence]
-        | dict[str, Waveform]
-        | None = None,
+        interleaved_waveform: (
+            Waveform | dict[str, PulseSequence] | dict[str, Waveform] | None
+        ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
     ) -> PulseSequence:
@@ -3606,14 +3718,12 @@ class Experiment:
         target: str,
         n: int,
         x90: dict[str, Waveform] | None = None,
-        zx90: PulseSchedule
-        | dict[str, PulseSequence]
-        | dict[str, Waveform]
-        | None = None,
-        interleaved_waveform: PulseSchedule
-        | dict[str, PulseSequence]
-        | dict[str, Waveform]
-        | None = None,
+        zx90: (
+            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+        ) = None,
+        interleaved_waveform: (
+            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+        ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
@@ -3873,14 +3983,12 @@ class Experiment:
         target: str,
         n_cliffords_range: ArrayLike | None = None,
         x90: dict[str, Waveform] | None = None,
-        zx90: PulseSchedule
-        | dict[str, PulseSequence]
-        | dict[str, Waveform]
-        | None = None,
-        interleaved_waveform: PulseSchedule
-        | dict[str, PulseSequence]
-        | dict[str, Waveform]
-        | None = None,
+        zx90: (
+            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+        ) = None,
+        interleaved_waveform: (
+            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+        ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
@@ -4243,9 +4351,9 @@ class Experiment:
             sequence = sequence.get_sequences()
         else:
             sequence = {
-                target: Pulse(waveform)
-                if not isinstance(waveform, Waveform)
-                else waveform
+                target: (
+                    Pulse(waveform) if not isinstance(waveform, Waveform) else waveform
+                )
                 for target, waveform in sequence.items()
             }
 
@@ -5362,6 +5470,19 @@ class Experiment:
 
 
 class ExperimentUtil:
+    @staticmethod
+    @contextmanager
+    def no_output():
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        try:
+            sys.stdout = io.StringIO()
+            sys.stderr = io.StringIO()
+            yield
+        finally:
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+
     @staticmethod
     def discretize_time_range(
         time_range: ArrayLike,
