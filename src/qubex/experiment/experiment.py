@@ -20,6 +20,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 from tqdm import tqdm
+from typing_extensions import deprecated
 
 from ..analysis import IQPlotter, RabiParam, fitting
 from ..analysis import visualization as vis
@@ -1442,6 +1443,7 @@ class Experiment:
         *,
         amplitudes: dict[str, float],
         time_range: ArrayLike,
+        frequencies: dict[str, float] | None = None,
         detuning: float = 0.0,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1457,6 +1459,8 @@ class Experiment:
             Amplitudes of the control pulses.
         time_range : ArrayLike
             Time range of the experiment.
+        frequencies : dict[str, float], optional
+            Frequencies of the qubits. Defaults to None.
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.0.
         shots : int, optional
@@ -1488,6 +1492,12 @@ class Experiment:
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
+        # target frequencies
+        if frequencies is None:
+            frequencies = {
+                target: self.targets[target].frequency for target in amplitudes
+            }
+
         # rabi sequence with rect pulses of duration T
         def rabi_sequence(T: int) -> PulseSchedule:
             with PulseSchedule(targets) as ps:
@@ -1497,7 +1507,7 @@ class Experiment:
 
         # detune target frequencies if necessary
         detuned_frequencies = {
-            target: self.targets[target].frequency + detuning for target in amplitudes
+            target: frequencies[target] + detuning for target in amplitudes
         }
 
         # run the Rabi experiment by sweeping the drive time
@@ -1554,6 +1564,7 @@ class Experiment:
         *,
         amplitudes: dict[str, float],
         time_range: ArrayLike,
+        frequencies: dict[str, float] | None = None,
         detuning: float = 0.0,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1569,6 +1580,8 @@ class Experiment:
             Amplitudes of the control pulses.
         time_range : ArrayLike
             Time range of the experiment.
+        frequencies : dict[str, float], optional
+            Frequencies of the qubits. Defaults to None.
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.0.
         shots : int, optional
@@ -1604,6 +1617,12 @@ class Experiment:
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
+        # target frequencies
+        if frequencies is None:
+            frequencies = {
+                target: self.targets[target].frequency for target in amplitudes
+            }
+
         # ef rabi sequence with rect pulses of duration T
         def ef_rabi_sequence(T: int) -> PulseSchedule:
             with PulseSchedule(ge_labels + ef_labels) as ps:
@@ -1616,8 +1635,10 @@ class Experiment:
                     ps.add(ef, Rect(duration=T, amplitude=amplitudes[ef]))
             return ps
 
-        # detune ef frequencies if necessary
-        detuned_frequencies = {ef.label: ef.frequency + detuning for ef in ef_targets}
+        # detune target frequencies if necessary
+        detuned_frequencies = {
+            target: frequencies[target] + detuning for target in amplitudes
+        }
 
         # run the Rabi experiment by sweeping the drive time
         sweep_result = self.sweep_parameter(
@@ -1897,10 +1918,11 @@ class Experiment:
 
     def chevron_pattern(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 201, 4),
+        frequencies: dict[str, float] | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1912,12 +1934,14 @@ class Experiment:
 
         Parameters
         ----------
-        targets : Collection[str]
+        targets : Collection[str], optional
             Collection of targets to check the Rabi oscillation.
         detuning_range : ArrayLike, optional
             Range of the detuning to sweep in GHz.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
+        frequencies : dict[str, float], optional
+            Control frequencies for each target. Defaults to None.
         rabi_level : Literal["ge", "ef"], optional
             Rabi level to use. Defaults to "ge".
         shots : int, optional
@@ -1937,6 +1961,14 @@ class Experiment:
         ...     time_range=range(0, 101, 4),
         ... )
         """
+        if targets is None:
+            targets = self.qubit_labels
+        else:
+            targets = list(targets)
+
+        if frequencies is None:
+            frequencies = {target: self.targets[target].frequency for target in targets}
+
         detuning_range = np.array(detuning_range, dtype=np.float64)
         time_range = np.array(time_range, dtype=np.float64)
 
@@ -1945,9 +1977,13 @@ class Experiment:
         rabi_rates: dict[str, NDArray] = {}
         chevron_data: dict[str, NDArray] = {}
 
-        for subgroup in self.util.create_qubit_subgroups(targets):
+        print(f"Targets : {targets}")
+        subgroups = self.util.create_qubit_subgroups(targets)
+        for idx, subgroup in enumerate(subgroups):
             if len(subgroup) == 0:
                 continue
+
+            print(f"Subgroup ({idx + 1}/{len(subgroups)}) : {subgroup}")
 
             rabi_rates_buffer: dict[str, list[float]] = defaultdict(list)
             chevron_data_buffer: dict[str, list[NDArray]] = defaultdict(list)
@@ -1956,10 +1992,11 @@ class Experiment:
                 with self.util.no_output():
                     if rabi_level == "ge":
                         rabi_result = self.rabi_experiment(
-                            time_range=time_range,
                             amplitudes={
                                 label: control_amplitude[label] for label in subgroup
                             },
+                            time_range=time_range,
+                            frequencies=frequencies,
                             detuning=detuning,
                             shots=shots,
                             interval=interval,
@@ -1967,11 +2004,12 @@ class Experiment:
                         )
                     elif rabi_level == "ef":
                         rabi_result = self.ef_rabi_experiment(
-                            time_range=time_range,
                             amplitudes={
                                 label: control_amplitude[label] / np.sqrt(2)
                                 for label in subgroup
                             },
+                            time_range=time_range,
+                            frequencies=frequencies,
                             detuning=detuning,
                             shots=shots,
                             interval=interval,
@@ -1992,7 +2030,7 @@ class Experiment:
                 fig = go.Figure()
                 fig.add_trace(
                     go.Heatmap(
-                        x=detuning_range + self.targets[target].frequency,
+                        x=detuning_range + frequencies[target],
                         y=time_range,
                         z=chevron_data[target],
                         colorscale="Viridis",
@@ -2018,7 +2056,7 @@ class Experiment:
 
                 fitting.fit_detuned_rabi(
                     target=target,
-                    control_frequencies=detuning_range + self.targets[target].frequency,
+                    control_frequencies=detuning_range + frequencies[target],
                     rabi_frequencies=rabi_rates[target],
                     plot=plot,
                 )
@@ -2030,6 +2068,7 @@ class Experiment:
             "rabi_rates": rabi_rates,
         }
 
+    @deprecated("Use `chevron_pattern` instead.")
     def obtain_freq_rabi_relation(
         self,
         targets: list[str],
