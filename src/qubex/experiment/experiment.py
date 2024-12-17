@@ -1906,7 +1906,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
-    ) -> dict[str, NDArray]:
+    ) -> dict:
         """
         Obtains the relation between the detuning and the Rabi frequency.
 
@@ -1940,77 +1940,95 @@ class Experiment:
         detuning_range = np.array(detuning_range, dtype=np.float64)
         time_range = np.array(time_range, dtype=np.float64)
 
-        ampl = self.params.control_amplitude
-        rabi_rates: dict[str, list[float]] = defaultdict(list)
-        buffer: dict[str, list[NDArray]] = defaultdict(list)
-        for detuning in tqdm(detuning_range):
-            with self.util.no_output():
-                if rabi_level == "ge":
-                    rabi_result = self.rabi_experiment(
-                        time_range=time_range,
-                        amplitudes={target: ampl[target] for target in targets},
-                        detuning=detuning,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
+        control_amplitude = self.params.control_amplitude
+
+        rabi_rates: dict[str, NDArray] = {}
+        chevron_data: dict[str, NDArray] = {}
+
+        for subgroup in self.util.create_qubit_subgroups(targets):
+            if len(subgroup) == 0:
+                continue
+
+            rabi_rates_buffer: dict[str, list[float]] = defaultdict(list)
+            chevron_data_buffer: dict[str, list[NDArray]] = defaultdict(list)
+
+            for detuning in tqdm(detuning_range):
+                with self.util.no_output():
+                    if rabi_level == "ge":
+                        rabi_result = self.rabi_experiment(
+                            time_range=time_range,
+                            amplitudes={
+                                label: control_amplitude[label] for label in subgroup
+                            },
+                            detuning=detuning,
+                            shots=shots,
+                            interval=interval,
+                            plot=False,
+                        )
+                    elif rabi_level == "ef":
+                        rabi_result = self.ef_rabi_experiment(
+                            time_range=time_range,
+                            amplitudes={
+                                label: control_amplitude[label] / np.sqrt(2)
+                                for label in subgroup
+                            },
+                            detuning=detuning,
+                            shots=shots,
+                            interval=interval,
+                            plot=False,
+                        )
+                    else:
+                        raise ValueError("Invalid rabi_level.")
+
+                for target, data in rabi_result.data.items():
+                    rabi_rate = data.rabi_param.frequency
+                    rabi_rates_buffer[target].append(rabi_rate)
+                    chevron_data_buffer[target].append(data.normalized)
+
+            for target in subgroup:
+                rabi_rates[target] = np.array(rabi_rates_buffer[target])
+                chevron_data[target] = np.array(chevron_data_buffer[target]).T
+
+                fig = go.Figure()
+                fig.add_trace(
+                    go.Heatmap(
+                        x=detuning_range + self.targets[target].frequency,
+                        y=time_range,
+                        z=chevron_data[target],
+                        colorscale="Viridis",
                     )
-                elif rabi_level == "ef":
-                    rabi_result = self.ef_rabi_experiment(
-                        time_range=time_range,
-                        amplitudes={
-                            target: ampl[target] / np.sqrt(2) for target in targets
-                        },
-                        detuning=detuning,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                    )
-                else:
-                    raise ValueError("Invalid rabi_level.")
-
-            for target, data in rabi_result.data.items():
-                rabi_rate = data.rabi_param.frequency
-                rabi_rates[target].append(rabi_rate)
-                buffer[target].append(data.normalized)
-
-        chevron_data = {label: np.array(data).T for label, data in buffer.items()}
-
-        for target, data in chevron_data.items():
-            fig = go.Figure()
-            fig.add_trace(
-                go.Heatmap(
-                    x=detuning_range + self.targets[target].frequency,
-                    y=time_range,
-                    z=data,
-                    colorscale="Viridis",
                 )
-            )
-            fig.update_layout(
-                title=f"Chevron pattern : {target}",
-                xaxis_title="Drive frequency (GHz)",
-                yaxis_title="Time (ns)",
-                width=600,
-                height=400,
-            )
-            if plot:
-                fig.show()
-
-            if save_image:
-                vis.save_image(
-                    fig,
-                    name=f"chevron_pattern_{target}",
+                fig.update_layout(
+                    title=f"Chevron pattern : {target}",
+                    xaxis_title="Drive frequency (GHz)",
+                    yaxis_title="Time (ns)",
                     width=600,
                     height=400,
                 )
+                if plot:
+                    fig.show()
 
-        for target, rabi_rate in rabi_rates.items():
-            fitting.fit_detuned_rabi(
-                target=target,
-                control_frequencies=detuning_range + self.targets[target].frequency,
-                rabi_frequencies=np.array(rabi_rate),
-            )
+                if save_image:
+                    vis.save_image(
+                        fig,
+                        name=f"chevron_pattern_{target}",
+                        width=600,
+                        height=400,
+                    )
 
-        return chevron_data
+                fitting.fit_detuned_rabi(
+                    target=target,
+                    control_frequencies=detuning_range + self.targets[target].frequency,
+                    rabi_frequencies=rabi_rates[target],
+                    plot=plot,
+                )
+
+        return {
+            "detuning_range": detuning_range,
+            "time_range": time_range,
+            "chevron_data": chevron_data,
+            "rabi_rates": rabi_rates,
+        }
 
     def obtain_freq_rabi_relation(
         self,

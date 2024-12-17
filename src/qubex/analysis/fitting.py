@@ -449,13 +449,14 @@ def fit_detuned_rabi(
             arrowhead=1,
         )
         fig.update_layout(
-            title=f"Detuned Rabi oscillation of {target}",
+            title=f"Detuned Rabi oscillation : {target}",
             xaxis_title="Control frequency (GHz)",
             yaxis_title="Rabi frequency (MHz)",
         )
         fig.show(config=_plotly_config(f"detuned_rabi_{target}"))
 
-    print(f"Resonance frequency: {f_resonance:.6f} GHz")
+    print("Resonance frequency")
+    print(f"  {target}: {f_resonance:.6f}")
 
     return f_resonance, f_rabi
 
