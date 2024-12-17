@@ -72,11 +72,12 @@ class MeasureData:
             self.probabilities * (1 - self.probabilities) / sum(self.counts.values())
         )
 
-    def plot(self):
+    def plot(self, save_image: bool = False):
         if self.mode == MeasureMode.SINGLE:
             scatter_iq_data(
                 data={self.target: self.kerneled},
                 title=f"Readout IQ data of {self.target}",
+                save_image=save_image,
             )
         elif self.mode == MeasureMode.AVG:
             plot_waveform(
@@ -135,14 +136,14 @@ class MeasureResult:
             )
         }
 
-    def plot(self):
+    def plot(self, save_image: bool = False):
         if self.mode == MeasureMode.SINGLE:
             data = {qubit: data.kerneled for qubit, data in self.data.items()}
-            scatter_iq_data(data=data)
+            scatter_iq_data(data=data, save_image=save_image)
         elif self.mode == MeasureMode.AVG:
-            for qubit in self.data.values():
-                qubit.plot()
+            for measure_data in self.data.values():
+                measure_data.plot(save_image=save_image)
 
     def plot_fft(self):
-        for qubit in self.data.values():
-            qubit.plot_fft()
+        for measure_data in self.data.values():
+            measure_data.plot_fft()

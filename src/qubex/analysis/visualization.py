@@ -15,7 +15,7 @@ from ..style import get_colors, get_config
 from ..typing import IQArray, TargetMap
 
 
-def save_image(
+def save_figure_image(
     fig: go.Figure,
     *,
     images_dir: str = "./images",
@@ -210,6 +210,7 @@ def plot_bloch_vectors(
 
 def plot_waveform(
     data: NDArray[np.complex128],
+    *,
     sampling_period: float = 2.0,
     title: str = "Waveform",
     xlabel: str = "Time (ns)",
@@ -242,6 +243,7 @@ def plot_waveform(
 
 def plot_state_distribution(
     data: Mapping[str, IQArray],
+    *,
     title: str = "State distribution",
     xlabel: str = "In-phase (arb. units)",
     ylabel: str = "Quadrature (arb. units)",
@@ -297,6 +299,8 @@ def plot_state_distribution(
 
 def scatter_iq_data(
     data: Mapping[str, IQArray],
+    *,
+    save_image: bool = False,
     title: str = "I/Q plane",
     xlabel: str = "In-phase (arb. units)",
     ylabel: str = "Quadrature (arb. units)",
@@ -348,6 +352,13 @@ def scatter_iq_data(
         ),
     )
     fig.show(config=get_config())
+    if save_image:
+        save_figure_image(
+            fig,
+            name="iq_data",
+            width=500,
+            height=400,
+        )
 
 
 class IQPlotter:
