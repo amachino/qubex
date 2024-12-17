@@ -1920,9 +1920,10 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
+        detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
         time_range: ArrayLike = np.arange(0, 201, 4),
         frequencies: dict[str, float] | None = None,
+        amplitudes: dict[str, float] | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1942,6 +1943,8 @@ class Experiment:
             Time range of the experiment in ns.
         frequencies : dict[str, float], optional
             Control frequencies for each target. Defaults to None.
+        amplitudes : dict[str, float], optional
+            Control amplitudes for each target. Defaults to None.
         rabi_level : Literal["ge", "ef"], optional
             Rabi level to use. Defaults to "ge".
         shots : int, optional
@@ -1972,10 +1975,14 @@ class Experiment:
         detuning_range = np.array(detuning_range, dtype=np.float64)
         time_range = np.array(time_range, dtype=np.float64)
 
-        control_amplitude = self.params.control_amplitude
+        if amplitudes is None:
+            amplitudes = {
+                target: self.params.control_amplitude[target] for target in targets
+            }
 
         rabi_rates: dict[str, NDArray] = {}
         chevron_data: dict[str, NDArray] = {}
+        resonant_frequencies: dict[str, float] = {}
 
         print(f"Targets : {targets}")
         subgroups = self.util.create_qubit_subgroups(targets)
@@ -1992,9 +1999,7 @@ class Experiment:
                 with self.util.no_output():
                     if rabi_level == "ge":
                         rabi_result = self.rabi_experiment(
-                            amplitudes={
-                                label: control_amplitude[label] for label in subgroup
-                            },
+                            amplitudes=amplitudes,
                             time_range=time_range,
                             frequencies=frequencies,
                             detuning=detuning,
@@ -2004,10 +2009,7 @@ class Experiment:
                         )
                     elif rabi_level == "ef":
                         rabi_result = self.ef_rabi_experiment(
-                            amplitudes={
-                                label: control_amplitude[label] / np.sqrt(2)
-                                for label in subgroup
-                            },
+                            amplitudes=amplitudes,
                             time_range=time_range,
                             frequencies=frequencies,
                             detuning=detuning,
@@ -2054,18 +2056,25 @@ class Experiment:
                         height=400,
                     )
 
-                fitting.fit_detuned_rabi(
+                resonant_frequency, _ = fitting.fit_detuned_rabi(
                     target=target,
                     control_frequencies=detuning_range + frequencies[target],
                     rabi_frequencies=rabi_rates[target],
                     plot=plot,
                 )
+                resonant_frequencies[target] = resonant_frequency
+
+        rabi_rates = dict(sorted(rabi_rates.items()))
+        chevron_data = dict(sorted(chevron_data.items()))
+        resonant_frequencies = dict(sorted(resonant_frequencies.items()))
 
         return {
-            "detuning_range": detuning_range,
             "time_range": time_range,
+            "detuning_range": detuning_range,
+            "frequencies": frequencies,
             "chevron_data": chevron_data,
             "rabi_rates": rabi_rates,
+            "resonant_frequencies": resonant_frequencies,
         }
 
     @deprecated("Use `chevron_pattern` instead.")
@@ -2389,42 +2398,33 @@ class Experiment:
 
     def calibrate_control_frequency(
         self,
-        targets: list[str],
+        targets: Collection[str] | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 15),
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = range(0, 101, 4),
+        frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
-        # store the original control amplitudes
-        original_control_amplitudes = deepcopy(self.params.control_amplitude)
-
-        if amplitudes is not None:
-            # modify the control amplitudes if necessary
-            for target, amplitude in amplitudes.items():
-                label = Target.qubit_label(target)
-                self.params.control_amplitude[label] = amplitude
-
-        # restore the original control amplitudes
-        self.params.control_amplitude = original_control_amplitudes
-
-        result = self.obtain_freq_rabi_relation(
+        result = self.chevron_pattern(
             targets=targets,
             detuning_range=detuning_range,
             time_range=time_range,
+            frequencies=frequencies,
+            amplitudes=amplitudes,
             shots=shots,
             interval=interval,
             plot=plot,
         )
-        fit_data = {target: data.fit()[0] for target, data in result.data.items()}
+        resonant_frequencies = result["resonant_frequencies"]
 
         print("\nResults\n-------")
         print("ge frequency (GHz):")
-        for target, fit in fit_data.items():
-            print(f"    {target}: {fit:.6f}")
-        return fit_data
+        for target, frequency in resonant_frequencies.items():
+            print(f"    {target}: {frequency:.6f}")
+        return resonant_frequencies
 
     def calibrate_ef_control_frequency(
         self,
