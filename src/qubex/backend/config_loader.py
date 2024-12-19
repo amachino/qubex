@@ -10,7 +10,8 @@ from .control_system import Box, CapPort, ControlSystem, GenPort
 from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
 from .quantum_system import Chip, QuantumSystem
 
-DEFAULT_CONFIG_DIR: Final = "config"
+DEFAULT_CONFIG_DIR: Final = "/home/shared/config"
+DEFAULT_PARAMS_DIR: Final = "/home/shared/config"
 
 CHIP_FILE: Final = "chip.yaml"
 BOX_FILE: Final = "box.yaml"
@@ -22,8 +23,9 @@ PARAMS_FILE: Final = "params.yaml"
 class ConfigLoader:
     def __init__(
         self,
-        config_dir: str = DEFAULT_CONFIG_DIR,
         *,
+        config_dir: str = DEFAULT_CONFIG_DIR,
+        params_dir: str = DEFAULT_PARAMS_DIR,
         chip_file: str = CHIP_FILE,
         box_file: str = BOX_FILE,
         wiring_file: str = WIRING_FILE,
@@ -37,7 +39,9 @@ class ConfigLoader:
         Parameters
         ----------
         config_dir : str, optional
-            The directory where the configuration files are stored, by default "./config".
+            The directory where the configuration files are stored, by default DEFAULT_CONFIG_DIR.
+        params_dir : str, optional
+            The directory where the parameter files are stored, by default DEFAULT_PARAMS_DIR.
         chip_file : str, optional
             The name of the chip configuration file, by default "chip.yaml".
         box_file : str, optional
@@ -56,11 +60,12 @@ class ConfigLoader:
         >>> config = ConfigLoader()
         """
         self._config_dir = config_dir
+        self._params_dir = params_dir
         self._chip_dict = self._load_config_file(chip_file)
         self._box_dict = self._load_config_file(box_file)
         self._wiring_dict = self._load_config_file(wiring_file)
-        self._props_dict = self._load_config_file(props_file)
-        self._params_dict = self._load_config_file(params_file)
+        self._props_dict = self._load_params_file(props_file)
+        self._params_dict = self._load_params_file(params_file)
         self._quantum_system_dict = self._load_quantum_system()
         self._control_system_dict = self._load_control_system()
         self._wiring_info_dict = self._load_wiring_info()
@@ -105,6 +110,19 @@ class ConfigLoader:
             raise e
         except yaml.YAMLError as e:
             print(f"Error loading configuration file: {path}\n\n{e}")
+            raise e
+        return result
+
+    def _load_params_file(self, file_name) -> dict:
+        path = Path(self._params_dir) / file_name
+        try:
+            with open(path, "r") as file:
+                result = yaml.safe_load(file)
+        except FileNotFoundError as e:
+            print(f"Parameter file not found: {path}\n\n{e}")
+            raise e
+        except yaml.YAMLError as e:
+            print(f"Error loading parameter file: {path}\n\n{e}")
             raise e
         return result
 

@@ -14,6 +14,7 @@ except ImportError:
 
 from ..backend import (
     DEFAULT_CONFIG_DIR,
+    DEFAULT_PARAMS_DIR,
     SAMPLING_PERIOD,
     ControlParams,
     DeviceController,
@@ -44,6 +45,7 @@ class Measurement:
         chip_id: str,
         qubits: Sequence[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        params_dir: str = DEFAULT_PARAMS_DIR,
         fetch_device_state: bool = True,
         connect_devices: bool = False,
         use_neopulse: bool = False,
@@ -58,7 +60,9 @@ class Measurement:
         qubits : Sequence[str], optional
             The list of qubit labels, by default None.
         config_dir : str, optional
-            The configuration directory, by default "./config".
+            The configuration directory, by default DEFAULT_CONFIG_DIR.
+        params_dir : str, optional
+            The parameters directory, by default DEFAULT_PARAMS_DIR.
         fetch_device_state : bool, optional
             Whether to fetch the device state, by default True.
 
@@ -74,6 +78,7 @@ class Measurement:
             chip_id,
             qubits=qubits,
             config_dir=config_dir,
+            params_dir=params_dir,
             fetch_device_state=fetch_device_state,
         )
         self._use_neopulse = use_neopulse
@@ -96,12 +101,14 @@ class Measurement:
         chip_id: str,
         qubits: Sequence[str] | None,
         config_dir: str,
+        params_dir: str,
         fetch_device_state: bool,
     ):
         self._state_manager = StateManager.shared()
         self.state_manager.load(
             chip_id=chip_id,
             config_dir=config_dir,
+            params_dir=params_dir,
         )
         if fetch_device_state:
             box_ids = None

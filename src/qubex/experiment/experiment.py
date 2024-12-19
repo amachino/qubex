@@ -50,6 +50,7 @@ from ..measurement.measurement import (
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
     DEFAULT_INTERVAL,
+    DEFAULT_PARAMS_DIR,
     DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
 )
@@ -147,6 +148,7 @@ class Experiment:
         qubits: Collection[str | int] | None = None,
         exclude_qubits: Collection[str | int] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        params_dir: str = DEFAULT_PARAMS_DIR,
         fetch_device_state: bool = True,
         connect_devices: bool = True,
         control_window: int | None = None,
@@ -162,10 +164,12 @@ class Experiment:
             qubits=qubits,
             exclude_qubits=exclude_qubits,
             config_dir=config_dir,
+            params_dir=params_dir,
         )
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
         self._config_dir: Final = config_dir
+        self._params_dir: Final = params_dir
         self._control_window: Final = control_window
         self._capture_window: Final = capture_window
         self._capture_margin: Final = capture_margin
@@ -176,6 +180,7 @@ class Experiment:
             chip_id=chip_id,
             qubits=qubits,
             config_dir=self._config_dir,
+            params_dir=self._params_dir,
             fetch_device_state=fetch_device_state,
             use_neopulse=use_neopulse,
             connect_devices=connect_devices,
@@ -197,11 +202,13 @@ class Experiment:
         qubits: Collection[str | int] | None,
         exclude_qubits: Collection[str | int] | None,
         config_dir: str,
+        params_dir: str,
     ) -> list[str]:
         state_manager = StateManager.shared()
         state_manager.load(
             chip_id=chip_id,
             config_dir=config_dir,
+            params_dir=params_dir,
         )
         quantum_system = state_manager.experiment_system.quantum_system
         qubit_labels = []
@@ -367,6 +374,11 @@ class Experiment:
     def config_path(self) -> str:
         """Get the path of the configuration file."""
         return str(Path(self._config_dir).resolve())
+
+    @property
+    def params_path(self) -> str:
+        """Get the path of the parameter file."""
+        return str(Path(self._params_dir).resolve())
 
     @property
     def note(self) -> ExperimentNote:
@@ -743,6 +755,7 @@ class Experiment:
         print("qubex:", get_package_version("qubex"))
         print("env:", sys.prefix)
         print("config:", self.config_path)
+        print("params:", self.params_path)
         print("chip:", self.chip_id)
         print("qubits:", self.qubit_labels)
         print("muxes:", self.mux_labels)

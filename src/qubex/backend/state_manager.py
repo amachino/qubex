@@ -10,7 +10,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import Sequence, deprecated
 
-from .config_loader import DEFAULT_CONFIG_DIR, ConfigLoader
+from .config_loader import DEFAULT_CONFIG_DIR, DEFAULT_PARAMS_DIR, ConfigLoader
 from .control_system import CapPort, GenPort, PortType
 from .device_controller import DeviceController
 from .experiment_system import ExperimentSystem
@@ -199,6 +199,7 @@ class StateManager:
         *,
         chip_id: str,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        params_dir: str = DEFAULT_PARAMS_DIR,
         targets_to_exclude: list[str] | None = None,
     ):
         """
@@ -210,8 +211,14 @@ class StateManager:
             Chip ID.
         config_dir : str, optional
             Configuration directory, by default DEFAULT_CONFIG_DIR.
+        params_dir : str, optional
+            Parameters directory, by default DEFAULT_PARAMS_DIR.
         """
-        config = ConfigLoader(config_dir, targets_to_exclude=targets_to_exclude)
+        config = ConfigLoader(
+            config_dir=config_dir,
+            params_dir=params_dir,
+            targets_to_exclude=targets_to_exclude,
+        )
         self.experiment_system = config.get_experiment_system(chip_id)
 
     def pull(
