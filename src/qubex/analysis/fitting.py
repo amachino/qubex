@@ -1168,6 +1168,7 @@ def fit_lorentzian(
 
 
 def fit_sqrt_lorentzian(
+    *,
     target: str,
     freq_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],

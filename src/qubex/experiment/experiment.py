@@ -5728,6 +5728,39 @@ class Experiment:
 
         return frequency_range, phases_unwrap, np.asarray(amplitudes)
 
+    def estimate_control_amplitude(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike,
+        control_amplitude: float = 0.01,
+        target_rabi_rate: float = 0.0125,
+        shots: int = 3000,
+        interval: int = DEFAULT_INTERVAL,
+    ):
+        frequency_range = np.asarray(frequency_range)
+        _, data, _ = self.scan_qubit_frequencies(
+            target,
+            frequency_range=frequency_range,
+            control_amplitude=control_amplitude,
+            shots=shots,
+            interval=interval,
+        )
+        result = fitting.fit_sqrt_lorentzian(
+            target=target,
+            freq_range=frequency_range,
+            data=data,
+            title="Qubit resonance fit",
+        )
+        rabi_rate = result["Omega"]
+        estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
+
+        print("")
+        print(f"Control amplitude estimation : {target}")
+        print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
+        print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
+        return estimated_amplitude
+
     def qubit_spectroscopy(
         self,
         target: str,
