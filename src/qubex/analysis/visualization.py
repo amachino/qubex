@@ -136,7 +136,7 @@ def plot_fft(
     *,
     title: str = "FFT Result",
     xlabel: str = "Frequency (GHz)",
-    ylabel: str = "Amplitude (arb. units)",
+    ylabel: str = "Amplitude (arb. unit)",
 ) -> None:
     fft_result = np.fft.fft(data)
     fft_freqs = np.fft.fftfreq(len(data), times[1] - times[0])
@@ -214,7 +214,7 @@ def plot_waveform(
     sampling_period: float = 2.0,
     title: str = "Waveform",
     xlabel: str = "Time (ns)",
-    ylabel: str = "Amplitude (arb. units)",
+    ylabel: str = "Amplitude (arb. unit)",
 ):
     fig = go.Figure()
     fig.add_trace(
@@ -245,8 +245,8 @@ def plot_state_distribution(
     data: Mapping[str, IQArray],
     *,
     title: str = "State distribution",
-    xlabel: str = "In-phase (arb. units)",
-    ylabel: str = "Quadrature (arb. units)",
+    xlabel: str = "In-phase (arb. unit)",
+    ylabel: str = "Quadrature (arb. unit)",
 ) -> None:
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
@@ -302,8 +302,8 @@ def scatter_iq_data(
     *,
     save_image: bool = False,
     title: str = "I/Q plane",
-    xlabel: str = "In-phase (arb. units)",
-    ylabel: str = "Quadrature (arb. units)",
+    xlabel: str = "In-phase (arb. unit)",
+    ylabel: str = "Quadrature (arb. unit)",
 ) -> None:
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
@@ -373,8 +373,8 @@ class IQPlotter:
         self._widget = go.FigureWidget()
         self._widget.update_layout(
             title="I/Q plane",
-            xaxis_title="In-phase (arb. units)",
-            yaxis_title="Quadrature (arb. units)",
+            xaxis_title="In-phase (arb. unit)",
+            yaxis_title="Quadrature (arb. unit)",
             width=500,
             height=400,
             margin=dict(l=120, r=120),

@@ -85,7 +85,7 @@ class MeasureData:
                 sampling_period=SAMPLING_PERIOD_AVG,
                 title=f"Readout waveform of {self.target}",
                 xlabel="Capture time (ns)",
-                ylabel="Amplitude (arb. units)",
+                ylabel="Amplitude (arb. unit)",
             )
 
     def plot_fft(self):
@@ -94,7 +94,7 @@ class MeasureData:
             data=self.raw,
             title=f"Fourier transform of {self.target}",
             xlabel="Frequency (GHz)",
-            ylabel="Amplitude (arb. units)",
+            ylabel="Amplitude (arb. unit)",
         )
 
 

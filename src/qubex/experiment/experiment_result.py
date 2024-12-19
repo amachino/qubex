@@ -688,7 +688,7 @@ class AmplRabiData(TargetData):
         )
         fig.update_layout(
             title=f"Drive amplitude and Rabi rate : {self.target}",
-            xaxis_title="Drive amplitude (arb. units)",
+            xaxis_title="Drive amplitude (arb. unit)",
             yaxis_title="Rabi rate (MHz)",
         )
         fig.show()

@@ -387,7 +387,7 @@ def fit_rabi(
         fig.update_layout(
             title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
             xaxis_title="Drive duration (ns)",
-            yaxis_title=yaxis_title or "Amplitude (arb. units)",
+            yaxis_title=yaxis_title or "Amplitude (arb. unit)",
             yaxis_range=yaxis_range,
         )
         fig.show(config=_plotly_config(f"rabi_{target}"))
@@ -497,7 +497,7 @@ def fit_ramsey(
     plot: bool = True,
     title: str = "Ramsey fringe",
     xaxis_title: str = "Time (μs)",
-    yaxis_title: str = "Amplitude (arb. units)",
+    yaxis_title: str = "Amplitude (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -632,7 +632,7 @@ def fit_exp_decay(
     plot: bool = True,
     title: str = "Decay time",
     xaxis_title: str = "Time (μs)",
-    yaxis_title: str = "Amplitude (arb. units)",
+    yaxis_title: str = "Amplitude (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "log",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -972,8 +972,8 @@ def fit_ampl_calib_data(
     p0=None,
     plot: bool = True,
     title: str = "Amplitude calibration",
-    xaxis_title: str = "Amplitude (arb. units)",
-    yaxis_title: str = "Measured value (arb. units)",
+    xaxis_title: str = "Amplitude (arb. unit)",
+    yaxis_title: str = "Measured value (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> float:
@@ -1079,7 +1079,7 @@ def fit_lorentzian(
     plot: bool = True,
     title: str = "Lorentzian fit",
     xaxis_title: str = "Frequency (GHz)",
-    yaxis_title: str = "Amplitude (arb. units)",
+    yaxis_title: str = "Amplitude (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> float:
@@ -1176,7 +1176,7 @@ def fit_sqrt_lorentzian(
     plot: bool = True,
     title: str = "Square root Lorentzian fit",
     xaxis_title: str = "Frequency (GHz)",
-    yaxis_title: str = "Measured value (arb. units)",
+    yaxis_title: str = "Measured value (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
