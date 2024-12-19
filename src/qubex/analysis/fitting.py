@@ -1217,7 +1217,7 @@ def fit_sqrt_lorentzian(
         )
 
     try:
-        popt, _ = curve_fit(
+        popt, pcov = curve_fit(
             func_sqrt_lorentzian,
             freq_range,
             data,
@@ -1226,9 +1226,10 @@ def fit_sqrt_lorentzian(
         )
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return np.nan
+        return {}
 
     A, f0, Omega, C = popt
+    A_err, f0_err, Omega_err, C_err = np.sqrt(np.diag(pcov))
 
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_sqrt_lorentzian(x_fine, *popt)
@@ -1261,10 +1262,10 @@ def fit_sqrt_lorentzian(
         fig.show(config=_plotly_config(f"sqrt_lorentzian_{target}"))
 
     print("Fit : A / sqrt{ 1 + ( (f - f0) / Omega )^2 } + C")
-    print(f"  A = {A:.3g}")
-    print(f"  f0 = {f0:.3g}")
-    print(f"  Omega = {Omega:.3g}")
-    print(f"  C = {C:.3g}")
+    print(f"  A = {A:.2f} ± {A_err:.2f}")
+    print(f"  f0 = {f0:.6f} ± {f0_err:.6f} GHz")
+    print(f"  Omega = {Omega * 1e3:.2f} ± {Omega_err * 1e3:.2f} MHz")
+    print(f"  C = {C:.2f} ± {C_err:.2f}")
 
     return {
         "A": A,
