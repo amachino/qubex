@@ -1822,7 +1822,7 @@ class Experiment:
         amplitudes: dict[str, float],
         time_range: ArrayLike,
         frequencies: dict[str, float] | None = None,
-        detuning: float = 0.0,
+        detuning: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1840,7 +1840,7 @@ class Experiment:
         frequencies : dict[str, float], optional
             Frequencies of the qubits. Defaults to None.
         detuning : float, optional
-            Detuning of the control frequency. Defaults to 0.0.
+            Detuning of the control frequency. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1884,15 +1884,16 @@ class Experiment:
             return ps
 
         # detune target frequencies if necessary
-        detuned_frequencies = {
-            target: frequencies[target] + detuning for target in amplitudes
-        }
+        if detuning is not None:
+            frequencies = {
+                target: frequencies[target] + detuning for target in amplitudes
+            }
 
         # run the Rabi experiment by sweeping the drive time
         sweep_result = self.sweep_parameter(
             sequence=rabi_sequence,
             sweep_range=time_range,
-            frequencies=detuned_frequencies,
+            frequencies=frequencies,
             shots=shots,
             interval=interval,
             plot=plot,
@@ -1943,7 +1944,7 @@ class Experiment:
         amplitudes: dict[str, float],
         time_range: ArrayLike,
         frequencies: dict[str, float] | None = None,
-        detuning: float = 0.0,
+        detuning: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1961,7 +1962,7 @@ class Experiment:
         frequencies : dict[str, float], optional
             Frequencies of the qubits. Defaults to None.
         detuning : float, optional
-            Detuning of the control frequency. Defaults to 0.0.
+            Detuning of the control frequency. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2014,15 +2015,16 @@ class Experiment:
             return ps
 
         # detune target frequencies if necessary
-        detuned_frequencies = {
-            target: frequencies[target] + detuning for target in amplitudes
-        }
+        if detuning is not None:
+            frequencies = {
+                target: frequencies[target] + detuning for target in amplitudes
+            }
 
         # run the Rabi experiment by sweeping the drive time
         sweep_result = self.sweep_parameter(
             sequence=ef_rabi_sequence,
             sweep_range=time_range,
-            frequencies=detuned_frequencies,
+            frequencies=frequencies,
             shots=shots,
             interval=interval,
             plot=plot,
