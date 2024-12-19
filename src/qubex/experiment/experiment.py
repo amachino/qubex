@@ -1204,10 +1204,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        sequence: TargetMap[IQArray]
-        | TargetMap[Waveform]
-        | PulseSchedule
-        | None = None,
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         capture_window: int | None = None,
         capture_margin: int | None = None,
         readout_duration: int | None = None,
@@ -1216,7 +1213,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
-    ) -> dict[str, float]:
+    ) -> dict:
         """
         Measures the readout SNR of the given targets.
 
@@ -1224,8 +1221,8 @@ class Experiment:
         ----------
         targets : Collection[str], optional
             Target labels to measure the readout SNR.
-        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule, optional
-            Sequence of the experiment. Defaults to None.
+        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
+            Initial state of the qubits. Defaults to None.
         capture_window : int, optional
             Capture window. Defaults to None.
         capture_margin : int, optional
@@ -1243,15 +1240,25 @@ class Experiment:
 
         Returns
         -------
-        dict[str, float]
+        dict
             Readout SNR of the targets.
 
         Examples
         --------
         >>> result = ex.measure_readout_snr(["Q00", "Q01"])
         """
-        targets = targets or self.qubit_labels
-        sequence = sequence or {target: np.zeros(0) for target in targets}
+        if targets is None:
+            targets = self.qubit_labels
+        else:
+            targets = list(targets)
+
+        sequence = {
+            target: self.get_pulse_for_state(
+                target=target,
+                state=initial_state,
+            )
+            for target in targets
+        }
 
         result = self.measure(
             sequence=sequence,
@@ -1267,13 +1274,278 @@ class Experiment:
         if plot:
             result.plot(save_image=save_image)
 
-        signal = {
-            target: np.abs(np.average(data.kerneled))
-            for target, data in result.data.items()
+        signal = {}
+        noise = {}
+        snr = {}
+        for target, data in result.data.items():
+            iq = data.kerneled
+            signal[target] = np.abs(np.average(iq))
+            noise[target] = np.std(iq)
+            snr[target] = signal[target] / noise[target]
+        return {
+            "signal": signal,
+            "noise": noise,
+            "snr": snr,
         }
-        noise = {target: np.std(data.kerneled) for target, data in result.data.items()}
-        snr = {target: signal[target] / noise[target] for target in targets}
-        return snr
+
+    def sweep_readout_amplitude(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        capture_window: int | None = None,
+        capture_margin: int | None = None,
+        readout_duration: int | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict:
+        """
+        Sweeps the readout amplitude of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str], optional
+            Target labels to sweep the readout amplitude. Defaults to None.
+        amplitude_range : ArrayLike, optional
+            Range of the readout amplitude to sweep. Defaults to np.linspace(0.0, 1.0, 21).
+        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
+            Initial state of the qubits. Defaults to None.
+        capture_window : int, optional
+            Capture window. Defaults to None.
+        capture_margin : int, optional
+            Capture margin. Defaults to None.
+        readout_duration : int, optional
+            Readout duration. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Readout SNR of the targets.
+        """
+        if targets is None:
+            targets = self.qubit_labels
+        else:
+            targets = list(targets)
+
+        amplitude_range = np.asarray(amplitude_range)
+
+        signal_buf = defaultdict(list)
+        noise_buf = defaultdict(list)
+        snr_buf = defaultdict(list)
+
+        for amplitude in amplitude_range:
+            result = self.measure_readout_snr(
+                targets=targets,
+                initial_state=initial_state,
+                capture_window=capture_window,
+                capture_margin=capture_margin,
+                readout_duration=readout_duration,
+                readout_amplitudes={target: amplitude for target in targets},
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            for target in targets:
+                signal_buf[target].append(result["signal"][target])
+                noise_buf[target].append(result["noise"][target])
+                snr_buf[target].append(result["snr"][target])
+
+        signal = {target: np.array(signal_buf[target]) for target in targets}
+        noise = {target: np.array(noise_buf[target]) for target in targets}
+        snr = {target: np.array(snr_buf[target]) for target in targets}
+
+        if plot:
+            for target in targets:
+                fig = make_subplots(rows=3, cols=1, shared_xaxes=True)
+                fig.add_trace(
+                    go.Scatter(
+                        x=amplitude_range,
+                        y=signal[target],
+                        mode="lines+markers",
+                        name="Signal",
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=amplitude_range,
+                        y=noise[target],
+                        mode="lines+markers",
+                        name="Noise",
+                    ),
+                    row=2,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=amplitude_range,
+                        y=snr[target],
+                        mode="lines+markers",
+                        name="SNR",
+                    ),
+                    row=3,
+                    col=1,
+                )
+                fig.update_layout(
+                    title=f"Readout SNR : {target}",
+                    xaxis3_title="Readout amplitude (arb. units)",
+                    yaxis_title="Signal",
+                    yaxis2_title="Noise",
+                    yaxis3_title="SNR",
+                    showlegend=False,
+                    width=600,
+                    height=400,
+                )
+                fig.show()
+                vis.save_figure_image(
+                    fig,
+                    f"readout_snr_{target}",
+                    width=600,
+                    height=400,
+                )
+
+        return {
+            "signal": signal,
+            "noise": noise,
+            "snr": snr,
+        }
+
+    def sweep_readout_duration(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        time_range: ArrayLike = np.arange(128, 2048, 128),
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        capture_margin: int | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict:
+        """
+        Sweeps the readout duration of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str], optional
+            Target labels to sweep the readout duration. Defaults to None.
+        time_range : ArrayLike, optional
+            Time range of the readout duration to sweep. Defaults to np.arange(0, 2048, 128).
+        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
+            Initial state of the qubits. Defaults to None.
+        capture_margin : int, optional
+            Capture margin. Defaults to None.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitudes for each target. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Readout SNR of the targets.
+        """
+        if targets is None:
+            targets = self.qubit_labels
+        else:
+            targets = list(targets)
+
+        time_range = np.asarray(time_range)
+
+        signal_buf = defaultdict(list)
+        noise_buf = defaultdict(list)
+        snr_buf = defaultdict(list)
+
+        for T in time_range:
+            result = self.measure_readout_snr(
+                targets=targets,
+                initial_state=initial_state,
+                capture_window=T + 512,
+                capture_margin=capture_margin,
+                readout_duration=T,
+                readout_amplitudes=readout_amplitudes,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            for target in targets:
+                signal_buf[target].append(result["signal"][target])
+                noise_buf[target].append(result["noise"][target])
+                snr_buf[target].append(result["snr"][target])
+
+        signal = {target: np.array(signal_buf[target]) for target in targets}
+        noise = {target: np.array(noise_buf[target]) for target in targets}
+        snr = {target: np.array(snr_buf[target]) for target in targets}
+
+        if plot:
+            for target in targets:
+                fig = make_subplots(rows=3, cols=1, shared_xaxes=True)
+                fig.add_trace(
+                    go.Scatter(
+                        x=time_range,
+                        y=signal[target],
+                        mode="lines+markers",
+                        name="Signal",
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=time_range,
+                        y=noise[target],
+                        mode="lines+markers",
+                        name="Noise",
+                    ),
+                    row=2,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=time_range,
+                        y=snr[target],
+                        mode="lines+markers",
+                        name="SNR",
+                    ),
+                    row=3,
+                    col=1,
+                )
+                fig.update_layout(
+                    title=f"Readout SNR : {target}",
+                    xaxis3_title="Readout duration (ns)",
+                    yaxis_title="Signal",
+                    yaxis2_title="Noise",
+                    yaxis3_title="SNR",
+                    showlegend=False,
+                    width=600,
+                    height=400,
+                )
+                fig.show()
+                vis.save_figure_image(
+                    fig,
+                    f"readout_snr_{target}",
+                    width=600,
+                    height=400,
+                )
+
+        return {
+            "signal": signal,
+            "noise": noise,
+            "snr": snr,
+        }
 
     def check_noise(
         self,

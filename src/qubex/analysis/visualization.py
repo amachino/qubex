@@ -17,9 +17,9 @@ from ..typing import IQArray, TargetMap
 
 def save_figure_image(
     fig: go.Figure,
+    name: str = "image",
     *,
     images_dir: str = "./images",
-    name: str = "image",
     format: Literal["png", "svg", "jpeg", "webp"] = "png",
     width: int = 600,
     height: int = 300,
