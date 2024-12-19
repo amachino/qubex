@@ -211,6 +211,32 @@ def func_lorentzian(
     return A / (1 + ((f - f0) / gamma) ** 2) + C
 
 
+def func_sqrt_lorentzian(
+    f: npt.NDArray[np.float64],
+    A: float,
+    f0: float,
+    Omega: float,
+    C: float,
+) -> npt.NDArray[np.float64]:
+    """
+    Calculate a square root Lorentzian function with given parameters.
+
+    Parameters
+    ----------
+    f : npt.NDArray[np.float64]
+        Frequency points for the function evaluation.
+    A : float
+        Amplitude of the square root Lorentzian function.
+    f0 : float
+        Central frequency of the square root Lorentzian function.
+    Omega : float
+        Width of the square root Lorentzian function.
+    C : float
+        Vertical offset of the square root Lorentzian function.
+    """
+    return A / np.sqrt(1 + ((f - f0) / Omega) ** 2) + C
+
+
 def func_resonance(f, f_r, kappa_ex, kappa_in, A, phi):
     """
     Calculate a resonance function with given parameters.
@@ -1139,6 +1165,113 @@ def fit_lorentzian(
         fig.show(config=_plotly_config(f"lorentzian_{target}"))
 
     return f0
+
+
+def fit_sqrt_lorentzian(
+    target: str,
+    freq_range: npt.NDArray[np.float64],
+    data: npt.NDArray[np.float64],
+    p0=None,
+    bounds=None,
+    plot: bool = True,
+    title: str = "Square root Lorentzian fit",
+    xaxis_title: str = "Frequency (GHz)",
+    yaxis_title: str = "Measured value (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> dict:
+    """
+    Fit square root Lorentzian data to a square root Lorentzian function and plot the results.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    freq_range : npt.NDArray[np.float64]
+        Frequency range for the square root Lorentzian data.
+    data : npt.NDArray[np.float64]
+        Amplitude data for the square root Lorentzian data.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+
+    Returns
+    -------
+    dict
+    """
+    if p0 is None:
+        p0 = (
+            np.min(data) - np.max(data),
+            np.mean(freq_range),
+            (np.max(freq_range) - np.min(freq_range)) / 4,
+            np.max(data),
+        )
+
+    if bounds is None:
+        bounds = (
+            (-np.inf, np.min(freq_range), 0, -np.inf),
+            (0, np.max(freq_range), np.inf, np.inf),
+        )
+
+    try:
+        popt, _ = curve_fit(
+            func_sqrt_lorentzian,
+            freq_range,
+            data,
+            p0=p0,
+            bounds=bounds,
+        )
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return np.nan
+
+    A, f0, Omega, C = popt
+
+    x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
+    y_fine = func_sqrt_lorentzian(x_fine, *popt)
+
+    if plot:
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=x_fine,
+                y=y_fine,
+                mode="lines",
+                name="Fit",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=freq_range,
+                y=data,
+                mode="markers",
+                name="Data",
+            )
+        )
+        fig.update_layout(
+            title=f"{title} : {target}",
+            xaxis_title=xaxis_title,
+            yaxis_title=yaxis_title,
+            xaxis_type=xaxis_type,
+            yaxis_type=yaxis_type,
+        )
+        fig.show(config=_plotly_config(f"sqrt_lorentzian_{target}"))
+
+    print("Fit : A / sqrt{ 1 + ( (f - f0) / Omega )^2 } + C")
+    print(f"  A = {A:.3g}")
+    print(f"  f0 = {f0:.3g}")
+    print(f"  Omega = {Omega:.3g}")
+    print(f"  C = {C:.3g}")
+
+    return {
+        "A": A,
+        "f0": f0,
+        "Omega": Omega,
+        "C": C,
+    }
 
 
 def fit_reflection_coefficient(
