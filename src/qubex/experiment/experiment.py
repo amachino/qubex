@@ -1698,10 +1698,13 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
+        amplitudes: dict[str, float] | None = None,
         time_range: ArrayLike | None = None,
+        frequencies: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
+        plot: bool = False,
+        store_params: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
         Conducts a Rabi experiment with the default amplitude.
@@ -1710,14 +1713,20 @@ class Experiment:
         ----------
         targets : Collection[str], optional
             Target labels to check the Rabi oscillation.
+        amplitudes : dict[str, float], optional
+            Amplitudes of the control pulses. Defaults to None.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
+        frequencies : dict[str, float], optional
+            Frequencies of the qubits. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
+            Whether to plot the measured signals. Defaults to False.
+        store_params : bool, optional
+            Whether to store the Rabi parameters. Defaults to True.
 
         Returns
         -------
@@ -1736,16 +1745,20 @@ class Experiment:
         if time_range is None:
             time_range = np.arange(0, 201, 8)
 
-        ampl = self.params.control_amplitude
-        amplitudes = {target: ampl[target] for target in targets}
-        result = self.rabi_experiment(
-            amplitudes=amplitudes,
-            time_range=time_range,
-            shots=shots,
-            interval=interval,
-            store_params=True,
-            plot=plot,
-        )
+        if amplitudes is None:
+            ampl = self.params.control_amplitude
+            amplitudes = {target: ampl[target] for target in targets}
+
+        with self.util.no_output():
+            result = self.rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                frequencies=frequencies,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                store_params=store_params,
+            )
         return result
 
     def obtain_ef_rabi_params(
@@ -2304,7 +2317,7 @@ class Experiment:
         time_range: ArrayLike = np.arange(0, 201, 4),
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
-        rabi_level: Literal["ge", "ef"] = "ge",
+        rabi_params: dict[str, RabiParam] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2325,8 +2338,8 @@ class Experiment:
             Control frequencies for each target. Defaults to None.
         amplitudes : dict[str, float], optional
             Control amplitudes for each target. Defaults to None.
-        rabi_level : Literal["ge", "ef"], optional
-            Rabi level to use. Defaults to "ge".
+        rabi_params : dict[str, RabiParam], optional
+            Rabi parameters for each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2360,6 +2373,21 @@ class Experiment:
                 target: self.params.control_amplitude[target] for target in targets
             }
 
+        shared_rabi_params: dict[str, RabiParam]
+        if rabi_params is None:
+            shared_rabi_params = self.obtain_rabi_params(
+                targets=targets,
+                amplitudes=amplitudes,
+                time_range=time_range,
+                frequencies=frequencies,
+                shots=shots,
+                interval=interval,
+                plot=False,
+                store_params=False,
+            ).rabi_params  # type: ignore
+        else:
+            shared_rabi_params = rabi_params
+
         rabi_rates: dict[str, NDArray] = {}
         chevron_data: dict[str, NDArray] = {}
         resonant_frequencies: dict[str, float] = {}
@@ -2377,33 +2405,31 @@ class Experiment:
 
             for detuning in tqdm(detuning_range):
                 with self.util.no_output():
-                    if rabi_level == "ge":
-                        rabi_result = self.rabi_experiment(
-                            amplitudes=amplitudes,
-                            time_range=time_range,
-                            frequencies=frequencies,
-                            detuning=detuning,
-                            shots=shots,
-                            interval=interval,
-                            plot=False,
-                        )
-                    elif rabi_level == "ef":
-                        rabi_result = self.ef_rabi_experiment(
-                            amplitudes=amplitudes,
-                            time_range=time_range,
-                            frequencies=frequencies,
-                            detuning=detuning,
-                            shots=shots,
-                            interval=interval,
-                            plot=False,
-                        )
-                    else:
-                        raise ValueError("Invalid rabi_level.")
+                    sweep_result = self.sweep_parameter(
+                        sequence=lambda t: {
+                            label: Rect(duration=t, amplitude=amplitudes[label])
+                            for label in subgroup
+                        },
+                        sweep_range=time_range,
+                        frequencies={
+                            label: frequencies[label] + detuning for label in subgroup
+                        },
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    sweep_data = sweep_result.data
 
-                for target, data in rabi_result.data.items():
-                    rabi_rate = data.rabi_param.frequency
-                    rabi_rates_buffer[target].append(rabi_rate)
-                    chevron_data_buffer[target].append(data.rotated.imag)
+                    for target, data in sweep_data.items():
+                        rabi_param = fitting.fit_rabi(
+                            target=data.target,
+                            times=data.sweep_range,
+                            data=data.data,
+                            plot=False,
+                        )
+                        rabi_rates_buffer[target].append(rabi_param.frequency)
+                        data.rabi_param = shared_rabi_params[target]
+                        chevron_data_buffer[target].append(data.normalized)
 
             for target in subgroup:
                 rabi_rates[target] = np.array(rabi_rates_buffer[target])
