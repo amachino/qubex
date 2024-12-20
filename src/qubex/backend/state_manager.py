@@ -502,6 +502,10 @@ This operation will overwrite the existing device settings. Do you want to conti
                 target_frequency=target.frequency,
             )
 
+        # reset the cache
+        qc.clear_command_queue()
+        self.device_controller.clear_cache()
+
     def _create_experiment_system(
         self,
         device_settings: dict,
