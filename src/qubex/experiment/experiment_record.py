@@ -70,9 +70,10 @@ class ExperimentRecord(Generic[T]):
         extension = ".json"
         counter = 1
         current_date = datetime.datetime.now().strftime("%Y%m%d")
+        file_name = f"{current_date}_{self.name}_{counter}{extension}"
         file_path = os.path.join(
             data_path,
-            f"{current_date}_{self.name}_{counter}{extension}",
+            file_name,
         )
 
         while os.path.exists(file_path):
