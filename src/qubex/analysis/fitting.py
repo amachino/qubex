@@ -409,7 +409,7 @@ def fit_detuned_rabi(
     control_frequencies: npt.NDArray[np.float64],
     rabi_frequencies: npt.NDArray[np.float64],
     plot: bool = True,
-) -> tuple[float, float]:
+) -> dict:
     """
     Fit detuned Rabi oscillation data to a cosine function and plot the results.
 
@@ -426,21 +426,21 @@ def fit_detuned_rabi(
 
     Returns
     -------
-    tuple[float, float]
-        Resonance frequency and Rabi frequency of the detuned Rabi oscillation.
+    dict
+        Fitted parameters and the figure.
     """
 
     def func(f_control, f_resonance, f_rabi):
         return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
 
     try:
-        popt, _ = curve_fit(func, control_frequencies, rabi_frequencies)
+        popt, pcov = curve_fit(func, control_frequencies, rabi_frequencies)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return np.nan, np.nan
+        return {}
 
-    f_resonance = popt[0]
-    f_rabi = popt[1]
+    f_resonance, f_rabi = popt
+    f_resonance_err, f_rabi_err = np.sqrt(np.diag(pcov))
 
     x = control_frequencies
     y = rabi_frequencies * 1e3
@@ -470,7 +470,7 @@ def fit_detuned_rabi(
         fig.add_annotation(
             x=f_resonance,
             y=np.abs(f_rabi * 1e3),
-            text=f"min: {f_resonance:.6f} GHz",
+            text=f"min: {f_resonance:.6f} ± {f_resonance_err:.6f} GHz",
             showarrow=True,
             arrowhead=1,
         )
@@ -484,7 +484,13 @@ def fit_detuned_rabi(
     print("Resonance frequency")
     print(f"  {target}: {f_resonance:.6f}")
 
-    return f_resonance, f_rabi
+    return {
+        "f_resonance": f_resonance,
+        "f_resonance_err": f_resonance_err,
+        "f_rabi": f_rabi,
+        "f_rabi_err": f_rabi_err,
+        "fig": fig,
+    }
 
 
 def fit_ramsey(
@@ -531,8 +537,8 @@ def fit_ramsey(
 
     Returns
     -------
-    tuple[float, float]
-        Decay time and frequency of the Ramsey fringe.
+    dict
+        Fitted parameters and the figure.
     """
     wave_count_est = estimate_wave_count(x, y)
     amplitude_est = (np.max(y) - np.min(y)) / 2
@@ -667,7 +673,7 @@ def fit_exp_decay(
     Returns
     -------
     dict
-        Dictionary containing the fitted parameters and the plot.
+        Fitted parameters and the figure.
     """
     if p0 is None:
         tau_guess = 20_000
@@ -1202,6 +1208,7 @@ def fit_sqrt_lorentzian(
     Returns
     -------
     dict
+        Fitted parameters and the figure.
     """
     if p0 is None:
         p0 = (
@@ -1273,10 +1280,18 @@ def fit_sqrt_lorentzian(
         "f0": f0,
         "Omega": Omega,
         "C": C,
+        "A_err": A_err,
+        "f0_err": f0_err,
+        "Omega_err": Omega_err,
+        "C_err": C_err,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
     }
 
 
 def fit_reflection_coefficient(
+    *,
     target: str,
     freq_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.complex128],
@@ -1284,7 +1299,7 @@ def fit_reflection_coefficient(
     bounds=None,
     plot: bool = True,
     title: str = "Reflection coefficient",
-) -> tuple[float, float, float]:
+) -> dict:
     """
     Fit reflection coefficient data and obtain the resonance frequency and loss rates.
 
@@ -1305,8 +1320,8 @@ def fit_reflection_coefficient(
 
     Returns
     -------
-    tuple[float, float, float]
-        Resonance frequency, external loss rate, and internal loss rate.
+    dict
+        Fitted parameters and the figure.
     """
 
     if p0 is None:
@@ -1338,15 +1353,7 @@ def fit_reflection_coefficient(
 
     fitted_params = result.x
 
-    f_r = fitted_params[0]
-    kappa_ex = fitted_params[1]
-    kappa_in = fitted_params[2]
-    # A = fitted_params[3]
-    # phi = fitted_params[4]
-
-    # print(
-    #     f"Fitted function:\n  {A:.3g} * exp(1j * {phi:.3g}) * ((f - {f_r:.3g}) * 1j + (-{kappa_ex:.3g} + {kappa_in:.3g}) / 2) / ((f - {f_r:.3g}) * 1j + ({kappa_ex:.3g} + {kappa_in:.3g}) / 2)"
-    # )
+    f_r, kappa_ex, kappa_in, A, phi = fitted_params
 
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonance(x_fine, *fitted_params)
@@ -1486,7 +1493,6 @@ def fit_reflection_coefficient(
             row=2,
             col=2,
         )
-
         fig.show()
 
     print(f"{target}\n--------------------")
@@ -1495,7 +1501,14 @@ def fit_reflection_coefficient(
     print(f"Internal loss rate:\n  {kappa_in * 1e3:.6f} MHz")
     print("--------------------\n")
 
-    return f_r, kappa_ex, kappa_in
+    return {
+        "f_r": f_r,
+        "kappa_ex": kappa_ex,
+        "kappa_in": kappa_in,
+        "A": A,
+        "phi": phi,
+        "fig": fig,
+    }
 
 
 def fit_rotation(
@@ -1533,6 +1546,8 @@ def fit_rotation(
             Rotation coefficients.
         delta : float
             Detuning frequency.
+        fig : go.Figure
+            Plot of the data and the fit.
     """
     if data.ndim != 2 or data.shape[1] != 3:
         raise ValueError("Data must be a 2D array with 3 columns.")
@@ -1807,6 +1822,7 @@ def fit_rotation(
     return {
         "Omega": np.array([Omega_x, Omega_y, Omega_z]),
         "delta": delta,
+        "fig": fig,
     }
 
 

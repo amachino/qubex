@@ -2403,7 +2403,7 @@ class Experiment:
                 for target, data in rabi_result.data.items():
                     rabi_rate = data.rabi_param.frequency
                     rabi_rates_buffer[target].append(rabi_rate)
-                    chevron_data_buffer[target].append(data.normalized)
+                    chevron_data_buffer[target].append(data.rotated.imag)
 
             for target in subgroup:
                 rabi_rates[target] = np.array(rabi_rates_buffer[target])
@@ -2436,13 +2436,13 @@ class Experiment:
                         height=400,
                     )
 
-                resonant_frequency, _ = fitting.fit_detuned_rabi(
+                fit_result = fitting.fit_detuned_rabi(
                     target=target,
                     control_frequencies=detuning_range + frequencies[target],
                     rabi_frequencies=rabi_rates[target],
                     plot=plot,
                 )
-                resonant_frequencies[target] = resonant_frequency
+                resonant_frequencies[target] = fit_result["f_resonance"]
 
         rabi_rates = dict(sorted(rabi_rates.items()))
         chevron_data = dict(sorted(chevron_data.items()))
@@ -5493,7 +5493,8 @@ class Experiment:
         shots: int = 128,
         interval: int = 0,
         plot: bool = True,
-    ) -> tuple[NDArray[np.float64], NDArray[np.complex128], float, float, float]:
+        save_image: bool = True,
+    ) -> dict:
         """
         Scans the readout frequencies to find the resonator frequencies.
 
@@ -5513,11 +5514,12 @@ class Experiment:
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the image. Defaults to True.
 
         Returns
         -------
-        tuple[NDArray[np.float64], NDArray[np.complex128], float, float, float]
-            Frequency range and reflection coefficients (complex), resonator frequency, external coupling rate, internal coupling rate.
+        dict
         """
         freq_range = np.array(frequency_range)
         center_frequency = np.mean(freq_range).astype(float)
@@ -5556,33 +5558,28 @@ class Experiment:
                     signal = signal * np.exp(-1j * freq * phase_shift)
                     signals.append(signal)
 
-        # if plot:
-        #     fig = go.Figure()
-        #     fig.add_trace(
-        #         go.Scatter(
-        #             x=freq_range,
-        #             y=np.unwrap(np.angle(signals)),
-        #             mode="markers+lines",
-        #         )
-        #     )
-        #     fig.update_layout(
-        #         title=f"Phase of reflection wave : {qubit_label}",
-        #         xaxis_title="Frequency (GHz)",
-        #         yaxis_title="Phase (rad)",
-        #     )
-        #     fig.show()
-
         phi = (np.angle(signals[0]) + np.angle(signals[-1])) / 2
         coeffs = np.array(signals) * np.exp(-1j * phi)
 
-        f_r, kappa_ex, kappa_in = fitting.fit_reflection_coefficient(
+        fit_result = fitting.fit_reflection_coefficient(
             target=target,
             freq_range=freq_range,
             data=coeffs,
             plot=plot,
         )
 
-        return freq_range, coeffs, f_r, kappa_ex, kappa_in
+        fig = fit_result["fig"]
+        if save_image:
+            vis.save_figure_image(
+                fig,
+                name=f"reflection_coefficient_{target}",
+            )
+
+        return {
+            "frequency_range": freq_range,
+            "reflection_coefficients": coeffs,
+            **fit_result,
+        }
 
     def scan_qubit_frequencies(
         self,
