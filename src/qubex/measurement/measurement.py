@@ -34,6 +34,7 @@ DEFAULT_CONTROL_WINDOW: Final = 1024  # ns
 DEFAULT_CAPTURE_WINDOW: Final = 1024  # ns
 DEFAULT_CAPTURE_MARGIN: Final = 128  # ns
 DEFAULT_READOUT_DURATION: Final = 512  # ns
+DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 INTERVAL_STEP: Final = 10240  # ns
 MIN_DURATION: Final = 128  # ns
 
@@ -630,7 +631,7 @@ class Measurement:
                         pls.RaisedCosFlatTop(
                             duration=readout_duration,
                             amplitude=readout_amplitudes[qubit],
-                            rise_time=32,
+                            rise_time=DEFAULT_READOUT_RAMPTIME,
                         ).target(readout_target)
                         capture.target(readout_target)
         return sequence
@@ -647,7 +648,7 @@ class Measurement:
         return FlatTop(
             duration=duration,
             amplitude=amplitude,
-            tau=32,
+            tau=DEFAULT_READOUT_RAMPTIME,
         )
 
     def _create_sequencer(
@@ -951,7 +952,7 @@ class Measurement:
             n_states = None
 
             if measure_mode == MeasureMode.SINGLE:
-                # iqs: ndarray[duration, shots]
+                # iqs[capture_index]: ndarray[duration, shots]
                 raw = iqs[capture_index].T.squeeze()
                 kerneled = np.mean(iqs[capture_index], axis=0) * 2 ** (-32)
                 classifier = self.classifiers.get(qubit)
@@ -959,7 +960,7 @@ class Measurement:
                     classified_data = classifier.predict(kerneled)
                     n_states = classifier.n_states
             elif measure_mode == MeasureMode.AVG:
-                # iqs: ndarray[duration, 1]
+                # iqs[capture_index]: ndarray[duration, 1]
                 raw = iqs[capture_index].squeeze()
                 kerneled = np.mean(iqs) * 2 ** (-32) / shots
             else:
