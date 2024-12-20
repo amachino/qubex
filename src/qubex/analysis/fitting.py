@@ -1444,8 +1444,8 @@ def fit_reflection_coefficient(
 
         fig.update_layout(
             title=f"{title} : {target}",
-            height=450,
             width=800,
+            height=450,
             showlegend=False,
         )
 
