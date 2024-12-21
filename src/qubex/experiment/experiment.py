@@ -1354,7 +1354,7 @@ class Experiment:
         noise_buf = defaultdict(list)
         snr_buf = defaultdict(list)
 
-        for amplitude in amplitude_range:
+        for amplitude in tqdm(amplitude_range):
             result = self.measure_readout_snr(
                 targets=targets,
                 initial_state=initial_state,
@@ -2895,7 +2895,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 15),
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = range(0, 101, 4),
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2913,12 +2913,8 @@ class Experiment:
         original_readout_amplitudes = deepcopy(self.params.readout_amplitude)
 
         result = defaultdict(list)
-        for detuning in detuning_range:
-            modified_frequencies = {
-                resonator.label: resonator.frequency + detuning
-                for resonator in self.resonators.values()
-            }
-            with self.modified_frequencies(modified_frequencies):
+        for detuning in tqdm(detuning_range):
+            with self.util.no_output():
                 if readout_amplitudes is not None:
                     # modify the readout amplitudes if necessary
                     for target, amplitude in readout_amplitudes.items():
@@ -2931,14 +2927,14 @@ class Experiment:
                         target: self.params.control_amplitude[target]
                         for target in targets
                     },
+                    frequencies={
+                        resonator.label: resonator.frequency + detuning
+                        for resonator in self.resonators.values()
+                    },
                     shots=shots,
                     interval=interval,
                     plot=False,
                 )
-                clear_output()
-                if plot:
-                    rabi_result.fit()
-                clear_output(wait=True)
                 for qubit, data in rabi_result.data.items():
                     rabi_amplitude = data.rabi_param.amplitude
                     result[qubit].append(rabi_amplitude)
@@ -2949,7 +2945,7 @@ class Experiment:
         fit_data = {}
         for target, values in result.items():
             freq = self.resonators[target].frequency
-            freq_fit = fitting.fit_lorentzian(
+            fit_result = fitting.fit_lorentzian(
                 target=target,
                 freq_range=detuning_range + freq,
                 data=np.array(values),
@@ -2957,8 +2953,10 @@ class Experiment:
                 title="Readout frequency calibration",
                 xaxis_title="Readout frequency (GHz)",
             )
-            fit_data[target] = freq_fit
+            if "f0" in fit_result:
+                fit_data[target] = fit_result["f0"]
 
+        print("\nResults\n-------")
         for target, freq in fit_data.items():
             print(f"{target}: {freq:.6f}")
 
@@ -3643,11 +3641,12 @@ class Experiment:
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
-                t1 = fit_result["tau"]
-                t1_data = T1Data.new(sweep_data, t1=t1)
-                data[target] = t1_data
+                if "tau" in fit_result:
+                    t1 = fit_result["tau"]
+                    t1_data = T1Data.new(sweep_data, t1=t1)
+                    data[target] = t1_data
 
-                if save_image:
+                if save_image and "fig" in fit_result:
                     fig = fit_result["fig"]
                     vis.save_figure_image(
                         fig,
@@ -3765,11 +3764,12 @@ class Experiment:
                     xaxis_title="Time (μs)",
                     yaxis_title="Normalized value",
                 )
-                t2 = fit_result["tau"]
-                t2_data = T2Data.new(sweep_data, t2=t2)
-                data[target] = t2_data
+                if "tau" in fit_result:
+                    t2 = fit_result["tau"]
+                    t2_data = T2Data.new(sweep_data, t2=t2)
+                    data[target] = t2_data
 
-                if save_image:
+                if save_image and "fig" in fit_result:
                     fig = fit_result["fig"]
                     vis.save_figure_image(
                         fig,
@@ -3893,14 +3893,15 @@ class Experiment:
                         y=sweep_data.normalized,
                         plot=plot,
                     )
-                    ramsey_data = RamseyData.new(
-                        sweep_data=sweep_data,
-                        t2=fit_result["tau"],
-                        ramsey_freq=fit_result["f"],
-                    )
-                    data[target] = ramsey_data
+                    if "tau" in fit_result and "f" in fit_result:
+                        ramsey_data = RamseyData.new(
+                            sweep_data=sweep_data,
+                            t2=fit_result["tau"],
+                            ramsey_freq=fit_result["f"],
+                        )
+                        data[target] = ramsey_data
 
-                    if save_image:
+                    if save_image and "fig" in fit_result:
                         fig = fit_result["fig"]
                         vis.save_figure_image(
                             fig,
@@ -5139,7 +5140,7 @@ class Experiment:
         subrange_width: float = 0.3,
         shots: int = 128,
         interval: int = 0,
-        plot: bool = False,
+        plot: bool = True,
     ) -> float:
         """
         Measures the phase shift caused by the length of the transmission line.
@@ -5157,7 +5158,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
-            Whether to plot the measured signals. Defaults to False.
+            Whether to plot the measured signals. Defaults to True.
 
         Returns
         -------

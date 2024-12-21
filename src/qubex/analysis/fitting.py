@@ -1088,7 +1088,7 @@ def fit_lorentzian(
     yaxis_title: str = "Amplitude (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
-) -> float:
+) -> dict:
     """
     Fit Lorentzian data to a Lorentzian function and plot the results.
 
@@ -1107,8 +1107,8 @@ def fit_lorentzian(
 
     Returns
     -------
-    float
-        Central frequency of the Lorentzian.
+    dict
+        Fitted parameters and the figure.
     """
     if p0 is None:
         p0 = (
@@ -1119,19 +1119,13 @@ def fit_lorentzian(
         )
 
     try:
-        popt, _ = curve_fit(func_lorentzian, freq_range, data, p0=p0)
+        popt, pcov = curve_fit(func_lorentzian, freq_range, data, p0=p0)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return np.nan
+        return {}
 
-    A = popt[0]
-    f0 = popt[1]
-    gamma = popt[2]
-    C = popt[3]
-
-    print(
-        f"Fitted function: {A:.3g} / (1 + ((f - {f0:.3g}) / {gamma:.3g})^2) + {C:.3g}"
-    )
+    A, f0, gamma, C = popt
+    A_err, f0_err, gamma_err, C_err = np.sqrt(np.diag(pcov))
 
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_lorentzian(x_fine, *popt)
@@ -1170,7 +1164,25 @@ def fit_lorentzian(
         )
         fig.show(config=_plotly_config(f"lorentzian_{target}"))
 
-    return f0
+    print("Fit : A / ( 1 + ( (f - f0) / gamma )^2 ) + C")
+    print(f"  A = {A:.2f} ± {A_err:.2f}")
+    print(f"  f0 = {f0:.6f} ± {f0_err:.6f} GHz")
+    print(f"  gamma = {gamma * 1e3:.2f} ± {gamma_err * 1e3:.2f} MHz")
+    print(f"  C = {C:.2f} ± {C_err:.2f}")
+
+    return {
+        "A": A,
+        "f0": f0,
+        "gamma": gamma,
+        "C": C,
+        "A_err": A_err,
+        "f0_err": f0_err,
+        "gamma_err": gamma_err,
+        "C_err": C_err,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
 
 
 def fit_sqrt_lorentzian(
