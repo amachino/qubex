@@ -773,10 +773,10 @@ def fit_rb(
     plot: bool = True,
     title: str = "Randomized benchmarking",
     xaxis_title: str = "Number of Cliffords",
-    yaxis_title: str = "Z expectation value",
+    yaxis_title: str = "Normalized signal",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
-) -> tuple[float, float, float]:
+) -> dict:
     """
     Fit randomized benchmarking data to an exponential decay function and plot the results.
 
@@ -809,69 +809,100 @@ def fit_rb(
 
     Returns
     -------
-    tuple[float, float, float]
-        Depolarizing rate, average error, and average fidelity of the randomized benchmarking.
+    dict
+        Fitted parameters and the figure.
     """
     if p0 is None:
-        p0 = 0.0
+        p0 = (0.5, 1.0, 0.5)
 
     if bounds is None:
-        bounds = (0, 1)
+        bounds = (
+            (0.0, 0.0, 0.0),
+            (0.5, 1.0, 1.0),
+        )
 
-    def func_rb(n: npt.NDArray[np.float64], p: float):
-        return (1 - p) ** n
+    def func_rb(n: npt.NDArray[np.float64], A: float, p: float, C: float):
+        return A * p**n + C
 
     try:
-        popt, _ = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
+        popt, pcov = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return np.nan, np.nan, np.nan
+        return {}
 
-    depolarizing_rate = popt[0]
-    r = 1 - depolarizing_rate
-    avg_gate_error = (2 - 1) / 2 * (1 - r)
-    avg_gate_fidelity = (1 + (2 - 1) * r) / 2
+    A, p, C = popt
+    A_err, p_err, C_err = np.sqrt(np.diag(pcov))
+
+    dimension = 2
+    depolarizing_rate = 1 - p
+    avg_gate_error = (dimension - 1) * (1 - p) / dimension
+    avg_gate_fidelity = 1 - avg_gate_error
+    avg_gate_fidelity_err = (dimension - 1) * p_err / dimension
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_rb(x_fine, *popt)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            error_y=dict(type="data", array=error_y),
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"F = {avg_gate_fidelity * 100:.3f} ± {avg_gate_fidelity_err * 100:.3f}%",
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
 
     if plot:
-        x_fine = np.linspace(np.min(x), np.max(x), 1000)
-        y_fine = func_rb(x_fine, *popt)
-
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=y_fine,
-                mode="lines",
-                name="Fit",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=x,
-                y=y,
-                error_y=dict(type="data", array=error_y),
-                mode="markers",
-                name="Data",
-            )
-        )
-        fig.add_annotation(
-            xref="paper",
-            yref="paper",
-            x=0.95,
-            y=0.95,
-            text=f"F = {avg_gate_fidelity * 100:.3f}%",
-            showarrow=False,
-        )
-        fig.update_layout(
-            title=f"{title} : {target}",
-            xaxis_title=xaxis_title,
-            yaxis_title=yaxis_title,
-            xaxis_type=xaxis_type,
-            yaxis_type=yaxis_type,
-        )
         fig.show(config=_plotly_config(f"rb_{target}"))
 
-    return depolarizing_rate, avg_gate_error, avg_gate_fidelity
+    print(f"Target: {target}")
+    print("Fit: A * p^n + C")
+    print(f"  A = {A:.6f} ± {A_err:.6f}")
+    print(f"  p = {p:.6f} ± {p_err:.6f}")
+    print(f"  C = {C:.6f} ± {C_err:.6f}")
+    print(f"Depolarizing rate: {depolarizing_rate:.6f}")
+    print(f"Average gate error: {avg_gate_error:.6f}")
+    print(f"Average gate fidelity: {avg_gate_fidelity:.6f}")
+    print("")
+
+    return {
+        "A": A,
+        "A_err": A_err,
+        "p": p,
+        "p_err": p_err,
+        "C": C,
+        "C_err": C_err,
+        "depolarizing_rate": depolarizing_rate,
+        "avg_gate_error": avg_gate_error,
+        "avg_gate_fidelity": avg_gate_fidelity,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
 
 
 def plot_irb(
@@ -882,14 +913,19 @@ def plot_irb(
     y_irb: npt.NDArray[np.float64],
     error_y_rb: npt.NDArray[np.float64],
     error_y_irb: npt.NDArray[np.float64],
+    A_rb: float,
+    A_irb: float,
     p_rb: float,
     p_irb: float,
+    C_rb: float,
+    C_irb: float,
+    gate_fidelity: float,
     title: str = "Interleaved randomized benchmarking",
     xaxis_title: str = "Number of Cliffords",
-    yaxis_title: str = "Z expectation value",
+    yaxis_title: str = "Normalized signal",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
-):
+) -> go.Figure:
     """
     Plot interleaved randomized benchmarking data.
 
@@ -908,9 +944,9 @@ def plot_irb(
     error_y_irb : npt.NDArray[np.float64]
         Error data for the interleaved decay.
     p_rb : float
-        Depolarizing rate of the randomized benchmarking.
+        Depolarizing parameter of the randomized benchmarking.
     p_irb : float
-        Depolarizing rate of the interleaved randomized benchmarking.
+        Depolarizing parameter of the interleaved randomized benchmarking.
     title : str, optional
         Title of the plot.
     xaxis_title : str, optional
@@ -923,12 +959,12 @@ def plot_irb(
         Type of the y-axis.
     """
 
-    def func_rb(n: npt.NDArray[np.float64], p: float):
-        return (1 - p) ** n
+    def func_rb(n: npt.NDArray[np.float64], A: float, p: float, C: float):
+        return A * p**n + C
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_rb_fine = func_rb(x_fine, p_rb)
-    y_irb_fine = func_rb(x_fine, p_irb)
+    y_rb_fine = func_rb(x_fine, A_rb, p_rb, C_rb)
+    y_irb_fine = func_rb(x_fine, A_irb, p_irb, C_irb)
 
     fig = go.Figure()
     fig.add_trace(
@@ -969,6 +1005,14 @@ def plot_irb(
             showlegend=False,
         )
     )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"F = {gate_fidelity * 100:.3f}%",
+        showarrow=False,
+    )
     fig.update_layout(
         title=f"{title} : {target}",
         xaxis_title=xaxis_title,
@@ -977,6 +1021,7 @@ def plot_irb(
         yaxis_type=yaxis_type,
     )
     fig.show(config=_plotly_config(f"irb_{target}"))
+    return fig
 
 
 def fit_ampl_calib_data(

@@ -4436,6 +4436,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = True,
     ) -> ExperimentResult[RBData]:
         """
         Conducts a randomized benchmarking experiment.
@@ -4462,6 +4463,8 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to True.
 
         Returns
         -------
@@ -4535,24 +4538,31 @@ class Experiment:
 
         sweep_data = sweep_result.data[target]
 
-        fit_data = fitting.fit_rb(
+        fit_result = fitting.fit_rb(
             target=target,
             x=sweep_data.sweep_range,
-            y=sweep_data.normalized,
+            y=(sweep_data.normalized + 1) / 2,
+            bounds=((0, 0, 0), (0.5, 1, 1)),
             title="Randomized benchmarking",
             xaxis_title="Number of Cliffords",
-            yaxis_title="Z expectation value",
+            yaxis_title="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
             plot=plot,
         )
 
+        if save_image:
+            vis.save_figure_image(
+                fit_result["fig"],
+                name=f"rb_{target}",
+            )
+
         data = {
             qubit: RBData.new(
                 data,
-                depolarizing_rate=fit_data[0],
-                avg_gate_error=fit_data[1],
-                avg_gate_fidelity=fit_data[2],
+                depolarizing_rate=fit_result["depolarizing_rate"],
+                avg_gate_error=fit_result["avg_gate_error"],
+                avg_gate_fidelity=fit_result["avg_gate_fidelity"],
             )
             for qubit, data in sweep_result.data.items()
         }
@@ -4636,7 +4646,7 @@ class Experiment:
             p00 = result.probabilities["00"]
             fidelities.append(p00)
 
-        fit_data = fitting.fit_rb(
+        fit_result = fitting.fit_rb(
             target=target,
             x=n_cliffords_range,
             y=np.array(fidelities),
@@ -4649,22 +4659,24 @@ class Experiment:
         )
 
         return {
-            "depolarizing_rate": fit_data[0],
-            "avg_gate_error": fit_data[1],
-            "avg_gate_fidelity": fit_data[2],
+            "depolarizing_rate": fit_result["depolarizing_rate"],
+            "avg_gate_error": fit_result["avg_gate_error"],
+            "avg_gate_fidelity": fit_result["avg_gate_fidelity"],
         }
 
     def randomized_benchmarking(
         self,
         target: str,
         *,
-        n_cliffords_range: ArrayLike | None = None,
+        n_cliffords_range: ArrayLike = np.arange(0, 1001, 100),
         n_trials: int = 30,
         x90: Waveform | dict[str, Waveform] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = True,
     ) -> dict:
         """
         Conducts a randomized benchmarking experiment with multiple trials.
@@ -4681,66 +4693,83 @@ class Experiment:
             π/2 pulse used for the experiment. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
-        seed : int, optional
-            Random seed.
+        seeds : ArrayLike, optional
+            Random seeds. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to True.
 
         Returns
         -------
         dict
             Results of the experiment.
         """
-        if n_cliffords_range is None:
-            n_cliffords_range = np.arange(0, 1001, 100)
-        else:
-            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
 
-        self._validate_rabi_params()
+        if seeds is None:
+            seeds = np.random.randint(0, 2**32, n_trials)
+        else:
+            seeds = np.array(seeds, dtype=int)
+            if len(seeds) != n_trials:
+                raise ValueError(
+                    "The number of seeds must be equal to the number of trials."
+                )
+
+        self._validate_rabi_params([target])
 
         results = []
-        seeds = np.random.randint(0, 2**32, n_trials)
-        for seed in seeds:
-            result = self.rb_experiment(
-                target=target,
-                n_cliffords_range=n_cliffords_range,
-                spectator_state=spectator_state,
-                x90=x90,
-                seed=seed,
-                shots=shots,
-                interval=interval,
-                plot=False,
-            )
-            results.append(result.data[target].normalized)
-            clear_output(wait=True)
+        for seed in tqdm(seeds):
+            with self.util.no_output():
+                result = self.rb_experiment(
+                    target=target,
+                    n_cliffords_range=n_cliffords_range,
+                    spectator_state=spectator_state,
+                    x90=x90,
+                    seed=seed,
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                    save_image=False,
+                )
+                signal = (result.data[target].normalized + 1) / 2
+                results.append(signal)
 
         mean = np.mean(results, axis=0)
         std = np.std(results, axis=0)
+
+        target_object = self.experiment_system.get_target(target)
+        bounds = ((0, 0, 0), (0.5, 1, 1)) if target_object.is_cr else None
 
         fit_result = fitting.fit_rb(
             target=target,
             x=n_cliffords_range,
             y=mean,
             error_y=std,
+            bounds=bounds,
             plot=plot,
             title="Randomized benchmarking",
             xaxis_title="Number of Cliffords",
-            yaxis_title="Z expectation value",
+            yaxis_title="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
         )
 
+        if save_image:
+            vis.save_figure_image(
+                fit_result["fig"],
+                name=f"randomized_benchmarking_{target}",
+            )
+
         return {
-            "depolarizing_rate": fit_result[0],
-            "avg_gate_error": fit_result[1],
-            "avg_gate_fidelity": fit_result[2],
             "n_cliffords": n_cliffords_range,
             "mean": mean,
             "std": std,
+            **fit_result,
         }
 
     def interleaved_randomized_benchmarking(
@@ -4753,10 +4782,10 @@ class Experiment:
         n_trials: int = 30,
         x90: Waveform | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        show_ref: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = True,
     ) -> dict:
         """
         Conducts a randomized benchmarking experiment with multiple trials.
@@ -4777,14 +4806,14 @@ class Experiment:
             π/2 pulse. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
-        show_ref : bool, optional
-            Whether to show the reference curve. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to True.
 
         Returns
         -------
@@ -4820,8 +4849,9 @@ class Experiment:
         rb_results = []
         irb_results = []
         seeds = np.random.randint(0, 2**32, n_trials)
-        for seed in seeds:
-            if show_ref:
+
+        for seed in tqdm(seeds):
+            with self.util.no_output():
                 rb_result = self.rb_experiment(
                     target=target,
                     n_cliffords_range=n_cliffords_range,
@@ -4831,35 +4861,42 @@ class Experiment:
                     shots=shots,
                     interval=interval,
                     plot=False,
+                    save_image=False,
                 )
-                rb_results.append(rb_result.data[target].normalized)
-            irb_result = self.rb_experiment(
-                target=target,
-                n_cliffords_range=n_cliffords_range,
-                x90=x90,
-                interleaved_waveform=interleaved_waveform,
-                interleaved_clifford=interleaved_clifford,
-                spectator_state=spectator_state,
-                seed=seed,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-            )
-            irb_results.append(irb_result.data[target].normalized)
-            clear_output(wait=True)
+                rb_signal = (rb_result.data[target].normalized + 1) / 2
+                rb_results.append(rb_signal)
 
-        if show_ref:
-            rb_mean = np.mean(rb_results, axis=0)
-            rb_std = np.std(rb_results, axis=0)
-            rb_fit_result = fitting.fit_rb(
-                target=target,
-                x=n_cliffords_range,
-                y=rb_mean,
-                error_y=rb_std,
-                plot=False,
-                title="Randomized benchmarking",
-            )
-            p_rb = rb_fit_result[0]
+                irb_result = self.rb_experiment(
+                    target=target,
+                    n_cliffords_range=n_cliffords_range,
+                    x90=x90,
+                    interleaved_waveform=interleaved_waveform,
+                    interleaved_clifford=interleaved_clifford,
+                    spectator_state=spectator_state,
+                    seed=seed,
+                    shots=shots,
+                    interval=interval,
+                    plot=False,
+                    save_image=False,
+                )
+                irb_signal = (irb_result.data[target].normalized + 1) / 2
+                irb_results.append(irb_signal)
+
+        print("Randomized benchmarking:")
+        rb_mean = np.mean(rb_results, axis=0)
+        rb_std = np.std(rb_results, axis=0)
+        rb_fit_result = fitting.fit_rb(
+            target=target,
+            x=n_cliffords_range,
+            y=rb_mean,
+            error_y=rb_std,
+            plot=plot,
+        )
+        A_rb = rb_fit_result["A"]
+        p_rb = rb_fit_result["p"]
+        C_rb = rb_fit_result["C"]
+
+        print("Interleaved randomized benchmarking:")
         irb_mean = np.mean(irb_results, axis=0)
         irb_std = np.std(irb_results, axis=0)
         irb_fit_result = fitting.fit_rb(
@@ -4870,30 +4907,49 @@ class Experiment:
             plot=plot,
             title="Interleaved randomized benchmarking",
         )
-        p_irb = irb_fit_result[0]
+        A_irb = irb_fit_result["A"]
+        p_irb = irb_fit_result["p"]
+        C_irb = irb_fit_result["C"]
 
-        if show_ref:
-            fitting.plot_irb(
-                target=target,
-                x=n_cliffords_range,
-                y_rb=rb_mean,
-                y_irb=irb_mean,
-                error_y_rb=rb_std,
-                error_y_irb=irb_std,
-                p_rb=p_rb,
-                p_irb=p_irb,
-                title="Interleaved randomized benchmarking",
-                xaxis_title="Number of Cliffords",
-                yaxis_title="Z expectation value",
+        dimension = 2
+        gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
+        gate_fidelity = 1 - gate_error
+
+        fig = fitting.plot_irb(
+            target=target,
+            x=n_cliffords_range,
+            y_rb=rb_mean,
+            y_irb=irb_mean,
+            error_y_rb=rb_std,
+            error_y_irb=irb_std,
+            A_rb=A_rb,
+            A_irb=A_irb,
+            p_rb=p_rb,
+            p_irb=p_irb,
+            C_rb=C_rb,
+            C_irb=C_irb,
+            gate_fidelity=gate_fidelity,
+            title="Interleaved randomized benchmarking",
+            xaxis_title="Number of Cliffords",
+            yaxis_title="Normalized signal",
+        )
+        if save_image:
+            vis.save_figure_image(
+                fig,
+                name=f"interleaved_randomized_benchmarking_{target}",
             )
 
+        print("")
+        print(f"Gate error: {gate_error:.6f}")
+        print(f"Gate fidelity: {gate_fidelity:.6f}")
+        print("")
+
         return {
-            "depolarizing_rate": irb_fit_result[0],
-            "avg_gate_error": irb_fit_result[1],
-            "avg_gate_fidelity": irb_fit_result[2],
-            "n_cliffords": n_cliffords_range,
-            "mean": irb_mean,
-            "std": irb_std,
+            "gate_error": gate_error,
+            "gate_fidelity": gate_fidelity,
+            "rb_fit_result": rb_fit_result,
+            "irb_fit_result": irb_fit_result,
+            "fig": fig,
         }
 
     def state_tomography(
