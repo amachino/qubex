@@ -10,7 +10,8 @@ from .control_system import Box, CapPort, ControlSystem, GenPort
 from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
 from .quantum_system import Chip, QuantumSystem
 
-DEFAULT_CONFIG_DIR: Final = "config"
+DEFAULT_CONFIG_DIR: Final = "/home/shared/config"
+DEFAULT_PARAMS_DIR: Final = "/home/shared/config"
 
 CHIP_FILE: Final = "chip.yaml"
 BOX_FILE: Final = "box.yaml"
@@ -22,13 +23,15 @@ PARAMS_FILE: Final = "params.yaml"
 class ConfigLoader:
     def __init__(
         self,
-        config_dir: str = DEFAULT_CONFIG_DIR,
         *,
+        config_dir: str = DEFAULT_CONFIG_DIR,
+        params_dir: str = DEFAULT_PARAMS_DIR,
         chip_file: str = CHIP_FILE,
         box_file: str = BOX_FILE,
         wiring_file: str = WIRING_FILE,
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
+        targets_to_exclude: list[str] | None = None,
     ):
         """
         Initializes the ConfigLoader object.
@@ -36,7 +39,9 @@ class ConfigLoader:
         Parameters
         ----------
         config_dir : str, optional
-            The directory where the configuration files are stored, by default "./config".
+            The directory where the configuration files are stored, by default DEFAULT_CONFIG_DIR.
+        params_dir : str, optional
+            The directory where the parameter files are stored, by default DEFAULT_PARAMS_DIR.
         chip_file : str, optional
             The name of the chip configuration file, by default "chip.yaml".
         box_file : str, optional
@@ -47,22 +52,27 @@ class ConfigLoader:
             The name of the properties configuration file, by default "props.yaml".
         params_file : str, optional
             The name of the parameters configuration file, by default "params.yaml".
+        targets_to_exclude : list[str], optional
+            The list of target labels to exclude, by default None.
 
         Examples
         --------
         >>> config = ConfigLoader()
         """
         self._config_dir = config_dir
+        self._params_dir = params_dir
         self._chip_dict = self._load_config_file(chip_file)
         self._box_dict = self._load_config_file(box_file)
         self._wiring_dict = self._load_config_file(wiring_file)
-        self._props_dict = self._load_config_file(props_file)
-        self._params_dict = self._load_config_file(params_file)
+        self._props_dict = self._load_params_file(props_file)
+        self._params_dict = self._load_params_file(params_file)
         self._quantum_system_dict = self._load_quantum_system()
         self._control_system_dict = self._load_control_system()
         self._wiring_info_dict = self._load_wiring_info()
         self._control_params_dict = self._load_control_params()
-        self._experiment_system_dict = self._load_experiment_system()
+        self._experiment_system_dict = self._load_experiment_system(
+            targets_to_exclude=targets_to_exclude
+        )
 
     @property
     def config_path(self) -> Path:
@@ -100,6 +110,19 @@ class ConfigLoader:
             raise e
         except yaml.YAMLError as e:
             print(f"Error loading configuration file: {path}\n\n{e}")
+            raise e
+        return result
+
+    def _load_params_file(self, file_name) -> dict:
+        path = Path(self._params_dir) / file_name
+        try:
+            with open(path, "r") as file:
+                result = yaml.safe_load(file)
+        except FileNotFoundError as e:
+            print(f"Parameter file not found: {path}\n\n{e}")
+            raise e
+        except yaml.YAMLError as e:
+            print(f"Error loading parameter file: {path}\n\n{e}")
             raise e
         return result
 
@@ -204,7 +227,10 @@ class ConfigLoader:
             control_params_dict[chip_id] = control_params
         return control_params_dict
 
-    def _load_experiment_system(self) -> dict[str, ExperimentSystem]:
+    def _load_experiment_system(
+        self,
+        targets_to_exclude: list[str] | None = None,
+    ) -> dict[str, ExperimentSystem]:
         experiment_system_dict = {}
         for chip_id in self._chip_dict:
             quantum_system = self._quantum_system_dict[chip_id]
@@ -216,6 +242,7 @@ class ConfigLoader:
                 control_system=control_system,
                 wiring_info=wiring_info,
                 control_params=control_params,
+                targets_to_exclude=targets_to_exclude,
             )
             experiment_system_dict[chip_id] = experiment_system
         return experiment_system_dict

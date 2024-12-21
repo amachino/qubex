@@ -86,11 +86,13 @@ class ExperimentSystem:
         control_system: ControlSystem,
         wiring_info: WiringInfo,
         control_params: ControlParams,
+        targets_to_exclude: list[str] | None = None,
     ):
         self._quantum_system: Final = quantum_system
         self._control_system: Final = control_system
         self._wiring_info: Final = wiring_info
         self._control_params: Final = control_params
+        self._targets_to_exclude: Final = targets_to_exclude or []
         self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
         self._initialize_ports()
         self._initialize_targets()
@@ -179,8 +181,13 @@ class ExperimentSystem:
     def get_resonator(self, label: int | str) -> Resonator:
         return self.quantum_system.get_resonator(label)
 
-    def get_spectator_qubits(self, qubit: int | str) -> list[Qubit]:
-        return self.quantum_system.get_spectator_qubits(qubit)
+    def get_spectator_qubits(
+        self,
+        qubit: int | str,
+        *,
+        in_same_mux: bool = False,
+    ) -> list[Qubit]:
+        return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
 
     def get_box(self, box_id: str) -> Box:
         return self.control_system.get_box(box_id)
@@ -496,10 +503,12 @@ class ExperimentSystem:
             spectator.ge_frequency * 1e9
             for spectator in self.get_spectator_qubits(qubit.label)
             if spectator.ge_frequency > 0
+            and spectator.label not in self._targets_to_exclude
+            and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
         ]
 
         if not f_CRs:
-            f_CR = f_ge
+            f_CRs = [f_ge]
 
         f_CR_max = max(f_CRs)
         if f_CR_max > f_ge:

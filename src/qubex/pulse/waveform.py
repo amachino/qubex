@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Final, Literal
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -23,7 +23,7 @@ class Waveform(ABC):
         Phase shift of the waveform in rad.
     """
 
-    SAMPLING_PERIOD: Final[float] = 2.0  # ns
+    SAMPLING_PERIOD: float = 2.0  # ns
 
     def __init__(
         self,
@@ -151,6 +151,8 @@ class Waveform(ABC):
         *,
         polar=False,
         title=None,
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
+        divide_by_two_pi: bool = False,
     ):
         """
         Plots the waveform.
@@ -165,16 +167,26 @@ class Waveform(ABC):
         if title is None:
             title = f"Waveform ({self.duration} ns)"
         if polar:
-            self.plot_polar(title=title)
+            self.plot_polar(
+                title=title,
+                line_shape=line_shape,
+            )
         else:
-            self.plot_xy(title=title)
+            self.plot_xy(
+                title=title,
+                line_shape=line_shape,
+                divide_by_two_pi=divide_by_two_pi,
+            )
 
     def plot_xy(
         self,
         *,
-        title=None,
-        xlabel="Time (ns)",
-        ylabel="Amplitude (arb. units)",
+        n_samples: int | None = None,
+        divide_by_two_pi: bool = False,
+        title: str | None = None,
+        xlabel: str = "Time (ns)",
+        ylabel: str = "Amplitude (arb. unit)",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
         Plots the waveform with I/Q values.
@@ -196,6 +208,16 @@ class Waveform(ABC):
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
 
+        if n_samples is not None and len(times) > n_samples:
+            indices = np.linspace(0, len(times) - 1, n_samples).astype(int)
+            times = times[indices]
+            real = real[indices]
+            imag = imag[indices]
+
+        if divide_by_two_pi:
+            real /= 2 * np.pi * 1e-3
+            imag /= 2 * np.pi * 1e-3
+
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -203,7 +225,7 @@ class Waveform(ABC):
                 y=real,
                 mode="lines",
                 name="I",
-                line_shape="hv",
+                line_shape=line_shape,
             )
         )
         fig.add_trace(
@@ -212,13 +234,13 @@ class Waveform(ABC):
                 y=imag,
                 mode="lines",
                 name="Q",
-                line_shape="hv",
+                line_shape=line_shape,
             )
         )
         fig.update_layout(
             title=title,
             xaxis_title=xlabel,
-            yaxis_title=ylabel,
+            yaxis_title="Amplitude (MHz)" if divide_by_two_pi else ylabel,
         )
         fig.show(
             config={
@@ -232,10 +254,11 @@ class Waveform(ABC):
     def plot_polar(
         self,
         *,
-        title="",
-        xlabel="Time (ns)",
-        ylabel_1="Amplitude (arb. units)",
-        ylabel_2="Phase (rad)",
+        title: str = "",
+        xlabel: str = "Time (ns)",
+        ylabel_1: str = "Amplitude (arb. unit)",
+        ylabel_2: str = "Phase (rad)",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
         Plots the waveform with amplitude and phase.
@@ -269,7 +292,7 @@ class Waveform(ABC):
                 y=ampl,
                 mode="lines",
                 name="Amplitude",
-                line_shape="hv",
+                line_shape=line_shape,
             ),
             row=1,
             col=1,
@@ -280,7 +303,7 @@ class Waveform(ABC):
                 y=phase,
                 mode="lines",
                 name="Phase",
-                line_shape="hv",
+                line_shape=line_shape,
             ),
             row=2,
             col=1,

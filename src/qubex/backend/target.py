@@ -228,3 +228,15 @@ class Target(Model):
     def read_label(cls, label: str) -> str:
         qubit = cls.qubit_label(label)
         return f"R{qubit}"
+
+    @classmethod
+    def cr_qubit_pair(
+        cls,
+        label: str,
+    ) -> tuple[str, str]:
+        if match := re.match(r"^(Q\d+)-(Q\d+)$", label):
+            control_qubit = match.group(1)
+            target_qubit = match.group(2)
+        else:
+            raise ValueError(f"Invalid target label `{label}`.")
+        return control_qubit, target_qubit

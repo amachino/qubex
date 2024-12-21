@@ -34,6 +34,7 @@ class DeviceController:
             except FileNotFoundError:
                 print(f"Configuration file {config_path} not found.")
                 raise
+        self._boxpool = None
 
     @property
     def system_config(self) -> dict[str, dict]:
@@ -75,6 +76,20 @@ class DeviceController:
         return list(self.box_settings.keys())
 
     @property
+    def boxpool(self):
+        """
+        Get the boxpool.
+
+        Returns
+        -------
+        BoxPool
+            The boxpool.
+        """
+        if self._boxpool is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
+        return self._boxpool
+
+    @property
     def hash(self) -> int:
         """
         Get the hash of the system configuration.
@@ -112,6 +127,10 @@ class DeviceController:
             ]
         return result
 
+    def clear_cache(self):
+        if self._boxpool is not None:
+            self._boxpool._box_config_cache.clear()
+
     def link_status(self, box_name: str) -> dict[int, bool]:
         """
         Get the link status of a box.
@@ -135,23 +154,18 @@ class DeviceController:
         box = self.qubecalib.create_box(box_name, reconnect=False)
         return box.link_status()
 
-    def reconnect(self, box_name: str):
+    def connect(self, box_names: list[str] | None = None):
         """
-        Reconnect a box.
+        Connect to the boxes.
 
         Parameters
         ----------
-        box_name : str
-            Name of the box to reconnect.
-
-        Raises
-        ------
-        ValueError
-            If the box is not in the available boxes.
+        box_names : list[str], optional
+            List of box names to connect to. If None, connect to all available boxes.
         """
-        self._check_box_availabilty(box_name)
-        box = self.qubecalib.create_box(box_name, reconnect=False)
-        box.reconnect()
+        if box_names is None:
+            box_names = self.available_boxes
+        self._boxpool = self.qubecalib.create_boxpool(*box_names)
 
     def linkup(
         self,
@@ -526,16 +540,31 @@ class DeviceController:
         RawResult
             Measurement result.
         """
-        self.clear_command_queue()
-        self.add_sequencer(sequencer)
-        return next(
-            self.execute(
+        if self._boxpool is None:
+            self.clear_command_queue()
+            self.add_sequencer(sequencer)
+            return next(
+                self.execute(
+                    repeats=repeats,
+                    integral_mode=integral_mode,
+                    dsp_demodulation=dsp_demodulation,
+                    software_demodulation=software_demodulation,
+                )
+            )
+        else:
+            sequencer.set_measurement_option(
                 repeats=repeats,
+                interval=sequencer.interval,  # type: ignore
                 integral_mode=integral_mode,
                 dsp_demodulation=dsp_demodulation,
                 software_demodulation=software_demodulation,
             )
-        )
+            status, data, config = sequencer.execute(self.boxpool)
+            return RawResult(
+                status=status,
+                data=data,
+                config=config,
+            )
 
     def modify_target_frequency(self, target: str, frequency: float):
         """

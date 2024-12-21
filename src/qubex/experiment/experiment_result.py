@@ -146,8 +146,16 @@ class RabiData(TargetData):
                     y=self.zvalues,
                 )
             )
+            fig.add_annotation(
+                xref="paper",
+                yref="paper",
+                x=0.95,
+                y=0.95,
+                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
+                showarrow=False,
+            )
             fig.update_layout(
-                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                title=f"Rabi oscillation : {self.target}",
                 xaxis_title="Drive duration (ns)",
                 yaxis_title="Z value",
                 yaxis_range=[-1.2, 1.2],
@@ -167,8 +175,16 @@ class RabiData(TargetData):
                     ),
                 )
             )
+            fig.add_annotation(
+                xref="paper",
+                yref="paper",
+                x=0.95,
+                y=0.95,
+                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
+                showarrow=False,
+            )
             fig.update_layout(
-                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                title=f"Rabi oscillation : {self.target}",
                 xaxis_title="Drive duration (ns)",
                 yaxis_title="Normalized value",
             )
@@ -191,8 +207,16 @@ class RabiData(TargetData):
                     name="Q",
                 )
             )
+            fig.add_annotation(
+                xref="paper",
+                yref="paper",
+                x=0.95,
+                y=0.95,
+                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
+                showarrow=False,
+            )
             fig.update_layout(
-                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                title=f"Rabi oscillation : {self.target}",
                 xaxis_title="Drive duration (ns)",
                 yaxis_title="Measured value",
             )
@@ -457,8 +481,8 @@ class T1Data(SweepData):
             t1=t1,
         )
 
-    def fit(self) -> float:
-        tau = fitting.fit_exp_decay(
+    def fit(self) -> dict:
+        return fitting.fit_exp_decay(
             target=self.target,
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
@@ -468,7 +492,6 @@ class T1Data(SweepData):
             xaxis_type="log",
             yaxis_type="linear",
         )
-        return tau
 
 
 @dataclass
@@ -517,8 +540,8 @@ class T2Data(SweepData):
             t2=t2,
         )
 
-    def fit(self) -> float:
-        tau = fitting.fit_exp_decay(
+    def fit(self) -> dict:
+        return fitting.fit_exp_decay(
             target=self.target,
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
@@ -526,7 +549,6 @@ class T2Data(SweepData):
             xaxis_title="Time (μs)",
             yaxis_title="Population",
         )
-        return tau
 
 
 @dataclass
@@ -557,11 +579,14 @@ class RamseyData(SweepData):
     t2 : float, optional
         T2* time.
     ramsey_freq : float, optional
-        Ramsey frequency.
+        Frequency of the Ramsey fringes.
+    bare_freq : float, optional
+        Bare frequency of the qubit.
     """
 
     t2: float = np.nan
     ramsey_freq: float = np.nan
+    bare_freq: float = np.nan
 
     @classmethod
     def new(
@@ -569,6 +594,7 @@ class RamseyData(SweepData):
         sweep_data: SweepData,
         t2: float,
         ramsey_freq: float,
+        bare_freq: float,
     ) -> RamseyData:
         return cls(
             target=sweep_data.target,
@@ -582,15 +608,15 @@ class RamseyData(SweepData):
             yaxis_type=sweep_data.yaxis_type,
             t2=t2,
             ramsey_freq=ramsey_freq,
+            bare_freq=bare_freq,
         )
 
-    def fit(self) -> tuple[float, float]:
-        t2, ramsey_freq = fitting.fit_ramsey(
+    def fit(self) -> dict:
+        return fitting.fit_ramsey(
             target=self.target,
             x=self.sweep_range,
             y=self.normalized,
         )
-        return t2, ramsey_freq
 
 
 @dataclass
@@ -688,7 +714,7 @@ class AmplRabiData(TargetData):
         )
         fig.update_layout(
             title=f"Drive amplitude and Rabi rate : {self.target}",
-            xaxis_title="Drive amplitude (arb. units)",
+            xaxis_title="Drive amplitude (arb. unit)",
             yaxis_title="Rabi rate (MHz)",
         )
         fig.show()
@@ -729,7 +755,7 @@ class FreqRabiData(TargetData):
         )
         fig.show()
 
-    def fit(self) -> tuple[float, float]:
+    def fit(self) -> dict:
         return fitting.fit_detuned_rabi(
             target=self.target,
             control_frequencies=self.frequency_range,
@@ -777,8 +803,16 @@ class TimePhaseData(TargetData):
                 y=self.phases,
             )
         )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"Phase shift = {self.phase_shift:.5g} rad/128ns",
+            showarrow=False,
+        )
         fig.update_layout(
-            title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/128ns",
+            title=f"Phase shift : {self.target}",
             xaxis_title="Control window (ns)",
             yaxis_title="Phase (rad)",
         )
@@ -818,8 +852,16 @@ class ResonatorFreqData(TargetData):
                 y=self.phases,
             )
         )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"Phase shift = {self.phase_shift:.5g} rad/128ns",
+            showarrow=False,
+        )
         fig.update_layout(
-            title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/128ns",
+            title=f"Phase shift : {self.target}",
             xaxis_title="Control window (ns)",
             yaxis_title="Phase (rad)",
         )
