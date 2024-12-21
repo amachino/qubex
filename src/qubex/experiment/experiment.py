@@ -4069,7 +4069,7 @@ class Experiment:
         shots: int = 1000,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ):
+    ) -> dict:
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -4104,6 +4104,8 @@ class Experiment:
             raise ValueError("Invalid classifier type.")
         self._measurement.classifiers = classifiers
 
+        fidelities = {}
+        average_fidelities = {}
         for target in targets:
             clf = classifiers[target]
             classified = []
@@ -4120,6 +4122,9 @@ class Experiment:
                 classified[state][state] / sum(classified[state].values())
                 for state in range(n_states)
             ]
+            fidelities[target] = fidelity
+            average_fidelities[target] = np.mean(fidelity)
+
             if plot:
                 print(f"{target}:")
                 print(f"  Total shots: {shots}")
@@ -4128,7 +4133,7 @@ class Experiment:
                         f"  |{state}⟩ → {classified[state]}, f_{state}: {fidelity[state] * 100:.2f}%"
                     )
                 print(
-                    f"  Average readout fidelity : {np.mean(fidelity) * 100:.2f}%\n\n"
+                    f"  Average readout fidelity : {average_fidelities[target] * 100:.2f}%\n\n"
                 )
 
         self._system_note.put(
@@ -4141,6 +4146,13 @@ class Experiment:
                 for target in targets
             },
         )
+
+        return {
+            "readout_fidelties": fidelities,
+            "average_readout_fidelity": average_fidelities,
+            "measure_results": results,
+            "classifiers": classifiers,
+        }
 
     def rb_sequence(
         self,
