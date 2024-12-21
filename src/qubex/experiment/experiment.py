@@ -3851,7 +3851,7 @@ class Experiment:
         else:
             targets = list(targets)
 
-        time_range = np.asarray(time_range)
+        time_range = self.util.discretize_time_range(time_range)
         self._validate_rabi_params(targets)
 
         target_groups = self.util.create_qubit_subgroups(targets)
@@ -3919,8 +3919,15 @@ class Experiment:
                             sweep_data=sweep_data,
                             t2=fit_result["tau"],
                             ramsey_freq=fit_result["f"],
+                            bare_freq=self.targets[target].frequency
+                            + detuning
+                            - fit_result["f"],
                         )
                         data[target] = ramsey_data
+
+                    print(f"Bare frequency with |{spectator_state}〉:")
+                    print(f"  {target}: {ramsey_data.bare_freq:.6f}")
+                    print("")
 
                     if save_image and "fig" in fit_result:
                         fig = fit_result["fig"]
@@ -3935,12 +3942,12 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 30001, 100),
+        time_range: ArrayLike = np.arange(0, 20001, 100),
         detuning: float = 0.001,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> dict[str, float]:
+    ) -> dict:
         """
         Obtains the effective control frequency of the qubit.
 
@@ -3961,7 +3968,7 @@ class Experiment:
 
         Returns
         -------
-        dict[str, float]
+        dict
             Effective control frequency.
 
         Examples
@@ -4000,32 +4007,25 @@ class Experiment:
             plot=plot,
         )
 
-        bare_freq_0 = {
-            target: self.targets[target].frequency
-            + detuning
-            - result_0.data[target].ramsey_freq
-            for target in targets
-        }
-        bare_freq_1 = {
-            target: self.targets[target].frequency
-            + detuning
-            - result_1.data[target].ramsey_freq
-            for target in targets
-        }
         effective_freq = {
-            target: (bare_freq_0[target] + bare_freq_1[target]) / 2
+            target: (result_0.data[target].bare_freq + result_1.data[target].bare_freq)
+            * 0.5
             for target in targets
         }
 
         for target in targets:
             print(f"Target: {target}")
             print(f"  Original frequency: {self.targets[target].frequency:.6f}")
-            print(f"  Bare frequency with |0>: {bare_freq_0[target]:.6f}")
-            print(f"  Bare frequency with |1>: {bare_freq_1[target]:.6f}")
+            print(f"  Bare frequency with |0>: {result_0.data[target].bare_freq:.6f}")
+            print(f"  Bare frequency with |1>: {result_1.data[target].bare_freq:.6f}")
             print(f"  Effective control frequency: {effective_freq[target]:.6f}")
             print("")
 
-        return effective_freq
+        return {
+            "effective_freq": effective_freq,
+            "result_0": result_0,
+            "result_1": result_1,
+        }
 
     def measure_state_distribution(
         self,

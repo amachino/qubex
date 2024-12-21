@@ -481,8 +481,8 @@ class T1Data(SweepData):
             t1=t1,
         )
 
-    def fit(self) -> float:
-        tau = fitting.fit_exp_decay(
+    def fit(self) -> dict:
+        return fitting.fit_exp_decay(
             target=self.target,
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
@@ -491,8 +491,7 @@ class T1Data(SweepData):
             yaxis_title="Population",
             xaxis_type="log",
             yaxis_type="linear",
-        )["tau"]
-        return tau
+        )
 
 
 @dataclass
@@ -541,16 +540,15 @@ class T2Data(SweepData):
             t2=t2,
         )
 
-    def fit(self) -> float:
-        tau = fitting.fit_exp_decay(
+    def fit(self) -> dict:
+        return fitting.fit_exp_decay(
             target=self.target,
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
             title="T2",
             xaxis_title="Time (μs)",
             yaxis_title="Population",
-        )["tau"]
-        return tau
+        )
 
 
 @dataclass
@@ -581,11 +579,14 @@ class RamseyData(SweepData):
     t2 : float, optional
         T2* time.
     ramsey_freq : float, optional
-        Ramsey frequency.
+        Frequency of the Ramsey fringes.
+    bare_freq : float, optional
+        Bare frequency of the qubit.
     """
 
     t2: float = np.nan
     ramsey_freq: float = np.nan
+    bare_freq: float = np.nan
 
     @classmethod
     def new(
@@ -593,6 +594,7 @@ class RamseyData(SweepData):
         sweep_data: SweepData,
         t2: float,
         ramsey_freq: float,
+        bare_freq: float,
     ) -> RamseyData:
         return cls(
             target=sweep_data.target,
@@ -606,15 +608,15 @@ class RamseyData(SweepData):
             yaxis_type=sweep_data.yaxis_type,
             t2=t2,
             ramsey_freq=ramsey_freq,
+            bare_freq=bare_freq,
         )
 
-    def fit(self) -> tuple[float, float]:
-        t2, ramsey_freq = fitting.fit_ramsey(
+    def fit(self) -> dict:
+        return fitting.fit_ramsey(
             target=self.target,
             x=self.sweep_range,
             y=self.normalized,
         )
-        return t2, ramsey_freq
 
 
 @dataclass
