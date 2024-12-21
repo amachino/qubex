@@ -402,7 +402,9 @@ class Experiment:
         if calib_amplitude is not None:
             for target in calib_amplitude:
                 # use the calibrated hpi amplitude if it is stored
-                amplitude[target] = calib_amplitude[target]
+                amp = calib_amplitude.get(target)
+                if amp is not None and np.isnan(amp) is False:
+                    amplitude[target] = calib_amplitude[target]
         return {
             target: FlatTop(
                 duration=HPI_DURATION,
@@ -431,11 +433,13 @@ class Experiment:
         if calib_amplitude is not None:
             for target in calib_amplitude:
                 # use the calibrated pi amplitude if it is stored
-                pi[target] = FlatTop(
-                    duration=PI_DURATION,
-                    amplitude=calib_amplitude[target],
-                    tau=PI_RISETIME,
-                )
+                amp = calib_amplitude.get(target)
+                if amp is not None and np.isnan(amp) is False:
+                    pi[target] = FlatTop(
+                        duration=PI_DURATION,
+                        amplitude=amp,
+                        tau=PI_RISETIME,
+                    )
         return {target: pi[target] for target in self._qubits}
 
     @property
