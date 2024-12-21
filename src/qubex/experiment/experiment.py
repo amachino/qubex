@@ -845,6 +845,10 @@ class Experiment:
             box_ids=box_ids or self.box_ids,
         )
 
+    def reload(self):
+        """Reload the configuration files."""
+        self._measurement.reload()
+
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float] | None):
         """

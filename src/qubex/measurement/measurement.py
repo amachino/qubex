@@ -75,51 +75,46 @@ class Measurement:
         ...     qubits=["Q00", "Q01"],
         ... )
         """
-        self._load_state(
-            chip_id,
-            qubits=qubits,
-            config_dir=config_dir,
-            params_dir=params_dir,
-            fetch_device_state=fetch_device_state,
-        )
+        self._chip_id = chip_id
+        self._qubits = qubits
+        self._config_dir = config_dir
+        self._params_dir = params_dir
         self._use_neopulse = use_neopulse
         self._classifiers: TargetMap[StateClassifier] = {}
-        if connect_devices:
-            self._connect_devices(qubits)
+        self._load_device_state(
+            fetch_device_state=fetch_device_state,
+            connect_devices=connect_devices,
+        )
 
-    def _connect_devices(
+    def _load_device_state(
         self,
-        qubits: Sequence[str] | None = None,
-        box_ids: list[str] | None = None,
-    ):
-        if box_ids is None and qubits is not None:
-            boxes = self.experiment_system.get_boxes_for_qubits(qubits)
-            box_ids = [box.id for box in boxes]
-        self.device_controller.connect(box_ids)
-
-    def _load_state(
-        self,
-        chip_id: str,
-        qubits: Sequence[str] | None,
-        config_dir: str,
-        params_dir: str,
         fetch_device_state: bool,
+        connect_devices: bool,
     ):
         self._state_manager = StateManager.shared()
         self.state_manager.load(
-            chip_id=chip_id,
-            config_dir=config_dir,
-            params_dir=params_dir,
+            chip_id=self._chip_id,
+            config_dir=self._config_dir,
+            params_dir=self._params_dir,
         )
+        box_ids = None
+        if self._qubits is not None:
+            boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
+            box_ids = [box.id for box in boxes]
         if fetch_device_state:
-            box_ids = None
-            if qubits is not None:
-                boxes = self.experiment_system.get_boxes_for_qubits(qubits)
-                box_ids = [box.id for box in boxes]
             try:
                 self.state_manager.pull(box_ids=box_ids)
             except Exception:
                 print("Failed to fetch the device state.")
+        if connect_devices:
+            try:
+                self.device_controller.connect(box_ids)
+            except Exception:
+                print("Failed to connect the devices.")
+
+    def reload(self):
+        """Reload the measuremnt settings."""
+        self._load_device_state(fetch_device_state=True, connect_devices=True)
 
     @property
     def state_manager(self) -> StateManager:
