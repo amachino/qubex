@@ -3603,18 +3603,19 @@ class Experiment:
         self._validate_rabi_params(targets)
 
         if time_range is None:
-            time_range = self.util.discretize_time_range(
-                np.logspace(
-                    np.log10(100),
-                    np.log10(100 * 1000),
-                    51,
-                )
+            time_range = np.logspace(
+                np.log10(100),
+                np.log10(100 * 1000),
+                51,
             )
-        time_range = np.asarray(time_range)
+        time_range = self.util.discretize_time_range(np.asarray(time_range))
 
         data: dict[str, T1Data] = {}
 
-        for subgroup in self.util.create_qubit_subgroups(targets):
+        subgroups = self.util.create_qubit_subgroups(targets)
+        print(f"Target qubits: {targets}")
+        print(f"Subgroups: {subgroups}")
+        for idx, subgroup in enumerate(subgroups):
             if len(subgroup) == 0:
                 continue
 
@@ -3624,6 +3625,10 @@ class Experiment:
                         ps.add(target, self.pi_pulse[target])
                         ps.add(target, Blank(T))
                 return ps
+
+            print(
+                f"({idx+1}/{len(subgroups)}) Conducting T1 experiment for {subgroup}...\n"
+            )
 
             sweep_result = self.sweep_parameter(
                 sequence=t1_sequence,
@@ -3720,19 +3725,23 @@ class Experiment:
         self._validate_rabi_params(targets)
 
         if time_range is None:
-            time_range = self.util.discretize_time_range(
-                np.logspace(
-                    np.log10(300),
-                    np.log10(100 * 1000),
-                    51,
-                ),
-                2 * SAMPLING_PERIOD,
+            time_range = np.logspace(
+                np.log10(300),
+                np.log10(100 * 1000),
+                51,
             )
-        time_range = np.asarray(time_range)
+        time_range = self.util.discretize_time_range(
+            time_range=np.asarray(time_range),
+            sampling_period=2 * SAMPLING_PERIOD,
+        )
 
         data: dict[str, T2Data] = {}
 
-        for subgroup in self.util.create_qubit_subgroups(targets):
+        subgroups = self.util.create_qubit_subgroups(targets)
+
+        print(f"Target qubits: {targets}")
+        print(f"Subgroups: {subgroups}")
+        for idx, subgroup in enumerate(subgroups):
             if len(subgroup) == 0:
                 continue
 
@@ -3753,6 +3762,10 @@ class Experiment:
                             )
                         ps.add(target, hpi.shifted(np.pi))
                 return ps
+
+            print(
+                f"({idx+1}/{len(subgroups)}) Conducting T2 experiment for {subgroup}...\n"
+            )
 
             sweep_result = self.sweep_parameter(
                 sequence=t2_sequence,
