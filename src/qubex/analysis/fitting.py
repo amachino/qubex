@@ -384,8 +384,16 @@ def fit_rabi(
                 error_y=dict(type="constant", value=noise),
             ),
         )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"f = {frequency * 1e3:.2f} MHz",
+            showarrow=False,
+        )
         fig.update_layout(
-            title=(f"Rabi oscillation of {target} : {frequency * 1e3:.3g} MHz"),
+            title=(f"Rabi oscillation : {target}"),
             xaxis_title="Drive duration (ns)",
             yaxis_title=yaxis_title or "Amplitude (arb. unit)",
             yaxis_range=yaxis_range,

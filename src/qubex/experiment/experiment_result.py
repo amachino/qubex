@@ -146,8 +146,16 @@ class RabiData(TargetData):
                     y=self.zvalues,
                 )
             )
+            fig.add_annotation(
+                xref="paper",
+                yref="paper",
+                x=0.95,
+                y=0.95,
+                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
+                showarrow=False,
+            )
             fig.update_layout(
-                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                title=f"Rabi oscillation : {self.target}",
                 xaxis_title="Drive duration (ns)",
                 yaxis_title="Z value",
                 yaxis_range=[-1.2, 1.2],
@@ -167,8 +175,16 @@ class RabiData(TargetData):
                     ),
                 )
             )
+            fig.add_annotation(
+                xref="paper",
+                yref="paper",
+                x=0.95,
+                y=0.95,
+                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
+                showarrow=False,
+            )
             fig.update_layout(
-                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                title=f"Rabi oscillation : {self.target}",
                 xaxis_title="Drive duration (ns)",
                 yaxis_title="Normalized value",
             )
@@ -191,8 +207,16 @@ class RabiData(TargetData):
                     name="Q",
                 )
             )
+            fig.add_annotation(
+                xref="paper",
+                yref="paper",
+                x=0.95,
+                y=0.95,
+                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
+                showarrow=False,
+            )
             fig.update_layout(
-                title=f"Rabi oscillation of {self.target} : {self.rabi_param.frequency * 1e3:.2f} MHz",
+                title=f"Rabi oscillation : {self.target}",
                 xaxis_title="Drive duration (ns)",
                 yaxis_title="Measured value",
             )
@@ -777,8 +801,16 @@ class TimePhaseData(TargetData):
                 y=self.phases,
             )
         )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"Phase shift = {self.phase_shift:.5g} rad/128ns",
+            showarrow=False,
+        )
         fig.update_layout(
-            title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/128ns",
+            title=f"Phase shift : {self.target}",
             xaxis_title="Control window (ns)",
             yaxis_title="Phase (rad)",
         )
@@ -818,8 +850,16 @@ class ResonatorFreqData(TargetData):
                 y=self.phases,
             )
         )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"Phase shift = {self.phase_shift:.5g} rad/128ns",
+            showarrow=False,
+        )
         fig.update_layout(
-            title=f"Phase shift of {self.target} : {self.phase_shift:.5g} rad/128ns",
+            title=f"Phase shift : {self.target}",
             xaxis_title="Control window (ns)",
             yaxis_title="Phase (rad)",
         )

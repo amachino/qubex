@@ -76,14 +76,14 @@ class MeasureData:
         if self.mode == MeasureMode.SINGLE:
             scatter_iq_data(
                 data={self.target: self.kerneled},
-                title=f"Readout IQ data of {self.target}",
+                title=f"Readout IQ data : {self.target}",
                 save_image=save_image,
             )
         elif self.mode == MeasureMode.AVG:
             plot_waveform(
                 data=self.raw,
                 sampling_period=SAMPLING_PERIOD_AVG,
-                title=f"Readout waveform of {self.target}",
+                title=f"Readout waveform : {self.target}",
                 xlabel="Capture time (ns)",
                 ylabel="Amplitude (arb. unit)",
             )
@@ -92,7 +92,7 @@ class MeasureData:
         plot_fft(
             times=self.times,
             data=self.raw,
-            title=f"Fourier transform of {self.target}",
+            title=f"Fourier transform : {self.target}",
             xlabel="Frequency (GHz)",
             ylabel="Amplitude (arb. unit)",
         )

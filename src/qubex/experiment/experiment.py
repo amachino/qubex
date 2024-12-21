@@ -1602,7 +1602,7 @@ class Experiment:
             if plot:
                 vis.plot_waveform(
                     np.array(data.raw, dtype=np.complex64) * 2 ** (-32),
-                    title=f"Readout noise of {target}",
+                    title=f"Readout noise : {target}",
                     xlabel="Capture time (μs)",
                     sampling_period=8e-3,
                 )
@@ -4040,7 +4040,7 @@ class Experiment:
             if plot:
                 vis.plot_state_distribution(
                     data=data,
-                    title=f"State distribution of {target}",
+                    title=f"State distribution : {target}",
                 )
         return list(result.values())
 
@@ -5020,7 +5020,7 @@ class Experiment:
 
         if plot:
             for target, states in result.items():
-                print(f"State evolution of {target}")
+                print(f"State evolution : {target}")
                 vis.display_bloch_sphere(states)
 
         return result
@@ -5077,7 +5077,7 @@ class Experiment:
 
         if plot:
             for target in pulses:
-                pulses[target].plot(title=f"Waveform of {target}")
+                pulses[target].plot(title=f"Waveform : {target}")
 
         def partial_waveform(waveform: Waveform, index: int) -> Waveform:
             """Returns a partial waveform up to the given index."""
@@ -5130,7 +5130,7 @@ class Experiment:
                 vis.plot_bloch_vectors(
                     times=times,
                     bloch_vectors=states,
-                    title=f"State evolution of {target}",
+                    title=f"State evolution : {target}",
                 )
 
         return result

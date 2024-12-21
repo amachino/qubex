@@ -363,7 +363,7 @@ class StateClassifierGMM(StateClassifier):
             )
 
         fig.update_layout(
-            title=f"State classification of {target}",
+            title=f"State classification : {target}",
             xaxis_title="In-Phase (arb. unit)",
             yaxis_title="Quadrature (arb. unit)",
             showlegend=True,

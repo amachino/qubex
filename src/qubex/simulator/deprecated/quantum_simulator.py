@@ -405,7 +405,7 @@ class SimulationResult:
                 populations[rf"$|{basis}\rangle$"].append(prob)
 
         figure = plt.figure()
-        figure.suptitle(f"Population dynamics of {label}")
+        figure.suptitle(f"Population dynamics : {label}")
         qv.plot_population_dynamics(
             self.control.times * 1e-9,
             populations,
