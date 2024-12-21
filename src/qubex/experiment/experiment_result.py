@@ -753,7 +753,7 @@ class FreqRabiData(TargetData):
         )
         fig.show()
 
-    def fit(self) -> tuple[float, float]:
+    def fit(self) -> dict:
         return fitting.fit_detuned_rabi(
             target=self.target,
             control_frequencies=self.frequency_range,
