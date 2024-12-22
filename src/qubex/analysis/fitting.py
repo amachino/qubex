@@ -818,7 +818,7 @@ def fit_rb(
     if bounds is None:
         bounds = (
             (0.0, 0.0, 0.0),
-            (0.5, 1.0, 1.0),
+            (1.0, 1.0, 1.0),
         )
 
     def func_rb(n: npt.NDArray[np.float64], A: float, p: float, C: float):

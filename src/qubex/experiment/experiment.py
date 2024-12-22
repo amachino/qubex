@@ -4430,7 +4430,7 @@ class Experiment:
         n_cliffords_range: ArrayLike | None = None,
         x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: Waveform | None = None,
-        interleaved_clifford: dict[str, tuple[complex, str]] | None = None,
+        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -4451,7 +4451,7 @@ class Experiment:
             π/2 pulse used for the experiment. Defaults to None.
         interleaved_waveform : Waveform, optional
             Waveform of the interleaved gate. Defaults to None.
-        interleaved_clifford : dict[str, tuple[complex, str]], optional
+        interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
@@ -4742,15 +4742,11 @@ class Experiment:
         mean = np.mean(results, axis=0)
         std = np.std(results, axis=0)
 
-        target_object = self.experiment_system.get_target(target)
-        bounds = ((0, 0, 0), (0.5, 1, 1)) if target_object.is_cr else None
-
         fit_result = fitting.fit_rb(
             target=target,
             x=n_cliffords_range,
             y=mean,
             error_y=std,
-            bounds=bounds,
             plot=plot,
             title="Randomized benchmarking",
             xaxis_title="Number of Cliffords",
@@ -4777,11 +4773,12 @@ class Experiment:
         *,
         target: str,
         interleaved_waveform: Waveform,
-        interleaved_clifford: dict[str, tuple[complex, str]],
-        n_cliffords_range: ArrayLike | None = None,
+        interleaved_clifford: Clifford | dict[str, tuple[complex, str]],
+        n_cliffords_range: ArrayLike = np.arange(0, 1001, 100),
         n_trials: int = 30,
         x90: Waveform | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -4796,7 +4793,7 @@ class Experiment:
             Target qubit.
         interleaved_waveform : Waveform
             Waveform of the interleaved gate.
-        interleaved_clifford : dict[str, tuple[complex, str]]
+        interleaved_clifford : Clifford | dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 100).
@@ -4806,6 +4803,8 @@ class Experiment:
             π/2 pulse. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
+        seeds : ArrayLike, optional
+            Random seeds. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -4841,14 +4840,19 @@ class Experiment:
         ...     plot=True,
         ... )
         """
-        if n_cliffords_range is None:
-            n_cliffords_range = np.arange(0, 1001, 100)
+        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
+        if seeds is None:
+            seeds = np.random.randint(0, 2**32, n_trials)
         else:
-            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+            seeds = np.array(seeds, dtype=int)
+            if len(seeds) != n_trials:
+                raise ValueError(
+                    "The number of seeds must be equal to the number of trials."
+                )
 
         rb_results = []
         irb_results = []
-        seeds = np.random.randint(0, 2**32, n_trials)
 
         for seed in tqdm(seeds):
             with self.util.no_output():
@@ -4940,8 +4944,8 @@ class Experiment:
             )
 
         print("")
-        print(f"Gate error: {gate_error:.6f}")
-        print(f"Gate fidelity: {gate_fidelity:.6f}")
+        print(f"Gate error: {gate_error * 100:.3f}%")
+        print(f"Gate fidelity: {gate_fidelity * 100:.3f}%")
         print("")
 
         return {
