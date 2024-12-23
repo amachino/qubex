@@ -310,11 +310,14 @@ class DeviceController:
         box_list : list[str]
             List of box names.
         """
-        synchronized = self.check_clocks(box_list)
+        # synchronized = self.check_clocks(box_list)
+        # if not synchronized:
+        #     synchronized = self.resync_clocks(box_list)
+        #     if not synchronized:
+        #         print("Failed to synchronize clocks.")
+        synchronized = self.resync_clocks(box_list)
         if not synchronized:
-            synchronized = self.resync_clocks(box_list)
-            if not synchronized:
-                print("Failed to synchronize clocks.")
+            print("Failed to synchronize clocks.")
         return synchronized
 
     def dump_box(self, box_name: str) -> dict:
