@@ -427,7 +427,7 @@ class AmplCalibData(SweepData):
             calib_value=calib_value,
         )
 
-    def fit(self) -> float:
+    def fit(self) -> dict:
         return fitting.fit_ampl_calib_data(
             target=self.target,
             amplitude_range=self.sweep_range,
@@ -679,7 +679,7 @@ class RBData(SweepData):
             avg_gate_fidelity=avg_gate_fidelity,
         )
 
-    def fit(self) -> tuple[float, float, float]:
+    def fit(self) -> dict:
         return fitting.fit_rb(
             target=self.target,
             x=self.sweep_range,

@@ -1025,6 +1025,7 @@ def plot_irb(
 
 
 def fit_ampl_calib_data(
+    *,
     target: str,
     amplitude_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],
@@ -1035,7 +1036,7 @@ def fit_ampl_calib_data(
     yaxis_title: str = "Measured value (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
-) -> float:
+) -> dict:
     """
     Fit amplitude calibration data to a cosine function and plot the results.
 
@@ -1054,8 +1055,8 @@ def fit_ampl_calib_data(
 
     Returns
     -------
-    float
-        Calibrated amplitude of the target.
+    dict
+        Fitted parameters and the figure.
     """
 
     def cos_func(t, ampl, omega, phi, offset):
@@ -1070,14 +1071,10 @@ def fit_ampl_calib_data(
         )
 
     try:
-        popt, _ = curve_fit(cos_func, amplitude_range, data, p0=p0)
+        popt, pcov = curve_fit(cos_func, amplitude_range, data, p0=p0)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return np.nan
-
-    print(
-        f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g}"
-    )
+        return {}
 
     result = minimize(
         cos_func,
@@ -1127,7 +1124,12 @@ def fit_ampl_calib_data(
 
     print(f"Calibrated amplitude: {min_x:.6g}")
 
-    return min_x
+    return {
+        "amplitude": min_x,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
 
 
 def fit_lorentzian(

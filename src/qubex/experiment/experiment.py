@@ -19,6 +19,7 @@ from plotly.subplots import make_subplots
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
+from scipy.optimize import root_scalar
 from tqdm import tqdm
 from typing_extensions import deprecated
 
@@ -3043,7 +3044,7 @@ class Experiment:
                 plot=False,
             ).data[target]
 
-            calib_value = fitting.fit_ampl_calib_data(
+            fit_result = fitting.fit_ampl_calib_data(
                 target=target,
                 amplitude_range=ampl_range,
                 data=-sweep_data.normalized,
@@ -3053,7 +3054,7 @@ class Experiment:
 
             return AmplCalibData.new(
                 sweep_data=sweep_data,
-                calib_value=calib_value,
+                calib_value=fit_result["amplitude"],
             )
 
         data: dict[str, AmplCalibData] = {}
@@ -3153,7 +3154,7 @@ class Experiment:
                 plot=True,
             ).data[ge_label]
 
-            calib_value = fitting.fit_ampl_calib_data(
+            fit_result = fitting.fit_ampl_calib_data(
                 target=ef_label,
                 amplitude_range=ampl_range,
                 data=-sweep_data.normalized,
@@ -3162,7 +3163,7 @@ class Experiment:
 
             return AmplCalibData.new(
                 sweep_data=sweep_data,
-                calib_value=calib_value,
+                calib_value=fit_result["amplitude"],
             )
 
         data: dict[str, AmplCalibData] = {}
@@ -3171,25 +3172,23 @@ class Experiment:
             data[target] = calibrate(target)
             print("")
 
-        return ExperimentResult(data=data)
-
         print(f"Calibration results for {pulse_type} pulse:")
         for target, calib_data in data.items():
             print(f"{target}: {calib_data.calib_value:.6f}")
 
         return ExperimentResult(data=data)
 
-    def calibrate_drag_pulse(
+    def calibrate_drag_amplitude(
         self,
         targets: Collection[str],
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 4,
         drag_coeff: float = DRAG_COEFF,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
+    ) -> dict[str, float]:
         """
-        Calibrates the DRAG pulse.
+        Calibrates the DRAG amplitude.
 
         Parameters
         ----------
@@ -3202,21 +3201,20 @@ class Experiment:
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to 3000.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
         -------
-        ExperimentResult[AmplCalibData]
-            Result of the experiment.
+        dict[str, float]
+            Result of the calibration.
         """
         targets = list(targets)
         rabi_params = self.rabi_params
-        if rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
+        self._validate_rabi_params(rabi_params)
 
-        def calibrate(target: str) -> AmplCalibData:
+        def calibrate(target: str) -> float:
             if pulse_type == "hpi":
                 pulse = Drag(
                     duration=DRAG_HPI_DURATION,
@@ -3253,29 +3251,124 @@ class Experiment:
                 plot=False,
             ).data[target]
 
-            calib_value = fitting.fit_ampl_calib_data(
+            fit_result = fitting.fit_ampl_calib_data(
                 target=target,
                 amplitude_range=ampl_range,
                 data=-sweep_data.normalized,
-                title=f"DRAG {pulse_type} pulse calibration",
+                title=f"DRAG {pulse_type} amplitude calibration",
             )
 
-            return AmplCalibData.new(
-                sweep_data=sweep_data,
-                calib_value=calib_value,
-            )
+            return fit_result["amplitude"]
 
-        data: dict[str, AmplCalibData] = {}
+        result: dict[str, float] = {}
         for idx, target in enumerate(targets):
             print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
-            data[target] = calibrate(target)
+            result[target] = calibrate(target)
             print("")
 
-        print(f"Calibration results for DRAG {pulse_type} pulse:")
-        for target, calib_data in data.items():
-            print(f"{target}: {calib_data.calib_value:.6f}")
+        print(f"Calibration results for DRAG {pulse_type} amplitude:")
+        for target, amplitude in result.items():
+            print(f"{target}: {amplitude:.6f}")
 
-        return ExperimentResult(data=data)
+        return result
+
+    def calibrate_drag_beta(
+        self,
+        targets: Collection[str],
+        pulse_type: Literal["pi", "hpi"],
+        beta_range: ArrayLike = np.linspace(-1.0, 1.0, 51),
+        n_repetitions: int = 4,
+        deg: int = 1,
+        shots: int = 3000,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> dict[str, float]:
+        """
+        Calibrates the DRAG beta.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            Target qubits to calibrate.
+        pulse_type : Literal["pi", "hpi"]
+            Type of the pulse to calibrate.
+        beta_range : ArrayLike, optional
+            Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 51).
+        n_repetitions : int, optional
+            Number of repetitions. Defaults to 4.
+        deg : int, optional
+            Degree of the polynomial to fit. Defaults to 1.
+        shots : int, optional
+            Number of shots. Defaults to 3000.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        dict[str, float]
+            Result of the calibration.
+        """
+        targets = list(targets)
+        beta_range = np.array(beta_range, dtype=np.float64)
+        rabi_params = self.rabi_params
+        self._validate_rabi_params(rabi_params)
+
+        def calibrate(target: str) -> float:
+            if pulse_type == "hpi":
+                duration = DRAG_HPI_DURATION
+                amplitude = self._system_note.get(HPI_AMPLITUDE)[target]
+            elif pulse_type == "pi":
+                duration = DRAG_PI_DURATION
+                amplitude = self._system_note.get(PI_AMPLITUDE)[target]
+
+            def sequence(beta: float) -> dict[str, PulseSequence]:
+                drag = Drag(
+                    duration=duration,
+                    amplitude=amplitude,
+                    beta=beta,
+                )
+                y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                return {
+                    target: PulseSequence(
+                        [
+                            PulseSequence(
+                                [
+                                    drag,
+                                    drag.scaled(-1),
+                                ]
+                            ).repeated(n_repetitions),
+                            y90m,
+                        ]
+                    )
+                }
+
+            sweep_data = self.sweep_parameter(
+                sequence=sequence,
+                sweep_range=beta_range,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            ).data[target]
+            values = sweep_data.normalized
+            vis.plot_xy(beta_range, values)
+            params = np.polyfit(beta_range, values, deg)
+            vis.plot_xy(beta_range, np.polyval(params, beta_range))
+            beta = root_scalar(
+                lambda beta: np.polyval(params, beta),
+                bracket=[beta_range[0], beta_range[-1]],
+            ).root
+            return beta
+
+        result = {}
+        for idx, target in enumerate(targets):
+            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
+            result[target] = calibrate(target)
+            print("")
+
+        print(f"Calibration results for DRAG {pulse_type} beta:")
+        for target, beta in result.items():
+            print(f"{target}: {beta:.6f}")
+
+        return result
 
     def calibrate_hpi_pulse(
         self,
@@ -3460,7 +3553,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         drag_coeff: float = DRAG_COEFF,
         interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
+    ) -> dict:
         """
         Calibrates the DRAG π/2 pulse.
 
@@ -3479,15 +3572,15 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[AmplCalibData]
-            Result of the experiment.
+        dict
+            Result of the calibration.
         """
         if targets is None:
             targets = self.qubit_labels
         else:
             targets = list(targets)
 
-        result = self.calibrate_drag_pulse(
+        result = self.calibrate_drag_amplitude(
             targets=targets,
             pulse_type="hpi",
             n_rotations=n_rotations,
@@ -3495,12 +3588,15 @@ class Experiment:
             interval=interval,
         )
 
-        ampl = {target: data.calib_value for target, data in result.data.items()}
+        amplitude = {target: amp for target, amp in result.items()}
         beta = {target: -drag_coeff / self.qubits[target].alpha for target in targets}
-        self._system_note.put(DRAG_HPI_AMPLITUDE, ampl)
+        self._system_note.put(DRAG_HPI_AMPLITUDE, amplitude)
         self._system_note.put(DRAG_HPI_BETA, beta)
 
-        return result
+        return {
+            "amplitude": amplitude,
+            "beta": beta,
+        }
 
     def calibrate_drag_pi_pulse(
         self,
@@ -3509,7 +3605,7 @@ class Experiment:
         drag_coeff: float = DRAG_COEFF,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
+    ) -> dict:
         """
         Calibrates the DRAG π pulse.
 
@@ -3528,15 +3624,15 @@ class Experiment:
 
         Returns
         -------
-        ExperimentResult[AmplCalibData]
-            Result of the experiment.
+        dict
+            Result of the calibration.
         """
         if targets is None:
             targets = self.qubit_labels
         else:
             targets = list(targets)
 
-        result = self.calibrate_drag_pulse(
+        result = self.calibrate_drag_amplitude(
             targets=targets,
             pulse_type="pi",
             n_rotations=n_rotations,
@@ -3544,12 +3640,15 @@ class Experiment:
             interval=interval,
         )
 
-        ampl = {target: data.calib_value for target, data in result.data.items()}
+        amplitude = {target: amp for target, amp in result.items()}
         beta = {target: -drag_coeff / self.qubits[target].alpha for target in targets}
-        self._system_note.put(DRAG_PI_AMPLITUDE, ampl)
+        self._system_note.put(DRAG_PI_AMPLITUDE, amplitude)
         self._system_note.put(DRAG_PI_BETA, beta)
 
-        return result
+        return {
+            "amplitude": amplitude,
+            "beta": beta,
+        }
 
     def t1_experiment(
         self,
