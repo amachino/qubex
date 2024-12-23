@@ -257,6 +257,88 @@ def func_resonance(f, f_r, kappa_ex, kappa_in, A, phi):
     return A * np.exp(1j * phi) * (numerator / denominator)
 
 
+def fit_polynomial(
+    *,
+    target: str,
+    x: npt.NDArray[np.float64],
+    y: npt.NDArray[np.float64],
+    degree: int,
+    plot: bool = True,
+    title: str = "Polynomial fit",
+    xaxis_title: str = "x",
+    yaxis_title: str = "y",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> dict:
+    """
+    Fit data to a polynomial function and plot the results.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    x : npt.NDArray[np.float64]
+        x values for the data.
+    y : npt.NDArray[np.float64]
+        y values for the data.
+    degree : int
+        Degree of the polynomial.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+    title : str, optional
+        Title of the plot.
+    xaxis_title : str, optional
+        Label for the x-axis.
+    yaxis_title : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
+    popt = np.polyfit(x, y, degree)
+    p = np.poly1d(popt)
+    y_fit = p(x)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y_fit,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.update_layout(
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        fig.show(config=_plotly_config(f"polynomial_{target}"))
+
+    return {
+        "popt": popt,
+        "fig": fig,
+    }
+
+
 def fit_rabi(
     *,
     target: str,

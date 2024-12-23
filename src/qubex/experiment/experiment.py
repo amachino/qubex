@@ -3278,7 +3278,7 @@ class Experiment:
         pulse_type: Literal["pi", "hpi"],
         beta_range: ArrayLike = np.linspace(-1.0, 1.0, 51),
         n_repetitions: int = 4,
-        deg: int = 1,
+        degree: int = 1,
         shots: int = 3000,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
@@ -3295,7 +3295,7 @@ class Experiment:
             Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 51).
         n_repetitions : int, optional
             Number of repetitions. Defaults to 4.
-        deg : int, optional
+        degree : int, optional
             Degree of the polynomial to fit. Defaults to 1.
         shots : int, optional
             Number of shots. Defaults to 3000.
@@ -3349,11 +3349,18 @@ class Experiment:
                 plot=False,
             ).data[target]
             values = sweep_data.normalized
-            vis.plot_xy(beta_range, values)
-            params = np.polyfit(beta_range, values, deg)
-            vis.plot_xy(beta_range, np.polyval(params, beta_range))
+            fit_result = fitting.fit_polynomial(
+                target=target,
+                x=beta_range,
+                y=values,
+                degree=degree,
+                title=f"DRAG {pulse_type} beta calibration",
+                xaxis_title="Beta",
+                yaxis_title="Normalized signal",
+            )
+            params = fit_result["popt"]
             beta = root_scalar(
-                lambda beta: np.polyval(params, beta),
+                np.poly1d(params),
                 bracket=[beta_range[0], beta_range[-1]],
             ).root
             return beta
