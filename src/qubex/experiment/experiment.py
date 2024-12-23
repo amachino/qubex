@@ -30,6 +30,7 @@ from ..backend import (
     Box,
     ControlParams,
     ControlSystem,
+    DeviceController,
     ExperimentSystem,
     MixingUtil,
     QuantumSystem,
@@ -272,6 +273,11 @@ class Experiment:
     def control_system(self) -> ControlSystem:
         """Get the qube system."""
         return self.experiment_system.control_system
+
+    @property
+    def device_controller(self) -> DeviceController:
+        """Get the device manager."""
+        return self.state_manager.device_controller
 
     @property
     def params(self) -> ControlParams:
