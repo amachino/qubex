@@ -113,7 +113,7 @@ DRAG_COEFF = 0.5
 
 RABI_TIME_RANGE = range(0, 201, 4)
 RABI_FREQUENCY = 0.0125
-CALIBRATION_SHOTS = 2048
+CALIBRATION_SHOTS = 5000
 
 
 class Experiment:
@@ -1669,9 +1669,9 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
-        shots: int = CALIBRATION_SHOTS,
+        shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        store_params: bool = True,
+        store_params: bool = False,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -1688,7 +1688,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         store_params : bool, optional
-            Whether to store the Rabi parameters. Defaults to True.
+            Whether to store the Rabi parameters. Defaults to False.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -1727,7 +1727,7 @@ class Experiment:
         frequencies: dict[str, float] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        plot: bool = False,
+        plot: bool = True,
         store_params: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -1748,7 +1748,7 @@ class Experiment:
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
-            Whether to plot the measured signals. Defaults to False.
+            Whether to plot the measured signals. Defaults to True.
         store_params : bool, optional
             Whether to store the Rabi parameters. Defaults to True.
 
@@ -1769,7 +1769,6 @@ class Experiment:
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
-        with self.util.no_output():
             result = self.rabi_experiment(
                 amplitudes=amplitudes,
                 time_range=time_range,
@@ -3067,10 +3066,9 @@ class Experiment:
             )
 
         data: dict[str, AmplCalibData] = {}
-        for idx, target in enumerate(targets):
-            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
+        for target in targets:
+            print(f"Calibrating {target}...\n")
             data[target] = calibrate(target)
-            print("")
 
         print(f"Calibration results for {pulse_type} pulse:")
         for target, calib_data in data.items():
@@ -3176,10 +3174,9 @@ class Experiment:
             )
 
         data: dict[str, AmplCalibData] = {}
-        for idx, target in enumerate(ef_labels):
-            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
+        for target in ef_labels:
+            print(f"Calibrating {target}...\n")
             data[target] = calibrate(target)
-            print("")
 
         print(f"Calibration results for {pulse_type} pulse:")
         for target, calib_data in data.items():
@@ -3193,6 +3190,7 @@ class Experiment:
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 4,
         drag_coeff: float = DRAG_COEFF,
+        use_stored_beta: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
@@ -3206,9 +3204,11 @@ class Experiment:
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 4.
+            Number of rotations to |0> state. Defaults to 4.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
+        use_stored_beta : bool, optional
+            Whether to use the stored beta. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -3224,11 +3224,16 @@ class Experiment:
         self._validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
+            if use_stored_beta:
+                beta = self._system_note.get(DRAG_HPI_BETA)[target]
+            else:
+                beta = -drag_coeff / self.qubits[target].alpha
+
             if pulse_type == "hpi":
                 pulse = Drag(
                     duration=DRAG_HPI_DURATION,
                     amplitude=1,
-                    beta=-drag_coeff / self.qubits[target].alpha,
+                    beta=beta,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
@@ -3236,7 +3241,7 @@ class Experiment:
                 pulse = Drag(
                     duration=DRAG_PI_DURATION,
                     amplitude=1,
-                    beta=-drag_coeff / self.qubits[target].alpha,
+                    beta=beta,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -3270,10 +3275,9 @@ class Experiment:
             return fit_result["amplitude"]
 
         result: dict[str, float] = {}
-        for idx, target in enumerate(targets):
-            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
+        for target in targets:
+            print(f"Calibrating {target}...\n")
             result[target] = calibrate(target)
-            print("")
 
         print(f"Calibration results for DRAG {pulse_type} amplitude:")
         for target, amplitude in result.items():
@@ -3287,7 +3291,7 @@ class Experiment:
         pulse_type: Literal["pi", "hpi"],
         beta_range: ArrayLike = np.linspace(-1.0, 1.0, 51),
         root_range: tuple[float, float] | None = None,
-        n_repetitions: int = 4,
+        n_turns: int = 4,
         degree: int = 1,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3303,8 +3307,8 @@ class Experiment:
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 51).
-        n_repetitions : int, optional
-            Number of repetitions. Defaults to 4.
+        n_turns : int, optional
+            Number of turns to |0> state. Defaults to 4.
         degree : int, optional
             Degree of the polynomial to fit. Defaults to 1.
         shots : int, optional
@@ -3351,7 +3355,7 @@ class Experiment:
                                     drag,
                                     drag.scaled(-1),
                                 ]
-                            ).repeated(n_repetitions),
+                            ).repeated(n_turns),
                             y90m,
                         ]
                     )
@@ -3382,15 +3386,14 @@ class Experiment:
                 ).root
                 print(f"Calibrated beta: {beta:.6f}")
             except ValueError:
-                print(f"Failed to find the root in the range {root_range}.")
+                print(f"Failed to find the beta in the range {root_range}.")
                 beta = 0.0
             return beta
 
         result = {}
-        for idx, target in enumerate(targets):
-            print(f"[{idx+1}/{len(targets)}] Calibrating {target}...\n")
+        for target in targets:
+            print(f"Calibrating {target}...\n")
             result[target] = calibrate(target)
-            print("")
 
         print(f"Calibration results for DRAG {pulse_type} beta:")
         for target, beta in result.items():
@@ -3578,6 +3581,8 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
+        n_turns: int = 4,
+        n_iterations: int = 1,
         calibrate_beta: bool = True,
         drag_coeff: float = DRAG_COEFF,
         shots: int = DEFAULT_SHOTS,
@@ -3591,7 +3596,11 @@ class Experiment:
         targets : Collection[str], optional
             Target qubits to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 4.
+            Number of rotations to |0> state. Defaults to 4.
+        n_turns : int, optional
+            Number of turns to |0> state. Defaults to 4.
+        n_iterations : int, optional
+            Number of iterations. Defaults to 4.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
         drag_coeff : float, optional
@@ -3611,29 +3620,37 @@ class Experiment:
         else:
             targets = list(targets)
 
-        print("Calibrating DRAG amplitude:")
-        amplitude = self.calibrate_drag_amplitude(
-            targets=targets,
-            pulse_type="hpi",
-            n_rotations=n_rotations,
-            shots=shots,
-            interval=interval,
-        )
-        self._system_note.put(DRAG_HPI_AMPLITUDE, amplitude)
+        for i in range(n_iterations):
+            print(f"\nIteration {i+1}/{n_iterations}")
 
-        if calibrate_beta:
-            print("\nCalibrating DRAG beta:")
-            beta = self.calibrate_drag_beta(
+            use_stored_beta = True if i > 0 else False
+
+            print("Calibrating DRAG amplitude:")
+            amplitude = self.calibrate_drag_amplitude(
                 targets=targets,
                 pulse_type="hpi",
+                n_rotations=n_rotations,
+                use_stored_beta=use_stored_beta,
                 shots=shots,
                 interval=interval,
             )
-        else:
-            beta = {
-                target: -drag_coeff / self.qubits[target].alpha for target in targets
-            }
-        self._system_note.put(DRAG_HPI_BETA, beta)
+            self._system_note.put(DRAG_HPI_AMPLITUDE, amplitude)
+
+            if calibrate_beta:
+                print("\nCalibrating DRAG beta:")
+                beta = self.calibrate_drag_beta(
+                    targets=targets,
+                    pulse_type="hpi",
+                    n_turns=n_turns,
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                beta = {
+                    target: -drag_coeff / self.qubits[target].alpha
+                    for target in targets
+                }
+            self._system_note.put(DRAG_HPI_BETA, beta)
 
         return {
             "amplitude": amplitude,
@@ -3644,6 +3661,8 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
+        n_turns: int = 4,
+        n_iterations: int = 1,
         calibrate_beta: bool = False,
         drag_coeff: float = DRAG_COEFF,
         shots: int = DEFAULT_SHOTS,
@@ -3657,7 +3676,11 @@ class Experiment:
         targets : Collection[str], optional
             Target qubits to calibrate.
         n_rotations : int, optional
-            Number of rotations. Defaults to 4.
+            Number of rotations to |0> state. Defaults to 4.
+        n_turns : int, optional
+            Number of turns to |0> state. Defaults to 4.
+        n_iterations : int, optional
+            Number of iterations. Defaults to 4.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
         drag_coeff : float, optional
@@ -3677,29 +3700,37 @@ class Experiment:
         else:
             targets = list(targets)
 
-        print("Calibrating DRAG amplitude:")
-        amplitude = self.calibrate_drag_amplitude(
-            targets=targets,
-            pulse_type="pi",
-            n_rotations=n_rotations,
-            shots=shots,
-            interval=interval,
-        )
-        self._system_note.put(DRAG_PI_AMPLITUDE, amplitude)
+        for i in range(n_iterations):
+            print(f"\nIteration {i+1}/{n_iterations}")
 
-        if calibrate_beta:
-            print("Calibrating DRAG beta:")
-            beta = self.calibrate_drag_beta(
+            use_stored_beta = True if i > 0 else False
+
+            print("Calibrating DRAG amplitude:")
+            amplitude = self.calibrate_drag_amplitude(
                 targets=targets,
                 pulse_type="pi",
+                n_rotations=n_rotations,
+                use_stored_beta=use_stored_beta,
                 shots=shots,
                 interval=interval,
             )
-        else:
-            beta = {
-                target: -drag_coeff / self.qubits[target].alpha for target in targets
-            }
-        self._system_note.put(DRAG_PI_BETA, beta)
+            self._system_note.put(DRAG_PI_AMPLITUDE, amplitude)
+
+            if calibrate_beta:
+                print("Calibrating DRAG beta:")
+                beta = self.calibrate_drag_beta(
+                    targets=targets,
+                    pulse_type="pi",
+                    n_turns=n_turns,
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                beta = {
+                    target: -drag_coeff / self.qubits[target].alpha
+                    for target in targets
+                }
+            self._system_note.put(DRAG_PI_BETA, beta)
 
         return {
             "amplitude": amplitude,

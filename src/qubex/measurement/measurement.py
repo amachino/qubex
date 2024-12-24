@@ -28,7 +28,7 @@ from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .state_classifier import StateClassifier
 
-DEFAULT_SHOTS: Final = 1024
+DEFAULT_SHOTS: Final = 1000
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW: Final = 1024  # ns
 DEFAULT_CAPTURE_WINDOW: Final = 1024  # ns
