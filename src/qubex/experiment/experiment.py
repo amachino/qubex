@@ -1219,12 +1219,12 @@ class Experiment:
                 elif state == "g":
                     ps.add(target, Blank(0))
                 elif state == "e":
-                    ps.add(target, self.pi_pulse[target])
+                    ps.add(target, self.hpi_pulse[target].repeated(2))
                 elif state == "f":
-                    ps.add(target, self.pi_pulse[target])
+                    ps.add(target, self.hpi_pulse[target].repeated(2))
                     ps.barrier()
                     ef_label = Target.ef_label(target)
-                    ps.add(ef_label, self.ef_pi_pulse[ef_label])
+                    ps.add(ef_label, self.ef_hpi_pulse[ef_label].repeated(2))
 
         return self.measure(
             sequence=ps,
