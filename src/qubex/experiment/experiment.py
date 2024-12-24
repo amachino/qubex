@@ -678,7 +678,7 @@ class Experiment:
         if state == "0":
             return Blank(0)
         elif state == "1":
-            return self.pi_pulse[target]
+            return self.hpi_pulse[target].repeated(2)
         else:
             hpi = self.hpi_pulse[target]
             if state == "+":
