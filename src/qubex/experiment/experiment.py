@@ -3289,7 +3289,7 @@ class Experiment:
         self,
         targets: Collection[str],
         pulse_type: Literal["pi", "hpi"],
-        beta_range: ArrayLike = np.linspace(-1.0, 1.0, 51),
+        beta_range: ArrayLike = np.linspace(-0.1, 0.1, 51),
         root_range: tuple[float, float] | None = None,
         n_turns: int = 4,
         degree: int = 1,
@@ -3335,27 +3335,24 @@ class Experiment:
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
                 duration = DRAG_HPI_DURATION
-                amplitude = self._system_note.get(HPI_AMPLITUDE)[target]
+                amplitude = self._system_note.get(DRAG_HPI_AMPLITUDE)[target]
             elif pulse_type == "pi":
                 duration = DRAG_PI_DURATION
-                amplitude = self._system_note.get(PI_AMPLITUDE)[target]
+                amplitude = self._system_note.get(DRAG_PI_AMPLITUDE)[target]
 
             def sequence(beta: float) -> dict[str, PulseSequence]:
-                drag = Drag(
+                x90p = Drag(
                     duration=duration,
                     amplitude=amplitude,
                     beta=beta,
                 )
+                x90m = x90p.scaled(-1)
                 y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
                 return {
                     target: PulseSequence(
                         [
-                            PulseSequence(
-                                [
-                                    drag,
-                                    drag.scaled(-1),
-                                ]
-                            ).repeated(n_turns),
+                            x90p,
+                            PulseSequence([x90m, x90p] * n_turns),
                             y90m,
                         ]
                     )
@@ -3641,6 +3638,8 @@ class Experiment:
                 beta = self.calibrate_drag_beta(
                     targets=targets,
                     pulse_type="hpi",
+                    beta_range=np.linspace(-0.5, 0.5, 51),
+                    degree=1,
                     n_turns=n_turns,
                     shots=shots,
                     interval=interval,
@@ -3663,8 +3662,10 @@ class Experiment:
         n_rotations: int = 4,
         n_turns: int = 4,
         n_iterations: int = 1,
-        calibrate_beta: bool = False,
+        calibrate_beta: bool = True,
+        beta_range: ArrayLike = np.linspace(-0.1, 0.1, 51),
         drag_coeff: float = DRAG_COEFF,
+        degree: int = 1,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -3721,7 +3722,9 @@ class Experiment:
                 beta = self.calibrate_drag_beta(
                     targets=targets,
                     pulse_type="pi",
+                    beta_range=beta_range,
                     n_turns=n_turns,
+                    degree=degree,
                     shots=shots,
                     interval=interval,
                 )
