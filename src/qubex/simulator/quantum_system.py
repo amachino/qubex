@@ -237,15 +237,51 @@ class QuantumSystem:
         return omega * ad * a + 0.5 * alpha * (ad * ad * a * a)
 
     @cache
-    def get_coupling_hamiltonian(self, label: str | tuple[str, str]) -> qt.Qobj:
-        pair = label if isinstance(label, tuple) else tuple(label.split("-"))
-        coupling = self.get_coupling(pair)
+    def get_rotating_object_hamiltonian(self, label: str) -> qt.Qobj:
+        object = self.get_object(label)
+        alpha = 2 * np.pi * object.anharmonicity
+        a = self.get_lowering_operator(object.label)
+        ad = a.dag()
+        return 0.5 * alpha * (ad * ad * a * a)
+
+    @cache
+    def get_coupling_term(self, label: str | tuple[str, str]) -> qt.Qobj:
+        coupling = self.get_coupling(label)
         g = 2 * np.pi * coupling.strength
-        a_0 = self.get_lowering_operator(coupling.pair[0])
-        ad_0 = a_0.dag()
+        ad_0 = self.get_lowering_operator(coupling.pair[0]).dag()
         a_1 = self.get_lowering_operator(coupling.pair[1])
-        ad_1 = a_1.dag()
-        return g * (ad_0 * a_1 + ad_1 * a_0)
+        return g * (ad_0 * a_1)
+
+    @cache
+    def get_coupling_hamiltonian(self, label: str | tuple[str, str]) -> qt.Qobj:
+        term = self.get_coupling_term(label)
+        return term + term.dag()
+
+    @cache
+    def get_coupling_detuning(self, label: str | tuple[str, str]) -> float:
+        pair = label if isinstance(label, tuple) else tuple(label.split("-"))
+        omega_0 = 2 * np.pi * self.get_object(pair[0]).frequency
+        omega_1 = 2 * np.pi * self.get_object(pair[1]).frequency
+        return omega_1 - omega_0
+
+    def get_rotating_coupling_hamiltonian(
+        self,
+        label: str,
+        time: float,
+    ) -> qt.Qobj:
+        term = self.get_coupling_term(label)
+        detuning = self.get_coupling_detuning(label)
+        term = term * np.exp(-1j * detuning * time)
+        H = term + term.dag()
+        return H
+
+    def get_rotating_hamiltonian(self, time: float) -> qt.Qobj:
+        H = self.zero_matrix
+        for object in self.objects:
+            H += self.get_rotating_object_hamiltonian(object.label)
+        for coupling in self.couplings:
+            H += self.get_rotating_coupling_hamiltonian(coupling.label, time)
+        return H
 
     def draw(self, **kwargs):
         nx.draw(

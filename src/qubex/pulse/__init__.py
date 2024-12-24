@@ -32,3 +32,11 @@ __all__ = [
     "VirtualZ",
     "Waveform",
 ]
+
+
+def set_sampling_period(dt: float):
+    Waveform.SAMPLING_PERIOD = dt
+
+
+def get_sampling_period():
+    return Waveform.SAMPLING_PERIOD

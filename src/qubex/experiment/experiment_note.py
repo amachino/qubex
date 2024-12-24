@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 FILE_PATH = ".experiment_note.json"
 
 
@@ -46,6 +48,8 @@ class ExperimentNote:
         if isinstance(old_value, dict) and isinstance(value, dict):
             self._update_dict_recursively(old_value, value)
         else:
+            if isinstance(value, float) and np.isnan(value):
+                value = None
             self._dict[key] = value
 
         if old_value is not None:
@@ -217,4 +221,7 @@ class ExperimentNote:
             ):
                 self._update_dict_recursively(old_dict[key], value)
             else:
-                old_dict[key] = value
+                if isinstance(value, float) and np.isnan(value):
+                    value = None
+                else:
+                    old_dict[key] = value

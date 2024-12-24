@@ -14,6 +14,7 @@ except ImportError:
 
 from ..backend import (
     DEFAULT_CONFIG_DIR,
+    DEFAULT_PARAMS_DIR,
     SAMPLING_PERIOD,
     ControlParams,
     DeviceController,
@@ -33,6 +34,7 @@ DEFAULT_CONTROL_WINDOW: Final = 1024  # ns
 DEFAULT_CAPTURE_WINDOW: Final = 1024  # ns
 DEFAULT_CAPTURE_MARGIN: Final = 128  # ns
 DEFAULT_READOUT_DURATION: Final = 512  # ns
+DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 INTERVAL_STEP: Final = 10240  # ns
 MIN_DURATION: Final = 128  # ns
 
@@ -44,7 +46,9 @@ class Measurement:
         chip_id: str,
         qubits: Sequence[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        params_dir: str = DEFAULT_PARAMS_DIR,
         fetch_device_state: bool = True,
+        connect_devices: bool = False,
         use_neopulse: bool = False,
     ):
         """
@@ -57,7 +61,9 @@ class Measurement:
         qubits : Sequence[str], optional
             The list of qubit labels, by default None.
         config_dir : str, optional
-            The configuration directory, by default "./config".
+            The configuration directory, by default DEFAULT_CONFIG_DIR.
+        params_dir : str, optional
+            The parameters directory, by default DEFAULT_PARAMS_DIR.
         fetch_device_state : bool, optional
             Whether to fetch the device state, by default True.
 
@@ -69,36 +75,46 @@ class Measurement:
         ...     qubits=["Q00", "Q01"],
         ... )
         """
-        self._load_state(
-            chip_id,
-            qubits=qubits,
-            config_dir=config_dir,
-            fetch_device_state=fetch_device_state,
-        )
+        self._chip_id = chip_id
+        self._qubits = qubits
+        self._config_dir = config_dir
+        self._params_dir = params_dir
         self._use_neopulse = use_neopulse
         self._classifiers: TargetMap[StateClassifier] = {}
+        self._load_device_state(
+            fetch_device_state=fetch_device_state,
+            connect_devices=connect_devices,
+        )
 
-    def _load_state(
+    def _load_device_state(
         self,
-        chip_id: str,
-        qubits: Sequence[str] | None,
-        config_dir: str,
         fetch_device_state: bool,
+        connect_devices: bool,
     ):
         self._state_manager = StateManager.shared()
         self.state_manager.load(
-            chip_id=chip_id,
-            config_dir=config_dir,
+            chip_id=self._chip_id,
+            config_dir=self._config_dir,
+            params_dir=self._params_dir,
         )
+        box_ids = None
+        if self._qubits is not None:
+            boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
+            box_ids = [box.id for box in boxes]
         if fetch_device_state:
-            box_ids = None
-            if qubits is not None:
-                boxes = self.experiment_system.get_boxes_for_qubits(qubits)
-                box_ids = [box.id for box in boxes]
             try:
                 self.state_manager.pull(box_ids=box_ids)
             except Exception:
                 print("Failed to fetch the device state.")
+        if connect_devices:
+            try:
+                self.device_controller.connect(box_ids)
+            except Exception:
+                print("Failed to connect the devices.")
+
+    def reload(self):
+        """Reload the measuremnt settings."""
+        self._load_device_state(fetch_device_state=True, connect_devices=True)
 
     @property
     def state_manager(self) -> StateManager:
@@ -610,7 +626,7 @@ class Measurement:
                         pls.RaisedCosFlatTop(
                             duration=readout_duration,
                             amplitude=readout_amplitudes[qubit],
-                            rise_time=32,
+                            rise_time=DEFAULT_READOUT_RAMPTIME,
                         ).target(readout_target)
                         capture.target(readout_target)
         return sequence
@@ -627,7 +643,7 @@ class Measurement:
         return FlatTop(
             duration=duration,
             amplitude=amplitude,
-            tau=32,
+            tau=DEFAULT_READOUT_RAMPTIME,
         )
 
     def _create_sequencer(
@@ -800,10 +816,10 @@ class Measurement:
         if add_last_measurement:
             # register all readout targets for the last measurement
             readout_targets = list(
-                {Target.read_label(target) for target in schedule.targets}
+                {Target.read_label(target) for target in schedule.labels}
             )
             # create a new schedule with the last readout pulse
-            with PulseSchedule(schedule.targets + readout_targets) as ps:
+            with PulseSchedule(schedule.labels + readout_targets) as ps:
                 ps.call(schedule)
                 ps.barrier()
                 for target in readout_targets:
@@ -905,7 +921,7 @@ class Measurement:
             cap_sequences[target] = cap_sequence
 
         # create resource map
-        resource_map = self.device_controller.get_resource_map(schedule.targets)
+        resource_map = self.device_controller.get_resource_map(schedule.labels)
 
         # return Sequencer
         return Sequencer(
@@ -927,21 +943,21 @@ class Measurement:
         measure_data = {}
         for target, iqs in backend_result.data.items():
             qubit = target[label_slice]
+            classified_data = np.array([])
+            n_states = None
 
             if measure_mode == MeasureMode.SINGLE:
-                # iqs: ndarray[duration, shots]
+                # iqs[capture_index]: ndarray[duration, shots]
                 raw = iqs[capture_index].T.squeeze()
                 kerneled = np.mean(iqs[capture_index], axis=0) * 2 ** (-32)
                 classifier = self.classifiers.get(qubit)
-                if classifier is None:
-                    classified_data = None
-                else:
-                    classified_data = classifier.classify(qubit, kerneled, plot=False)
+                if classifier is not None:
+                    classified_data = classifier.predict(kerneled)
+                    n_states = classifier.n_states
             elif measure_mode == MeasureMode.AVG:
-                # iqs: ndarray[duration, 1]
+                # iqs[capture_index]: ndarray[duration, 1]
                 raw = iqs[capture_index].squeeze()
                 kerneled = np.mean(iqs) * 2 ** (-32) / shots
-                classified_data = None
             else:
                 raise ValueError(f"Invalid measure mode: {measure_mode}")
 
@@ -951,6 +967,7 @@ class Measurement:
                 raw=raw,
                 kerneled=kerneled,
                 classified=classified_data,
+                n_states=n_states,
             )
 
         return MeasureResult(

@@ -146,7 +146,7 @@ def get_colors(
 
 
 def get_config(
-    format: Literal["png", "svg", "jpeg", "webp"] = "svg",
+    format: Literal["png", "svg", "jpeg", "webp"] = "png",
     filename: str = "image",
     height: int | None = None,
     width: int | None = None,
