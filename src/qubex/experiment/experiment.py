@@ -113,7 +113,7 @@ DRAG_COEFF = 0.5
 
 RABI_TIME_RANGE = range(0, 201, 4)
 RABI_FREQUENCY = 0.0125
-CALIBRATION_SHOTS = 5000
+CALIBRATION_SHOTS = 4096
 
 
 class Experiment:
@@ -1684,7 +1684,7 @@ class Experiment:
         time_range : ArrayLike, optional
             Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
         shots : int, optional
-            Number of shots. Defaults to CALIBRATION_SHOTS.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         store_params : bool, optional
@@ -3402,7 +3402,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 1,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -3415,7 +3415,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -3446,7 +3446,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 1,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -3459,7 +3459,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -3490,7 +3490,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 1,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -3503,7 +3503,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -3534,7 +3534,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 1,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -3547,7 +3547,7 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -3582,7 +3582,7 @@ class Experiment:
         n_iterations: int = 1,
         calibrate_beta: bool = True,
         drag_coeff: float = DRAG_COEFF,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
         """
@@ -3603,7 +3603,7 @@ class Experiment:
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -3666,7 +3666,7 @@ class Experiment:
         beta_range: ArrayLike = np.linspace(-0.1, 0.1, 51),
         drag_coeff: float = DRAG_COEFF,
         degree: int = 1,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
         """
@@ -3687,7 +3687,7 @@ class Experiment:
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -4255,7 +4255,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         n_states: Literal[2, 3] = 2,
-        shots: int = 1000,
+        shots: int = 10000,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
