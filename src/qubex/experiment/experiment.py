@@ -111,6 +111,10 @@ DRAG_PI_BETA = "drag_pi_beta"
 DRAG_PI_DURATION = 16
 DRAG_COEFF = 0.5
 
+RABI_TIME_RANGE = range(0, 201, 4)
+RABI_FREQUENCY = 0.0125
+CALIBRATION_SHOTS = 2048
+
 
 class Experiment:
     """
@@ -152,6 +156,7 @@ class Experiment:
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
         fetch_device_state: bool = True,
+        linkup: bool = True,
         connect_devices: bool = True,
         control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
@@ -196,6 +201,11 @@ class Experiment:
         )
         self._validate()
         self.print_environment()
+        if linkup:
+            try:
+                self.linkup()
+            except Exception as e:
+                print(e)
 
     def _create_qubit_labels(
         self,
@@ -756,6 +766,7 @@ class Experiment:
 
     def print_environment(self, verbose: bool = False):
         """Print the environment information."""
+        print("========================================")
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         print("python:", sys.version.split()[0])
         if verbose:
@@ -771,6 +782,7 @@ class Experiment:
         print("qubits:", self.qubit_labels)
         print("muxes:", self.mux_labels)
         print("boxes:", self.box_ids)
+        print("========================================")
 
     def print_boxes(self):
         """Print the box information."""
@@ -965,8 +977,8 @@ class Experiment:
         >>> result = ex.execute(
         ...     schedule=ps,
         ...     mode="avg",
-        ...     shots=3000,
-        ...     interval=100 * 1024,
+        ...     shots=1024,
+        ...     interval=150 * 1024,
         ... )
         """
         return self._measurement.execute(
@@ -1027,11 +1039,10 @@ class Experiment:
         Examples
         --------
         >>> result = ex.measure(
-        ...     sequence={"Q00": np.zeros(0)},
+        ...     sequence={"Q00": [0.1+0.0j, 0.3+0.0j, 0.1+0.0j]},
         ...     mode="avg",
-        ...     shots=3000,
-        ...     interval=100 * 1024,
-        ...     control_window=1024,
+        ...     shots=1024,
+        ...     interval=150 * 1024,
         ...     plot=True,
         ... )
         """
@@ -1189,9 +1200,8 @@ class Experiment:
         >>> result = ex.measure_state(
         ...     states={"Q00": "0", "Q01": "1"},
         ...     mode="single",
-        ...     shots=3000,
-        ...     interval=100 * 1024,
-        ...     control_window=1024,
+        ...     shots=1024,
+        ...     interval=150 * 1024,
         ...     plot=True,
         ... )
         """
@@ -1658,8 +1668,8 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        time_range: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
+        time_range: ArrayLike = RABI_TIME_RANGE,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         store_params: bool = True,
         plot: bool = True,
@@ -1672,9 +1682,9 @@ class Experiment:
         targets : Collection[str], optional
             Target labels to check the Rabi oscillation.
         time_range : ArrayLike, optional
-            Time range of the experiment in ns.
+            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         store_params : bool, optional
@@ -1695,8 +1705,7 @@ class Experiment:
             targets = self.qubit_labels
         else:
             targets = list(targets)
-        if time_range is None:
-            time_range = np.arange(0, 201, 8)
+        time_range = np.asarray(time_range)
         ampl = self.params.control_amplitude
         amplitudes = {target: ampl[target] for target in targets}
         result = self.rabi_experiment(
@@ -1713,10 +1722,10 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
+        time_range: ArrayLike = RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
-        time_range: ArrayLike | None = None,
         frequencies: dict[str, float] | None = None,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
         store_params: bool = True,
@@ -1728,14 +1737,14 @@ class Experiment:
         ----------
         targets : Collection[str], optional
             Target labels to check the Rabi oscillation.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
         amplitudes : dict[str, float], optional
             Amplitudes of the control pulses. Defaults to None.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns.
         frequencies : dict[str, float], optional
             Frequencies of the qubits. Defaults to None.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
@@ -1756,14 +1765,10 @@ class Experiment:
             targets = self.qubit_labels
         else:
             targets = list(targets)
-
-        if time_range is None:
-            time_range = np.arange(0, 201, 8)
-
+        time_range = np.asarray(time_range)
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
-
         with self.util.no_output():
             result = self.rabi_experiment(
                 amplitudes=amplitudes,
@@ -1780,8 +1785,8 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        time_range: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
+        time_range: ArrayLike = RABI_TIME_RANGE,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
@@ -1793,9 +1798,9 @@ class Experiment:
         targets : Collection[str], optional
             Target labels to check the Rabi oscillation.
         time_range : ArrayLike, optional
-            Time range of the experiment in ns.
+            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
@@ -1815,8 +1820,7 @@ class Experiment:
         else:
             targets = list(targets)
 
-        if time_range is None:
-            time_range = np.arange(0, 201, 8)
+        time_range = np.asarray(time_range)
 
         ef_labels = [Target.ef_label(target) for target in targets]
         ef_targets = [self.targets[ef] for ef in ef_labels]
@@ -1848,7 +1852,7 @@ class Experiment:
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: ArrayLike,
+        time_range: ArrayLike = RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -1863,8 +1867,8 @@ class Experiment:
         ----------
         amplitudes : dict[str, float]
             Amplitudes of the control pulses.
-        time_range : ArrayLike
-            Time range of the experiment.
+        time_range : ArrayLike, optional
+            Time range of the experiment. Defaults to RABI_TIME_RANGE.
         frequencies : dict[str, float], optional
             Frequencies of the qubits. Defaults to None.
         detuning : float, optional
@@ -2329,7 +2333,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
-        time_range: ArrayLike = np.arange(0, 201, 4),
+        time_range: ArrayLike = RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
@@ -2348,7 +2352,7 @@ class Experiment:
         detuning_range : ArrayLike, optional
             Range of the detuning to sweep in GHz.
         time_range : ArrayLike, optional
-            Time range of the experiment in ns.
+            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
         frequencies : dict[str, float], optional
             Control frequencies for each target. Defaults to None.
         amplitudes : dict[str, float], optional
@@ -2619,8 +2623,8 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
+        time_range: ArrayLike = RABI_TIME_RANGE,
         amplitude_range: ArrayLike | None = None,
-        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2632,10 +2636,10 @@ class Experiment:
         ----------
         targets : Collection[str], optional
             Target labels to check the Rabi oscillation.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
         amplitude_range : ArrayLike, optional
             Range of the control amplitude to sweep.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2666,13 +2670,12 @@ class Experiment:
         else:
             targets = list(targets)
 
+        time_range = np.array(time_range, dtype=np.float64)
+
         if amplitude_range is None:
             amplitude_range = np.linspace(0.01, 0.1, 10)
         else:
             amplitude_range = np.array(amplitude_range, dtype=np.float64)
-
-        if time_range is None:
-            time_range = np.arange(0, 201, 4)
 
         rabi_rates: dict[str, list[float]] = defaultdict(list)
         for amplitude in amplitude_range:
@@ -2775,7 +2778,7 @@ class Experiment:
     def calc_control_amplitudes(
         self,
         *,
-        rabi_rate: float = 12.5e-3,
+        rabi_rate: float = RABI_FREQUENCY,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
@@ -2786,7 +2789,7 @@ class Experiment:
         Parameters
         ----------
         rabi_rate : float, optional
-            Target Rabi rate in GHz. Defaults to 12.5e-3.
+            Target Rabi rate in GHz. Defaults to RABI_FREQUENCY.
         current_amplitudes : dict[str, float], optional
             Current control amplitudes. Defaults to None.
         current_rabi_params : dict[str, RabiParam], optional
@@ -3190,7 +3193,7 @@ class Experiment:
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 4,
         drag_coeff: float = DRAG_COEFF,
-        shots: int = 3000,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
         """
@@ -3207,7 +3210,7 @@ class Experiment:
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -3286,7 +3289,7 @@ class Experiment:
         root_range: tuple[float, float] | None = None,
         n_repetitions: int = 4,
         degree: int = 1,
-        shots: int = 3000,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
         """
@@ -3305,7 +3308,7 @@ class Experiment:
         degree : int, optional
             Degree of the polynomial to fit. Defaults to 1.
         shots : int, optional
-            Number of shots. Defaults to 3000.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -3321,8 +3324,8 @@ class Experiment:
 
         if root_range is None:
             root_range = (
-                10 * beta_range[0],
-                10 * beta_range[-1],
+                beta_range[0],
+                beta_range[-1],
             )
 
         def calibrate(target: str) -> float:
@@ -3379,7 +3382,7 @@ class Experiment:
                 ).root
                 print(f"Calibrated beta: {beta:.6f}")
             except ValueError:
-                print("Failed to find the root.")
+                print(f"Failed to find the root in the range {root_range}.")
                 beta = 0.0
             return beta
 
@@ -6057,8 +6060,8 @@ class Experiment:
         *,
         frequency_range: ArrayLike,
         control_amplitude: float = 0.01,
-        target_rabi_rate: float = 0.0125,
-        shots: int = 3000,
+        target_rabi_rate: float = RABI_FREQUENCY,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ):
         frequency_range = np.asarray(frequency_range)
