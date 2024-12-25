@@ -1769,15 +1769,15 @@ class Experiment:
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
-            result = self.rabi_experiment(
-                amplitudes=amplitudes,
-                time_range=time_range,
-                frequencies=frequencies,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-                store_params=store_params,
-            )
+        result = self.rabi_experiment(
+            amplitudes=amplitudes,
+            time_range=time_range,
+            frequencies=frequencies,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            store_params=store_params,
+        )
         return result
 
     def obtain_ef_rabi_params(
