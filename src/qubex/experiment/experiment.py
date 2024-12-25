@@ -3187,6 +3187,7 @@ class Experiment:
     def calibrate_drag_amplitude(
         self,
         targets: Collection[str],
+        *,
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 4,
         drag_coeff: float = DRAG_COEFF,
@@ -3287,8 +3288,9 @@ class Experiment:
 
     def calibrate_drag_beta(
         self,
-        targets: Collection[str],
-        pulse_type: Literal["pi", "hpi"],
+        targets: Collection[str] | None = None,
+        *,
+        pulse_type: Literal["pi", "hpi"] = "hpi",
         beta_range: ArrayLike = np.linspace(-0.1, 0.1, 51),
         root_range: tuple[float, float] | None = None,
         n_turns: int = 4,
@@ -3321,7 +3323,10 @@ class Experiment:
         dict[str, float]
             Result of the calibration.
         """
-        targets = list(targets)
+        if targets is None:
+            targets = self.qubit_labels
+        else:
+            targets = list(targets)
         beta_range = np.array(beta_range, dtype=np.float64)
         rabi_params = self.rabi_params
         self._validate_rabi_params(rabi_params)
@@ -3334,29 +3339,43 @@ class Experiment:
 
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
-                duration = DRAG_HPI_DURATION
-                amplitude = self._system_note.get(DRAG_HPI_AMPLITUDE)[target]
-            elif pulse_type == "pi":
-                duration = DRAG_PI_DURATION
-                amplitude = self._system_note.get(DRAG_PI_AMPLITUDE)[target]
 
-            def sequence(beta: float) -> dict[str, PulseSequence]:
-                x90p = Drag(
-                    duration=duration,
-                    amplitude=amplitude,
-                    beta=beta,
-                )
-                x90m = x90p.scaled(-1)
-                y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
-                return {
-                    target: PulseSequence(
-                        [
-                            x90p,
-                            PulseSequence([x90m, x90p] * n_turns),
-                            y90m,
-                        ]
+                def sequence(beta: float) -> dict[str, PulseSequence]:
+                    x90p = Drag(
+                        duration=DRAG_HPI_DURATION,
+                        amplitude=self._system_note.get(DRAG_HPI_AMPLITUDE)[target],
+                        beta=beta,
                     )
-                }
+                    x90m = x90p.scaled(-1)
+                    y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                    return {
+                        target: PulseSequence(
+                            [
+                                x90p,
+                                PulseSequence([x90m, x90p] * n_turns),
+                                y90m,
+                            ]
+                        )
+                    }
+
+            elif pulse_type == "pi":
+
+                def sequence(beta: float) -> dict[str, PulseSequence]:
+                    x180p = Drag(
+                        duration=DRAG_PI_DURATION,
+                        amplitude=self._system_note.get(DRAG_PI_AMPLITUDE)[target],
+                        beta=beta,
+                    )
+                    x180m = x180p.scaled(-1)
+                    y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                    return {
+                        target: PulseSequence(
+                            [
+                                PulseSequence([x180p, x180m] * n_turns),
+                                y90m,
+                            ]
+                        )
+                    }
 
             sweep_data = self.sweep_parameter(
                 sequence=sequence,
@@ -3581,6 +3600,7 @@ class Experiment:
         n_turns: int = 4,
         n_iterations: int = 1,
         calibrate_beta: bool = True,
+        beta_range: ArrayLike = np.linspace(-0.3, 0.3, 21),
         drag_coeff: float = DRAG_COEFF,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3600,6 +3620,8 @@ class Experiment:
             Number of iterations. Defaults to 4.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
+        beta_range : ArrayLike, optional
+            Range of the beta to sweep. Defaults to np.linspace(-0.3, 0.3, 21).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
@@ -3638,8 +3660,8 @@ class Experiment:
                 beta = self.calibrate_drag_beta(
                     targets=targets,
                     pulse_type="hpi",
-                    beta_range=np.linspace(-0.5, 0.5, 51),
-                    degree=1,
+                    beta_range=np.linspace(-0.3, 0.3, 21),
+                    degree=3,
                     n_turns=n_turns,
                     shots=shots,
                     interval=interval,
@@ -3663,9 +3685,9 @@ class Experiment:
         n_turns: int = 4,
         n_iterations: int = 1,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.1, 0.1, 51),
+        beta_range: ArrayLike = np.linspace(-0.3, 0.3, 21),
         drag_coeff: float = DRAG_COEFF,
-        degree: int = 1,
+        degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -3684,8 +3706,12 @@ class Experiment:
             Number of iterations. Defaults to 4.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
+        beta_range : ArrayLike, optional
+            Range of the beta to sweep. Defaults to np.linspace(-0.3, 0.3, 21).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
+        degree : int, optional
+            Degree of the polynomial to fit. Defaults to 3.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
