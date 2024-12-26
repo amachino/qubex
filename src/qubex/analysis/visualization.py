@@ -136,7 +136,7 @@ def plot_fft(
     *,
     title: str = "FFT Result",
     xlabel: str = "Frequency (GHz)",
-    ylabel: str = "Amplitude (arb. unit)",
+    ylabel: str = "Signal (arb. unit)",
 ) -> None:
     fft_result = np.fft.fft(data)
     fft_freqs = np.fft.fftfreq(len(data), times[1] - times[0])
@@ -214,7 +214,7 @@ def plot_waveform(
     sampling_period: float = 2.0,
     title: str = "Waveform",
     xlabel: str = "Time (ns)",
-    ylabel: str = "Amplitude (arb. unit)",
+    ylabel: str = "Signal (arb. unit)",
 ):
     fig = go.Figure()
     fig.add_trace(
