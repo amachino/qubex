@@ -400,13 +400,13 @@ class Experiment:
         return self._user_note
 
     @property
-    def hpi_pulse(self) -> TargetMap[Waveform]:
+    def hpi_pulse(self) -> dict[str, Waveform]:
         """
         Get the default π/2 pulse.
 
         Returns
         -------
-        TargetMap[Waveform]
+        dict[str, Waveform]
             π/2 pulse.
         """
         # preset hpi amplitude
@@ -429,13 +429,13 @@ class Experiment:
         }
 
     @property
-    def pi_pulse(self) -> TargetMap[Waveform]:
+    def pi_pulse(self) -> dict[str, Waveform]:
         """
         Get the default π pulse.
 
         Returns
         -------
-        TargetMap[Waveform]
+        dict[str, Waveform]
             π pulse.
         """
         # preset hpi pulse
@@ -457,13 +457,13 @@ class Experiment:
         return {target: pi[target] for target in self._qubits}
 
     @property
-    def drag_hpi_pulse(self) -> TargetMap[Waveform]:
+    def drag_hpi_pulse(self) -> dict[str, Waveform]:
         """
         Get the DRAG π/2 pulse.
 
         Returns
         -------
-        TargetMap[Waveform]
+        dict[str, Waveform]
             DRAG π/2 pulse.
         """
         calib_amplitude: dict[str, float] = self._system_note.get(DRAG_HPI_AMPLITUDE)
@@ -481,13 +481,13 @@ class Experiment:
         }
 
     @property
-    def drag_pi_pulse(self) -> TargetMap[Waveform]:
+    def drag_pi_pulse(self) -> dict[str, Waveform]:
         """
         Get the DRAG π pulse.
 
         Returns
         -------
-        TargetMap[Waveform]
+        dict[str, Waveform]
             DRAG π pulse.
         """
         calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
@@ -504,13 +504,13 @@ class Experiment:
         }
 
     @property
-    def ef_hpi_pulse(self) -> TargetMap[Waveform]:
+    def ef_hpi_pulse(self) -> dict[str, Waveform]:
         """
         Get the ef π/2 pulse.
 
         Returns
         -------
-        TargetMap[Waveform]
+        dict[str, Waveform]
             π/2 pulse.
         """
         amplitude = self._system_note.get(HPI_AMPLITUDE)
@@ -527,13 +527,13 @@ class Experiment:
         }
 
     @property
-    def ef_pi_pulse(self) -> TargetMap[Waveform]:
+    def ef_pi_pulse(self) -> dict[str, Waveform]:
         """
         Get the ef π pulse.
 
         Returns
         -------
-        TargetMap[Waveform]
+        dict[str, Waveform]
             π/2 pulse.
         """
         amplitude = self._system_note.get(PI_AMPLITUDE)
@@ -4548,6 +4548,7 @@ class Experiment:
                 elif gate == "IZ90":
                     ps.add(target_qubit, z90)
                 elif gate == "ZX90":
+                    # TODO: Add ZX90
                     if zx90 is not None:
                         ps.barrier()
                         if isinstance(zx90, dict):
@@ -4791,6 +4792,7 @@ class Experiment:
         for n_clifford in n_cliffords_range:
             result = self.measure(
                 sequence=rb_sequence(n_clifford),
+                mode="single",
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -4811,6 +4813,7 @@ class Experiment:
         )
 
         return {
+            "fidelities": fidelities,
             "depolarizing_rate": fit_result["depolarizing_rate"],
             "avg_gate_error": fit_result["avg_gate_error"],
             "avg_gate_fidelity": fit_result["avg_gate_fidelity"],
@@ -4872,23 +4875,40 @@ class Experiment:
                     "The number of seeds must be equal to the number of trials."
                 )
 
-        self._validate_rabi_params([target])
+        target_object = self.experiment_system.get_target(target)
+        if not target_object.is_cr:
+            self._validate_rabi_params([target])
 
         results = []
         for seed in tqdm(seeds):
             with self.util.no_output():
-                result = self.rb_experiment(
-                    target=target,
-                    n_cliffords_range=n_cliffords_range,
-                    spectator_state=spectator_state,
-                    x90=x90,
-                    seed=seed,
-                    shots=shots,
-                    interval=interval,
-                    plot=False,
-                    save_image=False,
-                )
-                signal = (result.data[target].normalized + 1) / 2
+                if target_object.is_cr:
+                    result = self.rb_experiment_2q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,  # type: ignore
+                        interleaved_waveform=None,
+                        interleaved_clifford=None,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    signal = result["fidelities"]
+                else:
+                    result = self.rb_experiment(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        spectator_state=spectator_state,
+                        x90=x90,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                        save_image=False,
+                    )
+                    signal = (result.data[target].normalized + 1) / 2
                 results.append(signal)
 
         mean = np.mean(results, axis=0)
