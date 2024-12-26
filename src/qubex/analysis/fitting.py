@@ -307,9 +307,11 @@ def fit_polynomial(
 
     roots = np.roots(fun)
     real_roots = roots[np.isreal(roots)].real
-    root = real_roots[np.argmin(np.abs(real_roots))]
-    if root < np.min(x) or root > np.max(x):
-        print(f"No root found in the range [{np.min(x)}, {np.max(x)}].")
+    roots_in_range = real_roots[(real_roots >= np.min(x)) & (real_roots <= np.max(x))]
+    try:
+        root = roots_in_range[np.argmin(np.abs(roots_in_range))]
+    except ValueError:
+        print(f"No real root in the range for {target}.")
         root = np.nan
 
     fig = go.Figure()
