@@ -19,9 +19,7 @@ from plotly.subplots import make_subplots
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
-from scipy.optimize import root_scalar
 from tqdm import tqdm
-from typing_extensions import deprecated
 
 from ..analysis import IQPlotter, RabiParam, fitting
 from ..analysis import visualization as vis
@@ -1671,7 +1669,7 @@ class Experiment:
         time_range: ArrayLike = RABI_TIME_RANGE,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-        store_params: bool = False,
+        store_params: bool = True,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -2225,6 +2223,9 @@ class Experiment:
                 if plot:
                     plotter.update(signals)
 
+        if plot:
+            plotter.show()
+
         # with self.modified_frequencies(frequencies):
         #     for seq in sequences:
         #         measure_result = self.measure(
@@ -2240,9 +2241,6 @@ class Experiment:
         #             signals[target].append(complex(data.kerneled))
         #         if plot:
         #             plotter.update(signals)
-
-        if plot:
-            plotter.show()
 
         sweep_data = {
             target: SweepData(
@@ -2393,6 +2391,7 @@ class Experiment:
 
         shared_rabi_params: dict[str, RabiParam]
         if rabi_params is None:
+            print("Obtaining Rabi parameters...")
             shared_rabi_params = self.obtain_rabi_params(
                 targets=targets,
                 amplitudes=amplitudes,
@@ -2501,7 +2500,6 @@ class Experiment:
             "resonant_frequencies": resonant_frequencies,
         }
 
-    @deprecated("Use `chevron_pattern` instead.")
     def obtain_freq_rabi_relation(
         self,
         targets: Collection[str] | None = None,
@@ -2868,8 +2866,8 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        detuning_range: ArrayLike | None = None,
-        time_range: ArrayLike | None = None,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
+        time_range: ArrayLike = np.arange(0, 101, 4),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2879,11 +2877,8 @@ class Experiment:
         else:
             targets = list(targets)
 
-        if detuning_range is None:
-            detuning_range = np.linspace(-0.01, 0.01, 15)
-
-        if time_range is None:
-            time_range = np.arange(0, 101, 4)
+        detuning_range = np.array(detuning_range, dtype=np.float64)
+        time_range = np.array(time_range, dtype=np.float64)
 
         result = self.obtain_freq_rabi_relation(
             targets=targets,
@@ -2894,7 +2889,9 @@ class Experiment:
             interval=interval,
             plot=plot,
         )
-        fit_data = {target: data.fit()[0] for target, data in result.data.items()}
+        fit_data = {
+            target: data.fit()["f_resonance"] for target, data in result.data.items()
+        }
 
         print("\nResults\n-------")
         print("ef frequency (GHz):")
@@ -3072,7 +3069,7 @@ class Experiment:
 
         print(f"Calibration results for {pulse_type} pulse:")
         for target, calib_data in data.items():
-            print(f"{target}: {calib_data.calib_value:.6f}")
+            print(f"  {target}: {calib_data.calib_value:.6f}")
 
         return ExperimentResult(data=data)
 
@@ -3180,7 +3177,7 @@ class Experiment:
 
         print(f"Calibration results for {pulse_type} pulse:")
         for target, calib_data in data.items():
-            print(f"{target}: {calib_data.calib_value:.6f}")
+            print(f"  {target}: {calib_data.calib_value:.6f}")
 
         return ExperimentResult(data=data)
 
@@ -3394,16 +3391,8 @@ class Experiment:
                 xaxis_title="Beta",
                 yaxis_title="Normalized signal",
             )
-            params = fit_result["popt"]
-            try:
-                beta = root_scalar(
-                    np.poly1d(params),
-                    bracket=root_range,
-                ).root
-                print(f"Calibrated beta: {beta:.6f}")
-            except ValueError:
-                print(f"Failed to find the beta in the range {root_range}.")
-                beta = 0.0
+            beta = fit_result["root"]
+            print(f"Calibrated beta: {beta:.6f}")
             return beta
 
         result = {}
@@ -3598,7 +3587,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
         n_turns: int = 4,
-        n_iterations: int = 1,
+        n_iterations: int = 4,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-0.3, 0.3, 21),
         drag_coeff: float = DRAG_COEFF,
@@ -3660,7 +3649,7 @@ class Experiment:
                 beta = self.calibrate_drag_beta(
                     targets=targets,
                     pulse_type="hpi",
-                    beta_range=np.linspace(-0.3, 0.3, 21),
+                    beta_range=beta_range,
                     degree=3,
                     n_turns=n_turns,
                     shots=shots,
@@ -3683,7 +3672,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
         n_turns: int = 4,
-        n_iterations: int = 1,
+        n_iterations: int = 4,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-0.3, 0.3, 21),
         drag_coeff: float = DRAG_COEFF,
@@ -5577,7 +5566,7 @@ class Experiment:
         amplitude: float = 0.01,
         phase_shift: float | None = None,
         subrange_width: float = 0.3,
-        shots: int = 512,
+        shots: int = DEFAULT_SHOTS,
         interval: int = 0,
         plot: bool = True,
         save_image: bool = False,
@@ -5598,7 +5587,7 @@ class Experiment:
         subrange_width : float, optional
             Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
-            Number of shots. Defaults to 512.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
@@ -5767,7 +5756,7 @@ class Experiment:
         frequency_range: ArrayLike = np.arange(9.75, 10.75, 0.002),
         power_range: ArrayLike = np.arange(-60, 5, 5),
         phase_shift: float | None = None,
-        shots: int = 512,
+        shots: int = DEFAULT_SHOTS,
         interval: int = 0,
         plot: bool = True,
         save_image: bool = True,
@@ -5786,7 +5775,7 @@ class Experiment:
         phase_shift : float, optional
             Phase shift in rad/GHz.
         shots : int, optional
-            Number of shots. Defaults to 512.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
@@ -5875,7 +5864,7 @@ class Experiment:
         frequency_range: ArrayLike,
         amplitude: float = 0.01,
         phase_shift: float,
-        shots: int = 512,
+        shots: int = DEFAULT_SHOTS,
         interval: int = 0,
         plot: bool = True,
         save_image: bool = True,
@@ -5894,7 +5883,7 @@ class Experiment:
         phase_shift : float
             Phase shift in rad/GHz.
         shots : int, optional
-            Number of shots. Defaults to 512.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional

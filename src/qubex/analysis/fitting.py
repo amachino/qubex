@@ -302,8 +302,12 @@ def fit_polynomial(
         Fitted parameters and the figure.
     """
     popt = np.polyfit(x, y, degree)
-    p = np.poly1d(popt)
-    y_fit = p(x)
+    fun = np.poly1d(popt)
+    y_fit = fun(x)
+
+    roots = np.roots(fun)
+    real_roots = roots[np.isreal(roots)].real
+    root = real_roots[np.argmin(np.abs(real_roots))]
 
     fig = go.Figure()
     fig.add_trace(
@@ -322,6 +326,13 @@ def fit_polynomial(
             name="Fit",
         )
     )
+    fig.add_annotation(
+        x=root,
+        y=fun(root),
+        text=f"Root: {root:.3g}",
+        showarrow=True,
+        arrowhead=1,
+    )
     fig.update_layout(
         title=f"{title} : {target}",
         xaxis_title=xaxis_title,
@@ -335,6 +346,8 @@ def fit_polynomial(
 
     return {
         "popt": popt,
+        "fun": fun,
+        "root": root,
         "fig": fig,
     }
 
@@ -1156,7 +1169,9 @@ def fit_ampl_calib_data(
         popt, pcov = curve_fit(cos_func, amplitude_range, data, p0=p0)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return {}
+        return {
+            "amplitude": np.nan,
+        }
 
     result = minimize(
         cos_func,
