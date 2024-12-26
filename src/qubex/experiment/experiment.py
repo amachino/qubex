@@ -3310,11 +3310,11 @@ class Experiment:
                         )
                     }
 
+            sweep_range = beta_range
             if stored_beta is not None:
                 if target in stored_beta:
                     beta = stored_beta[target]
-
-            sweep_range = (beta_range + beta).astype(np.float64)
+                    sweep_range = (beta_range + beta).astype(np.float64)
 
             sweep_data = self.sweep_parameter(
                 sequence=sequence,
