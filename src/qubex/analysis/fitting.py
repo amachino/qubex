@@ -308,6 +308,9 @@ def fit_polynomial(
     roots = np.roots(fun)
     real_roots = roots[np.isreal(roots)].real
     root = real_roots[np.argmin(np.abs(real_roots))]
+    if root < np.min(x) or root > np.max(x):
+        print(f"No root found in the range [{np.min(x)}, {np.max(x)}].")
+        root = np.nan
 
     fig = go.Figure()
     fig.add_trace(
@@ -326,13 +329,14 @@ def fit_polynomial(
             name="Fit",
         )
     )
-    fig.add_annotation(
-        x=root,
-        y=fun(root),
-        text=f"Root: {root:.3g}",
-        showarrow=True,
-        arrowhead=1,
-    )
+    if not np.isnan(root):
+        fig.add_annotation(
+            x=root,
+            y=fun(root),
+            text=f"root: {root:.3g}",
+            showarrow=True,
+            arrowhead=1,
+        )
     fig.update_layout(
         title=f"{title} : {target}",
         xaxis_title=xaxis_title,

@@ -764,62 +764,6 @@ class FreqRabiData(TargetData):
 
 
 @dataclass
-class TimePhaseData(TargetData):
-    """
-    The relation between the control window and the phase shift.
-
-    Attributes
-    ----------
-    target : str
-        Target of the experiment.
-    data : NDArray
-        Measured data.
-    sweep_range : NDArray
-        Sweep range of the experiment.
-    """
-
-    sweep_range: NDArray
-
-    @property
-    def phases(self) -> NDArray[np.float64]:
-        return np.angle(self.data)
-
-    @property
-    def phase_diffs(self) -> NDArray[np.float64]:
-        delta_phases = np.diff(self.phases)
-        delta_phases[delta_phases < 0] += 2 * np.pi
-        return delta_phases
-
-    @property
-    def phase_shift(self) -> float:
-        """Return the average phase shift per 128 ns."""
-        return np.mean(self.phase_diffs).astype(float)
-
-    def plot(self):
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=self.sweep_range,
-                y=self.phases,
-            )
-        )
-        fig.add_annotation(
-            xref="paper",
-            yref="paper",
-            x=0.95,
-            y=0.95,
-            text=f"Phase shift = {self.phase_shift:.5g} rad/128ns",
-            showarrow=False,
-        )
-        fig.update_layout(
-            title=f"Phase shift : {self.target}",
-            xaxis_title="Control window (ns)",
-            yaxis_title="Phase (rad)",
-        )
-        fig.show()
-
-
-@dataclass
 class ResonatorFreqData(TargetData):
     """
 

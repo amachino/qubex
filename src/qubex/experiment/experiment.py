@@ -84,7 +84,6 @@ from .experiment_result import (
     SweepData,
     T1Data,
     T2Data,
-    TimePhaseData,
 )
 
 console = Console()
@@ -97,10 +96,10 @@ STATE_CENTERS = "state_centers"
 
 HPI_AMPLITUDE = "hpi_amplitude"
 HPI_DURATION = 30
-HPI_RISETIME = 10
+HPI_RAMPTIME = 10
 PI_AMPLITUDE = "pi_amplitude"
 PI_DURATION = 30
-PI_RISETIME = 10
+PI_RAMPTIME = 10
 DRAG_HPI_AMPLITUDE = "drag_hpi_amplitude"
 DRAG_HPI_BETA = "drag_hpi_beta"
 DRAG_HPI_DURATION = 16
@@ -111,7 +110,7 @@ DRAG_COEFF = 0.5
 
 RABI_TIME_RANGE = range(0, 201, 4)
 RABI_FREQUENCY = 0.0125
-CALIBRATION_SHOTS = 4096
+CALIBRATION_SHOTS = 2048
 
 
 class Experiment:
@@ -418,13 +417,13 @@ class Experiment:
             for target in calib_amplitude:
                 # use the calibrated hpi amplitude if it is stored
                 amp = calib_amplitude.get(target)
-                if amp is not None and np.isnan(amp) is False:
+                if amp is not None:
                     amplitude[target] = calib_amplitude[target]
         return {
             target: FlatTop(
                 duration=HPI_DURATION,
                 amplitude=amplitude[target],
-                tau=HPI_RISETIME,
+                tau=HPI_RAMPTIME,
             )
             for target in self._qubits
         }
@@ -449,11 +448,11 @@ class Experiment:
             for target in calib_amplitude:
                 # use the calibrated pi amplitude if it is stored
                 amp = calib_amplitude.get(target)
-                if amp is not None and np.isnan(amp) is False:
+                if amp is not None:
                     pi[target] = FlatTop(
                         duration=PI_DURATION,
                         amplitude=amp,
-                        tau=PI_RISETIME,
+                        tau=PI_RAMPTIME,
                     )
         return {target: pi[target] for target in self._qubits}
 
@@ -522,7 +521,7 @@ class Experiment:
             target: FlatTop(
                 duration=HPI_DURATION,
                 amplitude=amplitude[target],
-                tau=HPI_RISETIME,
+                tau=HPI_RAMPTIME,
             )
             for target in ef_labels
         }
@@ -546,7 +545,7 @@ class Experiment:
             target: FlatTop(
                 duration=PI_DURATION,
                 amplitude=amplitude[target],
-                tau=PI_RISETIME,
+                tau=PI_RAMPTIME,
             )
             for target in ef_labels
         }
@@ -2504,8 +2503,8 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        detuning_range: ArrayLike | None = None,
-        time_range: ArrayLike | None = None,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
+        time_range: ArrayLike = np.arange(0, 101, 4),
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -2554,13 +2553,8 @@ class Experiment:
         else:
             targets = list(targets)
 
-        if detuning_range is None:
-            detuning_range = np.linspace(-0.01, 0.01, 15)
-        else:
-            detuning_range = np.array(detuning_range, dtype=np.float64)
-
-        if time_range is None:
-            time_range = np.arange(0, 101, 4)
+        detuning_range = np.array(detuning_range, dtype=np.float64)
+        time_range = np.array(time_range, dtype=np.float64)
 
         ampl = self.params.control_amplitude
         rabi_rates: dict[str, list[float]] = defaultdict(list)
@@ -2621,7 +2615,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
-        amplitude_range: ArrayLike | None = None,
+        amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2668,11 +2662,7 @@ class Experiment:
             targets = list(targets)
 
         time_range = np.array(time_range, dtype=np.float64)
-
-        if amplitude_range is None:
-            amplitude_range = np.linspace(0.01, 0.1, 10)
-        else:
-            amplitude_range = np.array(amplitude_range, dtype=np.float64)
+        amplitude_range = np.array(amplitude_range, dtype=np.float64)
 
         rabi_rates: dict[str, list[float]] = defaultdict(list)
         for amplitude in amplitude_range:
@@ -2699,76 +2689,6 @@ class Experiment:
                 sweep_range=amplitude_range,
             )
             for target, values in rabi_rates.items()
-        }
-        return ExperimentResult(data=data)
-
-    def obtain_time_phase_relation(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        time_range: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-    ) -> ExperimentResult[TimePhaseData]:
-        """
-        Obtains the relation between the control window and the phase shift.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to check the phase shift.
-        time_range : ArrayLike, optional
-            The control window range to sweep in ns.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        ExperimentResult[PhaseShiftData]
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.obtain_time_phase_relation(
-        ...     targets=["Q00", "Q01"],
-        ...     time_range=range(0, 1024, 128),
-        ... )
-        """
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
-        if time_range is None:
-            time_range = np.arange(0, 1024, 128)
-        else:
-            time_range = np.array(time_range, dtype=np.int64)
-
-        iq_data = defaultdict(list)
-        plotter = IQPlotter()
-        for window in time_range:
-            result = self.measure(
-                sequence={target: np.zeros(0) for target in targets},
-                shots=shots,
-                interval=interval,
-                control_window=window,
-                plot=False,
-            )
-            for qubit, value in result.data.items():
-                iq = complex(value.kerneled)
-                iq_data[qubit].append(iq)
-            if plot:
-                plotter.update(iq_data)
-        data = {
-            qubit: TimePhaseData(
-                target=qubit,
-                data=np.array(values),
-                sweep_range=time_range,
-            )
-            for qubit, values in iq_data.items()
         }
         return ExperimentResult(data=data)
 
@@ -3018,7 +2938,7 @@ class Experiment:
                 pulse = FlatTop(
                     duration=HPI_DURATION,
                     amplitude=1,
-                    tau=HPI_RISETIME,
+                    tau=HPI_RAMPTIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
@@ -3026,7 +2946,7 @@ class Experiment:
                 pulse = FlatTop(
                     duration=PI_DURATION,
                     amplitude=1,
-                    tau=PI_RISETIME,
+                    tau=PI_RAMPTIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -3117,7 +3037,7 @@ class Experiment:
                 pulse = FlatTop(
                     duration=HPI_DURATION,
                     amplitude=1,
-                    tau=HPI_RISETIME,
+                    tau=HPI_RAMPTIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
@@ -3125,7 +3045,7 @@ class Experiment:
                 pulse = FlatTop(
                     duration=PI_DURATION,
                     amplitude=1,
-                    tau=PI_RISETIME,
+                    tau=PI_RAMPTIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -3188,6 +3108,7 @@ class Experiment:
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 4,
         drag_coeff: float = DRAG_COEFF,
+        use_stored_amplitude: bool = False,
         use_stored_beta: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3205,6 +3126,8 @@ class Experiment:
             Number of rotations to |0> state. Defaults to 4.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
+        use_stored_amplitude : bool, optional
+            Whether to use the stored amplitude. Defaults to False.
         use_stored_beta : bool, optional
             Whether to use the stored beta. Defaults to False.
         shots : int, optional
@@ -3222,12 +3145,12 @@ class Experiment:
         self._validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
-            if use_stored_beta:
-                beta = self._system_note.get(DRAG_HPI_BETA)[target]
-            else:
-                beta = -drag_coeff / self.qubits[target].alpha
-
             if pulse_type == "hpi":
+                if use_stored_beta:
+                    beta = self._system_note.get(DRAG_HPI_BETA)[target]
+                else:
+                    beta = -drag_coeff / self.qubits[target].alpha
+
                 pulse = Drag(
                     duration=DRAG_HPI_DURATION,
                     amplitude=1,
@@ -3235,7 +3158,21 @@ class Experiment:
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
+
+                if use_stored_amplitude:
+                    ampl = self._system_note.get(DRAG_HPI_AMPLITUDE)[target]
+                else:
+                    ampl = self.calc_control_amplitudes(
+                        rabi_rate=rabi_rate,
+                        print_result=False,
+                    )[target]
+
             elif pulse_type == "pi":
+                if use_stored_beta:
+                    beta = self._system_note.get(DRAG_PI_BETA)[target]
+                else:
+                    beta = -drag_coeff / self.qubits[target].alpha
+
                 pulse = Drag(
                     duration=DRAG_PI_DURATION,
                     amplitude=1,
@@ -3243,12 +3180,16 @@ class Experiment:
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
+
+                if use_stored_amplitude:
+                    ampl = self._system_note.get(DRAG_PI_AMPLITUDE)[target]
+                else:
+                    ampl = self.calc_control_amplitudes(
+                        rabi_rate=rabi_rate,
+                        print_result=False,
+                    )[target]
             else:
                 raise ValueError("Invalid pulse type.")
-            ampl = self.calc_control_amplitudes(
-                rabi_rate=rabi_rate,
-                print_result=False,
-            )[target]
 
             ampl_min = ampl * (1 - 0.5 / n_rotations)
             ampl_max = ampl * (1 + 0.5 / n_rotations)
@@ -3289,7 +3230,6 @@ class Experiment:
         *,
         pulse_type: Literal["pi", "hpi"] = "hpi",
         beta_range: ArrayLike = np.linspace(-0.1, 0.1, 51),
-        root_range: tuple[float, float] | None = None,
         n_turns: int = 4,
         degree: int = 1,
         shots: int = CALIBRATION_SHOTS,
@@ -3328,14 +3268,9 @@ class Experiment:
         rabi_params = self.rabi_params
         self._validate_rabi_params(rabi_params)
 
-        if root_range is None:
-            root_range = (
-                beta_range[0],
-                beta_range[-1],
-            )
-
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
+                stored_beta = self._system_note.get(DRAG_HPI_BETA)
 
                 def sequence(beta: float) -> dict[str, PulseSequence]:
                     x90p = Drag(
@@ -3356,6 +3291,7 @@ class Experiment:
                     }
 
             elif pulse_type == "pi":
+                stored_beta = self._system_note.get(DRAG_PI_BETA)
 
                 def sequence(beta: float) -> dict[str, PulseSequence]:
                     x180p = Drag(
@@ -3374,9 +3310,15 @@ class Experiment:
                         )
                     }
 
+            if stored_beta is not None:
+                if target in stored_beta:
+                    beta = stored_beta[target]
+
+            sweep_range = (beta_range + beta).astype(np.float64)
+
             sweep_data = self.sweep_parameter(
                 sequence=sequence,
-                sweep_range=beta_range,
+                sweep_range=sweep_range,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -3384,7 +3326,7 @@ class Experiment:
             values = sweep_data.normalized
             fit_result = fitting.fit_polynomial(
                 target=target,
-                x=beta_range,
+                x=sweep_range,
                 y=values,
                 degree=degree,
                 title=f"DRAG {pulse_type} beta calibration",
@@ -3392,6 +3334,8 @@ class Experiment:
                 yaxis_title="Normalized signal",
             )
             beta = fit_result["root"]
+            if np.isnan(beta):
+                beta = 0.0
             print(f"Calibrated beta: {beta:.6f}")
             return beta
 
@@ -3587,7 +3531,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
         n_turns: int = 4,
-        n_iterations: int = 4,
+        n_iterations: int = 2,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-0.3, 0.3, 21),
         drag_coeff: float = DRAG_COEFF,
@@ -3606,7 +3550,7 @@ class Experiment:
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 4.
         n_iterations : int, optional
-            Number of iterations. Defaults to 4.
+            Number of iterations. Defaults to 2.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
         beta_range : ArrayLike, optional
@@ -3631,6 +3575,7 @@ class Experiment:
         for i in range(n_iterations):
             print(f"\nIteration {i+1}/{n_iterations}")
 
+            use_stored_amplitude = True if i > 0 else False
             use_stored_beta = True if i > 0 else False
 
             print("Calibrating DRAG amplitude:")
@@ -3638,6 +3583,7 @@ class Experiment:
                 targets=targets,
                 pulse_type="hpi",
                 n_rotations=n_rotations,
+                use_stored_amplitude=use_stored_amplitude,
                 use_stored_beta=use_stored_beta,
                 shots=shots,
                 interval=interval,
@@ -3672,7 +3618,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
         n_turns: int = 4,
-        n_iterations: int = 4,
+        n_iterations: int = 2,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-0.3, 0.3, 21),
         drag_coeff: float = DRAG_COEFF,
@@ -3692,7 +3638,7 @@ class Experiment:
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 4.
         n_iterations : int, optional
-            Number of iterations. Defaults to 4.
+            Number of iterations. Defaults to 2.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
         beta_range : ArrayLike, optional
@@ -3719,6 +3665,7 @@ class Experiment:
         for i in range(n_iterations):
             print(f"\nIteration {i+1}/{n_iterations}")
 
+            use_stored_amplitude = True if i > 0 else False
             use_stored_beta = True if i > 0 else False
 
             print("Calibrating DRAG amplitude:")
@@ -3726,6 +3673,7 @@ class Experiment:
                 targets=targets,
                 pulse_type="pi",
                 n_rotations=n_rotations,
+                use_stored_amplitude=use_stored_amplitude,
                 use_stored_beta=use_stored_beta,
                 shots=shots,
                 interval=interval,
