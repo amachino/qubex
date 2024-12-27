@@ -3229,9 +3229,9 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-0.1, 0.1, 51),
+        beta_range: ArrayLike = np.linspace(-1.0, 1.0, 21),
         n_turns: int = 4,
-        degree: int = 1,
+        degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
@@ -3245,11 +3245,11 @@ class Experiment:
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 51).
+            Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 21).
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 4.
         degree : int, optional
-            Degree of the polynomial to fit. Defaults to 1.
+            Degree of the polynomial to fit. Defaults to 3.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -3533,7 +3533,7 @@ class Experiment:
         n_turns: int = 4,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.3, 0.3, 21),
+        beta_range: ArrayLike = np.linspace(-1.0, 1.0, 21),
         drag_coeff: float = DRAG_COEFF,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3554,7 +3554,7 @@ class Experiment:
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-0.3, 0.3, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 21),
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
