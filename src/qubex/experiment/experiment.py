@@ -57,6 +57,7 @@ from ..measurement.measurement import (
 from ..pulse import (
     CPMG,
     Blank,
+    CrossResonance,
     Drag,
     FlatTop,
     Gaussian,
@@ -5180,6 +5181,7 @@ class Experiment:
 
         for basis in ["X", "Y", "Z"]:
             with PulseSchedule(targets) as ps:
+                # Initialization pulses
                 if initial_state is not None:
                     for qubit in qubits:
                         if qubit in initial_state:
@@ -5189,9 +5191,13 @@ class Experiment:
                             )
                             ps.add(qubit, init_pulse)
                     ps.barrier()
+
+                # Pulse sequences
                 for target, waveform in sequence.items():
                     ps.add(target, waveform)
                 ps.barrier()
+
+                # Basis transformation pulses
                 for qubit in qubits:
                     x90p = x90[qubit]
                     y90m = x90p.shifted(-np.pi / 2)
@@ -6363,6 +6369,139 @@ class Experiment:
             fig.show()
 
         return result_pops, result_errs
+
+    def execute_cr(
+        self,
+        time_range: ArrayLike,
+        control_qubit: str,
+        target_qubit: str,
+        cr_amplitude: float,
+        cr_ramptime: float,
+        cr_phase: float,
+        cancel_amplitude: float,
+        cancel_phase: float,
+        echo: bool,
+        control_state: str,
+        shots: int = DEFAULT_SHOTS,
+    ) -> NDArray[np.float64]:
+        time_range = np.array(time_range)
+
+        buffer = []
+        for T in time_range:
+            result = self.state_tomography(
+                CrossResonance(
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
+                    cr_amplitude=cr_amplitude,
+                    cr_duration=T,
+                    cr_ramptime=cr_ramptime,
+                    cr_phase=cr_phase,
+                    cancel_amplitude=cancel_amplitude,
+                    cancel_phase=cancel_phase,
+                    echo=echo,
+                ),
+                initial_state={control_qubit: control_state},
+                shots=shots,
+            )
+            state = np.array(result[target_qubit])
+            buffer.append(state)
+
+        result = np.array(buffer).astype(np.float64)
+        return result
+
+    def cr_hamiltonian_tomography(
+        self,
+        time_range: ArrayLike,
+        control_qubit: str,
+        target_qubit: str,
+        cr_amplitude: float,
+        cr_ramptime: float,
+        cr_phase: float,
+        cancel_amplitude: float = 0.0,
+        cancel_phase: float = 0.0,
+        plot: bool = False,
+    ) -> dict:
+        time_range = np.array(time_range)
+
+        result_0 = self.execute_cr(
+            time_range=time_range,
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            cr_amplitude=cr_amplitude,
+            cr_ramptime=cr_ramptime,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
+            echo=False,
+            control_state="0",
+        )
+        result_1 = self.execute_cr(
+            time_range=time_range,
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            cr_amplitude=cr_amplitude,
+            cr_ramptime=cr_ramptime,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
+            echo=False,
+            control_state="1",
+        )
+
+        indices = (time_range >= cr_ramptime) & (
+            time_range < time_range[-1] - cr_ramptime
+        )
+        times = time_range[indices] - cr_ramptime * 0.5
+        vectors_0 = result_0[indices]
+        vectors_1 = result_1[indices]
+
+        fit_0 = fitting.fit_rotation(
+            times,
+            vectors_0,
+            plot=plot,
+        )
+        vis.display_bloch_sphere(vectors_0)
+        fit_1 = fitting.fit_rotation(
+            times,
+            vectors_1,
+            plot=plot,
+        )
+        vis.display_bloch_sphere(vectors_1)
+        Omega_0 = fit_0["Omega"]
+        Omega_1 = fit_1["Omega"]
+        Omega = np.concatenate(
+            [
+                0.5 * (Omega_0 + Omega_1),
+                0.5 * (Omega_0 - Omega_1),
+            ]
+        )
+        coeffs = dict(
+            zip(
+                ["IX/2", "IY/2", "IZ/2", "ZX/2", "ZY/2", "ZZ/2"],
+                Omega / (2 * np.pi),  # GHz
+            )
+        )
+
+        for key, value in coeffs.items():
+            print(f"{key}: {value * 1e3:+.6f} MHz")
+
+        cr_phase_est = -np.arctan2(coeffs["ZY/2"], coeffs["ZX/2"])
+
+        cancel_pulse = -(coeffs["IX/2"] + 1j * coeffs["IY/2"])
+        cancel_amplitude_est = np.abs(cancel_pulse)
+        cancel_phase_est = np.angle(cancel_pulse)
+        cancel_amplitude_est = self.calc_control_amplitudes(
+            rabi_rate=cancel_amplitude_est,
+            print_result=False,
+        )[target_qubit]
+
+        return {
+            "Omega": Omega,
+            "coeffs": coeffs,
+            "cr_phase_est": cr_phase_est,
+            "cancel_amplitude_est": cancel_amplitude_est,
+            "cancel_phase_est": cancel_phase_est,
+        }
 
 
 class ExperimentUtil:
