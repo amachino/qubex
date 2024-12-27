@@ -5188,10 +5188,10 @@ class Experiment:
                                 state=initial_state[qubit],
                             )
                             ps.add(qubit, init_pulse)
-                            ps.barrier()
+                    ps.barrier()
                 for target, waveform in sequence.items():
                     ps.add(target, waveform)
-                    ps.barrier()
+                ps.barrier()
                 for qubit in qubits:
                     x90p = x90[qubit]
                     y90m = x90p.shifted(-np.pi / 2)
