@@ -6484,7 +6484,7 @@ class Experiment:
         )
         coeffs = dict(
             zip(
-                ["IX/2", "IY/2", "IZ/2", "ZX/2", "ZY/2", "ZZ/2"],
+                ["IX", "IY", "IZ", "ZX", "ZY", "ZZ"],
                 Omega / (2 * np.pi),  # GHz
             )
         )
@@ -6492,9 +6492,9 @@ class Experiment:
         for key, value in coeffs.items():
             print(f"{key}: {value * 1e3:+.6f} MHz")
 
-        cr_phase_est = -np.arctan2(coeffs["ZY/2"], coeffs["ZX/2"])
+        cr_phase_est = -np.arctan2(coeffs["ZY"], coeffs["ZX"])
 
-        cancel_pulse = -(coeffs["IX/2"] + 1j * coeffs["IY/2"])
+        cancel_pulse = -(coeffs["IX"] + 1j * coeffs["IY"])
         cancel_amplitude_est = np.abs(cancel_pulse)
         cancel_phase_est = np.angle(cancel_pulse)
         cancel_amplitude_est = self.calc_control_amplitudes(
