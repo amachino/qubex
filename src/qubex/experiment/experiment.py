@@ -3621,7 +3621,7 @@ class Experiment:
         n_turns: int = 4,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.3, 0.3, 21),
+        beta_range: ArrayLike = np.linspace(-0.5, 0.5, 21),
         drag_coeff: float = DRAG_COEFF,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
@@ -3643,7 +3643,7 @@ class Experiment:
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-0.3, 0.3, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-0.5, 0.5, 21).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         degree : int, optional
@@ -3803,7 +3803,7 @@ class Experiment:
                     plot=plot,
                     title="T1",
                     xaxis_title="Time (μs)",
-                    yaxis_title="Normalized value",
+                    yaxis_title="Normalized signal",
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
@@ -3936,7 +3936,7 @@ class Experiment:
                     plot=plot,
                     title="T2 echo",
                     xaxis_title="Time (μs)",
-                    yaxis_title="Normalized value",
+                    yaxis_title="Normalized signal",
                 )
                 if "tau" in fit_result:
                     t2 = fit_result["tau"]
@@ -4095,7 +4095,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 20001, 100),
+        time_range: ArrayLike = np.arange(0, 10001, 100),
         detuning: float = 0.001,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -4128,7 +4128,7 @@ class Experiment:
         --------
         >>> result = ex.obtain_true_control_frequency(
         ...     targets=["Q00", "Q01", "Q02", "Q03"]
-        ...     time_range=range(0, 10000, 100),
+        ...     time_range=range(0, 10001, 100),
         ...     shots=1024,
         ... )
         """
@@ -6383,7 +6383,8 @@ class Experiment:
         echo: bool = False,
         control_state: str = "0",
         shots: int = DEFAULT_SHOTS,
-    ) -> NDArray[np.float64]:
+        interval: int = DEFAULT_INTERVAL,
+    ) -> dict:
         time_range = np.array(time_range)
 
         x90 = self.hpi_pulse
@@ -6392,7 +6393,8 @@ class Experiment:
         if target_qubit in self.drag_hpi_pulse:
             x90[target_qubit] = self.drag_hpi_pulse[target_qubit]
 
-        buffer = []
+        control_states = []
+        target_states = []
         for T in time_range:
             result = self.state_tomography(
                 CrossResonance(
@@ -6409,12 +6411,17 @@ class Experiment:
                 x90=x90,
                 initial_state={control_qubit: control_state},
                 shots=shots,
+                interval=interval,
+                plot=False,
             )
-            state = np.array(result[target_qubit])
-            buffer.append(state)
+            control_states.append(np.array(result[control_qubit]))
+            target_states.append(np.array(result[target_qubit]))
 
-        result = np.array(buffer).astype(np.float64)
-        return result
+        return {
+            "time_range": time_range,
+            "control_states": np.array(control_states),
+            "target_states": np.array(target_states),
+        }
 
     def cr_hamiltonian_tomography(
         self,
@@ -6426,6 +6433,8 @@ class Experiment:
         cr_phase: float = 0.0,
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict:
         time_range = np.array(time_range)
@@ -6441,6 +6450,8 @@ class Experiment:
             cancel_phase=cancel_phase,
             echo=False,
             control_state="0",
+            shots=shots,
+            interval=interval,
         )
         result_1 = self.execute_cr(
             time_range=time_range,
@@ -6453,27 +6464,29 @@ class Experiment:
             cancel_phase=cancel_phase,
             echo=False,
             control_state="1",
+            shots=shots,
+            interval=interval,
         )
 
         indices = (time_range >= cr_ramptime) & (
             time_range < time_range[-1] - cr_ramptime
         )
         times = time_range[indices] - cr_ramptime * 0.5
-        vectors_0 = result_0[indices]
-        vectors_1 = result_1[indices]
+        target_states_0 = result_0["target_states"][indices]
+        target_states_1 = result_1["target_states"][indices]
 
         fit_0 = fitting.fit_rotation(
             times,
-            vectors_0,
+            target_states_0,
             plot=plot,
         )
-        vis.display_bloch_sphere(vectors_0)
+        vis.display_bloch_sphere(target_states_0)
         fit_1 = fitting.fit_rotation(
             times,
-            vectors_1,
+            target_states_1,
             plot=plot,
         )
-        vis.display_bloch_sphere(vectors_1)
+        vis.display_bloch_sphere(target_states_1)
         Omega_0 = fit_0["Omega"]
         Omega_1 = fit_1["Omega"]
         Omega = np.concatenate(

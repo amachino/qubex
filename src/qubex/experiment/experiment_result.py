@@ -186,7 +186,7 @@ class RabiData(TargetData):
             fig.update_layout(
                 title=f"Rabi oscillation : {self.target}",
                 xaxis_title="Drive duration (ns)",
-                yaxis_title="Normalized value",
+                yaxis_title="Normalized signal",
             )
             fig.show()
         else:
@@ -218,7 +218,7 @@ class RabiData(TargetData):
             fig.update_layout(
                 title=f"Rabi oscillation : {self.target}",
                 xaxis_title="Drive duration (ns)",
-                yaxis_title="Measured value",
+                yaxis_title="Signal (arb. unit)",
             )
             fig.show()
 
