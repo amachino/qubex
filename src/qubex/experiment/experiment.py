@@ -6372,19 +6372,25 @@ class Experiment:
 
     def execute_cr(
         self,
-        time_range: ArrayLike,
         control_qubit: str,
         target_qubit: str,
-        cr_amplitude: float,
-        cr_ramptime: float,
-        cr_phase: float,
-        cancel_amplitude: float,
-        cancel_phase: float,
-        echo: bool,
-        control_state: str,
+        time_range: ArrayLike = np.arange(100, 401, 20),
+        cr_amplitude: float = 1.0,
+        cr_ramptime: float = 50,
+        cr_phase: float = 0.0,
+        cancel_amplitude: float = 0.0,
+        cancel_phase: float = 0.0,
+        echo: bool = False,
+        control_state: str = "0",
         shots: int = DEFAULT_SHOTS,
     ) -> NDArray[np.float64]:
         time_range = np.array(time_range)
+
+        x90 = self.hpi_pulse
+        if control_qubit in self.drag_hpi_pulse:
+            x90[control_qubit] = self.drag_hpi_pulse[control_qubit]
+        if target_qubit in self.drag_hpi_pulse:
+            x90[target_qubit] = self.drag_hpi_pulse[target_qubit]
 
         buffer = []
         for T in time_range:
@@ -6400,6 +6406,7 @@ class Experiment:
                     cancel_phase=cancel_phase,
                     echo=echo,
                 ),
+                x90=x90,
                 initial_state={control_qubit: control_state},
                 shots=shots,
             )
@@ -6411,12 +6418,12 @@ class Experiment:
 
     def cr_hamiltonian_tomography(
         self,
-        time_range: ArrayLike,
         control_qubit: str,
         target_qubit: str,
-        cr_amplitude: float,
-        cr_ramptime: float,
-        cr_phase: float,
+        time_range: ArrayLike = np.arange(100, 401, 20),
+        cr_amplitude: float = 1.0,
+        cr_ramptime: float = 50,
+        cr_phase: float = 0.0,
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
         plot: bool = False,
