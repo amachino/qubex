@@ -1795,7 +1795,8 @@ def fit_rotation(
     Omega_z = Omega * np.cos(theta)
     print(f"Omega: ({Omega_x:.6f}, {Omega_y:.6f}, {Omega_z:.6f})")
 
-    fit = rotate(times, *fitted_params)
+    times_fine = np.linspace(np.min(times), np.max(times), 1000)
+    fit = rotate(times_fine, *fitted_params)
 
     if plot:
         fig = go.Figure()
@@ -1810,7 +1811,7 @@ def fit_rotation(
         )
         fig.add_trace(
             go.Scatter(
-                x=times,
+                x=times_fine,
                 y=fit[:, 0],
                 mode="lines",
                 name="X (fit)",
@@ -1828,7 +1829,7 @@ def fit_rotation(
         )
         fig.add_trace(
             go.Scatter(
-                x=times,
+                x=times_fine,
                 y=fit[:, 1],
                 mode="lines",
                 name="Y (fit)",
@@ -1846,7 +1847,7 @@ def fit_rotation(
         )
         fig.add_trace(
             go.Scatter(
-                x=times,
+                x=times_fine,
                 y=fit[:, 2],
                 mode="lines",
                 name="Z (fit)",

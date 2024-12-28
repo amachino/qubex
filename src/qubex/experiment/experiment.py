@@ -6427,7 +6427,7 @@ class Experiment:
         self,
         control_qubit: str,
         target_qubit: str,
-        time_range: ArrayLike = np.arange(100, 401, 20),
+        flattop_range: ArrayLike = np.arange(0, 301, 10),
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
         cr_phase: float = 0.0,
@@ -6437,7 +6437,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict:
-        time_range = np.array(time_range)
+        time_range = np.array(flattop_range) + cr_ramptime * 2
 
         result_0 = self.execute_cr_sequence(
             time_range=time_range,
@@ -6468,23 +6468,23 @@ class Experiment:
             interval=interval,
         )
 
-        indices = (time_range >= cr_ramptime) & (
-            time_range < time_range[-1] - cr_ramptime
-        )
-        flat_time_range = time_range[indices] - cr_ramptime
+        indices = time_range >= cr_ramptime * 2
+        effective_time_range = time_range[indices] - cr_ramptime
         target_states_0 = result_0["target_states"][indices]
         target_states_1 = result_1["target_states"][indices]
 
         fit_0 = fitting.fit_rotation(
-            flat_time_range,
+            effective_time_range,
             target_states_0,
             plot=plot,
         )
         vis.display_bloch_sphere(target_states_0)
         fit_1 = fitting.fit_rotation(
-            flat_time_range,
+            effective_time_range,
             target_states_1,
             plot=plot,
+            title="CR Hamiltonian tomography",
+            xlabel="Effective drive time (ns)",
         )
         vis.display_bloch_sphere(target_states_1)
         Omega_0 = fit_0["Omega"]
@@ -6528,10 +6528,9 @@ class Experiment:
         control_qubit: str,
         target_qubit: str,
         *,
-        time_range: ArrayLike = np.arange(100, 401, 20),
+        flattop_range: ArrayLike = np.arange(0, 301, 10),
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
-        n_iteraions: int = 2,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -6539,47 +6538,44 @@ class Experiment:
         cancel_amplitude = 0.0
         cancel_phase = 0.0
 
-        for i in range(n_iteraions):
-            print(f"Iteration {i + 1}/{n_iteraions}")
-            step_1 = self.cr_hamiltonian_tomography(
-                control_qubit=control_qubit,
-                target_qubit=target_qubit,
-                time_range=time_range,
-                cr_amplitude=cr_amplitude,
-                cr_ramptime=cr_ramptime,
-                cr_phase=cr_phase,
-                cancel_amplitude=cancel_amplitude,
-                cancel_phase=cancel_phase,
-                shots=shots,
-                interval=interval,
-                plot=True,
-            )
-            cr_phase = step_1["cr_phase_est"]
-            print(f"cr_phase : {cr_phase:+.6f} rad")
+        step_1 = self.cr_hamiltonian_tomography(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            flattop_range=flattop_range,
+            cr_amplitude=cr_amplitude,
+            cr_ramptime=cr_ramptime,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
+            shots=shots,
+            interval=interval,
+            plot=True,
+        )
+        cr_phase = step_1["cr_phase_est"]
 
-            step_2 = self.cr_hamiltonian_tomography(
-                control_qubit=control_qubit,
-                target_qubit=target_qubit,
-                time_range=time_range,
-                cr_amplitude=cr_amplitude,
-                cr_ramptime=cr_ramptime,
-                cr_phase=cr_phase,
-                cancel_amplitude=cancel_amplitude,
-                cancel_phase=cancel_phase,
-                shots=shots,
-                interval=interval,
-                plot=True,
-            )
+        step_2 = self.cr_hamiltonian_tomography(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            flattop_range=flattop_range,
+            cr_amplitude=cr_amplitude,
+            cr_ramptime=cr_ramptime,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
+            shots=shots,
+            interval=interval,
+            plot=True,
+        )
 
-            cancel_amplitude = step_2["cancel_amplitude_est"]
-            cancel_phase = step_2["cancel_phase_est"]
-            print(f"cancel_amplitude : {cancel_amplitude:+.6f}")
-            print(f"cancel_phase : {cancel_phase:+.6f} rad")
+        cancel_amplitude = step_2["cancel_amplitude_est"]
+        cancel_phase = step_2["cancel_phase_est"]
+        print(f"cancel_amplitude : {cancel_amplitude:+.6f}")
+        print(f"cancel_phase : {cancel_phase:+.6f} rad")
 
         result = self.cr_hamiltonian_tomography(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
-            time_range=time_range,
+            flattop_range=flattop_range,
             cr_amplitude=cr_amplitude,
             cr_ramptime=cr_ramptime,
             cr_phase=cr_phase,
