@@ -92,8 +92,9 @@ console = Console()
 USER_NOTE_PATH = ".user_note.json"
 SYSTEM_NOTE_PATH = ".system_note.json"
 
-RABI_PARAMS = "rabi_params"
 STATE_CENTERS = "state_centers"
+RABI_PARAMS = "rabi_params"
+CR_PARAMS = "cr_params"
 
 HPI_AMPLITUDE = "hpi_amplitude"
 HPI_DURATION = 30
@@ -6478,7 +6479,8 @@ class Experiment:
             target_states_0,
             plot=plot,
         )
-        vis.display_bloch_sphere(target_states_0)
+        if plot:
+            vis.display_bloch_sphere(target_states_0)
         fit_1 = fitting.fit_rotation(
             effective_time_range,
             target_states_1,
@@ -6486,7 +6488,8 @@ class Experiment:
             title="CR Hamiltonian tomography",
             xlabel="Effective drive time (ns)",
         )
-        vis.display_bloch_sphere(target_states_1)
+        if plot:
+            vis.display_bloch_sphere(target_states_1)
         Omega_0 = fit_0["Omega"]
         Omega_1 = fit_1["Omega"]
         Omega = np.concatenate(
@@ -6536,10 +6539,10 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
-        cr_params = {
+        cr_pulse = {
             "phase": 0.0,
         }
-        cancel_params = {
+        cancel_pulse = {
             "amplitude": 0.0,
             "phase": 0.0,
         }
@@ -6547,33 +6550,33 @@ class Experiment:
 
         def update_params(
             tomography_result: dict,
-            update_cr_params: bool = False,
-            update_cancel_params: bool = False,
+            update_cr_pulse: bool = False,
+            update_cancel_pulse: bool = False,
         ):
             # append coeffs
             for key, value in tomography_result["coeffs"].items():
                 coeffs[key].append(value)
 
-            # update cr params
-            if update_cr_params:
-                phase = cr_params["phase"]
+            # update cr pulse
+            if update_cr_pulse:
+                phase = cr_pulse["phase"]
                 phase_diff = tomography_result["cr_phase"]
                 new_phase = phase + phase_diff
-                cr_params["phase"] = new_phase
+                cr_pulse["phase"] = new_phase
                 print(f"CR phase: {phase:+.6f} -> {new_phase:+.6f}")
 
-            # update cancel params
-            if update_cancel_params:
-                amplitude = cancel_params["amplitude"]
-                phase = cancel_params["phase"]
+            # update cancel pulse
+            if update_cancel_pulse:
+                amplitude = cancel_pulse["amplitude"]
+                phase = cancel_pulse["phase"]
                 pulse = amplitude * np.exp(1j * phase)
                 amplitude_diff = tomography_result["cancel_amplitude"]
                 phase_diff = tomography_result["cancel_phase"]
                 new_pulse = pulse + amplitude_diff * np.exp(1j * phase_diff)
                 new_amplitude = np.abs(new_pulse)
                 new_phase = np.angle(new_pulse)
-                cancel_params["amplitude"] = new_amplitude
-                cancel_params["phase"] = new_phase
+                cancel_pulse["amplitude"] = new_amplitude
+                cancel_pulse["phase"] = new_phase
                 print(f"Cancel amplitude: {amplitude:+.6f} -> {new_amplitude:+.6f}")
                 print(f"Cancel phase: {phase:+.6f} -> {new_phase:+.6f}")
 
@@ -6585,17 +6588,17 @@ class Experiment:
                 flattop_range=flattop_range,
                 cr_amplitude=cr_amplitude,
                 cr_ramptime=cr_ramptime,
-                cr_phase=cr_params["phase"],
-                cancel_amplitude=cancel_params["amplitude"],
-                cancel_phase=cancel_params["phase"],
+                cr_phase=cr_pulse["phase"],
+                cancel_amplitude=cancel_pulse["amplitude"],
+                cancel_phase=cancel_pulse["phase"],
                 shots=shots,
                 interval=interval,
                 plot=plot,
             )
             update_params(
                 step_1,
-                update_cr_params=True,
-                update_cancel_params=False,
+                update_cr_pulse=True,
+                update_cancel_pulse=False,
             )
 
             step_2 = self.cr_hamiltonian_tomography(
@@ -6604,17 +6607,17 @@ class Experiment:
                 flattop_range=flattop_range,
                 cr_amplitude=cr_amplitude,
                 cr_ramptime=cr_ramptime,
-                cr_phase=cr_params["phase"],
-                cancel_amplitude=cancel_params["amplitude"],
-                cancel_phase=cancel_params["phase"],
+                cr_phase=cr_pulse["phase"],
+                cancel_amplitude=cancel_pulse["amplitude"],
+                cancel_phase=cancel_pulse["phase"],
                 shots=shots,
                 interval=interval,
                 plot=plot,
             )
             update_params(
                 step_2,
-                update_cr_params=False,
-                update_cancel_params=True,
+                update_cr_pulse=False,
+                update_cancel_pulse=True,
             )
 
         tomography_result = self.cr_hamiltonian_tomography(
@@ -6623,9 +6626,9 @@ class Experiment:
             flattop_range=flattop_range,
             cr_amplitude=cr_amplitude,
             cr_ramptime=cr_ramptime,
-            cr_phase=cr_params["phase"],
-            cancel_amplitude=cancel_params["amplitude"],
-            cancel_phase=cancel_params["phase"],
+            cr_phase=cr_pulse["phase"],
+            cancel_amplitude=cancel_pulse["amplitude"],
+            cancel_phase=cancel_pulse["phase"],
             shots=shots,
             interval=interval,
             plot=plot,
@@ -6651,13 +6654,23 @@ class Experiment:
             yaxis_title="Coefficient (MHz)",
             xaxis=dict(tickmode="array", tickvals=np.arange(len(value))),
         )
-        fig.show()
+        if plot:
+            fig.show()
+
+        self._system_note.put(
+            CR_PARAMS,
+            {
+                f"{control_qubit}-{target_qubit}": {
+                    "cr_pulse": cr_pulse,
+                    "cancel_pulse": cancel_pulse,
+                },
+            },
+        )
 
         return {
-            "cr_params": cr_params,
-            "cancel_params": cancel_params,
+            "cr_pulse": cr_pulse,
+            "cancel_pulse": cancel_pulse,
             "hamiltonian_coeffs": hamiltonian_coeffs,
-            "tomography_result": tomography_result,
         }
 
 
