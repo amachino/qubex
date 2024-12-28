@@ -409,7 +409,7 @@ class IQPlotter:
                         x=x,
                         y=y,
                         mode="text+markers",
-                        text=[f"|{state}〉" for state in centers],
+                        text=[f"{state}" for state in centers],
                         name=f"{label}",
                         hoverinfo="name",
                         showlegend=True,
@@ -420,7 +420,9 @@ class IQPlotter:
                         ),
                         textfont=dict(
                             size=12,
-                            color="black",
+                            color="rgba(0, 0, 0, 0.8)",
+                            family="sans-serif",
+                            weight="bold",
                         ),
                         legendgroup="state",
                     )
