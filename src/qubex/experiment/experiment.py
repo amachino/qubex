@@ -6371,17 +6371,19 @@ class Experiment:
 
         return result_pops, result_errs
 
-    def execute_cr_sequence(
+    def measure_cr_dynamics(
         self,
+        *,
         control_qubit: str,
         target_qubit: str,
-        time_range: ArrayLike = np.arange(100, 401, 20),
+        time_range: ArrayLike = np.arange(100, 401, 10),
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
         cr_phase: float = 0.0,
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
         echo: bool = False,
+        pi_pulse: TargetMap[Waveform] | None = None,
         control_state: str = "0",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -6393,6 +6395,9 @@ class Experiment:
             x90[control_qubit] = self.drag_hpi_pulse[control_qubit]
         if target_qubit in self.drag_hpi_pulse:
             x90[target_qubit] = self.drag_hpi_pulse[target_qubit]
+
+        if pi_pulse is None:
+            pi_pulse = self.pi_pulse
 
         control_states = []
         target_states = []
@@ -6408,6 +6413,7 @@ class Experiment:
                     cancel_amplitude=cancel_amplitude,
                     cancel_phase=cancel_phase,
                     echo=echo,
+                    pi_pulse=pi_pulse[control_qubit],
                 ),
                 x90=x90,
                 initial_state={control_qubit: control_state},
@@ -6426,6 +6432,7 @@ class Experiment:
 
     def cr_hamiltonian_tomography(
         self,
+        *,
         control_qubit: str,
         target_qubit: str,
         flattop_range: ArrayLike = np.arange(0, 301, 10),
@@ -6440,7 +6447,7 @@ class Experiment:
     ) -> dict:
         time_range = np.array(flattop_range) + cr_ramptime * 2
 
-        result_0 = self.execute_cr_sequence(
+        result_0 = self.measure_cr_dynamics(
             time_range=time_range,
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -6454,7 +6461,7 @@ class Experiment:
             shots=shots,
             interval=interval,
         )
-        result_1 = self.execute_cr_sequence(
+        result_1 = self.measure_cr_dynamics(
             time_range=time_range,
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -6526,11 +6533,11 @@ class Experiment:
             "cancel_phase": cancel_phase_est,
         }
 
-    def calibrate_cr_sequence(
+    def calibrate_cr_params(
         self,
+        *,
         control_qubit: str,
         target_qubit: str,
-        *,
         flattop_range: ArrayLike = np.arange(0, 301, 10),
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
@@ -6540,6 +6547,7 @@ class Experiment:
         plot: bool = True,
     ) -> dict:
         cr_pulse = {
+            "amplitude": cr_amplitude,
             "phase": 0.0,
         }
         cancel_pulse = {
@@ -6663,6 +6671,7 @@ class Experiment:
                 f"{control_qubit}-{target_qubit}": {
                     "cr_pulse": cr_pulse,
                     "cancel_pulse": cancel_pulse,
+                    "ramptime": cr_ramptime,
                 },
             },
         )
@@ -6672,6 +6681,55 @@ class Experiment:
             "cancel_pulse": cancel_pulse,
             "hamiltonian_coeffs": hamiltonian_coeffs,
         }
+
+    def calibrate_zx90_by_amplitude(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        duration: float = 100,
+        amplitude_range: ArrayLike = np.linspace(0.0, 0.5, 21),
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        amplitude_range = np.array(amplitude_range)
+
+        cr_label = f"{control_qubit}-{target_qubit}"
+        cr_params = self._system_note.get(CR_PARAMS)[cr_label]
+        cr_ramptime = cr_params["ramptime"]
+        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
+        cr_phase = cr_params["cr_pulse"]["phase"]
+        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
+        cancel_phase = cr_params["cancel_pulse"]["phase"]
+
+        sweep_result = self.sweep_parameter(
+            lambda amplitude: CrossResonance(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+                cr_amplitude=amplitude,
+                cr_duration=duration,
+                cr_ramptime=cr_ramptime,
+                cr_phase=cr_phase,
+                cancel_amplitude=cancel_amplitude * amplitude / cr_amplitude,
+                cancel_phase=cancel_phase,
+                echo=True,
+                pi_pulse=self.pi_pulse[target_qubit],
+            ),
+            sweep_range=amplitude_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        data = sweep_result.data[target_qubit].normalized
+        fit_result = fitting.fit_polynomial(
+            target=target_qubit,
+            x=amplitude_range,
+            y=data,
+            degree=3,
+        )
+        return fit_result
 
 
 class ExperimentUtil:
