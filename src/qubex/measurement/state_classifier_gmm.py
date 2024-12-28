@@ -291,6 +291,7 @@ class StateClassifierGMM(StateClassifier):
         target: str,
         data: NDArray[np.complex128],
         labels: NDArray,
+        n_samples: int = 1000,
     ):
         """
         Plot the data and the predicted labels.
@@ -301,7 +302,12 @@ class StateClassifierGMM(StateClassifier):
             An array of complex numbers representing the data.
         labels : NDArray
             An array of predicted state labels.
+        n_samples : int, optional
+            The number of samples to plot, by default 1000.
         """
+        if len(data) > n_samples:
+            data = data[:n_samples]
+            labels = labels[:n_samples]
         x = data.real
         y = data.imag
         unique_labels = np.unique(labels)
