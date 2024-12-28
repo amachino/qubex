@@ -6518,9 +6518,9 @@ class Experiment:
         return {
             "Omega": Omega,
             "coeffs": coeffs,
-            "cr_phase_est": cr_phase_est,
-            "cancel_amplitude_est": cancel_amplitude_est,
-            "cancel_phase_est": cancel_phase_est,
+            "cr_phase": cr_phase_est,
+            "cancel_amplitude": cancel_amplitude_est,
+            "cancel_phase": cancel_phase_est,
         }
 
     def calibrate_cr_sequence(
@@ -6531,61 +6531,134 @@ class Experiment:
         flattop_range: ArrayLike = np.arange(0, 301, 10),
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
+        n_iterations: int = 2,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
     ) -> dict:
-        cr_phase = 0.0
-        cancel_amplitude = 0.0
-        cancel_phase = 0.0
+        cr_params = {
+            "phase": 0.0,
+        }
+        cancel_params = {
+            "amplitude": 0.0,
+            "phase": 0.0,
+        }
+        coeffs = defaultdict(list)
 
-        step_1 = self.cr_hamiltonian_tomography(
+        def update_params(
+            tomography_result: dict,
+            update_cr_params: bool = False,
+            update_cancel_params: bool = False,
+        ):
+            # append coeffs
+            for key, value in tomography_result["coeffs"].items():
+                coeffs[key].append(value)
+
+            # update cr params
+            if update_cr_params:
+                phase = cr_params["phase"]
+                phase_diff = tomography_result["cr_phase"]
+                new_phase = phase + phase_diff
+                cr_params["phase"] = new_phase
+                print(f"CR phase: {phase:+.6f} -> {new_phase:+.6f}")
+
+            # update cancel params
+            if update_cancel_params:
+                amplitude = cancel_params["amplitude"]
+                phase = cancel_params["phase"]
+                pulse = amplitude * np.exp(1j * phase)
+                amplitude_diff = tomography_result["cancel_amplitude"]
+                phase_diff = tomography_result["cancel_phase"]
+                new_pulse = pulse + amplitude_diff * np.exp(1j * phase_diff)
+                new_amplitude = np.abs(new_pulse)
+                new_phase = np.angle(new_pulse)
+                cancel_params["amplitude"] = new_amplitude
+                cancel_params["phase"] = new_phase
+                print(f"Cancel amplitude: {amplitude:+.6f} -> {new_amplitude:+.6f}")
+                print(f"Cancel phase: {phase:+.6f} -> {new_phase:+.6f}")
+
+        for i in range(n_iterations):
+            print(f"Iteration {i + 1}/{n_iterations}")
+            step_1 = self.cr_hamiltonian_tomography(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+                flattop_range=flattop_range,
+                cr_amplitude=cr_amplitude,
+                cr_ramptime=cr_ramptime,
+                cr_phase=cr_params["phase"],
+                cancel_amplitude=cancel_params["amplitude"],
+                cancel_phase=cancel_params["phase"],
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+            update_params(
+                step_1,
+                update_cr_params=True,
+                update_cancel_params=False,
+            )
+
+            step_2 = self.cr_hamiltonian_tomography(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+                flattop_range=flattop_range,
+                cr_amplitude=cr_amplitude,
+                cr_ramptime=cr_ramptime,
+                cr_phase=cr_params["phase"],
+                cancel_amplitude=cancel_params["amplitude"],
+                cancel_phase=cancel_params["phase"],
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+            update_params(
+                step_2,
+                update_cr_params=False,
+                update_cancel_params=True,
+            )
+
+        tomography_result = self.cr_hamiltonian_tomography(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
             flattop_range=flattop_range,
             cr_amplitude=cr_amplitude,
             cr_ramptime=cr_ramptime,
-            cr_phase=cr_phase,
-            cancel_amplitude=cancel_amplitude,
-            cancel_phase=cancel_phase,
+            cr_phase=cr_params["phase"],
+            cancel_amplitude=cancel_params["amplitude"],
+            cancel_phase=cancel_params["phase"],
             shots=shots,
             interval=interval,
-            plot=True,
+            plot=plot,
         )
-        cr_phase = step_1["cr_phase_est"]
+        update_params(tomography_result)
 
-        step_2 = self.cr_hamiltonian_tomography(
-            control_qubit=control_qubit,
-            target_qubit=target_qubit,
-            flattop_range=flattop_range,
-            cr_amplitude=cr_amplitude,
-            cr_ramptime=cr_ramptime,
-            cr_phase=cr_phase,
-            cancel_amplitude=cancel_amplitude,
-            cancel_phase=cancel_phase,
-            shots=shots,
-            interval=interval,
-            plot=True,
+        hamiltonian_coeffs = {key: np.array(value) for key, value in coeffs.items()}
+
+        fig = go.Figure()
+        for key, value in hamiltonian_coeffs.items():
+            fig.add_trace(
+                go.Scatter(
+                    x=np.arange(len(value)),
+                    y=value * 1e3,
+                    mode="lines+markers",
+                    name=f"{key}/2",
+                )
+            )
+
+        fig.update_layout(
+            title="CR Hamiltonian coefficients",
+            xaxis_title="Iteration",
+            yaxis_title="Coefficient (MHz)",
+            xaxis=dict(tickmode="array", tickvals=np.arange(len(value))),
         )
+        fig.show()
 
-        cancel_amplitude = step_2["cancel_amplitude_est"]
-        cancel_phase = step_2["cancel_phase_est"]
-        print(f"cancel_amplitude : {cancel_amplitude:+.6f}")
-        print(f"cancel_phase : {cancel_phase:+.6f} rad")
-
-        result = self.cr_hamiltonian_tomography(
-            control_qubit=control_qubit,
-            target_qubit=target_qubit,
-            flattop_range=flattop_range,
-            cr_amplitude=cr_amplitude,
-            cr_ramptime=cr_ramptime,
-            cr_phase=cr_phase,
-            cancel_amplitude=cancel_amplitude,
-            cancel_phase=cancel_phase,
-            shots=shots,
-            interval=interval,
-            plot=True,
-        )
-        return result
+        return {
+            "cr_params": cr_params,
+            "cancel_params": cancel_params,
+            "hamiltonian_coeffs": hamiltonian_coeffs,
+            "tomography_result": tomography_result,
+        }
 
 
 class ExperimentUtil:
