@@ -4517,6 +4517,7 @@ class Experiment:
         if not target_object.is_cr:
             raise ValueError(f"`{target}` is not a 2Q target.")
         control_qubit, target_qubit = Target.cr_qubit_pair(target)
+        cr_label = target
         xi90, ix90 = None, None
         if isinstance(x90, dict):
             xi90 = x90.get(control_qubit)
@@ -4541,7 +4542,7 @@ class Experiment:
                 seed=seed,
             )
 
-        with PulseSchedule([control_qubit, target_qubit]) as ps:
+        with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
 
             def add_gate(gate: str):
                 if gate == "XI90":
@@ -4553,7 +4554,6 @@ class Experiment:
                 elif gate == "IZ90":
                     ps.add(target_qubit, z90)
                 elif gate == "ZX90":
-                    # TODO: Add ZX90
                     if zx90 is not None:
                         ps.barrier()
                         if isinstance(zx90, dict):
@@ -4731,7 +4731,7 @@ class Experiment:
         self,
         *,
         target: str,
-        n_cliffords_range: ArrayLike | None = None,
+        n_cliffords_range: ArrayLike = np.arange(0, 1001, 50),
         x90: dict[str, Waveform] | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
@@ -4742,22 +4742,24 @@ class Experiment:
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
+        mitigate_readout: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
-        if n_cliffords_range is None:
-            n_cliffords_range = np.arange(0, 1001, 50)
-        else:
-            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+        if self.state_centers is None:
+            raise ValueError("State classifiers are not built.")
+
+        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
 
         target_object = self.experiment_system.get_target(target)
         if not target_object.is_cr:
             raise ValueError(f"`{target}` is not a 2Q target.")
         control_qubit, target_qubit = Target.cr_qubit_pair(target)
+        cr_label = target
 
         def rb_sequence(N: int) -> PulseSchedule:
-            with PulseSchedule([control_qubit, target_qubit]) as ps:
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
                 # Excite spectator qubits if needed
                 if spectator_state != "0":
                     control_spectators = {
@@ -4794,7 +4796,7 @@ class Experiment:
 
         fidelities = []
 
-        for n_clifford in n_cliffords_range:
+        for n_clifford in tqdm(n_cliffords_range):
             result = self.measure(
                 sequence=rb_sequence(n_clifford),
                 mode="single",
@@ -4802,7 +4804,15 @@ class Experiment:
                 interval=interval,
                 plot=False,
             )
-            p00 = result.probabilities["00"]
+            if mitigate_readout:
+                prob = np.array(list(result.probabilities.values()))
+                cm_inv = self.get_inverse_confusion_matrix(
+                    [control_qubit, target_qubit]
+                )
+                prob_mitigated = prob @ cm_inv
+                p00 = prob_mitigated[0]
+            else:
+                p00 = result.probabilities["00"]
             fidelities.append(p00)
 
         fit_result = fitting.fit_rb(
@@ -4818,6 +4828,7 @@ class Experiment:
         )
 
         return {
+            "n_cliffords": n_cliffords_range,
             "fidelities": fidelities,
             "depolarizing_rate": fit_result["depolarizing_rate"],
             "avg_gate_error": fit_result["avg_gate_error"],
