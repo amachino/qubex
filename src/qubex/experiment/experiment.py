@@ -6688,7 +6688,9 @@ class Experiment:
         control_qubit: str,
         target_qubit: str,
         duration: float = 100,
-        amplitude_range: ArrayLike = np.linspace(0.0, 0.5, 21),
+        amplitude_range: ArrayLike = np.linspace(0.0, 1.0, 51),
+        degree: int = 3,
+        use_zvalues: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -6722,14 +6724,87 @@ class Experiment:
             plot=plot,
         )
 
-        data = sweep_result.data[target_qubit].normalized
+        if use_zvalues:
+            signal = sweep_result.data[target_qubit].zvalues
+        else:
+            signal = sweep_result.data[target_qubit].normalized
+
         fit_result = fitting.fit_polynomial(
             target=target_qubit,
             x=amplitude_range,
-            y=data,
-            degree=3,
+            y=signal,
+            degree=degree,
+            title="ZX90 calibration",
+            xaxis_title="Amplitude (arb. unit)",
+            yaxis_title="Signal",
         )
-        return fit_result
+        return {
+            "amplitude_range": amplitude_range,
+            "signal": signal,
+            **fit_result,
+        }
+
+    def calibrate_zx90_by_duration(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        amplitude: float = 1.0,
+        duration_range: ArrayLike = np.arange(100, 501, 10),
+        degree: int = 3,
+        use_zvalues: bool = False,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        duration_range = np.array(duration_range)
+
+        cr_label = f"{control_qubit}-{target_qubit}"
+        cr_params = self._system_note.get(CR_PARAMS)[cr_label]
+        cr_ramptime = cr_params["ramptime"]
+        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
+        cr_phase = cr_params["cr_pulse"]["phase"]
+        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
+        cancel_phase = cr_params["cancel_pulse"]["phase"]
+
+        sweep_result = self.sweep_parameter(
+            lambda duration: CrossResonance(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+                cr_amplitude=amplitude,
+                cr_duration=duration,
+                cr_ramptime=cr_ramptime,
+                cr_phase=cr_phase,
+                cancel_amplitude=cancel_amplitude * amplitude / cr_amplitude,
+                cancel_phase=cancel_phase,
+                echo=True,
+                pi_pulse=self.pi_pulse[target_qubit],
+            ),
+            sweep_range=duration_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        if use_zvalues:
+            signal = sweep_result.data[target_qubit].zvalues
+        else:
+            signal = sweep_result.data[target_qubit].normalized
+
+        fit_result = fitting.fit_polynomial(
+            target=target_qubit,
+            x=duration_range,
+            y=signal,
+            degree=degree,
+            title="ZX90 calibration",
+            xaxis_title="Duration (ns)",
+            yaxis_title="Signal",
+        )
+        return {
+            "duration_range": duration_range,
+            "signal": signal,
+            **fit_result,
+        }
 
 
 class ExperimentUtil:

@@ -415,7 +415,7 @@ class IQPlotter:
                         showlegend=True,
                         marker=dict(
                             symbol="circle",
-                            size=30,
+                            size=24,
                             color=f"rgba{color}",
                         ),
                         textfont=dict(

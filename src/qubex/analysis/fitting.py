@@ -311,7 +311,7 @@ def fit_polynomial(
     try:
         root = roots_in_range[np.argmin(np.abs(roots_in_range))]
     except ValueError:
-        print(f"No real root in the range for {target}.")
+        print(f"No root found in the range ({np.min(x)}, {np.max(x)}).")
         root = np.nan
 
     fig = go.Figure()
