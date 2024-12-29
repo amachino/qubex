@@ -5328,11 +5328,11 @@ class Experiment:
         self._validate_rabi_params()
 
         if isinstance(waveforms, PulseSchedule):
-            waveforms = waveforms.get_sequences()
+            sequences = waveforms.get_sequences()
 
         pulses: dict[str, Waveform] = {}
         pulse_length_set = set()
-        for target, waveform in waveforms.items():
+        for target, waveform in sequences.items():
             if isinstance(waveform, Waveform):
                 pulse = waveform
             elif isinstance(waveform, list) or isinstance(waveform, np.ndarray):
@@ -5347,8 +5347,11 @@ class Experiment:
         pulse_length = pulse_length_set.pop()
 
         if plot:
-            for target in pulses:
-                pulses[target].plot(title=f"Waveform : {target}")
+            if isinstance(waveforms, PulseSchedule):
+                waveforms.plot(title="Pulse sequence")
+            else:
+                for target in pulses:
+                    pulses[target].plot(title=f"Waveform : {target}")
 
         def partial_waveform(waveform: Waveform, index: int) -> Waveform:
             """Returns a partial waveform up to the given index."""
