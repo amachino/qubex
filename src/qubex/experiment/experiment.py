@@ -4526,6 +4526,12 @@ class Experiment:
         ix90 = ix90 or self.hpi_pulse[target_qubit]
         z90 = VirtualZ(np.pi / 2)
 
+        if zx90 is None:
+            zx90 = self.zx90(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+            )
+
         if interleaved_waveform is None:
             cliffords, inverse = self.clifford_generator.create_rb_sequences(
                 n=n,
@@ -4554,22 +4560,21 @@ class Experiment:
                 elif gate == "IZ90":
                     ps.add(target_qubit, z90)
                 elif gate == "ZX90":
-                    if zx90 is not None:
-                        ps.barrier()
-                        if isinstance(zx90, dict):
-                            ps.add(control_qubit, zx90[control_qubit])
-                            ps.add(target_qubit, zx90[target_qubit])
-                        elif isinstance(zx90, PulseSchedule):
-                            ps.call(zx90)
-                        ps.barrier()
+                    ps.barrier()
+                    if isinstance(zx90, dict):
+                        ps.add(control_qubit, zx90[control_qubit])
+                        ps.add(target_qubit, zx90[target_qubit])
+                    elif isinstance(zx90, PulseSchedule):
+                        ps.call(zx90)
+                    ps.barrier()
                 else:
                     raise ValueError("Invalid gate.")
 
             for clifford in cliffords:
                 for gate in clifford:
                     add_gate(gate)
+                ps.barrier()
                 if interleaved_waveform is not None:
-                    ps.barrier()
                     if isinstance(interleaved_waveform, dict):
                         ps.add(control_qubit, interleaved_waveform[control_qubit])
                         ps.add(target_qubit, interleaved_waveform[target_qubit])
