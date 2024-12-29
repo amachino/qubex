@@ -4559,6 +4559,7 @@ class Experiment:
                     ps.add(control_qubit, z90)
                 elif gate == "IZ90":
                     ps.add(target_qubit, z90)
+                    ps.add(cr_label, z90)
                 elif gate == "ZX90":
                     ps.barrier()
                     if isinstance(zx90, dict):
@@ -4573,8 +4574,8 @@ class Experiment:
             for clifford in cliffords:
                 for gate in clifford:
                     add_gate(gate)
-                ps.barrier()
                 if interleaved_waveform is not None:
+                    ps.barrier()
                     if isinstance(interleaved_waveform, dict):
                         ps.add(control_qubit, interleaved_waveform[control_qubit])
                         ps.add(target_qubit, interleaved_waveform[target_qubit])
