@@ -6546,7 +6546,7 @@ class Experiment:
         *,
         control_qubit: str,
         target_qubit: str,
-        flattop_range: ArrayLike = np.arange(0, 301, 10),
+        flattop_range: ArrayLike = np.arange(0, 401, 10),
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
         n_iterations: int = 2,
@@ -6604,11 +6604,10 @@ class Experiment:
             if i == 1:
                 start = float(flattop_range[0])
                 end = float(flattop_range[-1])
-                duration = float(end - start)
                 step = float(flattop_range[1] - flattop_range[0])
                 flattop_range = np.arange(
                     start,
-                    start + duration * 2,
+                    end,
                     step * 2,
                 )
 
@@ -6690,12 +6689,15 @@ class Experiment:
         if plot:
             fig.show()
 
+        cr_cancel_ratio = cancel_pulse["amplitude"] / cr_pulse["amplitude"]
+
         self._system_note.put(
             CR_PARAMS,
             {
                 f"{control_qubit}-{target_qubit}": {
                     "cr_pulse": cr_pulse,
                     "cancel_pulse": cancel_pulse,
+                    "cr_cancel_ratio": cr_cancel_ratio,
                     "ramptime": cr_ramptime,
                 },
             },
@@ -6704,6 +6706,7 @@ class Experiment:
         return {
             "cr_pulse": cr_pulse,
             "cancel_pulse": cancel_pulse,
+            "cr_cancel_ratio": cr_cancel_ratio,
             "hamiltonian_coeffs": hamiltonian_coeffs,
         }
 
@@ -6715,6 +6718,7 @@ class Experiment:
         duration: float = 100,
         amplitude_range: ArrayLike = np.linspace(0.0, 1.0, 51),
         degree: int = 3,
+        x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -6729,6 +6733,15 @@ class Experiment:
         cr_phase = cr_params["cr_pulse"]["phase"]
         cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
         cancel_phase = cr_params["cancel_pulse"]["phase"]
+        cr_cancel_ratio = cancel_amplitude / cr_amplitude
+
+        if x180 is None:
+            if target_qubit in self.drag_pi_pulse:
+                x180 = self.drag_pi_pulse
+            else:
+                x180 = self.pi_pulse
+        elif isinstance(x180, Waveform):
+            x180 = {target_qubit: x180}
 
         sweep_result = self.sweep_parameter(
             lambda amplitude: CrossResonance(
@@ -6738,10 +6751,10 @@ class Experiment:
                 cr_duration=duration,
                 cr_ramptime=cr_ramptime,
                 cr_phase=cr_phase,
-                cancel_amplitude=cancel_amplitude * amplitude / cr_amplitude,
+                cancel_amplitude=amplitude * cr_cancel_ratio,
                 cancel_phase=cancel_phase,
                 echo=True,
-                pi_pulse=self.pi_pulse[target_qubit],
+                pi_pulse=x180[target_qubit],
             ),
             sweep_range=amplitude_range,
             shots=shots,
@@ -6777,7 +6790,7 @@ class Experiment:
                         "phase": cr_phase,
                     },
                     "cancel_pulse": {
-                        "amplitude": cancel_amplitude * amplitude / cr_amplitude,
+                        "amplitude": amplitude * cr_cancel_ratio,
                         "phase": cancel_phase,
                     },
                 },
@@ -6795,9 +6808,10 @@ class Experiment:
         *,
         control_qubit: str,
         target_qubit: str,
-        amplitude: float = 1.0,
-        duration_range: ArrayLike = np.arange(100, 501, 10),
+        amplitude: float = 0.5,
+        duration_range: ArrayLike = np.arange(100, 201, 2),
         degree: int = 3,
+        x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -6812,6 +6826,15 @@ class Experiment:
         cr_phase = cr_params["cr_pulse"]["phase"]
         cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
         cancel_phase = cr_params["cancel_pulse"]["phase"]
+        cr_cancel_ratio = cancel_amplitude / cr_amplitude
+
+        if x180 is None:
+            if target_qubit in self.drag_pi_pulse:
+                x180 = self.drag_pi_pulse
+            else:
+                x180 = self.pi_pulse
+        elif isinstance(x180, Waveform):
+            x180 = {target_qubit: x180}
 
         sweep_result = self.sweep_parameter(
             lambda duration: CrossResonance(
@@ -6821,10 +6844,10 @@ class Experiment:
                 cr_duration=duration,
                 cr_ramptime=cr_ramptime,
                 cr_phase=cr_phase,
-                cancel_amplitude=cancel_amplitude * amplitude / cr_amplitude,
+                cancel_amplitude=amplitude * cr_cancel_ratio,
                 cancel_phase=cancel_phase,
                 echo=True,
-                pi_pulse=self.pi_pulse[target_qubit],
+                pi_pulse=x180[target_qubit],
             ),
             sweep_range=duration_range,
             shots=shots,
@@ -6860,7 +6883,7 @@ class Experiment:
                         "phase": cr_phase,
                     },
                     "cancel_pulse": {
-                        "amplitude": cancel_amplitude * amplitude / cr_amplitude,
+                        "amplitude": amplitude * cr_cancel_ratio,
                         "phase": cancel_phase,
                     },
                 },
@@ -6890,7 +6913,10 @@ class Experiment:
         cr_params = self._system_note.get(CR_PARAMS)[cr_label]
 
         if x180 is None:
-            x180 = self.pi_pulse
+            if target_qubit in self.drag_pi_pulse:
+                x180 = self.drag_pi_pulse
+            else:
+                x180 = self.pi_pulse
         elif isinstance(x180, Waveform):
             x180 = {target_qubit: x180}
 
@@ -6911,7 +6937,7 @@ class Experiment:
             cancel_amplitude=cancel_amplitude or cr_params["cancel_pulse"]["amplitude"],
             cancel_phase=cancel_phase or cr_params["cancel_pulse"]["phase"],
             echo=echo,
-            pi_pulse=self.pi_pulse[target_qubit],
+            pi_pulse=x180[target_qubit],
         )
 
 
