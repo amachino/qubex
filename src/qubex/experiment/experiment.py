@@ -6485,17 +6485,20 @@ class Experiment:
             effective_time_range,
             target_states_0,
             plot=plot,
+            title="Cross resonance dynamics : |0〉",
+            xlabel="Effective drive time (ns)",
+            ylabel="Bloch vector",
         )
-        if plot:
-            vis.display_bloch_sphere(target_states_0)
         fit_1 = fitting.fit_rotation(
             effective_time_range,
             target_states_1,
             plot=plot,
-            title="CR Hamiltonian tomography",
+            title="Cross resonance dynamics : |1〉",
             xlabel="Effective drive time (ns)",
+            ylabel="Bloch vector",
         )
         if plot:
+            vis.display_bloch_sphere(target_states_0)
             vis.display_bloch_sphere(target_states_1)
         Omega_0 = fit_0["Omega"]
         Omega_1 = fit_1["Omega"]
@@ -6512,8 +6515,10 @@ class Experiment:
             )
         )
 
+        print("=== CR rotation rate ===")
         for key, value in coeffs.items():
-            print(f"{key}: {value * 1e3:+.6f} MHz")
+            print(f"  {key}: {value * 1e3:+.6f} MHz")
+        print("========================")
 
         cr_phase_est = -np.arctan2(coeffs["ZY"], coeffs["ZX"])
 
@@ -6546,6 +6551,8 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
+        flattop_range = np.array(flattop_range, dtype=float)
+
         cr_pulse = {
             "amplitude": cr_amplitude,
             "phase": 0.0,
@@ -6590,6 +6597,19 @@ class Experiment:
 
         for i in range(n_iterations):
             print(f"Iteration {i + 1}/{n_iterations}")
+
+            if i == 1:
+                start = float(flattop_range[0])
+                end = float(flattop_range[-1])
+                duration = float(end - start)
+                step = float(flattop_range[1] - flattop_range[0])
+                flattop_range = np.arange(
+                    start,
+                    start + duration * 2,
+                    step * 2,
+                )
+
+            print(f"Step {i + 1}-1: Updating CR phase...")
             step_1 = self.cr_hamiltonian_tomography(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
@@ -6609,6 +6629,7 @@ class Experiment:
                 update_cancel_pulse=False,
             )
 
+            print(f"Step {i + 1}-2: Updating cancel pulse...")
             step_2 = self.cr_hamiltonian_tomography(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
@@ -6628,6 +6649,7 @@ class Experiment:
                 update_cancel_pulse=True,
             )
 
+        print("Final measurement...")
         tomography_result = self.cr_hamiltonian_tomography(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -6658,7 +6680,7 @@ class Experiment:
 
         fig.update_layout(
             title="CR Hamiltonian coefficients",
-            xaxis_title="Iteration",
+            xaxis_title="Number of steps",
             yaxis_title="Coefficient (MHz)",
             xaxis=dict(tickmode="array", tickvals=np.arange(len(value))),
         )
@@ -6738,6 +6760,27 @@ class Experiment:
             xaxis_title="Amplitude (arb. unit)",
             yaxis_title="Signal",
         )
+
+        amplitude = fit_result["root"]
+
+        self._system_note.put(
+            CR_PARAMS,
+            {
+                f"{control_qubit}-{target_qubit}": {
+                    "duration": duration,
+                    "ramptime": cr_ramptime,
+                    "cr_pulse": {
+                        "amplitude": amplitude,
+                        "phase": cr_phase,
+                    },
+                    "cancel_pulse": {
+                        "amplitude": cancel_amplitude * amplitude / cr_amplitude,
+                        "phase": cancel_phase,
+                    },
+                },
+            },
+        )
+
         return {
             "amplitude_range": amplitude_range,
             "signal": signal,
@@ -6800,11 +6843,73 @@ class Experiment:
             xaxis_title="Duration (ns)",
             yaxis_title="Signal",
         )
+
+        duration = fit_result["root"]
+
+        self._system_note.put(
+            CR_PARAMS,
+            {
+                f"{control_qubit}-{target_qubit}": {
+                    "duration": duration,
+                    "ramptime": cr_ramptime,
+                    "cr_pulse": {
+                        "amplitude": amplitude,
+                        "phase": cr_phase,
+                    },
+                    "cancel_pulse": {
+                        "amplitude": cancel_amplitude * amplitude / cr_amplitude,
+                        "phase": cancel_phase,
+                    },
+                },
+            },
+        )
+
         return {
             "duration_range": duration_range,
             "signal": signal,
             **fit_result,
         }
+
+    def zx90(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        cr_duration: float | None = None,
+        cr_ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        echo: bool = True,
+        x180: TargetMap[Waveform] | Waveform | None = None,
+    ) -> PulseSchedule:
+        cr_label = f"{control_qubit}-{target_qubit}"
+        cr_params = self._system_note.get(CR_PARAMS)[cr_label]
+
+        if x180 is None:
+            x180 = self.pi_pulse
+        elif isinstance(x180, Waveform):
+            x180 = {target_qubit: x180}
+
+        if cr_amplitude is not None and cancel_amplitude is None:
+            cr_cancel_ratio = (
+                cr_params["cancel_pulse"]["amplitude"]
+                / cr_params["cr_pulse"]["amplitude"]
+            )
+            cancel_amplitude = cr_amplitude * cr_cancel_ratio
+
+        return CrossResonance(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            cr_amplitude=cr_amplitude or cr_params["cr_pulse"]["amplitude"],
+            cr_duration=cr_duration or cr_params["duration"],
+            cr_ramptime=cr_ramptime or cr_params["ramptime"],
+            cr_phase=cr_phase or cr_params["cr_pulse"]["phase"],
+            cancel_amplitude=cancel_amplitude or cr_params["cancel_pulse"]["amplitude"],
+            cancel_phase=cancel_phase or cr_params["cancel_pulse"]["phase"],
+            echo=echo,
+            pi_pulse=self.pi_pulse[target_qubit],
+        )
 
 
 class ExperimentUtil:

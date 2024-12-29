@@ -1921,7 +1921,7 @@ def fit_rotation(
 
     if plot:
         fig.show()
-        fig3d.show()
+        # fig3d.show()
 
     return {
         "Omega": np.array([Omega_x, Omega_y, Omega_z]),
