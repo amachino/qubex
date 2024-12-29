@@ -431,7 +431,7 @@ class AmplCalibData(SweepData):
         return fitting.fit_ampl_calib_data(
             target=self.target,
             amplitude_range=self.sweep_range,
-            data=-self.normalized,
+            data=self.normalized,
         )
 
 

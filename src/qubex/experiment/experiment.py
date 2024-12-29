@@ -2974,9 +2974,10 @@ class Experiment:
             fit_result = fitting.fit_ampl_calib_data(
                 target=target,
                 amplitude_range=ampl_range,
-                data=-sweep_data.normalized,
+                data=sweep_data.normalized,
                 plot=plot,
                 title=f"{pulse_type} pulse calibration",
+                yaxis_title="Normalized signal",
             )
 
             return AmplCalibData.new(
@@ -3083,8 +3084,9 @@ class Experiment:
             fit_result = fitting.fit_ampl_calib_data(
                 target=ef_label,
                 amplitude_range=ampl_range,
-                data=-sweep_data.normalized,
+                data=sweep_data.normalized,
                 title=f"ef {pulse_type} pulse calibration",
+                yaxis_title="Normalized signal",
             )
 
             return AmplCalibData.new(
@@ -3209,8 +3211,9 @@ class Experiment:
             fit_result = fitting.fit_ampl_calib_data(
                 target=target,
                 amplitude_range=ampl_range,
-                data=-sweep_data.normalized,
+                data=sweep_data.normalized,
                 title=f"DRAG {pulse_type} amplitude calibration",
+                yaxis_title="Normalized signal",
             )
 
             return fit_result["amplitude"]

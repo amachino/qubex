@@ -1131,6 +1131,7 @@ def fit_ampl_calib_data(
     amplitude_range: npt.NDArray[np.float64],
     data: npt.NDArray[np.float64],
     p0=None,
+    maximize: bool = True,
     plot: bool = True,
     title: str = "Amplitude calibration",
     xaxis_title: str = "Amplitude (arb. unit)",
@@ -1151,6 +1152,8 @@ def fit_ampl_calib_data(
         Measured values for the calibration data.
     p0 : optional
         Initial guess for the fitting parameters.
+    maximize : bool, optional
+        Whether to maximize or minimize the data.
     plot : bool, optional
         Whether to plot the data and the fit.
 
@@ -1159,6 +1162,9 @@ def fit_ampl_calib_data(
     dict
         Fitted parameters and the figure.
     """
+
+    if maximize:
+        data = -data
 
     def cos_func(t, ampl, omega, phi, offset):
         return ampl * np.cos(omega * t + phi) + offset
@@ -1191,38 +1197,38 @@ def fit_ampl_calib_data(
     x_fine = np.linspace(np.min(amplitude_range), np.max(amplitude_range), 1000)
     y_fine = cos_func(x_fine, *popt)
 
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=-y_fine if maximize else y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=amplitude_range,
+            y=-data if maximize else data,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        x=min_x,
+        y=-min_y if maximize else min_y,
+        text=f"max: {min_x:.6g}" if maximize else f"min: {min_x:.6g}",
+        showarrow=True,
+        arrowhead=1,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
     if plot:
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=y_fine,
-                mode="lines",
-                name="Fit",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=amplitude_range,
-                y=data,
-                mode="markers",
-                name="Data",
-            )
-        )
-        fig.add_annotation(
-            x=min_x,
-            y=min_y,
-            text=f"min: {min_x:.6g}",
-            showarrow=True,
-            arrowhead=1,
-        )
-        fig.update_layout(
-            title=f"{title} : {target}",
-            xaxis_title=xaxis_title,
-            yaxis_title=yaxis_title,
-            xaxis_type=xaxis_type,
-            yaxis_type=yaxis_type,
-        )
         fig.show(config=_plotly_config(f"ampl_calib_{target}"))
 
     print(f"Calibrated amplitude: {min_x:.6g}")
