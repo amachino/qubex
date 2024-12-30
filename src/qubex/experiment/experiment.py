@@ -997,6 +997,7 @@ class Experiment:
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         frequencies: Optional[dict[str, float]] = None,
+        initial_states: dict[str, str] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1016,6 +1017,8 @@ class Experiment:
             Sequence of the experiment.
         frequencies : Optional[dict[str, float]]
             Frequencies of the qubits.
+        initial_states : dict[str, str], optional
+            Initial states of the qubits. Defaults to None.
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
@@ -1054,16 +1057,44 @@ class Experiment:
         capture_window = capture_window or self._capture_window
         capture_margin = capture_margin or self._capture_margin
         readout_duration = readout_duration or self._readout_duration
-        waveforms = {}
+        waveforms: dict[str, NDArray[complex]] = {}
 
         if isinstance(sequence, PulseSchedule):
-            sequence = sequence.get_sampled_sequences()
-
-        for target, waveform in sequence.items():
-            if isinstance(waveform, Waveform):
-                waveforms[target] = waveform.values
+            if initial_states is not None:
+                labels = list(set(sequence.labels) | set(initial_states.keys()))
+                with PulseSchedule(labels) as ps:
+                    for target, state in initial_states.items():
+                        if target in self.qubit_labels:
+                            ps.add(target, self.get_pulse_for_state(target, state))
+                        else:
+                            raise ValueError(f"Invalid init target: {target}")
+                    ps.barrier()
+                    ps.call(sequence)
+                waveforms = ps.get_sampled_sequences()
             else:
-                waveforms[target] = np.array(waveform, dtype=np.complex128)
+                waveforms = sequence.get_sampled_sequences()
+        else:
+            if initial_states is not None:
+                labels = list(set(sequence.keys()) | set(initial_states.keys()))
+                with PulseSchedule(labels) as ps:
+                    for target, state in initial_states.items():
+                        if target in self.qubit_labels:
+                            ps.add(target, self.get_pulse_for_state(target, state))
+                        else:
+                            raise ValueError(f"Invalid init target: {target}")
+                    ps.barrier()
+                    for target, waveform in sequence.items():
+                        if isinstance(waveform, Waveform):
+                            ps.add(target, waveform)
+                        else:
+                            ps.add(target, Pulse(waveform))
+                waveforms = ps.get_sampled_sequences()
+            else:
+                for target, waveform in sequence.items():
+                    if isinstance(waveform, Waveform):
+                        waveforms[target] = waveform.values
+                    else:
+                        waveforms[target] = np.array(waveform, dtype=np.complex128)
 
         if frequencies is None:
             result = self._measurement.measure(

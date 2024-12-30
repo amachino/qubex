@@ -38,7 +38,9 @@ class PulseSchedule:
         ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
-        if isinstance(targets, list):
+        if isinstance(targets, dict):
+            self.targets = targets
+        else:
             self.targets = {
                 target: {
                     "frequency": None,
@@ -46,8 +48,6 @@ class PulseSchedule:
                 }
                 for target in targets
             }
-        else:
-            self.targets = targets
 
         self._sequences = {target: PulseSequence() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
