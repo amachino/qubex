@@ -1057,7 +1057,7 @@ class Experiment:
         capture_window = capture_window or self._capture_window
         capture_margin = capture_margin or self._capture_margin
         readout_duration = readout_duration or self._readout_duration
-        waveforms: dict[str, NDArray[complex]] = {}
+        waveforms: dict[str, NDArray[np.complex128]] = {}
 
         if isinstance(sequence, PulseSchedule):
             if initial_states is not None:
@@ -5016,7 +5016,7 @@ class Experiment:
         self,
         *,
         target: str,
-        interleaved_waveform: Waveform,
+        interleaved_waveform: Waveform | PulseSchedule,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]],
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
@@ -5133,7 +5133,7 @@ class Experiment:
                         target=target,
                         n_cliffords_range=n_cliffords_range,
                         x90=x90,
-                        interleaved_waveform=interleaved_waveform,
+                        interleaved_waveform=interleaved_waveform,  # type: ignore
                         interleaved_clifford=interleaved_clifford,
                         spectator_state=spectator_state,
                         seed=seed,
@@ -5158,8 +5158,6 @@ class Experiment:
                         n_cliffords_range=n_cliffords_range,
                         x90=x90,
                         zx90=zx90,
-                        interleaved_waveform=None,
-                        interleaved_clifford=None,
                         spectator_state=spectator_state,
                         seed=seed,
                         shots=shots,
@@ -5174,7 +5172,7 @@ class Experiment:
                         n_cliffords_range=n_cliffords_range,
                         x90=x90,
                         zx90=zx90,
-                        interleaved_waveform=interleaved_waveform,
+                        interleaved_waveform=interleaved_waveform,  # type: ignore
                         interleaved_clifford=interleaved_clifford,
                         spectator_state=spectator_state,
                         seed=seed,
@@ -6670,9 +6668,9 @@ class Experiment:
 
     def obtain_cr_params(
         self,
-        *,
         control_qubit: str,
         target_qubit: str,
+        *,
         flattop_range: ArrayLike = np.arange(0, 401, 10),
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
@@ -6825,7 +6823,6 @@ class Experiment:
                     "cr_pulse": cr_pulse,
                     "cancel_pulse": cancel_pulse,
                     "cr_cancel_ratio": cr_cancel_ratio,
-                    "ramptime": cr_ramptime,
                 },
             },
         )
@@ -6839,10 +6836,11 @@ class Experiment:
 
     def calibrate_zx90_by_amplitude(
         self,
-        *,
         control_qubit: str,
         target_qubit: str,
+        *,
         duration: float = 100,
+        ramptime: float = 20,
         amplitude_range: ArrayLike = np.linspace(0.0, 1.0, 51),
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
@@ -6855,7 +6853,7 @@ class Experiment:
 
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_params = self._system_note.get(CR_PARAMS)[cr_label]
-        cr_ramptime = cr_params["ramptime"]
+        cr_ramptime = ramptime
         cr_amplitude = cr_params["cr_pulse"]["amplitude"]
         cr_phase = cr_params["cr_pulse"]["phase"]
         cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
@@ -6937,6 +6935,7 @@ class Experiment:
         target_qubit: str,
         amplitude: float = 0.5,
         duration_range: ArrayLike = np.arange(100, 201, 2),
+        ramptime: float = 20,
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -6948,7 +6947,7 @@ class Experiment:
 
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_params = self._system_note.get(CR_PARAMS)[cr_label]
-        cr_ramptime = cr_params["ramptime"]
+        cr_ramptime = ramptime
         cr_amplitude = cr_params["cr_pulse"]["amplitude"]
         cr_phase = cr_params["cr_pulse"]["phase"]
         cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
@@ -7034,18 +7033,13 @@ class Experiment:
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
         echo: bool = True,
-        x180: TargetMap[Waveform] | Waveform | None = None,
+        x180: Waveform | None = None,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_params = self._system_note.get(CR_PARAMS)[cr_label]
 
         if x180 is None:
-            if target_qubit in self.drag_pi_pulse:
-                x180 = self.drag_pi_pulse
-            else:
-                x180 = self.pi_pulse
-        elif isinstance(x180, Waveform):
-            x180 = {target_qubit: x180}
+            x180 = self.hpi_pulse[target_qubit].repeated(2)
 
         if cr_amplitude is not None and cancel_amplitude is None:
             cr_cancel_ratio = (
@@ -7064,8 +7058,71 @@ class Experiment:
             cancel_amplitude=cancel_amplitude or cr_params["cancel_pulse"]["amplitude"],
             cancel_phase=cancel_phase or cr_params["cancel_pulse"]["phase"],
             echo=echo,
-            pi_pulse=x180[target_qubit],
+            pi_pulse=x180,
         )
+
+    def cnot(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        cr_duration: float | None = None,
+        cr_ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        echo: bool = True,
+        x180: Waveform | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule:
+        cr_label = f"{control_qubit}-{target_qubit}"
+        zx90 = self.zx90(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            cr_duration=cr_duration,
+            cr_ramptime=cr_ramptime,
+            cr_amplitude=cr_amplitude,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
+            echo=echo,
+            x180=x180,
+        )
+        if x90 is None:
+            x90 = self.hpi_pulse[target_qubit]
+
+        with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+            ps.call(zx90)
+            ps.add(control_qubit, VirtualZ(-np.pi / 2))
+            ps.add(target_qubit, x90.scaled(-1))
+
+        return ps
+
+    def create_bell_state(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ):
+        if self.state_centers is None:
+            self.build_classifier(plot=False)
+
+        cnot = self.cnot(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+        )
+        result = self.measure(
+            cnot,
+            initial_states={control_qubit: "+"},
+            mode="single",
+            shots=shots,
+            interval=interval,
+        )
+
+        prob = np.array(list(result.probabilities.values()))
+        cm_imv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
+        return prob @ cm_imv
 
 
 class ExperimentUtil:
