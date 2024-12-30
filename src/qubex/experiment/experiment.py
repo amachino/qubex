@@ -617,6 +617,11 @@ class Experiment:
             self._clifford_generator = CliffordGenerator()
         return self._clifford_generator
 
+    @property
+    def clifford(self) -> dict[str, Clifford]:
+        """Get the Clifford dict."""
+        return self.clifford_generator.generators
+
     def _validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
@@ -4827,7 +4832,7 @@ class Experiment:
             y=np.array(fidelities),
             title="Randomized benchmarking",
             xaxis_title="Number of Cliffords",
-            yaxis_title="Probability of |00⟩",
+            yaxis_title="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
             plot=plot,
