@@ -4587,7 +4587,7 @@ class Experiment:
                 add_gate(gate)
         return ps
 
-    def rb_experiment(
+    def rb_experiment_1q(
         self,
         *,
         target: str,
@@ -4737,7 +4737,7 @@ class Experiment:
         self,
         *,
         target: str,
-        n_cliffords_range: ArrayLike = np.arange(0, 1001, 50),
+        n_cliffords_range: ArrayLike = np.arange(0, 21, 2),
         x90: dict[str, Waveform] | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
@@ -4845,9 +4845,12 @@ class Experiment:
         self,
         target: str,
         *,
-        n_cliffords_range: ArrayLike = np.arange(0, 1001, 100),
+        n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: Waveform | dict[str, Waveform] | None = None,
+        zx90: (
+            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+        ) = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -4863,11 +4866,13 @@ class Experiment:
         target : str
             Target qubit.
         n_cliffords_range : ArrayLike, optional
-            Range of the number of Cliffords. Defaults to range(0, 1001, 100).
+            Range of the number of Cliffords. Defaults to None.
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform | dict[str, Waveform], optional
             π/2 pulse used for the experiment. Defaults to None.
+        zx90 : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+            ZX90 pulses used for 2Q gates. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         seeds : ArrayLike, optional
@@ -4886,7 +4891,6 @@ class Experiment:
         dict
             Results of the experiment.
         """
-        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
 
         if seeds is None:
             seeds = np.random.randint(0, 2**32, n_trials)
@@ -4900,15 +4904,25 @@ class Experiment:
         target_object = self.experiment_system.get_target(target)
         if not target_object.is_cr:
             self._validate_rabi_params([target])
+            if n_cliffords_range is None:
+                n_cliffords_range = np.arange(0, 1001, 100)
+        else:
+            if n_cliffords_range is None:
+                n_cliffords_range = np.arange(0, 21, 2)
+
+        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
 
         results = []
         for seed in tqdm(seeds):
             with self.util.no_output():
                 if target_object.is_cr:
+                    if isinstance(x90, Waveform):
+                        raise ValueError("x90 must be a dict for 2Q gates.")
                     result = self.rb_experiment_2q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
-                        x90=x90,  # type: ignore
+                        x90=x90,
+                        zx90=zx90,
                         interleaved_waveform=None,
                         interleaved_clifford=None,
                         spectator_state=spectator_state,
@@ -4919,7 +4933,7 @@ class Experiment:
                     )
                     signal = result["fidelities"]
                 else:
-                    result = self.rb_experiment(
+                    result = self.rb_experiment_1q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
                         spectator_state=spectator_state,
@@ -4968,9 +4982,12 @@ class Experiment:
         target: str,
         interleaved_waveform: Waveform,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]],
-        n_cliffords_range: ArrayLike = np.arange(0, 1001, 100),
+        n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: Waveform | None = None,
+        zx90: (
+            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+        ) = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -4995,6 +5012,8 @@ class Experiment:
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
+        zx90 : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+            ZX90 pulses used for 2Q gates. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         seeds : ArrayLike, optional
@@ -5045,40 +5064,90 @@ class Experiment:
                     "The number of seeds must be equal to the number of trials."
                 )
 
+        target_object = self.experiment_system.get_target(target)
+        if not target_object.is_cr:
+            self._validate_rabi_params([target])
+            if n_cliffords_range is None:
+                n_cliffords_range = np.arange(0, 1001, 100)
+        else:
+            if n_cliffords_range is None:
+                n_cliffords_range = np.arange(0, 21, 2)
+
         rb_results = []
         irb_results = []
 
         for seed in tqdm(seeds):
             with self.util.no_output():
-                rb_result = self.rb_experiment(
-                    target=target,
-                    n_cliffords_range=n_cliffords_range,
-                    x90=x90,
-                    spectator_state=spectator_state,
-                    seed=seed,
-                    shots=shots,
-                    interval=interval,
-                    plot=False,
-                    save_image=False,
-                )
-                rb_signal = (rb_result.data[target].normalized + 1) / 2
-                rb_results.append(rb_signal)
+                if not target_object.is_cr:
+                    rb_result = self.rb_experiment_1q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                        save_image=False,
+                    )
+                    rb_signal = (rb_result.data[target].normalized + 1) / 2
+                    rb_results.append(rb_signal)
 
-                irb_result = self.rb_experiment(
-                    target=target,
-                    n_cliffords_range=n_cliffords_range,
-                    x90=x90,
-                    interleaved_waveform=interleaved_waveform,
-                    interleaved_clifford=interleaved_clifford,
-                    spectator_state=spectator_state,
-                    seed=seed,
-                    shots=shots,
-                    interval=interval,
-                    plot=False,
-                    save_image=False,
-                )
-                irb_signal = (irb_result.data[target].normalized + 1) / 2
-                irb_results.append(irb_signal)
+                    irb_result = self.rb_experiment_1q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,
+                        interleaved_waveform=interleaved_waveform,
+                        interleaved_clifford=interleaved_clifford,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                        save_image=False,
+                    )
+                    irb_signal = (irb_result.data[target].normalized + 1) / 2
+                    irb_results.append(irb_signal)
+                else:
+                    if isinstance(x90, Waveform):
+                        raise ValueError("x90 must be a dict for 2Q gates.")
+                    if isinstance(zx90, Waveform):
+                        raise ValueError("zx90 must be a dict for 2Q gates.")
+                    if isinstance(interleaved_waveform, Waveform):
+                        raise ValueError(
+                            "interleaved_waveform must be a dict for 2Q gates."
+                        )
+                    rb_result = self.rb_experiment_2q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,
+                        zx90=zx90,
+                        interleaved_waveform=None,
+                        interleaved_clifford=None,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    rb_signal = rb_result["fidelities"]
+                    rb_results.append(rb_signal)
+
+                    irb_result = self.rb_experiment_2q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,
+                        zx90=zx90,
+                        interleaved_waveform=interleaved_waveform,
+                        interleaved_clifford=interleaved_clifford,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    irb_signal = irb_result["fidelities"]
+                    irb_results.append(irb_signal)
 
         print("Randomized benchmarking:")
         rb_mean = np.mean(rb_results, axis=0)
@@ -5346,6 +5415,8 @@ class Experiment:
 
         if isinstance(waveforms, PulseSchedule):
             sequences = waveforms.get_sequences()
+        else:
+            sequences = waveforms
 
         pulses: dict[str, Waveform] = {}
         pulse_length_set = set()
@@ -6561,7 +6632,7 @@ class Experiment:
             "cancel_phase": cancel_phase_est,
         }
 
-    def calibrate_cr_params(
+    def obtain_cr_params(
         self,
         *,
         control_qubit: str,
