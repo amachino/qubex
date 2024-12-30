@@ -1,24 +1,25 @@
 import numpy as np
 import pytest
-from qubex.pulse import DragGauss, Pulse
+
+from qubex.pulse import Gaussian, Pulse
 
 dt = Pulse.SAMPLING_PERIOD
 
 
 def test_inheritance():
-    """DragGauss should inherit from Pulse."""
-    assert issubclass(DragGauss, Pulse)
+    """Gaussian should inherit from Pulse."""
+    assert issubclass(Gaussian, Pulse)
 
 
 def test_empty_init():
-    """DragGauss should raise a TypeError if no duration is provided."""
+    """Gaussian should raise a TypeError if no duration is provided."""
     with pytest.raises(TypeError):
-        DragGauss()  # type: ignore
+        Gaussian()  # type: ignore
 
 
 def test_init():
-    """DragGauss should be initialized with valid parameters."""
-    pulse = DragGauss(duration=5 * dt, amplitude=1, sigma=2 * dt, beta=1)
+    """Gaussian should be initialized with valid parameters."""
+    pulse = Gaussian(duration=5 * dt, amplitude=1, sigma=2 * dt, beta=1)
     assert pulse.duration == 5 * dt
     assert pulse.values == pytest.approx(
         [
@@ -32,13 +33,13 @@ def test_init():
 
 
 def test_zero_duration():
-    """DragGauss should be initialized with zero duration."""
-    pulse = DragGauss(duration=0, amplitude=1, sigma=1, beta=1)
+    """Gaussian should be initialized with zero duration."""
+    pulse = Gaussian(duration=0, amplitude=1, sigma=1, beta=1)
     assert pulse.duration == 0
     assert (pulse.values == np.array([], dtype=np.complex128)).all()
 
 
 def test_invalid_parameter():
-    """DragGauss should raise a ValueError if sigma is zero."""
+    """Gaussian should raise a ValueError if sigma is zero."""
     with pytest.raises(ValueError):
-        DragGauss(duration=5 * dt, amplitude=1, sigma=0, beta=1)
+        Gaussian(duration=5 * dt, amplitude=1, sigma=0, beta=1)

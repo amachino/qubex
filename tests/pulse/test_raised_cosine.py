@@ -1,24 +1,25 @@
 import numpy as np
 import pytest
-from qubex.pulse import DragCos, Pulse
+
+from qubex.pulse import Pulse, RaisedCosine
 
 dt = Pulse.SAMPLING_PERIOD
 
 
 def test_inheritance():
-    """DragCos should inherit from Pulse."""
-    assert issubclass(DragCos, Pulse)
+    """RaisedCosine should inherit from Pulse."""
+    assert issubclass(RaisedCosine, Pulse)
 
 
 def test_empty_init():
-    """DragCos should raise a TypeError if no duration is provided."""
+    """RaisedCosine should raise a TypeError if no duration is provided."""
     with pytest.raises(TypeError):
-        DragCos()  # type: ignore
+        RaisedCosine()  # type: ignore
 
 
 def test_init():
-    """DragCos should be initialized with valid parameters."""
-    pulse = DragCos(duration=5 * dt, amplitude=1, beta=1)
+    """RaisedCosine should be initialized with valid parameters."""
+    pulse = RaisedCosine(duration=5 * dt, amplitude=1, beta=1)
     assert pulse.duration == 5 * dt
     assert pulse.values == pytest.approx(
         [
@@ -32,7 +33,7 @@ def test_init():
 
 
 def test_zero_duration():
-    """DragCos should be initialized with zero duration."""
-    pulse = DragCos(duration=0, amplitude=1, beta=1)
+    """RaisedCosine should be initialized with zero duration."""
+    pulse = RaisedCosine(duration=0, amplitude=1, beta=1)
     assert pulse.duration == 0
     assert (pulse.values == np.array([], dtype=np.complex128)).all()

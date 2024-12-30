@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from qubex.pulse import Blank, Pulse
 
 dt = Blank.SAMPLING_PERIOD
