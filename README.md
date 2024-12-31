@@ -1,6 +1,6 @@
-## qubex
+## Qubex: Quantum Experimentation and Simulation Framework
 
-A Python library for quantum control experiments.
+Qubex is a Python library designed to facilitate quantum experiments by providing a flexible, modular, and extensible framework for pulse-level control, readout, and calibration on quantum hardware. It streamlines experiment workflows (T1/T2 experiments, 1Q/2Q gate calibration, Randomized Benchmarking and more) and supports advanced simulations, data analysis, and experiment orchestration.
 
 
 ## Requirements
@@ -11,7 +11,7 @@ A Python library for quantum control experiments.
 
 ## Installation
 
-### qubex
+### basic installation
 
 ```bash
 pip install git+https://github.com/amachino/qubex.git
@@ -21,6 +21,14 @@ pip install git+https://github.com/amachino/qubex.git
 
 ```bash
 pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
+```
+
+### editable installation (for development)
+
+```bash
+git clone git+https://github.com/amachino/qubex.git
+cd qubex
+pip install -e .
 ```
 
 Check available versions on the [release page](https://github.com/amachino/qubex/releases).
