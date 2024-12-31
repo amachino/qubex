@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+import os
 from typing import Literal, Mapping
 
 import numpy as np
@@ -11,6 +13,43 @@ from numpy.typing import ArrayLike, NDArray
 
 from ..style import get_colors, get_config
 from ..typing import IQArray, TargetMap
+
+
+def save_figure_image(
+    fig: go.Figure,
+    name: str = "image",
+    *,
+    images_dir: str = "./images",
+    format: Literal["png", "svg", "jpeg", "webp"] = "png",
+    width: int = 600,
+    height: int = 300,
+    scale: int = 3,
+):
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
+
+    counter = 1
+    current_date = datetime.datetime.now().strftime("%Y%m%d")
+    file_path = os.path.join(
+        images_dir,
+        f"{current_date}_{name}_{counter}.{format}",
+    )
+
+    while os.path.exists(file_path):
+        counter += 1
+        file_path = os.path.join(
+            images_dir,
+            f"{current_date}_{name}_{counter}.{format}",
+        )
+
+    fig.write_image(
+        file_path,
+        format=format,
+        width=width,
+        height=height,
+        scale=scale,
+    )
+    print(f"Image saved to {file_path}")
 
 
 def display_bloch_sphere(bloch_vectors: NDArray[np.float64]):
@@ -97,7 +136,7 @@ def plot_fft(
     *,
     title: str = "FFT Result",
     xlabel: str = "Frequency (GHz)",
-    ylabel: str = "Amplitude (arb. units)",
+    ylabel: str = "Signal (arb. unit)",
 ) -> None:
     fft_result = np.fft.fft(data)
     fft_freqs = np.fft.fftfreq(len(data), times[1] - times[0])
@@ -126,37 +165,38 @@ def plot_fft(
     fig.show()
 
 
-def plot_state_vectors(
+def plot_bloch_vectors(
     times: NDArray[np.float64],
-    state_vectors: NDArray[np.float64],
+    bloch_vectors: NDArray[np.float64],
     *,
     title: str = "State evolution",
     xlabel: str = "Time (ns)",
     ylabel: str = "Expectation value",
+    mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
 ):
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=times,
-            y=state_vectors[:, 0],
-            mode="lines+markers",
-            name="X",
+            y=bloch_vectors[:, 0],
+            mode=mode,
+            name="〈X〉",
         )
     )
     fig.add_trace(
         go.Scatter(
             x=times,
-            y=state_vectors[:, 1],
-            mode="lines+markers",
-            name="Y",
+            y=bloch_vectors[:, 1],
+            mode=mode,
+            name="〈Y〉",
         )
     )
     fig.add_trace(
         go.Scatter(
             x=times,
-            y=state_vectors[:, 2],
-            mode="lines+markers",
-            name="Z",
+            y=bloch_vectors[:, 2],
+            mode=mode,
+            name="〈Z〉",
         )
     )
     fig.update_layout(
@@ -170,10 +210,11 @@ def plot_state_vectors(
 
 def plot_waveform(
     data: NDArray[np.complex128],
+    *,
     sampling_period: float = 2.0,
     title: str = "Waveform",
     xlabel: str = "Time (ns)",
-    ylabel: str = "Amplitude (arb. units)",
+    ylabel: str = "Signal (arb. unit)",
 ):
     fig = go.Figure()
     fig.add_trace(
@@ -202,9 +243,10 @@ def plot_waveform(
 
 def plot_state_distribution(
     data: Mapping[str, IQArray],
+    *,
     title: str = "State distribution",
-    xlabel: str = "In-phase (arb. units)",
-    ylabel: str = "Quadrature (arb. units)",
+    xlabel: str = "In-phase (arb. unit)",
+    ylabel: str = "Quadrature (arb. unit)",
 ) -> None:
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
@@ -257,9 +299,11 @@ def plot_state_distribution(
 
 def scatter_iq_data(
     data: Mapping[str, IQArray],
+    *,
+    save_image: bool = False,
     title: str = "I/Q plane",
-    xlabel: str = "In-phase (arb. units)",
-    ylabel: str = "Quadrature (arb. units)",
+    xlabel: str = "In-phase (arb. unit)",
+    ylabel: str = "Quadrature (arb. unit)",
 ) -> None:
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
@@ -308,6 +352,13 @@ def scatter_iq_data(
         ),
     )
     fig.show(config=get_config())
+    if save_image:
+        save_figure_image(
+            fig,
+            name="iq_data",
+            width=500,
+            height=400,
+        )
 
 
 class IQPlotter:
@@ -322,8 +373,8 @@ class IQPlotter:
         self._widget = go.FigureWidget()
         self._widget.update_layout(
             title="I/Q plane",
-            xaxis_title="In-phase (arb. units)",
-            yaxis_title="Quadrature (arb. units)",
+            xaxis_title="In-phase (arb. unit)",
+            yaxis_title="Quadrature (arb. unit)",
             width=500,
             height=400,
             margin=dict(l=120, r=120),
@@ -358,18 +409,20 @@ class IQPlotter:
                         x=x,
                         y=y,
                         mode="text+markers",
-                        text=[f"|{state}〉" for state in centers],
+                        text=[f"{state}" for state in centers],
                         name=f"{label}",
                         hoverinfo="name",
                         showlegend=True,
                         marker=dict(
                             symbol="circle",
-                            size=30,
+                            size=24,
                             color=f"rgba{color}",
                         ),
                         textfont=dict(
                             size=12,
-                            color="black",
+                            color="rgba(0, 0, 0, 0.8)",
+                            family="sans-serif",
+                            weight="bold",
                         ),
                         legendgroup="state",
                     )

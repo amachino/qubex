@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import subprocess
-from typing import Sequence
+from typing import Collection
 
 from rich.console import Console
 from rich.prompt import Confirm
@@ -88,7 +88,7 @@ def reset_clockmaster(ipaddr: str = "10.3.0.255") -> bool:
     return qcm.QuBEMasterClient(ipaddr).reset()
 
 
-def resync_clocks(box_ids: Sequence[str]) -> bool:
+def resync_clocks(box_ids: Collection[str]) -> bool:
     """Resync the clocks of the boxes."""
     return state_manager.device_controller.resync_clocks(list(box_ids))
 
@@ -103,7 +103,7 @@ def print_chip_info() -> None:
     graph.plot_lattice(text=frequencies)
 
 
-def print_wiring_info(qubits: Sequence[str] | None = None) -> None:
+def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     """Print the wiring information of the chip."""
 
     experiment_system = state_manager.experiment_system
@@ -146,14 +146,21 @@ def print_wiring_info(qubits: Sequence[str] | None = None) -> None:
     console.print(table)
 
 
-def print_box_info(box_id: str, fetch: bool = False) -> None:
+def print_box_info(box_id: str | None = None, fetch: bool = False) -> None:
     """Print the information of a box."""
-    state_manager.print_box_info(box_id, fetch=fetch)
+    if box_id is None:
+        box_ids = [box.id for box in state_manager.experiment_system.boxes]
+    else:
+        box_ids = [box_id]
+    for box_id in box_ids:
+        state_manager.print_box_info(box_id, fetch=fetch)
 
 
-def print_target_frequencies(qubits: Sequence[str] | str) -> None:
+def print_target_frequencies(qubits: Collection[str] | str | None = None) -> None:
     """Print the target frequencies of the qubits."""
-    if isinstance(qubits, str):
+    if qubits is None:
+        qubits = [qubit.label for qubit in state_manager.experiment_system.qubits]
+    elif isinstance(qubits, str):
         qubits = [qubits]
 
     targets = [
@@ -224,9 +231,11 @@ def print_target_frequencies(qubits: Sequence[str] | str) -> None:
     console.print(table)
 
 
-def print_cr_targets(qubits: Sequence[str] | str) -> None:
+def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
     """Print the target frequencies of the qubits."""
-    if isinstance(qubits, str):
+    if qubits is None:
+        qubits = [qubit.label for qubit in state_manager.experiment_system.qubits]
+    elif isinstance(qubits, str):
         qubits = [qubits]
 
     targets = [

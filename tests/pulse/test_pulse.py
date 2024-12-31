@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from qubex.pulse import Pulse, Waveform
 
 dt = Pulse.SAMPLING_PERIOD

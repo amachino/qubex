@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Literal
+from copy import deepcopy
+from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -15,15 +16,15 @@ from .pulse_sequence import PhaseShift, PulseSequence
 class PulseSchedule:
     def __init__(
         self,
-        targets: list[str],
+        targets: list[str] | dict[str, Any],
     ):
         """
         A class to represent a pulse schedule.
 
         Parameters
         ----------
-        targets : list[str]
-            The target qubits.
+        targets : list[str] | dict[str, Any]
+            The control targets.
 
         Examples
         --------
@@ -37,10 +38,56 @@ class PulseSchedule:
         ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
-        # Remove duplicates while preserving order
-        self.targets = list(dict.fromkeys(targets))
+        if isinstance(targets, dict):
+            self.targets = targets
+        else:
+            self.targets = {
+                target: {
+                    "frequency": None,
+                    "object": None,
+                }
+                for target in targets
+            }
+
         self._sequences = {target: PulseSequence() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
+
+    @property
+    def labels(self) -> list[str]:
+        """
+        Returns the target labels.
+        """
+        return list(self.targets.keys())
+
+    @property
+    def frequencies(self) -> dict[str, float | None]:
+        """
+        Returns the target frequencies of the sequences.
+        """
+        return {
+            target: props.get("frequency") for target, props in self.targets.items()
+        }
+
+    @property
+    def objects(self) -> dict[str, str | None]:
+        """
+        Returns the target objects of the sequences.
+        """
+        return {target: props.get("object") for target, props in self.targets.items()}
+
+    @property
+    def sequences(self) -> dict[str, PulseSequence]:
+        """
+        Returns the pulse sequences.
+        """
+        return self._sequences.copy()
+
+    @property
+    def sampled_sequences(self) -> dict[str, npt.NDArray[np.complex128]]:
+        """
+        Returns the sampled pulse sequences.
+        """
+        return self.get_sampled_sequences()
 
     def __enter__(self):
         """
@@ -97,7 +144,7 @@ class PulseSchedule:
         Parameters
         ----------
         target : str
-            The target qubit.
+            The target label.
         obj : Waveform | PhaseShift
             The waveform or phase shift to add.
 
@@ -129,7 +176,7 @@ class PulseSchedule:
         Parameters
         ----------
         targets : list[str], optional
-            The target qubits to add the barrier to.
+            The target labels to add the barrier to.
 
         Examples
         --------
@@ -137,7 +184,7 @@ class PulseSchedule:
         ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         ...     ps.barrier()
         """
-        targets = targets or self.targets
+        targets = targets or list(self.targets.keys())
         for target in targets:
             self.add(
                 target,
@@ -178,10 +225,43 @@ class PulseSchedule:
             if target not in self.targets:
                 raise ValueError(f"The target {target} is not in the current schedule.")
 
-        self.barrier(schedule.targets)
+        self.barrier(schedule.labels)
         sequences = schedule.get_sequences()
         for target, sequence in sequences.items():
             self.add(target, sequence)
+
+    def copy(self) -> PulseSchedule:
+        """
+        Returns a copy of the pulse schedule.
+        """
+        return deepcopy(self)
+
+    def scaled(self, scale: float) -> PulseSchedule:
+        """
+        Returns a scaled pulse schedule.
+        """
+        new = PulseSchedule(self.targets)
+        for target, sequence in self._sequences.items():
+            new.add(target, sequence.scaled(scale))
+        return new
+
+    def detuned(self, detuning: float) -> PulseSchedule:
+        """
+        Returns a detuned pulse schedule.
+        """
+        new = PulseSchedule(self.targets)
+        for target, sequence in self._sequences.items():
+            new.add(target, sequence.detuned(detuning))
+        return new
+
+    def shifted(self, phase: float) -> PulseSchedule:
+        """
+        Returns a shifted pulse schedule.
+        """
+        new = PulseSchedule(self.targets)
+        for target, sequence in self._sequences.items():
+            new.add(target, sequence.shifted(phase))
+        return new
 
     def repeated(self, n: int) -> PulseSchedule:
         """
@@ -195,8 +275,12 @@ class PulseSchedule:
     def plot(
         self,
         *,
+        title: str = "Pulse Schedule",
         width: int = 800,
+        n_samples: int = 1024,
+        divide_by_two_pi: bool = False,
         time_unit: Literal["ns", "samples"] = "ns",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
         Plots the pulse schedule.
@@ -213,6 +297,10 @@ class PulseSchedule:
         ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
+        if self._max_offset() == 0.0:
+            print("No data to plot.")
+            return
+
         n_targets = len(self.targets)
 
         if n_targets == 0:
@@ -234,13 +322,23 @@ class PulseSchedule:
                 times = np.arange(seq.length + 1)
             real = np.append(seq.real, seq.real[-1])
             imag = np.append(seq.imag, seq.imag[-1])
+
+            if len(times) > n_samples:
+                times = self._downsample(times, n_samples)
+                real = self._downsample(real, n_samples)
+                imag = self._downsample(imag, n_samples)
+
+            if divide_by_two_pi:
+                real /= 2 * np.pi * 1e-3
+                imag /= 2 * np.pi * 1e-3
+
             fig.add_trace(
                 go.Scatter(
                     x=times,
                     y=real,
                     name="I",
                     mode="lines",
-                    line_shape="hv",
+                    line_shape=line_shape,
                     line=dict(color=COLORS[0]),
                     showlegend=(i == 0),
                 ),
@@ -253,7 +351,7 @@ class PulseSchedule:
                     y=imag,
                     name="Q",
                     mode="lines",
-                    line_shape="hv",
+                    line_shape=line_shape,
                     line=dict(color=COLORS[1]),
                     showlegend=(i == 0),
                 ),
@@ -261,7 +359,7 @@ class PulseSchedule:
                 col=1,
             )
         fig.update_layout(
-            title="Pulse Schedule",
+            title=title,
             height=80 * n_targets + 140,
             width=width,
         )
@@ -272,11 +370,30 @@ class PulseSchedule:
         )
         for i, (target, seq) in enumerate(sequences.items()):
             y_max = np.max(seq.abs)
+            if divide_by_two_pi:
+                y_max /= 2 * np.pi * 1e-3
             fig.update_yaxes(
                 row=i + 1,
                 col=1,
                 title_text=target,
                 range=[-1.1 * y_max, 1.1 * y_max],
+            )
+            annotations = []
+            if self.frequencies.get(target) is not None:
+                annotations.append(f"{self.frequencies[target]:.2f} GHz")
+            if self.objects.get(target) is not None:
+                annotations.append(f"{self.objects[target]}")
+            fig.add_annotation(
+                x=0.02,
+                y=0.06,
+                xref="x domain",
+                yref="y domain",
+                text=" → ".join(annotations),
+                showarrow=False,
+                row=i + 1,
+                col=1,
+                # set bg color to white
+                bgcolor="rgba(255, 255, 255, 0.8)",
             )
         fig.show()
 
@@ -348,14 +465,14 @@ class PulseSchedule:
         Parameters
         ----------
         targets : list[str], optional
-            The target qubits.
+            The target labels.
 
         Returns
         -------
         dict[str, list[range]]
             The pulse ranges.
         """
-        targets = targets or self.targets
+        targets = targets or self.labels
         ranges: dict[str, list[range]] = {target: [] for target in targets}
         for target in targets:
             current_offset = 0
@@ -376,3 +493,13 @@ class PulseSchedule:
             offsets = [self._offsets[target] for target in targets]
 
         return max(offsets, default=0.0)
+
+    @staticmethod
+    def _downsample(
+        data: npt.NDArray,
+        n_max_points: int,
+    ) -> npt.NDArray:
+        if len(data) <= n_max_points:
+            return data
+        indices = np.linspace(0, len(data) - 1, n_max_points).astype(int)
+        return data[indices]

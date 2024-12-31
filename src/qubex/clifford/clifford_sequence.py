@@ -90,16 +90,12 @@ class CliffordSequence:
         CliffordSequence
             The resulting Clifford sequence after composing the input transformation.
         """
-        if isinstance(other, Clifford):
-            composed_sequence = self.sequence + [other]
-            composed_clifford = self.clifford.compose(other)
-        elif isinstance(other, CliffordSequence):
+        if isinstance(other, CliffordSequence):
             composed_sequence = self.sequence + other.sequence
             composed_clifford = self.clifford.compose(other.clifford)
         else:
-            raise TypeError(
-                f"Unsupported type for composition: {type(other)}. Must be Clifford or CliffordSequence."
-            )
+            composed_sequence = self.sequence + [other]
+            composed_clifford = self.clifford.compose(other)
         return CliffordSequence(sequence=composed_sequence, clifford=composed_clifford)
 
     def __hash__(self) -> int:

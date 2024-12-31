@@ -65,6 +65,26 @@ class Clifford:
         )
 
     @classmethod
+    def X180(cls) -> Clifford:
+        """
+        Create the Clifford transformation for a 180-degree rotation around the X-axis.
+
+        Returns
+        -------
+        Clifford
+            A Clifford representing a 180-degree rotation around the X-axis.
+        """
+        return Clifford(
+            name="X180",
+            map={
+                "I": Pauli(1, "I"),
+                "X": Pauli(1, "X"),
+                "Y": Pauli(-1, "Y"),
+                "Z": Pauli(-1, "Z"),
+            },
+        )
+
+    @classmethod
     def Y90(cls) -> Clifford:
         """
         Create the Clifford transformation for a 90-degree rotation around the Y-axis.
@@ -85,6 +105,26 @@ class Clifford:
         )
 
     @classmethod
+    def Y180(cls) -> Clifford:
+        """
+        Create the Clifford transformation for a 180-degree rotation around the Y-axis.
+
+        Returns
+        -------
+        Clifford
+            A Clifford representing a 180-degree rotation around the Y-axis.
+        """
+        return Clifford(
+            name="Y180",
+            map={
+                "I": Pauli(1, "I"),
+                "X": Pauli(-1, "X"),
+                "Y": Pauli(1, "Y"),
+                "Z": Pauli(-1, "Z"),
+            },
+        )
+
+    @classmethod
     def Z90(cls) -> Clifford:
         """
         Create the Clifford transformation for a 90-degree rotation around the Z-axis.
@@ -100,6 +140,26 @@ class Clifford:
                 "I": Pauli(1, "I"),
                 "X": Pauli(1, "Y"),
                 "Y": Pauli(-1, "X"),
+                "Z": Pauli(1, "Z"),
+            },
+        )
+
+    @classmethod
+    def Z180(cls) -> Clifford:
+        """
+        Create the Clifford transformation for a 180-degree rotation around the Z-axis.
+
+        Returns
+        -------
+        Clifford
+            A Clifford representing a 180-degree rotation around the Z-axis.
+        """
+        return Clifford(
+            name="Z180",
+            map={
+                "I": Pauli(1, "I"),
+                "X": Pauli(-1, "X"),
+                "Y": Pauli(-1, "Y"),
                 "Z": Pauli(1, "Z"),
             },
         )

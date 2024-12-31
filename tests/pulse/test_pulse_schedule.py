@@ -1,4 +1,5 @@
 import pytest
+
 from qubex.pulse import Pulse, PulseSchedule
 
 
@@ -11,13 +12,22 @@ def test_empty_init():
 def test_empty_list():
     """PulseSchedule should be initialized with an empty list."""
     ps = PulseSchedule([])
-    assert ps.targets == []
+    assert ps.targets == {}
 
 
 def test_init():
     """PulseSchedule should be initialized with valid parameters."""
     ps = PulseSchedule(["Q00", "Q01"])
-    assert ps.targets == ["Q00", "Q01"]
+    assert ps.targets == {
+        "Q00": {
+            "frequency": None,
+            "object": None,
+        },
+        "Q01": {
+            "frequency": None,
+            "object": None,
+        },
+    }
 
 
 def test_add():

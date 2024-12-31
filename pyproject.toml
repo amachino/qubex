@@ -7,15 +7,20 @@ name = "qubex"
 dynamic = ["version"]
 requires-python = ">=3.9"
 authors = [{ name = "Akinori MACHINO" }]
-description = "Quantum Experiment Tools using QuBE"
+description = "Qubex: Quantum Experimentation and Simulation Framework"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
+    "cma ~= 4.0",
     "httpx ~= 0.0",
+    "jax ~= 0.0",
     "jsonpickle ~= 3.0",
     "jupyter ~= 1.0",
+    "kaleido ~= 0.0",
     "matplotlib ~= 3.0",
+    "networkx ~= 3.0",
     "numpy ~= 1.0",
+    "optax ~= 0.0",
     "pip == 24.0",
     "plotly ~= 5.0",
     "pydantic ~= 2.0",

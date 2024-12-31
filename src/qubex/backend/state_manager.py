@@ -10,7 +10,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import Sequence, deprecated
 
-from .config_loader import DEFAULT_CONFIG_DIR, ConfigLoader
+from .config_loader import DEFAULT_CONFIG_DIR, DEFAULT_PARAMS_DIR, ConfigLoader
 from .control_system import CapPort, GenPort, PortType
 from .device_controller import DeviceController
 from .experiment_system import ExperimentSystem
@@ -105,7 +105,7 @@ class StateManager:
         """
         self._experiment_system = experiment_system
         # update device controller to reflect the new experiment system
-        self._device_controller = self._create_device_controller(experiment_system)
+        self._update_device_controller(experiment_system)
         self.update_cache()
 
     @property
@@ -199,6 +199,8 @@ class StateManager:
         *,
         chip_id: str,
         config_dir: str = DEFAULT_CONFIG_DIR,
+        params_dir: str = DEFAULT_PARAMS_DIR,
+        targets_to_exclude: list[str] | None = None,
     ):
         """
         Load the experiment system and the device controller.
@@ -209,8 +211,14 @@ class StateManager:
             Chip ID.
         config_dir : str, optional
             Configuration directory, by default DEFAULT_CONFIG_DIR.
+        params_dir : str, optional
+            Parameters directory, by default DEFAULT_PARAMS_DIR.
         """
-        config = ConfigLoader(config_dir)
+        config = ConfigLoader(
+            config_dir=config_dir,
+            params_dir=params_dir,
+            targets_to_exclude=targets_to_exclude,
+        )
         self.experiment_system = config.get_experiment_system(chip_id)
 
     def pull(
@@ -440,15 +448,14 @@ This operation will overwrite the existing device settings. Do you want to conti
                     print(e)
         return result
 
-    def _create_device_controller(
+    def _update_device_controller(
         self,
         experiment_system: ExperimentSystem,
-    ) -> DeviceController:
+    ):
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
 
-        device_controller = DeviceController()
-        qc = device_controller.qubecalib
+        qc = self.device_controller.qubecalib
 
         qc.define_clockmaster(
             ipaddr=control_system.clock_master_address,
@@ -494,7 +501,10 @@ This operation will overwrite the existing device settings. Do you want to conti
                 channel_name=target.channel.id,
                 target_frequency=target.frequency,
             )
-        return device_controller
+
+        # reset the cache
+        qc.clear_command_queue()
+        self.device_controller.clear_cache()
 
     def _create_experiment_system(
         self,
@@ -654,3 +664,6 @@ This operation will overwrite the existing device settings. Do you want to conti
                     runit=cap_channel.number,
                     fnco_freq=original_fnco_freq,
                 )
+
+            # clear the cache
+            self.device_controller.clear_cache()
