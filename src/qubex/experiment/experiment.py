@@ -6511,21 +6511,26 @@ class Experiment:
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
         echo: bool = False,
-        pi_pulse: TargetMap[Waveform] | None = None,
         control_state: str = "0",
+        x90: TargetMap[Waveform] | None = None,
+        x180: TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
         time_range = np.array(time_range)
 
-        x90 = self.hpi_pulse
-        if control_qubit in self.drag_hpi_pulse:
-            x90[control_qubit] = self.drag_hpi_pulse[control_qubit]
-        if target_qubit in self.drag_hpi_pulse:
-            x90[target_qubit] = self.drag_hpi_pulse[target_qubit]
+        if x90 is None:
+            x90 = self.hpi_pulse
+            if control_qubit in self.drag_hpi_pulse:
+                x90[control_qubit] = self.drag_hpi_pulse[control_qubit]
+            if target_qubit in self.drag_hpi_pulse:
+                x90[target_qubit] = self.drag_hpi_pulse[target_qubit]
 
-        if pi_pulse is None:
-            pi_pulse = self.pi_pulse
+        if x180 is None:
+            if control_qubit in self.drag_pi_pulse:
+                x180 = self.drag_pi_pulse
+            else:
+                x180 = self.pi_pulse
 
         control_states = []
         target_states = []
@@ -6541,7 +6546,7 @@ class Experiment:
                     cancel_amplitude=cancel_amplitude,
                     cancel_phase=cancel_phase,
                     echo=echo,
-                    pi_pulse=pi_pulse[control_qubit],
+                    pi_pulse=x180[control_qubit],
                 ),
                 x90=x90,
                 initial_state={control_qubit: control_state},
@@ -6569,6 +6574,7 @@ class Experiment:
         cr_phase: float = 0.0,
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
+        x90: TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
@@ -6586,6 +6592,7 @@ class Experiment:
             cancel_phase=cancel_phase,
             echo=False,
             control_state="0",
+            x90=x90,
             shots=shots,
             interval=interval,
         )
@@ -6600,6 +6607,7 @@ class Experiment:
             cancel_phase=cancel_phase,
             echo=False,
             control_state="1",
+            x90=x90,
             shots=shots,
             interval=interval,
         )
@@ -6643,10 +6651,10 @@ class Experiment:
             )
         )
 
-        print("=== CR rotation rate ===")
+        print("== CR rotation rate ==")
         for key, value in coeffs.items():
             print(f"  {key}: {value * 1e3:+.6f} MHz")
-        print("========================")
+        print("======================")
 
         cr_phase_est = -np.arctan2(coeffs["ZY"], coeffs["ZX"])
 
@@ -6675,7 +6683,8 @@ class Experiment:
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
         n_iterations: int = 2,
-        shots: int = DEFAULT_SHOTS,
+        x90: TargetMap[Waveform] | None = None,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
@@ -6746,6 +6755,7 @@ class Experiment:
                 cr_phase=cr_pulse["phase"],
                 cancel_amplitude=cancel_pulse["amplitude"],
                 cancel_phase=cancel_pulse["phase"],
+                x90=x90,
                 shots=shots,
                 interval=interval,
                 plot=plot,
@@ -6766,6 +6776,7 @@ class Experiment:
                 cr_phase=cr_pulse["phase"],
                 cancel_amplitude=cancel_pulse["amplitude"],
                 cancel_phase=cancel_pulse["phase"],
+                x90=x90,
                 shots=shots,
                 interval=interval,
                 plot=plot,
@@ -6786,6 +6797,7 @@ class Experiment:
             cr_phase=cr_pulse["phase"],
             cancel_amplitude=cancel_pulse["amplitude"],
             cancel_phase=cancel_pulse["phase"],
+            x90=x90,
             shots=shots,
             interval=interval,
             plot=plot,
@@ -6845,7 +6857,7 @@ class Experiment:
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
@@ -6861,12 +6873,12 @@ class Experiment:
         cr_cancel_ratio = cancel_amplitude / cr_amplitude
 
         if x180 is None:
-            if target_qubit in self.drag_pi_pulse:
+            if control_qubit in self.drag_pi_pulse:
                 x180 = self.drag_pi_pulse
             else:
                 x180 = self.pi_pulse
         elif isinstance(x180, Waveform):
-            x180 = {target_qubit: x180}
+            x180 = {control_qubit: x180}
 
         sweep_result = self.sweep_parameter(
             lambda amplitude: CrossResonance(
@@ -6939,7 +6951,7 @@ class Experiment:
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
@@ -6955,12 +6967,12 @@ class Experiment:
         cr_cancel_ratio = cancel_amplitude / cr_amplitude
 
         if x180 is None:
-            if target_qubit in self.drag_pi_pulse:
+            if control_qubit in self.drag_pi_pulse:
                 x180 = self.drag_pi_pulse
             else:
                 x180 = self.pi_pulse
         elif isinstance(x180, Waveform):
-            x180 = {target_qubit: x180}
+            x180 = {control_qubit: x180}
 
         sweep_result = self.sweep_parameter(
             lambda duration: CrossResonance(
@@ -7039,7 +7051,10 @@ class Experiment:
         cr_params = self._system_note.get(CR_PARAMS)[cr_label]
 
         if x180 is None:
-            x180 = self.hpi_pulse[target_qubit].repeated(2)
+            if control_qubit in self.drag_pi_pulse:
+                x180 = self.drag_pi_pulse[control_qubit]
+            else:
+                x180 = self.pi_pulse[control_qubit]
 
         if cr_amplitude is not None and cancel_amplitude is None:
             cr_cancel_ratio = (
@@ -7098,19 +7113,24 @@ class Experiment:
 
         return ps
 
-    def create_bell_state(
+    def measure_bell_state(
         self,
         control_qubit: str,
         target_qubit: str,
+        x90: Waveform | None = None,
+        x180: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ):
+        plot: bool = True,
+    ) -> dict:
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
         cnot = self.cnot(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
+            x90=x90,
+            x180=x180,
         )
         result = self.measure(
             cnot,
@@ -7120,9 +7140,45 @@ class Experiment:
             interval=interval,
         )
 
+        labels = [f"|{i}⟩" for i in result.probabilities.keys()]
         prob = np.array(list(result.probabilities.values()))
         cm_imv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
-        return prob @ cm_imv
+
+        mitigated_prob = prob @ cm_imv
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=prob,
+                name="Raw",
+            )
+        )
+        fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=mitigated_prob,
+                name="Mitigated",
+            )
+        )
+        fig.update_layout(
+            title="Bell state measurement",
+            xaxis_title="State label",
+            yaxis_title="Probability",
+            barmode="group",
+            yaxis_range=[0, 1],
+        )
+        if plot:
+            fig.show()
+
+        for label, p, mp in zip(labels, prob, mitigated_prob):
+            print(f"{label} : {p:.2%} -> {mp:.2%}")
+
+        return {
+            "raw": prob,
+            "mitigated": mitigated_prob,
+            "figure": fig,
+        }
 
 
 class ExperimentUtil:
