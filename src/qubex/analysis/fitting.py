@@ -1742,6 +1742,7 @@ def fit_rotation(
         omega: float,
         theta: float,
         phi: float,
+        alpha: float,
     ) -> npt.NDArray[np.float64]:
         """
         Simulate the rotation of a state vector.
@@ -1756,13 +1757,15 @@ def fit_rotation(
             Polar angle of the rotation axis.
         phi : float
             Azimuthal angle of the rotation axis.
+        alpha : float
+            Decay rate.
         """
         n_x = np.sin(theta) * np.cos(phi)
         n_y = np.sin(theta) * np.sin(phi)
         n_z = np.cos(theta)
-        return np.array(
-            [rotation_matrix(t, omega, (n_x, n_y, n_z)) @ r0 for t in times]
-        )
+        r_t = np.array([rotation_matrix(t, omega, (n_x, n_y, n_z)) @ r0 for t in times])
+        decay_factor = np.exp(-alpha * times)
+        return decay_factor[:, np.newaxis] * r_t
 
     def residuals(params, times, data):
         return (rotate(times, *params) - data).flatten()
@@ -1777,12 +1780,13 @@ def fit_rotation(
         omega_est = 2 * np.pi * dominant_freq
         theta_est = np.pi / 2
         phi_est = 0.0
-        p0 = (omega_est, theta_est, phi_est)
+        alpha_est = 0.0
+        p0 = (omega_est, theta_est, phi_est, alpha_est)
 
     if bounds is None:
         bounds = (
-            (0, 0, -np.pi),
-            (np.inf, np.pi, np.pi),
+            (0, 0, -np.pi, 0),
+            (np.inf, np.pi, np.pi, np.inf),
         )
 
     result = least_squares(
