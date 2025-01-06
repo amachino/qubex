@@ -4938,20 +4938,22 @@ class Experiment:
                 )
 
         target_object = self.experiment_system.get_target(target)
-        if not target_object.is_cr:
+        is_2q = target_object.is_cr
+
+        if is_2q:
+            if n_cliffords_range is None:
+                n_cliffords_range = np.arange(0, 21, 2)
+        else:
             self._validate_rabi_params([target])
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 1001, 100)
-        else:
-            if n_cliffords_range is None:
-                n_cliffords_range = np.arange(0, 21, 2)
 
         n_cliffords_range = np.array(n_cliffords_range, dtype=int)
 
         results = []
         for seed in tqdm(seeds):
             with self.util.no_output():
-                if target_object.is_cr:
+                if is_2q:
                     if isinstance(x90, Waveform):
                         raise ValueError("x90 must be a dict for 2Q gates.")
                     result = self.rb_experiment_2q(
@@ -5101,20 +5103,60 @@ class Experiment:
                 )
 
         target_object = self.experiment_system.get_target(target)
-        if not target_object.is_cr:
+        is_2q = target_object.is_cr
+
+        if is_2q:
+            if n_cliffords_range is None:
+                n_cliffords_range = np.arange(0, 21, 2)
+        else:
             self._validate_rabi_params([target])
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 1001, 100)
-        else:
-            if n_cliffords_range is None:
-                n_cliffords_range = np.arange(0, 21, 2)
 
         rb_results = []
         irb_results = []
 
         for seed in tqdm(seeds):
             with self.util.no_output():
-                if not target_object.is_cr:
+                if is_2q:
+                    if isinstance(x90, Waveform):
+                        raise ValueError("x90 must be a dict for 2Q gates.")
+                    if isinstance(zx90, Waveform):
+                        raise ValueError("zx90 must be a dict for 2Q gates.")
+                    if isinstance(interleaved_waveform, Waveform):
+                        raise ValueError(
+                            "interleaved_waveform must be a dict for 2Q gates."
+                        )
+                    rb_result = self.rb_experiment_2q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,
+                        zx90=zx90,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    rb_signal = rb_result["fidelities"]
+                    rb_results.append(rb_signal)
+
+                    irb_result = self.rb_experiment_2q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,
+                        zx90=zx90,
+                        interleaved_waveform=interleaved_waveform,
+                        interleaved_clifford=interleaved_clifford,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    irb_signal = irb_result["fidelities"]
+                    irb_results.append(irb_signal)
+                else:
                     rb_result = self.rb_experiment_1q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
@@ -5143,44 +5185,6 @@ class Experiment:
                         save_image=False,
                     )
                     irb_signal = (irb_result.data[target].normalized + 1) / 2
-                    irb_results.append(irb_signal)
-                else:
-                    if isinstance(x90, Waveform):
-                        raise ValueError("x90 must be a dict for 2Q gates.")
-                    if isinstance(zx90, Waveform):
-                        raise ValueError("zx90 must be a dict for 2Q gates.")
-                    if isinstance(interleaved_waveform, Waveform):
-                        raise ValueError(
-                            "interleaved_waveform must be a dict for 2Q gates."
-                        )
-                    rb_result = self.rb_experiment_2q(
-                        target=target,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        zx90=zx90,
-                        spectator_state=spectator_state,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                    )
-                    rb_signal = rb_result["fidelities"]
-                    rb_results.append(rb_signal)
-
-                    irb_result = self.rb_experiment_2q(
-                        target=target,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        zx90=zx90,
-                        interleaved_waveform=interleaved_waveform,  # type: ignore
-                        interleaved_clifford=interleaved_clifford,
-                        spectator_state=spectator_state,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                    )
-                    irb_signal = irb_result["fidelities"]
                     irb_results.append(irb_signal)
 
         print("Randomized benchmarking:")
@@ -5212,7 +5216,7 @@ class Experiment:
         p_irb = irb_fit_result["p"]
         C_irb = irb_fit_result["C"]
 
-        dimension = 2
+        dimension = 2**2 if is_2q else 2
         gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
         gate_fidelity = 1 - gate_error
 
