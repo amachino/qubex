@@ -1742,6 +1742,7 @@ def fit_rotation(
         omega: float,
         theta: float,
         phi: float,
+        alpha: float,
     ) -> npt.NDArray[np.float64]:
         """
         Simulate the rotation of a state vector.
@@ -1756,13 +1757,15 @@ def fit_rotation(
             Polar angle of the rotation axis.
         phi : float
             Azimuthal angle of the rotation axis.
+        alpha : float
+            Decay rate.
         """
         n_x = np.sin(theta) * np.cos(phi)
         n_y = np.sin(theta) * np.sin(phi)
         n_z = np.cos(theta)
-        return np.array(
-            [rotation_matrix(t, omega, (n_x, n_y, n_z)) @ r0 for t in times]
-        )
+        r_t = np.array([rotation_matrix(t, omega, (n_x, n_y, n_z)) @ r0 for t in times])
+        decay_factor = np.exp(-alpha * times)
+        return decay_factor[:, np.newaxis] * r_t
 
     def residuals(params, times, data):
         return (rotate(times, *params) - data).flatten()
@@ -1777,12 +1780,13 @@ def fit_rotation(
         omega_est = 2 * np.pi * dominant_freq
         theta_est = np.pi / 2
         phi_est = 0.0
-        p0 = (omega_est, theta_est, phi_est)
+        alpha_est = 0.0
+        p0 = (omega_est, theta_est, phi_est, alpha_est)
 
     if bounds is None:
         bounds = (
-            (0, 0, -np.pi),
-            (np.inf, np.pi, np.pi),
+            (0, 0, -np.pi, 0),
+            (np.inf, np.pi, np.pi, 1e-3),
         )
 
     result = least_squares(
@@ -1796,6 +1800,8 @@ def fit_rotation(
     Omega = fitted_params[0]
     theta = fitted_params[1]
     phi = fitted_params[2]
+    alpha = fitted_params[3]
+    tau = 1 / alpha * 1e-3  # μs
     Omega_x = Omega * np.sin(theta) * np.cos(phi)
     Omega_y = Omega * np.sin(theta) * np.sin(phi)
     Omega_z = Omega * np.cos(theta)
@@ -1858,6 +1864,14 @@ def fit_rotation(
             name="Z (fit)",
             line=dict(color=COLORS[2]),
         )
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"τ = {tau:.3f} μs",
+        showarrow=False,
     )
     fig.update_layout(
         title=title,
@@ -1932,6 +1946,7 @@ def fit_rotation(
     return {
         "Omega": np.array([Omega_x, Omega_y, Omega_z]),
         "fig": fig,
+        "fig3d": fig3d,
     }
 
 

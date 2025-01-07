@@ -4938,20 +4938,22 @@ class Experiment:
                 )
 
         target_object = self.experiment_system.get_target(target)
-        if not target_object.is_cr:
+        is_2q = target_object.is_cr
+
+        if is_2q:
+            if n_cliffords_range is None:
+                n_cliffords_range = np.arange(0, 21, 2)
+        else:
             self._validate_rabi_params([target])
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 1001, 100)
-        else:
-            if n_cliffords_range is None:
-                n_cliffords_range = np.arange(0, 21, 2)
 
         n_cliffords_range = np.array(n_cliffords_range, dtype=int)
 
         results = []
         for seed in tqdm(seeds):
             with self.util.no_output():
-                if target_object.is_cr:
+                if is_2q:
                     if isinstance(x90, Waveform):
                         raise ValueError("x90 must be a dict for 2Q gates.")
                     result = self.rb_experiment_2q(
@@ -5089,8 +5091,6 @@ class Experiment:
         ...     plot=True,
         ... )
         """
-        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
-
         if seeds is None:
             seeds = np.random.randint(0, 2**32, n_trials)
         else:
@@ -5101,20 +5101,62 @@ class Experiment:
                 )
 
         target_object = self.experiment_system.get_target(target)
-        if not target_object.is_cr:
+        is_2q = target_object.is_cr
+
+        if is_2q:
+            if n_cliffords_range is None:
+                n_cliffords_range = np.arange(0, 21, 2)
+        else:
             self._validate_rabi_params([target])
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 1001, 100)
-        else:
-            if n_cliffords_range is None:
-                n_cliffords_range = np.arange(0, 21, 2)
+
+        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
 
         rb_results = []
         irb_results = []
 
         for seed in tqdm(seeds):
             with self.util.no_output():
-                if not target_object.is_cr:
+                if is_2q:
+                    if isinstance(x90, Waveform):
+                        raise ValueError("x90 must be a dict for 2Q gates.")
+                    if isinstance(zx90, Waveform):
+                        raise ValueError("zx90 must be a dict for 2Q gates.")
+                    if isinstance(interleaved_waveform, Waveform):
+                        raise ValueError(
+                            "interleaved_waveform must be a dict for 2Q gates."
+                        )
+                    rb_result = self.rb_experiment_2q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,
+                        zx90=zx90,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    rb_signal = rb_result["fidelities"]
+                    rb_results.append(rb_signal)
+
+                    irb_result = self.rb_experiment_2q(
+                        target=target,
+                        n_cliffords_range=n_cliffords_range,
+                        x90=x90,
+                        zx90=zx90,
+                        interleaved_waveform=interleaved_waveform,
+                        interleaved_clifford=interleaved_clifford,
+                        spectator_state=spectator_state,
+                        seed=seed,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    irb_signal = irb_result["fidelities"]
+                    irb_results.append(irb_signal)
+                else:
                     rb_result = self.rb_experiment_1q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
@@ -5143,44 +5185,6 @@ class Experiment:
                         save_image=False,
                     )
                     irb_signal = (irb_result.data[target].normalized + 1) / 2
-                    irb_results.append(irb_signal)
-                else:
-                    if isinstance(x90, Waveform):
-                        raise ValueError("x90 must be a dict for 2Q gates.")
-                    if isinstance(zx90, Waveform):
-                        raise ValueError("zx90 must be a dict for 2Q gates.")
-                    if isinstance(interleaved_waveform, Waveform):
-                        raise ValueError(
-                            "interleaved_waveform must be a dict for 2Q gates."
-                        )
-                    rb_result = self.rb_experiment_2q(
-                        target=target,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        zx90=zx90,
-                        spectator_state=spectator_state,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                    )
-                    rb_signal = rb_result["fidelities"]
-                    rb_results.append(rb_signal)
-
-                    irb_result = self.rb_experiment_2q(
-                        target=target,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        zx90=zx90,
-                        interleaved_waveform=interleaved_waveform,  # type: ignore
-                        interleaved_clifford=interleaved_clifford,
-                        spectator_state=spectator_state,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                    )
-                    irb_signal = irb_result["fidelities"]
                     irb_results.append(irb_signal)
 
         print("Randomized benchmarking:")
@@ -5212,7 +5216,7 @@ class Experiment:
         p_irb = irb_fit_result["p"]
         C_irb = irb_fit_result["C"]
 
-        dimension = 2
+        dimension = 2**2 if is_2q else 2
         gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
         gate_fidelity = 1 - gate_error
 
@@ -6679,7 +6683,7 @@ class Experiment:
         control_qubit: str,
         target_qubit: str,
         *,
-        flattop_range: ArrayLike = np.arange(0, 401, 10),
+        flattop_range: ArrayLike = np.arange(0, 401, 20),
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 50,
         n_iterations: int = 2,
@@ -6846,6 +6850,108 @@ class Experiment:
             "hamiltonian_coeffs": hamiltonian_coeffs,
         }
 
+    def calibrate_zx90(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        amplitude_range: ArrayLike | None = None,
+        duration_range: ArrayLike | None = None,
+        amplitude: float = 0.5,
+        duration: float = 200,
+        ramptime: float = 50,
+        degree: int = 3,
+        x180: TargetMap[Waveform] | Waveform | None = None,
+        use_zvalues: bool = False,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        if amplitude_range is not None and duration_range is not None:
+            raise ValueError("Both amplitude_range and duration_range are specified.")
+        elif amplitude_range is not None:
+            sweep_parameter = "amplitude"
+        elif duration_range is not None:
+            sweep_parameter = "duration"
+        else:
+            raise ValueError(
+                "Either amplitude_range or duration_range must be specified."
+            )
+
+        def calibrate(sweep_parameter: str, initial_state: str):
+            if sweep_parameter == "amplitude":
+                return self.calibrate_zx90_by_amplitude(
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
+                    duration=duration,
+                    ramptime=ramptime,
+                    amplitude_range=amplitude_range,  # type: ignore
+                    initial_state=initial_state,
+                    degree=degree,
+                    x180=x180,
+                    use_zvalues=use_zvalues,
+                    store_params=False,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+            elif sweep_parameter == "duration":
+                return self.calibrate_zx90_by_duration(
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
+                    amplitude=amplitude,
+                    duration_range=duration_range,  # type: ignore
+                    ramptime=ramptime,
+                    initial_state=initial_state,
+                    degree=degree,
+                    x180=x180,
+                    use_zvalues=use_zvalues,
+                    store_params=False,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+            else:
+                raise ValueError("Invalid sweep parameter.")
+
+        result_0 = calibrate(sweep_parameter, "0")
+        result_1 = calibrate(sweep_parameter, "1")
+        calibrated_value = (result_0["root"] + result_1["root"]) / 2
+
+        cr_label = f"{control_qubit}-{target_qubit}"
+        cr_params = self._system_note.get(CR_PARAMS)[cr_label]
+        cr_ramptime = ramptime
+        cr_duration = calibrated_value if sweep_parameter == "duration" else duration
+        cr_amplitude = calibrated_value if sweep_parameter == "amplitude" else amplitude
+        cr_phase = cr_params["cr_pulse"]["phase"]
+        cr_cancel_ratio = cr_params["cr_cancel_ratio"]
+        cancel_amplitude = cr_amplitude * cr_cancel_ratio
+        cancel_phase = cr_params["cancel_pulse"]["phase"]
+
+        self._system_note.put(
+            CR_PARAMS,
+            {
+                cr_label: {
+                    "duration": cr_duration,
+                    "ramptime": cr_ramptime,
+                    "cr_pulse": {
+                        "amplitude": cr_amplitude,
+                        "phase": cr_phase,
+                    },
+                    "cancel_pulse": {
+                        "amplitude": cancel_amplitude,
+                        "phase": cancel_phase,
+                    },
+                },
+            },
+        )
+
+        return {
+            "calibrated_value": calibrated_value,
+            "result_0": result_0,
+            "result_1": result_1,
+        }
+
     def calibrate_zx90_by_amplitude(
         self,
         control_qubit: str,
@@ -6854,9 +6960,11 @@ class Experiment:
         duration: float = 100,
         ramptime: float = 20,
         amplitude_range: ArrayLike = np.linspace(0.0, 1.0, 51),
+        initial_state: str = "0",
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
+        store_params: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -6880,8 +6988,8 @@ class Experiment:
         elif isinstance(x180, Waveform):
             x180 = {control_qubit: x180}
 
-        sweep_result = self.sweep_parameter(
-            lambda amplitude: CrossResonance(
+        def ecr_sequence(amplitude: float) -> PulseSchedule:
+            ecr = CrossResonance(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
                 cr_amplitude=amplitude,
@@ -6891,8 +6999,20 @@ class Experiment:
                 cancel_amplitude=amplitude * cr_cancel_ratio,
                 cancel_phase=cancel_phase,
                 echo=True,
-                pi_pulse=x180[target_qubit],
-            ),
+                pi_pulse=x180[control_qubit],
+            )
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+                if initial_state != "0":
+                    ps.add(
+                        control_qubit,
+                        self.get_pulse_for_state(control_qubit, initial_state),
+                    )
+                    ps.barrier()
+                ps.call(ecr)
+            return ps
+
+        sweep_result = self.sweep_parameter(
+            ecr_sequence,
             sweep_range=amplitude_range,
             shots=shots,
             interval=interval,
@@ -6916,23 +7036,24 @@ class Experiment:
 
         amplitude = fit_result["root"]
 
-        self._system_note.put(
-            CR_PARAMS,
-            {
-                f"{control_qubit}-{target_qubit}": {
-                    "duration": duration,
-                    "ramptime": cr_ramptime,
-                    "cr_pulse": {
-                        "amplitude": amplitude,
-                        "phase": cr_phase,
-                    },
-                    "cancel_pulse": {
-                        "amplitude": amplitude * cr_cancel_ratio,
-                        "phase": cancel_phase,
+        if store_params:
+            self._system_note.put(
+                CR_PARAMS,
+                {
+                    cr_label: {
+                        "duration": duration,
+                        "ramptime": cr_ramptime,
+                        "cr_pulse": {
+                            "amplitude": amplitude,
+                            "phase": cr_phase,
+                        },
+                        "cancel_pulse": {
+                            "amplitude": amplitude * cr_cancel_ratio,
+                            "phase": cancel_phase,
+                        },
                     },
                 },
-            },
-        )
+            )
 
         return {
             "amplitude_range": amplitude_range,
@@ -6942,15 +7063,17 @@ class Experiment:
 
     def calibrate_zx90_by_duration(
         self,
-        *,
         control_qubit: str,
         target_qubit: str,
+        *,
         amplitude: float = 0.5,
         duration_range: ArrayLike = np.arange(100, 201, 2),
         ramptime: float = 20,
+        initial_state: str = "0",
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
+        store_params: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -6974,8 +7097,8 @@ class Experiment:
         elif isinstance(x180, Waveform):
             x180 = {control_qubit: x180}
 
-        sweep_result = self.sweep_parameter(
-            lambda duration: CrossResonance(
+        def ecr_sequence(duration: float) -> PulseSchedule:
+            ecr = CrossResonance(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
                 cr_amplitude=amplitude,
@@ -6985,8 +7108,20 @@ class Experiment:
                 cancel_amplitude=amplitude * cr_cancel_ratio,
                 cancel_phase=cancel_phase,
                 echo=True,
-                pi_pulse=x180[target_qubit],
-            ),
+                pi_pulse=x180[control_qubit],
+            )
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+                if initial_state != "0":
+                    ps.add(
+                        control_qubit,
+                        self.get_pulse_for_state(control_qubit, initial_state),
+                    )
+                    ps.barrier()
+                ps.call(ecr)
+            return ps
+
+        sweep_result = self.sweep_parameter(
+            ecr_sequence,
             sweep_range=duration_range,
             shots=shots,
             interval=interval,
@@ -7008,25 +7143,26 @@ class Experiment:
             yaxis_title="Signal",
         )
 
-        duration = fit_result["root"]
+        duration = round(fit_result["root"] / SAMPLING_PERIOD) * SAMPLING_PERIOD
 
-        self._system_note.put(
-            CR_PARAMS,
-            {
-                f"{control_qubit}-{target_qubit}": {
-                    "duration": duration,
-                    "ramptime": cr_ramptime,
-                    "cr_pulse": {
-                        "amplitude": amplitude,
-                        "phase": cr_phase,
-                    },
-                    "cancel_pulse": {
-                        "amplitude": amplitude * cr_cancel_ratio,
-                        "phase": cancel_phase,
+        if store_params:
+            self._system_note.put(
+                CR_PARAMS,
+                {
+                    cr_label: {
+                        "duration": duration,
+                        "ramptime": cr_ramptime,
+                        "cr_pulse": {
+                            "amplitude": amplitude,
+                            "phase": cr_phase,
+                        },
+                        "cancel_pulse": {
+                            "amplitude": amplitude * cr_cancel_ratio,
+                            "phase": cancel_phase,
+                        },
                     },
                 },
-            },
-        )
+            )
 
         return {
             "duration_range": duration_range,
@@ -7045,16 +7181,20 @@ class Experiment:
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
         echo: bool = True,
-        x180: Waveform | None = None,
+        x180: TargetMap[Waveform] | Waveform | None = None,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_params = self._system_note.get(CR_PARAMS)[cr_label]
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
-                x180 = self.drag_pi_pulse[control_qubit]
+                pi_pulse = self.drag_pi_pulse[control_qubit]
             else:
-                x180 = self.pi_pulse[control_qubit]
+                pi_pulse = self.pi_pulse[control_qubit]
+        elif isinstance(x180, Waveform):
+            pi_pulse = x180
+        else:
+            pi_pulse = x180[control_qubit]
 
         if cr_amplitude is not None and cancel_amplitude is None:
             cr_cancel_ratio = (
@@ -7073,38 +7213,23 @@ class Experiment:
             cancel_amplitude=cancel_amplitude or cr_params["cancel_pulse"]["amplitude"],
             cancel_phase=cancel_phase or cr_params["cancel_pulse"]["phase"],
             echo=echo,
-            pi_pulse=x180,
+            pi_pulse=pi_pulse,
         )
 
     def cnot(
         self,
         control_qubit: str,
         target_qubit: str,
-        cr_duration: float | None = None,
-        cr_ramptime: float | None = None,
-        cr_amplitude: float | None = None,
-        cr_phase: float | None = None,
-        cancel_amplitude: float | None = None,
-        cancel_phase: float | None = None,
-        echo: bool = True,
-        x180: Waveform | None = None,
+        zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
-        zx90 = self.zx90(
-            control_qubit=control_qubit,
-            target_qubit=target_qubit,
-            cr_duration=cr_duration,
-            cr_ramptime=cr_ramptime,
-            cr_amplitude=cr_amplitude,
-            cr_phase=cr_phase,
-            cancel_amplitude=cancel_amplitude,
-            cancel_phase=cancel_phase,
-            echo=echo,
-            x180=x180,
-        )
+        zx90 = zx90 or self.zx90(control_qubit, target_qubit)
         if x90 is None:
-            x90 = self.hpi_pulse[target_qubit]
+            if target_qubit in self.drag_hpi_pulse:
+                x90 = self.drag_hpi_pulse[target_qubit]
+            else:
+                x90 = self.hpi_pulse[target_qubit]
 
         with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
             ps.call(zx90)
@@ -7117,8 +7242,7 @@ class Experiment:
         self,
         control_qubit: str,
         target_qubit: str,
-        x90: Waveform | None = None,
-        x180: Waveform | None = None,
+        zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -7129,8 +7253,7 @@ class Experiment:
         cnot = self.cnot(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
-            x90=x90,
-            x180=x180,
+            zx90=zx90,
         )
         result = self.measure(
             cnot,
