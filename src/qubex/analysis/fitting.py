@@ -1786,7 +1786,7 @@ def fit_rotation(
     if bounds is None:
         bounds = (
             (0, 0, -np.pi, 0),
-            (np.inf, np.pi, np.pi, np.inf),
+            (np.inf, np.pi, np.pi, 1e-3),
         )
 
     result = least_squares(
@@ -1800,6 +1800,8 @@ def fit_rotation(
     Omega = fitted_params[0]
     theta = fitted_params[1]
     phi = fitted_params[2]
+    alpha = fitted_params[3]
+    tau = 1 / alpha * 1e-3  # μs
     Omega_x = Omega * np.sin(theta) * np.cos(phi)
     Omega_y = Omega * np.sin(theta) * np.sin(phi)
     Omega_z = Omega * np.cos(theta)
@@ -1862,6 +1864,14 @@ def fit_rotation(
             name="Z (fit)",
             line=dict(color=COLORS[2]),
         )
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"τ = {tau:.3f} μs",
+        showarrow=False,
     )
     fig.update_layout(
         title=title,
@@ -1936,6 +1946,7 @@ def fit_rotation(
     return {
         "Omega": np.array([Omega_x, Omega_y, Omega_z]),
         "fig": fig,
+        "fig3d": fig3d,
     }
 
 
