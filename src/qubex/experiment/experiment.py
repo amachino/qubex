@@ -5091,8 +5091,6 @@ class Experiment:
         ...     plot=True,
         ... )
         """
-        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
-
         if seeds is None:
             seeds = np.random.randint(0, 2**32, n_trials)
         else:
@@ -5112,6 +5110,8 @@ class Experiment:
             self._validate_rabi_params([target])
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 1001, 100)
+
+        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
 
         rb_results = []
         irb_results = []
