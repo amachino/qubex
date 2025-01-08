@@ -16,7 +16,7 @@ dependencies = [
     "jax ~= 0.0",
     "jsonpickle ~= 3.0",
     "jupyter ~= 1.0",
-    "kaleido ~= 0.0",
+    "kaleido == 0.2.1",
     "matplotlib ~= 3.0",
     "networkx ~= 3.0",
     "numpy ~= 1.0",
