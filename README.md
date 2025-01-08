@@ -29,14 +29,6 @@ cd qubex
 pip install -e .
 ```
 
-or with uv:
-
-```bash
-git clone git+https://github.com/amachino/qubex.git
-cd qubex
-uv sync
-```
-
 Check available versions on the [release page](https://github.com/amachino/qubex/releases).
 
 ## Usage
