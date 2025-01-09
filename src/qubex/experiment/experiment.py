@@ -846,6 +846,26 @@ class Experiment:
             box_ids = self.box_ids
         self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
 
+    def resync_clocks(
+        self,
+        box_ids: Optional[list[str]] = None,
+    ) -> None:
+        """
+        Resynchronize the clocks of the measurement system.
+
+        Parameters
+        ----------
+        box_ids : Optional[list[str]], optional
+            List of the box IDs to resynchronize. Defaults to None.
+
+        Examples
+        --------
+        >>> ex.resync_clocks()
+        """
+        if box_ids is None:
+            box_ids = self.box_ids
+        self.device_controller.resync_clocks(box_ids)
+
     def configure(
         self,
         box_ids: Optional[list[str]] = None,
@@ -2785,8 +2805,6 @@ class Experiment:
             print(f"control_amplitude for {rabi_rate * 1e3} MHz\n")
             for target, amplitude in amplitudes.items():
                 print(f"{target}: {amplitude:.6f}")
-
-            print(f"\n{1/rabi_rate/4} ns rect pulse → π/2 pulse")
 
         return amplitudes
 
