@@ -16,11 +16,14 @@ CLIFFORD_LIST_2Q = "clifford_list_2q"
 
 
 class CliffordGenerator:
-    generators = {
+    cliffords = {
         "I": Clifford.I(),
         "X90": Clifford.X90(),
         "Y90": Clifford.Y90(),
         "Z90": Clifford.Z90(),
+        "X180": Clifford.X180(),
+        "Y180": Clifford.Y180(),
+        "Z180": Clifford.Z180(),
         "II": Clifford.II(),
         "IX90": Clifford.IX90(),
         "IY90": Clifford.IY90(),
@@ -559,9 +562,9 @@ class CliffordGenerator:
         for item in data:
             sequence = []
             for gate in item["sequence"]:
-                if gate not in self.generators:
+                if gate not in self.cliffords:
                     raise ValueError("Invalid gate name.")
-                sequence.append(self.generators[gate])
+                sequence.append(self.cliffords[gate])
 
             map = {operator: Pauli(*item["map"][operator]) for operator in item["map"]}
 

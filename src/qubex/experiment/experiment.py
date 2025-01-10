@@ -620,7 +620,7 @@ class Experiment:
     @property
     def clifford(self) -> dict[str, Clifford]:
         """Get the Clifford dict."""
-        return self.clifford_generator.generators
+        return self.clifford_generator.cliffords
 
     def _validate_rabi_params(
         self,
@@ -3289,8 +3289,8 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-1.0, 1.0, 21),
-        n_turns: int = 4,
+        beta_range: ArrayLike = np.linspace(-0.2, 1.0, 21),
+        n_turns: int = 1,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3305,9 +3305,9 @@ class Experiment:
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-0.2, 1.0, 21).
         n_turns : int, optional
-            Number of turns to |0> state. Defaults to 4.
+            Number of turns to |0> state. Defaults to 1.
         degree : int, optional
             Degree of the polynomial to fit. Defaults to 3.
         shots : int, optional
@@ -3330,7 +3330,6 @@ class Experiment:
 
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
-                stored_beta = self._system_note.get(DRAG_HPI_BETA)
 
                 def sequence(beta: float) -> dict[str, PulseSequence]:
                     x90p = Drag(
@@ -3351,7 +3350,6 @@ class Experiment:
                     }
 
             elif pulse_type == "pi":
-                stored_beta = self._system_note.get(DRAG_PI_BETA)
 
                 def sequence(beta: float) -> dict[str, PulseSequence]:
                     x180p = Drag(
@@ -3370,15 +3368,9 @@ class Experiment:
                         )
                     }
 
-            sweep_range = beta_range
-            if stored_beta is not None:
-                if target in stored_beta:
-                    beta = stored_beta[target]
-                    sweep_range = (beta_range + beta).astype(np.float64)
-
             sweep_data = self.sweep_parameter(
                 sequence=sequence,
-                sweep_range=sweep_range,
+                sweep_range=beta_range,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -3386,7 +3378,7 @@ class Experiment:
             values = sweep_data.normalized
             fit_result = fitting.fit_polynomial(
                 target=target,
-                x=sweep_range,
+                x=beta_range,
                 y=values,
                 degree=degree,
                 title=f"DRAG {pulse_type} beta calibration",
@@ -3590,10 +3582,10 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
-        n_turns: int = 4,
+        n_turns: int = 1,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-1.0, 1.0, 21),
+        beta_range: ArrayLike = np.linspace(-0.2, 1.0, 21),
         drag_coeff: float = DRAG_COEFF,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3608,13 +3600,13 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
         n_turns : int, optional
-            Number of turns to |0> state. Defaults to 4.
+            Number of turns to |0> state. Defaults to 1.
         n_iterations : int, optional
             Number of iterations. Defaults to 2.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 21),
+            Range of the beta to sweep. Defaults to np.linspace(-0.2, 1.0, 21).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
@@ -3677,10 +3669,10 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
-        n_turns: int = 4,
+        n_turns: int = 1,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.5, 0.5, 21),
+        beta_range: ArrayLike = np.linspace(-0.2, 1.0, 21),
         drag_coeff: float = DRAG_COEFF,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
@@ -3696,13 +3688,13 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
         n_turns : int, optional
-            Number of turns to |0> state. Defaults to 4.
+            Number of turns to |0> state. Defaults to 1.
         n_iterations : int, optional
             Number of iterations. Defaults to 2.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-0.5, 0.5, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-0.2, 1.0, 21).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         degree : int, optional
@@ -4511,7 +4503,7 @@ class Experiment:
         *,
         target: str,
         n: int,
-        x90: dict[str, Waveform] | None = None,
+        x90: TargetMap[Waveform] | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
@@ -4530,7 +4522,7 @@ class Experiment:
             Target qubit.
         n : int
             Number of Clifford gates.
-        x90 : Waveform | dict[str, Waveform], optional
+        x90 : Waveform | TargetMap[Waveform], optional
             π/2 pulse used for 1Q gates. Defaults to None.
         zx90 : PulseSchedule | dict[str, Waveform], optional
             ZX90 pulses used for 2Q gates. Defaults to None.
@@ -4793,7 +4785,7 @@ class Experiment:
         *,
         target: str,
         n_cliffords_range: ArrayLike = np.arange(0, 21, 2),
-        x90: dict[str, Waveform] | None = None,
+        x90: TargetMap[Waveform] | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
@@ -5041,7 +5033,7 @@ class Experiment:
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]],
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
-        x90: Waveform | None = None,
+        x90: TargetMap[Waveform] | Waveform | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
@@ -5179,7 +5171,7 @@ class Experiment:
                     rb_result = self.rb_experiment_1q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
-                        x90=x90,
+                        x90=x90,  # type: ignore
                         spectator_state=spectator_state,
                         seed=seed,
                         shots=shots,
@@ -5193,7 +5185,7 @@ class Experiment:
                     irb_result = self.rb_experiment_1q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
-                        x90=x90,
+                        x90=x90,  # type: ignore
                         interleaved_waveform=interleaved_waveform,  # type: ignore
                         interleaved_clifford=interleaved_clifford,
                         spectator_state=spectator_state,
