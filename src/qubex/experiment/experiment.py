@@ -3289,7 +3289,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-0.2, 1.0, 21),
+        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
         n_turns: int = 1,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
@@ -3305,7 +3305,7 @@ class Experiment:
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-0.2, 1.0, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 1.
         degree : int, optional
@@ -3585,7 +3585,7 @@ class Experiment:
         n_turns: int = 1,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.2, 1.0, 21),
+        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
         drag_coeff: float = DRAG_COEFF,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3606,7 +3606,7 @@ class Experiment:
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-0.2, 1.0, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
@@ -3672,7 +3672,7 @@ class Experiment:
         n_turns: int = 1,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.2, 1.0, 21),
+        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
         drag_coeff: float = DRAG_COEFF,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
@@ -3694,7 +3694,7 @@ class Experiment:
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-0.2, 1.0, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         degree : int, optional
@@ -4872,6 +4872,7 @@ class Experiment:
             target=target,
             x=n_cliffords_range,
             y=np.array(fidelities),
+            dimension=4,
             title="Randomized benchmarking",
             xaxis_title="Number of Cliffords",
             yaxis_title="Normalized signal",
@@ -5004,6 +5005,7 @@ class Experiment:
             x=n_cliffords_range,
             y=mean,
             error_y=std,
+            dimension=4 if is_2q else 2,
             plot=plot,
             title="Randomized benchmarking",
             xaxis_title="Number of Cliffords",
@@ -5206,6 +5208,7 @@ class Experiment:
             x=n_cliffords_range,
             y=rb_mean,
             error_y=rb_std,
+            dimension=4 if is_2q else 2,
             plot=plot,
         )
         A_rb = rb_fit_result["A"]
@@ -5220,6 +5223,7 @@ class Experiment:
             x=n_cliffords_range,
             y=irb_mean,
             error_y=irb_std,
+            dimension=4 if is_2q else 2,
             plot=plot,
             title="Interleaved randomized benchmarking",
         )
@@ -5227,7 +5231,7 @@ class Experiment:
         p_irb = irb_fit_result["p"]
         C_irb = irb_fit_result["C"]
 
-        dimension = 2**2 if is_2q else 2
+        dimension = 4 if is_2q else 2
         gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
         gate_fidelity = 1 - gate_error
 
