@@ -886,6 +886,7 @@ class Experiment:
         self.state_manager.load(
             chip_id=self.chip_id,
             config_dir=self.config_path,
+            params_dir=self.params_path,
             targets_to_exclude=exclude,
         )
         self.state_manager.push(
@@ -3632,7 +3633,7 @@ class Experiment:
             targets = list(targets)
 
         for i in range(n_iterations):
-            print(f"\nIteration {i+1}/{n_iterations}")
+            print(f"\nIteration {i + 1}/{n_iterations}")
 
             use_stored_amplitude = True if i > 0 else False
             use_stored_beta = True if i > 0 else False
@@ -3722,7 +3723,7 @@ class Experiment:
             targets = list(targets)
 
         for i in range(n_iterations):
-            print(f"\nIteration {i+1}/{n_iterations}")
+            print(f"\nIteration {i + 1}/{n_iterations}")
 
             use_stored_amplitude = True if i > 0 else False
             use_stored_beta = True if i > 0 else False
@@ -3838,7 +3839,7 @@ class Experiment:
                 return ps
 
             print(
-                f"({idx+1}/{len(subgroups)}) Conducting T1 experiment for {subgroup}...\n"
+                f"({idx + 1}/{len(subgroups)}) Conducting T1 experiment for {subgroup}...\n"
             )
 
             sweep_result = self.sweep_parameter(
@@ -3975,7 +3976,7 @@ class Experiment:
                 return ps
 
             print(
-                f"({idx+1}/{len(subgroups)}) Conducting T2 experiment for {subgroup}...\n"
+                f"({idx + 1}/{len(subgroups)}) Conducting T2 experiment for {subgroup}...\n"
             )
 
             sweep_result = self.sweep_parameter(
