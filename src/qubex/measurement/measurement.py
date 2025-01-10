@@ -970,6 +970,9 @@ class Measurement:
                 n_states=n_states,
             )
 
+        # reorder the keys in the measure_data
+        measure_data = {key: measure_data[key] for key in sorted(measure_data)}
+
         return MeasureResult(
             mode=measure_mode,
             data=measure_data,

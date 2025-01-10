@@ -846,6 +846,26 @@ class Experiment:
             box_ids = self.box_ids
         self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
 
+    def resync_clocks(
+        self,
+        box_ids: Optional[list[str]] = None,
+    ) -> None:
+        """
+        Resynchronize the clocks of the measurement system.
+
+        Parameters
+        ----------
+        box_ids : Optional[list[str]], optional
+            List of the box IDs to resynchronize. Defaults to None.
+
+        Examples
+        --------
+        >>> ex.resync_clocks()
+        """
+        if box_ids is None:
+            box_ids = self.box_ids
+        self.device_controller.resync_clocks(box_ids)
+
     def configure(
         self,
         box_ids: Optional[list[str]] = None,
@@ -2785,8 +2805,6 @@ class Experiment:
             print(f"control_amplitude for {rabi_rate * 1e3} MHz\n")
             for target, amplitude in amplitudes.items():
                 print(f"{target}: {amplitude:.6f}")
-
-            print(f"\n{1/rabi_rate/4} ns rect pulse → π/2 pulse")
 
         return amplitudes
 
@@ -7246,6 +7264,7 @@ class Experiment:
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = False,
     ) -> dict:
         if self.state_centers is None:
             self.build_classifier(plot=False)
@@ -7285,7 +7304,7 @@ class Experiment:
             )
         )
         fig.update_layout(
-            title="Bell state measurement",
+            title=f"Bell state measurement: {control_qubit}-{target_qubit}",
             xaxis_title="State label",
             yaxis_title="Probability",
             barmode="group",
@@ -7293,6 +7312,12 @@ class Experiment:
         )
         if plot:
             fig.show()
+
+        if save_image:
+            vis.save_figure_image(
+                fig,
+                f"bell_state_measurement_{control_qubit}-{target_qubit}",
+            )
 
         for label, p, mp in zip(labels, prob, mitigated_prob):
             print(f"{label} : {p:.2%} -> {mp:.2%}")
