@@ -6875,6 +6875,7 @@ class Experiment:
         amplitude: float = 0.5,
         duration: float = 200,
         ramptime: float = 50,
+        n_repetitions: int = 1,
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -6902,6 +6903,7 @@ class Experiment:
                     ramptime=ramptime,
                     amplitude_range=amplitude_range,  # type: ignore
                     initial_state=initial_state,
+                    n_repetitions=n_repetitions,
                     degree=degree,
                     x180=x180,
                     use_zvalues=use_zvalues,
@@ -6918,6 +6920,7 @@ class Experiment:
                     duration_range=duration_range,  # type: ignore
                     ramptime=ramptime,
                     initial_state=initial_state,
+                    n_repetitions=n_repetitions,
                     degree=degree,
                     x180=x180,
                     use_zvalues=use_zvalues,
@@ -6976,6 +6979,7 @@ class Experiment:
         ramptime: float = 20,
         amplitude_range: ArrayLike = np.linspace(0.0, 1.0, 51),
         initial_state: str = "0",
+        n_repetitions: int = 1,
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -7015,7 +7019,7 @@ class Experiment:
                 cancel_phase=cancel_phase,
                 echo=True,
                 pi_pulse=x180[control_qubit],
-            )
+            ).repeated(n_repetitions)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
                 if initial_state != "0":
                     ps.add(
@@ -7085,6 +7089,7 @@ class Experiment:
         duration_range: ArrayLike = np.arange(100, 201, 2),
         ramptime: float = 20,
         initial_state: str = "0",
+        n_repetitions: int = 1,
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -7124,7 +7129,7 @@ class Experiment:
                 cancel_phase=cancel_phase,
                 echo=True,
                 pi_pulse=x180[control_qubit],
-            )
+            ).repeated(n_repetitions)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
                 if initial_state != "0":
                     ps.add(
