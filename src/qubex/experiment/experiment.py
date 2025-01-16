@@ -696,7 +696,11 @@ class Experiment:
             else:
                 raise ValueError("Invalid state.")
 
-    def get_spectators(self, qubit: str) -> list[Qubit]:
+    def get_spectators(
+        self,
+        qubit: str,
+        in_same_mux: bool = False,
+    ) -> list[Qubit]:
         """
         Get the spectators of the given qubit.
 
@@ -704,13 +708,15 @@ class Experiment:
         ----------
         qubit : str
             Qubit to get the spectators.
+        in_same_mux : bool, optional
+            Whether to get the spectators in the same mux. Defaults to False.
 
         Returns
         -------
         list[Qubit]
             List of the spectators.
         """
-        return self.quantum_system.get_spectator_qubits(qubit)
+        return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
 
     def get_confusion_matrix(
         self,
@@ -3164,6 +3170,7 @@ class Experiment:
         self,
         targets: Collection[str],
         *,
+        spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 4,
         drag_coeff: float = DRAG_COEFF,
@@ -3179,6 +3186,8 @@ class Experiment:
         ----------
         targets : Collection[str]
             Target qubits to calibrate.
+        spectator_state : str, optional
+            Spectator state. Defaults to "+".
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         n_rotations : int, optional
@@ -3254,10 +3263,34 @@ class Experiment:
             ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
             n_per_rotation = 2 if pulse_type == "pi" else 4
+
+            spectators = self.get_spectators(target)
+            all_targets = [target] + [
+                spectator.label
+                for spectator in spectators
+                if spectator.label in self._qubits
+            ]
+
+            def sequence(x: float) -> PulseSchedule:
+                with PulseSchedule(all_targets) as ps:
+                    for spectator in spectators:
+                        if spectator.label in self._qubits:
+                            ps.add(
+                                spectator.label,
+                                self.get_pulse_for_state(
+                                    target=spectator.label,
+                                    state=spectator_state,
+                                ),
+                            )
+                    ps.barrier()
+                    ps.add(
+                        target, pulse.scaled(x).repeated(n_per_rotation * n_rotations)
+                    )
+                return ps
+
             sweep_data = self.sweep_parameter(
-                sequence=lambda x: {target: pulse.scaled(x)},
+                sequence=sequence,
                 sweep_range=ampl_range,
-                repetitions=n_per_rotation * n_rotations,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -3288,6 +3321,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
+        spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"] = "hpi",
         beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
         n_turns: int = 1,
@@ -3302,6 +3336,8 @@ class Experiment:
         ----------
         targets : Collection[str]
             Target qubits to calibrate.
+        spectator_state : str, optional
+            Spectator state. Defaults to "+".
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
@@ -3329,44 +3365,61 @@ class Experiment:
         self._validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
-            if pulse_type == "hpi":
+            spectators = self.get_spectators(target)
+            all_targets = [target] + [
+                spectator.label
+                for spectator in spectators
+                if spectator.label in self._qubits
+            ]
 
-                def sequence(beta: float) -> dict[str, PulseSequence]:
-                    x90p = Drag(
-                        duration=DRAG_HPI_DURATION,
-                        amplitude=self._system_note.get(DRAG_HPI_AMPLITUDE)[target],
-                        beta=beta,
-                    )
-                    x90m = x90p.scaled(-1)
-                    y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
-                    return {
-                        target: PulseSequence(
-                            [
-                                x90p,
-                                PulseSequence([x90m, x90p] * n_turns),
-                                y90m,
-                            ]
+            def sequence(beta: float) -> PulseSchedule:
+                with PulseSchedule(all_targets) as ps:
+                    for spectator in spectators:
+                        if spectator.label in self._qubits:
+                            ps.add(
+                                spectator.label,
+                                self.get_pulse_for_state(
+                                    target=spectator.label,
+                                    state=spectator_state,
+                                ),
+                            )
+                    ps.barrier()
+                    if pulse_type == "hpi":
+                        x90p = Drag(
+                            duration=DRAG_HPI_DURATION,
+                            amplitude=self._system_note.get(DRAG_HPI_AMPLITUDE)[target],
+                            beta=beta,
                         )
-                    }
-
-            elif pulse_type == "pi":
-
-                def sequence(beta: float) -> dict[str, PulseSequence]:
-                    x180p = Drag(
-                        duration=DRAG_PI_DURATION,
-                        amplitude=self._system_note.get(DRAG_PI_AMPLITUDE)[target],
-                        beta=beta,
-                    )
-                    x180m = x180p.scaled(-1)
-                    y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
-                    return {
-                        target: PulseSequence(
-                            [
-                                PulseSequence([x180p, x180m] * n_turns),
-                                y90m,
-                            ]
+                        x90m = x90p.scaled(-1)
+                        y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                        ps.add(
+                            target,
+                            PulseSequence(
+                                [
+                                    x90p,
+                                    PulseSequence([x90m, x90p] * n_turns),
+                                    y90m,
+                                ]
+                            ),
                         )
-                    }
+                    elif pulse_type == "pi":
+                        x180p = Drag(
+                            duration=DRAG_PI_DURATION,
+                            amplitude=self._system_note.get(DRAG_PI_AMPLITUDE)[target],
+                            beta=beta,
+                        )
+                        x180m = x180p.scaled(-1)
+                        y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                        ps.add(
+                            target,
+                            PulseSequence(
+                                [
+                                    PulseSequence([x180p, x180m] * n_turns),
+                                    y90m,
+                                ]
+                            ),
+                        )
+                return ps
 
             sweep_data = self.sweep_parameter(
                 sequence=sequence,
@@ -3668,6 +3721,8 @@ class Experiment:
     def calibrate_drag_pi_pulse(
         self,
         targets: Collection[str] | None = None,
+        *,
+        spectator_state: str = "+",
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
@@ -3723,6 +3778,7 @@ class Experiment:
             print("Calibrating DRAG amplitude:")
             amplitude = self.calibrate_drag_amplitude(
                 targets=targets,
+                spectator_state=spectator_state,
                 pulse_type="pi",
                 n_rotations=n_rotations,
                 use_stored_amplitude=use_stored_amplitude,
@@ -3736,6 +3792,7 @@ class Experiment:
                 print("Calibrating DRAG beta:")
                 beta = self.calibrate_drag_beta(
                     targets=targets,
+                    spectator_state=spectator_state,
                     pulse_type="pi",
                     beta_range=beta_range,
                     n_turns=n_turns,
