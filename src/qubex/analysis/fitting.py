@@ -457,6 +457,8 @@ def fit_rabi(
     offset = popt[3]
     frequency = omega / (2 * np.pi)
 
+    tau = popt[4] if is_damped else None
+
     # print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
     print(f"Rabi frequency: {frequency * 1e3:.6g} MHz")
     # print(f"Rabi period: {1 / frequency:.3g} ns")
@@ -490,7 +492,8 @@ def fit_rabi(
             yref="paper",
             x=0.95,
             y=0.95,
-            text=f"f = {frequency * 1e3:.2f} MHz",
+            text=f"f = {frequency * 1e3:.2f} MHz"
+            + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
             showarrow=False,
         )
         fig.update_layout(

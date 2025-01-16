@@ -1787,6 +1787,7 @@ class Experiment:
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
+        is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1805,6 +1806,8 @@ class Experiment:
             Amplitudes of the control pulses. Defaults to None.
         frequencies : dict[str, float], optional
             Frequencies of the qubits. Defaults to None.
+        is_damped : bool, optional
+            Whether to fit as a damped oscillation. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -1835,6 +1838,7 @@ class Experiment:
             amplitudes=amplitudes,
             time_range=time_range,
             frequencies=frequencies,
+            is_damped=is_damped,
             shots=shots,
             interval=interval,
             plot=plot,
@@ -1847,6 +1851,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
+        is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1860,6 +1865,8 @@ class Experiment:
             Target labels to check the Rabi oscillation.
         time_range : ArrayLike, optional
             Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
+        is_damped : bool, optional
+            Whether to fit as a damped oscillation. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -1895,6 +1902,7 @@ class Experiment:
             data = self.ef_rabi_experiment(
                 amplitudes={label: amplitudes[label]},
                 time_range=time_range,
+                is_damped=is_damped,
                 shots=shots,
                 interval=interval,
                 store_params=True,
@@ -1916,6 +1924,7 @@ class Experiment:
         time_range: ArrayLike = RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
+        is_damped: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1934,6 +1943,8 @@ class Experiment:
             Frequencies of the qubits. Defaults to None.
         detuning : float, optional
             Detuning of the control frequency. Defaults to None.
+        is_damped : bool, optional
+            Whether to fit as a damped oscillation. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2002,6 +2013,7 @@ class Experiment:
                 times=data.sweep_range,
                 data=data.data,
                 plot=plot,
+                is_damped=is_damped,
             )
             for target, data in sweep_data.items()
         }
@@ -2038,6 +2050,7 @@ class Experiment:
         time_range: ArrayLike,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
+        is_damped: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2056,6 +2069,8 @@ class Experiment:
             Frequencies of the qubits. Defaults to None.
         detuning : float, optional
             Detuning of the control frequency. Defaults to None.
+        is_damped : bool, optional
+            Whether to fit as a damped oscillation. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2133,6 +2148,7 @@ class Experiment:
                 times=data.sweep_range,
                 data=data.data,
                 plot=plot,
+                is_damped=is_damped,
             )
             for target, data in sweep_data.items()
         }
