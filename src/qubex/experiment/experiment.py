@@ -3826,7 +3826,7 @@ class Experiment:
             def t1_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
-                        ps.add(target, self.pi_pulse[target])
+                        ps.add(target, self.hpi_pulse[target].repeated(2))
                         ps.add(target, Blank(T))
                 return ps
 
