@@ -7420,11 +7420,92 @@ class Experiment:
             "figure": fig,
         }
 
+    def optimize_x90(
+        self,
+        qubit: str,
+        *,
+        sigma0: float = 0.001,
+        seed: int = 42,
+        ftarget: float = 1e-3,
+        timeout: int = 300,
+    ) -> Waveform:
+        pulse = self.drag_hpi_pulse[qubit]
+        N = pulse.length
+        initial_params = list(pulse.real) + list(pulse.imag)
+        es = cma.CMAEvolutionStrategy(
+            initial_params,
+            sigma0,
+            {
+                "seed": seed,
+                "ftarget": ftarget,
+                "timeout": timeout,
+                "bounds": [[-1] * 2 * N, [1] * 2 * N],
+            },
+        )
+
+        def objective_func(params):
+            pulse = Pulse(params[:N] + 1j * params[N:])
+            result = self.state_tomography(
+                {qubit: pulse.repeated(2)},
+                x90={qubit: pulse},
+            )
+            loss = np.linalg.norm(result[qubit] - np.array((0, 0, -1)))
+            return loss
+
+        es.optimize(objective_func)
+        x = es.result.xbest
+        opt_pulse = Pulse(x[:N] + 1j * x[N:])
+        return opt_pulse
+
+    def optimize_drag_x90(
+        self,
+        qubit: str,
+        *,
+        duration: float = 16,
+        sigma0: float = 0.001,
+        seed: int = 42,
+        ftarget: float = 1e-3,
+        timeout: int = 300,
+    ) -> Waveform:
+        initial_params = [
+            self._system_note.get(DRAG_HPI_AMPLITUDE)[qubit],
+            self._system_note.get(DRAG_HPI_BETA)[qubit],
+        ]
+        es = cma.CMAEvolutionStrategy(
+            initial_params,
+            sigma0,
+            {
+                "seed": seed,
+                "ftarget": ftarget,
+                "timeout": timeout,
+                "bounds": [[-1, -1], [1, 1]],
+            },
+        )
+
+        def objective_func(params):
+            pulse = Drag(
+                duration=duration,
+                amplitude=params[0],
+                beta=params[1],
+            )
+            result = self.state_tomography(
+                {qubit: pulse.repeated(2)},
+                x90={qubit: pulse},
+            )
+            loss = np.linalg.norm(result[qubit] - np.array((0, 0, -1)))
+            return loss
+
+        es.optimize(objective_func)
+        x = es.result.xbest
+        opt_pulse = Drag(duration=duration, amplitude=x[0], beta=x[1])
+        return opt_pulse
+
     def optimize_pulse(
         self,
         qubit: str,
         *,
         pulse: Waveform,
+        x90: Waveform,
         target_state: tuple[float, float, float],
         sigma0: float = 0.001,
         seed: int = 42,
@@ -7446,7 +7527,7 @@ class Experiment:
 
         def objective_func(params):
             pulse = Pulse(params[:N] + 1j * params[N:])
-            result = self.state_tomography({qubit: pulse})
+            result = self.state_tomography({qubit: pulse}, x90={qubit: x90})
             loss = np.linalg.norm(result[qubit] - np.array(target_state))
             return loss
 
