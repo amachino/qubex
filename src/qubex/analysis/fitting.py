@@ -457,6 +457,8 @@ def fit_rabi(
     offset = popt[3]
     frequency = omega / (2 * np.pi)
 
+    tau = popt[4] if is_damped else None
+
     # print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
     print(f"Rabi frequency: {frequency * 1e3:.6g} MHz")
     # print(f"Rabi period: {1 / frequency:.3g} ns")
@@ -490,7 +492,8 @@ def fit_rabi(
             yref="paper",
             x=0.95,
             y=0.95,
-            text=f"f = {frequency * 1e3:.2f} MHz",
+            text=f"f = {frequency * 1e3:.2f} MHz"
+            + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
             showarrow=False,
         )
         fig.update_layout(
@@ -869,6 +872,7 @@ def fit_rb(
     x: npt.NDArray[np.int64],
     y: npt.NDArray[np.float64],
     error_y: npt.NDArray[np.float64] | None = None,
+    dimension: int = 2,
     p0=None,
     bounds=None,
     plot: bool = True,
@@ -891,6 +895,8 @@ def fit_rb(
         Amplitude data for the decay.
     error_y : npt.NDArray[np.float64], optional
         Error data for the decay.
+    dimension : int, optional
+        Dimension of the Hilbert space.
     p0 : optional
         Initial guess for the fitting parameters.
     bounds : optional
@@ -934,7 +940,6 @@ def fit_rb(
     A, p, C = popt
     A_err, p_err, C_err = np.sqrt(np.diag(pcov))
 
-    dimension = 2
     depolarizing_rate = 1 - p
     avg_gate_error = (dimension - 1) * (1 - p) / dimension
     avg_gate_fidelity = 1 - avg_gate_error

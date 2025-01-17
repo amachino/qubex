@@ -620,7 +620,7 @@ class Experiment:
     @property
     def clifford(self) -> dict[str, Clifford]:
         """Get the Clifford dict."""
-        return self.clifford_generator.generators
+        return self.clifford_generator.cliffords
 
     def _validate_rabi_params(
         self,
@@ -696,7 +696,11 @@ class Experiment:
             else:
                 raise ValueError("Invalid state.")
 
-    def get_spectators(self, qubit: str) -> list[Qubit]:
+    def get_spectators(
+        self,
+        qubit: str,
+        in_same_mux: bool = False,
+    ) -> list[Qubit]:
         """
         Get the spectators of the given qubit.
 
@@ -704,13 +708,15 @@ class Experiment:
         ----------
         qubit : str
             Qubit to get the spectators.
+        in_same_mux : bool, optional
+            Whether to get the spectators in the same mux. Defaults to False.
 
         Returns
         -------
         list[Qubit]
             List of the spectators.
         """
-        return self.quantum_system.get_spectator_qubits(qubit)
+        return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
 
     def get_confusion_matrix(
         self,
@@ -1781,6 +1787,7 @@ class Experiment:
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
+        is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1799,6 +1806,8 @@ class Experiment:
             Amplitudes of the control pulses. Defaults to None.
         frequencies : dict[str, float], optional
             Frequencies of the qubits. Defaults to None.
+        is_damped : bool, optional
+            Whether to fit as a damped oscillation. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -1829,6 +1838,7 @@ class Experiment:
             amplitudes=amplitudes,
             time_range=time_range,
             frequencies=frequencies,
+            is_damped=is_damped,
             shots=shots,
             interval=interval,
             plot=plot,
@@ -1841,6 +1851,7 @@ class Experiment:
         targets: Collection[str] | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
+        is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1854,6 +1865,8 @@ class Experiment:
             Target labels to check the Rabi oscillation.
         time_range : ArrayLike, optional
             Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
+        is_damped : bool, optional
+            Whether to fit as a damped oscillation. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -1889,6 +1902,7 @@ class Experiment:
             data = self.ef_rabi_experiment(
                 amplitudes={label: amplitudes[label]},
                 time_range=time_range,
+                is_damped=is_damped,
                 shots=shots,
                 interval=interval,
                 store_params=True,
@@ -1910,6 +1924,7 @@ class Experiment:
         time_range: ArrayLike = RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
+        is_damped: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1928,6 +1943,8 @@ class Experiment:
             Frequencies of the qubits. Defaults to None.
         detuning : float, optional
             Detuning of the control frequency. Defaults to None.
+        is_damped : bool, optional
+            Whether to fit as a damped oscillation. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -1996,6 +2013,7 @@ class Experiment:
                 times=data.sweep_range,
                 data=data.data,
                 plot=plot,
+                is_damped=is_damped,
             )
             for target, data in sweep_data.items()
         }
@@ -2032,6 +2050,7 @@ class Experiment:
         time_range: ArrayLike,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
+        is_damped: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2050,6 +2069,8 @@ class Experiment:
             Frequencies of the qubits. Defaults to None.
         detuning : float, optional
             Detuning of the control frequency. Defaults to None.
+        is_damped : bool, optional
+            Whether to fit as a damped oscillation. Defaults to False.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -2127,6 +2148,7 @@ class Experiment:
                 times=data.sweep_range,
                 data=data.data,
                 plot=plot,
+                is_damped=is_damped,
             )
             for target, data in sweep_data.items()
         }
@@ -3164,6 +3186,7 @@ class Experiment:
         self,
         targets: Collection[str],
         *,
+        spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 4,
         drag_coeff: float = DRAG_COEFF,
@@ -3179,6 +3202,8 @@ class Experiment:
         ----------
         targets : Collection[str]
             Target qubits to calibrate.
+        spectator_state : str, optional
+            Spectator state. Defaults to "+".
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         n_rotations : int, optional
@@ -3254,10 +3279,34 @@ class Experiment:
             ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
             n_per_rotation = 2 if pulse_type == "pi" else 4
+
+            spectators = self.get_spectators(target)
+            all_targets = [target] + [
+                spectator.label
+                for spectator in spectators
+                if spectator.label in self._qubits
+            ]
+
+            def sequence(x: float) -> PulseSchedule:
+                with PulseSchedule(all_targets) as ps:
+                    for spectator in spectators:
+                        if spectator.label in self._qubits:
+                            ps.add(
+                                spectator.label,
+                                self.get_pulse_for_state(
+                                    target=spectator.label,
+                                    state=spectator_state,
+                                ),
+                            )
+                    ps.barrier()
+                    ps.add(
+                        target, pulse.scaled(x).repeated(n_per_rotation * n_rotations)
+                    )
+                return ps
+
             sweep_data = self.sweep_parameter(
-                sequence=lambda x: {target: pulse.scaled(x)},
+                sequence=sequence,
                 sweep_range=ampl_range,
-                repetitions=n_per_rotation * n_rotations,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -3288,9 +3337,10 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         *,
+        spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-1.0, 1.0, 21),
-        n_turns: int = 4,
+        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
+        n_turns: int = 1,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3302,12 +3352,14 @@ class Experiment:
         ----------
         targets : Collection[str]
             Target qubits to calibrate.
+        spectator_state : str, optional
+            Spectator state. Defaults to "+".
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
         n_turns : int, optional
-            Number of turns to |0> state. Defaults to 4.
+            Number of turns to |0> state. Defaults to 1.
         degree : int, optional
             Degree of the polynomial to fit. Defaults to 3.
         shots : int, optional
@@ -3329,56 +3381,65 @@ class Experiment:
         self._validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
-            if pulse_type == "hpi":
-                stored_beta = self._system_note.get(DRAG_HPI_BETA)
+            spectators = self.get_spectators(target)
+            all_targets = [target] + [
+                spectator.label
+                for spectator in spectators
+                if spectator.label in self._qubits
+            ]
 
-                def sequence(beta: float) -> dict[str, PulseSequence]:
-                    x90p = Drag(
-                        duration=DRAG_HPI_DURATION,
-                        amplitude=self._system_note.get(DRAG_HPI_AMPLITUDE)[target],
-                        beta=beta,
-                    )
-                    x90m = x90p.scaled(-1)
-                    y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
-                    return {
-                        target: PulseSequence(
-                            [
-                                x90p,
-                                PulseSequence([x90m, x90p] * n_turns),
-                                y90m,
-                            ]
+            def sequence(beta: float) -> PulseSchedule:
+                with PulseSchedule(all_targets) as ps:
+                    for spectator in spectators:
+                        if spectator.label in self._qubits:
+                            ps.add(
+                                spectator.label,
+                                self.get_pulse_for_state(
+                                    target=spectator.label,
+                                    state=spectator_state,
+                                ),
+                            )
+                    ps.barrier()
+                    if pulse_type == "hpi":
+                        x90p = Drag(
+                            duration=DRAG_HPI_DURATION,
+                            amplitude=self._system_note.get(DRAG_HPI_AMPLITUDE)[target],
+                            beta=beta,
                         )
-                    }
-
-            elif pulse_type == "pi":
-                stored_beta = self._system_note.get(DRAG_PI_BETA)
-
-                def sequence(beta: float) -> dict[str, PulseSequence]:
-                    x180p = Drag(
-                        duration=DRAG_PI_DURATION,
-                        amplitude=self._system_note.get(DRAG_PI_AMPLITUDE)[target],
-                        beta=beta,
-                    )
-                    x180m = x180p.scaled(-1)
-                    y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
-                    return {
-                        target: PulseSequence(
-                            [
-                                PulseSequence([x180p, x180m] * n_turns),
-                                y90m,
-                            ]
+                        x90m = x90p.scaled(-1)
+                        y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                        ps.add(
+                            target,
+                            PulseSequence(
+                                [
+                                    x90p,
+                                    PulseSequence([x90m, x90p] * n_turns),
+                                    y90m,
+                                ]
+                            ),
                         )
-                    }
-
-            sweep_range = beta_range
-            if stored_beta is not None:
-                if target in stored_beta:
-                    beta = stored_beta[target]
-                    sweep_range = (beta_range + beta).astype(np.float64)
+                    elif pulse_type == "pi":
+                        x180p = Drag(
+                            duration=DRAG_PI_DURATION,
+                            amplitude=self._system_note.get(DRAG_PI_AMPLITUDE)[target],
+                            beta=beta,
+                        )
+                        x180m = x180p.scaled(-1)
+                        y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                        ps.add(
+                            target,
+                            PulseSequence(
+                                [
+                                    PulseSequence([x180p, x180m] * n_turns),
+                                    y90m,
+                                ]
+                            ),
+                        )
+                return ps
 
             sweep_data = self.sweep_parameter(
                 sequence=sequence,
-                sweep_range=sweep_range,
+                sweep_range=beta_range,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -3386,7 +3447,7 @@ class Experiment:
             values = sweep_data.normalized
             fit_result = fitting.fit_polynomial(
                 target=target,
-                x=sweep_range,
+                x=beta_range,
                 y=values,
                 degree=degree,
                 title=f"DRAG {pulse_type} beta calibration",
@@ -3590,10 +3651,10 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
         n_rotations: int = 4,
-        n_turns: int = 4,
+        n_turns: int = 1,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-1.0, 1.0, 21),
+        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
         drag_coeff: float = DRAG_COEFF,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3608,13 +3669,13 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
         n_turns : int, optional
-            Number of turns to |0> state. Defaults to 4.
+            Number of turns to |0> state. Defaults to 1.
         n_iterations : int, optional
             Number of iterations. Defaults to 2.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.0, 1.0, 21),
+            Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
@@ -3676,11 +3737,13 @@ class Experiment:
     def calibrate_drag_pi_pulse(
         self,
         targets: Collection[str] | None = None,
+        *,
+        spectator_state: str = "+",
         n_rotations: int = 4,
-        n_turns: int = 4,
+        n_turns: int = 1,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.5, 0.5, 21),
+        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
         drag_coeff: float = DRAG_COEFF,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
@@ -3696,13 +3759,13 @@ class Experiment:
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
         n_turns : int, optional
-            Number of turns to |0> state. Defaults to 4.
+            Number of turns to |0> state. Defaults to 1.
         n_iterations : int, optional
             Number of iterations. Defaults to 2.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-0.5, 0.5, 21).
+            Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         degree : int, optional
@@ -3731,6 +3794,7 @@ class Experiment:
             print("Calibrating DRAG amplitude:")
             amplitude = self.calibrate_drag_amplitude(
                 targets=targets,
+                spectator_state=spectator_state,
                 pulse_type="pi",
                 n_rotations=n_rotations,
                 use_stored_amplitude=use_stored_amplitude,
@@ -3744,6 +3808,7 @@ class Experiment:
                 print("Calibrating DRAG beta:")
                 beta = self.calibrate_drag_beta(
                     targets=targets,
+                    spectator_state=spectator_state,
                     pulse_type="pi",
                     beta_range=beta_range,
                     n_turns=n_turns,
@@ -3834,7 +3899,7 @@ class Experiment:
             def t1_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
-                        ps.add(target, self.pi_pulse[target])
+                        ps.add(target, self.hpi_pulse[target].repeated(2))
                         ps.add(target, Blank(T))
                 return ps
 
@@ -4511,7 +4576,7 @@ class Experiment:
         *,
         target: str,
         n: int,
-        x90: dict[str, Waveform] | None = None,
+        x90: TargetMap[Waveform] | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
@@ -4530,7 +4595,7 @@ class Experiment:
             Target qubit.
         n : int
             Number of Clifford gates.
-        x90 : Waveform | dict[str, Waveform], optional
+        x90 : Waveform | TargetMap[Waveform], optional
             π/2 pulse used for 1Q gates. Defaults to None.
         zx90 : PulseSchedule | dict[str, Waveform], optional
             ZX90 pulses used for 2Q gates. Defaults to None.
@@ -4793,7 +4858,7 @@ class Experiment:
         *,
         target: str,
         n_cliffords_range: ArrayLike = np.arange(0, 21, 2),
-        x90: dict[str, Waveform] | None = None,
+        x90: TargetMap[Waveform] | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
@@ -4880,6 +4945,7 @@ class Experiment:
             target=target,
             x=n_cliffords_range,
             y=np.array(fidelities),
+            dimension=4,
             title="Randomized benchmarking",
             xaxis_title="Number of Cliffords",
             yaxis_title="Normalized signal",
@@ -5012,6 +5078,7 @@ class Experiment:
             x=n_cliffords_range,
             y=mean,
             error_y=std,
+            dimension=4 if is_2q else 2,
             plot=plot,
             title="Randomized benchmarking",
             xaxis_title="Number of Cliffords",
@@ -5041,7 +5108,7 @@ class Experiment:
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]],
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
-        x90: Waveform | None = None,
+        x90: TargetMap[Waveform] | Waveform | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
@@ -5179,7 +5246,7 @@ class Experiment:
                     rb_result = self.rb_experiment_1q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
-                        x90=x90,
+                        x90=x90,  # type: ignore
                         spectator_state=spectator_state,
                         seed=seed,
                         shots=shots,
@@ -5193,7 +5260,7 @@ class Experiment:
                     irb_result = self.rb_experiment_1q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
-                        x90=x90,
+                        x90=x90,  # type: ignore
                         interleaved_waveform=interleaved_waveform,  # type: ignore
                         interleaved_clifford=interleaved_clifford,
                         spectator_state=spectator_state,
@@ -5214,6 +5281,7 @@ class Experiment:
             x=n_cliffords_range,
             y=rb_mean,
             error_y=rb_std,
+            dimension=4 if is_2q else 2,
             plot=plot,
         )
         A_rb = rb_fit_result["A"]
@@ -5228,6 +5296,7 @@ class Experiment:
             x=n_cliffords_range,
             y=irb_mean,
             error_y=irb_std,
+            dimension=4 if is_2q else 2,
             plot=plot,
             title="Interleaved randomized benchmarking",
         )
@@ -5235,7 +5304,7 @@ class Experiment:
         p_irb = irb_fit_result["p"]
         C_irb = irb_fit_result["C"]
 
-        dimension = 2**2 if is_2q else 2
+        dimension = 4 if is_2q else 2
         gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
         gate_fidelity = 1 - gate_error
 
@@ -6879,6 +6948,7 @@ class Experiment:
         amplitude: float = 0.5,
         duration: float = 200,
         ramptime: float = 50,
+        n_repetitions: int = 1,
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -6906,6 +6976,7 @@ class Experiment:
                     ramptime=ramptime,
                     amplitude_range=amplitude_range,  # type: ignore
                     initial_state=initial_state,
+                    n_repetitions=n_repetitions,
                     degree=degree,
                     x180=x180,
                     use_zvalues=use_zvalues,
@@ -6922,6 +6993,7 @@ class Experiment:
                     duration_range=duration_range,  # type: ignore
                     ramptime=ramptime,
                     initial_state=initial_state,
+                    n_repetitions=n_repetitions,
                     degree=degree,
                     x180=x180,
                     use_zvalues=use_zvalues,
@@ -6980,6 +7052,7 @@ class Experiment:
         ramptime: float = 20,
         amplitude_range: ArrayLike = np.linspace(0.0, 1.0, 51),
         initial_state: str = "0",
+        n_repetitions: int = 1,
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -7019,7 +7092,7 @@ class Experiment:
                 cancel_phase=cancel_phase,
                 echo=True,
                 pi_pulse=x180[control_qubit],
-            )
+            ).repeated(n_repetitions)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
                 if initial_state != "0":
                     ps.add(
@@ -7089,6 +7162,7 @@ class Experiment:
         duration_range: ArrayLike = np.arange(100, 201, 2),
         ramptime: float = 20,
         initial_state: str = "0",
+        n_repetitions: int = 1,
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -7128,7 +7202,7 @@ class Experiment:
                 cancel_phase=cancel_phase,
                 echo=True,
                 pi_pulse=x180[control_qubit],
-            )
+            ).repeated(n_repetitions)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
                 if initial_state != "0":
                     ps.add(
