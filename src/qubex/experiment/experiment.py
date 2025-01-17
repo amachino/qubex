@@ -7536,6 +7536,118 @@ class Experiment:
         opt_pulse = Pulse(x[:N] + 1j * x[N:])
         return opt_pulse
 
+    def optimize_zx90(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        duration: float = 100,
+        ramptime: float = 20,
+        x180: TargetMap[Waveform] | Waveform | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ):
+        cr_label = f"{control_qubit}-{target_qubit}"
+        cr_params = self._system_note.get(CR_PARAMS)[cr_label]
+        cr_ramptime = ramptime
+        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
+        cr_phase = cr_params["cr_pulse"]["phase"]
+        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
+        cancel_phase = cr_params["cancel_pulse"]["phase"]
+
+        if x180 is None:
+            if control_qubit in self.drag_pi_pulse:
+                x180 = self.drag_pi_pulse
+            else:
+                x180 = self.pi_pulse
+        elif isinstance(x180, Waveform):
+            x180 = {control_qubit: x180}
+
+        def objective_func(params):
+            ecr_0 = CrossResonance(
+                control_qubit=control_qubit,
+                target_qubit=target_qubit,
+                cr_amplitude=params[0],
+                cr_duration=duration,
+                cr_ramptime=cr_ramptime,
+                cr_phase=params[1],
+                cancel_amplitude=params[2],
+                cancel_phase=params[3],
+                echo=True,
+                pi_pulse=x180[control_qubit],
+            )
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr_1:
+                ecr_1.add(
+                    control_qubit,
+                    self.get_pulse_for_state(control_qubit, "1"),
+                )
+                ecr_1.barrier()
+                ecr_1.call(ecr_0)
+
+            result_0 = self.state_tomography(
+                ecr_0,
+                shots=shots,
+                interval=interval,
+            )
+            result_1 = self.state_tomography(
+                ecr_1,
+                shots=shots,
+                interval=interval,
+            )
+
+            loss_c0 = np.linalg.norm(result_0[control_qubit] - np.array((0, 0, 1)))
+            loss_t0 = np.linalg.norm(result_0[target_qubit] - np.array((0, -1, 0)))
+            loss_c1 = np.linalg.norm(result_1[control_qubit] - np.array((0, 0, -1)))
+            loss_t1 = np.linalg.norm(result_1[target_qubit] - np.array((0, 1, 0)))
+
+            loss = loss_c0 + loss_t0 + loss_c1 + loss_t1
+            return loss
+
+        initial_params = [cr_amplitude, cr_phase, cancel_amplitude, cancel_phase]
+        es = cma.CMAEvolutionStrategy(
+            initial_params,
+            1.0,
+            {
+                "seed": 42,
+                "ftarget": 1e-3,
+                "timeout": 300,
+                "bounds": [[0, -np.pi, 0, -np.pi], [1, np.pi, 1, np.pi]],
+                "CMA_stds": [
+                    0.01,
+                    0.01,
+                    0.01,
+                    0.01,
+                ],
+            },
+        )
+        es.optimize(objective_func)
+        x = es.result.xbest
+
+        self._system_note.put(
+            CR_PARAMS,
+            {
+                cr_label: {
+                    "duration": duration,
+                    "ramptime": cr_ramptime,
+                    "cr_pulse": {
+                        "amplitude": x[0],
+                        "phase": x[1],
+                    },
+                    "cancel_pulse": {
+                        "amplitude": x[2],
+                        "phase": x[3],
+                    },
+                },
+            },
+        )
+
+        return {
+            "cr_amplitude": x[0],
+            "cr_phase": x[1],
+            "cancel_amplitude": x[2],
+            "cancel_phase": x[3],
+        }
+
 
 class ExperimentUtil:
     @staticmethod
