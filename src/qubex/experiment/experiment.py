@@ -11,6 +11,7 @@ from functools import reduce
 from pathlib import Path
 from typing import Collection, Final, Literal, Optional, Sequence
 
+import cma
 import numpy as np
 import plotly.graph_objects as go
 from IPython.display import clear_output, display
@@ -7418,6 +7419,41 @@ class Experiment:
             "mitigated": mitigated_prob,
             "figure": fig,
         }
+
+    def optimize_pulse(
+        self,
+        qubit: str,
+        *,
+        pulse: Waveform,
+        target_state: tuple[float, float, float],
+        sigma0: float = 0.001,
+        seed: int = 42,
+        ftarget: float = 1e-3,
+        timeout: int = 300,
+    ) -> Waveform:
+        N = pulse.length
+        initial_params = list(pulse.real) + list(pulse.imag)
+        es = cma.CMAEvolutionStrategy(
+            initial_params,
+            sigma0,
+            {
+                "seed": seed,
+                "ftarget": ftarget,
+                "timeout": timeout,
+                "bounds": [[-1] * 2 * N, [1] * 2 * N],
+            },
+        )
+
+        def objective_func(params):
+            pulse = Pulse(params[:N] + 1j * params[N:])
+            result = self.state_tomography({qubit: pulse})
+            loss = np.linalg.norm(result[qubit] - np.array(target_state))
+            return loss
+
+        es.optimize(objective_func)
+        x = es.result.xbest
+        opt_pulse = Pulse(x[:N] + 1j * x[N:])
+        return opt_pulse
 
 
 class ExperimentUtil:
