@@ -3189,6 +3189,7 @@ class Experiment:
         spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"],
         n_rotations: int = 4,
+        duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         use_stored_amplitude: bool = False,
         use_stored_beta: bool = False,
@@ -3208,6 +3209,8 @@ class Experiment:
             Type of the pulse to calibrate.
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
+        duration : float, optional
+            Duration of the pulse. Defaults to None.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         use_stored_amplitude : bool, optional
@@ -3236,7 +3239,7 @@ class Experiment:
                     beta = -drag_coeff / self.qubits[target].alpha
 
                 pulse = Drag(
-                    duration=DRAG_HPI_DURATION,
+                    duration=duration or DRAG_HPI_DURATION,
                     amplitude=1,
                     beta=beta,
                 )
@@ -3258,7 +3261,7 @@ class Experiment:
                     beta = -drag_coeff / self.qubits[target].alpha
 
                 pulse = Drag(
-                    duration=DRAG_PI_DURATION,
+                    duration=duration or DRAG_PI_DURATION,
                     amplitude=1,
                     beta=beta,
                 )
@@ -3341,6 +3344,7 @@ class Experiment:
         pulse_type: Literal["pi", "hpi"] = "hpi",
         beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
         n_turns: int = 1,
+        duration: float | None = None,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3360,6 +3364,8 @@ class Experiment:
             Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 1.
+        duration : float, optional
+            Duration of the pulse. Defaults to None.
         degree : int, optional
             Degree of the polynomial to fit. Defaults to 3.
         shots : int, optional
@@ -3402,7 +3408,7 @@ class Experiment:
                     ps.barrier()
                     if pulse_type == "hpi":
                         x90p = Drag(
-                            duration=DRAG_HPI_DURATION,
+                            duration=duration or DRAG_HPI_DURATION,
                             amplitude=self._system_note.get(DRAG_HPI_AMPLITUDE)[target],
                             beta=beta,
                         )
@@ -3420,7 +3426,7 @@ class Experiment:
                         )
                     elif pulse_type == "pi":
                         x180p = Drag(
-                            duration=DRAG_PI_DURATION,
+                            duration=duration or DRAG_PI_DURATION,
                             amplitude=self._system_note.get(DRAG_PI_AMPLITUDE)[target],
                             beta=beta,
                         )
@@ -3655,6 +3661,7 @@ class Experiment:
         n_iterations: int = 2,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
+        duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -3676,6 +3683,8 @@ class Experiment:
             Whether to calibrate the DRAG beta. Defaults to True.
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
+        duration : float, optional
+            Duration of the pulse. Defaults to None.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         shots : int, optional
@@ -3704,6 +3713,7 @@ class Experiment:
                 targets=targets,
                 pulse_type="hpi",
                 n_rotations=n_rotations,
+                duration=duration,
                 use_stored_amplitude=use_stored_amplitude,
                 use_stored_beta=use_stored_beta,
                 shots=shots,
@@ -3717,8 +3727,9 @@ class Experiment:
                     targets=targets,
                     pulse_type="hpi",
                     beta_range=beta_range,
-                    degree=3,
                     n_turns=n_turns,
+                    duration=duration,
+                    degree=3,
                     shots=shots,
                     interval=interval,
                 )
@@ -3744,6 +3755,7 @@ class Experiment:
         n_iterations: int = 2,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
+        duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         degree: int = 3,
         shots: int = CALIBRATION_SHOTS,
@@ -3766,6 +3778,8 @@ class Experiment:
             Whether to calibrate the DRAG beta. Defaults to False.
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-0.5, 1.5, 41).
+        duration : float, optional
+            Duration of the pulse. Defaults to None.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         degree : int, optional
@@ -3797,6 +3811,7 @@ class Experiment:
                 spectator_state=spectator_state,
                 pulse_type="pi",
                 n_rotations=n_rotations,
+                duration=duration,
                 use_stored_amplitude=use_stored_amplitude,
                 use_stored_beta=use_stored_beta,
                 shots=shots,
@@ -3812,6 +3827,7 @@ class Experiment:
                     pulse_type="pi",
                     beta_range=beta_range,
                     n_turns=n_turns,
+                    duration=duration,
                     degree=degree,
                     shots=shots,
                     interval=interval,
