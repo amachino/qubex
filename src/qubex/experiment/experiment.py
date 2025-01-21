@@ -5097,9 +5097,9 @@ class Experiment:
         """
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials).tolist()
+            seeds = np.random.randint(0, 2**32, n_trials)
         else:
-            seeds = [int(s) for s in np.array(seeds, dtype=int)]
+            seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
                 raise ValueError(
                     "The number of seeds must be equal to the number of trials."
@@ -5120,6 +5120,7 @@ class Experiment:
 
         results = []
         for seed in tqdm(seeds):
+            seed = int(seed)
             with self.util.no_output():
                 if is_2q:
                     if isinstance(x90, Waveform):
@@ -5261,9 +5262,9 @@ class Experiment:
         ... )
         """
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials).tolist()
+            seeds = np.random.randint(0, 2**32, n_trials)
         else:
-            seeds = [int(s) for s in np.array(seeds, dtype=int)]
+            seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
                 raise ValueError(
                     "The number of seeds must be equal to the number of trials."
@@ -5286,6 +5287,7 @@ class Experiment:
         irb_results = []
 
         for seed in tqdm(seeds):
+            seed = int(seed)
             with self.util.no_output():
                 if is_2q:
                     if isinstance(x90, Waveform):
