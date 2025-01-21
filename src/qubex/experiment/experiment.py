@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 from tqdm import tqdm
+from typing_extensions import deprecated
 
 from ..analysis import IQPlotter, RabiParam, fitting
 from ..analysis import visualization as vis
@@ -903,6 +904,47 @@ class Experiment:
     def reload(self):
         """Reload the configuration files."""
         self._measurement.reload()
+
+    @deprecated("This method is tentative. It may be removed in the future.")
+    def register_custom_target(
+        self,
+        *,
+        label: str,
+        frequency: float,
+        box_id: str,
+        port_number: int,
+        channel_number: int,
+        update_lsi: bool = False,
+    ):
+        try:
+            qubit_label = Target.qubit_label(label)
+        except ValueError:
+            raise ValueError(f"Invalid target label: {label}")
+
+        port = self.control_system.get_port(box_id, port_number)
+        channel = port.channels[channel_number]
+        qubit = self.qubits[qubit_label]
+        target = Target.new_target(
+            label=label,
+            frequency=frequency,
+            object=qubit,
+            channel=channel,  # type: ignore
+        )
+        self.experiment_system.add_target(target)
+        self.device_controller.define_target(
+            target_name=target.label,
+            channel_name=target.channel.id,
+            target_frequency=target.frequency,
+        )
+        if update_lsi:
+            fnco, _ = MixingUtil.calc_fnco(
+                f=frequency * 1e9,
+                ssb="L",
+                lo=port.lo_freq,
+                cnco=port.cnco_freq,
+            )
+            port.channels[channel_number].fnco_freq = fnco
+            self.state_manager.push(box_ids=[box_id])
 
     @contextmanager
     def modified_frequencies(self, frequencies: dict[str, float] | None):

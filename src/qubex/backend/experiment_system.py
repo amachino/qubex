@@ -172,6 +172,12 @@ class ExperimentSystem:
     def all_targets(self) -> list[Target | CapTarget]:
         return self.targets + self.read_in_targets
 
+    def add_target(self, target: Target | CapTarget):
+        if isinstance(target, Target):
+            self._gen_target_dict[target.label] = target
+        elif isinstance(target, CapTarget):
+            self._cap_target_dict[target.label] = target
+
     def get_mux(self, label: int | str) -> Mux:
         return self.quantum_system.get_mux(label)
 

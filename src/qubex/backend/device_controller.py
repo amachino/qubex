@@ -593,3 +593,27 @@ class DeviceController:
         """
         for target, frequency in frequencies.items():
             self.modify_target_frequency(target, frequency)
+
+    def define_target(
+        self,
+        target_name: str,
+        channel_name: str,
+        target_frequency: float | None = None,
+    ):
+        """
+        Define a target.
+
+        Parameters
+        ----------
+        target_name : str
+            Name of the target.
+        channel_name : str
+            Name of the channel.
+        target_frequency : float, optional
+            Frequency of the target in GHz.
+        """
+        self.qubecalib.define_target(
+            target_name=target_name,
+            channel_name=channel_name,
+            target_frequency=target_frequency,
+        )
