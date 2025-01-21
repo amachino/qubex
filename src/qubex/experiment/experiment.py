@@ -5014,9 +5014,9 @@ class Experiment:
         """
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = np.random.randint(0, 2**32, n_trials).tolist()
         else:
-            seeds = np.array(seeds, dtype=int)
+            seeds = [int(s) for s in np.array(seeds, dtype=int)]
             if len(seeds) != n_trials:
                 raise ValueError(
                     "The number of seeds must be equal to the number of trials."
@@ -5049,7 +5049,7 @@ class Experiment:
                         interleaved_waveform=None,
                         interleaved_clifford=None,
                         spectator_state=spectator_state,
-                        seed=seed,
+                        seed=int(seed), #ref: https://github.com/amachino/qubex/issues/102
                         shots=shots,
                         interval=interval,
                         plot=False,
@@ -5061,7 +5061,7 @@ class Experiment:
                         n_cliffords_range=n_cliffords_range,
                         spectator_state=spectator_state,
                         x90=x90,
-                        seed=seed,
+                        seed=int(seed), #ref: https://github.com/amachino/qubex/issues/102
                         shots=shots,
                         interval=interval,
                         plot=False,
@@ -5178,9 +5178,9 @@ class Experiment:
         ... )
         """
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = np.random.randint(0, 2**32, n_trials).tolist()
         else:
-            seeds = np.array(seeds, dtype=int)
+            seeds = [int(s) for s in np.array(seeds, dtype=int)]
             if len(seeds) != n_trials:
                 raise ValueError(
                     "The number of seeds must be equal to the number of trials."
@@ -5219,7 +5219,7 @@ class Experiment:
                         x90=x90,
                         zx90=zx90,
                         spectator_state=spectator_state,
-                        seed=seed,
+                        seed=int(seed), #ref: https://github.com/amachino/qubex/issues/102
                         shots=shots,
                         interval=interval,
                         plot=False,
@@ -5235,7 +5235,7 @@ class Experiment:
                         interleaved_waveform=interleaved_waveform,
                         interleaved_clifford=interleaved_clifford,
                         spectator_state=spectator_state,
-                        seed=seed,
+                        seed=int(seed), #ref: https://github.com/amachino/qubex/issues/102
                         shots=shots,
                         interval=interval,
                         plot=False,
@@ -5248,7 +5248,7 @@ class Experiment:
                         n_cliffords_range=n_cliffords_range,
                         x90=x90,  # type: ignore
                         spectator_state=spectator_state,
-                        seed=seed,
+                        seed=int(seed), #ref: https://github.com/amachino/qubex/issues/102
                         shots=shots,
                         interval=interval,
                         plot=False,
