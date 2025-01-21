@@ -1835,6 +1835,7 @@ class Experiment:
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = True,
+        simultaneous: bool = False,
     ) -> ExperimentResult[RabiData]:
         """
         Conducts a Rabi experiment with the default amplitude.
@@ -1859,6 +1860,8 @@ class Experiment:
             Whether to plot the measured signals. Defaults to True.
         store_params : bool, optional
             Whether to store the Rabi parameters. Defaults to True.
+        simultaneous : bool, optional
+            Whether to conduct the experiment simultaneously. Defaults to False.
 
         Returns
         -------
@@ -1877,16 +1880,37 @@ class Experiment:
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
-        result = self.rabi_experiment(
-            amplitudes=amplitudes,
-            time_range=time_range,
-            frequencies=frequencies,
-            is_damped=is_damped,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-            store_params=store_params,
-        )
+        if simultaneous:
+            result = self.rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                frequencies=frequencies,
+                is_damped=is_damped,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                store_params=store_params,
+            )
+        else:
+            rabi_data = {}
+            rabi_params = {}
+            for target in targets:
+                data = self.rabi_experiment(
+                    amplitudes={target: amplitudes[target]},
+                    time_range=time_range,
+                    frequencies=frequencies,
+                    is_damped=is_damped,
+                    shots=shots,
+                    interval=interval,
+                    store_params=store_params,
+                    plot=plot,
+                ).data[target]
+                rabi_data[target] = data
+                rabi_params[target] = data.rabi_param
+            result = ExperimentResult(
+                data=rabi_data,
+                rabi_params=rabi_params,
+            )
         return result
 
     def obtain_ef_rabi_params(
