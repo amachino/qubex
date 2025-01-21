@@ -5073,9 +5073,9 @@ class Experiment:
         """
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = np.random.randint(0, 2**32, n_trials).tolist()
         else:
-            seeds = np.array(seeds, dtype=int)
+            seeds = [int(s) for s in np.array(seeds, dtype=int)]
             if len(seeds) != n_trials:
                 raise ValueError(
                     "The number of seeds must be equal to the number of trials."
@@ -5237,9 +5237,9 @@ class Experiment:
         ... )
         """
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = np.random.randint(0, 2**32, n_trials).tolist()
         else:
-            seeds = np.array(seeds, dtype=int)
+            seeds = [int(s) for s in np.array(seeds, dtype=int)]
             if len(seeds) != n_trials:
                 raise ValueError(
                     "The number of seeds must be equal to the number of trials."
