@@ -141,7 +141,7 @@ class ConfigLoader:
                 ) or float("nan")
                 qubit.anharmonicity = props["anharmonicity"].get(
                     qubit.label, float("nan")
-                )
+                ) or float("nan")
             for resonator in chip.resonators:
                 resonator.frequency = props["resonator_frequency"].get(
                     resonator.qubit, float("nan")
