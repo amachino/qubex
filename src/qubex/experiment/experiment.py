@@ -4446,6 +4446,59 @@ class Experiment:
             **fit_result,
         }
 
+    def obtain_coupling_strength(
+        self,
+        target_qubit: str,
+        spectator_qubit: str,
+        *,
+        time_range: ArrayLike = np.arange(0, 1001, 50),
+        x90: TargetMap[Waveform] | None = None,
+        x180: TargetMap[Waveform] | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict:
+        x90 = x90 or self.hpi_pulse
+        x180 = x180 or self.pi_pulse
+
+        qubit_1 = target_qubit
+        qubit_2 = spectator_qubit
+
+        result = self.jazz_experiment(
+            target_qubit=qubit_1,
+            spectator_qubit=qubit_2,
+            time_range=time_range,
+            x90=x90,
+            x180=x180,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        xi = result["xi"]
+
+        f_1 = self.qubits[qubit_1].frequency
+        f_2 = self.qubits[qubit_2].frequency
+
+        a_1 = self.qubits[qubit_1].anharmonicity
+        a_2 = self.qubits[qubit_2].anharmonicity
+
+        Delta_12 = f_1 - f_2
+
+        g = np.sqrt(np.abs((xi * (Delta_12 + a_1) * (Delta_12 - a_2)) / (a_1 + a_2)))
+
+        print(f"frequency_1: {f_1:.2f} GHz")
+        print(f"frequency_2: {f_2:.2f} GHz")
+        print(f"Delta_12: {Delta_12 * 1e3:.2f} MHz")
+        print(f"anharmonicity_1: {a_1 * 1e3:.2f} MHz")
+        print(f"anharmonicity_2: {a_2 * 1e3:.2f} MHz")
+        print(f"g: {g * 1e3:.2f} MHz")
+
+        return {
+            "xi": xi,
+            "g": g,
+        }
+
     def measure_state_distribution(
         self,
         targets: Collection[str] | None = None,
