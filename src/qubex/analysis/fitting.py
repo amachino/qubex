@@ -362,6 +362,7 @@ def fit_cosine(
     x: npt.ArrayLike,
     y: npt.ArrayLike,
     *,
+    is_damped: bool = False,
     title: str = "Cosine fit",
     xaxis_title: str = "x",
     yaxis_title: str = "y",
@@ -376,12 +377,21 @@ def fit_cosine(
     phase_est = 0.0
     offset_est = (np.max(y) + np.min(y)) / 2
 
-    p0 = (amplitude_est, omega_est, phase_est, offset_est)
-    bounds = (
-        (0, 0, 0, -np.inf),
-        (np.inf, np.inf, np.pi, np.inf),
-    )
-    popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+    if is_damped:
+        tau_est = 10_000
+        p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
+        bounds = (
+            (0, 0, 0, -np.inf, 0),
+            (np.inf, np.inf, np.pi, np.inf, np.inf),
+        )
+        popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+    else:
+        p0 = (amplitude_est, omega_est, phase_est, offset_est)
+        bounds = (
+            (0, 0, 0, -np.inf),
+            (np.inf, np.inf, np.pi, np.inf),
+        )
+        popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
 
     amplitude = popt[0]
     omega = popt[1]
@@ -389,9 +399,13 @@ def fit_cosine(
     offset = popt[3]
     frequency = omega / (2 * np.pi)
 
+    tau = popt[4] if is_damped else None
+
     if plot:
         x_fine = np.linspace(np.min(x), np.max(x), 1000)
-        y_fine = func_cos(x_fine, *popt)
+        y_fine = (
+            func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
+        )
 
         fig = go.Figure()
         fig.add_trace(
@@ -415,7 +429,8 @@ def fit_cosine(
             yref="paper",
             x=0.95,
             y=0.95,
-            text=f"f = {frequency:.6f}",
+            text=f"f = {frequency * 1e3:.2f} MHz"
+            + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
             showarrow=False,
         )
         fig.update_layout(
@@ -430,6 +445,7 @@ def fit_cosine(
         "frequency": frequency,
         "phase": phase,
         "offset": offset,
+        "tau": tau,
         "popt": popt,
         "fig": fig,
     }

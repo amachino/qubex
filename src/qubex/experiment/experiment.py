@@ -4387,6 +4387,65 @@ class Experiment:
             "result_1": result_1,
         }
 
+    def jazz_experiment(
+        self,
+        target_qubit: str,
+        spectator_qubit: str,
+        *,
+        time_range: ArrayLike = np.arange(0, 2001, 100),
+        x90: TargetMap[Waveform] | None = None,
+        x180: TargetMap[Waveform] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        x90 = x90 or self.hpi_pulse
+        x180 = x180 or self.pi_pulse
+
+        def jazz_sequence(tau: float) -> PulseSchedule:
+            with PulseSchedule([target_qubit, spectator_qubit]) as ps:
+                ps.add(target_qubit, x90[target_qubit])
+                ps.add(target_qubit, Blank(tau))
+                ps.barrier()
+                ps.add(target_qubit, x180[target_qubit])
+                ps.add(spectator_qubit, x180[spectator_qubit])
+                ps.add(target_qubit, Blank(tau))
+                ps.add(target_qubit, x90[target_qubit].scaled(-1))
+            return ps
+
+        time_range = np.asarray(time_range)
+        self._validate_rabi_params([target_qubit, spectator_qubit])
+
+        result = self.sweep_parameter(
+            sequence=jazz_sequence,
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            title=f"JAZZ : {target_qubit}-{spectator_qubit}",
+            xaxis_title="Time (ns)",
+            yaxis_title="Measured value",
+        )
+
+        fit_result = fitting.fit_cosine(
+            time_range * 2,
+            (1 - result.data[target_qubit].normalized) * 0.5,
+            is_damped=True,
+            plot=plot,
+            title=f"JAZZ : {target_qubit}-{spectator_qubit}",
+            xaxis_title="Wait time (ns)",
+            yaxis_title=f"Normalized value : {target_qubit}",
+        )
+
+        xi = fit_result["frequency"]
+
+        print(f"ξ: {xi * 1e6:.2f} kHz")
+
+        return {
+            "xi": xi,
+            **fit_result,
+        }
+
     def measure_state_distribution(
         self,
         targets: Collection[str] | None = None,
