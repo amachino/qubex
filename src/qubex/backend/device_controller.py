@@ -240,12 +240,12 @@ class DeviceController:
         box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
         box.reconnect()
 
-    def relinkup_boxes(self, box_list: list[str]):
+    def relinkup_boxes(self, box_list: list[str], noise_threshold: int = 500):
         """
         Relinkup all the boxes in the list.
         """
         for box_name in box_list:
-            self.relinkup(box_name)
+            self.relinkup(box_name, noise_threshold=noise_threshold)
 
     def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
         """
