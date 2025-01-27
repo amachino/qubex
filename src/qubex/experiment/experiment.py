@@ -196,6 +196,7 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
         config_dir: str,
         params_dir: str,
     ) -> list[str]:
+        """Create the list of qubit labels."""
         state_manager = StateManager.shared()
         state_manager.load(
             chip_id=chip_id,
@@ -234,542 +235,6 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
             print(err_msg)
             raise ValueError(err_msg)
 
-    @property
-    def tool(self):
-        """Get the experiment tool."""
-        return experiment_tool
-
-    @property
-    def util(self):
-        """Get the experiment util."""
-        return ExperimentUtil
-
-    @property
-    def measurement(self) -> Measurement:
-        """Get the measurement system."""
-        return self._measurement
-
-    @property
-    def state_manager(self) -> StateManager:
-        """Get the state manager."""
-        return StateManager.shared()
-
-    @property
-    def experiment_system(self) -> ExperimentSystem:
-        """Get the experiment system."""
-        return self.state_manager.experiment_system
-
-    @property
-    def quantum_system(self) -> QuantumSystem:
-        """Get the quantum system."""
-        return self.experiment_system.quantum_system
-
-    @property
-    def control_system(self) -> ControlSystem:
-        """Get the qube system."""
-        return self.experiment_system.control_system
-
-    @property
-    def device_controller(self) -> DeviceController:
-        """Get the device manager."""
-        return self.state_manager.device_controller
-
-    @property
-    def params(self) -> ControlParams:
-        """Get the control parameters."""
-        return self.experiment_system.control_params
-
-    @property
-    def chip_id(self) -> str:
-        """Get the chip ID."""
-        return self._chip_id
-
-    @property
-    def qubit_labels(self) -> list[str]:
-        """Get the list of qubit labels."""
-        return self._qubits
-
-    @property
-    def mux_labels(self) -> list[str]:
-        """Get the list of mux labels."""
-        mux_set = set()
-        for qubit in self.qubit_labels:
-            mux = self.experiment_system.get_mux_by_qubit(qubit)
-            mux_set.add(mux.label)
-        return sorted(list(mux_set))
-
-    @property
-    def qubits(self) -> dict[str, Qubit]:
-        """Get the available qubit dict."""
-        return {
-            qubit.label: qubit
-            for qubit in self.experiment_system.qubits
-            if qubit.label in self.qubit_labels
-        }
-
-    @property
-    def resonators(self) -> dict[str, Resonator]:
-        """Get the available resonator dict."""
-        return {
-            resonator.qubit: resonator
-            for resonator in self.experiment_system.resonators
-            if resonator.qubit in self.qubit_labels
-        }
-
-    @property
-    def targets(self) -> dict[str, Target]:
-        """Get the target dict."""
-        return {
-            target.label: target
-            for target in self.experiment_system.targets
-            if target.qubit in self.qubit_labels
-        }
-
-    @property
-    def available_targets(self) -> dict[str, Target]:
-        """Get the available target dict."""
-        return {
-            target.label: target
-            for target in self.experiment_system.targets
-            if target.qubit in self.qubit_labels and target.is_available
-        }
-
-    @property
-    def ge_targets(self) -> dict[str, Target]:
-        """Get the available target dict."""
-        return {
-            label: target
-            for label, target in self.available_targets.items()
-            if target.is_ge
-        }
-
-    @property
-    def ef_targets(self) -> dict[str, Target]:
-        """Get the available target dict."""
-        return {
-            label: target
-            for label, target in self.available_targets.items()
-            if target.is_ef
-        }
-
-    @property
-    def cr_targets(self) -> dict[str, Target]:
-        """Get the available target dict."""
-        return {
-            label: target
-            for label, target in self.available_targets.items()
-            if target.is_cr
-        }
-
-    @property
-    def boxes(self) -> dict[str, Box]:
-        """Get the available box dict."""
-        boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
-        return {box.id: box for box in boxes}
-
-    @property
-    def box_ids(self) -> list[str]:
-        """Get the available box IDs."""
-        return list(self.boxes.keys())
-
-    @property
-    def config_path(self) -> str:
-        """Get the path of the configuration file."""
-        return str(Path(self._config_dir).resolve())
-
-    @property
-    def params_path(self) -> str:
-        """Get the path of the parameter file."""
-        return str(Path(self._params_dir).resolve())
-
-    @property
-    def system_note(self) -> ExperimentNote:
-        """Get the system note."""
-        return self._system_note
-
-    @property
-    def note(self) -> ExperimentNote:
-        """Get the user note."""
-        return self._user_note
-
-    @property
-    def hpi_pulse(self) -> dict[str, Waveform]:
-        """
-        Get the default π/2 pulse.
-
-        Returns
-        -------
-        dict[str, Waveform]
-            π/2 pulse.
-        """
-        # preset hpi amplitude
-        amplitude = self.params.control_amplitude
-        # calibrated hpi amplitude
-        calib_amplitude: dict[str, float] = self._system_note.get(HPI_AMPLITUDE)
-        if calib_amplitude is not None:
-            for target in calib_amplitude:
-                # use the calibrated hpi amplitude if it is stored
-                amp = calib_amplitude.get(target)
-                if amp is not None:
-                    amplitude[target] = calib_amplitude[target]
-        return {
-            target: FlatTop(
-                duration=HPI_DURATION,
-                amplitude=amplitude[target],
-                tau=HPI_RAMPTIME,
-            )
-            for target in self._qubits
-        }
-
-    @property
-    def pi_pulse(self) -> dict[str, Waveform]:
-        """
-        Get the default π pulse.
-
-        Returns
-        -------
-        dict[str, Waveform]
-            π pulse.
-        """
-        # preset hpi pulse
-        hpi = self.hpi_pulse
-        # generate the pi pulse from the hpi pulse
-        pi = {target: hpi[target].repeated(2) for target in self._qubits}
-        # calibrated pi amplitude
-        calib_amplitude: dict[str, float] = self._system_note.get(PI_AMPLITUDE)
-        if calib_amplitude is not None:
-            for target in calib_amplitude:
-                # use the calibrated pi amplitude if it is stored
-                amp = calib_amplitude.get(target)
-                if amp is not None:
-                    pi[target] = FlatTop(
-                        duration=PI_DURATION,
-                        amplitude=amp,
-                        tau=PI_RAMPTIME,
-                    )
-        return {target: pi[target] for target in self._qubits}
-
-    @property
-    def drag_hpi_pulse(self) -> dict[str, Waveform]:
-        """
-        Get the DRAG π/2 pulse.
-
-        Returns
-        -------
-        dict[str, Waveform]
-            DRAG π/2 pulse.
-        """
-        calib_amplitude: dict[str, float] = self._system_note.get(DRAG_HPI_AMPLITUDE)
-        calib_beta: dict[str, float] = self._system_note.get(DRAG_HPI_BETA)
-
-        if calib_amplitude is None or calib_beta is None:
-            return {}
-        return {
-            target: Drag(
-                duration=DRAG_HPI_DURATION,
-                amplitude=calib_amplitude[target],
-                beta=calib_beta[target],
-            )
-            for target in calib_amplitude
-        }
-
-    @property
-    def drag_pi_pulse(self) -> dict[str, Waveform]:
-        """
-        Get the DRAG π pulse.
-
-        Returns
-        -------
-        dict[str, Waveform]
-            DRAG π pulse.
-        """
-        calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
-        calib_beta: dict[str, float] = self._system_note.get(DRAG_PI_BETA)
-        if calib_amplitude is None or calib_beta is None:
-            return {}
-        return {
-            target: Drag(
-                duration=DRAG_PI_DURATION,
-                amplitude=calib_amplitude[target],
-                beta=calib_beta[target],
-            )
-            for target in calib_amplitude
-        }
-
-    @property
-    def ef_hpi_pulse(self) -> dict[str, Waveform]:
-        """
-        Get the ef π/2 pulse.
-
-        Returns
-        -------
-        dict[str, Waveform]
-            π/2 pulse.
-        """
-        amplitude = self._system_note.get(HPI_AMPLITUDE)
-        if amplitude is None:
-            raise ValueError("EF π/2 amplitude is not stored.")
-        ef_labels = [Target.ef_label(target) for target in self._qubits]
-        return {
-            target: FlatTop(
-                duration=HPI_DURATION,
-                amplitude=amplitude[target],
-                tau=HPI_RAMPTIME,
-            )
-            for target in ef_labels
-        }
-
-    @property
-    def ef_pi_pulse(self) -> dict[str, Waveform]:
-        """
-        Get the ef π pulse.
-
-        Returns
-        -------
-        dict[str, Waveform]
-            π/2 pulse.
-        """
-        amplitude = self._system_note.get(PI_AMPLITUDE)
-        if amplitude is None:
-            raise ValueError("EF π amplitude is not stored.")
-        ef_labels = [Target.ef_label(target) for target in self._qubits]
-
-        return {
-            target: FlatTop(
-                duration=PI_DURATION,
-                amplitude=amplitude[target],
-                tau=PI_RAMPTIME,
-            )
-            for target in ef_labels
-        }
-
-    @property
-    def rabi_params(self) -> dict[str, RabiParam]:
-        """Get the Rabi parameters."""
-        params: dict[str, dict] | None
-        params = self._system_note.get(RABI_PARAMS)
-        if params is not None:
-            rabi_params = {
-                target: RabiParam(**param)
-                for target, param in params.items()
-                if target in self.qubit_labels
-            }
-            self._rabi_params.update(rabi_params)
-
-        return self._rabi_params
-
-    @property
-    def ge_rabi_params(self) -> dict[str, RabiParam]:
-        """Get the ge Rabi parameters."""
-        return {
-            target: param
-            for target, param in self.rabi_params.items()
-            if self.targets[target].is_ge
-        }
-
-    @property
-    def ef_rabi_params(self) -> dict[str, RabiParam]:
-        """Get the ef Rabi parameters."""
-        return {
-            Target.ge_label(target): param
-            for target, param in self.rabi_params.items()
-            if self.targets[target].is_ef
-        }
-
-    @property
-    def classifier_type(self) -> Literal["kmeans", "gmm"]:
-        """Get the classifier type."""
-        return self._classifier_type
-
-    @property
-    def classifiers(self) -> TargetMap[StateClassifier]:
-        """Get the classifiers."""
-        return self._measurement.classifiers
-
-    @property
-    def state_centers(self) -> dict[str, dict[int, complex]]:
-        """Get the state centers."""
-        centers: dict[str, dict[str, list[float]]] | None
-        centers = self._system_note.get(STATE_CENTERS)
-        if centers is not None:
-            return {
-                target: {
-                    int(state): complex(center[0], center[1])
-                    for state, center in centers.items()
-                }
-                for target, centers in centers.items()
-                if target in self.qubit_labels
-            }
-
-        return {
-            target: classifier.centers
-            for target, classifier in self.classifiers.items()
-        }
-
-    @property
-    def clifford_generator(self) -> CliffordGenerator:
-        """Get the Clifford generator."""
-        if self._clifford_generator is None:
-            self._clifford_generator = CliffordGenerator()
-        return self._clifford_generator
-
-    @property
-    def clifford(self) -> dict[str, Clifford]:
-        """Get the Clifford dict."""
-        return self.clifford_generator.cliffords
-
-    def _validate_rabi_params(
-        self,
-        targets: Collection[str] | None = None,
-    ):
-        """Check if the Rabi parameters are stored."""
-        if len(self.rabi_params) == 0:
-            raise ValueError("Rabi parameters are not stored.")
-        if targets is not None:
-            for target in targets:
-                if target not in self.rabi_params:
-                    raise ValueError(f"Rabi parameters for {target} are not stored.")
-        if targets is not None:
-            for target in targets:
-                if target not in self.rabi_params:
-                    raise ValueError(f"Rabi parameters for {target} are not stored.")
-
-    def store_rabi_params(self, rabi_params: dict[str, RabiParam]):
-        """
-        Stores the Rabi parameters.
-
-        Parameters
-        ----------
-        rabi_params : dict[str, RabiParam]
-            Parameters of the Rabi oscillation.
-        """
-        if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
-            self._rabi_params.update(rabi_params)
-        # else:
-        #     if not Confirm.ask("Overwrite the existing Rabi parameters?"):
-        #         return
-
-        self._system_note.put(
-            RABI_PARAMS,
-            {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
-        )
-        console.print("Rabi parameters are stored.")
-
-    def get_pulse_for_state(
-        self,
-        target: str,
-        state: str,  # Literal["0", "1", "+", "-", "+i", "-i"],
-    ) -> Waveform:
-        """
-        Get the pulse to prepare the given state from the ground state.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit.
-        state : Literal["0", "1", "+", "-", "+i", "-i"]
-            State to prepare.
-
-        Returns
-        -------
-        Waveform
-            Pulse for the state.
-        """
-        if state == "0":
-            return Blank(0)
-        elif state == "1":
-            return self.hpi_pulse[target].repeated(2)
-        else:
-            hpi = self.hpi_pulse[target]
-            if state == "+":
-                return hpi.shifted(np.pi / 2)
-            elif state == "-":
-                return hpi.shifted(-np.pi / 2)
-            elif state == "+i":
-                return hpi.shifted(np.pi)
-            elif state == "-i":
-                return hpi
-            else:
-                raise ValueError("Invalid state.")
-
-    def get_spectators(
-        self,
-        qubit: str,
-        in_same_mux: bool = False,
-    ) -> list[Qubit]:
-        """
-        Get the spectators of the given qubit.
-
-        Parameters
-        ----------
-        qubit : str
-            Qubit to get the spectators.
-        in_same_mux : bool, optional
-            Whether to get the spectators in the same mux. Defaults to False.
-
-        Returns
-        -------
-        list[Qubit]
-            List of the spectators.
-        """
-        return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
-
-    def get_confusion_matrix(
-        self,
-        targets: Collection[str],
-    ) -> NDArray:
-        """
-        Get the confusion matrix of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str]
-            Target labels.
-
-        Returns
-        -------
-        NDArray
-            Confusion matrix (rows: true, columns: predicted).
-        """
-        targets = list(targets)
-        confusion_matrices = []
-        for target in targets:
-            cm = self.classifiers[target].confusion_matrix
-            n_shots = cm[0].sum()
-            confusion_matrices.append(cm / n_shots)
-        return reduce(np.kron, confusion_matrices)
-
-    def get_inverse_confusion_matrix(
-        self,
-        targets: Collection[str],
-    ) -> NDArray:
-        """
-        Get the inverse confusion matrix of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str]
-            Target labels.
-
-        Returns
-        -------
-        NDArray
-            Inverse confusion matrix.
-
-        Notes
-        -----
-        The inverse confusion matrix should be multiplied from the right.
-
-        Examples
-        --------
-        >>> cm_inv = ex.get_inverse_confusion_matrix(["Q00", "Q01"])
-        >>> observed = np.array([300, 200, 200, 300])
-        >>> predicted = observed @ cm_inv
-        """
-        targets = list(targets)
-        confusion_matrix = self.get_confusion_matrix(targets)
-        return np.linalg.inv(confusion_matrix)
-
     def print_environment(self, verbose: bool = False):
         """Print the environment information."""
         print("========================================")
@@ -801,9 +266,391 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
 
+    @property
+    def tool(self):
+        return experiment_tool
+
+    @property
+    def util(self):
+        return ExperimentUtil
+
+    @property
+    def measurement(self) -> Measurement:
+        return self._measurement
+
+    @property
+    def state_manager(self) -> StateManager:
+        return StateManager.shared()
+
+    @property
+    def experiment_system(self) -> ExperimentSystem:
+        return self.state_manager.experiment_system
+
+    @property
+    def quantum_system(self) -> QuantumSystem:
+        return self.experiment_system.quantum_system
+
+    @property
+    def control_system(self) -> ControlSystem:
+        return self.experiment_system.control_system
+
+    @property
+    def device_controller(self) -> DeviceController:
+        return self.state_manager.device_controller
+
+    @property
+    def params(self) -> ControlParams:
+        return self.experiment_system.control_params
+
+    @property
+    def chip_id(self) -> str:
+        return self._chip_id
+
+    @property
+    def qubit_labels(self) -> list[str]:
+        return self._qubits
+
+    @property
+    def mux_labels(self) -> list[str]:
+        mux_set = set()
+        for qubit in self.qubit_labels:
+            mux = self.experiment_system.get_mux_by_qubit(qubit)
+            mux_set.add(mux.label)
+        return sorted(list(mux_set))
+
+    @property
+    def qubits(self) -> dict[str, Qubit]:
+        return {
+            qubit.label: qubit
+            for qubit in self.experiment_system.qubits
+            if qubit.label in self.qubit_labels
+        }
+
+    @property
+    def resonators(self) -> dict[str, Resonator]:
+        return {
+            resonator.qubit: resonator
+            for resonator in self.experiment_system.resonators
+            if resonator.qubit in self.qubit_labels
+        }
+
+    @property
+    def targets(self) -> dict[str, Target]:
+        return {
+            target.label: target
+            for target in self.experiment_system.targets
+            if target.qubit in self.qubit_labels
+        }
+
+    @property
+    def available_targets(self) -> dict[str, Target]:
+        return {
+            target.label: target
+            for target in self.experiment_system.targets
+            if target.qubit in self.qubit_labels and target.is_available
+        }
+
+    @property
+    def ge_targets(self) -> dict[str, Target]:
+        return {
+            label: target
+            for label, target in self.available_targets.items()
+            if target.is_ge
+        }
+
+    @property
+    def ef_targets(self) -> dict[str, Target]:
+        return {
+            label: target
+            for label, target in self.available_targets.items()
+            if target.is_ef
+        }
+
+    @property
+    def cr_targets(self) -> dict[str, Target]:
+        return {
+            label: target
+            for label, target in self.available_targets.items()
+            if target.is_cr
+        }
+
+    @property
+    def boxes(self) -> dict[str, Box]:
+        boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
+        return {box.id: box for box in boxes}
+
+    @property
+    def box_ids(self) -> list[str]:
+        return list(self.boxes.keys())
+
+    @property
+    def config_path(self) -> str:
+        return str(Path(self._config_dir).resolve())
+
+    @property
+    def params_path(self) -> str:
+        return str(Path(self._params_dir).resolve())
+
+    @property
+    def system_note(self) -> ExperimentNote:
+        return self._system_note
+
+    @property
+    def note(self) -> ExperimentNote:
+        return self._user_note
+
+    @property
+    def hpi_pulse(self) -> dict[str, Waveform]:
+        # preset hpi amplitude
+        amplitude = self.params.control_amplitude
+        # calibrated hpi amplitude
+        calib_amplitude: dict[str, float] = self._system_note.get(HPI_AMPLITUDE)
+        if calib_amplitude is not None:
+            for target in calib_amplitude:
+                # use the calibrated hpi amplitude if it is stored
+                amp = calib_amplitude.get(target)
+                if amp is not None:
+                    amplitude[target] = calib_amplitude[target]
+        return {
+            target: FlatTop(
+                duration=HPI_DURATION,
+                amplitude=amplitude[target],
+                tau=HPI_RAMPTIME,
+            )
+            for target in self._qubits
+        }
+
+    @property
+    def pi_pulse(self) -> dict[str, Waveform]:
+        # preset hpi pulse
+        hpi = self.hpi_pulse
+        # generate the pi pulse from the hpi pulse
+        pi = {target: hpi[target].repeated(2) for target in self._qubits}
+        # calibrated pi amplitude
+        calib_amplitude: dict[str, float] = self._system_note.get(PI_AMPLITUDE)
+        if calib_amplitude is not None:
+            for target in calib_amplitude:
+                # use the calibrated pi amplitude if it is stored
+                amp = calib_amplitude.get(target)
+                if amp is not None:
+                    pi[target] = FlatTop(
+                        duration=PI_DURATION,
+                        amplitude=amp,
+                        tau=PI_RAMPTIME,
+                    )
+        return {target: pi[target] for target in self._qubits}
+
+    @property
+    def drag_hpi_pulse(self) -> dict[str, Waveform]:
+        calib_amplitude: dict[str, float] = self._system_note.get(DRAG_HPI_AMPLITUDE)
+        calib_beta: dict[str, float] = self._system_note.get(DRAG_HPI_BETA)
+
+        if calib_amplitude is None or calib_beta is None:
+            return {}
+        return {
+            target: Drag(
+                duration=DRAG_HPI_DURATION,
+                amplitude=calib_amplitude[target],
+                beta=calib_beta[target],
+            )
+            for target in calib_amplitude
+        }
+
+    @property
+    def drag_pi_pulse(self) -> dict[str, Waveform]:
+        calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
+        calib_beta: dict[str, float] = self._system_note.get(DRAG_PI_BETA)
+        if calib_amplitude is None or calib_beta is None:
+            return {}
+        return {
+            target: Drag(
+                duration=DRAG_PI_DURATION,
+                amplitude=calib_amplitude[target],
+                beta=calib_beta[target],
+            )
+            for target in calib_amplitude
+        }
+
+    @property
+    def ef_hpi_pulse(self) -> dict[str, Waveform]:
+        amplitude = self._system_note.get(HPI_AMPLITUDE)
+        if amplitude is None:
+            raise ValueError("EF π/2 amplitude is not stored.")
+        ef_labels = [Target.ef_label(target) for target in self._qubits]
+        return {
+            target: FlatTop(
+                duration=HPI_DURATION,
+                amplitude=amplitude[target],
+                tau=HPI_RAMPTIME,
+            )
+            for target in ef_labels
+        }
+
+    @property
+    def ef_pi_pulse(self) -> dict[str, Waveform]:
+        amplitude = self._system_note.get(PI_AMPLITUDE)
+        if amplitude is None:
+            raise ValueError("EF π amplitude is not stored.")
+        ef_labels = [Target.ef_label(target) for target in self._qubits]
+
+        return {
+            target: FlatTop(
+                duration=PI_DURATION,
+                amplitude=amplitude[target],
+                tau=PI_RAMPTIME,
+            )
+            for target in ef_labels
+        }
+
+    @property
+    def rabi_params(self) -> dict[str, RabiParam]:
+        params: dict[str, dict] | None
+        params = self._system_note.get(RABI_PARAMS)
+        if params is not None:
+            rabi_params = {
+                target: RabiParam(**param)
+                for target, param in params.items()
+                if target in self.qubit_labels
+            }
+            self._rabi_params.update(rabi_params)
+
+        return self._rabi_params
+
+    @property
+    def ge_rabi_params(self) -> dict[str, RabiParam]:
+        return {
+            target: param
+            for target, param in self.rabi_params.items()
+            if self.targets[target].is_ge
+        }
+
+    @property
+    def ef_rabi_params(self) -> dict[str, RabiParam]:
+        return {
+            Target.ge_label(target): param
+            for target, param in self.rabi_params.items()
+            if self.targets[target].is_ef
+        }
+
+    @property
+    def classifier_type(self) -> Literal["kmeans", "gmm"]:
+        return self._classifier_type
+
+    @property
+    def classifiers(self) -> TargetMap[StateClassifier]:
+        return self._measurement.classifiers
+
+    @property
+    def state_centers(self) -> dict[str, dict[int, complex]]:
+        centers: dict[str, dict[str, list[float]]] | None
+        centers = self._system_note.get(STATE_CENTERS)
+        if centers is not None:
+            return {
+                target: {
+                    int(state): complex(center[0], center[1])
+                    for state, center in centers.items()
+                }
+                for target, centers in centers.items()
+                if target in self.qubit_labels
+            }
+
+        return {
+            target: classifier.centers
+            for target, classifier in self.classifiers.items()
+        }
+
+    @property
+    def clifford_generator(self) -> CliffordGenerator:
+        if self._clifford_generator is None:
+            self._clifford_generator = CliffordGenerator()
+        return self._clifford_generator
+
+    @property
+    def clifford(self) -> dict[str, Clifford]:
+        return self.clifford_generator.cliffords
+
+    def validate_rabi_params(
+        self,
+        targets: Collection[str] | None = None,
+    ):
+        if len(self.rabi_params) == 0:
+            raise ValueError("Rabi parameters are not stored.")
+        if targets is not None:
+            for target in targets:
+                if target not in self.rabi_params:
+                    raise ValueError(f"Rabi parameters for {target} are not stored.")
+        if targets is not None:
+            for target in targets:
+                if target not in self.rabi_params:
+                    raise ValueError(f"Rabi parameters for {target} are not stored.")
+
+    def store_rabi_params(
+        self,
+        rabi_params: dict[str, RabiParam],
+    ):
+        if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
+            self._rabi_params.update(rabi_params)
+        # else:
+        #     if not Confirm.ask("Overwrite the existing Rabi parameters?"):
+        #         return
+
+        self._system_note.put(
+            RABI_PARAMS,
+            {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
+        )
+        console.print("Rabi parameters are stored.")
+
+    def get_pulse_for_state(
+        self,
+        target: str,
+        state: str,  # Literal["0", "1", "+", "-", "+i", "-i"],
+    ) -> Waveform:
+        if state == "0":
+            return Blank(0)
+        elif state == "1":
+            return self.hpi_pulse[target].repeated(2)
+        else:
+            hpi = self.hpi_pulse[target]
+            if state == "+":
+                return hpi.shifted(np.pi / 2)
+            elif state == "-":
+                return hpi.shifted(-np.pi / 2)
+            elif state == "+i":
+                return hpi.shifted(np.pi)
+            elif state == "-i":
+                return hpi
+            else:
+                raise ValueError("Invalid state.")
+
+    def get_spectators(
+        self,
+        qubit: str,
+        in_same_mux: bool = False,
+    ) -> list[Qubit]:
+        return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
+
+    def get_confusion_matrix(
+        self,
+        targets: Collection[str],
+    ) -> NDArray:
+        targets = list(targets)
+        confusion_matrices = []
+        for target in targets:
+            cm = self.classifiers[target].confusion_matrix
+            n_shots = cm[0].sum()
+            confusion_matrices.append(cm / n_shots)
+        return reduce(np.kron, confusion_matrices)
+
+    def get_inverse_confusion_matrix(
+        self,
+        targets: Collection[str],
+    ) -> NDArray:
+        targets = list(targets)
+        confusion_matrix = self.get_confusion_matrix(targets)
+        return np.linalg.inv(confusion_matrix)
+
     def check_status(self):
-        """Check the status of the measurement system."""
-        # linnk status
+        # link status
         link_status = self._measurement.check_link_status(self.box_ids)
         if link_status["status"]:
             print("Link status: OK")
@@ -829,62 +676,26 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
 
     def linkup(
         self,
-        box_ids: Optional[list[str]] = None,
+        box_ids: list[str] | None = None,
         noise_threshold: int = 500,
     ) -> None:
-        """
-        Link up the measurement system.
-
-        Parameters
-        ----------
-        box_ids : Optional[list[str]], optional
-            List of the box IDs to link up. Defaults to None.
-
-        Examples
-        --------
-        >>> ex.linkup()
-        """
         if box_ids is None:
             box_ids = self.box_ids
         self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
 
     def resync_clocks(
         self,
-        box_ids: Optional[list[str]] = None,
+        box_ids: list[str] | None = None,
     ) -> None:
-        """
-        Resynchronize the clocks of the measurement system.
-
-        Parameters
-        ----------
-        box_ids : Optional[list[str]], optional
-            List of the box IDs to resynchronize. Defaults to None.
-
-        Examples
-        --------
-        >>> ex.resync_clocks()
-        """
         if box_ids is None:
             box_ids = self.box_ids
         self.device_controller.resync_clocks(box_ids)
 
     def configure(
         self,
-        box_ids: Optional[list[str]] = None,
-        exclude: Optional[list[str]] = None,
+        box_ids: list[str] | None = None,
+        exclude: list[str] | None = None,
     ):
-        """
-        Configure the measurement system from the config files.
-
-        Parameters
-        ----------
-        box_ids : Optional[list[str]], optional
-            List of the box IDs to configure. Defaults to None.
-
-        Examples
-        --------
-        >>> ex.configure()
-        """
         self.state_manager.load(
             chip_id=self.chip_id,
             config_dir=self.config_path,
@@ -896,7 +707,6 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
         )
 
     def reload(self):
-        """Reload the configuration files."""
         self._measurement.reload()
 
     @deprecated("This method is tentative. It may be removed in the future.")
@@ -941,20 +751,10 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
             self.state_manager.push(box_ids=[box_id])
 
     @contextmanager
-    def modified_frequencies(self, frequencies: dict[str, float] | None):
-        """
-        Temporarily modifies the frequencies of the qubits.
-
-        Parameters
-        ----------
-        frequencies : dict[str, float]
-            Modified frequencies in GHz.
-
-        Examples
-        --------
-        >>> with ex.modified_frequencies({"Q00": 5.0}):
-        ...     # Do something
-        """
+    def modified_frequencies(
+        self,
+        frequencies: dict[str, float] | None,
+    ):
         if frequencies is None:
             yield
         else:
@@ -962,19 +762,15 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
                 yield
 
     def print_defaults(self):
-        """Print the default params."""
         display(self._system_note)
 
     def save_defaults(self):
-        """Save the default params."""
         self._system_note.save()
 
     def clear_defaults(self):
-        """Clear the default params."""
         self._system_note.clear()
 
     def delete_defaults(self):
-        """Delete the default params."""
         if Confirm.ask("Delete the default params?"):
             self._system_note.clear()
             self._system_note.save()
@@ -983,27 +779,6 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
         self,
         name: str,
     ) -> ExperimentRecord:
-        """
-        Load an experiment record from a file.
-
-        Parameters
-        ----------
-        name : str
-            Name of the experiment record to load.
-
-        Returns
-        -------
-        ExperimentRecord
-            The loaded ExperimentRecord instance.
-
-        Raises
-        ------
-        FileNotFoundError
-
-        Examples
-        --------
-        >>> record = ex.load_record("some_record.json")
-        """
         record = ExperimentRecord.load(name)
         print(f"ExperimentRecord `{name}` is loaded.\n")
         print(f"description: {record.description}")
@@ -1018,37 +793,6 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> MeasureResult:
-        """
-        Execute the given schedule.
-
-        Parameters
-        ----------
-        schedule : PulseSchedule
-            Schedule to execute.
-        mode : Literal["single", "avg"], optional
-            Measurement mode. Defaults to "avg".
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-
-        Returns
-        -------
-        MeasureResult
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> with pulse.PulseSchedule(["Q00", "Q01"]) as ps:
-        ...     ps.add("Q00", pulse.Rect(...))
-        ...     ps.add("Q01", pulse.Gaussian(...))
-        >>> result = ex.execute(
-        ...     schedule=ps,
-        ...     mode="avg",
-        ...     shots=1024,
-        ...     interval=150 * 1024,
-        ... )
-        """
         return self._measurement.execute(
             schedule=schedule,
             mode=mode,
@@ -1072,51 +816,6 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
     ) -> MeasureResult:
-        """
-        Measures the signals using the given sequence.
-
-        Parameters
-        ----------
-        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
-            Sequence of the experiment.
-        frequencies : Optional[dict[str, float]]
-            Frequencies of the qubits.
-        initial_states : dict[str, str], optional
-            Initial states of the qubits. Defaults to None.
-        mode : Literal["single", "avg"], optional
-            Measurement mode. Defaults to "avg".
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
-            Control window. Defaults to None.
-        capture_window : int, optional
-            Capture window. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        readout_duration : int, optional
-            Readout duration. Defaults to None.
-        readout_amplitudes : dict[str, float], optional
-            Readout amplitude for each target. Defaults to None.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to False.
-
-        Returns
-        -------
-        MeasureResult
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.measure(
-        ...     sequence={"Q00": [0.1+0.0j, 0.3+0.0j, 0.1+0.0j]},
-        ...     mode="avg",
-        ...     shots=1024,
-        ...     interval=150 * 1024,
-        ...     plot=True,
-        ... )
-        """
         control_window = control_window or self._control_window
         capture_window = capture_window or self._capture_window
         capture_margin = capture_margin or self._capture_margin
@@ -1265,45 +964,6 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
         readout_duration: int | None = None,
         plot: bool = False,
     ) -> MeasureResult:
-        """
-        Measures the signals using the given states.
-
-        Parameters
-        ----------
-        states : dict[str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]]
-            States to prepare.
-        mode : Literal["single", "avg"], optional
-            Measurement mode. Defaults to "single".
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
-            Control window. Defaults to None.
-        capture_window : int, optional
-            Capture window. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        readout_duration : int, optional
-            Readout duration. Defaults to None.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to False.
-
-        Returns
-        -------
-        MeasureResult
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.measure_state(
-        ...     states={"Q00": "0", "Q01": "1"},
-        ...     mode="single",
-        ...     shots=1024,
-        ...     interval=150 * 1024,
-        ...     plot=True,
-        ... )
-        """
         targets = []
 
         for target, state in states.items():

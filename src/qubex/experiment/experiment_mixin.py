@@ -905,7 +905,7 @@ class ExperimentMixin(ExperimentProtocol):
         """
         targets = list(targets)
         rabi_params = self.rabi_params
-        self._validate_rabi_params(rabi_params)
+        self.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
@@ -1060,7 +1060,7 @@ class ExperimentMixin(ExperimentProtocol):
             targets = list(targets)
         beta_range = np.array(beta_range, dtype=np.float64)
         rabi_params = self.rabi_params
-        self._validate_rabi_params(rabi_params)
+        self.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
             spectators = self.get_spectators(target)
@@ -1569,7 +1569,7 @@ class ExperimentMixin(ExperimentProtocol):
         else:
             targets = list(targets)
 
-        self._validate_rabi_params(targets)
+        self.validate_rabi_params(targets)
 
         if time_range is None:
             time_range = np.logspace(
@@ -1691,7 +1691,7 @@ class ExperimentMixin(ExperimentProtocol):
         else:
             targets = list(targets)
 
-        self._validate_rabi_params(targets)
+        self.validate_rabi_params(targets)
 
         if time_range is None:
             time_range = np.logspace(
@@ -1821,7 +1821,7 @@ class ExperimentMixin(ExperimentProtocol):
             targets = list(targets)
 
         time_range = self.util.discretize_time_range(time_range)
-        self._validate_rabi_params(targets)
+        self.validate_rabi_params(targets)
 
         target_groups = self.util.create_qubit_subgroups(targets)
         spectator_groups = reversed(target_groups)  # TODO: make it more general
@@ -1954,7 +1954,7 @@ class ExperimentMixin(ExperimentProtocol):
             targets = list(targets)
 
         time_range = np.asarray(time_range)
-        self._validate_rabi_params(targets)
+        self.validate_rabi_params(targets)
 
         result_0 = self.ramsey_experiment(
             targets=targets,
@@ -2023,7 +2023,7 @@ class ExperimentMixin(ExperimentProtocol):
             return ps
 
         time_range = np.asarray(time_range)
-        self._validate_rabi_params([target_qubit, spectator_qubit])
+        self.validate_rabi_params([target_qubit, spectator_qubit])
 
         result = self.sweep_parameter(
             sequence=jazz_sequence,
@@ -2833,7 +2833,7 @@ class ExperimentMixin(ExperimentProtocol):
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 21, 2)
         else:
-            self._validate_rabi_params([target])
+            self.validate_rabi_params([target])
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 1001, 100)
 
@@ -2998,7 +2998,7 @@ class ExperimentMixin(ExperimentProtocol):
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 21, 2)
         else:
-            self._validate_rabi_params([target])
+            self.validate_rabi_params([target])
             if n_cliffords_range is None:
                 n_cliffords_range = np.arange(0, 1001, 100)
 
@@ -3343,7 +3343,7 @@ class ExperimentMixin(ExperimentProtocol):
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         """
-        self._validate_rabi_params()
+        self.validate_rabi_params()
 
         if isinstance(waveforms, PulseSchedule):
             sequences = waveforms.get_sequences()
