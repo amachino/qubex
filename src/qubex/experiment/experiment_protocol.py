@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Collection, ContextManager, Literal, Optional
 
-import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from typing_extensions import Protocol
 
@@ -36,6 +35,7 @@ from ..pulse import (
 from ..typing import IQArray, ParametricPulseSchedule, ParametricWaveformDict, TargetMap
 from .experiment_constants import (
     CALIBRATION_SHOTS,
+    RABI_FREQUENCY,
     RABI_TIME_RANGE,
 )
 from .experiment_note import ExperimentNote
@@ -676,73 +676,117 @@ class ExperimentProtocol(Protocol):
         """
         ...
 
-    def measure_readout_snr(
+    def sweep_parameter(
         self,
-        targets: Collection[str] | None = None,
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        sweep_range: ArrayLike,
+        repetitions: int = 1,
+        frequencies: dict[str, float] | None = None,
+        rabi_level: Literal["ge", "ef"] = "ge",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        control_window: int | None = None,
         capture_window: int | None = None,
         capture_margin: int | None = None,
-        readout_duration: int | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
+        plot: bool = True,
+        title: str = "Sweep result",
+        xaxis_title: str = "Sweep value",
+        yaxis_title: str = "Measured value",
+        xaxis_type: Literal["linear", "log"] = "linear",
+        yaxis_type: Literal["linear", "log"] = "linear",
+    ) -> ExperimentResult[SweepData]:
+        """
+        Sweeps a parameter and measures the signals.
+
+        Parameters
+        ----------
+        sequence : ParametricPulseSchedule | ParametricWaveformMap
+            Parametric sequence to sweep.
+        sweep_range : ArrayLike
+            Range of the parameter to sweep.
+        repetitions : int, optional
+            Number of repetitions. Defaults to 1.
+        frequencies : dict[str, float], optional
+            Frequencies of the qubits. Defaults to None.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        control_window : int, optional
+            Control window. Defaults to None.
+        capture_window : int, optional
+            Capture window. Defaults to None.
+        capture_margin : int, optional
+            Capture margin. Defaults to None.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        title : str, optional
+            Title of the plot. Defaults to "Sweep result".
+        xaxis_title : str, optional
+            Title of the x-axis. Defaults to "Sweep value".
+        yaxis_title : str, optional
+            Title of the y-axis. Defaults to "Measured value".
+        xaxis_type : Literal["linear", "log"], optional
+            Type of the x-axis. Defaults to "linear".
+        yaxis_type : Literal["linear", "log"], optional
+            Type of the y-axis. Defaults to "linear".
+
+        Returns
+        -------
+        ExperimentResult[SweepData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.sweep_parameter(
+        ...     sequence=lambda x: {"Q00": Rect(duration=30, amplitude=x)},
+        ...     sweep_range=np.arange(0, 101, 4),
+        ...     repetitions=4,
+        ...     shots=1024,
+        ...     plot=True,
+        ... )
+        """
+        ...
+
+    def repeat_sequence(
+        self,
+        sequence: TargetMap[Waveform] | PulseSchedule,
+        *,
+        repetitions: int = 20,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-        save_image: bool = False,
-    ) -> dict: ...
+    ) -> ExperimentResult[SweepData]:
+        """
+        Repeats the pulse sequence n times.
 
-    def sweep_readout_amplitude(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-    ) -> dict: ...
+        Parameters
+        ----------
+        sequence : TargetMap[Waveform] | PulseSchedule
+            Pulse sequence to repeat.
+        repetitions : int, optional
+            Number of repetitions. Defaults to 20.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
 
-    def sweep_readout_duration(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        time_range: ArrayLike = np.arange(128, 2048, 128),
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_margin: int | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-    ) -> dict: ...
+        Returns
+        -------
+        ExperimentResult[SweepData]
+            Result of the experiment.
 
-    def check_noise(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        duration: int = 10240,
-        plot: bool = True,
-    ) -> MeasureResult: ...
-
-    def check_waveform(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        plot: bool = True,
-    ) -> MeasureResult: ...
-
-    def check_rabi(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        store_params: bool = True,
-        plot: bool = True,
-    ) -> ExperimentResult[RabiData]: ...
+        Examples
+        --------
+        >>> result = ex.repeat_sequence(
+        ...     sequence={"Q00": Rect(duration=64, amplitude=0.1)},
+        ...     repetitions=4,
+        ... )
+        """
+        ...
 
     def obtain_rabi_params(
         self,
@@ -798,33 +842,31 @@ class ExperimentProtocol(Protocol):
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]: ...
 
-    def sweep_parameter(
+    def calc_control_amplitudes(
         self,
-        sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
-        sweep_range: ArrayLike,
-        repetitions: int = 1,
-        frequencies: Optional[dict[str, float]] = None,
-        rabi_level: Literal["ge", "ef"] = "ge",
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        plot: bool = True,
-        title: str = "Sweep result",
-        xaxis_title: str = "Sweep value",
-        yaxis_title: str = "Measured value",
-        xaxis_type: Literal["linear", "log"] = "linear",
-        yaxis_type: Literal["linear", "log"] = "linear",
-    ) -> ExperimentResult[SweepData]: ...
+        rabi_rate: float = RABI_FREQUENCY,
+        current_amplitudes: dict[str, float] | None = None,
+        current_rabi_params: dict[str, RabiParam] | None = None,
+        print_result: bool = True,
+    ) -> dict[str, float]:
+        """
+        Calculates the control amplitudes for the Rabi rate.
 
-    def repeat_sequence(
-        self,
-        sequence: TargetMap[Waveform] | PulseSchedule,
-        *,
-        repetitions: int = 20,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-    ) -> ExperimentResult[SweepData]: ...
+        Parameters
+        ----------
+        rabi_rate : float, optional
+            Target Rabi rate in GHz. Defaults to RABI_FREQUENCY.
+        current_amplitudes : dict[str, float], optional
+            Current control amplitudes. Defaults to None.
+        current_rabi_params : dict[str, RabiParam], optional
+            Current Rabi parameters. Defaults to None.
+        print_result : bool, optional
+            Whether to print the result. Defaults to True.
+
+        Returns
+        -------
+        dict[str, float]
+            Control amplitudes for the Rabi rate.
+        """
+        ...

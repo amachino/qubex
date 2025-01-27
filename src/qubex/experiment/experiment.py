@@ -10,17 +10,15 @@ from pathlib import Path
 from typing import Collection, Final, Literal, Optional, Sequence
 
 import numpy as np
-import plotly.graph_objects as go
 from IPython.display import display
 from numpy.typing import ArrayLike, NDArray
-from plotly.subplots import make_subplots
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
-from tqdm import tqdm
 from typing_extensions import deprecated
 
-from ..analysis import IQPlotter, RabiParam, fitting
+from ..analysis import IQPlotter, RabiParam
+from ..analysis import fitting as fitting
 from ..analysis import visualization as vis
 from ..backend import (
     Box,
@@ -76,13 +74,13 @@ from .experiment_constants import (
     PI_AMPLITUDE,
     PI_DURATION,
     PI_RAMPTIME,
+    RABI_FREQUENCY,
     RABI_PARAMS,
     RABI_TIME_RANGE,
     STATE_CENTERS,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
-from .experiment_mixin import ExperimentMixin
 from .experiment_note import ExperimentNote
 from .experiment_protocol import ExperimentProtocol
 from .experiment_record import ExperimentRecord
@@ -92,11 +90,16 @@ from .experiment_result import (
     SweepData,
 )
 from .experiment_util import ExperimentUtil
+from .mixin import CalibrationMixin, CharacterizationMixin
 
 console = Console()
 
 
-class Experiment(ExperimentMixin, ExperimentProtocol):
+class Experiment(
+    CharacterizationMixin,
+    CalibrationMixin,
+    ExperimentProtocol,
+):
     """
     Class representing an experiment.
 
@@ -997,352 +1000,153 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
             plot=plot,
         )
 
-    def measure_readout_snr(
+    def sweep_parameter(
         self,
-        targets: Collection[str] | None = None,
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        sweep_range: ArrayLike,
+        repetitions: int = 1,
+        frequencies: dict[str, float] | None = None,
+        rabi_level: Literal["ge", "ef"] = "ge",
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        control_window: int | None = None,
         capture_window: int | None = None,
         capture_margin: int | None = None,
-        readout_duration: int | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
+        plot: bool = True,
+        title: str = "Sweep result",
+        xaxis_title: str = "Sweep value",
+        yaxis_title: str = "Measured value",
+        xaxis_type: Literal["linear", "log"] = "linear",
+        yaxis_type: Literal["linear", "log"] = "linear",
+    ) -> ExperimentResult[SweepData]:
+        sweep_range = np.array(sweep_range)
+
+        if rabi_level == "ge":
+            rabi_params = self.ge_rabi_params
+        elif rabi_level == "ef":
+            rabi_params = self.ef_rabi_params
+        else:
+            raise ValueError("Invalid Rabi level.")
+
+        if isinstance(sequence, dict):
+            # TODO: this parameter type (dict[str, Callable[..., Waveform]]) will be deprecated
+            targets = list(sequence.keys())
+            sequences = [
+                {
+                    target: sequence[target](param).repeated(repetitions).values
+                    for target in targets
+                }
+                for param in sweep_range
+            ]
+
+        if callable(sequence):
+            if isinstance(sequence(0), PulseSchedule):
+                sequences = [
+                    sequence(param).repeated(repetitions).get_sampled_sequences()  # type: ignore
+                    for param in sweep_range
+                ]
+            elif isinstance(sequence(0), dict):
+                sequences = [
+                    {
+                        target: waveform.repeated(repetitions).values
+                        for target, waveform in sequence(param).items()  # type: ignore
+                    }
+                    for param in sweep_range
+                ]
+        else:
+            raise ValueError("Invalid sequence.")
+
+        signals = defaultdict(list)
+        plotter = IQPlotter(self.state_centers)
+
+        generator = self._measure_batch(
+            sequences=sequences,
+            shots=shots,
+            interval=interval,
+            control_window=control_window or self._control_window,
+            capture_window=capture_window or self._capture_window,
+            capture_margin=capture_margin or self._capture_margin,
+        )
+        with self.modified_frequencies(frequencies):
+            for result in generator:
+                for target, data in result.data.items():
+                    signals[target].append(data.kerneled)
+                if plot:
+                    plotter.update(signals)
+
+        if plot:
+            plotter.show()
+
+        # with self.modified_frequencies(frequencies):
+        #     for seq in sequences:
+        #         measure_result = self.measure(
+        #             sequence=seq,
+        #             mode="avg",
+        #             shots=shots,
+        #             interval=interval,
+        #             control_window=control_window,
+        #             capture_window=capture_window,
+        #             capture_margin=capture_margin,
+        #         )
+        #         for target, data in measure_result.data.items():
+        #             signals[target].append(complex(data.kerneled))
+        #         if plot:
+        #             plotter.update(signals)
+
+        sweep_data = {
+            target: SweepData(
+                target=target,
+                data=np.array(values),
+                sweep_range=sweep_range,
+                rabi_param=rabi_params.get(target),
+                state_centers=self.state_centers.get(target),
+                title=title,
+                xaxis_title=xaxis_title,
+                yaxis_title=yaxis_title,
+                xaxis_type=xaxis_type,
+                yaxis_type=yaxis_type,
+            )
+            for target, values in signals.items()
+        }
+        result = ExperimentResult(data=sweep_data, rabi_params=self.rabi_params)
+        return result
+
+    def repeat_sequence(
+        self,
+        sequence: TargetMap[Waveform] | PulseSchedule,
+        *,
+        repetitions: int = 20,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-        save_image: bool = False,
-    ) -> dict:
-        """
-        Measures the readout SNR of the given targets.
+    ) -> ExperimentResult[SweepData]:
+        def repeated_sequence(N: int) -> PulseSchedule:
+            if isinstance(sequence, dict):
+                targets = list(sequence.keys())
+                with PulseSchedule(targets) as ps:
+                    for target, pulse in sequence.items():
+                        ps.add(target, pulse.repeated(N))
+            elif isinstance(sequence, PulseSchedule):
+                ps = sequence.repeated(N)
+            else:
+                raise ValueError("Invalid sequence.")
+            return ps
 
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to measure the readout SNR.
-        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_window : int, optional
-            Capture window. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        readout_duration : int, optional
-            Readout duration. Defaults to None.
-        readout_amplitudes : dict[str, float], optional
-            Readout amplitudes for each target.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Readout SNR of the targets.
-
-        Examples
-        --------
-        >>> result = ex.measure_readout_snr(["Q00", "Q01"])
-        """
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
-        sequence = {
-            target: self.get_pulse_for_state(
-                target=target,
-                state=initial_state,
-            )
-            for target in targets
-        }
-
-        result = self.measure(
-            sequence=sequence,
-            mode="single",
+        result = self.sweep_parameter(
+            sweep_range=np.arange(repetitions + 1),
+            sequence=repeated_sequence,
+            repetitions=1,
             shots=shots,
             interval=interval,
-            capture_window=capture_window,
-            capture_margin=capture_margin,
-            readout_duration=readout_duration,
-            readout_amplitudes=readout_amplitudes,
+            plot=plot,
+            xaxis_title="Number of repetitions",
         )
 
         if plot:
-            result.plot(save_image=save_image)
+            result.plot(normalize=True)
 
-        signal = {}
-        noise = {}
-        snr = {}
-        for target, data in result.data.items():
-            iq = data.kerneled
-            signal[target] = np.abs(np.average(iq))
-            noise[target] = np.std(iq)
-            snr[target] = signal[target] / noise[target]
-        return {
-            "signal": signal,
-            "noise": noise,
-            "snr": snr,
-        }
-
-    def sweep_readout_amplitude(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-    ) -> dict:
-        """
-        Sweeps the readout amplitude of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to sweep the readout amplitude. Defaults to None.
-        amplitude_range : ArrayLike, optional
-            Range of the readout amplitude to sweep. Defaults to np.linspace(0.0, 1.0, 21).
-        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_window : int, optional
-            Capture window. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        readout_duration : int, optional
-            Readout duration. Defaults to None.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Readout SNR of the targets.
-        """
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
-        amplitude_range = np.asarray(amplitude_range)
-
-        signal_buf = defaultdict(list)
-        noise_buf = defaultdict(list)
-        snr_buf = defaultdict(list)
-
-        for amplitude in tqdm(amplitude_range):
-            result = self.measure_readout_snr(
-                targets=targets,
-                initial_state=initial_state,
-                capture_window=capture_window,
-                capture_margin=capture_margin,
-                readout_duration=readout_duration,
-                readout_amplitudes={target: amplitude for target in targets},
-                shots=shots,
-                interval=interval,
-                plot=False,
-            )
-            for target in targets:
-                signal_buf[target].append(result["signal"][target])
-                noise_buf[target].append(result["noise"][target])
-                snr_buf[target].append(result["snr"][target])
-
-        signal = {target: np.array(signal_buf[target]) for target in targets}
-        noise = {target: np.array(noise_buf[target]) for target in targets}
-        snr = {target: np.array(snr_buf[target]) for target in targets}
-
-        if plot:
-            for target in targets:
-                fig = make_subplots(rows=3, cols=1, shared_xaxes=True)
-                fig.add_trace(
-                    go.Scatter(
-                        x=amplitude_range,
-                        y=signal[target],
-                        mode="lines+markers",
-                        name="Signal",
-                    ),
-                    row=1,
-                    col=1,
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=amplitude_range,
-                        y=noise[target],
-                        mode="lines+markers",
-                        name="Noise",
-                    ),
-                    row=2,
-                    col=1,
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=amplitude_range,
-                        y=snr[target],
-                        mode="lines+markers",
-                        name="SNR",
-                    ),
-                    row=3,
-                    col=1,
-                )
-                fig.update_layout(
-                    title=f"Readout SNR : {target}",
-                    xaxis3_title="Readout amplitude (arb. unit)",
-                    yaxis_title="Signal",
-                    yaxis2_title="Noise",
-                    yaxis3_title="SNR",
-                    showlegend=False,
-                    width=600,
-                    height=400,
-                )
-                fig.show()
-                vis.save_figure_image(
-                    fig,
-                    f"readout_snr_{target}",
-                    width=600,
-                    height=400,
-                )
-
-        return {
-            "signal": signal,
-            "noise": noise,
-            "snr": snr,
-        }
-
-    def sweep_readout_duration(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        time_range: ArrayLike = np.arange(128, 2048, 128),
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_margin: int | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-    ) -> dict:
-        """
-        Sweeps the readout duration of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to sweep the readout duration. Defaults to None.
-        time_range : ArrayLike, optional
-            Time range of the readout duration to sweep. Defaults to np.arange(0, 2048, 128).
-        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        readout_amplitudes : dict[str, float], optional
-            Readout amplitudes for each target. Defaults to None.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Readout SNR of the targets.
-        """
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
-        time_range = np.asarray(time_range)
-
-        signal_buf = defaultdict(list)
-        noise_buf = defaultdict(list)
-        snr_buf = defaultdict(list)
-
-        for T in time_range:
-            result = self.measure_readout_snr(
-                targets=targets,
-                initial_state=initial_state,
-                capture_window=T + 512,
-                capture_margin=capture_margin,
-                readout_duration=T,
-                readout_amplitudes=readout_amplitudes,
-                shots=shots,
-                interval=interval,
-                plot=False,
-            )
-            for target in targets:
-                signal_buf[target].append(result["signal"][target])
-                noise_buf[target].append(result["noise"][target])
-                snr_buf[target].append(result["snr"][target])
-
-        signal = {target: np.array(signal_buf[target]) for target in targets}
-        noise = {target: np.array(noise_buf[target]) for target in targets}
-        snr = {target: np.array(snr_buf[target]) for target in targets}
-
-        if plot:
-            for target in targets:
-                fig = make_subplots(rows=3, cols=1, shared_xaxes=True)
-                fig.add_trace(
-                    go.Scatter(
-                        x=time_range,
-                        y=signal[target],
-                        mode="lines+markers",
-                        name="Signal",
-                    ),
-                    row=1,
-                    col=1,
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=time_range,
-                        y=noise[target],
-                        mode="lines+markers",
-                        name="Noise",
-                    ),
-                    row=2,
-                    col=1,
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=time_range,
-                        y=snr[target],
-                        mode="lines+markers",
-                        name="SNR",
-                    ),
-                    row=3,
-                    col=1,
-                )
-                fig.update_layout(
-                    title=f"Readout SNR : {target}",
-                    xaxis3_title="Readout duration (ns)",
-                    yaxis_title="Signal",
-                    yaxis2_title="Noise",
-                    yaxis3_title="SNR",
-                    showlegend=False,
-                    width=600,
-                    height=400,
-                )
-                fig.show()
-                vis.save_figure_image(
-                    fig,
-                    f"readout_snr_{target}",
-                    width=600,
-                    height=400,
-                )
-
-        return {
-            "signal": signal,
-            "noise": noise,
-            "snr": snr,
-        }
+        return result
 
     def check_noise(
         self,
@@ -1377,7 +1181,7 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
         else:
             targets = list(targets)
 
-        result = self._measurement.measure_noise(targets, duration)
+        result = self.measurement.measure_noise(targets, duration)
         for target, data in result.data.items():
             if plot:
                 vis.plot_waveform(
@@ -1898,230 +1702,60 @@ class Experiment(ExperimentMixin, ExperimentProtocol):
         # return the result
         return result
 
-    def sweep_parameter(
+    def calc_control_amplitudes(
         self,
-        sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
-        sweep_range: ArrayLike,
-        repetitions: int = 1,
-        frequencies: Optional[dict[str, float]] = None,
-        rabi_level: Literal["ge", "ef"] = "ge",
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        plot: bool = True,
-        title: str = "Sweep result",
-        xaxis_title: str = "Sweep value",
-        yaxis_title: str = "Measured value",
-        xaxis_type: Literal["linear", "log"] = "linear",
-        yaxis_type: Literal["linear", "log"] = "linear",
-    ) -> ExperimentResult[SweepData]:
+        rabi_rate: float = RABI_FREQUENCY,
+        current_amplitudes: dict[str, float] | None = None,
+        current_rabi_params: dict[str, RabiParam] | None = None,
+        print_result: bool = True,
+    ) -> dict[str, float]:
         """
-        Sweeps a parameter and measures the signals.
+        Calculates the control amplitudes for the Rabi rate.
 
         Parameters
         ----------
-        sequence : ParametricPulseSchedule | ParametricWaveformMap
-            Parametric sequence to sweep.
-        sweep_range : ArrayLike
-            Range of the parameter to sweep.
-        repetitions : int, optional
-            Number of repetitions. Defaults to 1.
-        frequencies : Optional[dict[str, float]]
-            Frequencies of the qubits.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
-            Control window. Defaults to None.
-        capture_window : int, optional
-            Capture window. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-        title : str, optional
-            Title of the plot. Defaults to "Sweep result".
-        xaxis_title : str, optional
-            Title of the x-axis. Defaults to "Sweep value".
-        yaxis_title : str, optional
-            Title of the y-axis. Defaults to "Measured value".
-        xaxis_type : Literal["linear", "log"], optional
-            Type of the x-axis. Defaults to "linear".
-        yaxis_type : Literal["linear", "log"], optional
-            Type of the y-axis. Defaults to "linear".
+        rabi_rate : float, optional
+            Target Rabi rate in GHz. Defaults to RABI_FREQUENCY.
+        current_amplitudes : dict[str, float], optional
+            Current control amplitudes. Defaults to None.
+        current_rabi_params : dict[str, RabiParam], optional
+            Current Rabi parameters. Defaults to None.
+        print_result : bool, optional
+            Whether to print the result. Defaults to True.
 
         Returns
         -------
-        ExperimentResult[SweepData]
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.sweep_parameter(
-        ...     sequence=lambda x: {"Q00": Rect(duration=30, amplitude=x)},
-        ...     sweep_range=np.arange(0, 101, 4),
-        ...     repetitions=4,
-        ...     shots=1024,
-        ...     plot=True,
-        ... )
+        dict[str, float]
+            Control amplitudes for the Rabi rate.
         """
-        sweep_range = np.array(sweep_range)
+        current_rabi_params = current_rabi_params or self.rabi_params
 
-        if rabi_level == "ge":
-            rabi_params = self.ge_rabi_params
-        elif rabi_level == "ef":
-            rabi_params = self.ef_rabi_params
-        else:
-            raise ValueError("Invalid Rabi level.")
+        if current_rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
 
-        if isinstance(sequence, dict):
-            # TODO: this parameter type (dict[str, Callable[..., Waveform]]) will be deprecated
-            targets = list(sequence.keys())
-            sequences = [
-                {
-                    target: sequence[target](param).repeated(repetitions).values
-                    for target in targets
-                }
-                for param in sweep_range
-            ]
+        if current_amplitudes is None:
+            current_amplitudes = {}
+            default_ampl = self.params.control_amplitude
+            for target in current_rabi_params:
+                if self.targets[target].is_ge:
+                    current_amplitudes[target] = default_ampl[target]
+                elif self.targets[target].is_ef:
+                    qubit = Target.qubit_label(target)
+                    current_amplitudes[target] = default_ampl[qubit] / np.sqrt(2)
+                else:
+                    raise ValueError("Invalid target.")
 
-        if callable(sequence):
-            if isinstance(sequence(0), PulseSchedule):
-                sequences = [
-                    sequence(param).repeated(repetitions).get_sampled_sequences()  # type: ignore
-                    for param in sweep_range
-                ]
-            elif isinstance(sequence(0), dict):
-                sequences = [
-                    {
-                        target: waveform.repeated(repetitions).values
-                        for target, waveform in sequence(param).items()  # type: ignore
-                    }
-                    for param in sweep_range
-                ]
-        else:
-            raise ValueError("Invalid sequence.")
-
-        signals = defaultdict(list)
-        plotter = IQPlotter(self.state_centers)
-
-        generator = self._measure_batch(
-            sequences=sequences,
-            shots=shots,
-            interval=interval,
-            control_window=control_window or self._control_window,
-            capture_window=capture_window or self._capture_window,
-            capture_margin=capture_margin or self._capture_margin,
-        )
-        with self.modified_frequencies(frequencies):
-            for result in generator:
-                for target, data in result.data.items():
-                    signals[target].append(data.kerneled)
-                if plot:
-                    plotter.update(signals)
-
-        if plot:
-            plotter.show()
-
-        # with self.modified_frequencies(frequencies):
-        #     for seq in sequences:
-        #         measure_result = self.measure(
-        #             sequence=seq,
-        #             mode="avg",
-        #             shots=shots,
-        #             interval=interval,
-        #             control_window=control_window,
-        #             capture_window=capture_window,
-        #             capture_margin=capture_margin,
-        #         )
-        #         for target, data in measure_result.data.items():
-        #             signals[target].append(complex(data.kerneled))
-        #         if plot:
-        #             plotter.update(signals)
-
-        sweep_data = {
-            target: SweepData(
-                target=target,
-                data=np.array(values),
-                sweep_range=sweep_range,
-                rabi_param=rabi_params.get(target),
-                state_centers=self.state_centers.get(target),
-                title=title,
-                xaxis_title=xaxis_title,
-                yaxis_title=yaxis_title,
-                xaxis_type=xaxis_type,
-                yaxis_type=yaxis_type,
-            )
-            for target, values in signals.items()
+        amplitudes = {
+            target: current_amplitudes[target]
+            * rabi_rate
+            / current_rabi_params[target].frequency
+            for target in current_rabi_params
         }
-        result = ExperimentResult(data=sweep_data, rabi_params=self.rabi_params)
-        return result
 
-    def repeat_sequence(
-        self,
-        sequence: TargetMap[Waveform] | PulseSchedule,
-        *,
-        repetitions: int = 20,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-    ) -> ExperimentResult[SweepData]:
-        """
-        Repeats the pulse sequence n times.
+        if print_result:
+            print(f"control_amplitude for {rabi_rate * 1e3} MHz\n")
+            for target, amplitude in amplitudes.items():
+                print(f"{target}: {amplitude:.6f}")
 
-        Parameters
-        ----------
-        sequence : TargetMap[Waveform] | PulseSchedule
-            Pulse sequence to repeat.
-        repetitions : int, optional
-            Number of repetitions. Defaults to 20.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        ExperimentResult[SweepData]
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.repeat_sequence(
-        ...     sequence={"Q00": Rect(duration=64, amplitude=0.1)},
-        ...     repetitions=4,
-        ... )
-        """
-
-        def repeated_sequence(N: int) -> PulseSchedule:
-            if isinstance(sequence, dict):
-                targets = list(sequence.keys())
-                with PulseSchedule(targets) as ps:
-                    for target, pulse in sequence.items():
-                        ps.add(target, pulse.repeated(N))
-            elif isinstance(sequence, PulseSchedule):
-                ps = sequence.repeated(N)
-            else:
-                raise ValueError("Invalid sequence.")
-            return ps
-
-        result = self.sweep_parameter(
-            sweep_range=np.arange(repetitions + 1),
-            sequence=repeated_sequence,
-            repetitions=1,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-            xaxis_title="Number of repetitions",
-        )
-
-        if plot:
-            result.plot(normalize=True)
-
-        return result
+        return amplitudes
