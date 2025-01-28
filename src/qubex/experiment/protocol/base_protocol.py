@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Collection, ContextManager, Literal
+from typing import Collection, ContextManager, Literal, Protocol
 
 from numpy.typing import NDArray
-from typing_extensions import Protocol
 
 from ...analysis import RabiParam
 from ...backend import (

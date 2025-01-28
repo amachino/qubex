@@ -401,43 +401,44 @@ def fit_cosine(
 
     tau = popt[4] if is_damped else None
 
-    if plot:
-        x_fine = np.linspace(np.min(x), np.max(x), 1000)
-        y_fine = (
-            func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
-        )
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = (
+        func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
+    )
 
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=y_fine,
-                mode="lines",
-                name="Fit",
-            )
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
         )
-        fig.add_trace(
-            go.Scatter(
-                x=x,
-                y=y,
-                mode="markers",
-                name="Data",
-            ),
-        )
-        fig.add_annotation(
-            xref="paper",
-            yref="paper",
-            x=0.95,
-            y=0.95,
-            text=f"f = {frequency * 1e3:.2f} MHz"
-            + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
-            showarrow=False,
-        )
-        fig.update_layout(
-            title=title,
-            xaxis_title=xaxis_title,
-            yaxis_title=yaxis_title,
-        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        ),
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"f = {frequency * 1e3:.2f} MHz"
+        + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=title,
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+    )
+
+    if plot:
         fig.show(config=_plotly_config("cosine_fit"))
 
     return {

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Collection, Literal
+from typing import Collection, Literal, Protocol
 
 import numpy as np
 from numpy.typing import ArrayLike
-from typing_extensions import Protocol
 
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import Waveform

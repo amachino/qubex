@@ -1088,11 +1088,14 @@ class CharacterizationMixin(
         )
 
         xi = fit_result["frequency"]
+        zeta = 2 * xi
 
         print(f"ξ: {xi * 1e6:.2f} kHz")
+        print(f"ζ: {zeta * 1e6:.2f} kHz")
 
         return {
             "xi": xi,
+            "zeta": zeta,
             **fit_result,
         }
 
@@ -1126,6 +1129,7 @@ class CharacterizationMixin(
         )
 
         xi = result["xi"]
+        zeta = result["zeta"]
 
         f_1 = self.qubits[qubit_1].frequency
         f_2 = self.qubits[qubit_2].frequency
@@ -1146,6 +1150,7 @@ class CharacterizationMixin(
 
         return {
             "xi": xi,
+            "zeta": zeta,
             "g": g,
         }
 

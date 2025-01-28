@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Collection, Literal
+from typing import Collection, Literal, Protocol
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from typing_extensions import Protocol
 
 from ...analysis import RabiParam
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
@@ -506,7 +505,38 @@ class CharacterizationProtocol(Protocol):
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ): ...
+    ):
+        """
+        Conducts a JAZZ experiment.
+
+        Parameters
+        ----------
+        target_qubit : str
+            Target qubit.
+        spectator_qubit : str
+            Spectator qubit.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns.
+        x90 : TargetMap[Waveform], optional
+            X90 pulse for each qubit.
+        x180 : TargetMap[Waveform], optional
+            X180 pulse for each qubit.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict
+            - "xi" : float
+                Coefficient of ZZ/2 in GHz.
+            - "zeta" : float
+                Coefficient of ZZ/4 in GHz.
+        """
+        ...
 
     def obtain_coupling_strength(
         self,
@@ -519,7 +549,40 @@ class CharacterizationProtocol(Protocol):
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ) -> dict: ...
+    ) -> dict:
+        """
+        Obtains the coupling strength between the target and spectator qubits.
+
+        Parameters
+        ----------
+        target_qubit : str
+            Target qubit.
+        spectator_qubit : str
+            Spectator qubit.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns.
+        x90 : TargetMap[Waveform], optional
+            X90 pulse for each qubit.
+        x180 : TargetMap[Waveform], optional
+            X180 pulse for each qubit.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict
+            - "xi" : float
+                Coefficient of ZZ/2 in GHz.
+            - "zeta" : float
+                Coefficient of ZZ/4 in GHz.
+            - "g" : float
+                Coupling strength in GHz.
+        """
+        ...
 
     def measure_phase_shift(
         self,

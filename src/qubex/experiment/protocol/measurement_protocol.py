@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Collection, Literal, Optional, Sequence
+from typing import Collection, Literal, Optional, Protocol, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from typing_extensions import Protocol
 
 from ...measurement import MeasureResult
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
