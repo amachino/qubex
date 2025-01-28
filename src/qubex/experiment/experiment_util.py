@@ -8,10 +8,7 @@ from typing import Collection
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ..backend import (
-    SAMPLING_PERIOD,
-    StateManager,
-)
+from ..backend import SAMPLING_PERIOD, StateManager
 
 
 class ExperimentUtil:

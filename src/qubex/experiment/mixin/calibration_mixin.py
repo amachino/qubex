@@ -11,21 +11,15 @@ from tqdm import tqdm
 
 from ...analysis import fitting
 from ...analysis import visualization as vis
-from ...backend import (
-    SAMPLING_PERIOD,
-    Target,
-)
+from ...backend import SAMPLING_PERIOD, Target
 from ...clifford import Clifford
 from ...measurement import (
+    MeasureResult,
     StateClassifier,
     StateClassifierGMM,
     StateClassifierKMeans,
 )
-from ...measurement.measurement import (
-    DEFAULT_INTERVAL,
-    DEFAULT_SHOTS,
-    MeasureResult,
-)
+from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import (
     CrossResonance,
     Drag,
@@ -61,15 +55,15 @@ from ..experiment_constants import (
     PI_RAMPTIME,
     STATE_CENTERS,
 )
-from ..experiment_protocol import ExperimentProtocol
-from ..experiment_result import (
-    AmplCalibData,
-    ExperimentResult,
-    RBData,
-)
+from ..experiment_result import AmplCalibData, ExperimentResult, RBData
+from ..protocol import BaseProtocol, CalibrationProtocol, MeasurementProtocol
 
 
-class CalibrationMixin(ExperimentProtocol):
+class CalibrationMixin(
+    BaseProtocol,
+    MeasurementProtocol,
+    CalibrationProtocol,
+):
     def calibrate_default_pulse(
         self,
         targets: Collection[str],

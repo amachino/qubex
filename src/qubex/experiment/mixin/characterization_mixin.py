@@ -14,27 +14,10 @@ from tqdm import tqdm
 from ...analysis import RabiParam, fitting
 from ...analysis import visualization as vis
 from ...backend import MixingUtil, Target
-from ...measurement.measurement import (
-    DEFAULT_INTERVAL,
-    DEFAULT_SHOTS,
-    SAMPLING_PERIOD,
-)
-from ...pulse import (
-    CPMG,
-    Blank,
-    FlatTop,
-    Gaussian,
-    PulseSchedule,
-    Rect,
-    Waveform,
-)
+from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
+from ...pulse import CPMG, Blank, FlatTop, Gaussian, PulseSchedule, Rect, Waveform
 from ...typing import TargetMap
-from ..experiment_constants import (
-    CALIBRATION_SHOTS,
-    RABI_FREQUENCY,
-    RABI_TIME_RANGE,
-)
-from ..experiment_protocol import ExperimentProtocol
+from ..experiment_constants import CALIBRATION_SHOTS, RABI_FREQUENCY, RABI_TIME_RANGE
 from ..experiment_result import (
     AmplRabiData,
     ExperimentResult,
@@ -44,9 +27,14 @@ from ..experiment_result import (
     T2Data,
 )
 from ..experiment_util import ExperimentUtil
+from ..protocol import BaseProtocol, CharacterizationProtocol, MeasurementProtocol
 
 
-class CharacterizationMixin(ExperimentProtocol):
+class CharacterizationMixin(
+    BaseProtocol,
+    MeasurementProtocol,
+    CharacterizationProtocol,
+):
     def measure_readout_snr(
         self,
         targets: Collection[str] | None = None,
@@ -61,39 +49,6 @@ class CharacterizationMixin(ExperimentProtocol):
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
-        """
-        Measures the readout SNR of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to measure the readout SNR.
-        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_window : int, optional
-            Capture window. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        readout_duration : int, optional
-            Readout duration. Defaults to None.
-        readout_amplitudes : dict[str, float], optional
-            Readout amplitudes for each target.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Readout SNR of the targets.
-
-        Examples
-        --------
-        >>> result = ex.measure_readout_snr(["Q00", "Q01"])
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -148,35 +103,6 @@ class CharacterizationMixin(ExperimentProtocol):
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
-        """
-        Sweeps the readout amplitude of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to sweep the readout amplitude. Defaults to None.
-        amplitude_range : ArrayLike, optional
-            Range of the readout amplitude to sweep. Defaults to np.linspace(0.0, 1.0, 21).
-        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_window : int, optional
-            Capture window. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        readout_duration : int, optional
-            Readout duration. Defaults to None.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Readout SNR of the targets.
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -278,33 +204,6 @@ class CharacterizationMixin(ExperimentProtocol):
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
-        """
-        Sweeps the readout duration of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to sweep the readout duration. Defaults to None.
-        time_range : ArrayLike, optional
-            Time range of the readout duration to sweep. Defaults to np.arange(0, 2048, 128).
-        initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_margin : int, optional
-            Capture margin. Defaults to None.
-        readout_amplitudes : dict[str, float], optional
-            Readout amplitudes for each target. Defaults to None.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Readout SNR of the targets.
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -546,44 +445,6 @@ class CharacterizationMixin(ExperimentProtocol):
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[FreqRabiData]:
-        """
-        Obtains the relation between the detuning and the Rabi frequency.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to check the Rabi oscillation.
-        detuning_range : ArrayLike, optional
-            Range of the detuning to sweep in GHz.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns.
-        rabi_level : Literal["ge", "ef"], optional
-            Rabi level to use. Defaults to "ge".
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        ExperimentResult[FreqRabiData]
-            Result of the experiment.
-
-        Raises
-        ------
-        ValueError
-            If the Rabi parameters are not stored.
-
-        Examples
-        --------
-        >>> result = ex.obtain_freq_rabi_relation(
-        ...     targets=["Q00", "Q01"],
-        ...     detuning_range=np.linspace(-0.01, 0.01, 11),
-        ...     time_range=range(0, 101, 4),
-        ... )
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -656,42 +517,6 @@ class CharacterizationMixin(ExperimentProtocol):
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[AmplRabiData]:
-        """
-        Obtains the relation between the control amplitude and the Rabi frequency.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to check the Rabi oscillation.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
-        amplitude_range : ArrayLike, optional
-            Range of the control amplitude to sweep.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        ExperimentResult[AmplRabiData]
-            Result of the experiment.
-
-        Raises
-        ------
-        ValueError
-            If the Rabi parameters are not stored.
-
-        Examples
-        --------
-        >>> result = ex.obtain_ampl_rabi_relation(
-        ...     targets=["Q00", "Q01"],
-        ...     amplitude_range=np.linspace(0.01, 0.1, 10),
-        ...     time_range=range(0, 201, 4),
-        ... )
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -883,39 +708,6 @@ class CharacterizationMixin(ExperimentProtocol):
         save_image: bool = False,
         xaxis_type: Literal["linear", "log"] = "log",
     ) -> ExperimentResult[T1Data]:
-        """
-        Conducts a T1 experiment in parallel.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Collection of qubits to check the T1 decay.
-        targets : Collection[str]
-            Collection of qubits to check the T1 decay.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-        save_image : bool, optional
-            Whether to save the images. Defaults to False.
-
-        Returns
-        -------
-        ExperimentResult[T1Data]
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.t1_experiment(
-        ...     targets=["Q00", "Q01", "Q02", "Q03"]
-        ...     time_range=2 ** np.arange(1, 19),
-        ...     shots=1024,
-        ... )
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -1001,43 +793,6 @@ class CharacterizationMixin(ExperimentProtocol):
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[T2Data]:
-        """
-        Conducts a T2 experiment in series.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to check the T2 decay.
-        targets : Collection[str]
-            Target labels to check the T2 decay.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns.
-        n_cpmg : int, optional
-            Number of CPMG pulses. Defaults to 1.
-        pi_cpmg : Waveform, optional
-            π pulse for the CPMG sequence. Defaults to None.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-        save_image : bool, optional
-            Whether to save the images. Defaults to False.
-
-        Returns
-        -------
-        ExperimentResult[T2Data]
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.t2_experiment(
-        ...     targets=["Q00", "Q01", "Q02", "Q03"]
-        ...     time_range=2 ** np.arange(1, 19),
-        ...     shots=1024,
-        ... )
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -1132,41 +887,6 @@ class CharacterizationMixin(ExperimentProtocol):
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[RamseyData]:
-        """
-        Conducts a Ramsey experiment in series.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target labels to check the Ramsey oscillation.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns. Defaults to np.arange(0, 20001, 100).
-        detuning : float, optional
-            Detuning of the control frequency. Defaults to 0.001 GHz.
-        spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Spectator state. Defaults to "0".
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-        save_image : bool, optional
-            Whether to save the images. Defaults to False.
-
-        Returns
-        -------
-        ExperimentResult[RamseyData]
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.ramsey_experiment(
-        ...     targets=["Q00", "Q01", "Q02", "Q03"]
-        ...     time_range=range(0, 10_000, 100),
-        ...     shots=1024,
-        ... )
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -1269,37 +989,6 @@ class CharacterizationMixin(ExperimentProtocol):
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
-        """
-        Obtains the effective control frequency of the qubit.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target qubits to check the Ramsey oscillation.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns.
-        detuning : float, optional
-            Detuning of the control frequency. Defaults to 0.001 GHz.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Effective control frequency.
-
-        Examples
-        --------
-        >>> result = ex.obtain_true_control_frequency(
-        ...     targets=["Q00", "Q01", "Q02", "Q03"]
-        ...     time_range=range(0, 10001, 100),
-        ...     shots=1024,
-        ... )
-        """
         if targets is None:
             targets = self.qubit_labels
         else:
@@ -1471,29 +1160,6 @@ class CharacterizationMixin(ExperimentProtocol):
         interval: int = 0,
         plot: bool = True,
     ) -> float:
-        """
-        Measures the phase shift caused by the length of the transmission line.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit connected to the resonator of interest.
-        frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz.
-        amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to 0.01.
-        shots : int, optional
-            Number of shots. Defaults to 128.
-        interval : int, optional
-            Interval between shots. Defaults to 0.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        float
-            Phase shift in rad/GHz.
-        """
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
@@ -1603,35 +1269,6 @@ class CharacterizationMixin(ExperimentProtocol):
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
-        """
-        Scans the readout frequencies to find the resonator frequencies.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit connected to the resonator of interest.
-        frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz.
-        amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to 0.01.
-        phase_shift : float, optional
-            Phase shift in rad/GHz. If None, it will be measured.
-        subrange_width : float, optional
-            Width of the frequency subrange in GHz. Defaults to 0.3.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to 0.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-        save_image : bool, optional
-            Whether to save the plot as an image. Defaults to False.
-
-        Returns
-        -------
-        dict
-            Results of the experiment.
-        """
         frequency_range = np.array(frequency_range)
 
         # measure phase shift if not provided
@@ -1793,33 +1430,6 @@ class CharacterizationMixin(ExperimentProtocol):
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
-        """
-        Conducts a resonator spectroscopy experiment.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit connected to the resonator of interest.
-        frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz. Defaults to np.arange(9.75, 10.75, 0.002).
-        power_range : ArrayLike, optional
-            Power range in dB. Defaults to np.arange(-60, 5, 5).
-        phase_shift : float, optional
-            Phase shift in rad/GHz.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to 0.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-        save_image : bool, optional
-            Whether to save the image. Defaults to True.
-
-        Returns
-        -------
-        dict
-            Results of the experiment.
-        """
         frequency_range = np.array(frequency_range)
         power_range = np.array(power_range)
         qubit_label = Target.qubit_label(target)
@@ -1901,32 +1511,6 @@ class CharacterizationMixin(ExperimentProtocol):
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
-        """
-        Scans the readout frequencies to find the resonator frequencies.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit connected to the resonator of interest.
-        frequency_range : ArrayLike
-            Frequency range of the scan in GHz.
-        amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to 0.01.
-        phase_shift : float
-            Phase shift in rad/GHz.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to 0.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-        save_image : bool, optional
-            Whether to save the image. Defaults to True.
-
-        Returns
-        -------
-        dict
-        """
         freq_range = np.array(frequency_range)
         center_frequency = np.mean(freq_range).astype(float)
         frequency_width = (freq_range[-1] - freq_range[0]).astype(float)
@@ -2002,33 +1586,6 @@ class CharacterizationMixin(ExperimentProtocol):
         interval: int = 0,
         plot: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
-        """
-        Scans the control frequencies to find the qubit frequencies.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit.
-        frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz.
-        control_amplitude : float, optional
-            Amplitude of the control pulse. Defaults to 0.1.
-        readout_amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to 0.01.
-        subrange_width : float, optional
-            Width of the frequency subrange in GHz. Defaults to 0.3.
-        shots : int, optional
-            Number of shots.
-        interval : int, optional
-            Interval between shots.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]
-            Frequency range, unwrapped phase and amplitude.
-        """
         # control and readout pulses
         qubit = Target.qubit_label(target)
         resonator = Target.read_label(target)
@@ -2180,35 +1737,6 @@ class CharacterizationMixin(ExperimentProtocol):
         plot: bool = True,
         save_image: bool = True,
     ) -> NDArray[np.float64]:
-        """
-        Conducts a qubit spectroscopy experiment.
-
-        Parameters
-        ----------
-        target : str
-            Target qubit.
-        frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz. Defaults to np.arange(6.5, 9.5, 0.002).
-        power_range : ArrayLike, optional
-            Power range in dB. Defaults to np.arange(-60, 5, 5).
-        readout_amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to 0.01.
-        readout_frequency : float, optional
-            Readout frequency. Defaults to None.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to 0.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-        save_image : bool, optional
-            Whether to save the image. Defaults to True.
-
-        Returns
-        -------
-        NDArray[np.float64]
-            Phase in rad.
-        """
         power_range = np.array(power_range)
         result = []
         for power in tqdm(power_range):
