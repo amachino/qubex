@@ -358,6 +358,100 @@ def fit_polynomial(
     }
 
 
+def fit_cosine(
+    x: npt.ArrayLike,
+    y: npt.ArrayLike,
+    *,
+    is_damped: bool = False,
+    title: str = "Cosine fit",
+    xaxis_title: str = "x",
+    yaxis_title: str = "y",
+    plot: bool = True,
+) -> dict:
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    wave_count_est = estimate_wave_count(x, y)
+    amplitude_est = (np.max(y) - np.min(y)) / 2
+    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
+    phase_est = 0.0
+    offset_est = (np.max(y) + np.min(y)) / 2
+
+    if is_damped:
+        tau_est = 100_000
+        p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
+        bounds = (
+            (0, 0, 0, -np.inf, 0),
+            (np.inf, np.inf, np.pi, np.inf, np.inf),
+        )
+        popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+    else:
+        p0 = (amplitude_est, omega_est, phase_est, offset_est)
+        bounds = (
+            (0, 0, 0, -np.inf),
+            (np.inf, np.inf, np.pi, np.inf),
+        )
+        popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+
+    amplitude = popt[0]
+    omega = popt[1]
+    phase = popt[2]
+    offset = popt[3]
+    frequency = omega / (2 * np.pi)
+
+    tau = popt[4] if is_damped else None
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = (
+        func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
+    )
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        ),
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"f = {frequency * 1e3:.2f} MHz"
+        + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=title,
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
+    )
+
+    if plot:
+        fig.show(config=_plotly_config("cosine_fit"))
+
+    return {
+        "amplitude": amplitude,
+        "frequency": frequency,
+        "phase": phase,
+        "offset": offset,
+        "tau": tau,
+        "popt": popt,
+        "fig": fig,
+    }
+
+
 def fit_rabi(
     *,
     target: str,
@@ -427,7 +521,7 @@ def fit_rabi(
         p0: tuple
         bounds: tuple
         if is_damped:
-            tau_est = 10_000
+            tau_est = 100_000
             p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
             bounds = (
                 (0, 0, 0, -np.inf, 0),

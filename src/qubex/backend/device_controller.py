@@ -240,12 +240,12 @@ class DeviceController:
         box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
         box.reconnect()
 
-    def relinkup_boxes(self, box_list: list[str]):
+    def relinkup_boxes(self, box_list: list[str], noise_threshold: int = 500):
         """
         Relinkup all the boxes in the list.
         """
         for box_name in box_list:
-            self.relinkup(box_name)
+            self.relinkup(box_name, noise_threshold=noise_threshold)
 
     def read_clocks(self, box_list: list[str]) -> list[tuple[bool, int, int]]:
         """
@@ -593,3 +593,27 @@ class DeviceController:
         """
         for target, frequency in frequencies.items():
             self.modify_target_frequency(target, frequency)
+
+    def define_target(
+        self,
+        target_name: str,
+        channel_name: str,
+        target_frequency: float | None = None,
+    ):
+        """
+        Define a target.
+
+        Parameters
+        ----------
+        target_name : str
+            Name of the target.
+        channel_name : str
+            Name of the channel.
+        target_frequency : float, optional
+            Frequency of the target in GHz.
+        """
+        self.qubecalib.define_target(
+            target_name=target_name,
+            channel_name=channel_name,
+            target_frequency=target_frequency,
+        )

@@ -62,7 +62,7 @@ def relinkup_box(box_id: str) -> None:
     relinkup_boxes([box_id])
 
 
-def relinkup_boxes(box_ids: list[str]) -> None:
+def relinkup_boxes(box_ids: list[str], noise_threshold: int = 500) -> None:
     """Relink up the boxes."""
     confirmed = Confirm.ask(
         f"""
@@ -78,7 +78,10 @@ This operation will reset LO/NCO settings. Do you want to continue?
         return
 
     print("Relinking up the boxes...")
-    state_manager.device_controller.relinkup_boxes(box_ids)
+    state_manager.device_controller.relinkup_boxes(
+        box_ids,
+        noise_threshold=noise_threshold,
+    )
     state_manager.device_controller.sync_clocks(box_ids)
     print("Operation completed.")
 
