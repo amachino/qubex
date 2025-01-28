@@ -532,3 +532,14 @@ class MeasurementProtocol(Protocol):
         >>> result = ex.measure_popultion_dynamics(sequence, params_list)
         """
         ...
+
+    def measure_bell_state(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        zx90: PulseSchedule | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> dict: ...

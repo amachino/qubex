@@ -20,7 +20,8 @@ from ...backend import (
 )
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
-from ...pulse import Waveform
+from ...pulse import PulseSchedule, Waveform
+from ...typing import TargetMap
 from ..experiment_constants import RABI_FREQUENCY
 from ..experiment_note import ExperimentNote
 from ..experiment_record import ExperimentRecord
@@ -543,3 +544,25 @@ class BaseProtocol(Protocol):
             Control amplitudes for the Rabi rate.
         """
         ...
+
+    def zx90(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        cr_duration: float | None = None,
+        cr_ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        echo: bool = True,
+        x180: TargetMap[Waveform] | Waveform | None = None,
+    ) -> PulseSchedule: ...
+
+    def cnot(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        zx90: PulseSchedule | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule: ...

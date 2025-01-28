@@ -1076,3 +1076,75 @@ class MeasurementMixin(
 
         # return the result
         return result
+
+    def measure_bell_state(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        zx90: PulseSchedule | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> dict:
+        if self.state_centers is None:
+            self.build_classifier(plot=False)
+
+        cnot = self.cnot(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            zx90=zx90,
+        )
+        result = self.measure(
+            cnot,
+            initial_states={control_qubit: "+"},
+            mode="single",
+            shots=shots,
+            interval=interval,
+        )
+
+        labels = [f"|{i}⟩" for i in result.probabilities.keys()]
+        prob = np.array(list(result.probabilities.values()))
+        cm_imv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
+
+        mitigated_prob = prob @ cm_imv
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=prob,
+                name="Raw",
+            )
+        )
+        fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=mitigated_prob,
+                name="Mitigated",
+            )
+        )
+        fig.update_layout(
+            title=f"Bell state measurement: {control_qubit}-{target_qubit}",
+            xaxis_title="State label",
+            yaxis_title="Probability",
+            barmode="group",
+            yaxis_range=[0, 1],
+        )
+        if plot:
+            fig.show()
+
+        if save_image:
+            vis.save_figure_image(
+                fig,
+                f"bell_state_measurement_{control_qubit}-{target_qubit}",
+            )
+
+        for label, p, mp in zip(labels, prob, mitigated_prob):
+            print(f"{label} : {p:.2%} -> {mp:.2%}")
+
+        return {
+            "raw": prob,
+            "mitigated": mitigated_prob,
+            "figure": fig,
+        }

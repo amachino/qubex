@@ -17,7 +17,6 @@ from rich.table import Table
 from typing_extensions import deprecated
 
 from ..analysis import RabiParam
-from ..analysis import fitting as fitting
 from ..analysis import visualization as vis
 from ..backend import (
     Box,
@@ -43,11 +42,20 @@ from ..measurement.measurement import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
 )
-from ..pulse import Blank, Drag, FlatTop, Waveform
+from ..pulse import (
+    Blank,
+    CrossResonance,
+    Drag,
+    FlatTop,
+    PulseSchedule,
+    VirtualZ,
+    Waveform,
+)
 from ..typing import TargetMap
 from ..version import get_package_version
 from . import experiment_tool
 from .experiment_constants import (
+    CR_PARAMS,
     DRAG_HPI_AMPLITUDE,
     DRAG_HPI_BETA,
     DRAG_HPI_DURATION,
@@ -71,12 +79,18 @@ from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import ExperimentResult, RabiData
 from .experiment_util import ExperimentUtil
-from .mixin import CalibrationMixin, CharacterizationMixin, MeasurementMixin
+from .mixin import (
+    BenchmarkingMixin,
+    CalibrationMixin,
+    CharacterizationMixin,
+    MeasurementMixin,
+)
 
 console = Console()
 
 
 class Experiment(
+    BenchmarkingMixin,
     CharacterizationMixin,
     CalibrationMixin,
     MeasurementMixin,
@@ -975,3 +989,71 @@ class Experiment(
                 print(f"{target}: {amplitude:.6f}")
 
         return amplitudes
+
+    def zx90(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        cr_duration: float | None = None,
+        cr_ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        echo: bool = True,
+        x180: TargetMap[Waveform] | Waveform | None = None,
+    ) -> PulseSchedule:
+        cr_label = f"{control_qubit}-{target_qubit}"
+        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+
+        if x180 is None:
+            if control_qubit in self.drag_pi_pulse:
+                pi_pulse = self.drag_pi_pulse[control_qubit]
+            else:
+                pi_pulse = self.pi_pulse[control_qubit]
+        elif isinstance(x180, Waveform):
+            pi_pulse = x180
+        else:
+            pi_pulse = x180[control_qubit]
+
+        if cr_amplitude is not None and cancel_amplitude is None:
+            cr_cancel_ratio = (
+                cr_params["cancel_pulse"]["amplitude"]
+                / cr_params["cr_pulse"]["amplitude"]
+            )
+            cancel_amplitude = cr_amplitude * cr_cancel_ratio
+
+        return CrossResonance(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            cr_amplitude=cr_amplitude or cr_params["cr_pulse"]["amplitude"],
+            cr_duration=cr_duration or cr_params["duration"],
+            cr_ramptime=cr_ramptime or cr_params["ramptime"],
+            cr_phase=cr_phase or cr_params["cr_pulse"]["phase"],
+            cancel_amplitude=cancel_amplitude or cr_params["cancel_pulse"]["amplitude"],
+            cancel_phase=cancel_phase or cr_params["cancel_pulse"]["phase"],
+            echo=echo,
+            pi_pulse=pi_pulse,
+        )
+
+    def cnot(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        zx90: PulseSchedule | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule:
+        cr_label = f"{control_qubit}-{target_qubit}"
+        zx90 = zx90 or self.zx90(control_qubit, target_qubit)
+        if x90 is None:
+            if target_qubit in self.drag_hpi_pulse:
+                x90 = self.drag_hpi_pulse[target_qubit]
+            else:
+                x90 = self.hpi_pulse[target_qubit]
+
+        with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+            ps.call(zx90)
+            ps.add(control_qubit, VirtualZ(-np.pi / 2))
+            ps.add(target_qubit, x90.scaled(-1))
+
+        return ps

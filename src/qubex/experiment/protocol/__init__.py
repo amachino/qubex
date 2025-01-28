@@ -1,4 +1,5 @@
 from .base_protocol import BaseProtocol
+from .benchmarking_protocol import BenchmarkingProtocol
 from .calibration_protocol import CalibrationProtocol
 from .characterization_protocol import CharacterizationProtocol
 from .measurement_protocol import MeasurementProtocol
@@ -6,6 +7,7 @@ from .measurement_protocol import MeasurementProtocol
 
 class ExperimentProtocol(
     BaseProtocol,
+    BenchmarkingProtocol,
     CalibrationProtocol,
     CharacterizationProtocol,
     MeasurementProtocol,
@@ -15,6 +17,7 @@ class ExperimentProtocol(
 
 __all__ = [
     "BaseProtocol",
+    "BenchmarkingProtocol",
     "CalibrationProtocol",
     "CharacterizationProtocol",
     "ExperimentProtocol",
