@@ -1104,7 +1104,7 @@ class CharacterizationMixin(
         target_qubit: str,
         spectator_qubit: str,
         *,
-        time_range: ArrayLike = np.arange(0, 1001, 50),
+        time_range: ArrayLike = np.arange(0, 5001, 200),
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,

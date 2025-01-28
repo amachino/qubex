@@ -378,7 +378,7 @@ def fit_cosine(
     offset_est = (np.max(y) + np.min(y)) / 2
 
     if is_damped:
-        tau_est = 10_000
+        tau_est = 100_000
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
         bounds = (
             (0, 0, 0, -np.inf, 0),
@@ -521,7 +521,7 @@ def fit_rabi(
         p0: tuple
         bounds: tuple
         if is_damped:
-            tau_est = 10_000
+            tau_est = 100_000
             p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
             bounds = (
                 (0, 0, 0, -np.inf, 0),
