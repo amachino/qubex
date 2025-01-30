@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Final
+from typing import Collection, Final
 
 import plotly.graph_objects as go
 
@@ -675,4 +675,87 @@ class Visualizer:
                 width=marker_size * 4 * n_mux_cols,
             ),
         )
+        return fig
+
+    def create_data_matrix(
+        self,
+        data: Collection,
+    ) -> list[list]:
+        data = list(data)
+
+        if len(data) != self.graph.n_qubits:
+            raise ValueError(
+                f"Length of data ({len(data)}) must be equal to the number of qubits ({self.graph.n_qubits})."
+            )
+
+        data_matrix = []
+
+        for qubit_index, data in enumerate(data):
+            mux_index = qubit_index // MUX_SIZE
+            qubit_index_in_mux = qubit_index % MUX_SIZE
+            mux_col = mux_index // self.graph.n_mux_cols
+            row_in_mux = qubit_index_in_mux // (MUX_SIZE // 2)
+
+            if mux_col == 0 and row_in_mux == 0:
+                data_matrix.append([])
+
+            row = mux_col * 2 + row_in_mux
+            data_matrix[row].append(data)
+
+        return data_matrix
+
+    def create_data_figure(
+        self,
+        *,
+        value: list | None = None,
+        text: list[str] | None = None,
+        hovertext: list[str] | None = None,
+        title: str = "Data",
+    ) -> go.Figure:
+        value_matrix = self.create_data_matrix(value) if value else None
+        text_matrix = self.create_data_matrix(text) if text else None
+        hovertext_matrix = self.create_data_matrix(hovertext) if hovertext else None
+
+        fig = go.Figure(
+            go.Heatmap(
+                z=value_matrix,
+                text=text_matrix,
+                colorscale="Viridis",
+                hoverinfo="text",
+                hovertext=hovertext_matrix or text_matrix,
+                texttemplate="%{text}",
+                showscale=False,
+                textfont=dict(
+                    family="sans-serif",
+                    size=12,
+                    weight="bold",
+                ),
+            )
+        )
+
+        fig.update_layout(
+            title=title,
+            showlegend=False,
+            margin=dict(b=30, l=30, r=30, t=60),
+            xaxis=dict(
+                ticks="",
+                # showline=False,
+                linewidth=1,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            yaxis=dict(
+                ticks="",
+                autorange="reversed",
+                # showline=False,
+                linewidth=1,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            height=150 * self.graph.n_mux_rows,
+            width=150 * self.graph.n_mux_cols,
+        )
+
         return fig
