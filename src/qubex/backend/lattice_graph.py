@@ -5,6 +5,8 @@ from typing import Collection, Final
 
 import plotly.graph_objects as go
 
+from ..analysis.visualization import save_figure_image
+
 MUX_SIZE = 4
 
 PREFIX_QUBIT = "Q"
@@ -65,7 +67,6 @@ class LatticeGraph:
         self.max_digit: Final = len(str(self.n_qubits - 1))
         self.max_mux_digit: Final = len(str(n_muxes - 1))
         self.edges: Final = self._create_edges(self.n_mux_rows, self.n_mux_cols)
-        self.visualizer: Final = Visualizer(self)
 
     @property
     def n_muxes(
@@ -403,34 +404,12 @@ class LatticeGraph:
     def plot_graph(
         self,
         hovertext: list[str] | None = None,
+        image_name: str = "graph",
+        images_dir: str = ".",
+        save_image: bool = False,
     ):
-        fig = self.visualizer.create_graph_figure(
-            hovertext=hovertext,
-        )
-        fig.show()
-
-    def plot_lattice(
-        self,
-        text: list[str] | None = None,
-        hovertext: list[str] | None = None,
-    ):
-        fig = self.visualizer.create_lattice_figure(
-            text=text,
-            hovertext=hovertext,
-        )
-        fig.show()
-
-
-class Visualizer:
-    def __init__(self, graph: LatticeGraph):
-        self.graph = graph
-
-    def create_graph_figure(
-        self,
-        hovertext: list[str] | None = None,
-    ) -> go.Figure:
-        n_mux_rows = self.graph.n_mux_rows
-        n_mux_cols = self.graph.n_mux_cols
+        n_mux_rows = self.n_mux_rows
+        n_mux_cols = self.n_mux_cols
         mux_size = 4
         dx = 1.0
         dy = 1.0
@@ -452,7 +431,7 @@ class Visualizer:
 
         edge_x = []
         edge_y = []
-        for edge in self.graph.edges:
+        for edge in self.edges:
             x0, y0 = qubit_xy[edge[0]]
             x1, y1 = qubit_xy[edge[1]]
             edge_x += [x0, x1, None]
@@ -469,11 +448,11 @@ class Visualizer:
         qubit_x = []
         qubit_y = []
         qubit_text = []
-        for i in range(self.graph.n_qubits):
+        for i in range(self.n_qubits):
             x, y = qubit_xy[i]
             qubit_x.append(x)
             qubit_y.append(y)
-            qubit_text.append(self.graph.qubits[i])
+            qubit_text.append(self.qubits[i])
 
         trace_qubit = go.Scatter(
             x=qubit_x,
@@ -502,7 +481,7 @@ class Visualizer:
         for mux, (x, y) in mux_xy.items():
             mux_x.append(x)
             mux_y.append(y)
-            mux_text.append(self.graph.muxes[mux])
+            mux_text.append(self.muxes[mux])
 
         trace_mux = go.Scatter(
             x=mux_x,
@@ -541,177 +520,30 @@ class Visualizer:
                 width=marker_size * 4 * n_mux_cols,
             ),
         )
-        return fig
+        fig.show()
 
-    def create_lattice_figure(
-        self,
-        text: list[str] | None = None,
-        hovertext: list[str] | None = None,
-    ) -> go.Figure:
-        n_mux_rows = self.graph.n_mux_rows
-        n_mux_cols = self.graph.n_mux_cols
-        mux_size = 4
-        dx = 1.0
-        dy = 1.0
-        marker_size = 36
-        mux_line_width = 2
-        qubit_line_width = 1
-
-        qubit_xy = {}
-        shapes = []
-        for i in range(n_mux_rows):
-            for j in range(n_mux_cols):
-                mux = i * n_mux_cols + j
-                idx = mux * mux_size
-                x = j * dx * 2
-                y = i * dy * 2
-
-                # muxes
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x,
-                        y0=y,
-                        x1=x + 2 * dx,
-                        y1=y + 2 * dy,
-                        line=dict(color="black", width=mux_line_width),
-                    )
-                )
-
-                # qubits
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x,
-                        y0=y,
-                        x1=x + dx,
-                        y1=y + dy,
-                        line=dict(color="black", width=qubit_line_width),
-                    )
-                )
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x + dx,
-                        y0=y,
-                        x1=x + 2 * dx,
-                        y1=y + dy,
-                        line=dict(color="black", width=qubit_line_width),
-                    )
-                )
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x,
-                        y0=y + dy,
-                        x1=x + dx,
-                        y1=y + 2 * dy,
-                        line=dict(color="black", width=qubit_line_width),
-                    )
-                )
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x + dx,
-                        y0=y + dy,
-                        x1=x + 2 * dx,
-                        y1=y + 2 * dy,
-                        line=dict(color="black", width=qubit_line_width),
-                    )
-                )
-
-                qubit_xy[idx + 0] = (x + 0.5, y + 0.5)
-                qubit_xy[idx + 1] = (x + dx + 0.5, y + 0.5)
-                qubit_xy[idx + 2] = (x + 0.5, y + dy + 0.5)
-                qubit_xy[idx + 3] = (x + dx + 0.5, y + dy + 0.5)
-
-        qubit_x = []
-        qubit_y = []
-        qubit_text = []
-        for i in range(self.graph.n_qubits):
-            x, y = qubit_xy[i]
-            qubit_x.append(x)
-            qubit_y.append(y)
-            qubit_text.append(self.graph.qubits[i])
-
-        trace_qubit = go.Scatter(
-            x=qubit_x,
-            y=qubit_y,
-            mode="text",
-            text=text or qubit_text,
-            hoverinfo="text",
-            hovertext=hovertext or qubit_text,
-            textfont=dict(
-                family="sans-serif",
-                color="black",
-                size=marker_size // 3,
-            ),
-            textposition="middle center",
-        )
-
-        fig = go.Figure(
-            data=[trace_qubit],
-            layout=go.Layout(
-                shapes=shapes,
-                showlegend=False,
-                hovermode="closest",
-                margin=dict(b=10, l=10, r=10, t=10),
-                xaxis=dict(
-                    ticks="",
-                    showline=False,
-                    showgrid=False,
-                    zeroline=False,
-                    showticklabels=False,
-                ),
-                yaxis=dict(
-                    ticks="",
-                    autorange="reversed",
-                    showline=False,
-                    showgrid=False,
-                    zeroline=False,
-                    showticklabels=False,
-                ),
-                height=marker_size * 4 * n_mux_rows,
+        if save_image:
+            save_figure_image(
+                fig,
+                name=image_name,
+                images_dir=images_dir,
+                format="png",
                 width=marker_size * 4 * n_mux_cols,
-            ),
-        )
-        return fig
-
-    def create_data_matrix(
-        self,
-        data: Collection,
-    ) -> list[list]:
-        data = list(data)
-
-        if len(data) != self.graph.n_qubits:
-            raise ValueError(
-                f"Length of data ({len(data)}) must be equal to the number of qubits ({self.graph.n_qubits})."
+                height=marker_size * 4 * n_mux_rows,
+                scale=3,
             )
 
-        data_matrix = []
-
-        for qubit_index, data in enumerate(data):
-            mux_index = qubit_index // MUX_SIZE
-            qubit_index_in_mux = qubit_index % MUX_SIZE
-            mux_col = mux_index // self.graph.n_mux_cols
-            row_in_mux = qubit_index_in_mux // (MUX_SIZE // 2)
-
-            if mux_col == 0 and row_in_mux == 0:
-                data_matrix.append([])
-
-            row = mux_col * 2 + row_in_mux
-            data_matrix[row].append(data)
-
-        return data_matrix
-
-    def create_data_figure(
+    def plot_data(
         self,
         *,
+        title: str = "Data",
         value: list | None = None,
         text: list[str] | None = None,
         hovertext: list[str] | None = None,
-        title: str = "Data",
-    ) -> go.Figure:
+        image_name: str = "data",
+        images_dir: str = ".",
+        save_image: bool = False,
+    ):
         value_matrix = self.create_data_matrix(value) if value else None
         text_matrix = self.create_data_matrix(text) if text else None
         hovertext_matrix = self.create_data_matrix(hovertext) if hovertext else None
@@ -754,8 +586,46 @@ class Visualizer:
                 zeroline=False,
                 showticklabels=False,
             ),
-            height=150 * self.graph.n_mux_rows,
-            width=150 * self.graph.n_mux_cols,
+            height=144 * self.n_mux_rows,
+            width=144 * self.n_mux_cols,
         )
 
-        return fig
+        fig.show()
+
+        if save_image:
+            save_figure_image(
+                fig,
+                name=image_name,
+                images_dir=images_dir,
+                format="png",
+                width=144 * self.n_mux_cols,
+                height=144 * self.n_mux_rows,
+                scale=3,
+            )
+
+    def create_data_matrix(
+        self,
+        data: Collection,
+    ) -> list[list]:
+        data = list(data)
+
+        if len(data) != self.n_qubits:
+            raise ValueError(
+                f"Length of data ({len(data)}) must be equal to the number of qubits ({self.n_qubits})."
+            )
+
+        data_matrix = []
+
+        for qubit_index, data in enumerate(data):
+            mux_index = qubit_index // MUX_SIZE
+            qubit_index_in_mux = qubit_index % MUX_SIZE
+            mux_col = mux_index // self.n_mux_cols
+            row_in_mux = qubit_index_in_mux // (MUX_SIZE // 2)
+
+            if mux_col == 0 and row_in_mux == 0:
+                data_matrix.append([])
+
+            row = mux_col * 2 + row_in_mux
+            data_matrix[row].append(data)
+
+        return data_matrix

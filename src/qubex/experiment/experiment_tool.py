@@ -96,14 +96,111 @@ def resync_clocks(box_ids: Collection[str]) -> bool:
     return state_manager.device_controller.resync_clocks(list(box_ids))
 
 
-def print_chip_info() -> None:
+def print_chip_info(
+    save_image: bool = False,
+) -> None:
     """Print the information of the chip."""
     chip = state_manager.experiment_system.chip
     graph = LatticeGraph(chip.n_qubits)
-    graph.plot_graph()
+    graph.plot_graph(
+        save_image=save_image,
+        image_name="chip_layout",
+    )
 
-    frequencies = [f"{qubit.frequency:.3f}" for qubit in chip.qubits]
-    graph.plot_lattice(text=frequencies)
+    resonator_frequency = [
+        f"{resonator.frequency:.3f}" if not math.isnan(resonator.frequency) else "N/A"
+        for resonator in chip.resonators
+    ]
+    graph.plot_data(
+        title="Resonator frequency (GHz)",
+        value=resonator_frequency,
+        text=resonator_frequency,
+        save_image=save_image,
+        image_name="resonator_frequency",
+    )
+
+    qubit_frequency = [
+        f"{qubit.frequency:.3f}" if not math.isnan(qubit.frequency) else "N/A"
+        for qubit in chip.qubits
+    ]
+    graph.plot_data(
+        title="Qubit frequency (GHz)",
+        value=qubit_frequency,
+        text=qubit_frequency,
+        save_image=save_image,
+        image_name="qubit_frequency",
+    )
+
+    qubit_anharmonicity = [
+        f"{qubit.anharmonicity * 1e3:.1f}"
+        if not math.isnan(qubit.anharmonicity)
+        else "N/A"
+        for qubit in chip.qubits
+    ]
+    graph.plot_data(
+        title="Qubit anharmonicity (MHz)",
+        value=qubit_anharmonicity,
+        text=qubit_anharmonicity,
+        save_image=save_image,
+        image_name="qubit_anharmonicity",
+    )
+
+    props = state_manager.config_loader._props_dict[chip.id]
+
+    external_loss_rate = [
+        f"{v * 1e3:.2f}" if v is not None else "N/A"
+        for v in props["external_loss_rate"].values()
+    ]
+    graph.plot_data(
+        title="External loss rate (MHz)",
+        value=external_loss_rate,
+        text=external_loss_rate,
+        save_image=save_image,
+        image_name="external_loss_rate",
+    )
+
+    internal_loss_rate = [
+        f"{v * 1e3:.2f}" if v is not None else "N/A"
+        for v in props["internal_loss_rate"].values()
+    ]
+    graph.plot_data(
+        title="Internal loss rate (MHz)",
+        value=internal_loss_rate,
+        text=internal_loss_rate,
+        save_image=save_image,
+        image_name="internal_loss_rate",
+    )
+
+    t1 = [f"{v * 1e-3:.2f}" if v is not None else "N/A" for v in props["t1"].values()]
+    graph.plot_data(
+        title="T1 (μs)",
+        value=t1,
+        text=t1,
+        save_image=save_image,
+        image_name="t1",
+    )
+
+    t2_star = [
+        f"{v * 1e-3:.2f}" if v is not None else "N/A" for v in props["t2_star"].values()
+    ]
+    graph.plot_data(
+        title="T2* (μs)",
+        value=t2_star,
+        text=t2_star,
+        save_image=save_image,
+        image_name="t2_star",
+    )
+
+    t2_echo = [
+        f"{v * 1e-3:.2f}" if v is not None else "N/A" for v in props["t2_echo"].values()
+    ]
+    graph.plot_data(
+        title="T2 echo (μs)",
+        value=t2_echo,
+        text=t2_echo,
+        save_image=save_image,
+        image_name="t2_echo",
+    )
 
 
 def print_wiring_info(qubits: Collection[str] | None = None) -> None:

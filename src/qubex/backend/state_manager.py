@@ -78,6 +78,11 @@ class StateManager:
         self._initialized = True
 
     @property
+    def config_loader(self) -> ConfigLoader:
+        """Get the configuration loader."""
+        return self._config_loader
+
+    @property
     def is_loaded(self) -> bool:
         """Check if the experiment system is loaded."""
         return self.experiment_system is not None
@@ -214,12 +219,12 @@ class StateManager:
         params_dir : str, optional
             Parameters directory, by default DEFAULT_PARAMS_DIR.
         """
-        config = ConfigLoader(
+        self._config_loader = ConfigLoader(
             config_dir=config_dir,
             params_dir=params_dir,
             targets_to_exclude=targets_to_exclude,
         )
-        self.experiment_system = config.get_experiment_system(chip_id)
+        self.experiment_system = self.config_loader.get_experiment_system(chip_id)
 
     def pull(
         self,
