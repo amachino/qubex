@@ -102,7 +102,7 @@ def print_chip_info(
     """Print the information of the chip."""
     chip = state_manager.experiment_system.chip
     graph = LatticeGraph(chip.n_qubits)
-    graph.plot_graph(
+    graph.plot_graph_data(
         save_image=save_image,
         image_name="chip_layout",
     )
@@ -111,10 +111,10 @@ def print_chip_info(
         f"{resonator.frequency:.3f}" if not math.isnan(resonator.frequency) else "N/A"
         for resonator in chip.resonators
     ]
-    graph.plot_data(
+    graph.plot_lattice_data(
         title="Resonator frequency (GHz)",
-        value=resonator_frequency,
-        text=resonator_frequency,
+        values=resonator_frequency,
+        texts=resonator_frequency,
         save_image=save_image,
         image_name="resonator_frequency",
     )
@@ -123,10 +123,10 @@ def print_chip_info(
         f"{qubit.frequency:.3f}" if not math.isnan(qubit.frequency) else "N/A"
         for qubit in chip.qubits
     ]
-    graph.plot_data(
+    graph.plot_lattice_data(
         title="Qubit frequency (GHz)",
-        value=qubit_frequency,
-        text=qubit_frequency,
+        values=qubit_frequency,
+        texts=qubit_frequency,
         save_image=save_image,
         image_name="qubit_frequency",
     )
@@ -137,10 +137,10 @@ def print_chip_info(
         else "N/A"
         for qubit in chip.qubits
     ]
-    graph.plot_data(
+    graph.plot_lattice_data(
         title="Qubit anharmonicity (MHz)",
-        value=qubit_anharmonicity,
-        text=qubit_anharmonicity,
+        values=qubit_anharmonicity,
+        texts=qubit_anharmonicity,
         save_image=save_image,
         image_name="qubit_anharmonicity",
     )
@@ -151,10 +151,10 @@ def print_chip_info(
         f"{v * 1e3:.2f}" if v is not None else "N/A"
         for v in props["external_loss_rate"].values()
     ]
-    graph.plot_data(
+    graph.plot_lattice_data(
         title="External loss rate (MHz)",
-        value=external_loss_rate,
-        text=external_loss_rate,
+        values=external_loss_rate,
+        texts=external_loss_rate,
         save_image=save_image,
         image_name="external_loss_rate",
     )
@@ -163,19 +163,19 @@ def print_chip_info(
         f"{v * 1e3:.2f}" if v is not None else "N/A"
         for v in props["internal_loss_rate"].values()
     ]
-    graph.plot_data(
+    graph.plot_lattice_data(
         title="Internal loss rate (MHz)",
-        value=internal_loss_rate,
-        text=internal_loss_rate,
+        values=internal_loss_rate,
+        texts=internal_loss_rate,
         save_image=save_image,
         image_name="internal_loss_rate",
     )
 
     t1 = [f"{v * 1e-3:.2f}" if v is not None else "N/A" for v in props["t1"].values()]
-    graph.plot_data(
+    graph.plot_lattice_data(
         title="T1 (μs)",
-        value=t1,
-        text=t1,
+        values=t1,
+        texts=t1,
         save_image=save_image,
         image_name="t1",
     )
@@ -183,10 +183,10 @@ def print_chip_info(
     t2_star = [
         f"{v * 1e-3:.2f}" if v is not None else "N/A" for v in props["t2_star"].values()
     ]
-    graph.plot_data(
+    graph.plot_lattice_data(
         title="T2* (μs)",
-        value=t2_star,
-        text=t2_star,
+        values=t2_star,
+        texts=t2_star,
         save_image=save_image,
         image_name="t2_star",
     )
@@ -194,10 +194,10 @@ def print_chip_info(
     t2_echo = [
         f"{v * 1e-3:.2f}" if v is not None else "N/A" for v in props["t2_echo"].values()
     ]
-    graph.plot_data(
+    graph.plot_lattice_data(
         title="T2 echo (μs)",
-        value=t2_echo,
-        text=t2_echo,
+        values=t2_echo,
+        texts=t2_echo,
         save_image=save_image,
         image_name="t2_echo",
     )
