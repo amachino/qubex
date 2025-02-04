@@ -461,28 +461,33 @@ class Experiment(
 
         if calib_amplitude is None or calib_beta is None:
             return {}
+
         return {
             target: Drag(
                 duration=DRAG_HPI_DURATION,
                 amplitude=calib_amplitude[target],
                 beta=calib_beta[target],
             )
-            for target in calib_amplitude
+            for target in self._qubits
+            if target in calib_amplitude and target in calib_beta
         }
 
     @property
     def drag_pi_pulse(self) -> dict[str, Waveform]:
         calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
         calib_beta: dict[str, float] = self._system_note.get(DRAG_PI_BETA)
+
         if calib_amplitude is None or calib_beta is None:
             return {}
+
         return {
             target: Drag(
                 duration=DRAG_PI_DURATION,
                 amplitude=calib_amplitude[target],
                 beta=calib_beta[target],
             )
-            for target in calib_amplitude
+            for target in self._qubits
+            if target in calib_amplitude and target in calib_beta
         }
 
     @property
