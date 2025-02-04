@@ -161,6 +161,10 @@ class Experiment(
         self._readout_duration: Final = readout_duration
         self._classifier_type: Final = classifier_type
         self._rabi_params: Final[dict[str, RabiParam]] = {}
+
+        if len(qubits) == 0:
+            return
+
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
