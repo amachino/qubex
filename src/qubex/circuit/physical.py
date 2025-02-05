@@ -3,9 +3,9 @@ from qiskit.qasm3 import loads
 from ..experiment import Experiment
 from ..pulse import PulseSchedule, VirtualZ
 from ..measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from .base import BaseBackend
 
-
-class CircuitBackend:
+class PhysicalBackend(BaseBackend):
     def __init__(self, chip_id: str, nodes: list[str], edges: list[str]):
         """
         Backend for QASM 3 circuit.
@@ -13,7 +13,7 @@ class CircuitBackend:
         self.experiment = Experiment(chip_id=chip_id, qubits=nodes)
         self.nodes = nodes  # e.g. ["Q05", "Q07"]
         self.edges = edges  # e.g. ["Q05-Q07"]
-        self.program = PulseSchedule(self.nodes + self.edges)
+        self.circuit = PulseSchedule(self.nodes + self.edges)
 
         # Virtual to Physical mapping
         self.virtual_to_physical = {i: nodes[i] for i in range(len(nodes))}
@@ -39,7 +39,7 @@ class CircuitBackend:
             ps.add(control, VirtualZ(-np.pi / 2))
             ps.add(target, x90_pulse.scaled(-1))
 
-        self.program.call(ps)
+        self.circuit.call(ps)
 
     def x90(self, target: str):
         """Apply X90 gate"""
@@ -53,7 +53,7 @@ class CircuitBackend:
         with PulseSchedule([target]) as ps:
             ps.add(target, x90_pulse)
 
-        self.program.call(ps)
+        self.circuit.call(ps)
 
     def x180(self, target: str):
         """Apply X180 gate"""
@@ -67,9 +67,9 @@ class CircuitBackend:
         with PulseSchedule([target]) as ps:
             ps.add(target, x180_pulse)
 
-        self.program.call(ps)
+        self.circuit.call(ps)
 
-    def rz(self, angle: float, target: str):
+    def rz(self, target: str, angle: float):
         """Apply Rz gate"""
         if target not in self.nodes:
             raise ValueError(f"Invalid qubit: {target}")
@@ -77,9 +77,9 @@ class CircuitBackend:
         with PulseSchedule([target]) as ps:
             ps.add(target, VirtualZ(angle))
 
-        self.program.call(ps)
+        self.circuit.call(ps)
 
-    def load_circuit(self, program: str):
+    def load_program(self, program: str):
         """Load QASM 3 program into the pulse schedule"""
         qiskit_circuit = loads(program)
 
@@ -94,7 +94,7 @@ class CircuitBackend:
                 self.x180(physical_index)
             elif name == "rz":
                 angle = instruction.params[0]
-                self.rz(angle, physical_index)
+                self.rz(physical_index, angle)
             elif name == "cx":
                 virtual_target_index = instruction.qubits[1]._index
                 physical_target_index = self.virtual_to_physical[virtual_target_index]
@@ -105,17 +105,20 @@ class CircuitBackend:
             else:
                 raise ValueError(f"Unsupported instruction: {name}")
 
-    def get_schedule(self) -> PulseSchedule:
+    def get_circuit(self) -> PulseSchedule:
         """Get the constructed pulse schedule"""
-        return self.program
+        return self.circuit
 
-    def execute(self, shots: int = DEFAULT_SHOTS):
+    def execute(self, shots: int = DEFAULT_SHOTS) -> dict:
         """Run the quantum circuit with specified shots"""
         self.experiment.build_classifier(plot=False)
-        schedule = self.get_schedule()
+        schedule = self.get_circuit()
 
         initial_states = {qubit: "0" for qubit in self.nodes}
 
         return self.experiment.measure(
             schedule, initial_states=initial_states, mode="single", shots=shots, interval=DEFAULT_INTERVAL
-        )
+        ).counts
+
+
+
