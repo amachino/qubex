@@ -14,10 +14,6 @@ class SimulatorBackend(BaseBackend):
             "qubits": {k: f"Q{v:02}" for k, v in virtual_physical_map["qubits"].items()},
             "couplings": {k: (f"Q{v[0]:02}", f"Q{v[1]:02}") for k, v in virtual_physical_map["couplings"].items()},
         }
-        
-        # Initialize the quantum circuit with the number of qubits
-        self.circuit = QuantumCircuit(len(self.qubits))
-        print(self.qubits)  # e.g., ['Q05', 'Q07']
 
     @property
     def qubits(self) -> list:
@@ -80,6 +76,7 @@ class SimulatorBackend(BaseBackend):
         Load a QASM 3 program and apply the corresponding gates to the circuit.
         """
         qiskit_circuit = loads(program)
+        self.circuit = QuantumCircuit(qiskit_circuit.num_qubits)
 
         for instruction in qiskit_circuit.data:
             name = instruction.name
