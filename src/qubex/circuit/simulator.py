@@ -87,7 +87,7 @@ class SimulatorBackend(BaseBackend):
         self.circuit.add_RZ_gate(self.physical_virtual_qubits[target], angle)
 
     def load_program(self, program: str):
-        """Load QASM 3 program into the pulse schedule"""
+        """Load QASM 3 program into the pulse schedule test"""
         qiskit_circuit = loads(program)
 
         for instruction in qiskit_circuit.data:
