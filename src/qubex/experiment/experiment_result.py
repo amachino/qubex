@@ -487,7 +487,7 @@ class T1Data(SweepData):
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
             title="T1",
-            xaxis_title="Time (ns)",
+            xaxis_title="Time (μs)",
             yaxis_title="Population",
             xaxis_type="log",
             yaxis_type="linear",
