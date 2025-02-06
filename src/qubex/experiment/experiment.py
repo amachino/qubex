@@ -161,10 +161,6 @@ class Experiment(
         self._readout_duration: Final = readout_duration
         self._classifier_type: Final = classifier_type
         self._rabi_params: Final[dict[str, RabiParam]] = {}
-
-        if len(qubits) == 0:
-            return
-
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
@@ -199,6 +195,8 @@ class Experiment(
         params_dir: str,
     ) -> list[str]:
         """Create the list of qubit labels."""
+        if muxes is None and qubits is None:
+            return []
         state_manager = StateManager.shared()
         state_manager.load(
             chip_id=chip_id,

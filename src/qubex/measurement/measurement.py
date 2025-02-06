@@ -97,13 +97,15 @@ class Measurement:
             config_dir=self._config_dir,
             params_dir=self._params_dir,
         )
-        box_ids = None
+        box_ids = []
         if self._qubits is not None:
             boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
             box_ids = [box.id for box in boxes]
+        if len(box_ids) == 0:
+            return
         if fetch_device_state:
             try:
-                self.state_manager.pull(box_ids=box_ids)
+                self.state_manager.pull(box_ids)
             except Exception:
                 print("Failed to fetch the device state.")
         if connect_devices:
