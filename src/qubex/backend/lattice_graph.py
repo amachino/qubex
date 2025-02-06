@@ -139,7 +139,7 @@ class LatticeGraph:
                 (x, y),
                 {
                     "index": idx_q,
-                    "label": f"Q{idx_q:0{self.qubit_max_digit}d}",
+                    "label": f"{PREFIX_QUBIT}{idx_q:0{self.qubit_max_digit}d}",
                     "position": (x, y),
                     "mux": f"MUX{idx_m:0{self.mux_max_digit}d}",
                 },
@@ -165,7 +165,7 @@ class LatticeGraph:
                 (x, y),
                 {
                     "index": idx,
-                    "label": f"MUX{idx:0{self.mux_max_digit}d}",
+                    "label": f"{PREFIX_MUX}{idx:0{self.mux_max_digit}d}",
                     "position": (x * 2 + 0.5, y * 2 + 0.5),
                 },
             )
