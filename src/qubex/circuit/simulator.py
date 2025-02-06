@@ -4,63 +4,52 @@ from qulacs import QuantumCircuit, QuantumState
 from .base import BaseBackend
 from collections import Counter
 
-
-
 class SimulatorBackend(BaseBackend):
     def __init__(self, virtual_physical_map: dict):
         """
-        Backend for QASM 3 circuit.
+        Backend for QASM 3 circuits.
         """
-        self._virtual_physical_map = virtual_physical_map
+        # Save the formatted mapping. We avoid further modifications.
+        self._virtual_physical_map = {
+            "qubits": {k: f"Q{v:02}" for k, v in virtual_physical_map["qubits"].items()},
+            "couplings": {k: (f"Q{v[0]:02}", f"Q{v[1]:02}") for k, v in virtual_physical_map["couplings"].items()},
+        }
+        
+        # Initialize the quantum circuit with the number of qubits
         self.circuit = QuantumCircuit(len(self.qubits))
+        print(self.qubits)  # e.g., ['Q05', 'Q07']
 
     @property
     def qubits(self) -> list:
         """
-        # Returns
-                List of couplings,
-        eg. ["Q05", "Q07"]
+        Returns a list of qubit labels, e.g., ["Q05", "Q07"]
         """
-        qubits = []
-        for _, v in self._virtual_physical_map["qubits"].items():
-            qubits.append(f"Q{v:02}")
-        return qubits
-    
+        # Return a copy if you want to prevent external modifications.
+        return list(self._virtual_physical_map["qubits"].values()) # type: ignore
     @property
     def couplings(self) -> list:
         """
-        # Returns
-                List of couplings,
-        eg. ["Q05-Q07", "Q07-Q05"]
+        Returns a list of couplings in the format "QXX-QYY", e.g., ["Q05-Q07", "Q07-Q05"]
         """
-        couplings = []
-        for _, v in self._virtual_physical_map["couplings"].items():
-            couplings.append(f"Q{v[0]:02}-Q{v[1]:02}")
-        return couplings
-
+        return [f"{v[0]}-{v[1]}" for v in self._virtual_physical_map["couplings"].values()] # type: ignore
 
     @property
     def virtual_physical_qubits(self) -> dict:
         """
-        # Returns
-                Virtual to Physical mapping,
-        eg. {0: "Q05", 1: "Q07"}
+        Returns the virtual-to-physical mapping, e.g., {0: "Q05", 1: "Q07"}
         """
-        for k, v in self._virtual_physical_map["qubits"].items():
-            self._virtual_physical_map["qubits"][k] = f"Q{v:02}"
-        return self._virtual_physical_map["qubits"]
+        # Return a shallow copy to avoid accidental modifications
+        return self._virtual_physical_map["qubits"].copy() # type: ignore
 
     @property
     def physical_virtual_qubits(self) -> dict:
         """
-        # Returns
-                Physical to Virtual mapping,
-        eg. {"Q05": 0, "Q07": 1}
+        Returns the physical-to-virtual mapping, e.g., {"Q05": 0, "Q07": 1}
         """
         return {v: k for k, v in self.virtual_physical_qubits.items()}
 
     def cnot(self, control: str, target: str):
-        """Apply CNOT gate"""
+        """Apply CNOT gate."""
         if control not in self.qubits or target not in self.qubits:
             raise ValueError(f"Invalid qubits for CNOT: {control}, {target}")
         self.circuit.add_CNOT_gate(
@@ -69,25 +58,27 @@ class SimulatorBackend(BaseBackend):
         )
 
     def x90(self, target: str):
-        """Apply X90 gate"""
+        """Apply X90 gate."""
         if target not in self.qubits:
             raise ValueError(f"Invalid qubit: {target}")
         self.circuit.add_sqrtX_gate(self.physical_virtual_qubits[target])
 
     def x180(self, target: str):
-        """Apply X180 gate"""
+        """Apply X180 gate."""
         if target not in self.qubits:
             raise ValueError(f"Invalid qubit: {target}")
         self.circuit.add_X_gate(self.physical_virtual_qubits[target])
 
     def rz(self, target: str, angle: float):
-        """Apply RZ gate"""
+        """Apply RZ gate."""
         if target not in self.qubits:
             raise ValueError(f"Invalid qubit: {target}")
         self.circuit.add_RZ_gate(self.physical_virtual_qubits[target], angle)
 
     def load_program(self, program: str):
-        """Load QASM 3 program into the pulse schedule test"""
+        """
+        Load a QASM 3 program and apply the corresponding gates to the circuit.
+        """
         qiskit_circuit = loads(program)
 
         for instruction in qiskit_circuit.data:
@@ -111,22 +102,19 @@ class SimulatorBackend(BaseBackend):
             else:
                 raise ValueError(f"Unsupported instruction: {name}")
 
-
-
     @property
     def get_circuit(self) -> QuantumCircuit:
-        """Get the constructed quantum circuit"""
+        """Return the constructed quantum circuit."""
         return self.circuit
 
     def execute(self, shots: int = DEFAULT_SHOTS) -> dict:
         """
-        Run the quantum circuit with specified shots
+        Execute the quantum circuit with a specified number of shots.
         """
         state = QuantumState(self.circuit.get_qubit_count())
         self.circuit.update_quantum_state(state)
-        result  = Counter(state.sampling(shots))
-        counts = dict()
+        result = Counter(state.sampling(shots))
+        counts = {}
         for key, value in result.items():
             counts[format(key, "0" + str(self.circuit.get_qubit_count()) + "b")] = value 
         return counts
-    
