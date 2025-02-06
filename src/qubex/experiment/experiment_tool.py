@@ -106,6 +106,8 @@ def print_chip_info(
         "t1",
         "t2_star",
         "t2_echo",
+        "static_zz_interaction",
+        "qubit_qubit_coupling_strength",
     ],
     save_image: bool = False,
 ) -> None:
@@ -114,10 +116,6 @@ def print_chip_info(
     props = state_manager.config_loader._props_dict[chip.id]
 
     graph = LatticeGraph(chip.n_qubits)
-    graph.plot_graph_data(
-        save_image=save_image,
-        image_name="chip_layout",
-    )
 
     if len(info_type) == 0:
         info_type = (
@@ -129,6 +127,8 @@ def print_chip_info(
             "t1",
             "t2_star",
             "t2_echo",
+            "qubit_qubit_coupling_strength",
+            "static_zz_interaction",
         )
 
     if "resonator_frequency" in info_type:
@@ -279,6 +279,35 @@ def print_chip_info(
             ],
             save_image=save_image,
             image_name="t2_echo",
+        )
+
+    if "static_zz_interaction" in info_type:
+        graph.plot_graph_data(
+            title="Static ZZ interaction",
+            edge_values={
+                key: value for key, value in props["static_zz_interaction"].items()
+            },
+            edge_hovertexts={
+                key: f"{key}: {value * 1e6:.1f} kHz" if value is not None else "N/A"
+                for key, value in props["static_zz_interaction"].items()
+            },
+            save_image=save_image,
+            image_name="static_zz_interaction",
+        )
+
+    if "qubit_qubit_coupling_strength" in info_type:
+        graph.plot_graph_data(
+            title="Qubit-Qubit coupling strength",
+            edge_values={
+                key: value
+                for key, value in props["qubit_qubit_coupling_strength"].items()
+            },
+            edge_hovertexts={
+                key: f"{key}: {value * 1e3:.1f} MHz" if value is not None else "N/A"
+                for key, value in props["qubit_qubit_coupling_strength"].items()
+            },
+            save_image=save_image,
+            image_name="qubit_qubit_coupling_strength",
         )
 
 

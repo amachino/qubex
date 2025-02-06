@@ -11,7 +11,7 @@ from plotly.colors import sample_colorscale
 from ..analysis.visualization import save_figure_image
 
 MUX_SIZE = 4
-NODE_SIZE = 36
+NODE_SIZE = 24
 
 
 PREFIX_QUBIT = "Q"
@@ -73,59 +73,19 @@ class LatticeGraph:
         self.n_qubit_rows: Final = qubit_side_length
         self.n_qubit_cols: Final = qubit_side_length
         self.qubit_max_digit: Final = len(str(self.n_qubits - 1))
-        qubit_graph = nx.grid_2d_graph(qubit_side_length, qubit_side_length)
-        self.qubit_graph: Final = qubit_graph.to_directed()
 
         self.n_muxes: Final = n_muxes
         self.n_mux_rows: Final = mux_side_length
         self.n_mux_cols: Final = mux_side_length
         self.mux_max_digit: Final = len(str(self.n_muxes - 1))
-        self.mux_graph: Final = nx.grid_2d_graph(mux_side_length, mux_side_length)
 
-        self._init_qubit_nodes()
-        self._init_qubit_edges()
-        self._init_mux_nodes()
+        self._init_qubit_graph()
+        self._init_mux_graph()
 
-    def get_qubit_node(
-        self,
-        node: tuple[int, int],
-    ) -> dict:
-        return self.qubit_graph.nodes[node]
-
-    def set_qubit_node(
-        self,
-        node: tuple[int, int],
-        data: dict,
-    ):
-        self.qubit_graph.nodes[node].update(data)
-
-    def get_qubit_edge(
-        self,
-        edge: tuple[tuple[int, int], tuple[int, int]],
-    ) -> dict:
-        return self.qubit_graph.edges[edge]
-
-    def set_qubit_edge(
-        self,
-        edge: tuple[tuple[int, int], tuple[int, int]],
-        data: dict,
-    ):
-        self.qubit_graph.edges[edge].update(data)
-
-    def get_mux_node(
-        self,
-        node: tuple[int, int],
-    ) -> dict:
-        return self.mux_graph.nodes[node]
-
-    def set_mux_node(
-        self,
-        node: tuple[int, int],
-        data: dict,
-    ):
-        self.mux_graph.nodes[node].update(data)
-
-    def _init_qubit_nodes(self):
+    def _init_qubit_graph(self):
+        mapping = {}
+        self.qubit_graph = nx.grid_2d_graph(self.n_qubit_cols, self.n_qubit_rows)
+        self.qubit_graph = self.qubit_graph.to_directed()
         for x, y in self.qubit_graph.nodes():
             len_q = self.n_qubit_cols
             len_m = self.n_mux_cols
@@ -135,40 +95,74 @@ class LatticeGraph:
             idx_m = row_m * len_m + col_m
             idx_qm = (x % len_qm) + (y % len_qm) * len_qm
             idx_q = MUX_SIZE * idx_m + idx_qm
-            self.set_qubit_node(
-                (x, y),
+            mapping[(x, y)] = idx_q
+            self.qubit_graph.nodes[(x, y)].update(
                 {
                     "index": idx_q,
                     "label": f"{PREFIX_QUBIT}{idx_q:0{self.qubit_max_digit}d}",
+                    "coordinates": (x, y),
                     "position": (x, y),
-                    "mux": f"MUX{idx_m:0{self.mux_max_digit}d}",
-                },
+                    "mux": f"{PREFIX_MUX}{idx_m:0{self.mux_max_digit}d}",
+                    "index_in_mux": idx_qm,
+                }
             )
-
-    def _init_qubit_edges(self):
+        nx.relabel_nodes(
+            self.qubit_graph,
+            mapping,
+            copy=False,
+        )
         for node0, node1 in self.qubit_graph.edges():
-            qubit0 = self.get_qubit_node(node0)
-            qubit1 = self.get_qubit_node(node1)
-            self.set_qubit_edge(
-                (node0, node1),
+            qubit0 = self.qubit_graph.nodes[node0]
+            qubit1 = self.qubit_graph.nodes[node1]
+            self.qubit_graph.edges[node0, node1].update(
                 {
-                    "index": (qubit0["index"], qubit1["index"]),
+                    "nodes": (qubit0["index"], qubit1["index"]),
                     "label": f"{qubit0['label']}-{qubit1['label']}",
                     "weight": np.random.rand(),
+                    "position": (
+                        tuple(qubit0["position"]),
+                        (
+                            (qubit0["position"][0] + qubit1["position"][0]) / 2,
+                            (qubit0["position"][1] + qubit1["position"][1]) / 2,
+                        ),
+                        tuple(qubit1["position"]),
+                    ),
                 },
             )
 
-    def _init_mux_nodes(self):
+    def _init_mux_graph(self):
+        self.mux_graph = nx.grid_2d_graph(self.n_mux_cols, self.n_mux_rows)
         for x, y in self.mux_graph.nodes():
             idx = y * self.n_mux_cols + x
-            self.set_mux_node(
-                (x, y),
+            self.mux_graph.nodes[(x, y)].update(
                 {
                     "index": idx,
                     "label": f"{PREFIX_MUX}{idx:0{self.mux_max_digit}d}",
+                    "coordinates": (x, y),
                     "position": (x * 2 + 0.5, y * 2 + 0.5),
-                },
+                }
             )
+
+    @property
+    def qubit_nodes(self) -> list[dict]:
+        return sorted(
+            [data for _, data in self.qubit_graph.nodes(data=True)],
+            key=lambda x: x["index"],
+        )
+
+    @property
+    def qubit_edges(self) -> list[dict]:
+        return sorted(
+            [data for _, _, data in self.qubit_graph.edges(data=True)],
+            key=lambda x: x["nodes"],
+        )
+
+    @property
+    def mux_nodes(self) -> list[dict]:
+        return sorted(
+            [data for _, data in self.mux_graph.nodes(data=True)],
+            key=lambda x: x["index"],
+        )
 
     @property
     def indices(
@@ -182,97 +176,52 @@ class LatticeGraph:
         list[int]
             List of qubit indices.
         """
-        return list(range(self.n_qubits))
+        return [qubit["index"] for qubit in self.qubit_nodes]
 
     @property
     def qubits(
         self,
-        prefix: str = PREFIX_QUBIT,
     ) -> list[str]:
         """
         Get qubit labels.
-
-        Parameters
-        ----------
-        prefix : str, optional
-            Prefix of qubit labels, by default "Q".
 
         Returns
         -------
         list[str]
             List of qubit labels.
         """
-        return [f"{prefix}{str(i).zfill(self.qubit_max_digit)}" for i in self.indices]
+        return [qubit["label"] for qubit in self.qubit_nodes]
 
     @property
     def resonators(
         self,
-        prefix: str = PREFIX_RESONATOR,
     ) -> list[str]:
         """
         Get resonator labels.
-
-        Parameters
-        ----------
-        prefix : str, optional
-            Prefix of resonator labels, by default "RQ".
 
         Returns
         -------
         list[str]
             List of resonator labels.
         """
-        return [f"{prefix}{str(i).zfill(self.qubit_max_digit)}" for i in self.indices]
+        return [
+            f"{PREFIX_RESONATOR}{index:0{self.qubit_max_digit}d}"
+            for index in self.indices
+        ]
 
     @property
     def muxes(
         self,
-        prefix: str = PREFIX_MUX,
     ) -> list[str]:
         """
         Get MUX labels.
-
-        Parameters
-        ----------
-        prefix : str, optional
-            Prefix of MUX labels, by default "MUX".
 
         Returns
         -------
         list[str]
             List of MUX labels.
         """
-        return [
-            f"{prefix}{str(i).zfill(self.mux_max_digit)}" for i in range(self.n_muxes)
-        ]
-
-    @property
-    def edges(
-        self,
-    ) -> list[tuple[int, int]]:
-        """
-        Get qubit edges.
-
-        Returns
-        -------
-        list[tuple[int, int]]
-            List of qubit edges.
-        """
-        return [data["index"] for _, _, data in self.qubit_graph.edges(data=True)]
-
-    @property
-    def qubit_edges(
-        self,
-    ) -> list[tuple[str, str]]:
-        """
-        Get qubit edges.
-
-        Returns
-        -------
-        list[tuple[str, str]]
-            List of qubit edges.
-        """
-        return [data["label"] for _, _, data in self.qubit_graph.edges(data=True)]
+        return [mux["label"] for mux in self.mux_nodes]
 
     def get_indices_in_mux(
         self,
@@ -406,7 +355,7 @@ class LatticeGraph:
             mux = self.get_mux_of_qubit(qubit)
 
         spectators = []
-        for edge in self.edges:
+        for edge in self.qubit_graph.edges():
             if edge[0] == qubit:
                 spectator = edge[1]
             else:
@@ -443,31 +392,97 @@ class LatticeGraph:
             for spectator in self.get_spectator_indices(qubit, in_same_mux=in_same_mux)
         ]
 
-    def create_qubit_edge_trace(
+    def plot_graph_data(
+        self,
+        *,
+        title: str = "Graph Data",
+        edge_values: dict | None = None,
+        edge_hovertexts: dict | None = None,
+        image_name: str = "graph_data",
+        images_dir: str = "./images",
+        save_image: bool = False,
+    ):
+        width = 3 * NODE_SIZE * self.n_qubit_cols
+        height = 3 * NODE_SIZE * self.n_qubit_rows
+
+        layout = go.Layout(
+            title=title,
+            width=width,
+            height=height,
+            margin=dict(b=30, l=30, r=30, t=60),
+            xaxis=dict(
+                ticks="",
+                # showline=False,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+                constrain="domain",
+            ),
+            yaxis=dict(
+                ticks="",
+                autorange="reversed",
+                # showline=False,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            plot_bgcolor="white",
+            hovermode="closest",
+            showlegend=False,
+        )
+
+        qubit_node_trace = self._create_qubit_node_trace()
+        mux_node_trace = self._create_mux_node_trace()
+        qubit_edge_trace = self._create_qubit_edge_trace(edge_values, edge_hovertexts)
+
+        fig = go.Figure(
+            data=[qubit_node_trace, mux_node_trace] + qubit_edge_trace,
+            layout=layout,
+        )
+        fig.show()
+
+        if save_image:
+            save_figure_image(
+                fig,
+                name=image_name,
+                images_dir=images_dir,
+                format="png",
+                width=width,
+                height=height,
+                scale=3,
+            )
+
+    def _create_qubit_edge_trace(
         self,
         values: dict | None = None,
-        texts: dict | None = None,
         hovertexts: dict | None = None,
     ) -> list[go.Scatter]:
-        edges = self.qubit_graph.edges(data=True)
+        edges = self.qubit_edges
 
-        weights = [data["weight"] for _, _, data in edges]
-        w_min, w_max = min(weights), max(weights)
+        if values is None:
+            values = {edge["label"]: edge["weight"] for edge in edges}
+
+        values = {
+            key: value
+            for key, value in values.items()
+            if isinstance(value, (int, float)) and not math.isnan(value)
+        }
+
+        w_min = min(values.values())
+        w_max = max(values.values())
 
         trace = []
-        for n0, n1, data in edges:
-            qubit0 = self.get_qubit_node(n0)
-            qubit1 = self.get_qubit_node(n1)
-            x0, y0 = qubit0["position"]
-            x1, y1 = qubit1["position"]
-            weight = data["weight"]
-            label = data["label"]
+        for edge in edges:
+            x0, y0 = edge["position"][0]
+            x1, y1 = edge["position"][-1]
+            label = edge["label"]
 
-            if weight < 0.3:
+            value = values.get(label)
+            if value is None:
                 continue
 
-            offset = 0.058
-            margin = 0.32
+            offset = 0.07
+            margin = 0.28
             if x0 == x1:
                 if y0 < y1:
                     x = [x0 + offset, x1 + offset]
@@ -483,8 +498,9 @@ class LatticeGraph:
                     x = [x0 - margin, x1 + margin]
                     y = [y0 + offset, y1 + offset]
 
-            norm_weight = (weight - w_min) / (w_max - w_min)
-            color = sample_colorscale("Blues", norm_weight)[0]
+            if w_max - w_min != 0:
+                value = (value - w_min) / (w_max - w_min)
+            color = sample_colorscale("Blues", value)[0]
             trace.append(
                 go.Scatter(
                     x=x,
@@ -501,13 +517,13 @@ class LatticeGraph:
                         width=3,
                         color=color,
                     ),
-                    text=f"{label}: {weight:.2f}",
                     hoverinfo="text",
+                    text=hovertexts[label] if hovertexts else label,
                 )
             )
         return trace
 
-    def create_qubit_trace(self) -> go.Scatter:
+    def _create_qubit_node_trace(self) -> go.Scatter:
         x = []
         y = []
         text = []
@@ -515,7 +531,7 @@ class LatticeGraph:
             pos = data["position"]
             x.append(pos[0])
             y.append(pos[1])
-            text.append(data["label"])
+            text.append(data["index"])
 
         return go.Scatter(
             x=x,
@@ -533,12 +549,13 @@ class LatticeGraph:
             textfont=dict(
                 family="sans-serif",
                 color="black",
+                weight="bold",
                 size=NODE_SIZE // 3,
             ),
             hoverinfo="text",
         )
 
-    def create_mux_trace(self) -> go.Scatter:
+    def _create_mux_node_trace(self) -> go.Scatter:
         x = []
         y = []
         text = []
@@ -546,7 +563,7 @@ class LatticeGraph:
             pos = data["position"]
             x.append(pos[0])
             y.append(pos[1])
-            text.append(data["label"])
+            text.append(data["index"])
 
         return go.Scatter(
             x=x,
@@ -561,67 +578,6 @@ class LatticeGraph:
                 size=NODE_SIZE // 3,
             ),
         )
-
-    def plot_graph_data(
-        self,
-        *,
-        title: str = "Graph Data",
-        edge_values: dict | None = None,
-        edge_texts: dict | None = None,
-        edge_hovertexts: dict | None = None,
-        image_name: str = "graph_data",
-        images_dir: str = "./images",
-        save_image: bool = False,
-    ):
-        layout = go.Layout(
-            title=title,
-            width=NODE_SIZE * 2 * self.n_qubit_cols,
-            height=NODE_SIZE * 2 * self.n_qubit_rows,
-            margin=dict(b=0, l=0, r=0, t=0),
-            xaxis=dict(
-                ticks="",
-                showline=False,
-                showgrid=False,
-                zeroline=False,
-                showticklabels=False,
-            ),
-            yaxis=dict(
-                ticks="",
-                autorange="reversed",
-                showline=False,
-                showgrid=False,
-                zeroline=False,
-                showticklabels=False,
-            ),
-            plot_bgcolor="white",
-            hovermode="closest",
-            showlegend=False,
-        )
-
-        qubit_trace = self.create_qubit_trace()
-        mux_trace = self.create_mux_trace()
-        qubit_edge_trace = self.create_qubit_edge_trace(
-            values=edge_values,
-            texts=edge_texts,
-            hovertexts=edge_hovertexts,
-        )
-
-        fig = go.Figure(
-            data=[qubit_trace, mux_trace] + qubit_edge_trace,
-            layout=layout,
-        )
-        fig.show()
-
-        if save_image:
-            save_figure_image(
-                fig,
-                name=image_name,
-                images_dir=images_dir,
-                format="png",
-                width=NODE_SIZE * 2 * self.n_qubit_cols,
-                height=NODE_SIZE * 2 * self.n_qubit_rows,
-                scale=3,
-            )
 
     def plot_lattice_data(
         self,
@@ -649,11 +605,14 @@ class LatticeGraph:
                 showscale=False,
                 textfont=dict(
                     family="sans-serif",
-                    size=12,
+                    size=NODE_SIZE // 3,
                     weight="bold",
                 ),
             )
         )
+
+        width = 3 * NODE_SIZE * self.n_qubit_cols
+        height = 3 * NODE_SIZE * self.n_qubit_rows
 
         fig.update_layout(
             title=title,
@@ -676,8 +635,8 @@ class LatticeGraph:
                 zeroline=False,
                 showticklabels=False,
             ),
-            height=144 * self.n_mux_rows,
-            width=144 * self.n_mux_cols,
+            width=width,
+            height=height,
         )
 
         fig.show()
@@ -688,8 +647,8 @@ class LatticeGraph:
                 name=image_name,
                 images_dir=images_dir,
                 format="png",
-                width=144 * self.n_mux_cols,
-                height=144 * self.n_mux_rows,
+                width=width,
+                height=height,
                 scale=3,
             )
 
