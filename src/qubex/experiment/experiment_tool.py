@@ -109,6 +109,7 @@ def print_chip_info(
         "static_zz_interaction",
         "qubit_qubit_coupling_strength",
     ],
+    directed: bool = False,
     save_image: bool = False,
 ) -> None:
     """Print the information of the chip."""
@@ -281,30 +282,51 @@ def print_chip_info(
             image_name="t2_echo",
         )
 
+    def create_undirected_data(data: dict[str, float]) -> dict[str, float]:
+        result = {}
+        for key, value in data.items():
+            if value is None:
+                continue
+            pair = key.split("-")
+            inv_key = f"{pair[1]}-{pair[0]}"
+            if inv_key in result:
+                result[inv_key] += value
+                result[inv_key] /= 2
+            else:
+                result[key] = value
+        return result
+
     if "static_zz_interaction" in info_type:
+        values = (
+            props["static_zz_interaction"]
+            if directed
+            else create_undirected_data(props["static_zz_interaction"])
+        )
         graph.plot_graph_data(
+            directed=directed,
             title="Static ZZ interaction",
-            edge_values={
-                key: value for key, value in props["static_zz_interaction"].items()
-            },
+            edge_values={key: value for key, value in values.items()},
             edge_hovertexts={
                 key: f"{key}: {value * 1e6:.1f} kHz" if value is not None else "N/A"
-                for key, value in props["static_zz_interaction"].items()
+                for key, value in values.items()
             },
             save_image=save_image,
             image_name="static_zz_interaction",
         )
 
     if "qubit_qubit_coupling_strength" in info_type:
+        values = (
+            props["qubit_qubit_coupling_strength"]
+            if directed
+            else create_undirected_data(props["qubit_qubit_coupling_strength"])
+        )
         graph.plot_graph_data(
+            directed=directed,
             title="Qubit-Qubit coupling strength",
-            edge_values={
-                key: value
-                for key, value in props["qubit_qubit_coupling_strength"].items()
-            },
+            edge_values={key: value for key, value in values.items()},
             edge_hovertexts={
                 key: f"{key}: {value * 1e3:.1f} MHz" if value is not None else "N/A"
-                for key, value in props["qubit_qubit_coupling_strength"].items()
+                for key, value in values.items()
             },
             save_image=save_image,
             image_name="qubit_qubit_coupling_strength",
