@@ -8,10 +8,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SimulatorBackend(BaseBackend):
-    def __init__(self, virtual_physical_map: dict):
+    def __init__(self, virtual_physical_map: dict, job_id: str="test_job"):
         """
         Backend for QASM 3 circuits.
         """
+        self.job_id = job_id
         self._virtual_physical_map = {
             "qubits": {k: f"Q{v:02}" for k, v in virtual_physical_map["qubits"].items()},
             "couplings": {k: (f"Q{v[0]:02}", f"Q{v[1]:02}") for k, v in virtual_physical_map["couplings"].items()},
@@ -52,16 +53,29 @@ class SimulatorBackend(BaseBackend):
         Returns the physical-to-virtual mapping, e.g., {"Q05": 0, "Q07": 1}
         """
         return {v: k for k, v in self.virtual_physical_qubits.items()}
+    
+    def physical_qubit(self, virtual_qubit: str) -> str:
+        """
+        Returns the physical qubit corresponding to the virtual qubit.
+        """
+        return self.virtual_physical_qubits[virtual_qubit]
+    
+    def virtual_qubit(self, physical_qubit: str) -> int:
+        """
+        Returns the virtual qubit corresponding to the physical qubit.
+        """
+        return self.physical_virtual_qubits[physical_qubit]
 
     def load_program(self, program: str):
-        logger.info("Loading QASM 3 program")
+        logger.info(f"Loading QASM 3 program: {program}, job_id={self.job_id}")
         self._program = program
 
     def cnot(self, control: str, target: str):
         """Apply CNOT gate."""
         if control not in self.qubits or target not in self.qubits:
+            logger.error(f"Invalid qubits for CNOT: {control}, {target}, job_id={self.job_id}")
             raise ValueError(f"Invalid qubits for CNOT: {control}, {target}")
-        logger.debug(f"Applying CNOT gate: {control} -> {target}")
+        logger.debug(f"Applying CNOT gate: {self.virtual_qubit(control)} -> {self.virtual_qubit(target)}, Physical qubits: {control} -> {target}, job_id={self.job_id}")
         self.circuit.add_CNOT_gate(
             self.physical_virtual_qubits[control],
             self.physical_virtual_qubits[target]
@@ -70,34 +84,37 @@ class SimulatorBackend(BaseBackend):
     def x90(self, target: str):
         """Apply X90 gate."""
         if target not in self.qubits:
+            logger.error(f"Invalid qubit: {target}, job_id={self.job_id}")
             raise ValueError(f"Invalid qubit: {target}")
-        logger.debug(f"Applying X90 gate: {target}")
+        logger.debug(f"Applying X90 gate: {self.virtual_qubit(target)}, Physical qubit: {target}, job_id={self.job_id}")
         self.circuit.add_sqrtX_gate(self.physical_virtual_qubits[target])
 
     def x180(self, target: str):
         """Apply X180 gate."""
         if target not in self.qubits:
+            logger.error(f"Invalid qubit: {target}, job_id={self.job_id}")
             raise ValueError(f"Invalid qubit: {target}")
-        logger.debug(f"Applying X180 gate: {target}")
+        logger.debug(f"Applying X180 gate: {self.virtual_qubit(target)}, Physical qubit: {target}, job_id={self.job_id}")
         self.circuit.add_X_gate(self.physical_virtual_qubits[target])
 
     def rz(self, target: str, angle: float):
         """Apply RZ gate."""
         if target not in self.qubits:
+            logger.error(f"Invalid qubit: {target}, job_id={self.job_id}")
             raise ValueError(f"Invalid qubit: {target}")
-        logger.debug(f"Applying RZ gate: {target}, angle={angle}")
+        logger.debug(f"Applying RZ gate: {self.virtual_qubit(target)}, Physical qubit: {target}, angle={angle}, job_id={self.job_id}")
         self.circuit.add_RZ_gate(self.physical_virtual_qubits[target], angle)
 
     def compile(self):
         """Load a QASM 3 program and apply the corresponding gates to the circuit."""
-        logger.info("Compiling QASM 3 program")
+        logger.info(f"QASM 3 program: {self.program}, job_id={self.job_id}")
         qiskit_circuit = loads(self.program)
         self.circuit = QuantumCircuit(qiskit_circuit.num_qubits)
 
         for instruction in qiskit_circuit.data:
             name = instruction.name
             virtual_index = instruction.qubits[0]._index
-            physical_label = self.virtual_physical_qubits[virtual_index]
+            physical_label = self.physical_qubit(virtual_index)#self.virtual_physical_qubits[virtual_index]
 
             if name == "sx":
                 self.x90(physical_label)
@@ -113,8 +130,9 @@ class SimulatorBackend(BaseBackend):
             elif name == "measure":
                 pass
             else:
+                logger.error(f"Unsupported instruction: {name}, job_id={self.job_id}")
                 raise ValueError(f"Unsupported instruction: {name}")
-        logger.info("Compilation complete")
+        logger.info(f"Compilation complete, job_id={self.job_id}")
 
     @property
     def get_circuit(self) -> QuantumCircuit:
@@ -132,5 +150,5 @@ class SimulatorBackend(BaseBackend):
         counts = {}
         for key, value in result.items():
             counts[format(key, "0" + str(self.circuit.get_qubit_count()) + "b")] = value 
-        logger.info("Execution complete")
+        logger.info(f"Execution complete, counts: {counts}, job_id={self.job_id}")
         return counts

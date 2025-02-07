@@ -6,7 +6,7 @@ from ..measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from .base import BaseBackend
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("qubex")
 
 class PhysicalBackend(BaseBackend):
     def __init__(self, virtual_physical_map: dict):
