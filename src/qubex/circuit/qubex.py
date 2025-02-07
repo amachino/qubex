@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger("qubex")
 
-class PhysicalBackend(BaseBackend):
+class QubexBackend(BaseBackend):
     def __init__(self, virtual_physical_map: dict):
         """
         Backend for QASM 3 circuit.

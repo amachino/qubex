@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-class SimulatorBackend(BaseBackend):
+class QulacsBackend(BaseBackend):
     def __init__(self, virtual_physical_map: dict, job_id: str="test_job"):
         """
         Backend for QASM 3 circuits.
