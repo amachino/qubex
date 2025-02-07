@@ -4,6 +4,9 @@ from ..experiment import Experiment
 from ..pulse import PulseSchedule, VirtualZ
 from ..measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from .base import BaseBackend
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PhysicalBackend(BaseBackend):
     def __init__(self, virtual_physical_map: dict):

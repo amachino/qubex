@@ -3,6 +3,9 @@ from ..measurement.measurement import DEFAULT_SHOTS
 from qulacs import QuantumCircuit, QuantumState
 from .base import BaseBackend
 from collections import Counter
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SimulatorBackend(BaseBackend):
     def __init__(self, virtual_physical_map: dict):
@@ -51,12 +54,14 @@ class SimulatorBackend(BaseBackend):
         return {v: k for k, v in self.virtual_physical_qubits.items()}
 
     def load_program(self, program: str):
+        logger.info("Loading QASM 3 program")
         self._program = program
 
     def cnot(self, control: str, target: str):
         """Apply CNOT gate."""
         if control not in self.qubits or target not in self.qubits:
             raise ValueError(f"Invalid qubits for CNOT: {control}, {target}")
+        logger.debug(f"Applying CNOT gate: {control} -> {target}")
         self.circuit.add_CNOT_gate(
             self.physical_virtual_qubits[control],
             self.physical_virtual_qubits[target]
@@ -66,22 +71,26 @@ class SimulatorBackend(BaseBackend):
         """Apply X90 gate."""
         if target not in self.qubits:
             raise ValueError(f"Invalid qubit: {target}")
+        logger.debug(f"Applying X90 gate: {target}")
         self.circuit.add_sqrtX_gate(self.physical_virtual_qubits[target])
 
     def x180(self, target: str):
         """Apply X180 gate."""
         if target not in self.qubits:
             raise ValueError(f"Invalid qubit: {target}")
+        logger.debug(f"Applying X180 gate: {target}")
         self.circuit.add_X_gate(self.physical_virtual_qubits[target])
 
     def rz(self, target: str, angle: float):
         """Apply RZ gate."""
         if target not in self.qubits:
             raise ValueError(f"Invalid qubit: {target}")
+        logger.debug(f"Applying RZ gate: {target}, angle={angle}")
         self.circuit.add_RZ_gate(self.physical_virtual_qubits[target], angle)
 
     def compile(self):
         """Load a QASM 3 program and apply the corresponding gates to the circuit."""
+        logger.info("Compiling QASM 3 program")
         qiskit_circuit = loads(self.program)
         self.circuit = QuantumCircuit(qiskit_circuit.num_qubits)
 
@@ -105,6 +114,7 @@ class SimulatorBackend(BaseBackend):
                 pass
             else:
                 raise ValueError(f"Unsupported instruction: {name}")
+        logger.info("Compilation complete")
 
     @property
     def get_circuit(self) -> QuantumCircuit:
@@ -115,10 +125,12 @@ class SimulatorBackend(BaseBackend):
         """
         Execute the quantum circuit with a specified number of shots.
         """
+        logger.info(f"Executing quantum circuit with {shots} shots")
         state = QuantumState(self.circuit.get_qubit_count())
         self.circuit.update_quantum_state(state)
         result = Counter(state.sampling(shots))
         counts = {}
         for key, value in result.items():
             counts[format(key, "0" + str(self.circuit.get_qubit_count()) + "b")] = value 
+        logger.info("Execution complete")
         return counts
