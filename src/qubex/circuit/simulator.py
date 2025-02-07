@@ -9,19 +9,25 @@ class SimulatorBackend(BaseBackend):
         """
         Backend for QASM 3 circuits.
         """
-        # Save the formatted mapping. We avoid further modifications.
         self._virtual_physical_map = {
             "qubits": {k: f"Q{v:02}" for k, v in virtual_physical_map["qubits"].items()},
             "couplings": {k: (f"Q{v[0]:02}", f"Q{v[1]:02}") for k, v in virtual_physical_map["couplings"].items()},
         }
+    
+    @property
+    def program(self) -> str:
+        """
+        Returns the QASM 3 program.
+        """
+        return self._program
 
     @property
     def qubits(self) -> list:
         """
         Returns a list of qubit labels, e.g., ["Q05", "Q07"]
         """
-        # Return a copy if you want to prevent external modifications.
         return list(self._virtual_physical_map["qubits"].values()) # type: ignore
+
     @property
     def couplings(self) -> list:
         """
@@ -43,6 +49,9 @@ class SimulatorBackend(BaseBackend):
         Returns the physical-to-virtual mapping, e.g., {"Q05": 0, "Q07": 1}
         """
         return {v: k for k, v in self.virtual_physical_qubits.items()}
+
+    def load_program(self, program: str):
+        self._program = program
 
     def cnot(self, control: str, target: str):
         """Apply CNOT gate."""
@@ -71,11 +80,9 @@ class SimulatorBackend(BaseBackend):
             raise ValueError(f"Invalid qubit: {target}")
         self.circuit.add_RZ_gate(self.physical_virtual_qubits[target], angle)
 
-    def load_program(self, program: str):
-        """
-        Load a QASM 3 program and apply the corresponding gates to the circuit.
-        """
-        qiskit_circuit = loads(program)
+    def compile(self):
+        """Load a QASM 3 program and apply the corresponding gates to the circuit."""
+        qiskit_circuit = loads(self.program)
         self.circuit = QuantumCircuit(qiskit_circuit.num_qubits)
 
         for instruction in qiskit_circuit.data:

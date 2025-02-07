@@ -10,57 +10,52 @@ class PhysicalBackend(BaseBackend):
         """
         Backend for QASM 3 circuit.
         """
-        self._virtual_physical_map = virtual_physical_map
+        self._virtual_physical_map = {
+            "qubits": {k: f"Q{v:02}" for k, v in virtual_physical_map["qubits"].items()},
+            "couplings": {k: (f"Q{v[0]:02}", f"Q{v[1]:02}") for k, v in virtual_physical_map["couplings"].items()},
+        }
         self.experiment = Experiment(chip_id="64Q", qubits=self.qubits)
-        self.circuit = PulseSchedule(self.qubits + self.couplings)
-
         if self.experiment.state_centers is None:
             self.experiment.build_classifier(plot=False)
 
     @property
+    def program(self) -> str:
+        """
+        Returns the QASM 3 program.
+        """
+        return self._program
+
+    @property
     def qubits(self) -> list:
         """
-        # Returns
-                List of couplings,
-        eg. ["Q05", "Q07"]
+        Returns a list of qubit labels, e.g., ["Q05", "Q07"]
         """
-        qubits = []
-        for _, v in self._virtual_physical_map["qubits"].items():
-            qubits.append(f"Q{v:02}")
-        return qubits
-    
+        return list(self._virtual_physical_map["qubits"].values()) # type: ignore
+
     @property
     def couplings(self) -> list:
         """
-        # Returns
-                List of couplings,
-        eg. ["Q05-Q07", "Q07-Q05"]
+        Returns a list of couplings in the format "QXX-QYY", e.g., ["Q05-Q07", "Q07-Q05"]
         """
-        couplings = []
-        for _, v in self._virtual_physical_map["couplings"].items():
-            couplings.append(f"Q{v[0]:02}-Q{v[1]:02}")
-        return couplings
-
+        return [f"{v[0]}-{v[1]}" for v in self._virtual_physical_map["couplings"].values()] # type: ignore
 
     @property
     def virtual_physical_qubits(self) -> dict:
         """
-        # Returns
-                Virtual to Physical mapping,
-        eg. {0: "Q05", 1: "Q07"}
+        Returns the virtual-to-physical mapping, e.g., {0: "Q05", 1: "Q07"}
         """
-        for k, v in self._virtual_physical_map["qubits"].items():
-            self._virtual_physical_map["qubits"][k] = f"Q{v:02}"
-        return self._virtual_physical_map["qubits"]
+        # Return a shallow copy to avoid accidental modifications
+        return self._virtual_physical_map["qubits"].copy() # type: ignore
 
     @property
     def physical_virtual_qubits(self) -> dict:
         """
-        # Returns
-                Physical to Virtual mapping,
-        eg. {"Q05": 0, "Q07": 1}
+        Returns the physical-to-virtual mapping, e.g., {"Q05": 0, "Q07": 1}
         """
         return {v: k for k, v in self.virtual_physical_qubits.items()}
+
+    def load_program(self, program: str):
+        self._program = program
 
     def cnot(self, control: str, target: str):
         """Apply CNOT gate"""
@@ -119,9 +114,10 @@ class PhysicalBackend(BaseBackend):
 
         self.circuit.call(ps)
 
-    def load_program(self, program: str):
+    def compile(self):
         """Load QASM 3 program into the pulse schedule"""
-        qiskit_circuit = loads(program)
+        qiskit_circuit = loads(self.program)
+        self.circuit = PulseSchedule(self.qubits + self.couplings)
 
         for instruction in qiskit_circuit.data:
             name = instruction.name
