@@ -108,6 +108,11 @@ def print_chip_info(
         "t2_echo",
         "static_zz_interaction",
         "qubit_qubit_coupling_strength",
+        "average_readout_fidelity",
+        "average_gate_fidelity",
+        "x90_gate_fidelity",
+        "x180_gate_fidelity",
+        "zx90_gate_fidelity",
     ],
     directed: bool = False,
     save_image: bool = False,
@@ -130,11 +135,16 @@ def print_chip_info(
             "t2_echo",
             "qubit_qubit_coupling_strength",
             "static_zz_interaction",
+            "average_readout_fidelity",
+            "average_gate_fidelity",
+            "x90_gate_fidelity",
+            "x180_gate_fidelity",
+            "zx90_gate_fidelity",
         )
 
     if "resonator_frequency" in info_type:
         graph.plot_lattice_data(
-            title="Resonator frequency",
+            title="Resonator frequency (GHz)",
             values=[resonator.frequency for resonator in chip.resonators],
             texts=[
                 f"{resonator.label}<br>{resonator.frequency:.3f}<br>GHz"
@@ -154,7 +164,7 @@ def print_chip_info(
 
     if "qubit_frequency" in info_type:
         graph.plot_lattice_data(
-            title="Qubit frequency",
+            title="Qubit frequency (GHz)",
             values=[qubit.frequency for qubit in chip.qubits],
             texts=[
                 f"{qubit.label}<br>{qubit.frequency:.3f}<br>GHz"
@@ -174,7 +184,7 @@ def print_chip_info(
 
     if "qubit_anharmonicity" in info_type:
         graph.plot_lattice_data(
-            title="Qubit anharmonicity",
+            title="Qubit anharmonicity (MHz)",
             values=[qubit.anharmonicity * 1e3 for qubit in chip.qubits],
             texts=[
                 f"{qubit.label}<br>{qubit.anharmonicity * 1e3:.1f}<br>MHz"
@@ -194,7 +204,7 @@ def print_chip_info(
 
     if "external_loss_rate" in info_type:
         graph.plot_lattice_data(
-            title="External loss rate",
+            title="External loss rate (MHz)",
             values=props["external_loss_rate"].values(),
             texts=[
                 f"{qubit}<br>{value * 1e3:.2f}<br>MHz" if value is not None else "N/A"
@@ -212,7 +222,7 @@ def print_chip_info(
 
     if "internal_loss_rate" in info_type:
         graph.plot_lattice_data(
-            title="Internal loss rate",
+            title="Internal loss rate (MHz)",
             values=props["internal_loss_rate"].values(),
             texts=[
                 f"{qubit}<br>{value * 1e3:.2f}<br>MHz" if value is not None else "N/A"
@@ -230,7 +240,7 @@ def print_chip_info(
 
     if "t1" in info_type:
         graph.plot_lattice_data(
-            title="T1",
+            title="T1 (μs)",
             values=props["t1"].values(),
             texts=[
                 f"{qubit}<br>{value * 1e-3:.2f}<br>μs" if value is not None else "N/A"
@@ -248,7 +258,7 @@ def print_chip_info(
 
     if "t2_star" in info_type:
         graph.plot_lattice_data(
-            title="T2*",
+            title="T2* (μs)",
             values=props["t2_star"].values(),
             texts=[
                 f"{qubit}<br>{value * 1e-3:.2f}<br>μs" if value is not None else "N/A"
@@ -266,7 +276,7 @@ def print_chip_info(
 
     if "t2_echo" in info_type:
         graph.plot_lattice_data(
-            title="T2 echo",
+            title="T2 echo (μs)",
             values=props["t2_echo"].values(),
             texts=[
                 f"{qubit}<br>{value * 1e-3:.2f}<br>μs" if value is not None else "N/A"
@@ -290,10 +300,9 @@ def print_chip_info(
             pair = key.split("-")
             inv_key = f"{pair[1]}-{pair[0]}"
             if inv_key in result:
-                result[inv_key] += value
-                result[inv_key] /= 2
+                result[inv_key] = (result[inv_key] + value) / 2
             else:
-                result[key] = value
+                result[key] = float(value)
         return result
 
     if "static_zz_interaction" in info_type:
@@ -304,8 +313,12 @@ def print_chip_info(
         )
         graph.plot_graph_data(
             directed=directed,
-            title="Static ZZ interaction",
+            title="Static ZZ interaction (kHz)",
             edge_values={key: value for key, value in values.items()},
+            edge_texts={
+                key: f"{value * 1e6:.0f}" if value is not None else None
+                for key, value in values.items()
+            },
             edge_hovertexts={
                 key: f"{key}: {value * 1e6:.1f} kHz" if value is not None else "N/A"
                 for key, value in values.items()
@@ -322,14 +335,100 @@ def print_chip_info(
         )
         graph.plot_graph_data(
             directed=directed,
-            title="Qubit-Qubit coupling strength",
+            title="Qubit-qubit coupling strength (MHz)",
             edge_values={key: value for key, value in values.items()},
+            edge_texts={
+                key: f"{value * 1e3:.1f}" if value is not None else None
+                for key, value in values.items()
+            },
             edge_hovertexts={
                 key: f"{key}: {value * 1e3:.1f} MHz" if value is not None else "N/A"
                 for key, value in values.items()
             },
             save_image=save_image,
             image_name="qubit_qubit_coupling_strength",
+        )
+
+    if "average_readout_fidelity" in info_type:
+        graph.plot_lattice_data(
+            title="Average readout fidelity (%)",
+            values=props["average_readout_fidelity"].values(),
+            texts=[
+                f"{qubit}<br>{value:.2%}" if value is not None else "N/A"
+                for qubit, value in props["average_readout_fidelity"].items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value:.2%}" if value is not None else f"{qubit}: N/A"
+                for qubit, value in props["average_readout_fidelity"].items()
+            ],
+            save_image=save_image,
+            image_name="average_readout_fidelity",
+        )
+
+    if "average_gate_fidelity" in info_type:
+        graph.plot_lattice_data(
+            title="Average gate fidelity (%)",
+            values=props["average_gate_fidelity"].values(),
+            texts=[
+                f"{qubit}<br>{value:.2%}" if value is not None else "N/A"
+                for qubit, value in props["average_gate_fidelity"].items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value:.2%}" if value is not None else f"{qubit}: N/A"
+                for qubit, value in props["average_gate_fidelity"].items()
+            ],
+            save_image=save_image,
+            image_name="average_gate_fidelity",
+        )
+
+    if "x90_gate_fidelity" in info_type:
+        graph.plot_lattice_data(
+            title="X90 gate fidelity (%)",
+            values=props["x90_gate_fidelity"].values(),
+            texts=[
+                f"{qubit}<br>{value:.2%}" if value is not None else "N/A"
+                for qubit, value in props["x90_gate_fidelity"].items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value:.2%}" if value is not None else f"{qubit}: N/A"
+                for qubit, value in props["x90_gate_fidelity"].items()
+            ],
+            save_image=save_image,
+            image_name="x90_gate_fidelity",
+        )
+
+    if "x180_gate_fidelity" in info_type:
+        graph.plot_lattice_data(
+            title="X180 gate fidelity (%)",
+            values=props["x180_gate_fidelity"].values(),
+            texts=[
+                f"{qubit}<br>{value:.2%}" if value is not None else "N/A"
+                for qubit, value in props["x180_gate_fidelity"].items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value:.2%}" if value is not None else f"{qubit}: N/A"
+                for qubit, value in props["x180_gate_fidelity"].items()
+            ],
+            save_image=save_image,
+            image_name="x180_gate_fidelity",
+        )
+
+    if "zx90_gate_fidelity" in info_type:
+        values = props["zx90_gate_fidelity"]
+        graph.plot_graph_data(
+            directed=True,
+            title="ZX90 gate fidelity (%)",
+            edge_values={key: value for key, value in values.items()},
+            edge_texts={
+                key: f"{value:.2%}" if value is not None else None
+                for key, value in values.items()
+            },
+            edge_hovertexts={
+                key: f"{key}: {value:.2%}" if value is not None else "N/A"
+                for key, value in values.items()
+            },
+            save_image=save_image,
+            image_name="zx90_gate_fidelity",
         )
 
 

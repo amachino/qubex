@@ -474,6 +474,7 @@ class LatticeGraph:
         directed: bool = True,
         title: str = "Graph Data",
         edge_values: dict | None = None,
+        edge_texts: dict | None = None,
         edge_hovertexts: dict | None = None,
         image_name: str = "graph_data",
         images_dir: str = "./images",
@@ -513,11 +514,12 @@ class LatticeGraph:
         qubit_edge_trace = self._create_qubit_edge_trace(
             directed=directed,
             values=edge_values,
+            texts=edge_texts,
             hovertexts=edge_hovertexts,
         )
 
         fig = go.Figure(
-            data=qubit_edge_trace + [qubit_node_trace, mux_node_trace],
+            data=qubit_edge_trace + [mux_node_trace, qubit_node_trace],
             layout=layout,
         )
         fig.show()
@@ -550,7 +552,7 @@ class LatticeGraph:
             y=y,
             mode="markers+text",
             marker=dict(
-                color="white",
+                color="ghostwhite",
                 size=NODE_SIZE,
                 line_width=2,
                 line_color="black",
@@ -597,6 +599,7 @@ class LatticeGraph:
         self,
         directed: bool = True,
         values: dict | None = None,
+        texts: dict | None = None,
         hovertexts: dict | None = None,
     ) -> list[go.Scatter]:
         if values is None:
@@ -627,7 +630,7 @@ class LatticeGraph:
             margin = 0.28
 
             if directed:
-                offset = 0.07
+                offset = 0.08
                 if x_ini == x_fin:
                     if y_ini < y_fin:
                         x = [x_ini + offset, x_fin + offset]
@@ -650,28 +653,49 @@ class LatticeGraph:
                 value = (value - v_min) / (v_max - v_min)
 
             color = sample_colorscale("Viridis", value)[0]
-            trace.append(
-                go.Scatter(
-                    x=x,
-                    y=y,
-                    mode="markers+lines" if directed else "lines",
-                    marker=dict(
-                        symbol="arrow",
-                        size=11,
-                        color=color,
-                        angleref="previous",
-                        standoff=0,
+            if directed:
+                trace.append(
+                    go.Scatter(
+                        x=x,
+                        y=y,
+                        mode="markers+lines",
+                        marker=dict(
+                            symbol="arrow",
+                            size=12,
+                            color=color,
+                            angleref="previous",
+                            standoff=0,
+                        ),
+                        line=dict(
+                            width=4,
+                            color=color,
+                        ),
+                        hoverinfo="text",
+                        text=hovertexts[label] if hovertexts else label,
                     )
-                    if directed
-                    else None,
-                    line=dict(
-                        width=3 if directed else 6,
-                        color=color,
-                    ),
-                    hoverinfo="text",
-                    text=hovertexts[label] if hovertexts else label,
                 )
-            )
+            else:
+                trace.append(
+                    go.Scatter(
+                        x=x,
+                        y=y,
+                        mode="lines+text",
+                        line=dict(
+                            width=NODE_SIZE + 2,
+                            color=color,
+                        ),
+                        text=[None, texts[label], None] if texts else None,
+                        textposition="middle center",
+                        textfont=dict(
+                            family="sans-serif",
+                            color="ghostwhite" if value < 0.5 else "black",
+                            weight="bold",
+                            size=8,
+                        ),
+                        hovertext=hovertexts[label] if hovertexts else label,
+                        hoverinfo="text",
+                    )
+                )
         return trace
 
     def plot_lattice_data(
