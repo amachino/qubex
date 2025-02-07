@@ -1,25 +1,11 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 
 from ..backend.config_loader import ConfigLoader
-
-CollisionType = Literal[
-    "Type0A",
-    "Type0B",
-    "Type1A",
-    "Type1B",
-    "Type1C",
-    "Type2A",
-    "Type2B",
-    "Type3A",
-    "Type3B",
-    "Type7",
-    "Type8",
-    "Type9",
-]
 
 CONDITIONS = {
     "max_frequency": 9.5,
@@ -36,6 +22,40 @@ DEFAULTS = {
     "t2_echo": 3e3,
     "coupling": 0.008,
 }
+
+
+CollisionType = Literal[
+    "Type0A",
+    "Type0B",
+    "Type1A",
+    "Type1B",
+    "Type1C",
+    "Type2A",
+    "Type2B",
+    "Type3A",
+    "Type3B",
+    "Type7",
+    "Type8",
+    "Type9",
+]
+
+
+@dataclass
+class Collision:
+    name: str
+    description: str
+    n_nodes: int
+    directed: bool
+    node_data: dict
+    edge_data: dict
+
+    @property
+    def collision_nodes(self) -> dict[str, list[str]]:
+        return {k: v["log"] for k, v in self.node_data.items() if v["collision"]}
+
+    @property
+    def collision_edges(self) -> dict[str, list[str]]:
+        return {k: v["log"] for k, v in self.edge_data.items() if v["collision"]}
 
 
 class CollisionChecker:
@@ -73,6 +93,8 @@ class CollisionChecker:
         if conditions is not None:
             self.conditions.update(conditions)
 
+        self.collisions: dict[CollisionType, Collision] = {}
+
     def get_value(
         self,
         target: int | tuple[int, int],
@@ -97,7 +119,7 @@ class CollisionChecker:
     def check(
         self,
         *collision: CollisionType,
-    ) -> dict:
+    ) -> dict[CollisionType, Collision]:
         result = {}
         for type in collision:
             result[type] = getattr(self, f"check_{type.lower()}")()
@@ -111,7 +133,7 @@ class CollisionChecker:
         max_frequency: float | None = None,
         min_t1: float | None = None,
         min_t2: float | None = None,
-    ) -> dict:
+    ) -> Collision:
         """
         conditions:
             (1) qubit unmeasured
@@ -160,7 +182,14 @@ class CollisionChecker:
             }
 
         result = dict(sorted(result.items()))
-        return result
+        return Collision(
+            name="Type0A",
+            description="Qubit unmeasured, frequency out of range, T1, T2 too short.",
+            n_nodes=1,
+            directed=False,
+            node_data=result,
+            edge_data={},
+        )
 
     def check_type0b(
         self,
@@ -191,7 +220,14 @@ class CollisionChecker:
             }
 
         result = dict(sorted(result.items()))
-        return result
+        return Collision(
+            name="Type0B",
+            description="Detuning too far to implement the fast CR.",
+            n_nodes=2,
+            directed=False,
+            node_data={},
+            edge_data=result,
+        )
 
     def check_type1a(self): ...
 
