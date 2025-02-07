@@ -27,13 +27,14 @@ class QubitNode(TypedDict):
     position: tuple[float, float]
     mux_id: int
     index_in_mux: int
+    properties: dict[str, float]
 
 
 class QubitEdge(TypedDict):
     id: tuple[int, int]
     label: str
-    weight: float
     position: tuple[tuple[float, float], tuple[float, float], tuple[float, float]]
+    properties: dict[str, float]
 
 
 class ResonatorNode(TypedDict):
@@ -41,6 +42,7 @@ class ResonatorNode(TypedDict):
     label: str
     coordinates: tuple[int, int]
     position: tuple[float, float]
+    properties: dict[str, float]
 
 
 class MuxNode(TypedDict):
@@ -48,6 +50,7 @@ class MuxNode(TypedDict):
     label: str
     coordinates: tuple[int, int]
     position: tuple[float, float]
+    properties: dict[str, float]
 
 
 class LatticeGraph:
@@ -155,7 +158,7 @@ class LatticeGraph:
         return self.qubit_graph.to_undirected(as_view=True)
 
     @cached_property
-    def qubit_undirected_edges(
+    def qubit_links(
         self,
     ) -> dict[tuple[int, int], QubitEdge]:
         return {
@@ -185,6 +188,7 @@ class LatticeGraph:
                     "position": (x, y),
                     "mux_id": idx_m,
                     "index_in_mux": idx_qm,
+                    "properties": {},
                 }
             )
         nx.relabel_nodes(
@@ -199,7 +203,6 @@ class LatticeGraph:
                 {
                     "id": (id0, id1),
                     "label": f"{node0['label']}-{node1['label']}",
-                    "weight": 1.0,
                     "position": (
                         node0["position"],
                         (
@@ -208,6 +211,7 @@ class LatticeGraph:
                         ),
                         node1["position"],
                     ),
+                    "properties": {},
                 },
             )
 
@@ -220,6 +224,7 @@ class LatticeGraph:
                     "label": f"{PREFIX_RESONATOR}{id:0{self.resonator_max_digit}d}",
                     "coordinates": data["coordinates"],
                     "position": data["position"],
+                    "properties": data["properties"],
                 }
             )
 
@@ -235,6 +240,7 @@ class LatticeGraph:
                     "label": f"{PREFIX_MUX}{idx:0{self.mux_max_digit}d}",
                     "coordinates": (x, y),
                     "position": (x * 2 + 0.5, y * 2 + 0.5),
+                    "properties": {},
                 }
             )
         nx.relabel_nodes(
@@ -603,9 +609,7 @@ class LatticeGraph:
         hovertexts: dict | None = None,
     ) -> list[go.Scatter]:
         if values is None:
-            values = {
-                edge["label"]: edge["weight"] for edge in self.qubit_edges.values()
-            }
+            values = {edge["label"]: 1.0 for edge in self.qubit_edges.values()}
 
         values = {
             key: value
