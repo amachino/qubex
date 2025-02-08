@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -14,14 +15,14 @@ CONDITIONS = {
     "max_detuning": 1.3,
     "min_t1": 3e3,
     "min_t2": 3e3,
-    "b1": 0.2,
-    "b2": 0.75,
+    "safe_factor": 0.2,
 }
 
 DEFAULTS = {
     "t1": 3e3,
     "t2_echo": 3e3,
     "coupling": 0.008,
+    "nnn_coupling": 0.008 * (0.008 / 0.8),
 }
 
 
@@ -76,14 +77,14 @@ class InspectionResult:
     def print(self):
         print(f"{self.type}:")
         print(f"  {self.description}")
+        print(f"{len(self.invalid_nodes)} invalid nodes: ")
         if self.invalid_nodes:
-            print("Invalid nodes:")
             for label, messages in self.invalid_nodes.items():
                 print(f"  {label}:")
                 for message in messages:
                     print(f"    - {message}")
+        print(f"{len(self.invalid_edges)} invalid edges: ")
         if self.invalid_edges:
-            print("Invalid edges:")
             for label, messages in self.invalid_edges.items():
                 print(f"  {label}:")
                 for message in messages:
@@ -125,6 +126,7 @@ class ChipInspector:
         chip_id: str,
         params_dir: str | None = None,
         conditions: dict | None = None,
+        defaults: dict | None = None,
     ):
         if params_dir is None:
             config_loader = ConfigLoader()
@@ -150,24 +152,59 @@ class ChipInspector:
                 "coupling": props["qubit_qubit_coupling_strength"].get(label),
             }
 
-        self.valid_conditions = CONDITIONS
+        self.conditions = CONDITIONS
         if conditions is not None:
-            self.valid_conditions.update(conditions)
+            self.conditions.update(conditions)
 
-    def get_value(
+        self.defaults = DEFAULTS
+        if defaults is not None:
+            self.defaults.update(defaults)
+
+    @cached_property
+    def nearest_neighbors(self) -> dict[int, list[int]]:
+        nn = {
+            i: sorted(list(self.graph.qubit_graph.neighbors(i)))
+            for i in self.graph.qubit_nodes.keys()
+        }
+        return dict(sorted(nn.items()))
+
+    @cached_property
+    def next_nearest_neighbors(self) -> dict[int, list[int]]:
+        nn = self.nearest_neighbors
+        nnm = {}
+        for i, neighbors in nn.items():
+            one_hop = set(neighbors)
+            two_hop = set()
+            for j in neighbors:
+                two_hop.update(nn[j])
+            nnm[i] = sorted(list(two_hop - one_hop - {i}))
+        return dict(sorted(nnm.items()))
+
+    def get_label(
         self,
         target: int | tuple[int, int],
-        property: str,
+    ) -> str:
+        if isinstance(target, int):
+            return self.graph.qubit_nodes[target]["label"]
+        elif isinstance(target, tuple):
+            return self.graph.qubit_edges[target]["label"]
+        else:
+            raise ValueError("Invalid target type.")
+
+    def get_property(
+        self,
+        target: int | tuple[int, int],
+        property_type: str,
         default: float = np.nan,
     ) -> float:
         if isinstance(target, int):
-            value = self.graph.qubit_nodes[target]["properties"][property]
+            value = self.graph.qubit_nodes[target]["properties"][property_type]
             if value is None or np.isnan(value):
                 return default
             else:
                 return value
         elif isinstance(target, tuple):
-            value = self.graph.qubit_edges[target]["properties"][property]
+            value = self.graph.qubit_edges[target]["properties"][property_type]
             if value is None or np.isnan(value):
                 return default
             else:
@@ -191,36 +228,30 @@ class ChipInspector:
         min_t1: float | None = None,
         min_t2: float | None = None,
     ) -> InspectionResult:
-        """
-        conditions:
-            (1) qubit unmeasured
-            (2) qubit frequency out of range
-            (3) qubit t1, t2 is too short
-        """
         node_result = {}
         for i, data in self.graph.qubit_nodes.items():
             is_valid = True
             label = data["label"]
             messages = []
-            f = self.get_value(i, "frequency", np.nan)
-            f_min = min_frequency or self.valid_conditions["min_frequency"]
-            f_max = max_frequency or self.valid_conditions["max_frequency"]
-            t1 = self.get_value(i, "t1", DEFAULTS["t1"])
-            t1_min = min_t1 or self.valid_conditions["min_t1"]
-            t2 = self.get_value(i, "t2_echo", DEFAULTS["t2_echo"])
-            t2_min = min_t2 or self.valid_conditions["min_t2"]
-            if np.isnan(f):
+            omega = self.get_property(i, "frequency", np.nan)
+            omega_min = min_frequency or self.conditions["min_frequency"]
+            omega_max = max_frequency or self.conditions["max_frequency"]
+            t1 = self.get_property(i, "t1", DEFAULTS["t1"])
+            t1_min = min_t1 or self.conditions["min_t1"]
+            t2 = self.get_property(i, "t2_echo", DEFAULTS["t2_echo"])
+            t2_min = min_t2 or self.conditions["min_t2"]
+            if np.isnan(omega):
                 is_valid = False
                 messages.append(f"Frequency of {label} is not defined.")
-            if f < f_min:
+            if omega < omega_min:
                 is_valid = False
                 messages.append(
-                    f"Frequency of {label} ({f:.3f} GHz) is lower than {f_min:.3f} GHz."
+                    f"Frequency of {label} ({omega:.3f} GHz) is lower than {omega_min:.3f} GHz."
                 )
-            if f > f_max:
+            if omega > omega_max:
                 is_valid = False
                 messages.append(
-                    f"Frequency of {label} ({f:.3f} GHz) is higher than {f_max:.3f} GHz."
+                    f"Frequency of {label} ({omega:.3f} GHz) is higher than {omega_max:.3f} GHz."
                 )
             if t1 < t1_min:
                 is_valid = False
@@ -247,24 +278,20 @@ class ChipInspector:
     def check_type0b(
         self,
         max_detuning: float | None = None,
-    ):
-        """
-        conditions:
-            (1) ge(i)-ge(j) is too far to implement CR gate
-        """
+    ) -> InspectionResult:
         edge_results = {}
         for (i, j), data in self.graph.qubit_edges.items():
             is_valid = True
             label = data["label"]
             messages = []
-            f_i = self.get_value(i, "frequency")
-            f_j = self.get_value(j, "frequency")
-            f_diff = abs(f_i - f_j)
-            f_diff_max = max_detuning or self.valid_conditions["max_detuning"]
-            if f_diff > f_diff_max:
+            omega_i = self.get_property(i, "frequency")
+            omega_j = self.get_property(j, "frequency")
+            Delta = abs(omega_i - omega_j)
+            Delta_max = max_detuning or self.conditions["max_detuning"]
+            if Delta > Delta_max:
                 is_valid = False
                 messages.append(
-                    f"Detuning of {label} ({f_diff:.3f} GHz) is higher than {f_diff_max:.3f} GHz."
+                    f"Detuning of {label} ({Delta * 1e3:.0f} MHz) is higher than {Delta_max * 1e3:.0f} GHz."
                 )
             edge_results[label] = InspectionData(
                 label=label,
@@ -273,12 +300,66 @@ class ChipInspector:
             )
         return InspectionResult(
             type="Type0B",
-            description="Detuning too far to implement CR gate.",
+            description="ge(i)-ge(j) too far.",
             node_data={},
             edge_data=edge_results,
         )
 
-    def check_type1a(self): ...
+    def check_type1a(
+        self,
+        safe_factor: float | None = None,
+    ) -> InspectionResult:
+        node_results = {}
+        safe_factor = safe_factor or self.conditions["safe_factor"]
+        for (i, j), data in self.graph.qubit_edges.items():
+            is_valid = True
+            label = data["label"]
+            messages = []
+            omega_i = self.get_property(i, "frequency")
+            omega_j = self.get_property(j, "frequency")
+            Delta = abs(omega_i - omega_j)
+            g = self.get_property((i, j), "coupling")
+            if abs(2 * g / Delta) > safe_factor:
+                is_valid = False
+                messages.append(
+                    f"|2g/Δ| of {label} ({abs(2 * g / Delta):.3f}) is higher than {safe_factor} (g={g * 1e3:.0f} MHz, Δ={Delta * 1e3:.0f} MHz)."
+                )
+
+            node_results[label] = InspectionData(
+                label=label,
+                is_valid=is_valid,
+                messages=messages,
+            )
+
+        for i, nnn in self.next_nearest_neighbors.items():
+            label_i = self.get_label(i)
+            for j in nnn:
+                is_valid = True
+                messages = []
+                label_j = self.get_label(j)
+                label = f"{label_i}-{label_j}"
+                omega_i = self.get_property(i, "frequency")
+                omega_j = self.get_property(j, "frequency")
+                Delta = abs(omega_i - omega_j)
+                g = self.defaults["nnn_coupling"]
+                if abs(2 * g / Delta) > safe_factor:
+                    is_valid = False
+                    messages.append(
+                        f"|2g/Δ| of {label} ({abs(2 * g / Delta):.3f}) is higher than {safe_factor} (g={g * 1e6:.0f} kHz, Δ={Delta * 1e6:.0f} kHz)."
+                    )
+
+                node_results[label] = InspectionData(
+                    label=label,
+                    is_valid=is_valid,
+                    messages=messages,
+                )
+
+        return InspectionResult(
+            type="Type1A",
+            description="ge(i)-ge(j) is too near.",
+            node_data={},
+            edge_data=node_results,
+        )
 
     def check_type1b(self): ...
 
