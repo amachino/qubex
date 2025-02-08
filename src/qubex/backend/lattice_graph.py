@@ -158,7 +158,7 @@ class LatticeGraph:
         return self.qubit_graph.to_undirected(as_view=True)
 
     @cached_property
-    def qubit_links(
+    def qubit_undirected_edges(
         self,
     ) -> dict[tuple[int, int], QubitEdge]:
         return {

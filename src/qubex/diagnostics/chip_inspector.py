@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
 
@@ -24,7 +25,7 @@ DEFAULTS = {
 }
 
 
-CollisionType = Literal[
+InspectionType = Literal[
     "Type0A",
     "Type0B",
     "Type1A",
@@ -41,24 +42,84 @@ CollisionType = Literal[
 
 
 @dataclass
-class Collision:
-    name: str
-    description: str
-    n_nodes: int
-    directed: bool
-    node_data: dict
-    edge_data: dict
+class InspectionData:
+    label: str
+    is_valid: bool
+    messages: list[str]
+
+
+class InspectionResult:
+    def __init__(
+        self,
+        type: InspectionType,
+        description: str,
+        node_data: dict[str, InspectionData],
+        edge_data: dict[str, InspectionData],
+    ):
+        self.type = type
+        self.description = description
+        self.node_data = dict(sorted(node_data.items()))
+        self.edge_data = dict(sorted(edge_data.items()))
 
     @property
-    def collision_nodes(self) -> dict[str, list[str]]:
-        return {k: v["log"] for k, v in self.node_data.items() if v["collision"]}
+    def invalid_nodes(self) -> dict[str, list[str]]:
+        return {
+            label: data.messages
+            for label, data in self.node_data.items()
+            if not data.is_valid
+        }
 
     @property
-    def collision_edges(self) -> dict[str, list[str]]:
-        return {k: v["log"] for k, v in self.edge_data.items() if v["collision"]}
+    def invalid_edges(self) -> dict[str, list[str]]:
+        return {k: v.messages for k, v in self.edge_data.items() if not v.is_valid}
+
+    def print(self):
+        print(f"{self.type}:")
+        print(f"  {self.description}")
+        if self.invalid_nodes:
+            print("Invalid nodes:")
+            for label, messages in self.invalid_nodes.items():
+                print(f"  {label}:")
+                for message in messages:
+                    print(f"    - {message}")
+        if self.invalid_edges:
+            print("Invalid edges:")
+            for label, messages in self.invalid_edges.items():
+                print(f"  {label}:")
+                for message in messages:
+                    print(f"    - {message}")
 
 
-class CollisionChecker:
+class InspectionSummary:
+    def __init__(
+        self,
+        results: dict[InspectionType, InspectionResult],
+    ):
+        self.results = results
+
+    @property
+    def invalid_nodes(self) -> dict[str, list[str]]:
+        invalid_nodes = defaultdict(list)
+        for result in self.results.values():
+            for label, messages in result.invalid_nodes.items():
+                invalid_nodes[label].extend(messages)
+        return dict(invalid_nodes)
+
+    @property
+    def invalid_edges(self) -> dict[str, list[str]]:
+        invalid_edges = defaultdict(list)
+        for result in self.results.values():
+            for label, messages in result.invalid_edges.items():
+                invalid_edges[label].extend(messages)
+        return dict(invalid_edges)
+
+    def print(self):
+        for result in self.results.values():
+            result.print()
+            print()
+
+
+class ChipInspector:
     def __init__(
         self,
         chip_id: str,
@@ -89,11 +150,9 @@ class CollisionChecker:
                 "coupling": props["qubit_qubit_coupling_strength"].get(label),
             }
 
-        self.conditions = CONDITIONS
+        self.valid_conditions = CONDITIONS
         if conditions is not None:
-            self.conditions.update(conditions)
-
-        self.collisions: dict[CollisionType, Collision] = {}
+            self.valid_conditions.update(conditions)
 
     def get_value(
         self,
@@ -116,16 +175,14 @@ class CollisionChecker:
         else:
             raise ValueError("Invalid target type.")
 
-    def check(
+    def execute(
         self,
-        *collision: CollisionType,
-    ) -> dict[CollisionType, Collision]:
-        result = {}
+        *collision: InspectionType,
+    ) -> InspectionSummary:
+        results = {}
         for type in collision:
-            result[type] = getattr(self, f"check_{type.lower()}")()
-
-        self.collisions = result
-        return result
+            results[type] = getattr(self, f"check_{type.lower()}")()
+        return InspectionSummary(results)
 
     def check_type0a(
         self,
@@ -133,61 +190,57 @@ class CollisionChecker:
         max_frequency: float | None = None,
         min_t1: float | None = None,
         min_t2: float | None = None,
-    ) -> Collision:
+    ) -> InspectionResult:
         """
         conditions:
             (1) qubit unmeasured
             (2) qubit frequency out of range
             (3) qubit t1, t2 is too short
         """
-        result = {}
+        node_result = {}
         for i, data in self.graph.qubit_nodes.items():
-            flag = False
+            is_valid = True
             label = data["label"]
-            log = []
+            messages = []
             f = self.get_value(i, "frequency", np.nan)
-            f_min = min_frequency or self.conditions["min_frequency"]
-            f_max = max_frequency or self.conditions["max_frequency"]
+            f_min = min_frequency or self.valid_conditions["min_frequency"]
+            f_max = max_frequency or self.valid_conditions["max_frequency"]
             t1 = self.get_value(i, "t1", DEFAULTS["t1"])
-            t1_min = min_t1 or self.conditions["min_t1"]
+            t1_min = min_t1 or self.valid_conditions["min_t1"]
             t2 = self.get_value(i, "t2_echo", DEFAULTS["t2_echo"])
-            t2_min = min_t2 or self.conditions["min_t2"]
+            t2_min = min_t2 or self.valid_conditions["min_t2"]
             if np.isnan(f):
-                flag = True
-                log.append(f"Frequency of {label} is not defined.")
+                is_valid = False
+                messages.append(f"Frequency of {label} is not defined.")
             if f < f_min:
-                flag = True
-                log.append(
+                is_valid = False
+                messages.append(
                     f"Frequency of {label} ({f:.3f} GHz) is lower than {f_min:.3f} GHz."
                 )
             if f > f_max:
-                flag = True
-                log.append(
+                is_valid = False
+                messages.append(
                     f"Frequency of {label} ({f:.3f} GHz) is higher than {f_max:.3f} GHz."
                 )
             if t1 < t1_min:
-                flag = True
-                log.append(
+                is_valid = False
+                messages.append(
                     f"T1 of {label} ({t1 * 1e-3:.1f} μs) is lower than {t1_min * 1e-3:.1f} μs."
                 )
             if t2 < t2_min:
-                flag = True
-                log.append(
+                is_valid = False
+                messages.append(
                     f"T2 of {label} ({t2 * 1e-3:.1f} μs) is lower than {t2_min * 1e-3:.1f} μs."
                 )
-
-            result[label] = {
-                "collision": flag,
-                "log": log,
-            }
-
-        result = dict(sorted(result.items()))
-        return Collision(
-            name="Type0A",
+            node_result[label] = InspectionData(
+                label=label,
+                is_valid=is_valid,
+                messages=messages,
+            )
+        return InspectionResult(
+            type="Type0A",
             description="Qubit unmeasured, frequency out of range, T1, T2 too short.",
-            n_nodes=1,
-            directed=False,
-            node_data=result,
+            node_data=node_result,
             edge_data={},
         )
 
@@ -197,36 +250,32 @@ class CollisionChecker:
     ):
         """
         conditions:
-            (1) ge(i)-ge(j) is too far to implement the fast CR(i>j) or CR(j>i)
+            (1) ge(i)-ge(j) is too far to implement CR gate
         """
-        result = {}
-        for (i, j), data in self.graph.qubit_links.items():
-            flag = False
+        edge_results = {}
+        for (i, j), data in self.graph.qubit_edges.items():
+            is_valid = True
             label = data["label"]
-            log = []
+            messages = []
             f_i = self.get_value(i, "frequency")
             f_j = self.get_value(j, "frequency")
             f_diff = abs(f_i - f_j)
-            f_diff_max = max_detuning or self.conditions["max_detuning"]
+            f_diff_max = max_detuning or self.valid_conditions["max_detuning"]
             if f_diff > f_diff_max:
-                flag = True
-                log.append(
+                is_valid = False
+                messages.append(
                     f"Detuning of {label} ({f_diff:.3f} GHz) is higher than {f_diff_max:.3f} GHz."
                 )
-
-            result[label] = {
-                "collision": flag,
-                "log": log,
-            }
-
-        result = dict(sorted(result.items()))
-        return Collision(
-            name="Type0B",
-            description="Detuning too far to implement the fast CR.",
-            n_nodes=2,
-            directed=False,
+            edge_results[label] = InspectionData(
+                label=label,
+                is_valid=is_valid,
+                messages=messages,
+            )
+        return InspectionResult(
+            type="Type0B",
+            description="Detuning too far to implement CR gate.",
             node_data={},
-            edge_data=result,
+            edge_data=edge_results,
         )
 
     def check_type1a(self): ...
