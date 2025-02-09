@@ -256,10 +256,18 @@ class ChipInspector:
             t1 = self.get_property(i, "t1", self.params.default_t1)
             t2 = self.get_property(i, "t2_echo", self.params.default_t2_echo)
 
-            omega_min = min_frequency or self.params.min_frequency
-            omega_max = max_frequency or self.params.max_frequency
-            t1_min = min_t1 or self.params.min_t1
-            t2_min = min_t2 or self.params.min_t2
+            omega_min = (
+                min_frequency
+                if min_frequency is not None
+                else self.params.min_frequency
+            )
+            omega_max = (
+                max_frequency
+                if max_frequency is not None
+                else self.params.max_frequency
+            )
+            t1_min = min_t1 if min_t1 is not None else self.params.min_t1
+            t2_min = min_t2 if min_t2 is not None else self.params.min_t2
 
             if np.isnan(omega):
                 is_invalid = True
@@ -314,7 +322,9 @@ class ChipInspector:
             omega_j = self.get_property(j, "frequency")
             Delta = abs(omega_i - omega_j)
 
-            Delta_max = max_detuning or self.params.max_detuning
+            Delta_max = (
+                max_detuning if max_detuning is not None else self.params.max_detuning
+            )
 
             if Delta > Delta_max:
                 is_invalid = True
@@ -344,7 +354,9 @@ class ChipInspector:
         data = {}
 
         adiabatic_safe_factor = (
-            adiabatic_safe_factor or self.params.adiabatic_safe_factor
+            adiabatic_safe_factor
+            if adiabatic_safe_factor is not None
+            else self.params.adiabatic_safe_factor
         )
 
         for i, j in self.graph.qubit_edges:
@@ -415,7 +427,9 @@ class ChipInspector:
         data = {}
 
         adiabatic_safe_factor = (
-            adiabatic_safe_factor or self.params.adiabatic_safe_factor
+            adiabatic_safe_factor
+            if adiabatic_safe_factor is not None
+            else self.params.adiabatic_safe_factor
         )
 
         for i, nnn in self.next_nearest_neighbors.items():
@@ -469,7 +483,9 @@ class ChipInspector:
             )
 
             cr_control_safe_factor = (
-                cr_control_safe_factor or self.params.cr_control_safe_factor
+                cr_control_safe_factor
+                if cr_control_safe_factor is not None
+                else self.params.cr_control_safe_factor
             )
 
             if np.abs(Omega_d / Delta) > cr_control_safe_factor:
@@ -493,9 +509,108 @@ class ChipInspector:
             inspection_data=data,
         )
 
-    def check_type2a(self): ...
+    def check_type2a(
+        self,
+        adiabatic_safe_factor: float | None = None,
+    ) -> InspectionResult:
+        data = {}
+        for i, j in self.graph.qubit_edges:
+            is_invalid = False
+            messages = []
 
-    def check_type2b(self): ...
+            label = self.get_label((i, j))
+            omega_i = self.get_property(i, "frequency")
+            omega_j = self.get_property(j, "frequency")
+            alpha_i = self.get_property(i, "anharmonicity")
+            Delta = abs(omega_i - omega_j)
+            g = self.get_property((i, j), "coupling")
+            Omega_d = np.abs(
+                Delta * (Delta + alpha_i) / (g * alpha_i) * self.params.omega_cr
+            )
+
+            adiabatic_safe_factor = (
+                adiabatic_safe_factor
+                if adiabatic_safe_factor is not None
+                else self.params.adiabatic_safe_factor
+            )
+
+            Omega_eff = abs(
+                2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
+            )
+
+            val = np.abs(Omega_eff / (2 * Delta + alpha_i))
+            if val > adiabatic_safe_factor:
+                is_invalid = True
+                messages.append(
+                    f"|Ω_eff/(2Δ+α)| of {label} ({val:.3g}) is higher than {adiabatic_safe_factor} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ+α={2 * Delta + alpha_i * 1e3:.0f} MHz)."
+                )
+
+            if is_invalid:
+                data[label] = InspectionData(
+                    label=label,
+                    messages=messages,
+                    invalid_nodes=[],
+                    invalid_edges=[label],
+                )
+
+        return InspectionResult(
+            inspection_type="Type2A",
+            short_description="CR cause gf",
+            description="CR(i->j) excites g-f(i) transition.",
+            inspection_data=data,
+        )
+
+    def check_type2b(
+        self,
+        adiabatic_safe_factor: float | None = None,
+    ) -> InspectionResult:
+        data = {}
+        for i, j in self.graph.qubit_edges:
+            is_invalid = False
+            messages = []
+
+            label = self.get_label((i, j))
+            omega_i = self.get_property(i, "frequency")
+            omega_j = self.get_property(j, "frequency")
+            alpha_i = self.get_property(i, "anharmonicity")
+            Delta = abs(omega_i - omega_j)
+            g = self.get_property((i, j), "coupling")
+            Omega_d = np.abs(
+                Delta * (Delta + alpha_i) / (g * alpha_i) * self.params.omega_cr
+            )
+
+            adiabatic_safe_factor = (
+                adiabatic_safe_factor
+                if adiabatic_safe_factor is not None
+                else self.params.adiabatic_safe_factor
+            )
+
+            Omega_eff = abs(
+                2 ** (0.5) * g * Omega_d * (1 / (Delta + alpha_i) - 1 / Delta)
+            )
+
+            val = np.abs(Omega_eff / (2 * Delta + alpha_i))
+
+            if val > adiabatic_safe_factor:
+                is_invalid = True
+                messages.append(
+                    f"|Ω_eff/(2Δ+α)| of {label} ({val:.3g}) is higher than {adiabatic_safe_factor} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ+α={2 * Delta + alpha_i * 1e3:.0f} MHz)."
+                )
+
+            if is_invalid:
+                data[label] = InspectionData(
+                    label=label,
+                    messages=messages,
+                    invalid_nodes=[],
+                    invalid_edges=[label],
+                )
+
+        return InspectionResult(
+            inspection_type="Type2B",
+            short_description="CR cause fogi",
+            description="CR(i->j) drive excites fogi (fg<->ge) transition.",
+            inspection_data=data,
+        )
 
     def check_type3a(self): ...
 
