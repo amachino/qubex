@@ -213,18 +213,30 @@ class ChipInspector:
         self,
         target: int | tuple[int, int],
         property_type: str,
-        default: float = np.nan,
     ) -> float:
         if isinstance(target, int):
             value = self.graph.qubit_nodes[target]["properties"][property_type]
             if value is None or np.isnan(value):
-                return default
+                if property_type == "anharmonicity":
+                    f = self.get_property(target, "frequency")
+                    return (-1 / 19) * f
+                elif property_type == "t1":
+                    return self.params.default_t1
+                elif property_type == "t2_echo":
+                    return self.params.default_t2_echo
+                else:
+                    return np.nan
             else:
                 return value
         elif isinstance(target, tuple):
             value = self.graph.qubit_edges[target]["properties"][property_type]
             if value is None or np.isnan(value):
-                return default
+                if property_type == "coupling":
+                    return self.params.default_coupling
+                elif property_type == "nnn_coupling":
+                    return self.params.default_nnn_coupling
+                else:
+                    return np.nan
             else:
                 return value
         else:
@@ -246,14 +258,14 @@ class ChipInspector:
         min_t1: float | None = None,
         min_t2: float | None = None,
     ) -> InspectionResult:
-        omega_min = (
-            min_frequency if min_frequency is not None else self.params.min_frequency
-        )
-        omega_max = (
-            max_frequency if max_frequency is not None else self.params.max_frequency
-        )
-        t1_min = min_t1 if min_t1 is not None else self.params.min_t1
-        t2_min = min_t2 if min_t2 is not None else self.params.min_t2
+        if min_frequency is None:
+            min_frequency = self.params.min_frequency
+        if max_frequency is None:
+            max_frequency = self.params.max_frequency
+        if min_t1 is None:
+            min_t1 = self.params.min_t1
+        if min_t2 is None:
+            min_t2 = self.params.min_t2
 
         data = {}
         for i in self.graph.qubit_nodes:
@@ -261,32 +273,32 @@ class ChipInspector:
             messages = []
 
             label = self.get_label(i)
-            omega = self.get_property(i, "frequency", np.nan)
-            t1 = self.get_property(i, "t1", self.params.default_t1)
-            t2 = self.get_property(i, "t2_echo", self.params.default_t2_echo)
+            f = self.get_property(i, "frequency")
+            t1 = self.get_property(i, "t1")
+            t2 = self.get_property(i, "t2_echo")
 
-            if np.isnan(omega):
+            if np.isnan(f):
                 is_invalid = True
                 messages.append(f"Frequency of {label} is not defined.")
-            if omega < omega_min:
+            if f < min_frequency:
                 is_invalid = True
                 messages.append(
-                    f"Frequency of {label} ({omega:.3f} GHz) is lower than {omega_min:.3f} GHz."
+                    f"Frequency of {label} ({f:.3f} GHz) is lower than {min_frequency:.3f} GHz."
                 )
-            if omega > omega_max:
+            if f > max_frequency:
                 is_invalid = True
                 messages.append(
-                    f"Frequency of {label} ({omega:.3f} GHz) is higher than {omega_max:.3f} GHz."
+                    f"Frequency of {label} ({f:.3f} GHz) is higher than {max_frequency:.3f} GHz."
                 )
-            if t1 < t1_min:
+            if t1 < min_t1:
                 is_invalid = True
                 messages.append(
-                    f"T1 of {label} ({t1 * 1e-3:.1f} μs) is lower than {t1_min * 1e-3:.1f} μs."
+                    f"T1 of {label} ({t1 * 1e-3:.1f} μs) is lower than {min_t1 * 1e-3:.1f} μs."
                 )
-            if t2 < t2_min:
+            if t2 < min_t2:
                 is_invalid = True
                 messages.append(
-                    f"T2 of {label} ({t2 * 1e-3:.1f} μs) is lower than {t2_min * 1e-3:.1f} μs."
+                    f"T2 of {label} ({t2 * 1e-3:.1f} μs) is lower than {min_t2 * 1e-3:.1f} μs."
                 )
 
             if is_invalid:
@@ -308,9 +320,8 @@ class ChipInspector:
         self,
         max_detuning: float | None = None,
     ) -> InspectionResult:
-        Delta_max = (
-            max_detuning if max_detuning is not None else self.params.max_detuning
-        )
+        if max_detuning is None:
+            max_detuning = self.params.max_detuning
 
         data = {}
         for i, j in self.graph.qubit_edges:
@@ -322,10 +333,10 @@ class ChipInspector:
             omega_j = self.get_property(j, "frequency")
             Delta = abs(omega_i - omega_j)
 
-            if Delta > Delta_max:
+            if Delta > max_detuning:
                 is_invalid = True
                 messages.append(
-                    f"Detuning of {label} ({Delta * 1e3:.0f} MHz) is higher than {Delta_max * 1e3:.0f} MHz."
+                    f"Detuning of {label} ({Delta * 1e3:.0f} MHz) is higher than {max_detuning * 1e3:.0f} MHz."
                 )
 
             if is_invalid:
@@ -347,14 +358,10 @@ class ChipInspector:
         self,
         adiabatic_limit: float | None = None,
     ) -> InspectionResult:
+        if adiabatic_limit is None:
+            adiabatic_limit = self.params.adiabatic_limit
+
         data = {}
-
-        adiabatic_limit = (
-            adiabatic_limit
-            if adiabatic_limit is not None
-            else self.params.adiabatic_limit
-        )
-
         for i, j in self.graph.qubit_edges:
             if i > j:
                 continue
@@ -420,14 +427,10 @@ class ChipInspector:
         self,
         adiabatic_limit: float | None = None,
     ) -> InspectionResult:
+        if adiabatic_limit is None:
+            adiabatic_limit = self.params.adiabatic_limit
+
         data = {}
-
-        adiabatic_limit = (
-            adiabatic_limit
-            if adiabatic_limit is not None
-            else self.params.adiabatic_limit
-        )
-
         for i, nnn in self.next_nearest_neighbors.items():
             label_i = self.get_label(i)
             for j in nnn:
@@ -463,11 +466,8 @@ class ChipInspector:
         self,
         cr_control_limit: float | None = None,
     ) -> InspectionResult:
-        cr_control_limit = (
-            cr_control_limit
-            if cr_control_limit is not None
-            else self.params.cr_control_limit
-        )
+        if cr_control_limit is None:
+            cr_control_limit = self.params.cr_control_limit
 
         data = {}
         for i, j in self.graph.qubit_edges:
@@ -509,11 +509,8 @@ class ChipInspector:
         self,
         adiabatic_limit: float | None = None,
     ) -> InspectionResult:
-        adiabatic_limit = (
-            adiabatic_limit
-            if adiabatic_limit is not None
-            else self.params.adiabatic_limit
-        )
+        if adiabatic_limit is None:
+            adiabatic_limit = self.params.adiabatic_limit
 
         data = {}
         for i, j in self.graph.qubit_edges:
@@ -559,11 +556,8 @@ class ChipInspector:
         self,
         adiabatic_limit: float | None = None,
     ) -> InspectionResult:
-        adiabatic_limit = (
-            adiabatic_limit
-            if adiabatic_limit is not None
-            else self.params.adiabatic_limit
-        )
+        if adiabatic_limit is None:
+            adiabatic_limit = self.params.adiabatic_limit
 
         data = {}
         for i, j in self.graph.qubit_edges:
@@ -609,11 +603,8 @@ class ChipInspector:
         self,
         adiabatic_limit: float | None = None,
     ) -> InspectionResult:
-        adiabatic_limit = (
-            adiabatic_limit
-            if adiabatic_limit is not None
-            else self.params.adiabatic_limit
-        )
+        if adiabatic_limit is None:
+            adiabatic_limit = self.params.adiabatic_limit
 
         data = {}
         for i, j in self.graph.qubit_edges:
@@ -689,11 +680,8 @@ class ChipInspector:
         self,
         cr_control_limit: float | None = None,
     ) -> InspectionResult:
-        cr_control_limit = (
-            cr_control_limit
-            if cr_control_limit is not None
-            else self.params.cr_control_limit
-        )
+        if cr_control_limit is None:
+            cr_control_limit = self.params.cr_control_limit
 
         data = {}
         for i, j in self.graph.qubit_edges:
@@ -735,7 +723,73 @@ class ChipInspector:
             inspection_data=data,
         )
 
-    def check_type7(self): ...
+    def check_type7(
+        self,
+        adiabatic_limit: float | None = None,
+    ) -> InspectionResult:
+        if adiabatic_limit is None:
+            adiabatic_limit = self.params.adiabatic_limit
+
+        data = {}
+        for i, j in self.graph.qubit_edges:
+            is_invalid = False
+            messages = []
+
+            label_ij = self.get_label((i, j))
+            omega_i = self.get_property(i, "frequency")
+            omega_j = self.get_property(j, "frequency")
+            alpha_i = self.get_property(i, "anharmonicity")
+            Delta_ij = abs(omega_i - omega_j)
+            g_ij = self.get_property((i, j), "coupling")
+            Omega_d_ij = np.abs(
+                Delta_ij
+                * (Delta_ij + alpha_i)
+                / (g_ij * alpha_i)
+                * self.params.omega_cr
+            )
+
+            for k in self.nearest_neighbors[i]:
+                if k == j:
+                    continue
+
+                label_ik = self.get_label((i, k))
+                omega_k = self.get_property(k, "frequency")
+                Delta_ik = abs(omega_i - omega_k)
+                g_ik = self.get_property((i, k), "coupling")
+                Omega_ik = np.abs(
+                    2 ** (-0.5)
+                    * g_ik
+                    * Omega_d_ij
+                    * (
+                        1 / (Delta_ij + alpha_i)
+                        - 1 / Delta_ij
+                        + 1 / (Delta_ik + alpha_i)
+                        - 1 / Delta_ik
+                    )
+                )
+
+                val = np.abs(Omega_ik / (2 * Delta_ik + alpha_i))
+
+                if val > adiabatic_limit:
+                    is_invalid = True
+                    messages.append(
+                        f"|Ω_ik/(2Δ+α)| of {label_ik} ({val:.3g}) is higher than {adiabatic_limit} (Ω_ik={Omega_ik * 1e3:.0f} MHz, 2Δ+α={2 * Delta_ik + alpha_i * 1e3:.0f} MHz)."
+                    )
+
+            if is_invalid:
+                data[label_ij] = InspectionData(
+                    label=label_ij,
+                    messages=messages,
+                    invalid_nodes=[],
+                    invalid_edges=[label_ij],
+                )
+
+        return InspectionResult(
+            inspection_type="Type7",
+            short_description="CR cause fogi, between spectator",
+            description="CR(i->j) drive excites fogi (i->k) transition.",
+            inspection_data=data,
+        )
 
     def check_type8(self): ...
 
