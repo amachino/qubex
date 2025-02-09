@@ -415,11 +415,13 @@ class ChipInspector:
                 omega_j = self.get_property(j, "frequency")
                 Delta = omega_i - omega_j
                 g = self.params.default_nnn_coupling
+
                 if abs(2 * g / Delta) > adiabatic_limit:
                     is_invalid = True
                     messages.append(
                         f"|2g/Δ| of {label} ({abs(2 * g / Delta):.3f}) is higher than {adiabatic_limit} (g={g * 1e6:.0f} kHz, Δ={Delta * 1e6:.0f} kHz)."
                     )
+
                 if is_invalid:
                     data[label] = InspectionData(
                         label=label,
@@ -462,7 +464,7 @@ class ChipInspector:
                     label_ki = f"{label_k}-{label_i}"
                     label_kj = f"{label_k}-{label_j}"
                     omega_j = self.get_property(j, "frequency")
-                    Delta_ij = abs(omega_i - omega_j)
+                    Delta_ij = omega_i - omega_j
                     Omega_CR = 1 / (self.params.cnot_time * 4)
 
                     if abs(Omega_CR / Delta_ij) > adiabatic_limit:
@@ -505,7 +507,7 @@ class ChipInspector:
             g = self.get_property((i, j), "coupling")
             Delta = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = abs(Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR)
+            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
 
             if abs(Omega_d / Delta) > cr_control_limit:
                 is_invalid = True
@@ -547,10 +549,8 @@ class ChipInspector:
             g = self.get_property((i, j), "coupling")
             Delta = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = abs(Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR)
-            Omega_eff = abs(
-                2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
-            )
+            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
+            Omega_eff = 2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
 
             val = abs(Omega_eff / (2 * Delta + alpha_i))
             if val > adiabatic_limit:
@@ -593,10 +593,8 @@ class ChipInspector:
             g = self.get_property((i, j), "coupling")
             Delta = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = abs(Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR)
-            Omega_eff = abs(
-                2 ** (0.5) * g * Omega_d * (1 / (Delta + alpha_i) - 1 / Delta)
-            )
+            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
+            Omega_eff = 2 ** (0.5) * g * Omega_d * (1 / (Delta + alpha_i) - 1 / Delta)
 
             val = abs(Omega_eff / (2 * Delta + alpha_i))
             if val > adiabatic_limit:
@@ -640,7 +638,6 @@ class ChipInspector:
             Delta = omega_i - omega_j
 
             val = abs(2**1.5 * g / (Delta + alpha_i))
-
             if val > adiabatic_limit:
                 is_invalid = True
                 messages.append(
@@ -670,7 +667,6 @@ class ChipInspector:
                 g = self.params.default_nnn_coupling
 
                 val = abs(2**1.5 * g / (Delta + alpha_i))
-
                 if val > adiabatic_limit:
                     is_invalid = True
                     messages.append(
@@ -713,10 +709,9 @@ class ChipInspector:
             g = self.get_property((i, j), "coupling")
             Delta = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = abs(Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR)
+            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
 
             val = abs(2**0.5 * Omega_d / (Delta + alpha_i))
-
             if val > cr_control_limit:
                 is_invalid = True
                 messages.append(
@@ -754,11 +749,9 @@ class ChipInspector:
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
             g_ij = self.get_property((i, j), "coupling")
-            Delta_ij = abs(omega_i - omega_j)
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d_ij = abs(
-                Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
-            )
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
 
             for k in self.nearest_neighbors[i]:
                 if k == j:
@@ -766,9 +759,9 @@ class ChipInspector:
 
                 label_ik = self.get_label((i, k))
                 omega_k = self.get_property(k, "frequency")
-                Delta_ik = abs(omega_i - omega_k)
+                Delta_ik = omega_i - omega_k
                 g_ik = self.get_property((i, k), "coupling")
-                Omega_ik = abs(
+                Omega_ik = (
                     2 ** (-0.5)
                     * g_ik
                     * Omega_d_ij
@@ -781,7 +774,6 @@ class ChipInspector:
                 )
 
                 val = abs(Omega_ik / (2 * Delta_ik + alpha_i))
-
                 if val > adiabatic_limit:
                     is_invalid = True
                     messages.append(
@@ -817,11 +809,9 @@ class ChipInspector:
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
             g_ij = self.get_property((i, j), "coupling")
-            Delta_ij = abs(omega_i - omega_j)
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d_ij = abs(
-                Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
-            )
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
             Delta_stark = (
                 Omega_d_ij**2 * alpha_i / (2 * Delta_ij * (Delta_ij + alpha_i))
             )
@@ -832,28 +822,28 @@ class ChipInspector:
 
                 label_ik = self.get_label((i, k))
                 omega_k = self.get_property(k, "frequency")
-                Delta_ik = abs(omega_i - omega_k)
+                Delta_ik = omega_i - omega_k
 
                 val = Delta_ik * (Delta_ik + Delta_stark)
 
                 if val < 0:
                     is_invalid = True
                     messages.append(
-                        f"Delta_ik * (Delta_ik + Delta_stark) of {label_ik} ({val:.3g}) is negative (Delta_ik={Delta_ik:.3g}, Delta_stark={Delta_stark:.3g})."
+                        f"Δ_ik(Δ_ik+Δ_stark) of {label_ik} ({val:.3g}) is negative (Δ_ik={Delta_ik:.3g}, Δ_stark={Delta_stark:.3g})."
                     )
 
             for k in self.next_nearest_neighbors[i]:
                 label_k = self.get_label(k)
                 label_ik = f"{label_i}-{label_k}"
                 omega_k = self.get_property(k, "frequency")
-                Delta_ik = abs(omega_i - omega_k)
+                Delta_ik = omega_i - omega_k
 
                 val = Delta_ik * (Delta_ik + Delta_stark)
 
                 if val < 0:
                     is_invalid = True
                     messages.append(
-                        f"Delta_ik * (Delta_ik + Delta_stark) of {label_ik} ({val:.3g}) is negative (Delta_ik={Delta_ik:.3g}, Delta_stark={Delta_stark:.3g})."
+                        f"Δ_ik(Δ_ik+Δ_stark) of {label_ik} ({val:.3g}) is negative (Δ_ik={Delta_ik:.3g}, Δ_stark={Delta_stark:.3g})."
                     )
 
             if is_invalid:
@@ -885,11 +875,9 @@ class ChipInspector:
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
             g_ij = self.get_property((i, j), "coupling")
-            Delta_ij = abs(omega_i - omega_j)
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d_ij = abs(
-                Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
-            )
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
             Delta_stark = (
                 Omega_d_ij**2 * alpha_i / (2 * Delta_ij * (Delta_ij + alpha_i))
             )
@@ -900,28 +888,30 @@ class ChipInspector:
 
                 label_ik = self.get_label((i, k))
                 omega_k = self.get_property(k, "frequency")
-                Delta_ik = abs(omega_i - omega_k)
+                alpha_k = self.get_property(k, "anharmonicity")
+                Delta_ik = omega_i - omega_k
 
-                val = (Delta_ik + alpha_i) * (Delta_ik + alpha_i + Delta_stark)
+                val = (Delta_ik - alpha_k) * (Delta_ik - alpha_k + Delta_stark)
 
                 if val < 0:
                     is_invalid = True
                     messages.append(
-                        f"(Delta_ik + α)(Delta_ik + α + Δstark) of {label_ik} ({val:.3g}) is negative (Delta_ik={Delta_ik:.3g}, α={alpha_i:.3g}, Δstark={Delta_stark:.3g})."
+                        f"(Δ_ik-α_k)(Δ_ik-α_k+Δ_stark) of {label_ik} ({val:.3g}) is negative (Δ_ik={Delta_ik:.3g}, α_k={alpha_k:.3g}, Δ_stark={Delta_stark:.3g})."
                     )
 
             for k in self.next_nearest_neighbors[i]:
                 label_k = self.get_label(k)
                 label_ik = f"{label_i}-{label_k}"
                 omega_k = self.get_property(k, "frequency")
-                Delta_ik = abs(omega_i - omega_k)
+                alpha_k = self.get_property(k, "anharmonicity")
+                Delta_ik = omega_i - omega_k
 
-                val = (Delta_ik + alpha_i) * (Delta_ik + alpha_i + Delta_stark)
+                val = (Delta_ik - alpha_k) * (Delta_ik - alpha_k + Delta_stark)
 
                 if val < 0:
                     is_invalid = True
                     messages.append(
-                        f"(Delta_ik + α)(Delta_ik + α + Δstark) of {label_ik} ({val:.3g}) is negative (Delta_ik={Delta_ik:.3g}, α={alpha_i:.3g}, Δstark={Delta_stark:.3g})."
+                        f"(Δ_ik-α_k)(Δ_ik-α_k+Δ_stark) of {label_ik} ({val:.3g}) is negative (Δ_ik={Delta_ik:.3g}, α_k={alpha_k:.3g}, Δ_stark={Delta_stark:.3g})."
                     )
 
             if is_invalid:
