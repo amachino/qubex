@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from typing import Literal
 
@@ -9,21 +9,24 @@ import numpy as np
 
 from ..backend.config_loader import ConfigLoader
 
-CONDITIONS = {
-    "max_frequency": 9.5,
-    "min_frequency": 6.5,
-    "max_detuning": 1.3,
-    "min_t1": 3e3,
-    "min_t2": 3e3,
-    "safe_factor": 0.2,
-}
 
-DEFAULTS = {
-    "t1": 3e3,
-    "t2_echo": 3e3,
-    "coupling": 0.008,
-    "nnn_coupling": 0.008 * (0.008 / 0.8),
-}
+@dataclass(frozen=True)
+class InspectionParams:
+    max_frequency: float = 9.5
+    min_frequency: float = 6.5
+    max_detuning: float = 1.3
+    min_t1: float = 3e3
+    min_t2: float = 3e3
+    safe_factor: float = 0.2
+    cnot_time: float = 500
+    default_t1: float = 3e3
+    default_t2_echo: float = 3e3
+    default_coupling: float = 0.008
+    default_nnn_coupling: float = 0.008 * (0.008 / 0.8)
+
+    @property
+    def omega_cr(self) -> float:
+        return 1 / (self.cnot_time * 4)
 
 
 InspectionType = Literal[
@@ -139,14 +142,13 @@ class ChipInspector:
     def __init__(
         self,
         chip_id: str,
-        params_dir: str | None = None,
-        conditions: dict | None = None,
-        defaults: dict | None = None,
+        props_dir: str | None = None,
+        params: dict | None = None,
     ):
-        if params_dir is None:
+        if props_dir is None:
             config_loader = ConfigLoader()
         else:
-            config_loader = ConfigLoader(params_dir=params_dir)
+            config_loader = ConfigLoader(params_dir=props_dir)
 
         experiment_system = config_loader.get_experiment_system(chip_id)
         self.graph = experiment_system.quantum_system._graph
@@ -167,13 +169,9 @@ class ChipInspector:
                 "coupling": props["qubit_qubit_coupling_strength"].get(label),
             }
 
-        self.conditions = CONDITIONS
-        if conditions is not None:
-            self.conditions.update(conditions)
-
-        self.defaults = DEFAULTS
-        if defaults is not None:
-            self.defaults.update(defaults)
+        self.params = InspectionParams()
+        if params is not None:
+            self.params = replace(self.params, **params)
 
     @cached_property
     def nearest_neighbors(self) -> dict[int, list[int]]:
@@ -250,13 +248,13 @@ class ChipInspector:
 
             label = self.get_label(i)
             omega = self.get_property(i, "frequency", np.nan)
-            t1 = self.get_property(i, "t1", DEFAULTS["t1"])
-            t2 = self.get_property(i, "t2_echo", DEFAULTS["t2_echo"])
+            t1 = self.get_property(i, "t1", self.params.default_t1)
+            t2 = self.get_property(i, "t2_echo", self.params.default_t2_echo)
 
-            omega_min = min_frequency or self.conditions["min_frequency"]
-            omega_max = max_frequency or self.conditions["max_frequency"]
-            t1_min = min_t1 or self.conditions["min_t1"]
-            t2_min = min_t2 or self.conditions["min_t2"]
+            omega_min = min_frequency or self.params.min_frequency
+            omega_max = max_frequency or self.params.max_frequency
+            t1_min = min_t1 or self.params.min_t1
+            t2_min = min_t2 or self.params.min_t2
 
             if np.isnan(omega):
                 is_invalid = True
@@ -311,7 +309,7 @@ class ChipInspector:
             omega_j = self.get_property(j, "frequency")
             Delta = abs(omega_i - omega_j)
 
-            Delta_max = max_detuning or self.conditions["max_detuning"]
+            Delta_max = max_detuning or self.params.max_detuning
 
             if Delta > Delta_max:
                 is_invalid = True
@@ -340,7 +338,7 @@ class ChipInspector:
     ) -> InspectionResult:
         data = {}
 
-        safe_factor = safe_factor or self.conditions["safe_factor"]
+        safe_factor = safe_factor or self.params.safe_factor
 
         for i, j in self.graph.qubit_edges:
             if i > j:
@@ -382,7 +380,7 @@ class ChipInspector:
                 omega_i = self.get_property(i, "frequency")
                 omega_j = self.get_property(j, "frequency")
                 Delta = abs(omega_i - omega_j)
-                g = self.defaults["nnn_coupling"]
+                g = self.params.default_nnn_coupling
                 if abs(2 * g / Delta) > safe_factor:
                     is_invalid = True
                     messages.append(
@@ -403,7 +401,44 @@ class ChipInspector:
             inspection_data=data,
         )
 
-    def check_type1b(self): ...
+    def check_type1b(
+        self,
+        safe_factor: float | None = None,
+    ) -> InspectionResult:
+        data = {}
+
+        safe_factor = safe_factor or self.params.safe_factor
+
+        for i, nnn in self.next_nearest_neighbors.items():
+            label_i = self.get_label(i)
+            for j in nnn:
+                is_invalid = False
+                messages = []
+                label_j = self.get_label(j)
+                label = f"{label_i}-{label_j}"
+                omega_i = self.get_property(i, "frequency")
+                omega_j = self.get_property(j, "frequency")
+                Delta = abs(omega_i - omega_j)
+                Omega_CR = self.params.omega_cr
+                if abs(2 * Omega_CR / Delta) > safe_factor:
+                    is_invalid = True
+                    messages.append(
+                        f"|Ω_CR/Δ| of {label} ({abs(Omega_CR / Delta):.3f}) is higher than {safe_factor} (Ω_CR={Omega_CR * 1e6:.0f} kHz, Δ={Delta * 1e6:.0f} kHz)."
+                    )
+                if is_invalid:
+                    data[label] = InspectionData(
+                        label=label,
+                        messages=messages,
+                        invalid_nodes=[],
+                        invalid_edges=[label],
+                    )
+
+        return InspectionResult(
+            inspection_type="Type1B",
+            short_description="CR not selective",
+            description="CR from node k drives both k->i and k->j at the same time.",
+            inspection_data=data,
+        )
 
     def check_type1c(self): ...
 
