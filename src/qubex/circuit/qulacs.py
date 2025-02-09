@@ -12,70 +12,54 @@ class QulacsBackend(BaseBackend):
         """
         Backend for QASM 3 circuits.
         """
+        super().__init__(virtual_physical_map, job_id)
         self.job_id = job_id
-        self._virtual_physical_map = {
-            "qubits": {k: f"Q{v:02}" for k, v in virtual_physical_map["qubits"].items()},
-            "couplings": {k: (f"Q{v[0]:02}", f"Q{v[1]:02}") for k, v in virtual_physical_map["couplings"].items()},
-        }
+        self._virtual_physical_map = virtual_physical_map
     
     @property
     def program(self) -> str:
-        """
-        Returns the QASM 3 program.
-        """
-        return self._program
-
+        return super().program
+    
     @property
     def qubits(self) -> list:
-        """
-        Returns a list of qubit labels, e.g., ["Q05", "Q07"]
-        """
-        return list(self._virtual_physical_map["qubits"].values()) # type: ignore
-
+        return super().qubits
+    
     @property
     def couplings(self) -> list:
-        """
-        Returns a list of couplings in the format "QXX-QYY", e.g., ["Q05-Q07", "Q07-Q05"]
-        """
-        return [f"{v[0]}-{v[1]}" for v in self._virtual_physical_map["couplings"].values()] # type: ignore
-
+        return super().couplings
+    
     @property
     def virtual_physical_qubits(self) -> dict:
-        """
-        Returns the virtual-to-physical mapping, e.g., {0: "Q05", 1: "Q07"}
-        """
-        # Return a shallow copy to avoid accidental modifications
-        return self._virtual_physical_map["qubits"].copy() # type: ignore
-
+        return super().virtual_physical_qubits
+    
     @property
     def physical_virtual_qubits(self) -> dict:
-        """
-        Returns the physical-to-virtual mapping, e.g., {"Q05": 0, "Q07": 1}
-        """
-        return {v: k for k, v in self.virtual_physical_qubits.items()}
+        return super().physical_virtual_qubits
     
-    def physical_qubit(self, virtual_qubit: str) -> str:
-        """
-        Returns the physical qubit corresponding to the virtual qubit.
-        """
-        return self.virtual_physical_qubits[virtual_qubit]
+    @property
+    def result(self) -> dict:
+        return super().result
     
-    def virtual_qubit(self, physical_qubit: str) -> int:
-        """
-        Returns the virtual qubit corresponding to the physical qubit.
-        """
-        return self.physical_virtual_qubits[physical_qubit]
+    @property
+    def get_circuit(self) -> QuantumCircuit:
+        """Return the constructed quantum circuit."""
+        return self.circuit
+    
+    def plot_histogram(self):
+        return super().plot_histogram()
+    
+    def physical_qubit(self, virtual_qubit):
+        return super().physical_qubit(virtual_qubit)
+    
+    def virtual_qubit(self, physical_qubit):
+        return super().virtual_qubit(physical_qubit)
 
     def load_program(self, program: str):
-        logger.info(f"Loading QASM 3 program: {program}, job_id={self.job_id}")
-        self._program = program
+        super().load_program(program)
 
     def cnot(self, control: str, target: str):
         """Apply CNOT gate."""
-        if control not in self.qubits or target not in self.qubits:
-            logger.error(f"Invalid qubits for CNOT: {control}, {target}, job_id={self.job_id}")
-            raise ValueError(f"Invalid qubits for CNOT: {control}, {target}")
-        logger.debug(f"Applying CNOT gate: {self.virtual_qubit(control)} -> {self.virtual_qubit(target)}, Physical qubits: {control} -> {target}, job_id={self.job_id}")
+        super().cnot(control, target)
         self.circuit.add_CNOT_gate(
             self.physical_virtual_qubits[control],
             self.physical_virtual_qubits[target]
@@ -83,26 +67,17 @@ class QulacsBackend(BaseBackend):
 
     def x90(self, target: str):
         """Apply X90 gate."""
-        if target not in self.qubits:
-            logger.error(f"Invalid qubit: {target}, job_id={self.job_id}")
-            raise ValueError(f"Invalid qubit: {target}")
-        logger.debug(f"Applying X90 gate: {self.virtual_qubit(target)}, Physical qubit: {target}, job_id={self.job_id}")
+        super().x90(target)
         self.circuit.add_sqrtX_gate(self.physical_virtual_qubits[target])
 
     def x180(self, target: str):
         """Apply X180 gate."""
-        if target not in self.qubits:
-            logger.error(f"Invalid qubit: {target}, job_id={self.job_id}")
-            raise ValueError(f"Invalid qubit: {target}")
-        logger.debug(f"Applying X180 gate: {self.virtual_qubit(target)}, Physical qubit: {target}, job_id={self.job_id}")
+        super().x180(target)
         self.circuit.add_X_gate(self.physical_virtual_qubits[target])
 
     def rz(self, target: str, angle: float):
         """Apply RZ gate."""
-        if target not in self.qubits:
-            logger.error(f"Invalid qubit: {target}, job_id={self.job_id}")
-            raise ValueError(f"Invalid qubit: {target}")
-        logger.debug(f"Applying RZ gate: {self.virtual_qubit(target)}, Physical qubit: {target}, angle={angle}, job_id={self.job_id}")
+        super().rz(target, angle)
         self.circuit.add_RZ_gate(self.physical_virtual_qubits[target], angle)
 
     def compile(self):
@@ -113,8 +88,8 @@ class QulacsBackend(BaseBackend):
 
         for instruction in qiskit_circuit.data:
             name = instruction.name
-            virtual_index = instruction.qubits[0]._index
-            physical_label = self.physical_qubit(virtual_index)#self.virtual_physical_qubits[virtual_index]
+            virtual_index =  qiskit_circuit.find_bit(instruction.qubits[0]).index
+            physical_label = self.physical_qubit(virtual_index)
 
             if name == "sx":
                 self.x90(physical_label)
@@ -124,7 +99,7 @@ class QulacsBackend(BaseBackend):
                 angle = instruction.params[0]
                 self.rz(physical_label, angle)
             elif name == "cx":
-                virtual_target_index = instruction.qubits[1]._index
+                virtual_target_index =  qiskit_circuit.find_bit(instruction.qubits[1]).index
                 physical_target_label = self.virtual_physical_qubits[virtual_target_index]
                 self.cnot(physical_label, physical_target_label)
             elif name == "measure":
@@ -133,11 +108,6 @@ class QulacsBackend(BaseBackend):
                 logger.error(f"Unsupported instruction: {name}, job_id={self.job_id}")
                 raise ValueError(f"Unsupported instruction: {name}")
         logger.info(f"Compilation complete, job_id={self.job_id}")
-
-    @property
-    def get_circuit(self) -> QuantumCircuit:
-        """Return the constructed quantum circuit."""
-        return self.circuit
 
     def execute(self, shots: int = DEFAULT_SHOTS) -> dict:
         """
@@ -151,4 +121,5 @@ class QulacsBackend(BaseBackend):
         for key, value in result.items():
             counts[format(key, "0" + str(self.circuit.get_qubit_count()) + "b")] = value 
         logger.info(f"Execution complete, counts: {counts}, job_id={self.job_id}")
+        self._result = counts
         return counts

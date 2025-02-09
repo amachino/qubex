@@ -24,6 +24,7 @@ dependencies = [
     "pip == 24.0",
     "plotly ~= 5.0",
     "pydantic ~= 2.0",
+    "pystaq",
     "pyyaml ~= 6.0",
     "qctrl-visualizer ~= 8.0",
     "qiskit-qasm3-import>=0.5.1",
@@ -53,3 +54,6 @@ ignore_missing_imports = true
 
 [tool.ruff.lint]
 ignore = ["E731"]
+
+[tool.uv.sources]
+pystaq = { git = "https://github.com/softwareQinc/staq" }

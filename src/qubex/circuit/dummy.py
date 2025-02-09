@@ -5,69 +5,72 @@ import logging
 logger = logging.getLogger(__name__)
 
 class DummyBackend(BaseBackend):
-    def __init__(self, virtual_physical_map: dict):
+    def __init__(self, virtual_physical_map: dict, job_id: str="test_job"):
         """
-        Dummy backend for QASM 3 circuit.
+        Backend for QASM 3 circuits.
         """
-        self._virtual_physical_map = {
-            "qubits": {k: f"Q{v:02}" for k, v in virtual_physical_map["qubits"].items()},
-            "couplings": {k: (f"Q{v[0]:02}", f"Q{v[1]:02}") for k, v in virtual_physical_map["couplings"].items()},
-        }
-
+        super().__init__(virtual_physical_map, job_id)
+        self.job_id = job_id
+        self._virtual_physical_map = virtual_physical_map
+    
+    @property
+    def program(self) -> str:
+        return super().program
+    
     @property
     def qubits(self) -> list:
-        """
-        Returns a list of qubit labels, e.g., ["Q05", "Q07"]
-        """
-        return list(self._virtual_physical_map["qubits"].values()) # type: ignore
-
+        return super().qubits
+    
     @property
     def couplings(self) -> list:
-        """
-        Returns a list of couplings in the format "QXX-QYY", e.g., ["Q05-Q07", "Q07-Q05"]
-        """
-        return [f"{v[0]}-{v[1]}" for v in self._virtual_physical_map["couplings"].values()] # type: ignore
-
+        return super().couplings
+    
     @property
     def virtual_physical_qubits(self) -> dict:
-        """
-        Returns the virtual-to-physical mapping, e.g., {0: "Q05", 1: "Q07"}
-        """
-        # Return a shallow copy to avoid accidental modifications
-        return self._virtual_physical_map["qubits"].copy() # type: ignore
-
+        return super().virtual_physical_qubits
+    
     @property
     def physical_virtual_qubits(self) -> dict:
-        """
-        Returns the physical-to-virtual mapping, e.g., {"Q05": 0, "Q07": 1}
-        """
-        return {v: k for k, v in self.virtual_physical_qubits.items()}
+        return super().physical_virtual_qubits
+    
+    @property
+    def result(self) -> dict:
+        return super().result
+
+    def plot_histogram(self):
+        return super().plot_histogram()
+    
+    def physical_qubit(self, virtual_qubit):
+        return super().physical_qubit(virtual_qubit)
+    
+    def virtual_qubit(self, physical_qubit):
+        return super().virtual_qubit(physical_qubit)
 
     def load_program(self, program: str):
-        self._program = program
-        
+        super().load_program(program)
 
     def cnot(self, control: str, target: str):
-        """Apply CNOT gate"""
+        """Apply CNOT gate."""
+        super().cnot(control, target)
         pass
-        
 
     def x90(self, target: str):
-        """Apply X90 gate"""
+        """Apply X90 gate."""
+        super().x90(target)
         pass
 
     def x180(self, target: str):
-        """Apply X180 gate"""
+        """Apply X180 gate."""
+        super().x180(target)
         pass
 
     def rz(self, target: str, angle: float):
-        """Apply RZ gate"""
+        """Apply RZ gate."""
+        super().rz(target, angle)
         pass
-    
+
     def compile(self):
-        """
-        Compile the quantum circuit
-        """
+        """Load a QASM 3 program and apply the corresponding gates to the circuit."""
         pass
 
 
@@ -81,5 +84,6 @@ class DummyBackend(BaseBackend):
             "10":0,
             "11":545
         }
+        self._result = counts
         return counts
     
