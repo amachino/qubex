@@ -373,8 +373,8 @@ class ChipInspector:
             label_j = self.get_label(j)
             omega_i = self.get_property(i, "frequency")
             omega_j = self.get_property(j, "frequency")
-            Delta = abs(omega_i - omega_j)
             g = self.get_property((i, j), "coupling")
+            Delta = abs(omega_i - omega_j)
 
             if abs(2 * g / Delta) > adiabatic_limit:
                 is_invalid = True
@@ -478,8 +478,8 @@ class ChipInspector:
             omega_i = self.get_property(i, "frequency")
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
-            Delta = abs(omega_i - omega_j)
             g = self.get_property((i, j), "coupling")
+            Delta = abs(omega_i - omega_j)
             Omega_d = np.abs(
                 Delta * (Delta + alpha_i) / (g * alpha_i) * self.params.omega_cr
             )
@@ -521,8 +521,8 @@ class ChipInspector:
             omega_i = self.get_property(i, "frequency")
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
-            Delta = abs(omega_i - omega_j)
             g = self.get_property((i, j), "coupling")
+            Delta = abs(omega_i - omega_j)
             Omega_d = np.abs(
                 Delta * (Delta + alpha_i) / (g * alpha_i) * self.params.omega_cr
             )
@@ -568,8 +568,8 @@ class ChipInspector:
             omega_i = self.get_property(i, "frequency")
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
-            Delta = abs(omega_i - omega_j)
             g = self.get_property((i, j), "coupling")
+            Delta = abs(omega_i - omega_j)
             Omega_d = np.abs(
                 Delta * (Delta + alpha_i) / (g * alpha_i) * self.params.omega_cr
             )
@@ -618,8 +618,8 @@ class ChipInspector:
             omega_i = self.get_property(i, "frequency")
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
-            Delta = abs(omega_i - omega_j)
             g = self.get_property((i, j), "coupling")
+            Delta = abs(omega_i - omega_j)
 
             val = abs(2**1.5 * g / (Delta + alpha_i))
 
@@ -695,8 +695,8 @@ class ChipInspector:
             omega_i = self.get_property(i, "frequency")
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
-            Delta = abs(omega_i - omega_j)
             g = self.get_property((i, j), "coupling")
+            Delta = abs(omega_i - omega_j)
             Omega_d = np.abs(
                 Delta * (Delta + alpha_i) / (g * alpha_i) * self.params.omega_cr
             )
@@ -739,8 +739,8 @@ class ChipInspector:
             omega_i = self.get_property(i, "frequency")
             omega_j = self.get_property(j, "frequency")
             alpha_i = self.get_property(i, "anharmonicity")
-            Delta_ij = abs(omega_i - omega_j)
             g_ij = self.get_property((i, j), "coupling")
+            Delta_ij = abs(omega_i - omega_j)
             Omega_d_ij = np.abs(
                 Delta_ij
                 * (Delta_ij + alpha_i)
@@ -791,6 +791,70 @@ class ChipInspector:
             inspection_data=data,
         )
 
-    def check_type8(self): ...
+    def check_type8(
+        self,
+    ) -> InspectionResult:
+        data = {}
+        for i, j in self.graph.qubit_edges:
+            is_invalid = False
+            messages = []
+
+            label_i = self.get_label(i)
+            label_ij = self.get_label((i, j))
+            omega_i = self.get_property(i, "frequency")
+            omega_j = self.get_property(j, "frequency")
+            alpha_i = self.get_property(i, "anharmonicity")
+            g_ij = self.get_property((i, j), "coupling")
+            Delta_ij = abs(omega_i - omega_j)
+            Omega_d_ij = np.abs(
+                Delta_ij
+                * (Delta_ij + alpha_i)
+                / (g_ij * alpha_i)
+                * self.params.omega_cr
+            )
+            Delta_stark = (
+                Omega_d_ij**2 * alpha_i / (2 * Delta_ij * (Delta_ij + alpha_i))
+            )
+
+            for k in self.nearest_neighbors[i]:
+                if k == j:
+                    continue
+
+                label_ik = self.get_label((i, k))
+                omega_k = self.get_property(k, "frequency")
+                Delta_ik = abs(omega_i - omega_k)
+
+                if Delta_ik * (Delta_ik + Delta_stark) < 0:
+                    is_invalid = True
+                    messages.append(
+                        f"Delta_ik * (Delta_ik + Delta_stark) of {label_ik} ({Delta_ik * (Delta_ik + Delta_stark):.3g}) is negative (Delta_ik={Delta_ik:.3g}, Delta_stark={Delta_stark:.3g})."
+                    )
+
+            for k in self.next_nearest_neighbors[i]:
+                label_k = self.get_label(k)
+                label_ik = f"{label_i}-{label_k}"
+                omega_k = self.get_property(k, "frequency")
+                Delta_ik = abs(omega_i - omega_k)
+
+                if Delta_ik * (Delta_ik + Delta_stark) < 0:
+                    is_invalid = True
+                    messages.append(
+                        f"Delta_ik * (Delta_ik + Delta_stark) of {label_ik} ({Delta_ik * (Delta_ik + Delta_stark):.3g}) is negative (Delta_ik={Delta_ik:.3g}, Delta_stark={Delta_stark:.3g})."
+                    )
+
+            if is_invalid:
+                data[label_ij] = InspectionData(
+                    label=label_ij,
+                    messages=messages,
+                    invalid_nodes=[],
+                    invalid_edges=[label_ij],
+                )
+
+        return InspectionResult(
+            inspection_type="Type8",
+            short_description="ge-ge too close with Stark shift",
+            description="ge(i) and ge(k) become close during CR(i->j).",
+            inspection_data=data,
+        )
 
     def check_type9(self): ...
