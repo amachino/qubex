@@ -148,12 +148,43 @@ class InspectionSummary:
         invalid_edge_values = {label: 1 for label in invalid_edges}
         valid_edge_values = {label: 1 for label in valid_edges}
 
-        invalid_node_messages = {
+        valid_node_hovertexts = {}
+        for data in self.graph.qubit_nodes.values():
+            label = data["label"]
+            p = data["properties"]
+            f_ge = p.get("frequency")
+            alpha = p.get("anharmonicity")
+            t1 = p.get("t1")
+            t2 = p.get("t2_echo")
+            f_ef = f_ge + alpha if f_ge is not None and alpha is not None else None
+
+            if f_ge is not None:
+                f_ge = f"{f_ge * 1e3:.0f} MHz"
+            if f_ef is not None:
+                f_ef = f"{f_ef * 1e3:.0f} MHz"
+            if alpha is not None:
+                alpha = f"{alpha * 1e3:.0f} MHz"
+            if t1 is not None:
+                t1 = f"{t1 * 1e-3:.0f} µs"
+            if t2 is not None:
+                t2 = f"{t2 * 1e-3:.0f} µs"
+
+            valid_node_hovertexts[label] = "<br>".join(
+                [
+                    f"f_ge: {f_ge}",
+                    f"f_ef: {f_ef}",
+                    f"α: {alpha}",
+                    f"T1: {t1}",
+                    f"T2: {t2}",
+                ]
+            )
+
+        invalid_node_hovertexts = {
             label: f"{'<br>'.join(messages)}"
             for label, messages in self.invalid_nodes.items()
         }
 
-        invalid_edge_messages = {
+        invalid_edge_hovertexts = {
             label: f"{'<br>'.join(messages)}"
             for label, messages in self.invalid_edges.items()
         }
@@ -164,6 +195,7 @@ class InspectionSummary:
             node_color="blue",
             node_linecolor="black",
             node_textcolor="white",
+            node_hovertexts=valid_node_hovertexts,
             edge_values=valid_edge_values,
             edge_color="blue",
         )
@@ -174,10 +206,10 @@ class InspectionSummary:
             node_color="red",
             node_linecolor="black",
             node_textcolor="white",
-            node_hovertexts=invalid_node_messages,
+            node_hovertexts=invalid_node_hovertexts,
             edge_values=invalid_edge_values,
             edge_color="red",
-            edge_hovertexts=invalid_edge_messages,
+            edge_hovertexts=invalid_edge_hovertexts,
         )
 
         for inspection in self.inspections.values():

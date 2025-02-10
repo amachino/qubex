@@ -21,7 +21,7 @@ class InspectionParams:
     cr_control_limit: float = 0.75
     cnot_time: float = 500
     default_t1: float = 10e3
-    default_t2_echo: float = 10e3
+    default_t2: float = 10e3
     default_coupling: float = 8e-3
     default_nnn_coupling: float = 8e-3 * (8e-3 / 0.8)
 
@@ -137,7 +137,7 @@ class Inspection(ABC):
         self,
         target: int,
     ) -> float:
-        return self.get_property(target, "t2_echo") or self.params.default_t2_echo
+        return self.get_property(target, "t2_echo") or self.params.default_t2
 
     def get_nn_coupling(
         self,

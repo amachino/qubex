@@ -522,7 +522,9 @@ class LatticeGraph:
             showlegend=False,
         )
 
-        qubit_node_trace = self._create_qubit_node_trace()
+        qubit_node_trace = self._create_qubit_node_trace(
+            hovertexts=node_hovertexts,
+        )
         qubit_node_layer_trace = self._create_qubit_node_trace(
             labels=node_labels,
             color=node_color,
@@ -582,7 +584,7 @@ class LatticeGraph:
             y.append(pos[1])
             text.append(data["id"])
             if hovertexts:
-                hovertext.append(hovertexts[data["label"]])
+                hovertext.append(hovertexts.get(data["label"]))
             else:
                 hovertext.append(data["label"])
 
