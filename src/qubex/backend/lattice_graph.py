@@ -479,9 +479,16 @@ class LatticeGraph:
         *,
         directed: bool = True,
         title: str = "Graph Data",
+        node_labels: Collection[str] | None = None,
+        node_color: str | None = None,
+        node_linecolor: str | None = None,
+        node_textcolor: str | None = None,
+        node_hovertexts: dict | None = None,
         edge_values: dict | None = None,
         edge_texts: dict | None = None,
         edge_hovertexts: dict | None = None,
+        edge_color: str | None = None,
+        colorscale: str = "Viridis",
         image_name: str = "graph_data",
         images_dir: str = "./images",
         save_image: bool = False,
@@ -516,16 +523,30 @@ class LatticeGraph:
         )
 
         qubit_node_trace = self._create_qubit_node_trace()
+        qubit_node_layer_trace = self._create_qubit_node_trace(
+            labels=node_labels,
+            color=node_color,
+            linecolor=node_linecolor,
+            textcolor=node_textcolor,
+            hovertexts=node_hovertexts,
+        )
         mux_node_trace = self._create_mux_node_trace()
         qubit_edge_trace = self._create_qubit_edge_trace(
             directed=directed,
             values=edge_values,
             texts=edge_texts,
             hovertexts=edge_hovertexts,
+            color=edge_color,
+            colorscale=colorscale,
         )
 
         fig = go.Figure(
-            data=qubit_edge_trace + [mux_node_trace, qubit_node_trace],
+            data=qubit_edge_trace
+            + [
+                mux_node_trace,
+                qubit_node_trace,
+                qubit_node_layer_trace,
+            ],
             layout=layout,
         )
         fig.show()
@@ -541,34 +562,46 @@ class LatticeGraph:
                 scale=3,
             )
 
-    def _create_qubit_node_trace(self) -> go.Scatter:
+    def _create_qubit_node_trace(
+        self,
+        labels: Collection[str] | None = None,
+        color: str | None = None,
+        linecolor: str | None = None,
+        textcolor: str | None = None,
+        hovertexts: dict | None = None,
+    ) -> go.Scatter:
         x = []
         y = []
         text = []
         hovertext = []
         for data in self.qubit_nodes.values():
+            if labels is not None and data["label"] not in labels:
+                continue
             pos = data["position"]
             x.append(pos[0])
             y.append(pos[1])
             text.append(data["id"])
-            hovertext.append(data["label"])
+            if hovertexts:
+                hovertext.append(hovertexts[data["label"]])
+            else:
+                hovertext.append(data["label"])
 
         return go.Scatter(
             x=x,
             y=y,
             mode="markers+text",
             marker=dict(
-                color="ghostwhite",
+                color=color or "ghostwhite",
                 size=NODE_SIZE,
                 line_width=2,
-                line_color="black",
+                line_color=linecolor or "black",
                 showscale=False,
             ),
             text=text,
             textposition="middle center",
             textfont=dict(
                 family="sans-serif",
-                color="black",
+                color=textcolor or "black",
                 weight="bold",
                 size=TEXT_SIZE,
             ),
@@ -607,6 +640,8 @@ class LatticeGraph:
         values: dict | None = None,
         texts: dict | None = None,
         hovertexts: dict | None = None,
+        color: str | None = None,
+        colorscale: str = "Viridis",
     ) -> list[go.Scatter]:
         if values is None:
             values = {edge["label"]: 1.0 for edge in self.qubit_edges.values()}
@@ -616,6 +651,9 @@ class LatticeGraph:
             for key, value in values.items()
             if isinstance(value, (int, float)) and not math.isnan(value)
         }
+
+        if len(values) == 0:
+            return []
 
         v_min = min(values.values())
         v_max = max(values.values())
@@ -653,10 +691,14 @@ class LatticeGraph:
                 x = [x_ini, x_mid, x_fin]
                 y = [y_ini, y_mid, y_fin]
 
-            if v_max - v_min != 0:
+            if color:
+                edge_color = color
+            elif v_max - v_min != 0:
                 value = (value - v_min) / (v_max - v_min)
+                edge_color = sample_colorscale(colorscale, value)[0]
+            else:
+                edge_color = "black"
 
-            color = sample_colorscale("Viridis", value)[0]
             if directed:
                 trace.append(
                     go.Scatter(
@@ -666,13 +708,13 @@ class LatticeGraph:
                         marker=dict(
                             symbol="arrow",
                             size=12,
-                            color=color,
+                            color=edge_color,
                             angleref="previous",
                             standoff=0,
                         ),
                         line=dict(
                             width=4,
-                            color=color,
+                            color=edge_color,
                         ),
                         hoverinfo="text",
                         text=hovertexts[label] if hovertexts else label,
@@ -686,7 +728,7 @@ class LatticeGraph:
                         mode="lines+text",
                         line=dict(
                             width=NODE_SIZE + 2,
-                            color=color,
+                            color=edge_color,
                         ),
                         text=[None, texts[label], None] if texts else None,
                         textposition="middle center",
@@ -709,6 +751,7 @@ class LatticeGraph:
         values: list | None = None,
         texts: list[str] | None = None,
         hovertexts: list[str] | None = None,
+        colorscale: str = "Viridis",
         image_name: str = "lattice_data",
         images_dir: str = "./images",
         save_image: bool = False,
@@ -721,7 +764,7 @@ class LatticeGraph:
             go.Heatmap(
                 z=value_matrix,
                 text=text_matrix,
-                colorscale="Viridis",
+                colorscale=colorscale,
                 hoverinfo="text",
                 hovertext=hovertext_matrix or text_matrix,
                 texttemplate="%{text}",

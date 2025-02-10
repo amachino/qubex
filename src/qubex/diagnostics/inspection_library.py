@@ -14,7 +14,7 @@ class Type0A(Inspection):
     ):
         super().__init__(
             name="Type0A",
-            description="Qubit unmeasured, frequency out of range, T1, T2 too short.",
+            description="bad qubit",
             graph=graph,
             params=params,
         )
@@ -26,35 +26,35 @@ class Type0A(Inspection):
         min_t2 = self.params.min_t2
 
         for i in self.graph.qubit_nodes:
-            label = self.get_label(i)
-            f = self.get_frequency(i)
-            t1 = self.get_t1(i)
-            t2 = self.get_t2(i)
+            label_i = self.get_label(i)
+            f_i = self.get_frequency(i)
+            t1_i = self.get_t1(i)
+            t2_i = self.get_t2(i)
 
-            if np.isnan(f):
+            if np.isnan(f_i):
                 self.add_invalid_nodes(
-                    [label],
-                    f"Frequency of {label} is not defined.",
+                    [label_i],
+                    f"Frequency of {label_i} is not defined.",
                 )
-            if f < min_frequency:
+            if f_i < min_frequency:
                 self.add_invalid_nodes(
-                    [label],
-                    f"Frequency of {label} ({f:.3f} GHz) is lower than {min_frequency:.3f} GHz.",
+                    [label_i],
+                    f"Frequency of {label_i} ({f_i:.3f} GHz) is lower than {min_frequency:.3f} GHz.",
                 )
-            if f > max_frequency:
+            if f_i > max_frequency:
                 self.add_invalid_nodes(
-                    [label],
-                    f"Frequency of {label} ({f:.3f} GHz) is higher than {max_frequency:.3f} GHz.",
+                    [label_i],
+                    f"Frequency of {label_i} ({f_i:.3f} GHz) is higher than {max_frequency:.3f} GHz.",
                 )
-            if t1 < min_t1:
+            if t1_i < min_t1:
                 self.add_invalid_nodes(
-                    [label],
-                    f"T1 of {label} ({t1 * 1e-3:.1f} μs) is lower than {min_t1 * 1e-3:.1f} μs.",
+                    [label_i],
+                    f"T1 of {label_i} ({t1_i * 1e-3:.1f} μs) is lower than {min_t1 * 1e-3:.1f} μs.",
                 )
-            if t2 < min_t2:
+            if t2_i < min_t2:
                 self.add_invalid_nodes(
-                    [label],
-                    f"T2 of {label} ({t2 * 1e-3:.1f} μs) is lower than {min_t2 * 1e-3:.1f} μs.",
+                    [label_i],
+                    f"T2 of {label_i} ({t2_i * 1e-3:.1f} μs) is lower than {min_t2 * 1e-3:.1f} μs.",
                 )
 
 
@@ -66,7 +66,7 @@ class Type0B(Inspection):
     ):
         super().__init__(
             name="Type0B",
-            description="ge(i)-ge(j) detuning too large.",
+            description="too far detuning",
             graph=graph,
             params=params,
         )
@@ -75,15 +75,15 @@ class Type0B(Inspection):
         max_detuning = self.params.max_detuning
 
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
-            Delta = omega_i - omega_j
+            Delta_ij = omega_i - omega_j
 
-            if Delta > max_detuning:
+            if abs(Delta_ij) > max_detuning:
                 self.add_invalid_edges(
-                    [label],
-                    f"Detuning of {label} ({Delta * 1e3:.0f} MHz) is higher than {max_detuning * 1e3:.0f} MHz.",
+                    [label_ij],
+                    f"Detuning of {label_ij} ({Delta_ij * 1e3:.0f} MHz) is higher than {max_detuning * 1e3:.0f} MHz.",
                 )
 
 
@@ -95,7 +95,7 @@ class Type1A(Inspection):
     ):
         super().__init__(
             name="Type1A",
-            description="ge(i)-ge(j) detuning too small.",
+            description="ge and ge too close",
             graph=graph,
             params=params,
         )
@@ -107,33 +107,39 @@ class Type1A(Inspection):
             if i > j:
                 continue
 
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
+            label_i = self.get_label(i)
+            label_j = self.get_label(j)
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
 
-            if abs(2 * g / Delta) > adiabatic_limit:
-                self.add_invalid_edges(
-                    [label],
-                    f"|2g/Δ| of {label} ({abs(2 * g / Delta):.3f}) is higher than {adiabatic_limit} (g={g * 1e3:.0f} MHz, Δ={Delta * 1e3:.0f} MHz).",
+            val = abs(2 * g_ij / Delta_ij)
+            if val > adiabatic_limit:
+                self.add_invalid_nodes(
+                    [label_i, label_j],
+                    f"|2g/Δ| of {label_ij} ({val:.3f}) is higher than {adiabatic_limit} (g={g_ij * 1e3:.0f} MHz, Δ={Delta_ij * 1e3:.0f} MHz).",
                 )
 
         for i, nnn in self.next_nearest_neighbors.items():
-            for j in nnn:
-                if i > j:
+            for k in nnn:
+                if i > k:
                     continue
 
-                label = self.get_label((i, j))
+                label_ik = self.get_label((i, k))
+                label_i = self.get_label(i)
+                label_k = self.get_label(k)
                 omega_i = self.get_frequency(i)
-                omega_j = self.get_frequency(j)
-                Delta = omega_i - omega_j
-                g = self.params.default_nnn_coupling
+                omega_k = self.get_frequency(k)
+                Delta_ik = omega_i - omega_k
+                g_ik = self.params.default_nnn_coupling
 
-                if abs(2 * g / Delta) > adiabatic_limit:
-                    self.add_invalid_edges(
-                        [label],
-                        f"|2g/Δ| of {label} ({abs(2 * g / Delta):.3f}) is higher than {adiabatic_limit} (g={g * 1e6:.0f} kHz, Δ={Delta * 1e6:.0f} kHz).",
+                val = abs(2 * g_ik / Delta_ik)
+                if val > adiabatic_limit:
+                    self.add_invalid_nodes(
+                        [label_i, label_k],
+                        f"|2g/Δ| of {label_ik} ({val:.3f}) is higher than {adiabatic_limit} (g={g_ik * 1e6:.0f} kHz, Δ={Delta_ik * 1e6:.0f} kHz).",
                     )
 
 
@@ -145,13 +151,13 @@ class Type1B(Inspection):
     ):
         super().__init__(
             name="Type1B",
-            description="CR from node k drives both k->i and k->j at the same time.",
+            description="CR not selective",
             graph=graph,
             params=params,
         )
 
     def execute(self):
-        cr_control_limit = self.params.cr_control_limit
+        adiabatic_limit = self.params.adiabatic_limit
 
         for k in self.graph.qubit_nodes:
             for i in self.nearest_neighbors[k]:
@@ -169,10 +175,11 @@ class Type1B(Inspection):
                     Delta_ij = omega_i - omega_j
                     Omega_CR = 1 / (self.params.cnot_time * 4)
 
-                    if abs(Omega_CR / Delta_ij) > cr_control_limit:
+                    val = abs(Omega_CR / Delta_ij)
+                    if val > adiabatic_limit:
                         self.add_invalid_edges(
                             [label_ki, label_kj],
-                            f"|Ω_CR/Δ| of {label_ij} ({abs(Omega_CR / Delta_ij):.3f}) is higher than {cr_control_limit} (Ω_CR={Omega_CR * 1e6:.0f} kHz, Δ={Delta_ij * 1e6:.0f} kHz).",
+                            f"|Ω_CR/Δ| of {label_ij} ({val:.3f}) is higher than {adiabatic_limit} (Ω_CR={Omega_CR * 1e6:.0f} kHz, Δ={Delta_ij * 1e6:.0f} kHz).",
                         )
 
 
@@ -184,7 +191,7 @@ class Type1C(Inspection):
     ):
         super().__init__(
             name="Type1C",
-            description="CR(i->j) excites g-e(i) transition.",
+            description="CR cause g-e",
             graph=graph,
             params=params,
         )
@@ -193,19 +200,20 @@ class Type1C(Inspection):
         cr_control_limit = self.params.cr_control_limit
 
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
             alpha_i = self.get_anharmonicity(i)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
 
-            if abs(Omega_d / Delta) > cr_control_limit:
+            val = abs(Omega_d_ij / Delta_ij)
+            if val > cr_control_limit:
                 self.add_invalid_edges(
-                    [label],
-                    f"|Ω_d/Δ| of {label} ({abs(Omega_d / Delta):.3f}) is higher than {cr_control_limit} (Ω_d={Omega_d * 1e3:.0f} MHz, Δ={Delta * 1e3:.0f} MHz).",
+                    [label_ij],
+                    f"|Ω_d/Δ| of {label_ij} ({val:.3f}) is higher than {cr_control_limit} (Ω_d={Omega_d_ij * 1e3:.0f} MHz, Δ={Delta_ij * 1e3:.0f} MHz).",
                 )
 
 
@@ -217,7 +225,7 @@ class Type2A(Inspection):
     ):
         super().__init__(
             name="Type2A",
-            description="CR(i->j) excites g-f(i) transition.",
+            description="CR cause g-f",
             graph=graph,
             params=params,
         )
@@ -226,21 +234,24 @@ class Type2A(Inspection):
         adiabatic_limit = self.params.adiabatic_limit
 
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
             alpha_i = self.get_anharmonicity(i)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
-            Omega_eff = 2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
+            Omega_eff_ij = (
+                2 ** (-1.5) * Omega_d_ij**2 * (1 / (Delta_ij + alpha_i) - 1 / Delta_ij)
+            )
+            Delta_eff_ij = 2 * Delta_ij + alpha_i
 
-            val = abs(Omega_eff / (2 * Delta + alpha_i))
+            val = abs(Omega_eff_ij / Delta_eff_ij)
             if val > adiabatic_limit:
                 self.add_invalid_edges(
-                    [label],
-                    f"|Ω_eff/(2Δ+α)| of {label} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ+α={2 * Delta + alpha_i * 1e3:.0f} MHz).",
+                    [label_ij],
+                    f"|Ω_eff/(2Δ+α)| of {label_ij} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff_ij * 1e3:.0f} MHz, 2Δ+α={Delta_eff_ij * 1e3:.0f} MHz).",
                 )
 
 
@@ -252,7 +263,7 @@ class Type2B(Inspection):
     ):
         super().__init__(
             name="Type2B",
-            description="CR(i->j) excites f-g(i) transition.",
+            description="CR cause fogi",
             graph=graph,
             params=params,
         )
@@ -261,21 +272,24 @@ class Type2B(Inspection):
         adiabatic_limit = self.params.adiabatic_limit
 
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
             alpha_i = self.get_anharmonicity(i)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
-            Omega_eff = 2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
+            Omega_eff_ij = (
+                2**0.5 * Omega_d_ij * g_ij / (1 / (Delta_ij + alpha_i) - 1 / Delta_ij)
+            )
+            Delta_eff_ij = 2 * Delta_ij + alpha_i
 
-            val = abs(Omega_eff / (2 * Delta))
+            val = abs(Omega_eff_ij / Delta_eff_ij)
             if val > adiabatic_limit:
                 self.add_invalid_edges(
-                    [label],
-                    f"|Ω_eff/(2Δ)| of {label} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ={2 * Delta * 1e3:.0f} MHz).",
+                    [label_ij],
+                    f"|Ω_eff/(2Δ+α)| of {label_ij} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff_ij * 1e3:.0f} MHz, 2Δ+α={Delta_eff_ij * 1e3:.0f} MHz).",
                 )
 
 
@@ -287,7 +301,7 @@ class Type3A(Inspection):
     ):
         super().__init__(
             name="Type3A",
-            description="CR(i->j) excites g-f(i) transition.",
+            description="ef and ge too close",
             graph=graph,
             params=params,
         )
@@ -296,22 +310,39 @@ class Type3A(Inspection):
         adiabatic_limit = self.params.adiabatic_limit
 
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
             alpha_i = self.get_anharmonicity(i)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
-            Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
-            Omega_eff = 2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
+            Omega_eff_ij = 2**1.5 * g_ij
+            Delta_eff_ij = Delta_ij + alpha_i
 
-            val = abs(Omega_eff / (2 * Delta + alpha_i))
+            val = abs(Omega_eff_ij / Delta_eff_ij)
             if val > adiabatic_limit:
                 self.add_invalid_edges(
-                    [label],
-                    f"|Ω_eff/(2Δ+α)| of {label} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ+α={2 * Delta + alpha_i * 1e3:.0f} MHz).",
+                    [label_ij],
+                    f"|2√2g/(Δ+α)| of {label_ij} ({val:.3g}) is higher than {adiabatic_limit} (2√2g={Omega_eff_ij * 1e3:.0f} MHz, Δ+α={Delta_eff_ij * 1e3:.0f} MHz).",
                 )
+
+        for i, nnn in self.next_nearest_neighbors.items():
+            for k in nnn:
+                label_ik = self.get_label((i, k))
+                omega_i = self.get_frequency(i)
+                omega_k = self.get_frequency(k)
+                alpha_i = self.get_anharmonicity(i)
+                Delta_ik = omega_i - omega_k
+                g_ik = self.params.default_nnn_coupling
+                Omega_eff_ik = 2**1.5 * g_ik
+                Delta_eff_ik = Delta_ik + alpha_i
+
+                val = abs(Omega_eff_ik / Delta_eff_ik)
+                if val > adiabatic_limit:
+                    self.add_invalid_edges(
+                        [label_ik],
+                        f"|2√2g/(Δ+α)| of {label_ik} ({val:.3g}) is higher than {adiabatic_limit} (2√2g={Omega_eff_ik * 1e3:.0f} MHz, Δ+α={Delta_eff_ik * 1e3:.0f} MHz).",
+                    )
 
 
 class Type3B(Inspection):
@@ -322,30 +353,31 @@ class Type3B(Inspection):
     ):
         super().__init__(
             name="Type3B",
-            description="CR(i->j) excites f-g(i) transition.",
+            description="CR cause e-f",
             graph=graph,
             params=params,
         )
 
     def execute(self):
-        adiabatic_limit = self.params.adiabatic_limit
+        cr_control_limit = self.params.cr_control_limit
 
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
             alpha_i = self.get_anharmonicity(i)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
-            Omega_eff = 2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
+            Omega_eff_ij = 2**0.5 * Omega_d_ij
+            Delta_eff_ij = Delta_ij + alpha_i
 
-            val = abs(Omega_eff / (2 * Delta))
-            if val > adiabatic_limit:
+            val = abs(Omega_eff_ij / Delta_eff_ij)
+            if val > cr_control_limit:
                 self.add_invalid_edges(
-                    [label],
-                    f"|Ω_eff/(2Δ)| of {label} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ={2 * Delta * 1e3:.0f} MHz).",
+                    [label_ij],
+                    f"|√2Ω_d/(Δ+α)| of {label_ij} ({val:.3g}) is higher than {cr_control_limit} (Ω_d={Omega_d_ij * 1e3:.0f} MHz, Δ+α={Delta_eff_ij * 1e3:.0f} MHz).",
                 )
 
 
@@ -357,7 +389,7 @@ class Type7(Inspection):
     ):
         super().__init__(
             name="Type7",
-            description="CR(i->j) excites g-f(i) transition.",
+            description="CR cause fogi with spectators",
             graph=graph,
             params=params,
         )
@@ -366,22 +398,42 @@ class Type7(Inspection):
         adiabatic_limit = self.params.adiabatic_limit
 
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
             alpha_i = self.get_anharmonicity(i)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
-            Omega_eff = 2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
 
-            val = abs(Omega_eff / (2 * Delta + alpha_i))
-            if val > adiabatic_limit:
-                self.add_invalid_edges(
-                    [label],
-                    f"|Ω_eff/(2Δ+α)| of {label} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ+α={2 * Delta + alpha_i * 1e3:.0f} MHz).",
+            for k in self.nearest_neighbors[i]:
+                if k == j:
+                    continue
+
+                label_ik = self.get_label((i, k))
+                omega_k = self.get_frequency(k)
+                g_ik = self.get_nn_coupling((i, k))
+                Delta_ik = omega_i - omega_k
+                Omega_eff_ik = (
+                    2 ** (-0.5)
+                    * g_ik
+                    * Omega_d_ij
+                    * (
+                        1 / (Delta_ij + alpha_i)
+                        - 1 / Delta_ij
+                        + 1 / (Delta_ik + alpha_i)
+                        - 1 / Delta_ik
+                    )
                 )
+                Delta_eff_ik = 2 * Delta_ik + alpha_i
+
+                val = abs(Omega_eff_ik / Delta_eff_ik)
+                if val > adiabatic_limit:
+                    self.add_invalid_edges(
+                        [label_ik],
+                        f"|Ω_eff/(2Δ+α)| of {label_ij} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff_ik * 1e3:.0f} MHz, 2Δ+α={Delta_eff_ik * 1e3:.0f} MHz).",
+                    )
 
 
 class Type8(Inspection):
@@ -392,31 +444,50 @@ class Type8(Inspection):
     ):
         super().__init__(
             name="Type8",
-            description="CR(i->j) excites f-g(i) transition.",
+            description="ge-ge too close with Stark shift",
             graph=graph,
             params=params,
         )
 
     def execute(self):
-        adiabatic_limit = self.params.adiabatic_limit
-
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
             alpha_i = self.get_anharmonicity(i)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
-            Omega_eff = 2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
+            Delta_stark = (
+                Omega_d_ij**2 * alpha_i / (2 * Delta_ij * (Delta_ij + alpha_i))
+            )
 
-            val = abs(Omega_eff / (2 * Delta))
-            if val > adiabatic_limit:
-                self.add_invalid_edges(
-                    [label],
-                    f"|Ω_eff/(2Δ)| of {label} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ={2 * Delta * 1e3:.0f} MHz).",
-                )
+            for k in self.nearest_neighbors[i]:
+                if k == j:
+                    continue
+
+                omega_k = self.get_frequency(k)
+                Delta_ik = omega_i - omega_k
+
+                val = Delta_ik * (Delta_ik + Delta_stark)
+                if val < 0:
+                    self.add_invalid_edges(
+                        [label_ij],
+                        f"Δ(Δ+Δ_stark) of {label_ij} ({val:.3g}) is negative (Δ={Delta_ik * 1e3:.0f} MHz, Δ_stark={Delta_stark * 1e3:.0f} MHz).",
+                    )
+
+            for k in self.next_nearest_neighbors[i]:
+                omega_k = self.get_frequency(k)
+                Delta_ik = omega_i - omega_k
+
+                val = Delta_ik * (Delta_ik + Delta_stark)
+
+                if val < 0:
+                    self.add_invalid_edges(
+                        [label_ij],
+                        f"Δ(Δ+Δ_stark) of {label_ij} ({val:.3g}) is negative (Δ={Delta_ik * 1e3:.0f} MHz, Δ_stark={Delta_stark * 1e3:.0f} MHz).",
+                    )
 
 
 class Type9(Inspection):
@@ -427,28 +498,48 @@ class Type9(Inspection):
     ):
         super().__init__(
             name="Type9",
-            description="CR(i->j) excites f-g(i) transition.",
+            description="ge-ef too close with Stark shift",
             graph=graph,
             params=params,
         )
 
     def execute(self):
-        adiabatic_limit = self.params.adiabatic_limit
-
         for i, j in self.graph.qubit_edges:
-            label = self.get_label((i, j))
+            label_ij = self.get_label((i, j))
             omega_i = self.get_frequency(i)
             omega_j = self.get_frequency(j)
             alpha_i = self.get_anharmonicity(i)
-            g = self.get_nn_coupling((i, j))
-            Delta = omega_i - omega_j
+            g_ij = self.get_nn_coupling((i, j))
+            Delta_ij = omega_i - omega_j
             Omega_CR = 1 / (self.params.cnot_time * 4)
-            Omega_d = Delta * (Delta + alpha_i) / (g * alpha_i) * Omega_CR
-            Omega_eff = 2 ** (-1.5) * Omega_d**2 * (1 / (Delta + alpha_i) - 1 / Delta)
+            Omega_d_ij = Delta_ij * (Delta_ij + alpha_i) / (g_ij * alpha_i) * Omega_CR
+            Delta_stark = (
+                Omega_d_ij**2 * alpha_i / (2 * Delta_ij * (Delta_ij + alpha_i))
+            )
 
-            val = abs(Omega_eff / (2 * Delta))
-            if val > adiabatic_limit:
-                self.add_invalid_edges(
-                    [label],
-                    f"|Ω_eff/(2Δ)| of {label} ({val:.3g}) is higher than {adiabatic_limit} (Ω_eff={Omega_eff * 1e3:.0f} MHz, 2Δ={2 * Delta * 1e3:.0f} MHz).",
-                )
+            for k in self.nearest_neighbors[i]:
+                if k == j:
+                    continue
+
+                omega_k = self.get_frequency(k)
+                alpha_k = self.get_anharmonicity(k)
+                Delta_ik = omega_i - omega_k
+
+                val = (Delta_ik - alpha_k) * (Delta_ik - alpha_k + Delta_stark)
+                if val < 0:
+                    self.add_invalid_edges(
+                        [label_ij],
+                        f"(Δ-α)(Δ-α+Δ_stark) of {label_ij} ({val:.3g}) is negative (Δ={Delta_ik * 1e3:.0f} MHz, α={alpha_k * 1e3:.0f} MHz, Δ_stark={Delta_stark * 1e3:.0f} MHz).",
+                    )
+
+            for k in self.next_nearest_neighbors[i]:
+                omega_k = self.get_frequency(k)
+                alpha_k = self.get_anharmonicity(k)
+                Delta_ik = omega_i - omega_k
+
+                val = (Delta_ik - alpha_k) * (Delta_ik - alpha_k + Delta_stark)
+                if val < 0:
+                    self.add_invalid_edges(
+                        [label_ij],
+                        f"(Δ-α)(Δ-α+Δ_stark) of {label_ij} ({val:.3g}) is negative (Δ={Delta_ik * 1e3:.0f} MHz, α={alpha_k * 1e3:.0f} MHz, Δ_stark={Delta_stark * 1e3:.0f} MHz).",
+                    )

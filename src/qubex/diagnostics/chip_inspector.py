@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import Literal
 
 from ..backend.config_loader import ConfigLoader
+from ..backend.lattice_graph import LatticeGraph
 from . import inspection_library
 from .inspection import Inspection
 
@@ -79,14 +80,19 @@ class ChipInspector:
             inspection.execute()
             inspections[type] = inspection
 
-        return InspectionSummary(inspections)
+        return InspectionSummary(
+            graph=self.graph,
+            inspections=inspections,
+        )
 
 
 class InspectionSummary:
     def __init__(
         self,
+        graph: LatticeGraph,
         inspections: dict[InspectionType, Inspection],
     ):
+        self.graph = graph
         self.inspections = inspections
 
     @property
@@ -122,3 +128,23 @@ class InspectionSummary:
                 print(f"  {label}:")
                 for message in messages:
                     print(f"    - {message}")
+
+    def draw(self):
+        node_hovertexts = {
+            label: f"{'<br>'.join(messages)}"
+            for label, messages in self.invalid_nodes.items()
+        }
+        edge_values = {label: 1 for label in self.invalid_edges.keys()}
+        self.graph.plot_graph_data(
+            node_labels=self.invalid_nodes.keys(),
+            node_color="red",
+            node_linecolor="black",
+            node_textcolor="white",
+            node_hovertexts=node_hovertexts,
+            edge_values=edge_values,
+            edge_color="red",
+            edge_hovertexts=self.invalid_edges,
+        )
+
+        for inspection in self.inspections.values():
+            inspection.draw()

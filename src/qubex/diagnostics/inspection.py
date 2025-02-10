@@ -14,16 +14,16 @@ from ..backend.lattice_graph import LatticeGraph
 class InspectionParams:
     max_frequency: float = 9.5
     min_frequency: float = 6.5
-    max_detuning: float = 1.3
+    max_detuning: float = 1.5
     min_t1: float = 3e3
     min_t2: float = 3e3
-    adiabatic_limit: float = 0.1
+    adiabatic_limit: float = 0.2
     cr_control_limit: float = 0.75
     cnot_time: float = 500
-    default_t1: float = 3e3
-    default_t2_echo: float = 3e3
-    default_coupling: float = 0.008
-    default_nnn_coupling: float = 0.008 * (0.008 / 0.8)
+    default_t1: float = 10e3
+    default_t2_echo: float = 10e3
+    default_coupling: float = 8e-3
+    default_nnn_coupling: float = 8e-3 * (8e-3 / 0.8)
 
 
 class Inspection(ABC):
@@ -188,3 +188,21 @@ class Inspection(ABC):
                 print(f"  {label}:")
                 for message in messages:
                     print(f"    - {message}")
+
+    def draw(self):
+        node_hovertexts = {
+            label: f"{'<br>'.join(messages)}"
+            for label, messages in self.invalid_nodes.items()
+        }
+        edge_values = {label: 1 for label in self.invalid_edges.keys()}
+        self.graph.plot_graph_data(
+            title=f"{self.name}: {self.description}",
+            node_labels=self.invalid_nodes.keys(),
+            node_color="red",
+            node_linecolor="black",
+            node_textcolor="white",
+            node_hovertexts=node_hovertexts,
+            edge_values=edge_values,
+            edge_color="red",
+            edge_hovertexts=self.invalid_edges,
+        )
