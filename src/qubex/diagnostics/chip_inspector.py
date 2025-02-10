@@ -130,20 +130,54 @@ class InspectionSummary:
                     print(f"    - {message}")
 
     def draw(self):
-        node_hovertexts = {
+        all_nodes = {node["label"] for node in self.graph.qubit_nodes.values()}
+        invalid_nodes = set(self.invalid_nodes)
+        valid_nodes = all_nodes - invalid_nodes
+
+        all_edges = {edge["label"] for edge in self.graph.qubit_edges.values()}
+        invalid_edges = set(self.invalid_edges)
+        for edge in self.graph.qubit_edges.values():
+            label = edge["label"]
+            node0, node1 = edge["id"]
+            qubit0 = self.graph.qubit_nodes[node0]["label"]
+            qubit1 = self.graph.qubit_nodes[node1]["label"]
+            if qubit0 in invalid_nodes or qubit1 in invalid_nodes:
+                invalid_edges.add(label)
+        valid_edges = all_edges - invalid_edges
+
+        invalid_edge_values = {label: 1 for label in invalid_edges}
+        valid_edge_values = {label: 1 for label in valid_edges}
+
+        invalid_node_messages = {
             label: f"{'<br>'.join(messages)}"
             for label, messages in self.invalid_nodes.items()
         }
-        edge_values = {label: 1 for label in self.invalid_edges.keys()}
+
+        invalid_edge_messages = {
+            label: f"{'<br>'.join(messages)}"
+            for label, messages in self.invalid_edges.items()
+        }
+
         self.graph.plot_graph_data(
-            node_labels=self.invalid_nodes.keys(),
+            title="Valid nodes and edges",
+            node_labels=valid_nodes,
+            node_color="blue",
+            node_linecolor="black",
+            node_textcolor="white",
+            edge_values=valid_edge_values,
+            edge_color="blue",
+        )
+
+        self.graph.plot_graph_data(
+            title="Invalid nodes and edges",
+            node_labels=invalid_nodes,
             node_color="red",
             node_linecolor="black",
             node_textcolor="white",
-            node_hovertexts=node_hovertexts,
-            edge_values=edge_values,
+            node_hovertexts=invalid_node_messages,
+            edge_values=invalid_edge_values,
             edge_color="red",
-            edge_hovertexts=self.invalid_edges,
+            edge_hovertexts=invalid_edge_messages,
         )
 
         for inspection in self.inspections.values():

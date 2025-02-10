@@ -717,7 +717,7 @@ class LatticeGraph:
                             color=edge_color,
                         ),
                         hoverinfo="text",
-                        text=hovertexts[label] if hovertexts else label,
+                        text=hovertexts.get(label) if hovertexts else label,
                     )
                 )
             else:
@@ -738,7 +738,7 @@ class LatticeGraph:
                             weight="bold",
                             size=8,
                         ),
-                        hovertext=hovertexts[label] if hovertexts else label,
+                        hovertext=hovertexts.get(label) if hovertexts else label,
                         hoverinfo="text",
                     )
                 )
