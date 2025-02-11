@@ -110,7 +110,7 @@ class Inspection(ABC):
         else:
             return value
 
-    def get_frequency(
+    def get_ge_frequency(
         self,
         target: int,
     ) -> float:
@@ -122,10 +122,16 @@ class Inspection(ABC):
     ) -> float:
         anharmonicity = self.get_property(target, "anharmonicity")
         if anharmonicity is None:
-            f = self.get_frequency(target)
+            f = self.get_ge_frequency(target)
             return (-1 / 19) * f  # E_J/E_C = 50
         else:
             return anharmonicity
+
+    def get_ef_frequency(
+        self,
+        target: int,
+    ) -> float:
+        return self.get_ge_frequency(target) + self.get_anharmonicity(target)
 
     def get_t1(
         self,
@@ -138,6 +144,28 @@ class Inspection(ABC):
         target: int,
     ) -> float:
         return self.get_property(target, "t2_echo") or self.params.default_t2
+
+    def get_ge_ge_detuning(
+        self,
+        target: tuple[int, int],
+    ) -> float:
+        return self.get_ge_frequency(target[0]) - self.get_ge_frequency(target[1])
+
+    def get_ef_ge_detuning(
+        self,
+        target: tuple[int, int],
+    ) -> float:
+        return self.get_ef_frequency(target[0]) - self.get_ge_frequency(target[1])
+
+    def get_stark_shift(
+        self,
+        target: tuple[int, int],
+    ) -> float:
+        c, t = target
+        a_c = self.get_anharmonicity(c)
+        D_ct = self.get_ge_ge_detuning((c, t))
+        O_d_ct = self.get_cr_drive_frequency((c, t))
+        return O_d_ct**2 * a_c / (2 * D_ct * (D_ct + a_c))
 
     def get_nn_coupling(
         self,
@@ -153,6 +181,24 @@ class Inspection(ABC):
             self.get_property(target, "nnn_coupling")
             or self.params.default_nnn_coupling
         )
+
+    def get_cr_rabi_frequency(
+        self,
+        target: tuple[int, int],
+    ) -> float:
+        cnot = self.params.cnot_time
+        return 1 / (4 * cnot)
+
+    def get_cr_drive_frequency(
+        self,
+        target: tuple[int, int],
+    ) -> float:
+        c, t = target
+        D_ct = self.get_ge_ge_detuning((c, t))
+        a_c = self.get_anharmonicity(c)
+        g_ct = self.get_nn_coupling((c, t))
+        O_r_ct = self.get_cr_rabi_frequency((c, t))
+        return -O_r_ct * D_ct * (D_ct + a_c) / (g_ct * a_c)
 
     def add_invalid_nodes(
         self,
