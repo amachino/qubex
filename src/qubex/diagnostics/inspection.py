@@ -240,15 +240,19 @@ class Inspection(ABC):
             label: f"{'<br>'.join(messages)}"
             for label, messages in self.invalid_nodes.items()
         }
+        node_values = {label: 1 for label in self.invalid_nodes.keys()}
         edge_values = {label: 1 for label in self.invalid_edges.keys()}
         self.graph.plot_graph_data(
             title=f"{self.name}: {self.description}",
-            node_labels=self.invalid_nodes.keys(),
-            node_color="red",
-            node_linecolor="black",
-            node_textcolor="white",
-            node_hovertexts=node_hovertexts,
-            edge_values=edge_values,
-            edge_color="red",
-            edge_hovertexts=self.invalid_edges,
+            node_overlay=True,
+            node_overlay_values=node_values,
+            node_overlay_color="red",
+            node_overlay_linecolor="black",
+            node_overlay_textcolor="white",
+            node_overlay_hovertexts=node_hovertexts,
+            edge_color="ghostwhite",
+            edge_overlay=True,
+            edge_overlay_values=edge_values,
+            edge_overlay_color="red",
+            edge_overlay_hovertexts=self.invalid_edges,
         )

@@ -134,6 +134,9 @@ class InspectionSummary:
         invalid_nodes = set(self.invalid_nodes)
         valid_nodes = all_nodes - invalid_nodes
 
+        invalid_node_values = {label: 1 for label in invalid_nodes}
+        valid_node_values = {label: 1 for label in valid_nodes}
+
         all_edges = {edge["label"] for edge in self.graph.qubit_edges.values()}
         invalid_edges = set(self.invalid_edges)
         for edge in self.graph.qubit_edges.values():
@@ -142,7 +145,7 @@ class InspectionSummary:
             qubit0 = self.graph.qubit_nodes[node0]["label"]
             qubit1 = self.graph.qubit_nodes[node1]["label"]
             if qubit0 in invalid_nodes or qubit1 in invalid_nodes:
-                invalid_edges.add(label)
+                all_edges.remove(label)
         valid_edges = all_edges - invalid_edges
 
         invalid_edge_values = {label: 1 for label in invalid_edges}
@@ -191,25 +194,31 @@ class InspectionSummary:
 
         self.graph.plot_graph_data(
             title="Valid nodes and edges",
-            node_labels=valid_nodes,
-            node_color="blue",
-            node_linecolor="black",
-            node_textcolor="white",
             node_hovertexts=valid_node_hovertexts,
-            edge_values=valid_edge_values,
-            edge_color="blue",
+            node_overlay=True,
+            node_overlay_values=valid_node_values,
+            node_overlay_color="blue",
+            node_overlay_linecolor="black",
+            node_overlay_textcolor="white",
+            node_overlay_hovertexts=valid_node_hovertexts,
+            edge_overlay=True,
+            edge_overlay_values=valid_edge_values,
+            edge_overlay_color="blue",
         )
 
         self.graph.plot_graph_data(
             title="Invalid nodes and edges",
-            node_labels=invalid_nodes,
-            node_color="red",
-            node_linecolor="black",
-            node_textcolor="white",
-            node_hovertexts=invalid_node_hovertexts,
-            edge_values=invalid_edge_values,
-            edge_color="red",
-            edge_hovertexts=invalid_edge_hovertexts,
+            node_hovertexts=valid_node_hovertexts,
+            node_overlay=True,
+            node_overlay_values=invalid_node_values,
+            node_overlay_color="red",
+            node_overlay_linecolor="black",
+            node_overlay_textcolor="white",
+            node_overlay_hovertexts=invalid_node_hovertexts,
+            edge_overlay=True,
+            edge_overlay_values=invalid_edge_values,
+            edge_overlay_color="red",
+            edge_overlay_hovertexts=invalid_edge_hovertexts,
         )
 
         for inspection in self.inspections.values():

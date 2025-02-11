@@ -479,15 +479,30 @@ class LatticeGraph:
         *,
         directed: bool = True,
         title: str = "Graph Data",
-        node_labels: Collection[str] | None = None,
+        node_values: dict | None = None,
+        node_texts: dict | None = None,
+        node_hovertexts: dict | None = None,
         node_color: str | None = None,
         node_linecolor: str | None = None,
         node_textcolor: str | None = None,
-        node_hovertexts: dict | None = None,
         edge_values: dict | None = None,
         edge_texts: dict | None = None,
         edge_hovertexts: dict | None = None,
         edge_color: str | None = None,
+        edge_textcolor: str | None = None,
+        node_overlay: bool = False,
+        edge_overlay: bool = False,
+        node_overlay_values: dict | None = None,
+        node_overlay_texts: dict | None = None,
+        node_overlay_hovertexts: dict | None = None,
+        node_overlay_color: str | None = None,
+        node_overlay_linecolor: str | None = None,
+        node_overlay_textcolor: str | None = None,
+        edge_overlay_values: dict | None = None,
+        edge_overlay_texts: dict | None = None,
+        edge_overlay_hovertexts: dict | None = None,
+        edge_overlay_color: str | None = None,
+        edge_overlay_textcolor: str | None = None,
         colorscale: str = "Viridis",
         image_name: str = "graph_data",
         images_dir: str = "./images",
@@ -522,33 +537,57 @@ class LatticeGraph:
             showlegend=False,
         )
 
-        qubit_node_trace = self._create_qubit_node_trace(
-            hovertexts=node_hovertexts,
-        )
-        qubit_node_layer_trace = self._create_qubit_node_trace(
-            labels=node_labels,
-            color=node_color,
-            linecolor=node_linecolor,
-            textcolor=node_textcolor,
-            hovertexts=node_hovertexts,
-        )
+        data = []
+
         mux_node_trace = self._create_mux_node_trace()
-        qubit_edge_trace = self._create_qubit_edge_trace(
+        data.append(mux_node_trace)
+
+        qubit_edge_trace = self._create_qubit_edge_traces(
             directed=directed,
             values=edge_values,
             texts=edge_texts,
             hovertexts=edge_hovertexts,
             color=edge_color,
+            textcolor=edge_textcolor,
             colorscale=colorscale,
         )
+        data += qubit_edge_trace
+
+        if edge_overlay:
+            qubit_edge_overlay_trace = self._create_qubit_edge_traces(
+                directed=directed,
+                values=edge_overlay_values,
+                texts=edge_overlay_texts,
+                hovertexts=edge_overlay_hovertexts,
+                color=edge_overlay_color,
+                textcolor=edge_overlay_textcolor,
+                colorscale=colorscale,
+            )
+            data += qubit_edge_overlay_trace
+
+        qubit_node_trace = self._create_qubit_node_traces(
+            values=node_values,
+            texts=node_texts,
+            hovertexts=node_hovertexts,
+            color=node_color,
+            linecolor=node_linecolor,
+            textcolor=node_textcolor,
+        )
+        data += qubit_node_trace
+
+        if node_overlay:
+            qubit_node_overlay_trace = self._create_qubit_node_traces(
+                values=node_overlay_values,
+                texts=node_overlay_texts,
+                hovertexts=node_overlay_hovertexts,
+                color=node_overlay_color,
+                linecolor=node_overlay_linecolor,
+                textcolor=node_overlay_textcolor,
+            )
+            data += qubit_node_overlay_trace
 
         fig = go.Figure(
-            data=qubit_edge_trace
-            + [
-                mux_node_trace,
-                qubit_node_trace,
-                qubit_node_layer_trace,
-            ],
+            data=data,
             layout=layout,
         )
         fig.show()
@@ -564,85 +603,80 @@ class LatticeGraph:
                 scale=3,
             )
 
-    def _create_qubit_node_trace(
+    def _create_qubit_node_traces(
         self,
-        labels: Collection[str] | None = None,
+        values: dict | None = None,
+        texts: dict | None = None,
         color: str | None = None,
         linecolor: str | None = None,
         textcolor: str | None = None,
         hovertexts: dict | None = None,
-    ) -> go.Scatter:
-        x = []
-        y = []
-        text = []
-        hovertext = []
+        colorscale: str = "Viridis",
+    ) -> list[go.Scatter]:
+        if values is None:
+            values = {node["label"]: 1.0 for node in self.qubit_nodes.values()}
+
+        values = {
+            key: value
+            for key, value in values.items()
+            if isinstance(value, (int, float)) and not math.isnan(value)
+        }
+
+        if len(values) == 0:
+            return []
+
+        v_min = min(values.values())
+        v_max = max(values.values())
+
+        traces = []
         for data in self.qubit_nodes.values():
-            if labels is not None and data["label"] not in labels:
+            label = data["label"]
+            if label not in values:
                 continue
-            pos = data["position"]
-            x.append(pos[0])
-            y.append(pos[1])
-            text.append(data["id"])
-            if hovertexts:
-                hovertext.append(hovertexts.get(data["label"]))
+            value = values[label]
+
+            if color:
+                node_color = color
+            elif v_max - v_min != 0:
+                value = (value - v_min) / (v_max - v_min)
+                node_color = sample_colorscale(colorscale, value)[0]
             else:
-                hovertext.append(data["label"])
+                node_color = "ghostwhite"
 
-        return go.Scatter(
-            x=x,
-            y=y,
-            mode="markers+text",
-            marker=dict(
-                color=color or "ghostwhite",
-                size=NODE_SIZE,
-                line_width=2,
-                line_color=linecolor or "black",
-                showscale=False,
-            ),
-            text=text,
-            textposition="middle center",
-            textfont=dict(
-                family="sans-serif",
-                color=textcolor or "black",
-                weight="bold",
-                size=TEXT_SIZE,
-            ),
-            hovertext=hovertext,
-            hoverinfo="text",
-        )
-
-    def _create_mux_node_trace(self) -> go.Scatter:
-        x = []
-        y = []
-        text = []
-        for data in self.mux_nodes.values():
             pos = data["position"]
-            x.append(pos[0])
-            y.append(pos[1])
-            text.append(data["id"])
+            trace = go.Scatter(
+                x=[pos[0]],
+                y=[pos[1]],
+                mode="markers+text",
+                marker=dict(
+                    color=node_color,
+                    size=NODE_SIZE,
+                    line_width=2,
+                    line_color=linecolor or "black",
+                    showscale=False,
+                ),
+                text=[texts.get(label)] if texts else label,
+                textposition="middle center",
+                textfont=dict(
+                    family="sans-serif",
+                    color=textcolor or "black",
+                    weight="bold",
+                    size=TEXT_SIZE,
+                ),
+                hovertext=hovertexts.get(label) if hovertexts else label,
+                hoverinfo="text",
+            )
+            traces.append(trace)
+        return traces
 
-        return go.Scatter(
-            x=x,
-            y=y,
-            mode="text",
-            text=text,
-            textposition="middle center",
-            textfont=dict(
-                family="sans-serif",
-                color="lightgrey",
-                weight="bold",
-                size=TEXT_SIZE,
-            ),
-            hoverinfo="none",
-        )
-
-    def _create_qubit_edge_trace(
+    def _create_qubit_edge_traces(
         self,
         directed: bool = True,
         values: dict | None = None,
         texts: dict | None = None,
         hovertexts: dict | None = None,
         color: str | None = None,
+        textcolor: str | None = None,
         colorscale: str = "Viridis",
     ) -> list[go.Scatter]:
         if values is None:
@@ -661,15 +695,23 @@ class LatticeGraph:
         v_max = max(values.values())
 
         trace = []
-        for edge in self.qubit_edges.values():
-            x_ini, y_ini = edge["position"][0]
-            x_mid, y_mid = edge["position"][1]
-            x_fin, y_fin = edge["position"][2]
-            label = edge["label"]
-
-            value = values.get(label)
-            if value is None:
+        for data in self.qubit_edges.values():
+            label = data["label"]
+            if label not in values:
                 continue
+            value = values[label]
+
+            if color:
+                edge_color = color
+            elif v_max - v_min != 0:
+                value = (value - v_min) / (v_max - v_min)
+                edge_color = sample_colorscale(colorscale, value)[0]
+            else:
+                edge_color = "ghostwhite"
+
+            x_ini, y_ini = data["position"][0]
+            x_mid, y_mid = data["position"][1]
+            x_fin, y_fin = data["position"][2]
 
             margin = 0.28
 
@@ -692,14 +734,6 @@ class LatticeGraph:
             else:
                 x = [x_ini, x_mid, x_fin]
                 y = [y_ini, y_mid, y_fin]
-
-            if color:
-                edge_color = color
-            elif v_max - v_min != 0:
-                value = (value - v_min) / (v_max - v_min)
-                edge_color = sample_colorscale(colorscale, value)[0]
-            else:
-                edge_color = "black"
 
             if directed:
                 trace.append(
@@ -732,7 +766,7 @@ class LatticeGraph:
                             width=NODE_SIZE + 2,
                             color=edge_color,
                         ),
-                        text=[None, texts[label], None] if texts else None,
+                        text=[None, texts.get(label), None] if texts else None,
                         textposition="middle center",
                         textfont=dict(
                             family="sans-serif",
@@ -745,6 +779,31 @@ class LatticeGraph:
                     )
                 )
         return trace
+
+    def _create_mux_node_trace(self) -> go.Scatter:
+        x = []
+        y = []
+        text = []
+        for data in self.mux_nodes.values():
+            pos = data["position"]
+            x.append(pos[0])
+            y.append(pos[1])
+            text.append(data["id"])
+
+        return go.Scatter(
+            x=x,
+            y=y,
+            mode="text",
+            text=text,
+            textposition="middle center",
+            textfont=dict(
+                family="sans-serif",
+                color="lightgrey",
+                weight="bold",
+                size=TEXT_SIZE,
+            ),
+            hoverinfo="none",
+        )
 
     def plot_lattice_data(
         self,
