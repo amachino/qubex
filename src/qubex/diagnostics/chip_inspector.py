@@ -129,7 +129,88 @@ class InspectionSummary:
                 for message in messages:
                     print(f"    - {message}")
 
-    def draw(self):
+    def create_node_hovertext(
+        self,
+        label: str,
+        invalid_types: list[str] | None = None,
+    ) -> str:
+        if invalid_types is None:
+            invalid_types = []
+        node = self.graph.get_qubit_node_by_label(label)
+
+        p = node["properties"]
+        f_ge = p.get("frequency")
+        alpha = p.get("anharmonicity")
+        t1 = p.get("t1")
+        t2 = p.get("t2_echo")
+        f_ef = f_ge + alpha if f_ge is not None and alpha is not None else None
+
+        if f_ge is not None:
+            f_ge = f"{f_ge * 1e3:.0f} MHz"
+        if f_ef is not None:
+            f_ef = f"{f_ef * 1e3:.0f} MHz"
+        if alpha is not None:
+            alpha = f"{alpha * 1e3:.0f} MHz"
+        if t1 is not None:
+            t1 = f"{t1 * 1e-3:.0f} µs"
+        if t2 is not None:
+            t2 = f"{t2 * 1e-3:.0f} µs"
+
+        hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
+        hovertext += "<br>".join(
+            [
+                f"f_ge = {f_ge}",
+                f"f_ef = {f_ef}",
+                f"α    = {alpha}",
+                f"T1   = {t1}",
+                f"T2   = {t2}",
+            ]
+        )
+        return hovertext
+
+    def create_edge_hovertext(
+        self,
+        label: str,
+        invalid_types: list[str] | None = None,
+    ) -> str:
+        if invalid_types is None:
+            invalid_types = []
+
+        edge = self.graph.get_qubit_edge_by_label(label)
+        i, j = edge["id"]
+        f_ge_i = self.graph.qubit_nodes[i]["properties"].get("frequency")
+        f_ge_j = self.graph.qubit_nodes[j]["properties"].get("frequency")
+        a_i = self.graph.qubit_nodes[i]["properties"].get("anharmonicity")
+
+        Delta_ge_ge = None
+        if f_ge_i is not None and f_ge_j is not None:
+            Delta_ge_ge = f_ge_i - f_ge_j
+            Delta_ge_ge = f"{Delta_ge_ge * 1e3:.0f} MHz"
+
+        Delta_ef_ge = None
+        if f_ge_i is not None and a_i is not None and f_ge_j is not None:
+            Delta_ef_ge = f_ge_i + a_i - f_ge_j
+            Delta_ef_ge = f"{Delta_ef_ge * 1e3:.0f} MHz"
+
+        g = edge["properties"].get("coupling")
+        if g is not None:
+            g = f"{g * 1e3:.0f} MHz"
+
+        hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
+        hovertext += "<br>".join(
+            [
+                f"Δ_ge = {Delta_ge_ge}",
+                f"Δ_ef = {Delta_ef_ge}",
+                f"g    = {g}",
+            ]
+        )
+        return hovertext
+
+    def draw(
+        self,
+        save_image: bool = False,
+        images_dir: str = "./images",
+    ):
         all_nodes = {node["label"] for node in self.graph.qubit_nodes.values()}
         invalid_nodes = set(self.invalid_nodes)
         valid_nodes = all_nodes - invalid_nodes
@@ -151,75 +232,63 @@ class InspectionSummary:
         invalid_edge_values = {label: 1 for label in invalid_edges}
         valid_edge_values = {label: 1 for label in valid_edges}
 
-        valid_node_hovertexts = {}
+        invalid_types: dict[str, list[str]] = defaultdict(list)
+        for type, inspection in self.inspections.items():
+            for label in inspection.invalid_nodes:
+                invalid_types[label].append(type.replace("Type", ""))
+            for label in inspection.invalid_edges:
+                invalid_types[label].append(type.replace("Type", ""))
+
+        node_hovertexts = {}
         for data in self.graph.qubit_nodes.values():
             label = data["label"]
-            p = data["properties"]
-            f_ge = p.get("frequency")
-            alpha = p.get("anharmonicity")
-            t1 = p.get("t1")
-            t2 = p.get("t2_echo")
-            f_ef = f_ge + alpha if f_ge is not None and alpha is not None else None
-
-            if f_ge is not None:
-                f_ge = f"{f_ge * 1e3:.0f} MHz"
-            if f_ef is not None:
-                f_ef = f"{f_ef * 1e3:.0f} MHz"
-            if alpha is not None:
-                alpha = f"{alpha * 1e3:.0f} MHz"
-            if t1 is not None:
-                t1 = f"{t1 * 1e-3:.0f} µs"
-            if t2 is not None:
-                t2 = f"{t2 * 1e-3:.0f} µs"
-
-            valid_node_hovertexts[label] = "<br>".join(
-                [
-                    f"f_ge: {f_ge}",
-                    f"f_ef: {f_ef}",
-                    f"α: {alpha}",
-                    f"T1: {t1}",
-                    f"T2: {t2}",
-                ]
-            )
-
-        invalid_node_hovertexts = {
-            label: f"{'<br>'.join(messages)}"
-            for label, messages in self.invalid_nodes.items()
-        }
-
-        invalid_edge_hovertexts = {
-            label: f"{'<br>'.join(messages)}"
-            for label, messages in self.invalid_edges.items()
-        }
+            hovertext = self.create_node_hovertext(label, invalid_types.get(label))
+            node_hovertexts[label] = hovertext
+        edge_hovertexts = {}
+        for data in self.graph.qubit_edges.values():
+            label = data["label"]
+            hovertext = self.create_edge_hovertext(label, invalid_types.get(label))
+            edge_hovertexts[label] = hovertext
 
         self.graph.plot_graph_data(
             title="Valid nodes and edges",
-            node_hovertexts=valid_node_hovertexts,
+            node_hovertexts=node_hovertexts,
             node_overlay=True,
             node_overlay_values=valid_node_values,
             node_overlay_color="blue",
             node_overlay_linecolor="black",
             node_overlay_textcolor="white",
-            node_overlay_hovertexts=valid_node_hovertexts,
+            node_overlay_hovertexts=node_hovertexts,
+            edge_color="ghostwhite",
+            edge_hovertexts=edge_hovertexts,
             edge_overlay=True,
             edge_overlay_values=valid_edge_values,
             edge_overlay_color="blue",
+            edge_overlay_hovertexts=edge_hovertexts,
         )
 
         self.graph.plot_graph_data(
             title="Invalid nodes and edges",
-            node_hovertexts=valid_node_hovertexts,
+            node_hovertexts=node_hovertexts,
             node_overlay=True,
             node_overlay_values=invalid_node_values,
             node_overlay_color="red",
             node_overlay_linecolor="black",
             node_overlay_textcolor="white",
-            node_overlay_hovertexts=invalid_node_hovertexts,
+            node_overlay_hovertexts=node_hovertexts,
+            edge_color="ghostwhite",
+            edge_hovertexts=edge_hovertexts,
             edge_overlay=True,
             edge_overlay_values=invalid_edge_values,
             edge_overlay_color="red",
-            edge_overlay_hovertexts=invalid_edge_hovertexts,
+            edge_overlay_hovertexts=edge_hovertexts,
+            save_image=save_image,
+            image_name="invalid_nodes_and_edges",
+            images_dir=images_dir,
         )
 
         for inspection in self.inspections.values():
-            inspection.draw()
+            inspection.draw(
+                save_image=save_image,
+                images_dir=images_dir,
+            )

@@ -474,6 +474,58 @@ class LatticeGraph:
             for spectator in self.get_spectator_indices(qubit, in_same_mux=in_same_mux)
         ]
 
+    def get_qubit_node_by_label(
+        self,
+        label: str,
+    ) -> QubitNode:
+        """
+        Get qubit node by label.
+
+        Parameters
+        ----------
+        label : str
+            Qubit label.
+
+        Returns
+        -------
+        QubitNode
+            Qubit node.
+        """
+        labels = nx.get_node_attributes(self.qubit_graph, "label")
+        node = None
+        for k, v in labels.items():
+            if v == label:
+                node = self.qubit_nodes[k]
+        if node is None:
+            raise ValueError(f"Qubit node with label '{label}' does not exist.")
+        return node
+
+    def get_qubit_edge_by_label(
+        self,
+        label: str,
+    ) -> QubitEdge:
+        """
+        Get qubit edge by label.
+
+        Parameters
+        ----------
+        label : str
+            Qubit edge label.
+
+        Returns
+        -------
+        QubitEdge
+            Qubit edge.
+        """
+        labels = nx.get_edge_attributes(self.qubit_graph, "label")
+        edge = None
+        for k, v in labels.items():
+            if v == label:
+                edge = self.qubit_edges[k]
+        if edge is None:
+            raise ValueError(f"Qubit edge with label '{label}' does not exist.")
+        return edge
+
     def plot_graph_data(
         self,
         *,
@@ -533,8 +585,17 @@ class LatticeGraph:
                 showticklabels=False,
             ),
             plot_bgcolor="white",
-            hovermode="closest",
             showlegend=False,
+            hovermode="closest",
+            hoverlabel=dict(
+                bgcolor="white",
+                bordercolor="black",
+                font=dict(
+                    family="monospace",
+                    size=TEXT_SIZE,
+                    color="black",
+                ),
+            ),
         )
 
         data = []
@@ -607,10 +668,10 @@ class LatticeGraph:
         self,
         values: dict | None = None,
         texts: dict | None = None,
+        hovertexts: dict | None = None,
         color: str | None = None,
         linecolor: str | None = None,
         textcolor: str | None = None,
-        hovertexts: dict | None = None,
         colorscale: str = "Viridis",
     ) -> list[go.Scatter]:
         if values is None:
@@ -655,10 +716,10 @@ class LatticeGraph:
                     line_color=linecolor or "black",
                     showscale=False,
                 ),
-                text=[texts.get(label)] if texts else label,
+                text=[texts.get(label)] if texts else data["id"],
                 textposition="middle center",
                 textfont=dict(
-                    family="sans-serif",
+                    family="monospace",
                     color=textcolor or "black",
                     weight="bold",
                     size=TEXT_SIZE,
@@ -769,7 +830,7 @@ class LatticeGraph:
                         text=[None, texts.get(label), None] if texts else None,
                         textposition="middle center",
                         textfont=dict(
-                            family="sans-serif",
+                            family="monospace",
                             color="ghostwhite" if value < 0.5 else "black",
                             weight="bold",
                             size=8,
@@ -797,7 +858,7 @@ class LatticeGraph:
             text=text,
             textposition="middle center",
             textfont=dict(
-                family="sans-serif",
+                family="monospace",
                 color="lightgrey",
                 weight="bold",
                 size=TEXT_SIZE,
@@ -831,7 +892,7 @@ class LatticeGraph:
                 texttemplate="%{text}",
                 showscale=False,
                 textfont=dict(
-                    family="sans-serif",
+                    family="monospace",
                     size=TEXT_SIZE,
                     weight="bold",
                 ),

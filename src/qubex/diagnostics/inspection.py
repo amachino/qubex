@@ -218,6 +218,75 @@ class Inspection(ABC):
         for edge in edges:
             self._invalid_edges[edge].append(message)
 
+    def create_node_hovertext(
+        self,
+        label: str,
+    ) -> str:
+        node = self.graph.get_qubit_node_by_label(label)
+        p = node["properties"]
+        f_ge = p.get("frequency")
+        alpha = p.get("anharmonicity")
+        t1 = p.get("t1")
+        t2 = p.get("t2_echo")
+        f_ef = f_ge + alpha if f_ge is not None and alpha is not None else None
+
+        if f_ge is not None:
+            f_ge = f"{f_ge * 1e3:.0f} MHz"
+        if f_ef is not None:
+            f_ef = f"{f_ef * 1e3:.0f} MHz"
+        if alpha is not None:
+            alpha = f"{alpha * 1e3:.0f} MHz"
+        if t1 is not None:
+            t1 = f"{t1 * 1e-3:.0f} µs"
+        if t2 is not None:
+            t2 = f"{t2 * 1e-3:.0f} µs"
+
+        hovertext = f"{label}:<br>"
+        hovertext += "<br>".join(
+            [
+                f"f_ge = {f_ge}",
+                f"f_ef = {f_ef}",
+                f"α    = {alpha}",
+                f"T1   = {t1}",
+                f"T2   = {t2}",
+            ]
+        )
+        return hovertext
+
+    def create_edge_hovertext(
+        self,
+        label: str,
+    ) -> str:
+        edge = self.graph.get_qubit_edge_by_label(label)
+        i, j = edge["id"]
+        f_ge_i = self.graph.qubit_nodes[i]["properties"].get("frequency")
+        f_ge_j = self.graph.qubit_nodes[j]["properties"].get("frequency")
+        a_i = self.graph.qubit_nodes[i]["properties"].get("anharmonicity")
+
+        Delta_ge_ge = None
+        if f_ge_i is not None and f_ge_j is not None:
+            Delta_ge_ge = f_ge_i - f_ge_j
+            Delta_ge_ge = f"{Delta_ge_ge * 1e3:.0f} MHz"
+
+        Delta_ef_ge = None
+        if f_ge_i is not None and a_i is not None and f_ge_j is not None:
+            Delta_ef_ge = f_ge_i + a_i - f_ge_j
+            Delta_ef_ge = f"{Delta_ef_ge * 1e3:.0f} MHz"
+
+        g = edge["properties"].get("coupling")
+        if g is not None:
+            g = f"{g * 1e3:.0f} MHz"
+
+        hovertext = f"{label}:<br>"
+        hovertext += "<br>".join(
+            [
+                f"Δ_ge = {Delta_ge_ge}",
+                f"Δ_ef = {Delta_ef_ge}",
+                f"g    = {g}",
+            ]
+        )
+        return hovertext
+
     def print(self):
         print(f"[{self.name}]")
         print(f"{self.description}")
@@ -235,15 +304,24 @@ class Inspection(ABC):
                 for message in messages:
                     print(f"    - {message}")
 
-    def draw(self):
-        node_hovertexts = {
-            label: f"{'<br>'.join(messages)}"
-            for label, messages in self.invalid_nodes.items()
-        }
+    def draw(
+        self,
+        save_image: bool = False,
+        images_dir: str = "./images",
+    ):
         node_values = {label: 1 for label in self.invalid_nodes.keys()}
         edge_values = {label: 1 for label in self.invalid_edges.keys()}
+        node_hovertexts = {
+            data["label"]: self.create_node_hovertext(data["label"])
+            for data in self.graph.qubit_nodes.values()
+        }
+        edge_hovertexts = {
+            data["label"]: self.create_edge_hovertext(data["label"])
+            for data in self.graph.qubit_edges.values()
+        }
         self.graph.plot_graph_data(
             title=f"{self.name}: {self.description}",
+            node_hovertexts=node_hovertexts,
             node_overlay=True,
             node_overlay_values=node_values,
             node_overlay_color="red",
@@ -251,8 +329,12 @@ class Inspection(ABC):
             node_overlay_textcolor="white",
             node_overlay_hovertexts=node_hovertexts,
             edge_color="ghostwhite",
+            edge_hovertexts=edge_hovertexts,
             edge_overlay=True,
             edge_overlay_values=edge_values,
             edge_overlay_color="red",
-            edge_overlay_hovertexts=self.invalid_edges,
+            edge_overlay_hovertexts=edge_hovertexts,
+            save_image=save_image,
+            image_name=f"{self.name.replace(' ', '_').lower()}",
+            images_dir=images_dir,
         )

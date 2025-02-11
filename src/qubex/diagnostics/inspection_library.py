@@ -36,26 +36,27 @@ class Type0A(Inspection):
                     [label_i],
                     f"Frequency of {label_i} is not defined.",
                 )
-            if f_ge_i < min_frequency:
-                self.add_invalid_nodes(
-                    [label_i],
-                    f"Frequency of {label_i} ({f_ge_i:.3f} GHz) is lower than {min_frequency:.3f} GHz.",
-                )
-            if f_ge_i > max_frequency:
-                self.add_invalid_nodes(
-                    [label_i],
-                    f"Frequency of {label_i} ({f_ge_i:.3f} GHz) is higher than {max_frequency:.3f} GHz.",
-                )
-            if t1_i < min_t1:
-                self.add_invalid_nodes(
-                    [label_i],
-                    f"T1 of {label_i} ({t1_i * 1e-3:.1f} μs) is lower than {min_t1 * 1e-3:.1f} μs.",
-                )
-            if t2_i < min_t2:
-                self.add_invalid_nodes(
-                    [label_i],
-                    f"T2 of {label_i} ({t2_i * 1e-3:.1f} μs) is lower than {min_t2 * 1e-3:.1f} μs.",
-                )
+            else:
+                if f_ge_i < min_frequency:
+                    self.add_invalid_nodes(
+                        [label_i],
+                        f"Frequency of {label_i} ({f_ge_i:.3f} GHz) is lower than {min_frequency:.3f} GHz.",
+                    )
+                if f_ge_i > max_frequency:
+                    self.add_invalid_nodes(
+                        [label_i],
+                        f"Frequency of {label_i} ({f_ge_i:.3f} GHz) is higher than {max_frequency:.3f} GHz.",
+                    )
+                if t1_i < min_t1:
+                    self.add_invalid_nodes(
+                        [label_i],
+                        f"T1 of {label_i} ({t1_i * 1e-3:.1f} μs) is lower than {min_t1 * 1e-3:.1f} μs.",
+                    )
+                if t2_i < min_t2:
+                    self.add_invalid_nodes(
+                        [label_i],
+                        f"T2 of {label_i} ({t2_i * 1e-3:.1f} μs) is lower than {min_t2 * 1e-3:.1f} μs.",
+                    )
 
 
 class Type0B(Inspection):
