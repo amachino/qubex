@@ -223,6 +223,7 @@ class Inspection(ABC):
         label: str,
     ) -> str:
         node = self.graph.get_qubit_node_by_label(label)
+        id = node["id"]
         p = node["properties"]
         f_ge = p.get("frequency")
         alpha = p.get("anharmonicity")
@@ -232,14 +233,24 @@ class Inspection(ABC):
 
         if f_ge is not None:
             f_ge = f"{f_ge * 1e3:.0f} MHz"
+        else:
+            f_ge = f"({self.get_ge_frequency(id) * 1e3:.0f}) MHz"
         if f_ef is not None:
             f_ef = f"{f_ef * 1e3:.0f} MHz"
+        else:
+            f_ef = f"({self.get_ef_frequency(id) * 1e3:.0f}) MHz"
         if alpha is not None:
             alpha = f"{alpha * 1e3:.0f} MHz"
+        else:
+            alpha = f"({self.get_anharmonicity(id) * 1e3:.0f}) MHz"
         if t1 is not None:
             t1 = f"{t1 * 1e-3:.0f} µs"
+        else:
+            t1 = f"({self.get_t1(id) * 1e-3:.0f}) µs"
         if t2 is not None:
             t2 = f"{t2 * 1e-3:.0f} µs"
+        else:
+            t2 = f"({self.get_t2(id) * 1e-3:.0f}) µs"
 
         hovertext = f"{label}:<br>"
         hovertext += "<br>".join(
@@ -267,15 +278,21 @@ class Inspection(ABC):
         if f_ge_i is not None and f_ge_j is not None:
             Delta_ge_ge = f_ge_i - f_ge_j
             Delta_ge_ge = f"{Delta_ge_ge * 1e3:.0f} MHz"
+        else:
+            Delta_ge_ge = f"({self.get_ge_ge_detuning((i, j)) * 1e3:.0f}) MHz"
 
         Delta_ef_ge = None
         if f_ge_i is not None and a_i is not None and f_ge_j is not None:
             Delta_ef_ge = f_ge_i + a_i - f_ge_j
             Delta_ef_ge = f"{Delta_ef_ge * 1e3:.0f} MHz"
+        else:
+            Delta_ef_ge = f"({self.get_ef_ge_detuning((i, j)) * 1e3:.0f}) MHz"
 
         g = edge["properties"].get("coupling")
         if g is not None:
             g = f"{g * 1e3:.0f} MHz"
+        else:
+            g = f"({self.get_nn_coupling((i, j)) * 1e3:.0f}) MHz"
 
         hovertext = f"{label}:<br>"
         hovertext += "<br>".join(
@@ -324,7 +341,7 @@ class Inspection(ABC):
             node_hovertexts=node_hovertexts,
             node_overlay=True,
             node_overlay_values=node_values,
-            node_overlay_color="red",
+            node_overlay_color="#ef553b",
             node_overlay_linecolor="black",
             node_overlay_textcolor="white",
             node_overlay_hovertexts=node_hovertexts,
@@ -332,7 +349,7 @@ class Inspection(ABC):
             edge_hovertexts=edge_hovertexts,
             edge_overlay=True,
             edge_overlay_values=edge_values,
-            edge_overlay_color="red",
+            edge_overlay_color="#ef553b",
             edge_overlay_hovertexts=edge_hovertexts,
             save_image=save_image,
             image_name=f"{self.name.replace(' ', '_').lower()}",

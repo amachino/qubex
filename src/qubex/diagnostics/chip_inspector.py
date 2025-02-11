@@ -156,7 +156,10 @@ class InspectionSummary:
         if t2 is not None:
             t2 = f"{t2 * 1e-3:.0f} µs"
 
-        hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
+        if len(invalid_types) == 0:
+            hovertext = f"{label}<br>"
+        else:
+            hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
         hovertext += "<br>".join(
             [
                 f"f_ge = {f_ge}",
@@ -196,7 +199,10 @@ class InspectionSummary:
         if g is not None:
             g = f"{g * 1e3:.0f} MHz"
 
-        hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
+        if len(invalid_types) == 0:
+            hovertext = f"{label}<br>"
+        else:
+            hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
         hovertext += "<br>".join(
             [
                 f"Δ_ge = {Delta_ge_ge}",
@@ -255,7 +261,7 @@ class InspectionSummary:
             node_hovertexts=node_hovertexts,
             node_overlay=True,
             node_overlay_values=valid_node_values,
-            node_overlay_color="blue",
+            node_overlay_color="#636EFA",
             node_overlay_linecolor="black",
             node_overlay_textcolor="white",
             node_overlay_hovertexts=node_hovertexts,
@@ -263,7 +269,7 @@ class InspectionSummary:
             edge_hovertexts=edge_hovertexts,
             edge_overlay=True,
             edge_overlay_values=valid_edge_values,
-            edge_overlay_color="blue",
+            edge_overlay_color="#636EFA",
             edge_overlay_hovertexts=edge_hovertexts,
         )
 
@@ -272,7 +278,7 @@ class InspectionSummary:
             node_hovertexts=node_hovertexts,
             node_overlay=True,
             node_overlay_values=invalid_node_values,
-            node_overlay_color="red",
+            node_overlay_color="#ef553b",
             node_overlay_linecolor="black",
             node_overlay_textcolor="white",
             node_overlay_hovertexts=node_hovertexts,
@@ -280,7 +286,7 @@ class InspectionSummary:
             edge_hovertexts=edge_hovertexts,
             edge_overlay=True,
             edge_overlay_values=invalid_edge_values,
-            edge_overlay_color="red",
+            edge_overlay_color="#ef553b",
             edge_overlay_hovertexts=edge_hovertexts,
             save_image=save_image,
             image_name="invalid_nodes_and_edges",
