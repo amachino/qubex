@@ -196,6 +196,9 @@ class InspectionSummary:
             edge_overlay_values=valid_edge_values,
             edge_overlay_color="#636EFA",
             edge_overlay_hovertexts=edge_hovertexts,
+            save_image=save_image,
+            image_name="inspection_summary_valid",
+            images_dir=images_dir,
         )
 
         self.graph.plot_graph_data(
@@ -214,7 +217,7 @@ class InspectionSummary:
             edge_overlay_color="#ef553b",
             edge_overlay_hovertexts=edge_hovertexts,
             save_image=save_image,
-            image_name="invalid_nodes_and_edges",
+            image_name="inspection_summary_invalid",
             images_dir=images_dir,
         )
 
