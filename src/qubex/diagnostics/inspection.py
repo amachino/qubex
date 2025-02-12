@@ -3,7 +3,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, replace
-from functools import cached_property
 
 import numpy as np
 
@@ -55,26 +54,6 @@ class Inspection(ABC):
     def invalid_edges(self) -> dict[str, list[str]]:
         return dict(sorted(self._invalid_edges.items()))
 
-    @cached_property
-    def nearest_neighbors(self) -> dict[int, list[int]]:
-        nn = {
-            i: sorted(list(self.graph.qubit_graph.neighbors(i)))
-            for i in self.graph.qubit_nodes.keys()
-        }
-        return dict(sorted(nn.items()))
-
-    @cached_property
-    def next_nearest_neighbors(self) -> dict[int, list[int]]:
-        nn = self.nearest_neighbors
-        nnm = {}
-        for i, neighbors in nn.items():
-            one_hop = set(neighbors)
-            two_hop = set()
-            for j in neighbors:
-                two_hop.update(nn[j])
-            nnm[i] = sorted(list(two_hop - one_hop - {i}))
-        return dict(sorted(nnm.items()))
-
     def get_label(
         self,
         target: int | tuple[int, int],
@@ -97,12 +76,7 @@ class Inspection(ABC):
         target: int | tuple[int, int],
         property_type: str,
     ) -> float | None:
-        if isinstance(target, int):
-            value = self.graph.qubit_nodes[target]["properties"].get(property_type)
-        elif isinstance(target, tuple):
-            value = self.graph.qubit_edges[target]["properties"].get(property_type)
-        else:
-            raise ValueError("Invalid target type.")
+        value = self.graph.get_property(target, property_type)
 
         # treat nan as None
         if value is None or np.isnan(value):
@@ -221,7 +195,11 @@ class Inspection(ABC):
     def create_node_hovertext(
         self,
         label: str,
+        invalid_types: list[str] | None = None,
     ) -> str:
+        if invalid_types is None:
+            invalid_types = []
+
         node = self.graph.get_qubit_node_by_label(label)
         id = node["id"]
         p = node["properties"]
@@ -252,7 +230,11 @@ class Inspection(ABC):
         else:
             t2 = f"({self.get_t2(id) * 1e-3:.0f}) µs"
 
-        hovertext = f"{label}:<br>"
+        if len(invalid_types) == 0:
+            hovertext = f"{label}<br>"
+        else:
+            hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
+
         hovertext += "<br>".join(
             [
                 f"f_ge = {f_ge}",
@@ -267,7 +249,11 @@ class Inspection(ABC):
     def create_edge_hovertext(
         self,
         label: str,
+        invalid_types: list[str] | None = None,
     ) -> str:
+        if invalid_types is None:
+            invalid_types = []
+
         edge = self.graph.get_qubit_edge_by_label(label)
         i, j = edge["id"]
         f_ge_i = self.graph.qubit_nodes[i]["properties"].get("frequency")
@@ -294,7 +280,11 @@ class Inspection(ABC):
         else:
             g = f"({self.get_nn_coupling((i, j)) * 1e3:.0f}) MHz"
 
-        hovertext = f"{label}:<br>"
+        if len(invalid_types) == 0:
+            hovertext = f"{label}<br>"
+        else:
+            hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
+
         hovertext += "<br>".join(
             [
                 f"Δ_ge = {Delta_ge_ge}",
@@ -308,14 +298,14 @@ class Inspection(ABC):
         print(f"[{self.name}]")
         print(f"{self.description}")
         print()
-        print(f"{len(self._invalid_nodes)} invalid nodes: ")
-        if self._invalid_nodes:
+        print(f"{len(self.invalid_nodes)} invalid nodes: ")
+        if self.invalid_nodes:
             for label, messages in self.invalid_nodes.items():
                 print(f"  {label}:")
                 for message in messages:
                     print(f"    - {message}")
-        print(f"{len(self._invalid_edges)} invalid edges: ")
-        if self._invalid_edges:
+        print(f"{len(self.invalid_edges)} invalid edges: ")
+        if self.invalid_edges:
             for label, messages in self.invalid_edges.items():
                 print(f"  {label}:")
                 for message in messages:

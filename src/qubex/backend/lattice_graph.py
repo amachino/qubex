@@ -129,24 +129,56 @@ class LatticeGraph:
     def qubit_nodes(
         self,
     ) -> dict[int, QubitNode]:
+        """
+        Get qubit nodes.
+
+        Returns
+        -------
+        dict[int, QubitNode]
+            Qubit nodes.
+        """
         return dict(self.qubit_graph.nodes(data=True))
 
     @cached_property
     def resonator_nodes(
         self,
     ) -> dict[int, ResonatorNode]:
+        """
+        Get resonator nodes.
+
+        Returns
+        -------
+        dict[int, ResonatorNode]
+            Resonator nodes.
+        """
         return dict(self.resonator_graph.nodes(data=True))
 
     @cached_property
     def mux_nodes(
         self,
     ) -> dict[int, MuxNode]:
+        """
+        Get MUX nodes.
+
+        Returns
+        -------
+        dict[int, MuxNode]
+            MUX nodes.
+        """
         return dict(self.mux_graph.nodes(data=True))
 
     @cached_property
     def qubit_edges(
         self,
     ) -> dict[tuple[int, int], QubitEdge]:
+        """
+        Get qubit edges.
+
+        Returns
+        -------
+        dict[tuple[int, int], QubitEdge]
+            Qubit edges.
+        """
         return {
             (id0, id1): data for id0, id1, data in self.qubit_graph.edges(data=True)
         }
@@ -155,16 +187,177 @@ class LatticeGraph:
     def qubit_undirected_graph(
         self,
     ) -> nx.Graph:
+        """
+        Get qubit undirected graph.
+
+        Returns
+        -------
+        nx.Graph
+            Qubit undirected graph.
+        """
         return self.qubit_graph.to_undirected(as_view=True)
 
     @cached_property
     def qubit_undirected_edges(
         self,
     ) -> dict[tuple[int, int], QubitEdge]:
+        """
+        Get qubit undirected edges.
+
+        Returns
+        -------
+        dict[tuple[int, int], QubitEdge]
+            Qubit undirected edges.
+        """
         return {
             (id0, id1): data
             for id0, id1, data in self.qubit_undirected_graph.edges(data=True)
         }
+
+    @cached_property
+    def qubit_node_labels(
+        self,
+    ) -> list[str]:
+        """
+        Get qubit node labels.
+
+        Returns
+        -------
+        list[str]
+            List of qubit node labels.
+        """
+        return [node["label"] for node in self.qubit_nodes.values()]
+
+    @cached_property
+    def qubit_edge_labels(
+        self,
+    ) -> list[str]:
+        """
+        Get qubit edge labels.
+
+        Returns
+        -------
+        list[str]
+            List of qubit edge labels.
+        """
+        return [edge["label"] for edge in self.qubit_edges.values()]
+
+    @cached_property
+    def nearest_neighbors(self) -> dict[int, list[int]]:
+        """
+        Get nearest neighbors.
+
+        Returns
+        -------
+        dict[int, list[int]]
+            Nearest neighbors.
+        """
+        nn = {
+            i: sorted(list(self.qubit_graph.neighbors(i)))
+            for i in self.qubit_nodes.keys()
+        }
+        return dict(sorted(nn.items()))
+
+    @cached_property
+    def next_nearest_neighbors(self) -> dict[int, list[int]]:
+        """
+        Get next nearest neighbors.
+
+        Returns
+        -------
+        dict[int, list[int]]
+            Next nearest neighbors.
+        """
+        nn = self.nearest_neighbors
+        nnm = {}
+        for i, neighbors in nn.items():
+            one_hop = set(neighbors)
+            two_hop = set()
+            for j in neighbors:
+                two_hop.update(nn[j])
+            nnm[i] = sorted(list(two_hop - one_hop - {i}))
+        return dict(sorted(nnm.items()))
+
+    def get_qubit_node_by_label(
+        self,
+        label: str,
+    ) -> QubitNode:
+        """
+        Get qubit node by label.
+
+        Parameters
+        ----------
+        label : str
+            Qubit label.
+
+        Returns
+        -------
+        QubitNode
+            Qubit node.
+        """
+        labels = nx.get_node_attributes(self.qubit_graph, "label")
+        node = None
+        for k, v in labels.items():
+            if v == label:
+                node = self.qubit_nodes[k]
+        if node is None:
+            raise ValueError(f"Qubit node with label '{label}' does not exist.")
+        return node
+
+    def get_qubit_edge_by_label(
+        self,
+        label: str,
+    ) -> QubitEdge:
+        """
+        Get qubit edge by label.
+
+        Parameters
+        ----------
+        label : str
+            Qubit edge label.
+
+        Returns
+        -------
+        QubitEdge
+            Qubit edge.
+        """
+        labels = nx.get_edge_attributes(self.qubit_graph, "label")
+        edge = None
+        for k, v in labels.items():
+            if v == label:
+                edge = self.qubit_edges[k]
+        if edge is None:
+            raise ValueError(f"Qubit edge with label '{label}' does not exist.")
+        return edge
+
+    def get_property(
+        self,
+        target: int | tuple[int, int],
+        property_type: str,
+    ) -> float | None:
+        """
+        Get property of the target.
+
+        Parameters
+        ----------
+        target : int, tuple[int, int]
+            Qubit index or edge.
+        property_type : str
+            Property type.
+
+        Returns
+        -------
+        float, None
+            Property value.
+        """
+        if isinstance(target, int):
+            value = self.qubit_nodes[target]["properties"].get(property_type)
+        elif isinstance(target, tuple):
+            value = self.qubit_edges[target]["properties"].get(property_type)
+        else:
+            raise ValueError("Invalid target type.")
+
+        return value
 
     def _init_qubit_graph(self):
         label_mapping = {}
@@ -473,58 +666,6 @@ class LatticeGraph:
             self.qubits[spectator]
             for spectator in self.get_spectator_indices(qubit, in_same_mux=in_same_mux)
         ]
-
-    def get_qubit_node_by_label(
-        self,
-        label: str,
-    ) -> QubitNode:
-        """
-        Get qubit node by label.
-
-        Parameters
-        ----------
-        label : str
-            Qubit label.
-
-        Returns
-        -------
-        QubitNode
-            Qubit node.
-        """
-        labels = nx.get_node_attributes(self.qubit_graph, "label")
-        node = None
-        for k, v in labels.items():
-            if v == label:
-                node = self.qubit_nodes[k]
-        if node is None:
-            raise ValueError(f"Qubit node with label '{label}' does not exist.")
-        return node
-
-    def get_qubit_edge_by_label(
-        self,
-        label: str,
-    ) -> QubitEdge:
-        """
-        Get qubit edge by label.
-
-        Parameters
-        ----------
-        label : str
-            Qubit edge label.
-
-        Returns
-        -------
-        QubitEdge
-            Qubit edge.
-        """
-        labels = nx.get_edge_attributes(self.qubit_graph, "label")
-        edge = None
-        for k, v in labels.items():
-            if v == label:
-                edge = self.qubit_edges[k]
-        if edge is None:
-            raise ValueError(f"Qubit edge with label '{label}' does not exist.")
-        return edge
 
     def plot_graph_data(
         self,

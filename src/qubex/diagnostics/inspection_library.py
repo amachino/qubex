@@ -121,7 +121,7 @@ class Type1A(Inspection):
                     f"|2g/Δ| of {label_ij} ({val:.3f}) is higher than {adiabatic_limit} (g={g_ij * 1e3:.0f} MHz, Δ={D_ij * 1e3:.0f} MHz).",
                 )
 
-        for i, nnn in self.next_nearest_neighbors.items():
+        for i, nnn in self.graph.next_nearest_neighbors.items():
             for k in nnn:
                 if i > k:
                     continue
@@ -157,8 +157,8 @@ class Type1B(Inspection):
         adiabatic_limit = self.params.adiabatic_limit
 
         for c in self.graph.qubit_nodes:
-            for t in self.nearest_neighbors[c]:
-                for s in self.nearest_neighbors[c]:
+            for t in self.graph.nearest_neighbors[c]:
+                for s in self.graph.nearest_neighbors[c]:
                     if t >= s:
                         continue
 
@@ -301,7 +301,7 @@ class Type3A(Inspection):
                     f"|2√2g/(Δ+α)| of {label_ij} ({val:.3g}) is higher than {adiabatic_limit} (2√2g={O_eff_ij * 1e3:.0f} MHz, Δ+α={D_eff_ij * 1e3:.0f} MHz).",
                 )
 
-        for i, nnn in self.next_nearest_neighbors.items():
+        for i, nnn in self.graph.next_nearest_neighbors.items():
             for k in nnn:
                 label_ik = self.get_label((i, k))
                 a_i = self.get_anharmonicity(i)
@@ -372,7 +372,7 @@ class Type7(Inspection):
             D_ct = self.get_ge_ge_detuning((c, t))
             O_d_ct = self.get_cr_drive_frequency((c, t))
 
-            for s in self.nearest_neighbors[c]:
+            for s in self.graph.nearest_neighbors[c]:
                 if s == t:
                     continue
 
@@ -413,7 +413,7 @@ class Type8(Inspection):
             label_ct = self.get_label((c, t))
             D_stark_c = self.get_stark_shift((c, t))
 
-            for s in self.nearest_neighbors[c]:
+            for s in self.graph.nearest_neighbors[c]:
                 if s == t:
                     continue
 
@@ -426,7 +426,7 @@ class Type8(Inspection):
                         f"Δ(Δ+Δ_stark) of {label_ct} ({val:.3g}) is negative (Δ={D_cs * 1e3:.0f} MHz, Δ_stark={D_stark_c * 1e3:.0f} MHz).",
                     )
 
-            for s in self.next_nearest_neighbors[c]:
+            for s in self.graph.next_nearest_neighbors[c]:
                 D_cs = self.get_ge_ge_detuning((c, s))
 
                 val = D_cs * (D_cs + D_stark_c)
@@ -455,7 +455,7 @@ class Type9(Inspection):
             label_ct = self.get_label((c, t))
             D_stark_c = self.get_stark_shift((c, t))
 
-            for s in self.nearest_neighbors[c]:
+            for s in self.graph.nearest_neighbors[c]:
                 if s == t:
                     continue
 
@@ -469,7 +469,7 @@ class Type9(Inspection):
                         f"(Δ-α)(Δ-α+Δ_stark) of {label_ct} ({val:.3g}) is negative (Δ={D_cs * 1e3:.0f} MHz, α={a_s * 1e3:.0f} MHz, Δ_stark={D_stark_c * 1e3:.0f} MHz).",
                     )
 
-            for s in self.next_nearest_neighbors[c]:
+            for s in self.graph.next_nearest_neighbors[c]:
                 a_s = self.get_anharmonicity(s)
                 D_cs = self.get_ge_ge_detuning((c, s))
 
