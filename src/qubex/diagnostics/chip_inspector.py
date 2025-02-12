@@ -129,89 +129,6 @@ class InspectionSummary:
                 for message in messages:
                     print(f"    - {message}")
 
-    def create_node_hovertext(
-        self,
-        label: str,
-        invalid_types: list[str] | None = None,
-    ) -> str:
-        if invalid_types is None:
-            invalid_types = []
-        node = self.graph.get_qubit_node_by_label(label)
-
-        p = node["properties"]
-        f_ge = p.get("frequency")
-        alpha = p.get("anharmonicity")
-        t1 = p.get("t1")
-        t2 = p.get("t2_echo")
-        f_ef = f_ge + alpha if f_ge is not None and alpha is not None else None
-
-        if f_ge is not None:
-            f_ge = f"{f_ge * 1e3:.0f} MHz"
-        if f_ef is not None:
-            f_ef = f"{f_ef * 1e3:.0f} MHz"
-        if alpha is not None:
-            alpha = f"{alpha * 1e3:.0f} MHz"
-        if t1 is not None:
-            t1 = f"{t1 * 1e-3:.0f} µs"
-        if t2 is not None:
-            t2 = f"{t2 * 1e-3:.0f} µs"
-
-        if len(invalid_types) == 0:
-            hovertext = f"{label}<br>"
-        else:
-            hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
-        hovertext += "<br>".join(
-            [
-                f"f_ge = {f_ge}",
-                f"f_ef = {f_ef}",
-                f"α    = {alpha}",
-                f"T1   = {t1}",
-                f"T2   = {t2}",
-            ]
-        )
-        return hovertext
-
-    def create_edge_hovertext(
-        self,
-        label: str,
-        invalid_types: list[str] | None = None,
-    ) -> str:
-        if invalid_types is None:
-            invalid_types = []
-
-        edge = self.graph.get_qubit_edge_by_label(label)
-        i, j = edge["id"]
-        f_ge_i = self.graph.qubit_nodes[i]["properties"].get("frequency")
-        f_ge_j = self.graph.qubit_nodes[j]["properties"].get("frequency")
-        a_i = self.graph.qubit_nodes[i]["properties"].get("anharmonicity")
-
-        Delta_ge_ge = None
-        if f_ge_i is not None and f_ge_j is not None:
-            Delta_ge_ge = f_ge_i - f_ge_j
-            Delta_ge_ge = f"{Delta_ge_ge * 1e3:.0f} MHz"
-
-        Delta_ef_ge = None
-        if f_ge_i is not None and a_i is not None and f_ge_j is not None:
-            Delta_ef_ge = f_ge_i + a_i - f_ge_j
-            Delta_ef_ge = f"{Delta_ef_ge * 1e3:.0f} MHz"
-
-        g = edge["properties"].get("coupling")
-        if g is not None:
-            g = f"{g * 1e3:.0f} MHz"
-
-        if len(invalid_types) == 0:
-            hovertext = f"{label}<br>"
-        else:
-            hovertext = f"{label}: {{{','.join(invalid_types)}}}<br>"
-        hovertext += "<br>".join(
-            [
-                f"Δ_ge = {Delta_ge_ge}",
-                f"Δ_ef = {Delta_ef_ge}",
-                f"g    = {g}",
-            ]
-        )
-        return hovertext
-
     def draw(
         self,
         save_image: bool = False,
@@ -245,15 +162,20 @@ class InspectionSummary:
             for label in inspection.invalid_edges:
                 invalid_types[label].append(type.replace("Type", ""))
 
+        inspection = list(self.inspections.values())[0]
         node_hovertexts = {}
         for data in self.graph.qubit_nodes.values():
             label = data["label"]
-            hovertext = self.create_node_hovertext(label, invalid_types.get(label))
+            hovertext = inspection.create_node_hovertext(
+                label, invalid_types.get(label)
+            )
             node_hovertexts[label] = hovertext
         edge_hovertexts = {}
         for data in self.graph.qubit_edges.values():
             label = data["label"]
-            hovertext = self.create_edge_hovertext(label, invalid_types.get(label))
+            hovertext = inspection.create_edge_hovertext(
+                label, invalid_types.get(label)
+            )
             edge_hovertexts[label] = hovertext
 
         self.graph.plot_graph_data(
