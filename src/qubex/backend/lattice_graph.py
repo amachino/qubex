@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from functools import cached_property
 from typing import Collection, Final, TypedDict
 
@@ -277,6 +278,40 @@ class LatticeGraph:
                 two_hop.update(nn[j])
             nnm[i] = sorted(list(two_hop - one_hop - {i}))
         return dict(sorted(nnm.items()))
+
+    @cached_property
+    def next_nearest_pairs(self) -> list[tuple[int, int]]:
+        """
+        Get next nearest neighbor pairs.
+
+        Returns
+        -------
+        list[tuple[int, int]]
+            Next nearest neighbor pairs.
+        """
+        pairs = []
+        for i, neighbors in self.next_nearest_neighbors.items():
+            for j in neighbors:
+                # if (j, i) not in pairs:
+                pairs.append((i, j))
+        return sorted(pairs)
+
+    @cached_property
+    def common_neighbors(self) -> dict[tuple[int, int], list[int]]:
+        """
+        Get common neighbors.
+
+        Returns
+        -------
+        dict[tuple[int, int], list[int]]
+            Common neighbors.
+        """
+        common_neighbors = defaultdict(list)
+        for i, k in self.next_nearest_pairs:
+            common_neighbors[(i, k)] = sorted(
+                set(self.nearest_neighbors[i]) & set(self.nearest_neighbors[k])
+            )
+        return dict(sorted(common_neighbors.items()))
 
     def get_qubit_node_by_label(
         self,

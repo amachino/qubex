@@ -130,7 +130,7 @@ class Type1A(Inspection):
                 label_i = self.get_label(i)
                 label_k = self.get_label(k)
                 D_ik = self.get_ge_ge_detuning((i, k))
-                g_ik = self.params.default_nnn_coupling
+                g_ik = self.get_nnn_coupling((i, k))
 
                 val = abs(2 * g_ik / D_ik)
                 if val > adiabatic_limit:
@@ -306,7 +306,7 @@ class Type3A(Inspection):
                 label_ik = self.get_label((i, k))
                 a_i = self.get_anharmonicity(i)
                 D_ik = self.get_ge_ge_detuning((i, k))
-                g_ik = self.params.default_nnn_coupling
+                g_ik = self.get_nnn_coupling((i, k))
                 O_eff_ik = 2**1.5 * g_ik
                 D_eff_ik = D_ik + a_i
 

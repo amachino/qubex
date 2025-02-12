@@ -134,6 +134,9 @@ class InspectionSummary:
         save_image: bool = False,
         images_dir: str = "./images",
     ):
+        if len(self.inspections) == 0:
+            raise ValueError("No inspections have been executed.")
+
         all_nodes = {node["label"] for node in self.graph.qubit_nodes.values()}
         invalid_nodes = set(self.invalid_nodes)
         valid_nodes = all_nodes - invalid_nodes

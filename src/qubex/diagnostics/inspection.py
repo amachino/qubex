@@ -16,13 +16,12 @@ class InspectionParams:
     max_detuning: float = 1.5
     min_t1: float = 3e3
     min_t2: float = 3e3
-    adiabatic_limit: float = 0.2
+    adiabatic_limit: float = np.sqrt(0.05 / 2.474)
     cr_control_limit: float = 0.75
     cnot_time: float = 500
     default_t1: float = 10e3
     default_t2: float = 10e3
     default_coupling: float = 8e-3
-    default_nnn_coupling: float = 8e-3 * (8e-3 / 0.8)
 
 
 class Inspection(ABC):
@@ -151,10 +150,29 @@ class Inspection(ABC):
         self,
         target: tuple[int, int],
     ) -> float:
-        return (
-            self.get_property(target, "nnn_coupling")
-            or self.params.default_nnn_coupling
-        )
+        def get_composite_coupling(i, j, k):
+            f_i = self.get_ge_frequency(i)
+            f_j = self.get_ge_frequency(j)
+            f_k = self.get_ge_frequency(k)
+            g_ij = self.get_nn_coupling((i, j))
+            g_jk = self.get_nn_coupling((j, k))
+            return 0.5 * (g_ij * g_jk) * (1 / (f_i - f_j) + 1 / (f_j - f_k))
+
+        i, k = target
+        if (i, k) not in self.graph.next_nearest_pairs:
+            raise ValueError("Distance between qubits is not 2.")
+        common_neighbors = self.graph.common_neighbors[i, k]
+        if len(common_neighbors) == 1:
+            j = common_neighbors[0]
+            g = get_composite_coupling(i, j, k)
+        elif len(common_neighbors) == 2:
+            j1, j2 = common_neighbors
+            g1 = get_composite_coupling(i, j1, k)
+            g2 = get_composite_coupling(i, j2, k)
+            g = g1 + g2
+        else:
+            raise ValueError("Invalid number of common neighbors.")
+        return g
 
     def get_cr_rabi_frequency(
         self,
@@ -222,13 +240,13 @@ class Inspection(ABC):
         else:
             alpha = f"({self.get_anharmonicity(id) * 1e3:.0f}) MHz"
         if t1 is not None:
-            t1 = f"{t1 * 1e-3:.0f} µs"
+            t1 = f"{t1 * 1e-3:.1f} µs"
         else:
-            t1 = f"({self.get_t1(id) * 1e-3:.0f}) µs"
+            t1 = f"({self.get_t1(id) * 1e-3:.1f}) µs"
         if t2 is not None:
-            t2 = f"{t2 * 1e-3:.0f} µs"
+            t2 = f"{t2 * 1e-3:.1f} µs"
         else:
-            t2 = f"({self.get_t2(id) * 1e-3:.0f}) µs"
+            t2 = f"({self.get_t2(id) * 1e-3:.1f}) µs"
 
         if len(invalid_types) == 0:
             hovertext = f"{label}<br>"
@@ -276,9 +294,9 @@ class Inspection(ABC):
 
         g = edge["properties"].get("coupling")
         if g is not None:
-            g = f"{g * 1e3:.0f} MHz"
+            g = f"{g * 1e3:.1f} MHz"
         else:
-            g = f"({self.get_nn_coupling((i, j)) * 1e3:.0f}) MHz"
+            g = f"({self.get_nn_coupling((i, j)) * 1e3:.1f}) MHz"
 
         if len(invalid_types) == 0:
             hovertext = f"{label}<br>"
