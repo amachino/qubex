@@ -98,6 +98,7 @@ def resync_clocks(box_ids: Collection[str]) -> bool:
 
 def print_chip_info(
     *info_type: Literal[
+        "all",
         "resonator_frequency",
         "qubit_frequency",
         "qubit_anharmonicity",
@@ -132,6 +133,16 @@ def print_chip_info(
 
     if len(info_type) == 0:
         info_type = (
+            "qubit_frequency",
+            "qubit_anharmonicity",
+            "t1",
+            "t2_echo",
+            "average_readout_fidelity",
+            "x90_gate_fidelity",
+            "zx90_gate_fidelity",
+        )
+    elif "all" in info_type:
+        info_type = (
             "resonator_frequency",
             "qubit_frequency",
             "qubit_anharmonicity",
@@ -140,8 +151,8 @@ def print_chip_info(
             "t1",
             "t2_star",
             "t2_echo",
-            "qubit_qubit_coupling_strength",
             "static_zz_interaction",
+            "qubit_qubit_coupling_strength",
             "average_readout_fidelity",
             "average_gate_fidelity",
             "x90_gate_fidelity",
@@ -337,11 +348,11 @@ def print_chip_info(
             title="Static ZZ interaction (kHz)",
             edge_values={key: value for key, value in values.items()},
             edge_texts={
-                key: f"{value * 1e6:.0f}" if value is not None else None
+                key: f"{value * 1e6:.0f}" if not math.isnan(value) else None
                 for key, value in values.items()
             },
             edge_hovertexts={
-                key: f"{key}: {value * 1e6:.1f} kHz" if value is not None else "N/A"
+                key: f"{key}: {value * 1e6:.1f} kHz" if not math.isnan(value) else "N/A"
                 for key, value in values.items()
             },
             save_image=save_image,
@@ -359,11 +370,11 @@ def print_chip_info(
             title="Qubit-qubit coupling strength (MHz)",
             edge_values={key: value for key, value in values.items()},
             edge_texts={
-                key: f"{value * 1e3:.1f}" if value is not None else None
+                key: f"{value * 1e3:.1f}" if not math.isnan(value) else None
                 for key, value in values.items()
             },
             edge_hovertexts={
-                key: f"{key}: {value * 1e3:.1f} MHz" if value is not None else "N/A"
+                key: f"{key}: {value * 1e3:.1f} MHz" if not math.isnan(value) else "N/A"
                 for key, value in values.items()
             },
             save_image=save_image,
@@ -376,11 +387,11 @@ def print_chip_info(
             title="Average readout fidelity (%)",
             values=list(values.values()),
             texts=[
-                f"{qubit}<br>{value:.2%}" if value is not None else "N/A"
+                f"{qubit}<br>{value:.2%}" if not math.isnan(value) else "N/A"
                 for qubit, value in values.items()
             ],
             hovertexts=[
-                f"{qubit}: {value:.2%}" if value is not None else f"{qubit}: N/A"
+                f"{qubit}: {value:.2%}" if not math.isnan(value) else f"{qubit}: N/A"
                 for qubit, value in values.items()
             ],
             save_image=save_image,
@@ -393,11 +404,11 @@ def print_chip_info(
             title="Average gate fidelity (%)",
             values=list(values.values()),
             texts=[
-                f"{qubit}<br>{value:.2%}" if value is not None else "N/A"
+                f"{qubit}<br>{value:.2%}" if not math.isnan(value) else "N/A"
                 for qubit, value in values.items()
             ],
             hovertexts=[
-                f"{qubit}: {value:.2%}" if value is not None else f"{qubit}: N/A"
+                f"{qubit}: {value:.2%}" if not math.isnan(value) else f"{qubit}: N/A"
                 for qubit, value in values.items()
             ],
             save_image=save_image,
@@ -410,11 +421,11 @@ def print_chip_info(
             title="X90 gate fidelity (%)",
             values=list(values.values()),
             texts=[
-                f"{qubit}<br>{value:.2%}" if value is not None else "N/A"
+                f"{qubit}<br>{value:.2%}" if not math.isnan(value) else "N/A"
                 for qubit, value in values.items()
             ],
             hovertexts=[
-                f"{qubit}: {value:.2%}" if value is not None else f"{qubit}: N/A"
+                f"{qubit}: {value:.2%}" if not math.isnan(value) else f"{qubit}: N/A"
                 for qubit, value in values.items()
             ],
             save_image=save_image,
@@ -427,11 +438,11 @@ def print_chip_info(
             title="X180 gate fidelity (%)",
             values=list(values.values()),
             texts=[
-                f"{qubit}<br>{value:.2%}" if value is not None else "N/A"
+                f"{qubit}<br>{value:.2%}" if not math.isnan(value) else "N/A"
                 for qubit, value in values.items()
             ],
             hovertexts=[
-                f"{qubit}: {value:.2%}" if value is not None else f"{qubit}: N/A"
+                f"{qubit}: {value:.2%}" if not math.isnan(value) else "N/A"
                 for qubit, value in values.items()
             ],
             save_image=save_image,
@@ -445,11 +456,11 @@ def print_chip_info(
             title="ZX90 gate fidelity (%)",
             edge_values={key: value for key, value in values.items()},
             edge_texts={
-                key: f"{value:.2%}" if value is not None else None
+                key: f"{value:.2%}" if not math.isnan(value) else None
                 for key, value in values.items()
             },
             edge_hovertexts={
-                key: f"{key}: {value:.2%}" if value is not None else "N/A"
+                key: f"{key}: {value:.2%}" if not math.isnan(value) else "N/A"
                 for key, value in values.items()
             },
             save_image=save_image,
