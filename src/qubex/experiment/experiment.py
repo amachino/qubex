@@ -30,6 +30,7 @@ from ..backend import (
     Resonator,
     StateManager,
     Target,
+    TargetType,
 )
 from ..clifford import Clifford, CliffordGenerator
 from ..measurement import Measurement, MeasureResult, StateClassifier
@@ -739,6 +740,7 @@ class Experiment(
         box_id: str,
         port_number: int,
         channel_number: int,
+        target_type: TargetType = TargetType.CTRL_GE,
         update_lsi: bool = False,
     ):
         try:
@@ -754,6 +756,7 @@ class Experiment(
             frequency=frequency,
             object=qubit,
             channel=channel,  # type: ignore
+            type=target_type,
         )
         self.experiment_system.add_target(target)
         self.device_controller.define_target(
