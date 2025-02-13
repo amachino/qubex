@@ -1043,14 +1043,31 @@ class CharacterizationMixin(
         spectator_qubit: str,
         *,
         time_range: ArrayLike = np.arange(0, 2001, 100),
-        x90: TargetMap[Waveform] | None = None,
-        x180: TargetMap[Waveform] | None = None,
+        x90: Waveform | TargetMap[Waveform] | None = None,
+        x180: Waveform | TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
-        x90 = x90 or self.hpi_pulse
-        x180 = x180 or self.pi_pulse
+        if x90 is None:
+            x90 = {
+                target_qubit: self.hpi_pulse[target_qubit],
+            }
+        elif isinstance(x90, Waveform):
+            x90 = {
+                target_qubit: x90,
+            }
+
+        if x180 is None:
+            x180 = {
+                target_qubit: self.hpi_pulse[target_qubit].repeated(2),
+                spectator_qubit: self.hpi_pulse[spectator_qubit].repeated(2),
+            }
+        elif isinstance(x180, Waveform):
+            x180 = {
+                target_qubit: x180,
+                spectator_qubit: x180,
+            }
 
         def jazz_sequence(tau: float) -> PulseSchedule:
             with PulseSchedule([target_qubit, spectator_qubit]) as ps:

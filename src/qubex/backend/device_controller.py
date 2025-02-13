@@ -310,11 +310,8 @@ class DeviceController:
         box_list : list[str]
             List of box names.
         """
-        # synchronized = self.check_clocks(box_list)
-        # if not synchronized:
-        #     synchronized = self.resync_clocks(box_list)
-        #     if not synchronized:
-        #         print("Failed to synchronize clocks.")
+        if len(box_list) < 2:
+            return True
         synchronized = self.resync_clocks(box_list)
         if not synchronized:
             print("Failed to synchronize clocks.")

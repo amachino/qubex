@@ -1,15 +1,57 @@
 from __future__ import annotations
 
 import math
-from typing import Final
+from collections import defaultdict
+from functools import cached_property
+from typing import Collection, Final, TypedDict
 
+import networkx as nx
 import plotly.graph_objects as go
+from plotly.colors import sample_colorscale
+
+from ..analysis.visualization import save_figure_image
 
 MUX_SIZE = 4
+NODE_SIZE = 24
+TEXT_SIZE = 10
+
 
 PREFIX_QUBIT = "Q"
 PREFIX_RESONATOR = "RQ"
 PREFIX_MUX = "MUX"
+
+
+class QubitNode(TypedDict):
+    id: int
+    label: str
+    coordinates: tuple[int, int]
+    position: tuple[float, float]
+    mux_id: int
+    index_in_mux: int
+    properties: dict[str, float]
+
+
+class QubitEdge(TypedDict):
+    id: tuple[int, int]
+    label: str
+    position: tuple[tuple[float, float], tuple[float, float], tuple[float, float]]
+    properties: dict[str, float]
+
+
+class ResonatorNode(TypedDict):
+    id: int
+    label: str
+    coordinates: tuple[int, int]
+    position: tuple[float, float]
+    properties: dict[str, float]
+
+
+class MuxNode(TypedDict):
+    id: int
+    label: str
+    coordinates: tuple[int, int]
+    position: tuple[float, float]
+    properties: dict[str, float]
 
 
 class LatticeGraph:
@@ -53,35 +95,389 @@ class LatticeGraph:
             raise ValueError(
                 f"n_qubits ({n_qubits}) must be a multiple of MUX_SIZE ({MUX_SIZE})."
             )
-        n_muxes = n_qubits // MUX_SIZE
-        mux_side_length = math.isqrt(n_muxes)
-        if mux_side_length**2 != n_muxes:
-            raise ValueError(
-                f"n_qubits ({n_qubits}) must result in a square number of MUXes."
-            )
-        self.n_qubits: Final = n_qubits
-        self.n_mux_rows: Final = mux_side_length
-        self.n_mux_cols: Final = mux_side_length
-        self.max_digit: Final = len(str(self.n_qubits - 1))
-        self.max_mux_digit: Final = len(str(n_muxes - 1))
-        self.edges: Final = self._create_edges(self.n_mux_rows, self.n_mux_cols)
-        self.visualizer: Final = Visualizer(self)
+        n_qubit_length = math.isqrt(n_qubits)
+        if n_qubit_length**2 != n_qubits:
+            raise ValueError(f"n_qubits ({n_qubits}) must be a perfect square.")
 
-    @property
-    def n_muxes(
+        n_muxes = n_qubits // MUX_SIZE
+        n_mux_length = math.isqrt(n_muxes)
+        if n_mux_length**2 != n_muxes:
+            raise ValueError(f"n_muxes ({n_muxes}) must be a perfect square.")
+
+        self.n_qubits: Final = n_qubits
+        self.n_qubit_length: Final = n_qubit_length
+        self.n_qubit_cols: Final = n_qubit_length
+        self.n_qubit_rows: Final = n_qubit_length
+        self.qubit_max_digit: Final = len(str(self.n_qubits - 1))
+
+        self.n_resonators: Final = n_qubits
+        self.n_resonator_length: Final = n_qubit_length
+        self.n_resonator_cols: Final = n_qubit_length
+        self.n_resonator_rows: Final = n_qubit_length
+        self.resonator_max_digit: Final = len(str(self.n_resonators - 1))
+
+        self.n_muxes: Final = n_muxes
+        self.n_mux_length: Final = n_mux_length
+        self.n_mux_cols: Final = n_mux_length
+        self.n_mux_rows: Final = n_mux_length
+        self.mux_max_digit: Final = len(str(self.n_muxes - 1))
+
+        self._init_qubit_graph()
+        self._init_resonator_graph()
+        self._init_mux_graph()
+
+    @cached_property
+    def qubit_nodes(
         self,
-    ) -> int:
+    ) -> dict[int, QubitNode]:
         """
-        Get number of MUXes.
+        Get qubit nodes.
 
         Returns
         -------
-        int
-            Number of MUXes.
+        dict[int, QubitNode]
+            Qubit nodes.
         """
-        return self.n_qubits // MUX_SIZE
+        return dict(self.qubit_graph.nodes(data=True))
 
-    @property
+    @cached_property
+    def resonator_nodes(
+        self,
+    ) -> dict[int, ResonatorNode]:
+        """
+        Get resonator nodes.
+
+        Returns
+        -------
+        dict[int, ResonatorNode]
+            Resonator nodes.
+        """
+        return dict(self.resonator_graph.nodes(data=True))
+
+    @cached_property
+    def mux_nodes(
+        self,
+    ) -> dict[int, MuxNode]:
+        """
+        Get MUX nodes.
+
+        Returns
+        -------
+        dict[int, MuxNode]
+            MUX nodes.
+        """
+        return dict(self.mux_graph.nodes(data=True))
+
+    @cached_property
+    def qubit_edges(
+        self,
+    ) -> dict[tuple[int, int], QubitEdge]:
+        """
+        Get qubit edges.
+
+        Returns
+        -------
+        dict[tuple[int, int], QubitEdge]
+            Qubit edges.
+        """
+        return {
+            (id0, id1): data for id0, id1, data in self.qubit_graph.edges(data=True)
+        }
+
+    @cached_property
+    def qubit_undirected_graph(
+        self,
+    ) -> nx.Graph:
+        """
+        Get qubit undirected graph.
+
+        Returns
+        -------
+        nx.Graph
+            Qubit undirected graph.
+        """
+        return self.qubit_graph.to_undirected(as_view=True)
+
+    @cached_property
+    def qubit_undirected_edges(
+        self,
+    ) -> dict[tuple[int, int], QubitEdge]:
+        """
+        Get qubit undirected edges.
+
+        Returns
+        -------
+        dict[tuple[int, int], QubitEdge]
+            Qubit undirected edges.
+        """
+        return {
+            (id0, id1): data
+            for id0, id1, data in self.qubit_undirected_graph.edges(data=True)
+        }
+
+    @cached_property
+    def qubit_node_labels(
+        self,
+    ) -> list[str]:
+        """
+        Get qubit node labels.
+
+        Returns
+        -------
+        list[str]
+            List of qubit node labels.
+        """
+        return [node["label"] for node in self.qubit_nodes.values()]
+
+    @cached_property
+    def qubit_edge_labels(
+        self,
+    ) -> list[str]:
+        """
+        Get qubit edge labels.
+
+        Returns
+        -------
+        list[str]
+            List of qubit edge labels.
+        """
+        return [edge["label"] for edge in self.qubit_edges.values()]
+
+    @cached_property
+    def nearest_neighbors(self) -> dict[int, list[int]]:
+        """
+        Get nearest neighbors.
+
+        Returns
+        -------
+        dict[int, list[int]]
+            Nearest neighbors.
+        """
+        nn = {
+            i: sorted(list(self.qubit_graph.neighbors(i)))
+            for i in self.qubit_nodes.keys()
+        }
+        return dict(sorted(nn.items()))
+
+    @cached_property
+    def next_nearest_neighbors(self) -> dict[int, list[int]]:
+        """
+        Get next nearest neighbors.
+
+        Returns
+        -------
+        dict[int, list[int]]
+            Next nearest neighbors.
+        """
+        nn = self.nearest_neighbors
+        nnm = {}
+        for i, neighbors in nn.items():
+            one_hop = set(neighbors)
+            two_hop = set()
+            for j in neighbors:
+                two_hop.update(nn[j])
+            nnm[i] = sorted(list(two_hop - one_hop - {i}))
+        return dict(sorted(nnm.items()))
+
+    @cached_property
+    def next_nearest_pairs(self) -> list[tuple[int, int]]:
+        """
+        Get next nearest neighbor pairs.
+
+        Returns
+        -------
+        list[tuple[int, int]]
+            Next nearest neighbor pairs.
+        """
+        pairs = []
+        for i, neighbors in self.next_nearest_neighbors.items():
+            for j in neighbors:
+                # if (j, i) not in pairs:
+                pairs.append((i, j))
+        return sorted(pairs)
+
+    @cached_property
+    def common_neighbors(self) -> dict[tuple[int, int], list[int]]:
+        """
+        Get common neighbors.
+
+        Returns
+        -------
+        dict[tuple[int, int], list[int]]
+            Common neighbors.
+        """
+        common_neighbors = defaultdict(list)
+        for i, k in self.next_nearest_pairs:
+            common_neighbors[(i, k)] = sorted(
+                set(self.nearest_neighbors[i]) & set(self.nearest_neighbors[k])
+            )
+        return dict(sorted(common_neighbors.items()))
+
+    def get_qubit_node_by_label(
+        self,
+        label: str,
+    ) -> QubitNode:
+        """
+        Get qubit node by label.
+
+        Parameters
+        ----------
+        label : str
+            Qubit label.
+
+        Returns
+        -------
+        QubitNode
+            Qubit node.
+        """
+        labels = nx.get_node_attributes(self.qubit_graph, "label")
+        node = None
+        for k, v in labels.items():
+            if v == label:
+                node = self.qubit_nodes[k]
+        if node is None:
+            raise ValueError(f"Qubit node with label '{label}' does not exist.")
+        return node
+
+    def get_qubit_edge_by_label(
+        self,
+        label: str,
+    ) -> QubitEdge:
+        """
+        Get qubit edge by label.
+
+        Parameters
+        ----------
+        label : str
+            Qubit edge label.
+
+        Returns
+        -------
+        QubitEdge
+            Qubit edge.
+        """
+        labels = nx.get_edge_attributes(self.qubit_graph, "label")
+        edge = None
+        for k, v in labels.items():
+            if v == label:
+                edge = self.qubit_edges[k]
+        if edge is None:
+            raise ValueError(f"Qubit edge with label '{label}' does not exist.")
+        return edge
+
+    def get_property(
+        self,
+        target: int | tuple[int, int],
+        property_type: str,
+    ) -> float | None:
+        """
+        Get property of the target.
+
+        Parameters
+        ----------
+        target : int, tuple[int, int]
+            Qubit index or edge.
+        property_type : str
+            Property type.
+
+        Returns
+        -------
+        float, None
+            Property value.
+        """
+        if isinstance(target, int):
+            value = self.qubit_nodes[target]["properties"].get(property_type)
+        elif isinstance(target, tuple):
+            value = self.qubit_edges[target]["properties"].get(property_type)
+        else:
+            raise ValueError("Invalid target type.")
+
+        return value
+
+    def _init_qubit_graph(self):
+        label_mapping = {}
+        qubit_graph = nx.grid_2d_graph(self.n_qubit_cols, self.n_qubit_rows)
+        self.qubit_graph = qubit_graph.to_directed()
+        for x, y in self.qubit_graph.nodes():
+            len_q = self.n_qubit_cols
+            len_m = self.n_mux_cols
+            len_qm = len_q // len_m
+            col_m = x // len_qm
+            row_m = y // len_qm
+            idx_m = row_m * len_m + col_m
+            idx_qm = (x % len_qm) + (y % len_qm) * len_qm
+            idx_q = MUX_SIZE * idx_m + idx_qm
+            label_mapping[(x, y)] = idx_q
+            self.qubit_graph.nodes[(x, y)].update(
+                {
+                    "id": idx_q,
+                    "label": f"{PREFIX_QUBIT}{idx_q:0{self.qubit_max_digit}d}",
+                    "coordinates": (x, y),
+                    "position": (x, y),
+                    "mux_id": idx_m,
+                    "index_in_mux": idx_qm,
+                    "properties": {},
+                }
+            )
+        nx.relabel_nodes(
+            self.qubit_graph,
+            label_mapping,
+            copy=False,
+        )
+        for id0, id1 in self.qubit_graph.edges():
+            node0 = self.qubit_nodes[id0]
+            node1 = self.qubit_nodes[id1]
+            self.qubit_graph.edges[(id0, id1)].update(
+                {
+                    "id": (id0, id1),
+                    "label": f"{node0['label']}-{node1['label']}",
+                    "position": (
+                        node0["position"],
+                        (
+                            (node0["position"][0] + node1["position"][0]) / 2,
+                            (node0["position"][1] + node1["position"][1]) / 2,
+                        ),
+                        node1["position"],
+                    ),
+                    "properties": {},
+                },
+            )
+
+    def _init_resonator_graph(self):
+        self.resonator_graph = self.qubit_graph.copy()
+        for id, data in self.resonator_nodes.items():
+            self.resonator_graph.nodes[id].update(
+                {
+                    "id": id,
+                    "label": f"{PREFIX_RESONATOR}{id:0{self.resonator_max_digit}d}",
+                    "coordinates": data["coordinates"],
+                    "position": data["position"],
+                    "properties": data["properties"],
+                }
+            )
+
+    def _init_mux_graph(self):
+        label_mapping = {}
+        self.mux_graph = nx.grid_2d_graph(self.n_mux_cols, self.n_mux_rows)
+        for x, y in self.mux_graph.nodes():
+            idx = y * self.n_mux_cols + x
+            label_mapping[(x, y)] = idx
+            self.mux_graph.nodes[(x, y)].update(
+                {
+                    "id": idx,
+                    "label": f"{PREFIX_MUX}{idx:0{self.mux_max_digit}d}",
+                    "coordinates": (x, y),
+                    "position": (x * 2 + 0.5, y * 2 + 0.5),
+                    "properties": {},
+                }
+            )
+        nx.relabel_nodes(
+            self.mux_graph,
+            label_mapping,
+            copy=False,
+        )
+
+    @cached_property
     def indices(
         self,
     ) -> list[int]:
@@ -93,83 +489,49 @@ class LatticeGraph:
         list[int]
             List of qubit indices.
         """
-        return list(range(self.n_qubits))
+        return sorted(self.qubit_nodes.keys())
 
-    @property
+    @cached_property
     def qubits(
         self,
-        prefix: str = PREFIX_QUBIT,
     ) -> list[str]:
         """
         Get qubit labels.
-
-        Parameters
-        ----------
-        prefix : str, optional
-            Prefix of qubit labels, by default "Q".
 
         Returns
         -------
         list[str]
             List of qubit labels.
         """
-        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in self.indices]
+        return sorted([node["label"] for node in self.qubit_nodes.values()])
 
-    @property
+    @cached_property
     def resonators(
         self,
-        prefix: str = PREFIX_RESONATOR,
     ) -> list[str]:
         """
         Get resonator labels.
-
-        Parameters
-        ----------
-        prefix : str, optional
-            Prefix of resonator labels, by default "RQ".
 
         Returns
         -------
         list[str]
             List of resonator labels.
         """
-        return [f"{prefix}{str(i).zfill(self.max_digit)}" for i in self.indices]
+        return sorted([node["label"] for node in self.resonator_nodes.values()])
 
-    @property
+    @cached_property
     def muxes(
         self,
-        prefix: str = PREFIX_MUX,
     ) -> list[str]:
         """
         Get MUX labels.
-
-        Parameters
-        ----------
-        prefix : str, optional
-            Prefix of MUX labels, by default "MUX".
 
         Returns
         -------
         list[str]
             List of MUX labels.
         """
-        return [
-            f"{prefix}{str(i).zfill(self.max_mux_digit)}" for i in range(self.n_muxes)
-        ]
-
-    @property
-    def qubit_edges(
-        self,
-    ) -> list[tuple[str, str]]:
-        """
-        Get qubit edges.
-
-        Returns
-        -------
-        list[tuple[str, str]]
-            List of qubit edges.
-        """
-        return [(self.qubits[edge[0]], self.qubits[edge[1]]) for edge in self.edges]
+        return sorted([node["label"] for node in self.mux_nodes.values()])
 
     def get_indices_in_mux(
         self,
@@ -303,11 +665,9 @@ class LatticeGraph:
             mux = self.get_mux_of_qubit(qubit)
 
         spectators = []
-        for edge in self.edges:
+        for edge in self.qubit_graph.edges():
             if edge[0] == qubit:
                 spectator = edge[1]
-            elif edge[1] == qubit:
-                spectator = edge[0]
             else:
                 continue
             if in_same_mux:
@@ -342,337 +702,443 @@ class LatticeGraph:
             for spectator in self.get_spectator_indices(qubit, in_same_mux=in_same_mux)
         ]
 
-    def _create_edges(
+    def plot_graph_data(
         self,
-        n_rows: int,
-        n_cols: int,
-    ) -> list[tuple[int, int]]:
-        """
-        Create edges of the lattice chip.
-
-        Parameters
-        ----------
-        n_rows : int
-            Number of rows of MUXes.
-        n_cols : int
-            Number of columns of MUXes.
-
-        Returns
-        -------
-        list[tuple[int, int]]
-            List of edges.
-        """
-        edge_set: set[tuple[int, int]] = set()
-
-        for row in range(n_rows):
-            for col in range(n_cols):
-                # MUX number
-                mux_number = row * n_cols + col
-
-                # Base qubit of the MUX
-                base_qubit = mux_number * MUX_SIZE
-
-                # Qubits in the MUX
-                qubits = [base_qubit + i for i in range(MUX_SIZE)]
-
-                # Internal MUX connections (within the same MUX)
-                edge_set.add((qubits[0], qubits[1]))
-                edge_set.add((qubits[0], qubits[2]))
-                edge_set.add((qubits[1], qubits[3]))
-                edge_set.add((qubits[2], qubits[3]))
-
-                # Connections to adjacent MUXes
-                # Right neighbor
-                if col < n_cols - 1:
-                    right_base_qubit = base_qubit + MUX_SIZE
-                    right_qubits = [right_base_qubit + i for i in range(MUX_SIZE)]
-                    edge_set.add((qubits[1], right_qubits[0]))
-                    edge_set.add((qubits[3], right_qubits[2]))
-
-                # Down neighbor
-                if row < n_rows - 1:
-                    down_base_qubit = base_qubit + n_cols * MUX_SIZE
-                    down_qubits = [down_base_qubit + i for i in range(MUX_SIZE)]
-                    edge_set.add((qubits[2], down_qubits[0]))
-                    edge_set.add((qubits[3], down_qubits[1]))
-
-        edge_list = list(edge_set)
-        edge_list.sort()
-        return edge_list
-
-    def plot_graph(
-        self,
-        hovertext: list[str] | None = None,
+        *,
+        directed: bool = True,
+        title: str = "Graph Data",
+        node_values: dict | None = None,
+        node_texts: dict | None = None,
+        node_hovertexts: dict | None = None,
+        node_color: str | None = None,
+        node_linecolor: str | None = None,
+        node_textcolor: str | None = None,
+        edge_values: dict | None = None,
+        edge_texts: dict | None = None,
+        edge_hovertexts: dict | None = None,
+        edge_color: str | None = None,
+        edge_textcolor: str | None = None,
+        node_overlay: bool = False,
+        edge_overlay: bool = False,
+        node_overlay_values: dict | None = None,
+        node_overlay_texts: dict | None = None,
+        node_overlay_hovertexts: dict | None = None,
+        node_overlay_color: str | None = None,
+        node_overlay_linecolor: str | None = None,
+        node_overlay_textcolor: str | None = None,
+        edge_overlay_values: dict | None = None,
+        edge_overlay_texts: dict | None = None,
+        edge_overlay_hovertexts: dict | None = None,
+        edge_overlay_color: str | None = None,
+        edge_overlay_textcolor: str | None = None,
+        colorscale: str = "Viridis",
+        image_name: str = "graph_data",
+        images_dir: str = "./images",
+        save_image: bool = False,
     ):
-        fig = self.visualizer.create_graph_figure(
-            hovertext=hovertext,
+        width = 3 * NODE_SIZE * self.n_qubit_cols
+        height = 3 * NODE_SIZE * self.n_qubit_rows
+
+        layout = go.Layout(
+            title=title,
+            width=width,
+            height=height,
+            margin=dict(b=30, l=30, r=30, t=60),
+            xaxis=dict(
+                ticks="",
+                # showline=False,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+                constrain="domain",
+            ),
+            yaxis=dict(
+                ticks="",
+                autorange="reversed",
+                # showline=False,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            plot_bgcolor="white",
+            showlegend=False,
+            hovermode="closest",
+            hoverlabel=dict(
+                bgcolor="white",
+                bordercolor="black",
+                font=dict(
+                    family="monospace",
+                    size=TEXT_SIZE,
+                    color="black",
+                ),
+            ),
+        )
+
+        data = []
+
+        mux_node_trace = self._create_mux_node_trace()
+        data.append(mux_node_trace)
+
+        qubit_edge_trace = self._create_qubit_edge_traces(
+            directed=directed,
+            values=edge_values,
+            texts=edge_texts,
+            hovertexts=edge_hovertexts,
+            color=edge_color,
+            textcolor=edge_textcolor,
+            colorscale=colorscale,
+        )
+        data += qubit_edge_trace
+
+        if edge_overlay:
+            qubit_edge_overlay_trace = self._create_qubit_edge_traces(
+                directed=directed,
+                values=edge_overlay_values,
+                texts=edge_overlay_texts,
+                hovertexts=edge_overlay_hovertexts,
+                color=edge_overlay_color,
+                textcolor=edge_overlay_textcolor,
+                colorscale=colorscale,
+            )
+            data += qubit_edge_overlay_trace
+
+        qubit_node_trace = self._create_qubit_node_traces(
+            values=node_values,
+            texts=node_texts,
+            hovertexts=node_hovertexts,
+            color=node_color,
+            linecolor=node_linecolor,
+            textcolor=node_textcolor,
+        )
+        data += qubit_node_trace
+
+        if node_overlay:
+            qubit_node_overlay_trace = self._create_qubit_node_traces(
+                values=node_overlay_values,
+                texts=node_overlay_texts,
+                hovertexts=node_overlay_hovertexts,
+                color=node_overlay_color,
+                linecolor=node_overlay_linecolor,
+                textcolor=node_overlay_textcolor,
+            )
+            data += qubit_node_overlay_trace
+
+        fig = go.Figure(
+            data=data,
+            layout=layout,
         )
         fig.show()
 
-    def plot_lattice(
+        if save_image:
+            save_figure_image(
+                fig,
+                name=image_name,
+                images_dir=images_dir,
+                format="png",
+                width=width,
+                height=height,
+                scale=3,
+            )
+
+    def _create_qubit_node_traces(
         self,
-        text: list[str] | None = None,
-        hovertext: list[str] | None = None,
-    ):
-        fig = self.visualizer.create_lattice_figure(
+        values: dict | None = None,
+        texts: dict | None = None,
+        hovertexts: dict | None = None,
+        color: str | None = None,
+        linecolor: str | None = None,
+        textcolor: str | None = None,
+        colorscale: str = "Viridis",
+    ) -> list[go.Scatter]:
+        if values is None:
+            values = {node["label"]: 1.0 for node in self.qubit_nodes.values()}
+
+        values = {
+            key: value
+            for key, value in values.items()
+            if isinstance(value, (int, float)) and not math.isnan(value)
+        }
+
+        if len(values) == 0:
+            return []
+
+        v_min = min(values.values())
+        v_max = max(values.values())
+
+        traces = []
+        for data in self.qubit_nodes.values():
+            label = data["label"]
+            if label not in values:
+                continue
+            value = values[label]
+
+            if color:
+                node_color = color
+            elif v_max - v_min != 0:
+                value = (value - v_min) / (v_max - v_min)
+                node_color = sample_colorscale(colorscale, value)[0]
+            else:
+                node_color = "ghostwhite"
+
+            pos = data["position"]
+            trace = go.Scatter(
+                x=[pos[0]],
+                y=[pos[1]],
+                mode="markers+text",
+                marker=dict(
+                    color=node_color,
+                    size=NODE_SIZE,
+                    line_width=2,
+                    line_color=linecolor or "black",
+                    showscale=False,
+                ),
+                text=[texts.get(label)] if texts else data["id"],
+                textposition="middle center",
+                textfont=dict(
+                    family="monospace",
+                    color=textcolor or "black",
+                    weight="bold",
+                    size=TEXT_SIZE,
+                ),
+                hovertext=hovertexts.get(label) if hovertexts else label,
+                hoverinfo="text",
+            )
+            traces.append(trace)
+        return traces
+
+    def _create_qubit_edge_traces(
+        self,
+        directed: bool = True,
+        values: dict | None = None,
+        texts: dict | None = None,
+        hovertexts: dict | None = None,
+        color: str | None = None,
+        textcolor: str | None = None,
+        colorscale: str = "Viridis",
+    ) -> list[go.Scatter]:
+        if values is None:
+            values = {edge["label"]: 1.0 for edge in self.qubit_edges.values()}
+
+        values = {
+            key: value
+            for key, value in values.items()
+            if isinstance(value, (int, float)) and not math.isnan(value)
+        }
+
+        if len(values) == 0:
+            return []
+
+        v_min = min(values.values())
+        v_max = max(values.values())
+
+        trace = []
+        for data in self.qubit_edges.values():
+            label = data["label"]
+            if label not in values:
+                continue
+            value = values[label]
+
+            if color:
+                edge_color = color
+            elif v_max - v_min != 0:
+                value = (value - v_min) / (v_max - v_min)
+                edge_color = sample_colorscale(colorscale, value)[0]
+            else:
+                edge_color = "ghostwhite"
+
+            x_ini, y_ini = data["position"][0]
+            x_mid, y_mid = data["position"][1]
+            x_fin, y_fin = data["position"][2]
+
+            margin = 0.28
+
+            if directed:
+                offset = 0.08
+                if x_ini == x_fin:
+                    if y_ini < y_fin:
+                        x = [x_ini + offset, x_fin + offset]
+                        y = [y_ini + margin, y_fin - margin]
+                    else:
+                        x = [x_ini - offset, x_fin - offset]
+                        y = [y_ini - margin, y_fin + margin]
+                elif y_ini == y_fin:
+                    if x_ini < x_fin:
+                        x = [x_ini + margin, x_fin - margin]
+                        y = [y_ini - offset, y_fin - offset]
+                    else:
+                        x = [x_ini - margin, x_fin + margin]
+                        y = [y_ini + offset, y_fin + offset]
+            else:
+                x = [x_ini, x_mid, x_fin]
+                y = [y_ini, y_mid, y_fin]
+
+            if directed:
+                trace.append(
+                    go.Scatter(
+                        x=x,
+                        y=y,
+                        mode="markers+lines",
+                        marker=dict(
+                            symbol="arrow",
+                            size=12,
+                            color=edge_color,
+                            angleref="previous",
+                            standoff=0,
+                        ),
+                        line=dict(
+                            width=4,
+                            color=edge_color,
+                        ),
+                        hoverinfo="text",
+                        text=hovertexts.get(label) if hovertexts else label,
+                    )
+                )
+            else:
+                trace.append(
+                    go.Scatter(
+                        x=x,
+                        y=y,
+                        mode="lines+text",
+                        line=dict(
+                            width=NODE_SIZE + 2,
+                            color=edge_color,
+                        ),
+                        text=[None, texts.get(label), None] if texts else None,
+                        textposition="middle center",
+                        textfont=dict(
+                            family="monospace",
+                            color="ghostwhite" if value < 0.5 else "black",
+                            weight="bold",
+                            size=8,
+                        ),
+                        hovertext=hovertexts.get(label) if hovertexts else label,
+                        hoverinfo="text",
+                    )
+                )
+        return trace
+
+    def _create_mux_node_trace(self) -> go.Scatter:
+        x = []
+        y = []
+        text = []
+        for data in self.mux_nodes.values():
+            pos = data["position"]
+            x.append(pos[0])
+            y.append(pos[1])
+            text.append(data["id"])
+
+        return go.Scatter(
+            x=x,
+            y=y,
+            mode="text",
             text=text,
-            hovertext=hovertext,
+            textposition="middle center",
+            textfont=dict(
+                family="monospace",
+                color="lightgrey",
+                weight="bold",
+                size=TEXT_SIZE,
+            ),
+            hoverinfo="none",
         )
+
+    def plot_lattice_data(
+        self,
+        *,
+        title: str = "Latice Data",
+        values: list | None = None,
+        texts: list[str] | None = None,
+        hovertexts: list[str] | None = None,
+        colorscale: str = "Viridis",
+        image_name: str = "lattice_data",
+        images_dir: str = "./images",
+        save_image: bool = False,
+    ):
+        value_matrix = self.create_data_matrix(values) if values else None
+        text_matrix = self.create_data_matrix(texts) if texts else None
+        hovertext_matrix = self.create_data_matrix(hovertexts) if hovertexts else None
+
+        fig = go.Figure(
+            go.Heatmap(
+                z=value_matrix,
+                text=text_matrix,
+                colorscale=colorscale,
+                hoverinfo="text",
+                hovertext=hovertext_matrix or text_matrix,
+                texttemplate="%{text}",
+                showscale=False,
+                textfont=dict(
+                    family="monospace",
+                    size=TEXT_SIZE,
+                    weight="bold",
+                ),
+            )
+        )
+
+        width = 3 * NODE_SIZE * self.n_qubit_cols
+        height = 3 * NODE_SIZE * self.n_qubit_rows
+
+        fig.update_layout(
+            title=title,
+            showlegend=False,
+            margin=dict(b=30, l=30, r=30, t=60),
+            xaxis=dict(
+                ticks="",
+                # showline=False,
+                linewidth=1,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            yaxis=dict(
+                ticks="",
+                autorange="reversed",
+                # showline=False,
+                linewidth=1,
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False,
+            ),
+            width=width,
+            height=height,
+        )
+
         fig.show()
 
+        if save_image:
+            save_figure_image(
+                fig,
+                name=image_name,
+                images_dir=images_dir,
+                format="png",
+                width=width,
+                height=height,
+                scale=3,
+            )
 
-class Visualizer:
-    def __init__(self, graph: LatticeGraph):
-        self.graph = graph
-
-    def create_graph_figure(
+    def create_data_matrix(
         self,
-        hovertext: list[str] | None = None,
-    ) -> go.Figure:
-        n_mux_rows = self.graph.n_mux_rows
-        n_mux_cols = self.graph.n_mux_cols
-        mux_size = 4
-        dx = 1.0
-        dy = 1.0
-        marker_size = 36
+        data: Collection,
+    ) -> list[list]:
+        data = list(data)
 
-        qubit_xy = {}
-        mux_xy = {}
-        for i in range(n_mux_rows):
-            for j in range(n_mux_cols):
-                mux = i * n_mux_cols + j
-                idx = mux * mux_size
-                x = j * dx * 2
-                y = i * dy * 2
-                qubit_xy[idx + 0] = (x, y)
-                qubit_xy[idx + 1] = (x + dx, y)
-                qubit_xy[idx + 2] = (x, y + dy)
-                qubit_xy[idx + 3] = (x + dx, y + dy)
-                mux_xy[mux] = (x + dx / 2, y + dy / 2)
+        if len(data) != self.n_qubits:
+            raise ValueError(
+                f"Length of data ({len(data)}) must be equal to the number of qubits ({self.n_qubits})."
+            )
 
-        edge_x = []
-        edge_y = []
-        for edge in self.graph.edges:
-            x0, y0 = qubit_xy[edge[0]]
-            x1, y1 = qubit_xy[edge[1]]
-            edge_x += [x0, x1, None]
-            edge_y += [y0, y1, None]
+        data_matrix = []
 
-        trace_edge = go.Scatter(
-            x=edge_x,
-            y=edge_y,
-            line=dict(width=2, color="black"),
-            hoverinfo="none",
-            mode="lines",
-        )
+        for qubit_index, data in enumerate(data):
+            mux_index = qubit_index // MUX_SIZE
+            qubit_index_in_mux = qubit_index % MUX_SIZE
+            mux_col = mux_index // self.n_mux_cols
+            row_in_mux = qubit_index_in_mux // (MUX_SIZE // 2)
 
-        qubit_x = []
-        qubit_y = []
-        qubit_text = []
-        for i in range(self.graph.n_qubits):
-            x, y = qubit_xy[i]
-            qubit_x.append(x)
-            qubit_y.append(y)
-            qubit_text.append(self.graph.qubits[i])
+            if mux_col == 0 and row_in_mux == 0:
+                data_matrix.append([])
 
-        trace_qubit = go.Scatter(
-            x=qubit_x,
-            y=qubit_y,
-            mode="markers+text",
-            text=qubit_text,
-            hoverinfo="text",
-            hovertext=hovertext or qubit_text,
-            marker=dict(
-                showscale=False,
-                color="white",
-                size=marker_size,
-                line=dict(color="black", width=2),
-            ),
-            textfont=dict(
-                family="sans-serif",
-                color="black",
-                size=marker_size // 3,
-            ),
-            textposition="middle center",
-        )
+            row = mux_col * 2 + row_in_mux
+            data_matrix[row].append(data)
 
-        mux_x = []
-        mux_y = []
-        mux_text = []
-        for mux, (x, y) in mux_xy.items():
-            mux_x.append(x)
-            mux_y.append(y)
-            mux_text.append(self.graph.muxes[mux])
-
-        trace_mux = go.Scatter(
-            x=mux_x,
-            y=mux_y,
-            mode="text",
-            hoverinfo="none",
-            text=mux_text,
-            textfont=dict(
-                family="sans-serif",
-                color="black",
-                size=marker_size // 3,
-            ),
-            textposition="middle center",
-        )
-
-        fig = go.Figure(
-            data=[trace_edge, trace_qubit, trace_mux],
-            layout=go.Layout(
-                showlegend=False,
-                hovermode="closest",
-                margin=dict(b=0, l=0, r=0, t=0),
-                xaxis=dict(
-                    ticks="",
-                    showgrid=False,
-                    zeroline=False,
-                    showticklabels=False,
-                ),
-                yaxis=dict(
-                    ticks="",
-                    autorange="reversed",
-                    showgrid=False,
-                    zeroline=False,
-                    showticklabels=False,
-                ),
-                height=marker_size * 4 * n_mux_rows,
-                width=marker_size * 4 * n_mux_cols,
-            ),
-        )
-        return fig
-
-    def create_lattice_figure(
-        self,
-        text: list[str] | None = None,
-        hovertext: list[str] | None = None,
-    ) -> go.Figure:
-        n_mux_rows = self.graph.n_mux_rows
-        n_mux_cols = self.graph.n_mux_cols
-        mux_size = 4
-        dx = 1.0
-        dy = 1.0
-        marker_size = 36
-        mux_line_width = 2
-        qubit_line_width = 1
-
-        qubit_xy = {}
-        shapes = []
-        for i in range(n_mux_rows):
-            for j in range(n_mux_cols):
-                mux = i * n_mux_cols + j
-                idx = mux * mux_size
-                x = j * dx * 2
-                y = i * dy * 2
-
-                # muxes
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x,
-                        y0=y,
-                        x1=x + 2 * dx,
-                        y1=y + 2 * dy,
-                        line=dict(color="black", width=mux_line_width),
-                    )
-                )
-
-                # qubits
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x,
-                        y0=y,
-                        x1=x + dx,
-                        y1=y + dy,
-                        line=dict(color="black", width=qubit_line_width),
-                    )
-                )
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x + dx,
-                        y0=y,
-                        x1=x + 2 * dx,
-                        y1=y + dy,
-                        line=dict(color="black", width=qubit_line_width),
-                    )
-                )
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x,
-                        y0=y + dy,
-                        x1=x + dx,
-                        y1=y + 2 * dy,
-                        line=dict(color="black", width=qubit_line_width),
-                    )
-                )
-                shapes.append(
-                    go.layout.Shape(
-                        type="rect",
-                        x0=x + dx,
-                        y0=y + dy,
-                        x1=x + 2 * dx,
-                        y1=y + 2 * dy,
-                        line=dict(color="black", width=qubit_line_width),
-                    )
-                )
-
-                qubit_xy[idx + 0] = (x + 0.5, y + 0.5)
-                qubit_xy[idx + 1] = (x + dx + 0.5, y + 0.5)
-                qubit_xy[idx + 2] = (x + 0.5, y + dy + 0.5)
-                qubit_xy[idx + 3] = (x + dx + 0.5, y + dy + 0.5)
-
-        qubit_x = []
-        qubit_y = []
-        qubit_text = []
-        for i in range(self.graph.n_qubits):
-            x, y = qubit_xy[i]
-            qubit_x.append(x)
-            qubit_y.append(y)
-            qubit_text.append(self.graph.qubits[i])
-
-        trace_qubit = go.Scatter(
-            x=qubit_x,
-            y=qubit_y,
-            mode="text",
-            text=text or qubit_text,
-            hoverinfo="text",
-            hovertext=hovertext or qubit_text,
-            textfont=dict(
-                family="sans-serif",
-                color="black",
-                size=marker_size // 3,
-            ),
-            textposition="middle center",
-        )
-
-        fig = go.Figure(
-            data=[trace_qubit],
-            layout=go.Layout(
-                shapes=shapes,
-                showlegend=False,
-                hovermode="closest",
-                margin=dict(b=10, l=10, r=10, t=10),
-                xaxis=dict(
-                    ticks="",
-                    showline=False,
-                    showgrid=False,
-                    zeroline=False,
-                    showticklabels=False,
-                ),
-                yaxis=dict(
-                    ticks="",
-                    autorange="reversed",
-                    showline=False,
-                    showgrid=False,
-                    zeroline=False,
-                    showticklabels=False,
-                ),
-                height=marker_size * 4 * n_mux_rows,
-                width=marker_size * 4 * n_mux_cols,
-            ),
-        )
-        return fig
+        return data_matrix

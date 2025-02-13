@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import subprocess
-from typing import Collection
+from typing import Collection, Literal
 
 from rich.console import Console
 from rich.prompt import Confirm
@@ -17,6 +17,7 @@ except ImportError:
 
 
 from ..backend import LatticeGraph, StateManager
+from ..diagnostics import ChipInspector
 
 console = Console()
 state_manager = StateManager.shared()
@@ -96,14 +97,387 @@ def resync_clocks(box_ids: Collection[str]) -> bool:
     return state_manager.device_controller.resync_clocks(list(box_ids))
 
 
-def print_chip_info() -> None:
+def print_chip_info(
+    *info_type: Literal[
+        "all",
+        "chip_summary",
+        "resonator_frequency",
+        "qubit_frequency",
+        "qubit_anharmonicity",
+        "external_loss_rate",
+        "internal_loss_rate",
+        "t1",
+        "t2_star",
+        "t2_echo",
+        "static_zz_interaction",
+        "qubit_qubit_coupling_strength",
+        "average_readout_fidelity",
+        "average_gate_fidelity",
+        "x90_gate_fidelity",
+        "x180_gate_fidelity",
+        "zx90_gate_fidelity",
+    ],
+    directed: bool = False,
+    save_image: bool = False,
+) -> None:
     """Print the information of the chip."""
     chip = state_manager.experiment_system.chip
-    graph = LatticeGraph(chip.n_qubits)
-    graph.plot_graph()
 
-    frequencies = [f"{qubit.frequency:.3f}" for qubit in chip.qubits]
-    graph.plot_lattice(text=frequencies)
+    props: dict[str, dict[str, float]] = {
+        key: {
+            qubit: value if value is not None else math.nan
+            for qubit, value in values.items()
+        }
+        for key, values in state_manager.config_loader._props_dict[chip.id].items()
+    }
+
+    graph = LatticeGraph(chip.n_qubits)
+
+    if len(info_type) == 0:
+        info_type = (
+            "chip_summary",
+            "qubit_frequency",
+            "qubit_anharmonicity",
+            "t1",
+            "t2_echo",
+            "average_readout_fidelity",
+            "x90_gate_fidelity",
+            "zx90_gate_fidelity",
+        )
+    elif "all" in info_type:
+        info_type = (
+            "chip_summary",
+            "resonator_frequency",
+            "qubit_frequency",
+            "qubit_anharmonicity",
+            "external_loss_rate",
+            "internal_loss_rate",
+            "t1",
+            "t2_star",
+            "t2_echo",
+            "static_zz_interaction",
+            "qubit_qubit_coupling_strength",
+            "average_readout_fidelity",
+            "average_gate_fidelity",
+            "x90_gate_fidelity",
+            "x180_gate_fidelity",
+            "zx90_gate_fidelity",
+        )
+
+    if "chip_summary" in info_type:
+        inspector = ChipInspector(chip.id)
+        summary = inspector.execute()
+        summary.draw(
+            draw_individual_results=False,
+            save_image=save_image,
+        )
+
+    if "resonator_frequency" in info_type:
+        values = props["resonator_frequency"]
+        graph.plot_lattice_data(
+            title="Resonator frequency (GHz)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value:.3f}<br>GHz" if not math.isnan(value) else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value * 1e3:.3f} MHz"
+                if not math.isnan(value)
+                else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="resonator_frequency",
+        )
+
+    if "qubit_frequency" in info_type:
+        values = props["qubit_frequency"]
+        graph.plot_lattice_data(
+            title="Qubit frequency (GHz)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value:.3f}<br>GHz" if not math.isnan(value) else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value * 1e3:.3f} MHz"
+                if not math.isnan(value)
+                else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="qubit_frequency",
+        )
+
+    if "qubit_anharmonicity" in info_type:
+        values = props["anharmonicity"]
+        graph.plot_lattice_data(
+            title="Qubit anharmonicity (MHz)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value * 1e3:.1f}<br>MHz"
+                if not math.isnan(value)
+                else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value * 1e3:.3f} MHz"
+                if not math.isnan(value)
+                else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="qubit_anharmonicity",
+        )
+
+    if "external_loss_rate" in info_type:
+        values = props["external_loss_rate"]
+        graph.plot_lattice_data(
+            title="External loss rate (MHz)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value * 1e3:.2f}<br>MHz"
+                if not math.isnan(value)
+                else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value * 1e3:.3f} MHz"
+                if not math.isnan(value)
+                else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="external_loss_rate",
+        )
+
+    if "internal_loss_rate" in info_type:
+        values = props["internal_loss_rate"]
+        graph.plot_lattice_data(
+            title="Internal loss rate (MHz)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value * 1e3:.2f}<br>MHz"
+                if not math.isnan(value)
+                else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value * 1e3:.3f} MHz"
+                if not math.isnan(value)
+                else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="internal_loss_rate",
+        )
+
+    if "t1" in info_type:
+        values = props["t1"]
+        graph.plot_lattice_data(
+            title="T1 (μs)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value * 1e-3:.2f}<br>μs"
+                if not math.isnan(value)
+                else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value * 1e-3:.3f} μs"
+                if not math.isnan(value)
+                else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="t1",
+        )
+
+    if "t2_star" in info_type:
+        values = props["t2_star"]
+        graph.plot_lattice_data(
+            title="T2* (μs)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value * 1e-3:.2f}<br>μs"
+                if not math.isnan(value)
+                else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value * 1e-3:.3f} μs"
+                if not math.isnan(value)
+                else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="t2_star",
+        )
+
+    if "t2_echo" in info_type:
+        values = props["t2_echo"]
+        graph.plot_lattice_data(
+            title="T2 echo (μs)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value * 1e-3:.2f}<br>μs"
+                if not math.isnan(value)
+                else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value * 1e-3:.3f} μs"
+                if not math.isnan(value)
+                else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="t2_echo",
+        )
+
+    def create_undirected_data(data: dict[str, float]) -> dict[str, float]:
+        result = {}
+        for key, value in data.items():
+            if value is None:
+                continue
+            pair = key.split("-")
+            inv_key = f"{pair[1]}-{pair[0]}"
+            if inv_key in result:
+                result[inv_key] = (result[inv_key] + value) / 2
+            else:
+                result[key] = float(value)
+        return result
+
+    if "static_zz_interaction" in info_type:
+        values = (
+            props["static_zz_interaction"]
+            if directed
+            else create_undirected_data(props["static_zz_interaction"])
+        )
+        graph.plot_graph_data(
+            directed=directed,
+            title="Static ZZ interaction (kHz)",
+            edge_values={key: value for key, value in values.items()},
+            edge_texts={
+                key: f"{value * 1e6:.0f}" if not math.isnan(value) else None
+                for key, value in values.items()
+            },
+            edge_hovertexts={
+                key: f"{key}: {value * 1e6:.1f} kHz" if not math.isnan(value) else "N/A"
+                for key, value in values.items()
+            },
+            save_image=save_image,
+            image_name="static_zz_interaction",
+        )
+
+    if "qubit_qubit_coupling_strength" in info_type:
+        values = (
+            props["qubit_qubit_coupling_strength"]
+            if directed
+            else create_undirected_data(props["qubit_qubit_coupling_strength"])
+        )
+        graph.plot_graph_data(
+            directed=directed,
+            title="Qubit-qubit coupling strength (MHz)",
+            edge_values={key: value for key, value in values.items()},
+            edge_texts={
+                key: f"{value * 1e3:.1f}" if not math.isnan(value) else None
+                for key, value in values.items()
+            },
+            edge_hovertexts={
+                key: f"{key}: {value * 1e3:.1f} MHz" if not math.isnan(value) else "N/A"
+                for key, value in values.items()
+            },
+            save_image=save_image,
+            image_name="qubit_qubit_coupling_strength",
+        )
+
+    if "average_readout_fidelity" in info_type:
+        values = props["average_readout_fidelity"]
+        graph.plot_lattice_data(
+            title="Average readout fidelity (%)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value:.2%}" if not math.isnan(value) else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value:.2%}" if not math.isnan(value) else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="average_readout_fidelity",
+        )
+
+    if "average_gate_fidelity" in info_type:
+        values = props["average_gate_fidelity"]
+        graph.plot_lattice_data(
+            title="Average gate fidelity (%)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value:.2%}" if not math.isnan(value) else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value:.2%}" if not math.isnan(value) else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="average_gate_fidelity",
+        )
+
+    if "x90_gate_fidelity" in info_type:
+        values = props["x90_gate_fidelity"]
+        graph.plot_lattice_data(
+            title="X90 gate fidelity (%)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value:.2%}" if not math.isnan(value) else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value:.2%}" if not math.isnan(value) else f"{qubit}: N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="x90_gate_fidelity",
+        )
+
+    if "x180_gate_fidelity" in info_type:
+        values = props["x180_gate_fidelity"]
+        graph.plot_lattice_data(
+            title="X180 gate fidelity (%)",
+            values=list(values.values()),
+            texts=[
+                f"{qubit}<br>{value:.2%}" if not math.isnan(value) else "N/A"
+                for qubit, value in values.items()
+            ],
+            hovertexts=[
+                f"{qubit}: {value:.2%}" if not math.isnan(value) else "N/A"
+                for qubit, value in values.items()
+            ],
+            save_image=save_image,
+            image_name="x180_gate_fidelity",
+        )
+
+    if "zx90_gate_fidelity" in info_type:
+        values = props["zx90_gate_fidelity"]
+        graph.plot_graph_data(
+            directed=True,
+            title="ZX90 gate fidelity (%)",
+            edge_values={key: value for key, value in values.items()},
+            edge_texts={
+                key: f"{value:.2%}" if not math.isnan(value) else None
+                for key, value in values.items()
+            },
+            edge_hovertexts={
+                key: f"{key}: {value:.2%}" if not math.isnan(value) else "N/A"
+                for key, value in values.items()
+            },
+            save_image=save_image,
+            image_name="zx90_gate_fidelity",
+        )
 
 
 def print_wiring_info(qubits: Collection[str] | None = None) -> None:
@@ -149,7 +523,7 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     console.print(table)
 
 
-def print_box_info(box_id: str | None = None, fetch: bool = False) -> None:
+def print_box_info(box_id: str | None = None, fetch: bool = True) -> None:
     """Print the information of a box."""
     if box_id is None:
         box_ids = [box.id for box in state_manager.experiment_system.boxes]

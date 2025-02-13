@@ -30,6 +30,7 @@ from ..backend import (
     Resonator,
     StateManager,
     Target,
+    TargetType,
 )
 from ..clifford import Clifford, CliffordGenerator
 from ..measurement import Measurement, MeasureResult, StateClassifier
@@ -195,6 +196,8 @@ class Experiment(
         params_dir: str,
     ) -> list[str]:
         """Create the list of qubit labels."""
+        if muxes is None and qubits is None:
+            return []
         state_manager = StateManager.shared()
         state_manager.load(
             chip_id=chip_id,
@@ -461,28 +464,33 @@ class Experiment(
 
         if calib_amplitude is None or calib_beta is None:
             return {}
+
         return {
             target: Drag(
                 duration=DRAG_HPI_DURATION,
                 amplitude=calib_amplitude[target],
                 beta=calib_beta[target],
             )
-            for target in calib_amplitude
+            for target in self._qubits
+            if target in calib_amplitude and target in calib_beta
         }
 
     @property
     def drag_pi_pulse(self) -> dict[str, Waveform]:
         calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
         calib_beta: dict[str, float] = self._system_note.get(DRAG_PI_BETA)
+
         if calib_amplitude is None or calib_beta is None:
             return {}
+
         return {
             target: Drag(
                 duration=DRAG_PI_DURATION,
                 amplitude=calib_amplitude[target],
                 beta=calib_beta[target],
             )
-            for target in calib_amplitude
+            for target in self._qubits
+            if target in calib_amplitude and target in calib_beta
         }
 
     @property
@@ -732,6 +740,7 @@ class Experiment(
         box_id: str,
         port_number: int,
         channel_number: int,
+        target_type: TargetType = TargetType.CTRL_GE,
         update_lsi: bool = False,
     ):
         try:
@@ -747,6 +756,7 @@ class Experiment(
             frequency=frequency,
             object=qubit,
             channel=channel,  # type: ignore
+            type=target_type,
         )
         self.experiment_system.add_target(target)
         self.device_controller.define_target(
