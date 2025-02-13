@@ -342,7 +342,7 @@ class Experiment(
             for qubit in self.experiment_system.qubits
             if qubit.label in self.qubit_labels
         }
-
+        
     @property
     def resonators(self) -> dict[str, Resonator]:
         return {
@@ -643,6 +643,55 @@ class Experiment(
                 return hpi
             else:
                 raise ValueError("Invalid state.")
+            
+    def get_cr_labels(self, inverse: bool = False) -> list[str]:
+        """
+        Generate CR labels for qubit pairs.
+        
+        Args:
+            inverse (bool): If True, sort pairs from high to low frequency.
+        
+        Returns:
+            list[str]: Formatted qubit pair labels.
+        """
+        import math
+
+        def _all_edge_pairs(total_nodes: int) -> list[tuple[str, str]]:
+            d = int(math.sqrt(total_nodes / 4))
+            if 4 * d * d != total_nodes:
+                raise ValueError("Invalid number of nodes.")
+            def _node(i: int, j: int, k: int) -> int:
+                return 4 * (i * d + j) + k
+            def _label(node: int) -> str:
+                return f"Q{node:02d}"
+            edges = []
+            for i in range(d):
+                for j in range(d):
+                    edges.append((_node(i, j, 0), _node(i, j, 1)))
+                    edges.append((_node(i, j, 0), _node(i, j, 2)))
+                    edges.append((_node(i, j, 1), _node(i, j, 3)))
+                    edges.append((_node(i, j, 2), _node(i, j, 3)))
+                    if i < d - 1:
+                        edges.append((_node(i, j, 2), _node(i + 1, j, 0)))
+                        edges.append((_node(i, j, 3), _node(i + 1, j, 1)))
+                    if j < d - 1:
+                        edges.append((_node(i, j, 1), _node(i, j + 1, 0)))
+                        edges.append((_node(i, j, 3), _node(i, j + 1, 2)))
+            return [(_label(a), _label(b)) for a, b in edges]
+
+        def _filter_edges(edges: list[tuple[str, str]], qubits: set[str]) -> list[tuple[str, str]]:
+            return [edge for edge in edges if set(edge).issubset(qubits)]
+
+        def _sort_pairs(pairs: list[tuple[str, str]], reverse: bool) -> list[tuple[str, str]]:
+            return [(sorted(pair, key=lambda q: self.qubits[q].frequency, reverse=reverse)[0], sorted(pair, key=lambda q: self.qubits[q].frequency, reverse=reverse)[1]) for pair in pairs]
+
+        def _format_pairs(pairs: list[tuple[str, str]]) -> list[str]:
+            return [f"{a}-{b}" for a, b in pairs]
+
+        edges = _all_edge_pairs(64) #TODO: remove hard-coded number
+        filtered = _filter_edges(edges, set(self.qubit_labels))
+        sorted_pairs = _sort_pairs(filtered, reverse=inverse)
+        return _format_pairs(sorted_pairs)
 
     def get_spectators(
         self,
