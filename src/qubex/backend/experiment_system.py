@@ -406,7 +406,7 @@ class ExperimentSystem:
         port.vatt = params.get_control_vatt(qubit.label)
         port.fullscale_current = params.get_control_fsc(qubit.label)
         for idx, gen_channel in enumerate(port.channels):
-            gen_channel.fnco_freq = config["fnco"][idx]
+            gen_channel.fnco_freq = config["channels"][idx]["fnco"]
 
         if port.n_channels == 1:
             # ge only
@@ -575,7 +575,12 @@ class ExperimentSystem:
             return {
                 "lo": lo,
                 "cnco": cnco,
-                "fnco": (fnco,),
+                "channels": {
+                    0: {
+                        "fnco": fnco,
+                        "targets": [qubit.label],
+                    },
+                },
             }
 
         elif n_channels != 3:
@@ -621,7 +626,23 @@ class ExperimentSystem:
         return {
             "lo": lo,
             "cnco": cnco,
-            "fnco": (fnco_ge, fnco_ef, fnco_CR),
+            "channels": {
+                0: {
+                    "fnco": fnco_ge,
+                    "targets": [qubit.label],
+                },
+                1: {
+                    "fnco": fnco_ef,
+                    "targets": [f"{qubit.label}-ef"],
+                },
+                2: {
+                    "fnco": fnco_CR,
+                    "targets": [
+                        f"{qubit.label}-{spectator.label}"
+                        for spectator in self.get_spectator_qubits(qubit.label)
+                    ],
+                },
+            },
         }
 
     def _find_center_freq_for_cr(
