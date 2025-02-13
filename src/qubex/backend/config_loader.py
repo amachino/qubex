@@ -139,15 +139,12 @@ class ConfigLoader:
                 qubit.frequency = props["qubit_frequency"].get(
                     qubit.label, float("nan")
                 ) or float("nan")
-                # anharmonicity = props["anharmonicity"].get(qubit.label)
-                # if anharmonicity is None:
-                #     factor = -1 / 19  # E_J / E_C = 50
-                #     qubit.anharmonicity = qubit.frequency * factor
-                # else:
-                #     qubit.anharmonicity = anharmonicity
-                qubit.anharmonicity = props["anharmonicity"].get(
-                    qubit.label, float("nan")
-                ) or float("nan")
+                anharmonicity = props["anharmonicity"].get(qubit.label)
+                if anharmonicity is None:
+                    factor = -1 / 19  # E_J / E_C = 50
+                    qubit.anharmonicity = qubit.frequency * factor
+                else:
+                    qubit.anharmonicity = anharmonicity
             for resonator in chip.resonators:
                 resonator.frequency = props["resonator_frequency"].get(
                     resonator.qubit, float("nan")
