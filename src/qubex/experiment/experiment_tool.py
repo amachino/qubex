@@ -17,6 +17,7 @@ except ImportError:
 
 
 from ..backend import LatticeGraph, StateManager
+from ..diagnostics import ChipInspector
 
 console = Console()
 state_manager = StateManager.shared()
@@ -99,6 +100,7 @@ def resync_clocks(box_ids: Collection[str]) -> bool:
 def print_chip_info(
     *info_type: Literal[
         "all",
+        "chip_summary",
         "resonator_frequency",
         "qubit_frequency",
         "qubit_anharmonicity",
@@ -133,6 +135,7 @@ def print_chip_info(
 
     if len(info_type) == 0:
         info_type = (
+            "chip_summary",
             "qubit_frequency",
             "qubit_anharmonicity",
             "t1",
@@ -143,6 +146,7 @@ def print_chip_info(
         )
     elif "all" in info_type:
         info_type = (
+            "chip_summary",
             "resonator_frequency",
             "qubit_frequency",
             "qubit_anharmonicity",
@@ -158,6 +162,14 @@ def print_chip_info(
             "x90_gate_fidelity",
             "x180_gate_fidelity",
             "zx90_gate_fidelity",
+        )
+
+    if "chip_summary" in info_type:
+        inspector = ChipInspector(chip.id)
+        summary = inspector.execute()
+        summary.draw(
+            draw_individual_results=False,
+            save_image=save_image,
         )
 
     if "resonator_frequency" in info_type:

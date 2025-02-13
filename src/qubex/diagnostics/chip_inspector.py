@@ -131,6 +131,7 @@ class InspectionSummary:
 
     def draw(
         self,
+        draw_individual_results: bool = True,
         save_image: bool = False,
         images_dir: str = "./images",
     ):
@@ -221,8 +222,9 @@ class InspectionSummary:
             images_dir=images_dir,
         )
 
-        for inspection in self.inspections.values():
-            inspection.draw(
-                save_image=save_image,
-                images_dir=images_dir,
-            )
+        if draw_individual_results:
+            for inspection in self.inspections.values():
+                inspection.draw(
+                    save_image=save_image,
+                    images_dir=images_dir,
+                )
