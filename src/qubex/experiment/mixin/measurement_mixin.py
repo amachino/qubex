@@ -798,7 +798,7 @@ class MeasurementMixin(
 
     def obtain_rabi_params(
         self,
-        targets: Collection[str] | None = None,
+        targets: str | Collection[str] | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
@@ -812,6 +812,8 @@ class MeasurementMixin(
     ) -> ExperimentResult[RabiData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
         time_range = np.asarray(time_range)
