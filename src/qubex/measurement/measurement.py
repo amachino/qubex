@@ -173,10 +173,10 @@ class Measurement:
         """Get the state classifiers."""
         return self._classifiers
 
-    @classifiers.setter
-    def classifiers(self, classifiers: TargetMap[StateClassifier]):
-        """Set the state classifiers."""
-        self._classifiers = classifiers
+    def update_classifiers(self, classifiers: TargetMap[StateClassifier]):
+        """Update the state classifiers."""
+        for target, classifier in classifiers.items():
+            self._classifiers[target] = classifier  # type: ignore
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """

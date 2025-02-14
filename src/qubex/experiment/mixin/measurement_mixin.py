@@ -379,7 +379,7 @@ class MeasurementMixin(
 
     def build_classifier(
         self,
-        targets: Collection[str] | None = None,
+        targets: str | Collection[str] | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         shots: int = 10000,
@@ -388,6 +388,8 @@ class MeasurementMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -418,7 +420,7 @@ class MeasurementMixin(
             }
         else:
             raise ValueError("Invalid classifier type.")
-        self.measurement.classifiers = classifiers
+        self.measurement.update_classifiers(classifiers)
 
         fidelities = {}
         average_fidelities = {}
