@@ -88,6 +88,7 @@ class ExperimentSystem:
         wiring_info: WiringInfo,
         control_params: ControlParams,
         targets_to_exclude: list[str] | None = None,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
         self._quantum_system: Final = quantum_system
         self._control_system: Final = control_system
@@ -95,7 +96,7 @@ class ExperimentSystem:
         self._control_params: Final = control_params
         self._targets_to_exclude: Final = targets_to_exclude or []
         self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
-        self.configure()
+        self.configure(mode=configuration_mode)
 
     @property
     def hash(self) -> int:
@@ -574,6 +575,7 @@ class ExperimentSystem:
         mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         ssb: Literal["U", "L"] = "L",
         cnco_center: int = CNCO_CENTER_CTRL,
+        min_frequency: float = 6.5e9,
     ) -> dict:
         """
         Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
@@ -640,6 +642,8 @@ class ExperimentSystem:
             f_CR_max = max(f_CRs)
             if f_CR_max > f_ge:
                 # if any CR is larger than GE, then let EF be the smallest
+                if f_ef < min_frequency:
+                    f_ef = f_ge
                 lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
                     f=f_ef + FNCO_MAX,
                     ssb=ssb,

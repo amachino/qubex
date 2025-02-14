@@ -50,6 +50,7 @@ class Measurement:
         fetch_device_state: bool = True,
         connect_devices: bool = False,
         use_neopulse: bool = False,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
         """
         Initialize the Measurement.
@@ -84,18 +85,21 @@ class Measurement:
         self._load_device_state(
             fetch_device_state=fetch_device_state,
             connect_devices=connect_devices,
+            configuration_mode=configuration_mode,
         )
 
     def _load_device_state(
         self,
         fetch_device_state: bool,
         connect_devices: bool,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
         self._state_manager = StateManager.shared()
         self.state_manager.load(
             chip_id=self._chip_id,
             config_dir=self._config_dir,
             params_dir=self._params_dir,
+            configuration_mode=configuration_mode,
         )
         box_ids = []
         if self._qubits is not None:

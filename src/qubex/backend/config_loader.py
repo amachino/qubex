@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 import yaml
 
@@ -32,6 +32,7 @@ class ConfigLoader:
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
         targets_to_exclude: list[str] | None = None,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
         """
         Initializes the ConfigLoader object.
@@ -71,7 +72,8 @@ class ConfigLoader:
         self._wiring_info_dict = self._load_wiring_info()
         self._control_params_dict = self._load_control_params()
         self._experiment_system_dict = self._load_experiment_system(
-            targets_to_exclude=targets_to_exclude
+            targets_to_exclude=targets_to_exclude,
+            configuration_mode=configuration_mode,
         )
 
     @property
@@ -233,6 +235,7 @@ class ConfigLoader:
     def _load_experiment_system(
         self,
         targets_to_exclude: list[str] | None = None,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ) -> dict[str, ExperimentSystem]:
         experiment_system_dict = {}
         for chip_id in self._chip_dict:
@@ -246,6 +249,7 @@ class ConfigLoader:
                 wiring_info=wiring_info,
                 control_params=control_params,
                 targets_to_exclude=targets_to_exclude,
+                configuration_mode=configuration_mode,
             )
             experiment_system_dict[chip_id] = experiment_system
         return experiment_system_dict
