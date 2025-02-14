@@ -1109,9 +1109,9 @@ class MeasurementMixin(
 
         labels = [f"|{i}⟩" for i in result.probabilities.keys()]
         prob = np.array(list(result.probabilities.values()))
-        cm_imv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
+        cm_inv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
 
-        mitigated_prob = prob @ cm_imv
+        mitigated_prob = prob @ cm_inv
 
         fig = go.Figure()
         fig.add_trace(
