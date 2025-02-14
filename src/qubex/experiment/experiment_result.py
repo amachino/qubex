@@ -29,7 +29,7 @@ class TargetData:
     target: str
     data: NDArray
 
-    def plot(self, *args, **kwargs) -> go.Figure:
+    def plot(self, *args, **kwargs):
         raise NotImplementedError
 
     def fit(self, *args, **kwargs):
@@ -136,7 +136,7 @@ class RabiData(TargetData):
         *,
         normalize: bool = False,
         use_zvalue: bool = False,
-    ) -> go.Figure:
+    ):
         if use_zvalue:
             fig = go.Figure()
             fig.add_trace(
@@ -221,8 +221,6 @@ class RabiData(TargetData):
                 yaxis_title="Signal (arb. unit)",
             )
             fig.show()
-
-        return fig
 
     def fit(
         self,
@@ -309,7 +307,7 @@ class SweepData(TargetData):
         yaxis_type: str | None = None,
         xaxis_title: str | None = None,
         yaxis_title: str | None = None,
-    ) -> go.Figure:
+    ):
         if use_zvalue:
             fig = go.Figure()
             fig.add_trace(
@@ -332,7 +330,7 @@ class SweepData(TargetData):
             param = self.rabi_param
             if param is None:
                 print("rabi_param must be provided for normalization.")
-                return
+                return  # type: ignore
             values = self.normalized
             fig = go.Figure()
             fig.add_trace(
@@ -380,8 +378,6 @@ class SweepData(TargetData):
                 yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             )
             fig.show()
-
-        return fig
 
 
 @dataclass
