@@ -224,5 +224,4 @@ class ExperimentNote:
             else:
                 if isinstance(value, float) and np.isnan(value):
                     value = None
-                else:
-                    old_dict[key] = value
+                old_dict[key] = value
