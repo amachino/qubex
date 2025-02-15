@@ -136,6 +136,8 @@ class Experiment(
         params_dir: str = DEFAULT_PARAMS_DIR,
         fetch_device_state: bool = True,
         linkup: bool = True,
+        drag_hpi_duration: int = DRAG_HPI_DURATION,
+        drag_pi_duration: int = DRAG_PI_DURATION,
         connect_devices: bool = True,
         control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
@@ -160,6 +162,8 @@ class Experiment(
         self._qubits: Final = qubits
         self._config_dir: Final = config_dir
         self._params_dir: Final = params_dir
+        self._drag_hpi_duration: Final = drag_hpi_duration
+        self._drag_pi_duration: Final = drag_pi_duration
         self._control_window: Final = control_window
         self._capture_window: Final = capture_window
         self._capture_margin: Final = capture_margin
@@ -281,6 +285,14 @@ class Experiment(
     @property
     def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
         return self._configuration_mode
+
+    @property
+    def drag_hpi_duration(self) -> int:
+        return self._drag_hpi_duration
+
+    @property
+    def drag_pi_duration(self) -> int:
+        return self._drag_pi_duration
 
     @property
     def control_window(self) -> int | None:
@@ -482,7 +494,7 @@ class Experiment(
 
         return {
             target: Drag(
-                duration=DRAG_HPI_DURATION,
+                duration=self.drag_hpi_duration,
                 amplitude=calib_amplitude[target],
                 beta=calib_beta[target],
             )
@@ -500,7 +512,7 @@ class Experiment(
 
         return {
             target: Drag(
-                duration=DRAG_PI_DURATION,
+                duration=self.drag_pi_duration,
                 amplitude=calib_amplitude[target],
                 beta=calib_beta[target],
             )
