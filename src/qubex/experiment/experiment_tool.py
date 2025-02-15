@@ -4,6 +4,7 @@ import math
 import subprocess
 from typing import Collection, Literal
 
+import yaml
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
@@ -11,6 +12,7 @@ from rich.table import Table
 try:
     import quel_clock_master as qcm
     from qubecalib import QubeCalib
+    from qubecalib.instrument.quel.quel1.tool import Skew
     from quel_ic_config import Quel1Box
 except ImportError:
     pass
@@ -21,6 +23,75 @@ from ..diagnostics import ChipInspector
 
 console = Console()
 state_manager = StateManager.shared()
+
+
+def check_skew(
+    box_ids: Collection[str],
+    skew_file: str = "/home/shared/config/skew.yaml",
+) -> None:
+    """Check the skew of the boxes."""
+    with open(skew_file, "r") as file:
+        config = yaml.safe_load(file)
+    ref_port = config["reference_port"].split(".")[0]
+
+    confirmed = Confirm.ask(
+        f"""
+You are going to check the skew of the following boxes using [bold bright_green]'{ref_port}'[/bold bright_green] as the reference.
+
+[bold bright_green]{box_ids}[/bold bright_green]
+
+Do you want to continue?
+"""
+    )
+    if not confirmed:
+        print("Operation cancelled.")
+        return
+
+    box_ids = list(set(list(box_ids) + [ref_port]))
+    qc = get_qubecalib()
+    system = qc.create_quel1system(box_ids)
+    skew = Skew(system, qubecalib=qc)
+    skew.load(skew_file)
+    qc.resync(*box_ids)
+    skew.measure()
+    skew.plot()
+
+
+def adjust_skew(
+    box_ids: Collection[str],
+    skew_file: str = "/home/shared/config/skew.yaml",
+    output_path: str = "./skew.yaml",
+) -> None:
+    """Adjust the skew of the boxes."""
+    with open(skew_file, "r") as file:
+        config = yaml.safe_load(file)
+    ref_port = config["reference_port"].split(".")[0]
+
+    confirmed = Confirm.ask(
+        f"""
+You are going to check the skew of the following boxes using [bold bright_green]'{ref_port}'[/bold bright_green] as the reference.
+
+[bold bright_green]{box_ids}[/bold bright_green]
+
+Do you want to continue?
+"""
+    )
+    if not confirmed:
+        print("Operation cancelled.")
+        return
+
+    box_ids = list(set(list(box_ids) + [ref_port]))
+    qc = get_qubecalib()
+    system = qc.create_quel1system(box_ids)
+    skew = Skew(system, qubecalib=qc)
+    skew.load(skew_file)
+    qc.resync(*box_ids)
+    skew_results = skew.adjust()
+    skew.plot()
+    print(skew_results)
+    skew.measure()
+    skew.plot()
+    skew.save(output_path)
 
 
 def get_qubecalib() -> QubeCalib:
