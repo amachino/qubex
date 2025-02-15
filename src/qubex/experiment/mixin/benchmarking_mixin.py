@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Literal
-
 import numpy as np
 from numpy.typing import ArrayLike
 from tqdm import tqdm
@@ -215,7 +213,6 @@ class BenchmarkingMixin(
         x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: Waveform | None = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -231,19 +228,6 @@ class BenchmarkingMixin(
 
         def rb_sequence(N: int) -> PulseSchedule:
             with PulseSchedule([target]) as ps:
-                # Excite spectator qubits if needed
-                if spectator_state != "0":
-                    spectators = self.get_spectators(target)
-                    for spectator in spectators:
-                        if spectator.label in self.qubit_labels:
-                            pulse = self.get_pulse_for_state(
-                                target=spectator.label,
-                                state=spectator_state,
-                            )
-                            ps.add(spectator.label, pulse)
-                    ps.barrier()
-
-                # Randomized benchmarking sequence
                 rb_sequence = self.rb_sequence_1q(
                     target=target,
                     n=N,
@@ -312,7 +296,6 @@ class BenchmarkingMixin(
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
         mitigate_readout: bool = True,
         shots: int = DEFAULT_SHOTS,
@@ -332,28 +315,6 @@ class BenchmarkingMixin(
 
         def rb_sequence(N: int) -> PulseSchedule:
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
-                # Excite spectator qubits if needed
-                if spectator_state != "0":
-                    control_spectators = {
-                        qubit.label for qubit in self.get_spectators(control_qubit)
-                    }
-                    target_spectators = {
-                        qubit.label for qubit in self.get_spectators(target_qubit)
-                    }
-                    spectators = (control_spectators | target_spectators) - {
-                        control_qubit,
-                        target_qubit,
-                    }
-                    for spectator in spectators:
-                        if spectator in self.qubit_labels:
-                            pulse = self.get_pulse_for_state(
-                                target=spectator,
-                                state=spectator_state,
-                            )
-                            ps.add(spectator, pulse)
-                    ps.barrier()
-
-                # Randomized benchmarking sequence
                 rb_sequence = self.rb_sequence_2q(
                     target=target,
                     n=N,
@@ -418,7 +379,6 @@ class BenchmarkingMixin(
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -461,7 +421,6 @@ class BenchmarkingMixin(
                         zx90=zx90,
                         interleaved_waveform=None,
                         interleaved_clifford=None,
-                        spectator_state=spectator_state,
                         seed=seed,
                         shots=shots,
                         interval=interval,
@@ -472,7 +431,6 @@ class BenchmarkingMixin(
                     result = self.rb_experiment_1q(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
-                        spectator_state=spectator_state,
                         x90=x90,
                         seed=seed,
                         shots=shots,
@@ -525,7 +483,6 @@ class BenchmarkingMixin(
         zx90: (
             PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
         ) = None,
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -574,7 +531,6 @@ class BenchmarkingMixin(
                         n_cliffords_range=n_cliffords_range,
                         x90=x90,
                         zx90=zx90,
-                        spectator_state=spectator_state,
                         seed=seed,
                         shots=shots,
                         interval=interval,
@@ -590,7 +546,6 @@ class BenchmarkingMixin(
                         zx90=zx90,
                         interleaved_waveform=interleaved_waveform,
                         interleaved_clifford=interleaved_clifford,
-                        spectator_state=spectator_state,
                         seed=seed,
                         shots=shots,
                         interval=interval,
@@ -603,7 +558,6 @@ class BenchmarkingMixin(
                         target=target,
                         n_cliffords_range=n_cliffords_range,
                         x90=x90,  # type: ignore
-                        spectator_state=spectator_state,
                         seed=seed,
                         shots=shots,
                         interval=interval,
@@ -619,7 +573,6 @@ class BenchmarkingMixin(
                         x90=x90,  # type: ignore
                         interleaved_waveform=interleaved_waveform,  # type: ignore
                         interleaved_clifford=interleaved_clifford,
-                        spectator_state=spectator_state,
                         seed=seed,
                         shots=shots,
                         interval=interval,
