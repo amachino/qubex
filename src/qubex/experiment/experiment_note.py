@@ -99,20 +99,21 @@ class ExperimentNote:
         self._dict.clear()
         print("All entries have been cleared from the ExperimentNote.")
 
-    def save(self, filename: str | None = None):
+    def save(self, file_path: str | None = None):
         """
         Saves the ExperimentNote to a JSON file.
 
         Parameters
         ----------
-        filename : str, optional
-            The name of the file to save to. Defaults to 'experiment_note.json'.
+        file_path : str, optional
+            The path to save the JSON file. Defaults to the path specified in the constructor.
         """
         try:
-            filename = filename or self._file_path
-            with open(filename, "w") as file:
+            file_path = file_path or self._file_path
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w") as file:
                 json.dump(self._dict, file, indent=4)
-            print(f"ExperimentNote saved to '{filename}'.")
+            print(f"ExperimentNote saved to '{file_path}'.")
         except Exception as e:
             print(f"Failed to save ExperimentNote: {e}")
 

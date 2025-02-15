@@ -474,7 +474,7 @@ class CalibrationMixin(
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
         self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
-        self.calibration_note.hpi_params = {
+        self.calib_note.hpi_params = {
             target: {
                 "duration": HPI_DURATION,
                 "amplitude": ampl[target],
@@ -506,7 +506,7 @@ class CalibrationMixin(
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
         self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
-        self.calibration_note.pi_params = {
+        self.calib_note.pi_params = {
             target: {
                 "duration": PI_DURATION,
                 "amplitude": ampl[target],
@@ -538,7 +538,7 @@ class CalibrationMixin(
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
         self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
-        self.calibration_note.hpi_params = {
+        self.calib_note.hpi_params = {
             target: {
                 "duration": HPI_DURATION,
                 "amplitude": ampl[target],
@@ -570,7 +570,7 @@ class CalibrationMixin(
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
         self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
-        self.calibration_note.pi_params = {
+        self.calib_note.pi_params = {
             target: {
                 "duration": PI_DURATION,
                 "amplitude": ampl[target],
@@ -616,7 +616,7 @@ class CalibrationMixin(
                 interval=interval,
             )
             self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
-            self.calibration_note.drag_hpi_params = {
+            self.calib_note.drag_hpi_params = {
                 target: {
                     "duration": self.drag_hpi_duration,
                     "amplitude": amplitude[target],
@@ -642,7 +642,7 @@ class CalibrationMixin(
                     for target in targets
                 }
             self.system_note.put(DRAG_HPI_BETA, beta)  # deprecated
-            self.calibration_note.drag_hpi_params = {
+            self.calib_note.drag_hpi_params = {
                 target: {
                     "duration": self.drag_hpi_duration,
                     "amplitude": amplitude[target],
@@ -696,7 +696,7 @@ class CalibrationMixin(
                 interval=interval,
             )
             self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
-            self.calibration_note.drag_pi_params = {
+            self.calib_note.drag_pi_params = {
                 target: {
                     "duration": self.drag_pi_duration,
                     "amplitude": amplitude[target],
@@ -723,7 +723,7 @@ class CalibrationMixin(
                     for target in targets
                 }
             self.system_note.put(DRAG_PI_BETA, beta)  # deprecated
-            self.calibration_note.drag_pi_params = {
+            self.calib_note.drag_pi_params = {
                 target: {
                     "duration": self.drag_pi_duration,
                     "amplitude": amplitude[target],
@@ -1076,7 +1076,7 @@ class CalibrationMixin(
                 },
             },
         )
-        self.calibration_note.cr_params = {
+        self.calib_note.cr_params = {
             f"{control_qubit}-{target_qubit}": {
                 "cr_pulse": cr_pulse,
                 "cancel_pulse": cancel_pulse,
@@ -1189,7 +1189,7 @@ class CalibrationMixin(
                 },
             },
         )
-        self.calibration_note.cr_params = {
+        self.calib_note.cr_params = {
             cr_label: {
                 "duration": cr_duration,
                 "ramptime": cr_ramptime,
@@ -1313,7 +1313,7 @@ class CalibrationMixin(
                     },
                 },
             )
-            self.calibration_note.cr_params = {
+            self.calib_note.cr_params = {
                 cr_label: {
                     "duration": duration,
                     "ramptime": cr_ramptime,
@@ -1437,7 +1437,7 @@ class CalibrationMixin(
                     },
                 },
             )
-            self.calibration_note.cr_params = {
+            self.calib_note.cr_params = {
                 cr_label: {
                     "duration": duration,
                     "ramptime": cr_ramptime,
@@ -1678,7 +1678,7 @@ class CalibrationMixin(
                 },
             },
         )
-        self.calibration_note.cr_params = {
+        self.calib_note.cr_params = {
             cr_label: {
                 "duration": duration,
                 "ramptime": cr_ramptime,

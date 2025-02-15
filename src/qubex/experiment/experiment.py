@@ -205,7 +205,7 @@ class Experiment(
         self._system_note: Final = ExperimentNote(
             file_path=SYSTEM_NOTE_PATH,
         )
-        self._calibration_note: Final = CalibrationNote(
+        self._calib_note: Final = CalibrationNote(
             chip_id=chip_id,
             dir_path=calibration_dir,
         )
@@ -454,10 +454,11 @@ class Experiment(
         return str(Path(self._params_dir).resolve())
 
     @property
-    def calibration_note(self) -> CalibrationNote:
-        return self._calibration_note
+    def calib_note(self) -> CalibrationNote:
+        return self._calib_note
 
     @property
+    @deprecated("This property is deprecated. Use `calibration_note` instead.")
     def system_note(self) -> ExperimentNote:
         return self._system_note
 
@@ -670,7 +671,7 @@ class Experiment(
             RABI_PARAMS,
             {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
         )
-        self.calibration_note.rabi_params = {
+        self.calib_note.rabi_params = {
             label: asdict(rabi_param) for label, rabi_param in rabi_params.items()
         }
         console.print("Rabi parameters are stored.")
@@ -842,15 +843,19 @@ class Experiment(
             with self.state_manager.modified_frequencies(frequencies):
                 yield
 
+    @deprecated("Use `calibration_note` instead.")
     def print_defaults(self):
         display(self._system_note)
 
+    @deprecated("Use `calibration_note.save()` instead.")
     def save_defaults(self):
         self._system_note.save()
 
+    @deprecated("Use `calibration_note.clear()` instead.")
     def clear_defaults(self):
         self._system_note.clear()
 
+    @deprecated("")
     def delete_defaults(self):
         if Confirm.ask("Delete the default params?"):
             self._system_note.clear()

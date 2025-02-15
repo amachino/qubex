@@ -170,7 +170,7 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def calibration_note(self) -> CalibrationNote:
+    def calib_note(self) -> CalibrationNote:
         """Get the calibration note."""
         ...
 
