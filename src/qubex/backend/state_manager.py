@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from rich.console import Console
 from rich.prompt import Confirm
@@ -206,6 +207,7 @@ class StateManager:
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
         targets_to_exclude: list[str] | None = None,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
         """
         Load the experiment system and the device controller.
@@ -223,6 +225,7 @@ class StateManager:
             config_dir=config_dir,
             params_dir=params_dir,
             targets_to_exclude=targets_to_exclude,
+            configuration_mode=configuration_mode,
         )
         self.experiment_system = self.config_loader.get_experiment_system(chip_id)
 

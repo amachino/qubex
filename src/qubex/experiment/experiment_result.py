@@ -330,7 +330,7 @@ class SweepData(TargetData):
             param = self.rabi_param
             if param is None:
                 print("rabi_param must be provided for normalization.")
-                return
+                return  # type: ignore
             values = self.normalized
             fig = go.Figure()
             fig.add_trace(

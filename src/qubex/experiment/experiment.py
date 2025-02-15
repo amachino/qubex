@@ -143,14 +143,18 @@ class Experiment(
         readout_duration: int = DEFAULT_READOUT_DURATION,
         use_neopulse: bool = False,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
-        qubits = self._create_qubit_labels(
+        self._load_config(
             chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            configuration_mode=configuration_mode,
+        )
+        qubits = self._create_qubit_labels(
             muxes=muxes,
             qubits=qubits,
             exclude_qubits=exclude_qubits,
-            config_dir=config_dir,
-            params_dir=params_dir,
         )
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
@@ -161,6 +165,7 @@ class Experiment(
         self._capture_margin: Final = capture_margin
         self._readout_duration: Final = readout_duration
         self._classifier_type: Final = classifier_type
+        self._configuration_mode: Final = configuration_mode
         self._rabi_params: Final[dict[str, RabiParam]] = {}
         self._measurement = Measurement(
             chip_id=chip_id,
@@ -170,6 +175,7 @@ class Experiment(
             fetch_device_state=fetch_device_state,
             use_neopulse=use_neopulse,
             connect_devices=connect_devices,
+            configuration_mode=configuration_mode,
         )
         self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(
@@ -186,25 +192,30 @@ class Experiment(
             except Exception as e:
                 print(e)
 
-    def _create_qubit_labels(
+    def _load_config(
         self,
         chip_id: str,
+        config_dir: str,
+        params_dir: str,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
+    ):
+        self.state_manager.load(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            configuration_mode=configuration_mode,
+        )
+
+    def _create_qubit_labels(
+        self,
         muxes: Collection[str | int] | None,
         qubits: Collection[str | int] | None,
         exclude_qubits: Collection[str | int] | None,
-        config_dir: str,
-        params_dir: str,
     ) -> list[str]:
         """Create the list of qubit labels."""
         if muxes is None and qubits is None:
             return []
-        state_manager = StateManager.shared()
-        state_manager.load(
-            chip_id=chip_id,
-            config_dir=config_dir,
-            params_dir=params_dir,
-        )
-        quantum_system = state_manager.experiment_system.quantum_system
+        quantum_system = self.state_manager.experiment_system.quantum_system
         qubit_labels = []
         if muxes is not None:
             for mux in muxes:
@@ -266,6 +277,10 @@ class Experiment(
         for box in self.boxes.values():
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
+
+    @property
+    def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
+        return self._configuration_mode
 
     @property
     def control_window(self) -> int | None:
@@ -717,12 +732,16 @@ class Experiment(
         self,
         box_ids: list[str] | None = None,
         exclude: list[str] | None = None,
+        mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ):
+        if mode is None:
+            mode = self.configuration_mode
         self.state_manager.load(
             chip_id=self.chip_id,
             config_dir=self.config_path,
             params_dir=self.params_path,
             targets_to_exclude=exclude,
+            configuration_mode=mode,
         )
         self.state_manager.push(
             box_ids=box_ids or self.box_ids,

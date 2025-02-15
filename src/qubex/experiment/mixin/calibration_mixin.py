@@ -168,6 +168,8 @@ class CalibrationMixin(
             )[ef_label]
             ampl_min = ampl * (1 - 0.5 / n_rotations)
             ampl_max = ampl * (1 + 0.5 / n_rotations)
+            ampl_min = 0 if ampl_min < 0 else ampl_min
+            ampl_max = 1 if ampl_max > 1 else ampl_max
             ampl_range = np.linspace(ampl_min, ampl_max, 20)
             n_per_rotation = 2 if pulse_type == "pi" else 4
             repetitions = n_per_rotation * n_rotations

@@ -379,7 +379,7 @@ class MeasurementMixin(
 
     def build_classifier(
         self,
-        targets: Collection[str] | None = None,
+        targets: str | Collection[str] | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         shots: int = 10000,
@@ -388,6 +388,8 @@ class MeasurementMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -418,7 +420,7 @@ class MeasurementMixin(
             }
         else:
             raise ValueError("Invalid classifier type.")
-        self.measurement.classifiers = classifiers
+        self.measurement.update_classifiers(classifiers)
 
         fidelities = {}
         average_fidelities = {}
@@ -796,7 +798,7 @@ class MeasurementMixin(
 
     def obtain_rabi_params(
         self,
-        targets: Collection[str] | None = None,
+        targets: str | Collection[str] | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
@@ -810,6 +812,8 @@ class MeasurementMixin(
     ) -> ExperimentResult[RabiData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
         time_range = np.asarray(time_range)
@@ -1105,9 +1109,9 @@ class MeasurementMixin(
 
         labels = [f"|{i}⟩" for i in result.probabilities.keys()]
         prob = np.array(list(result.probabilities.values()))
-        cm_imv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
+        cm_inv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
 
-        mitigated_prob = prob @ cm_imv
+        mitigated_prob = prob @ cm_inv
 
         fig = go.Figure()
         fig.add_trace(

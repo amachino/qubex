@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Final, Literal, Sequence
 
 import numpy as np
@@ -87,6 +88,7 @@ class ExperimentSystem:
         wiring_info: WiringInfo,
         control_params: ControlParams,
         targets_to_exclude: list[str] | None = None,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
         self._quantum_system: Final = quantum_system
         self._control_system: Final = control_system
@@ -94,8 +96,7 @@ class ExperimentSystem:
         self._control_params: Final = control_params
         self._targets_to_exclude: Final = targets_to_exclude or []
         self._qubit_port_set_map: Final = self._create_qubit_port_set_map()
-        self._initialize_ports()
-        self._initialize_targets()
+        self.configure(mode=configuration_mode)
 
     @property
     def hash(self) -> int:
@@ -362,71 +363,174 @@ class ExperimentSystem:
             for qubit in ctrl_port_map
         }
 
-    def _initialize_ports(self):
+    def configure(
+        self,
+        mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+    ):
         params = self.control_params
+
+        self._gen_target_dict: dict[str, Target] = {}
+        self._cap_target_dict: dict[str, CapTarget] = {}
+
         for box in self.boxes:
             for port in box.ports:
                 if isinstance(port, GenPort):
-                    self._initialize_gen_port(port, params)
+                    port.rfswitch = "pass"
+                    if port.type == PortType.READ_OUT:
+                        self._configure_readout_port(port, params)
+                    elif port.type == PortType.CTRL:
+                        self._configure_control_port(port, params, mode)
                 elif isinstance(port, CapPort):
-                    self._initialize_cap_port(port, params)
+                    port.rfswitch = "open"
+                    if port.type == PortType.READ_IN:
+                        self._configure_capture_port(port, params)
 
-    def _initialize_gen_port(
+        self._gen_target_dict = dict(sorted(self._gen_target_dict.items()))
+        self._cap_target_dict = dict(sorted(self._cap_target_dict.items()))
+
+    def _configure_control_port(
+        self,
+        port: GenPort,
+        params: ControlParams,
+        mode: Literal["ge-ef-cr", "ge-cr-cr"],
+    ) -> None:
+        qubit = self.get_qubit_by_control_port(port)
+        if qubit is None or not qubit.is_valid:
+            return
+        config = self._create_control_configuration(
+            mode=mode,
+            qubit=qubit,
+            n_channels=port.n_channels,
+        )
+        port.lo_freq = config["lo"]
+        port.cnco_freq = config["cnco"]
+        port.sideband = "L"
+        port.vatt = params.get_control_vatt(qubit.label)
+        port.fullscale_current = params.get_control_fsc(qubit.label)
+        for idx, gen_channel in enumerate(port.channels):
+            gen_channel.fnco_freq = config["channels"][idx]["fnco"]
+
+        if port.n_channels == 1:
+            # ge only
+            ge_target = Target.new_ge_target(
+                qubit=qubit,
+                channel=port.channels[0],
+            )
+            self._gen_target_dict[ge_target.label] = ge_target
+        elif port.n_channels == 3:
+            if mode == "ge-ef-cr":
+                # ge
+                ge_target = Target.new_ge_target(
+                    qubit=qubit,
+                    channel=port.channels[0],
+                )
+                self._gen_target_dict[ge_target.label] = ge_target
+                # ef
+                ef_target = Target.new_ef_target(
+                    qubit=qubit,
+                    channel=port.channels[1],
+                )
+                self._gen_target_dict[ef_target.label] = ef_target
+                # cr
+                cr_target = Target.new_cr_target(
+                    control_qubit=qubit,
+                    channel=port.channels[2],
+                )
+                self._gen_target_dict[cr_target.label] = cr_target
+                for spectator in self.get_spectator_qubits(qubit.label):
+                    cr_target = Target.new_cr_target(
+                        control_qubit=qubit,
+                        target_qubit=spectator,
+                        channel=port.channels[2],
+                    )
+                    self._gen_target_dict[cr_target.label] = cr_target
+            elif mode == "ge-cr-cr":
+                ef_target = Target.new_ef_target(
+                    qubit=qubit,
+                    channel=port.channels[0],
+                )
+                self._gen_target_dict[ef_target.label] = ef_target
+                for i, ch in config["channels"].items():
+                    for label in ch["targets"]:
+                        if match := re.match(r"^(Q\d+)$", label):
+                            qubit_label = match.group(1)
+                            qubit = self.get_qubit(qubit_label)
+                            target = Target.new_ge_target(
+                                qubit=qubit,
+                                channel=port.channels[i],
+                            )
+                        elif match := re.match(r"^(Q\d+)-ef$", label):
+                            qubit_label = match.group(1)
+                            qubit = self.get_qubit(qubit_label)
+                            target = Target.new_ef_target(
+                                qubit=qubit,
+                                channel=port.channels[i],
+                            )
+                        elif match := re.match(r"^(Q\d+)-(Q\d+)$", label):
+                            control_label = match.group(1)
+                            target_label = match.group(2)
+                            control_qubit = self.get_qubit(control_label)
+                            target_qubit = self.get_qubit(target_label)
+                            target = Target.new_cr_target(
+                                control_qubit=control_qubit,
+                                target_qubit=target_qubit,
+                                channel=port.channels[i],
+                            )
+                        else:
+                            raise ValueError(f"Invalid target label `{label}`.")
+                        self._gen_target_dict[target.label] = target
+
+    def _configure_readout_port(
         self,
         port: GenPort,
         params: ControlParams,
     ) -> None:
-        port.rfswitch = "pass"
-        if port.type == PortType.READ_OUT:
-            mux = self.get_mux_by_readout_port(port)
-            if mux is None or not mux.is_valid:
-                return
-            lo, cnco, fnco = self._find_readout_lo_nco(mux)
-            port.lo_freq = lo
-            port.cnco_freq = cnco
-            port.sideband = "U"
-            port.vatt = params.get_readout_vatt(mux.index)
-            port.fullscale_current = params.get_readout_fsc(mux.index)
-            port.channels[0].fnco_freq = fnco
-        elif port.type == PortType.CTRL:
-            qubit = self.get_qubit_by_control_port(port)
-            if qubit is None or not qubit.is_valid:
-                return
-            lo, cnco, fncos = self._find_control_lo_nco(
-                qubit=qubit,
-                n_channels=port.n_channels,
-            )
-            port.lo_freq = lo
-            port.cnco_freq = cnco
-            port.sideband = "L"
-            port.vatt = params.get_control_vatt(qubit.label)
-            port.fullscale_current = params.get_control_fsc(qubit.label)
-            for idx, gen_channel in enumerate(port.channels):
-                gen_channel.fnco_freq = fncos[idx]
+        mux = self.get_mux_by_readout_port(port)
+        if mux is None or not mux.is_valid:
+            return
+        config = self._create_readout_configuration(mux)
+        port.lo_freq = config["lo"]
+        port.cnco_freq = config["cnco"]
+        port.sideband = "U"
+        port.vatt = params.get_readout_vatt(mux.index)
+        port.fullscale_current = params.get_readout_fsc(mux.index)
+        port.channels[0].fnco_freq = config["fnco"]
 
-    def _initialize_cap_port(
+        for resonator in mux.resonators:
+            read_out_target = Target.new_read_target(
+                resonator=resonator,
+                channel=port.channels[0],
+            )
+            self._gen_target_dict[read_out_target.label] = read_out_target
+
+    def _configure_capture_port(
         self,
         port: CapPort,
         params: ControlParams,
     ) -> None:
-        port.rfswitch = "open"
-        if port.type == PortType.READ_IN:
-            mux = self.get_mux_by_readout_port(port)
-            if mux is None or not mux.is_valid:
-                return
-            lo, cnco, fnco = self._find_readout_lo_nco(mux)
-            port.lo_freq = lo
-            port.cnco_freq = cnco
-            for cap_channel in port.channels:
-                cap_channel.fnco_freq = fnco
-                cap_channel.ndelay = params.get_capture_delay(mux.index)
+        mux = self.get_mux_by_readout_port(port)
+        if mux is None or not mux.is_valid:
+            return
+        config = self._create_readout_configuration(mux)
+        port.lo_freq = config["lo"]
+        port.cnco_freq = config["cnco"]
+        for cap_channel in port.channels:
+            cap_channel.fnco_freq = config["fnco"]
+            cap_channel.ndelay = params.get_capture_delay(mux.index)
 
-    def _find_readout_lo_nco(
+        for idx, resonator in enumerate(mux.resonators):
+            read_in_target = CapTarget.new_read_target(
+                resonator=resonator,
+                channel=port.channels[idx],
+            )
+            self._cap_target_dict[read_in_target.label] = read_in_target
+
+    def _create_readout_configuration(
         self,
         mux: Mux,
         ssb: Literal["U", "L"] = "U",
         cnco_center: int = CNCO_CETNER_READ,
-    ) -> tuple[int, int, int]:
+    ) -> dict:
         """
         Finds the (lo, cnco, fnco) values for the readout mux.
 
@@ -441,8 +545,8 @@ class ExperimentSystem:
 
         Returns
         -------
-        tuple[int, int, int]
-            The tuple (lo, cnco, fnco) for the readout mux.
+        dict[str, int]
+            The dictionary containing the lo, cnco, and fnco values.
         """
         freqs = [resonator.frequency * 1e9 for resonator in mux.resonators]
         f_target = (max(freqs) + min(freqs)) / 2
@@ -457,21 +561,29 @@ class ExperimentSystem:
             lo=lo,
             cnco=cnco,
         )
-        return lo, cnco, fnco
+        return {
+            "lo": lo,
+            "cnco": cnco,
+            "fnco": fnco,
+        }
 
-    def _find_control_lo_nco(
+    def _create_control_configuration(
         self,
         qubit: Qubit,
         n_channels: int,
         *,
+        mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         ssb: Literal["U", "L"] = "L",
         cnco_center: int = CNCO_CENTER_CTRL,
-    ) -> tuple[int, int, tuple[int, int, int]]:
+        min_frequency: float = 6.5e9,
+    ) -> dict:
         """
         Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
 
         Parameters
         ----------
+        mode : Literal["ge-ef-cr", "ge-cr-cr"]
+            The mode to configure the control qubit.
         qubit : Qubit
             The control qubit.
         n_channels : int
@@ -483,8 +595,8 @@ class ExperimentSystem:
 
         Returns
         -------
-        tuple[int, int, tuple[int, int, int]]
-            The tuple (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) for the control qubit.
+        dict[str, int]
+            The dictionary containing the lo, cnco, and fnco values.
         """
         if n_channels == 1:
             f_target = qubit.ge_frequency * 1e9
@@ -499,48 +611,188 @@ class ExperimentSystem:
                 lo=lo,
                 cnco=cnco,
             )
-            return lo, cnco_center, (fnco, 0, 0)
+            return {
+                "lo": lo,
+                "cnco": cnco,
+                "channels": {
+                    0: {
+                        "fnco": fnco,
+                        "targets": [qubit.label],
+                    },
+                },
+            }
+
         elif n_channels != 3:
             raise ValueError("Invalid number of channels.")
 
-        f_ge = qubit.ge_frequency * 1e9
-        f_ef = qubit.ef_frequency * 1e9
-        f_CRs = [
-            spectator.ge_frequency * 1e9
-            for spectator in self.get_spectator_qubits(qubit.label)
-            if spectator.ge_frequency > 0
-            and spectator.label not in self._targets_to_exclude
-            and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
-        ]
+        if mode == "ge-ef-cr":
+            f_ge = qubit.ge_frequency * 1e9
+            f_ef = qubit.ef_frequency * 1e9
+            spectators = self.get_spectator_qubits(qubit.label)
+            f_CRs = [
+                spectator.ge_frequency * 1e9
+                for spectator in spectators
+                if spectator.ge_frequency > 0
+                and spectator.label not in self._targets_to_exclude
+                and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
+            ]
+            if not f_CRs:
+                f_CRs = [f_ge]
 
-        if not f_CRs:
-            f_CRs = [f_ge]
+            f_CR_max = max(f_CRs)
+            if f_CR_max > f_ge:
+                # if any CR is larger than GE, then let EF be the smallest
+                if f_ef < min_frequency:
+                    f_ef = f_ge
+                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
+                    f=f_ef + FNCO_MAX,
+                    ssb=ssb,
+                    cnco_center=cnco_center,
+                )
+                f_CRs_valid = [f for f in f_CRs if f < f_coarse + FNCO_MAX + AWG_MAX]
+            else:
+                # if all CRs are smaller than GE, then let GE be the largest
+                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
+                    f=f_ge - FNCO_MAX,
+                    ssb=ssb,
+                    cnco_center=cnco_center,
+                )
+                f_CRs_valid = [f for f in f_CRs if f > f_coarse - FNCO_MAX - AWG_MAX]
+            f_CR = self._find_center_freq_for_cr(
+                f_coarse=f_coarse,
+                f_CRs=f_CRs_valid,
+            )
+            fnco_ge, _ = MixingUtil.calc_fnco(f=f_ge, ssb=ssb, lo=lo, cnco=cnco)
+            fnco_ef, _ = MixingUtil.calc_fnco(f=f_ef, ssb=ssb, lo=lo, cnco=cnco)
+            fnco_CR, _ = MixingUtil.calc_fnco(f=f_CR, ssb=ssb, lo=lo, cnco=cnco)
+            return {
+                "lo": lo,
+                "cnco": cnco,
+                "channels": {
+                    0: {
+                        "fnco": fnco_ge,
+                        "targets": [qubit.label],
+                    },
+                    1: {
+                        "fnco": fnco_ef,
+                        "targets": [f"{qubit.label}-ef"],
+                    },
+                    2: {
+                        "fnco": fnco_CR,
+                        "targets": [
+                            f"{qubit.label}-{spectator.label}"
+                            for spectator in self.get_spectator_qubits(qubit.label)
+                        ],
+                    },
+                },
+            }
+        elif mode == "ge-cr-cr":
+            f_ge = qubit.ge_frequency * 1e9
+            f_ef = qubit.ef_frequency * 1e9
 
-        f_CR_max = max(f_CRs)
-        if f_CR_max > f_ge:
-            # if any CR is larger than GE, then let EF be the smallest
+            spectators = self.get_spectator_qubits(qubit.label)
+            cr_targets = [
+                {
+                    "label": f"{qubit.label}-{spectator.label}",
+                    "frequency": spectator.ge_frequency * 1e9,
+                }
+                for spectator in spectators
+                if spectator.ge_frequency > 0
+                and spectator.label not in self._targets_to_exclude
+                and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
+            ]
+
+            if not cr_targets:
+                cr_targets = [
+                    {
+                        "label": f"{qubit.label}",
+                        "frequency": f_ge,
+                    },
+                    {
+                        "label": f"{qubit.label}-ef",
+                        "frequency": f_ef,
+                    },
+                ]
+
+            group1, group2 = self._split_cr_target_group(cr_targets)
+            f_CR_1 = np.mean([target["frequency"] for target in group1]).astype(float)
+            f_CR_2 = np.mean([target["frequency"] for target in group2]).astype(float)
+            f_min = min(f_ge, f_CR_1, f_CR_2)
+            f_max = max(f_ge, f_CR_1, f_CR_2)
             lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                f=f_ef + FNCO_MAX,
+                f=(f_min + f_max) / 2,
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            f_CRs_valid = [f for f in f_CRs if f < f_coarse + FNCO_MAX + AWG_MAX]
+            fnco_ge, _ = MixingUtil.calc_fnco(f=f_ge, ssb=ssb, lo=lo, cnco=cnco)
+            fnco_CR_1, _ = MixingUtil.calc_fnco(f=f_CR_1, ssb=ssb, lo=lo, cnco=cnco)
+            fnco_CR_2, _ = MixingUtil.calc_fnco(f=f_CR_2, ssb=ssb, lo=lo, cnco=cnco)
+            return {
+                "lo": lo,
+                "cnco": cnco,
+                "channels": {
+                    0: {
+                        "fnco": fnco_ge,
+                        "targets": [qubit.label],
+                    },
+                    1: {
+                        "fnco": fnco_CR_1,
+                        "targets": [target["label"] for target in group1],
+                    },
+                    2: {
+                        "fnco": fnco_CR_2,
+                        "targets": [target["label"] for target in group2],
+                    },
+                },
+            }
         else:
-            # if all CRs are smaller than GE, then let GE be the largest
-            lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
-                f=f_ge - FNCO_MAX,
-                ssb=ssb,
-                cnco_center=cnco_center,
-            )
-            f_CRs_valid = [f for f in f_CRs if f > f_coarse - FNCO_MAX - AWG_MAX]
-        f_CR = self._find_center_freq_for_cr(
-            f_coarse=f_coarse,
-            f_CRs=f_CRs_valid,
-        )
-        fnco_ge, _ = MixingUtil.calc_fnco(f=f_ge, ssb=ssb, lo=lo, cnco=cnco)
-        fnco_ef, _ = MixingUtil.calc_fnco(f=f_ef, ssb=ssb, lo=lo, cnco=cnco)
-        fnco_CR, _ = MixingUtil.calc_fnco(f=f_CR, ssb=ssb, lo=lo, cnco=cnco)
-        return (lo, cnco, (fnco_ge, fnco_ef, fnco_CR))
+            raise ValueError("Invalid mode.")
+
+    def _split_cr_target_group(
+        self,
+        group: list[dict[str, float]],
+    ) -> tuple[list[dict[str, float]], list[dict[str, float]]]:
+        group = sorted(group, key=lambda x: x["frequency"])
+        if len(group) == 0:
+            raise ValueError("No CR target found.")
+        elif len(group) == 1:
+            return [group[0]], [group[0]]
+        elif len(group) == 2:
+            return [group[0]], [group[1]]
+        elif len(group) == 3:
+            split_options = [
+                ([group[0], group[1]], [group[2]]),
+                ([group[0]], [group[1], group[2]]),
+            ]
+        elif len(group) == 4:
+            split_options = [
+                ([group[0], group[1]], [group[2], group[3]]),
+                ([group[0], group[1], group[2]], [group[3]]),
+                ([group[0]], [group[1], group[2], group[3]]),
+            ]
+        else:
+            raise ValueError("Too many CR targets.")
+
+        best_split = None
+        best_max_bandwidth = float("inf")
+
+        for group1, group2 in split_options:
+            f_min1 = min(target["frequency"] for target in group1)
+            f_max1 = max(target["frequency"] for target in group1)
+            f_min2 = min(target["frequency"] for target in group2)
+            f_max2 = max(target["frequency"] for target in group2)
+            bandwidth1 = f_max1 - f_min1 if len(group1) > 1 else 0
+            bandwidth2 = f_max2 - f_min2 if len(group2) > 1 else 0
+            max_band = max(bandwidth1, bandwidth2)
+
+            if max_band < best_max_bandwidth:
+                best_max_bandwidth = max_band
+                best_split = (group1, group2)
+
+        if best_split is None:
+            raise ValueError("No split found.")
+
+        return best_split
 
     def _find_center_freq_for_cr(
         self,
@@ -581,84 +833,6 @@ class ExperimentSystem:
         # clip to the possible range
         center_freq = max(min_center_freq, min(center_freq, max_center_freq))
         return center_freq
-
-    def _initialize_targets(self) -> None:
-        self._gen_target_dict: dict[str, Target] = {}
-        self._cap_target_dict: dict[str, CapTarget] = {}
-
-        for box in self.boxes:
-            for port in box.ports:
-                # gen ports
-                if isinstance(port, GenPort):
-                    # ctrl ports
-                    if port.type == PortType.CTRL:
-                        qubit = self.get_qubit_by_control_port(port)
-                        if qubit is None:
-                            continue
-
-                        if port.n_channels == 1:
-                            # ge only
-                            ge_target = Target.new_ge_target(
-                                qubit=qubit,
-                                channel=port.channels[0],
-                            )
-                            self._gen_target_dict[ge_target.label] = ge_target
-                        elif port.n_channels == 3:
-                            # ge
-                            ge_target = Target.new_ge_target(
-                                qubit=qubit,
-                                channel=port.channels[0],
-                            )
-                            self._gen_target_dict[ge_target.label] = ge_target
-                            # ef
-                            ef_target = Target.new_ef_target(
-                                qubit=qubit,
-                                channel=port.channels[1],
-                            )
-                            self._gen_target_dict[ef_target.label] = ef_target
-                            # cr
-                            cr_target = Target.new_cr_target(
-                                control_qubit=qubit,
-                                channel=port.channels[2],
-                            )
-                            self._gen_target_dict[cr_target.label] = cr_target
-                            for spectator in self.get_spectator_qubits(qubit.label):
-                                cr_target = Target.new_cr_target(
-                                    control_qubit=qubit,
-                                    target_qubit=spectator,
-                                    channel=port.channels[2],
-                                )
-                                self._gen_target_dict[cr_target.label] = cr_target
-
-                    # readout ports
-                    elif port.type == PortType.READ_OUT:
-                        mux = self.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        for resonator in mux.resonators:
-                            read_out_target = Target.new_read_target(
-                                resonator=resonator,
-                                channel=port.channels[0],
-                            )
-                            self._gen_target_dict[read_out_target.label] = (
-                                read_out_target
-                            )
-
-                # cap ports
-                elif isinstance(port, CapPort):
-                    if port.type == PortType.READ_IN:
-                        mux = self.get_mux_by_readout_port(port)
-                        if mux is None:
-                            continue
-                        for idx, resonator in enumerate(mux.resonators):
-                            read_in_target = CapTarget.new_read_target(
-                                resonator=resonator,
-                                channel=port.channels[idx],
-                            )
-                            self._cap_target_dict[read_in_target.label] = read_in_target
-
-        self._gen_target_dict = dict(sorted(self._gen_target_dict.items()))
-        self._cap_target_dict = dict(sorted(self._cap_target_dict.items()))
 
 
 class MixingUtil:
