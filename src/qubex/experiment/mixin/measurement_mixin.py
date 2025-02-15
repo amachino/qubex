@@ -222,17 +222,6 @@ class MeasurementMixin(
         else:
             raise ValueError("Invalid Rabi level.")
 
-        if isinstance(sequence, dict):
-            # TODO: this parameter type (dict[str, Callable[..., Waveform]]) will be deprecated
-            targets = list(sequence.keys())
-            sequences = [
-                {
-                    target: sequence[target](param).repeated(repetitions).values
-                    for target in targets
-                }
-                for param in sweep_range
-            ]
-
         if callable(sequence):
             if isinstance(sequence(0), PulseSchedule):
                 sequences = [
@@ -272,22 +261,6 @@ class MeasurementMixin(
 
         if plot:
             plotter.show()
-
-        # with self.modified_frequencies(frequencies):
-        #     for seq in sequences:
-        #         measure_result = self.measure(
-        #             sequence=seq,
-        #             mode="avg",
-        #             shots=shots,
-        #             interval=interval,
-        #             control_window=control_window,
-        #             capture_window=capture_window,
-        #             capture_margin=capture_margin,
-        #         )
-        #         for target, data in measure_result.data.items():
-        #             signals[target].append(complex(data.kerneled))
-        #         if plot:
-        #             plotter.update(signals)
 
         sweep_data = {
             target: SweepData(
