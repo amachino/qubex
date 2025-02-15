@@ -57,7 +57,6 @@ from ..version import get_package_version
 from . import experiment_tool
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
-    CALIBRATION_DIR,
     CR_PARAMS,
     DRAG_HPI_AMPLITUDE,
     DRAG_HPI_BETA,
@@ -150,7 +149,7 @@ class Experiment(
         exclude_qubits: Collection[str | int] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
-        calibration_dir: str = CALIBRATION_DIR,
+        calib_note_path: Path | str | None = None,
         fetch_device_state: bool = True,
         linkup: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
@@ -207,7 +206,7 @@ class Experiment(
         )
         self._calib_note: Final = CalibrationNote(
             chip_id=chip_id,
-            dir_path=calibration_dir,
+            file_path=calib_note_path,
         )
         self._validate()
         self.print_environment()

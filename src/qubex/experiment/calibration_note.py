@@ -21,9 +21,12 @@ class CalibrationNote(ExperimentNote):
     def __init__(
         self,
         chip_id: str,
-        dir_path: str = CALIBRATION_DIR,
+        file_path: Path | str | None = None,
     ):
-        file_path = Path(dir_path) / f"{chip_id}.json"
+        if file_path is None:
+            file_path = Path(CALIBRATION_DIR) / f"{chip_id}.json"
+        else:
+            file_path = Path(file_path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         super().__init__(str(file_path))
 
