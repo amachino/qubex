@@ -21,6 +21,7 @@ from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
 from ...pulse import PulseSchedule, Waveform
 from ...typing import TargetMap
+from ..calibration_note import CalibrationNote
 from ..experiment_constants import RABI_FREQUENCY
 from ..experiment_note import ExperimentNote
 from ..experiment_record import ExperimentRecord
@@ -28,6 +29,16 @@ from ..experiment_util import ExperimentUtil
 
 
 class BaseProtocol(Protocol):
+    @property
+    def drag_hpi_duration(self) -> int:
+        """Get the DRAG π/2 duration."""
+        ...
+
+    @property
+    def drag_pi_duration(self) -> int:
+        """Get the DRAG π duration."""
+        ...
+
     @property
     def control_window(self) -> int | None:
         """Get the control window."""
@@ -156,6 +167,11 @@ class BaseProtocol(Protocol):
     @property
     def params_path(self) -> str:
         """Get the path of the parameter file."""
+        ...
+
+    @property
+    def calibration_note(self) -> CalibrationNote:
+        """Get the calibration note."""
         ...
 
     @property

@@ -55,7 +55,9 @@ from ..pulse import (
 from ..typing import TargetMap
 from ..version import get_package_version
 from . import experiment_tool
+from .calibration_note import CalibrationNote
 from .experiment_constants import (
+    CALIBRATION_DIR,
     CR_PARAMS,
     DRAG_HPI_AMPLITUDE,
     DRAG_HPI_BETA,
@@ -148,6 +150,7 @@ class Experiment(
         exclude_qubits: Collection[str | int] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
+        calibration_dir: str = CALIBRATION_DIR,
         fetch_device_state: bool = True,
         linkup: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
@@ -201,6 +204,10 @@ class Experiment(
         )
         self._system_note: Final = ExperimentNote(
             file_path=SYSTEM_NOTE_PATH,
+        )
+        self._calibration_note: Final = CalibrationNote(
+            chip_id=chip_id,
+            dir_path=calibration_dir,
         )
         self._validate()
         self.print_environment()
@@ -447,6 +454,10 @@ class Experiment(
         return str(Path(self._params_dir).resolve())
 
     @property
+    def calibration_note(self) -> CalibrationNote:
+        return self._calibration_note
+
+    @property
     def system_note(self) -> ExperimentNote:
         return self._system_note
 
@@ -655,10 +666,13 @@ class Experiment(
         if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
             self._rabi_params.update(rabi_params)
 
-        self._system_note.put(
+        self._system_note.put(  # deprecated
             RABI_PARAMS,
             {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
         )
+        self.calibration_note.rabi_params = {
+            label: asdict(rabi_param) for label, rabi_param in rabi_params.items()
+        }
         console.print("Rabi parameters are stored.")
 
     def get_pulse_for_state(

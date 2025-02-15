@@ -1,9 +1,15 @@
+CALIBRATION_DIR = ".calibration"
+
 USER_NOTE_PATH = ".user_note.json"
 SYSTEM_NOTE_PATH = ".system_note.json"
 
 STATE_CENTERS = "state_centers"
 RABI_PARAMS = "rabi_params"
 CR_PARAMS = "cr_params"
+HPI_PARAMS = "hpi_params"
+PI_PARAMS = "pi_params"
+DRAG_HPI_PARAMS = "drag_hpi_params"
+DRAG_PI_PARAMS = "drag_pi_params"
 
 HPI_AMPLITUDE = "hpi_amplitude"
 HPI_DURATION = 30

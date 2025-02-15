@@ -427,7 +427,7 @@ class MeasurementMixin(
                     f"  Average readout fidelity : {average_fidelities[target] * 100:.2f}%\n\n"
                 )
 
-        self.system_note.put(
+        self.system_note.put(  # deprecated
             STATE_CENTERS,
             {
                 target: {
@@ -437,6 +437,13 @@ class MeasurementMixin(
                 for target in targets
             },
         )
+        self.calibration_note.state_centers = {
+            target: {
+                str(state): (center.real, center.imag)
+                for state, center in classifiers[target].centers.items()
+            }
+            for target in targets
+        }
 
         return {
             "readout_fidelties": fidelities,
