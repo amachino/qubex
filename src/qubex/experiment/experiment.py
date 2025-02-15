@@ -198,12 +198,8 @@ class Experiment(
             configuration_mode=configuration_mode,
         )
         self._clifford_generator: CliffordGenerator | None = None
-        self._user_note: Final = ExperimentNote(
-            file_path=USER_NOTE_PATH,
-        )
-        self._system_note: Final = ExperimentNote(
-            file_path=SYSTEM_NOTE_PATH,
-        )
+        self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
+        self._system_note: Final = ExperimentNote(file_path=SYSTEM_NOTE_PATH)
         self._calib_note: Final = CalibrationNote(
             chip_id=chip_id,
             file_path=calib_note_path,
@@ -457,7 +453,7 @@ class Experiment(
         return self._calib_note
 
     @property
-    @deprecated("This property is deprecated. Use `calibration_note` instead.")
+    @deprecated("This property is deprecated. Use `calib_note` instead.")
     def system_note(self) -> ExperimentNote:
         return self._system_note
 
@@ -842,15 +838,15 @@ class Experiment(
             with self.state_manager.modified_frequencies(frequencies):
                 yield
 
-    @deprecated("Use `calibration_note` instead.")
+    @deprecated("Use `calib_note` instead.")
     def print_defaults(self):
         display(self._system_note)
 
-    @deprecated("Use `calibration_note.save()` instead.")
+    @deprecated("Use `calib_note.save()` instead.")
     def save_defaults(self):
         self._system_note.save()
 
-    @deprecated("Use `calibration_note.clear()` instead.")
+    @deprecated("Use `calib_note.clear()` instead.")
     def clear_defaults(self):
         self._system_note.clear()
 

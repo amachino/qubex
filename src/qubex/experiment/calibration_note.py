@@ -27,8 +27,7 @@ class CalibrationNote(ExperimentNote):
             file_path = Path(CALIBRATION_DIR) / f"{chip_id}.json"
         else:
             file_path = Path(file_path)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        super().__init__(str(file_path))
+        super().__init__(file_path)
 
     @property
     def rabi_params(self) -> dict:
