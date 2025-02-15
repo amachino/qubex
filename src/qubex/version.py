@@ -1,7 +1,7 @@
 import importlib.metadata
 import subprocess
 
-VERSION = "1.2.7"
+VERSION = "1.2.8"
 
 
 def get_version():
