@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from .experiment_constants import (
     CALIBRATION_DIR,
@@ -80,3 +82,9 @@ class CalibrationNote(ExperimentNote):
     @cr_params.setter
     def cr_params(self, value: dict):
         self.put(CR_PARAMS, value)
+
+    def put(self, key: str, value: dict[str, Any]):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for v in value.values():
+            v["timestamp"] = timestamp
+        super().put(key, value)
