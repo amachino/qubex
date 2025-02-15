@@ -508,9 +508,8 @@ This operation will overwrite the existing device settings. Do you want to conti
                     PortType.MNTR_OUT,
                     PortType.MNTR_IN,
                 ):
-                    qc.define_target(
-                        target_name=port.id,
-                        channel_name=port.channels[0].id,
+                    qc.sysdb._relation_channel_target.append(
+                        (port.channels[0].id, port.id),
                     )
 
         for target in experiment_system.all_targets:
