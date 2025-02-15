@@ -492,6 +492,8 @@ This operation will overwrite the existing device settings. Do you want to conti
                         if mux is None:
                             continue
                         ndelay_or_nwait = control_params.capture_delay[mux.index]
+                    elif port.type == PortType.MNTR_IN:
+                        ndelay_or_nwait = 7  # TODO: make this configurable
                     else:
                         ndelay_or_nwait = 0
                     qc.define_channel(
@@ -499,6 +501,16 @@ This operation will overwrite the existing device settings. Do you want to conti
                         port_name=port.id,
                         channel_number=channel.number,
                         ndelay_or_nwait=ndelay_or_nwait,
+                    )
+
+                if port.type in (
+                    PortType.PUMP,
+                    PortType.MNTR_OUT,
+                    PortType.MNTR_IN,
+                ):
+                    qc.define_target(
+                        target_name=port.id,
+                        channel_name=port.channels[0].id,
                     )
 
         for target in experiment_system.all_targets:
