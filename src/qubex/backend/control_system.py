@@ -262,8 +262,10 @@ def create_ports(
         PortType.MNTR_OUT: 0,
     }
     for port_num, port_type in PORT_MAPPING[box_type].items():
-        if port_numbers is not None and port_num not in port_numbers:
-            continue
+        if port_type in (PortType.READ_IN, PortType.READ_OUT, PortType.CTRL):
+            # skip if the port is not used in the experiment
+            if port_numbers is not None and port_num not in port_numbers:
+                continue
         index = port_index[port_type]
         if port_type == PortType.NOT_AVAILABLE:
             port_id = f"{box_id}.NA{index}"

@@ -490,9 +490,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                     if port.type == PortType.READ_IN:
                         mux = experiment_system.get_mux_by_readout_port(port)
                         if mux is None:
-                            raise ValueError(
-                                f"No mux found for readout port: {port.id}"
-                            )
+                            continue
                         ndelay_or_nwait = control_params.capture_delay[mux.index]
                     else:
                         ndelay_or_nwait = 0
