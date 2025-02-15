@@ -956,7 +956,7 @@ class MeasurementMixin(
                 data=data.data,
                 plot=plot,
                 is_damped=is_damped,
-            )
+            )["rabi_param"]
             for target, data in sweep_data.items()
         }
 
@@ -1053,7 +1053,7 @@ class MeasurementMixin(
                 data=data.data,
                 plot=plot,
                 is_damped=is_damped,
-            )
+            )["rabi_param"]
             for target, data in sweep_data.items()
         }
 

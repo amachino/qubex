@@ -362,6 +362,8 @@ def fit_cosine(
     x: npt.ArrayLike,
     y: npt.ArrayLike,
     *,
+    phase_est: float = 0.0,
+    tau_est: float = 10_000,
     is_damped: bool = False,
     title: str = "Cosine fit",
     xaxis_title: str = "x",
@@ -374,11 +376,9 @@ def fit_cosine(
     wave_count_est = estimate_wave_count(x, y)
     amplitude_est = (np.max(y) - np.min(y)) / 2
     omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
-    phase_est = 0.0
     offset_est = (np.max(y) + np.min(y)) / 2
 
     if is_damped:
-        tau_est = 100_000
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
         bounds = (
             (0, 0, 0, -np.inf, 0),
@@ -457,12 +457,13 @@ def fit_rabi(
     target: str,
     times: npt.NDArray[np.float64],
     data: npt.NDArray[np.complex64],
-    wave_count: float | None = None,
+    phase_est: float = 0.0,
+    tau_est: float = 10_000,
     plot: bool = True,
     is_damped: bool = False,
     yaxis_title: str | None = None,
     yaxis_range: tuple[float, float] | None = None,
-) -> RabiParam:
+) -> dict:
     """
     Fit Rabi oscillation data to a cosine function and plot the results.
 
@@ -474,8 +475,10 @@ def fit_rabi(
         Array of time points for the Rabi oscillations.
     data : npt.NDArray[np.complex128]
         Complex signal data corresponding to the Rabi oscillations.
-    wave_count : float, optional
-        Initial estimate for the number of wave cycles over the time span.
+    phase_est : float, optional
+        Initial phase of the Rabi oscillation.
+    tau_est : float, optional
+        Initial guess for the damping time constant.
     plot : bool, optional
         Whether to plot the data and the fit.
     is_damped : bool, optional
@@ -483,8 +486,8 @@ def fit_rabi(
 
     Returns
     -------
-    RabiParam
-        Data class containing the parameters of the Rabi oscillation.
+    dict
+        Fitted parameters and the figure.
     """
     print(f"Target: {target}")
     data = np.array(data, dtype=np.complex64)
@@ -511,39 +514,35 @@ def fit_rabi(
     y = rotated.imag
 
     # Estimate the initial parameters
-    wave_count_est = estimate_wave_count(x, y) if wave_count is None else wave_count
+    wave_count_est = estimate_wave_count(x, y)
     amplitude_est = (np.max(y) - np.min(y)) / 2
     omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
-    phase_est = 0.0
     offset_est = (np.max(y) + np.min(y)) / 2
 
     try:
         p0: tuple
         bounds: tuple
         if is_damped:
-            tau_est = 100_000
             p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
             bounds = (
                 (0, 0, 0, -np.inf, 0),
                 (np.inf, np.inf, np.pi, np.inf, np.inf),
             )
-            popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
-            # print(
-            #     f"Fitted function: {popt[0]:.3g} * exp(-t/{popt[4]:.3g}) * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
-            # )
+            popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
                 (0, 0, 0, -np.inf),
                 (np.inf, np.inf, np.pi, np.inf),
             )
-            popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
-            # print(
-            #     f"Fitted function: {popt[0]:.3g} * cos({popt[1]:.3g} * t + {popt[2]:.3g}) + {popt[3]:.3g} ± {noise:.3g}"
-            # )
+            popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return RabiParam(target, np.nan, np.nan, np.nan, np.nan, noise, angle)
+        return {
+            "rabi_param": RabiParam(
+                target, np.nan, np.nan, np.nan, np.nan, noise, angle
+            )
+        }
 
     amplitude = popt[0]
     omega = popt[1]
@@ -553,60 +552,64 @@ def fit_rabi(
 
     tau = popt[4] if is_damped else None
 
-    # print(f"Phase shift: {angle:.3g} rad, {angle * 180 / np.pi:.3g} deg")
     print(f"Rabi frequency: {frequency * 1e3:.6g} MHz")
-    # print(f"Rabi period: {1 / frequency:.3g} ns")
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = (
+        func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
+    )
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+            error_y=dict(type="constant", value=noise),
+        ),
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"f = {frequency * 1e3:.2f} MHz"
+        + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=(f"Rabi oscillation : {target}"),
+        xaxis_title="Drive duration (ns)",
+        yaxis_title=yaxis_title or "Signal (arb. unit)",
+        yaxis_range=yaxis_range,
+    )
 
     if plot:
-        x_fine = np.linspace(np.min(x), np.max(x), 1000)
-        y_fine = (
-            func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
-        )
-
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=y_fine,
-                mode="lines",
-                name="Fit",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=x,
-                y=y,
-                mode="markers",
-                name="Data",
-                error_y=dict(type="constant", value=noise),
-            ),
-        )
-        fig.add_annotation(
-            xref="paper",
-            yref="paper",
-            x=0.95,
-            y=0.95,
-            text=f"f = {frequency * 1e3:.2f} MHz"
-            + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
-            showarrow=False,
-        )
-        fig.update_layout(
-            title=(f"Rabi oscillation : {target}"),
-            xaxis_title="Drive duration (ns)",
-            yaxis_title=yaxis_title or "Signal (arb. unit)",
-            yaxis_range=yaxis_range,
-        )
         fig.show(config=_plotly_config(f"rabi_{target}"))
 
-    return RabiParam(
-        target=target,
-        amplitude=amplitude,
-        frequency=frequency,
-        phase=phase,
-        offset=offset,
-        noise=noise,
-        angle=angle,
-    )
+    return {
+        "rabi_param": RabiParam(
+            target=target,
+            amplitude=amplitude,
+            frequency=frequency,
+            phase=phase,
+            offset=offset,
+            noise=noise,
+            angle=angle,
+        ),
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
 
 
 def fit_detuned_rabi(

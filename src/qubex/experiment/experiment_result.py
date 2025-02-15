@@ -226,7 +226,7 @@ class RabiData(TargetData):
         self,
         use_zvalue: bool = False,
         yaxis_range: tuple[float, float] | None = None,
-    ) -> RabiParam:
+    ) -> dict:
         return fitting.fit_rabi(
             target=self.target,
             times=self.time_range,

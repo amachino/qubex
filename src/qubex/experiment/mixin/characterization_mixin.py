@@ -372,12 +372,13 @@ class CharacterizationMixin(
                     sweep_data = sweep_result.data
 
                     for target, data in sweep_data.items():
-                        rabi_param = fitting.fit_rabi(
+                        fit_result = fitting.fit_rabi(
                             target=data.target,
                             times=data.sweep_range,
                             data=data.data,
                             plot=False,
                         )
+                        rabi_param = fit_result["rabi_param"]
                         rabi_rates_buffer[target].append(rabi_param.frequency)
                         data.rabi_param = shared_rabi_params[target]
                         chevron_data_buffer[target].append(data.normalized)
