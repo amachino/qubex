@@ -103,18 +103,32 @@ class Experiment(
     ----------
     chip_id : str
         Identifier of the quantum chip.
-    qubits : Collection[str]
-        Target labels to use in the experiment.
+    muxes : Collection[str | int], optional
+        Mux labels to use in the experiment. Defaults to None.
+    qubits : Collection[str | int], optional
+        Qubit labels to use in the experiment. Defaults to None.
+    exclude_qubits : Collection[str | int], optional
+        Qubit labels to exclude in the experiment. Defaults to None.
     config_dir : str, optional
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
+    params_dir : str, optional
+        Directory of the parameter files. Defaults to DEFAULT_PARAMS_DIR.
     fetch_device_state : bool, optional
         Whether to fetch the device state. Defaults to True.
-    control_window : int, optional
-        Control window. Defaults to DEFAULT_CONTROL_WINDOW.
+    linkup : bool, optional
+        Whether to link up the devices. Defaults to True.
+    drag_hpi_duration : int, optional
+        Duration of the DRAG HPI pulse. Defaults to DRAG_HPI_DURATION.
+    drag_pi_duration : int, optional
+        Duration of the DRAG π pulse. Defaults to DRAG_PI_DURATION.
     capture_window : int, optional
         Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
     readout_duration : int, optional
         Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+    classifier_type : Literal["kmeans", "gmm"], optional
+        Type of the state classifier. Defaults to "gmm".
+    configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+        Configuration mode of the experiment. Defaults to "ge-cr-cr".
 
     Examples
     --------
@@ -203,6 +217,7 @@ class Experiment(
         params_dir: str,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
     ):
+        """Load the configuration files."""
         self.state_manager.load(
             chip_id=chip_id,
             config_dir=config_dir,
@@ -281,10 +296,6 @@ class Experiment(
         for box in self.boxes.values():
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
-
-    @property
-    def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
-        return self._configuration_mode
 
     @property
     def drag_hpi_duration(self) -> int:
@@ -618,6 +629,10 @@ class Experiment(
     def clifford(self) -> dict[str, Clifford]:
         return self.clifford_generator.cliffords
 
+    @property
+    def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
+        return self._configuration_mode
+
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
@@ -639,9 +654,6 @@ class Experiment(
     ):
         if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
             self._rabi_params.update(rabi_params)
-        # else:
-        #     if not Confirm.ask("Overwrite the existing Rabi parameters?"):
-        #         return
 
         self._system_note.put(
             RABI_PARAMS,
