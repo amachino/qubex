@@ -132,12 +132,61 @@ class CalibrationNote(ExperimentNote):
     def cr_params(self, value: dict[str, CrossResonanceParam]):
         self.put(CR_PARAMS, value)
 
+    def get_rabi_param(
+        self,
+        target: str,
+        cutoff: int | None = None,
+    ) -> RabiParam | None:
+        return self.get_property(RABI_PARAMS, target, cutoff)
+
+    def get_hpi_param(
+        self,
+        target: str,
+        cutoff: int | None = None,
+    ) -> FlatTopParam | None:
+        return self.get_property(HPI_PARAMS, target, cutoff)
+
+    def get_pi_param(
+        self,
+        target: str,
+        cutoff: int | None = None,
+    ) -> FlatTopParam | None:
+        return self.get_property(PI_PARAMS, target, cutoff)
+
+    def get_drag_hpi_param(
+        self,
+        target: str,
+        cutoff: int | None = None,
+    ) -> DragParam | None:
+        return self.get_property(DRAG_HPI_PARAMS, target, cutoff)
+
+    def get_drag_pi_param(
+        self,
+        target: str,
+        cutoff: int | None = None,
+    ) -> DragParam | None:
+        return self.get_property(DRAG_PI_PARAMS, target, cutoff)
+
+    def get_state_center(
+        self,
+        target: str,
+        cutoff: int | None = None,
+    ) -> StateCenter | None:
+        return self.get_property(STATE_CENTERS, target, cutoff)
+
+    def get_cr_param(
+        self,
+        target: str,
+        cutoff: int | None = None,
+    ) -> CrossResonanceParam | None:
+        return self.get_property(CR_PARAMS, target, cutoff)
+
     def get_property(
         self,
         key: str,
         target: str,
         cutoff: int | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> Any:
         property = self.get(key)
         if property is None:
             return None

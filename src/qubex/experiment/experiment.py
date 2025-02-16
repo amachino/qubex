@@ -57,23 +57,13 @@ from ..version import get_package_version
 from . import experiment_tool
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
-    CR_PARAMS,
-    DRAG_HPI_AMPLITUDE,
-    DRAG_HPI_BETA,
     DRAG_HPI_DURATION,
-    DRAG_PI_AMPLITUDE,
-    DRAG_PI_BETA,
     DRAG_PI_DURATION,
-    HPI_AMPLITUDE,
     HPI_DURATION,
     HPI_RAMPTIME,
-    PI_AMPLITUDE,
-    PI_DURATION,
-    PI_RAMPTIME,
     RABI_FREQUENCY,
     RABI_PARAMS,
     RABI_TIME_RANGE,
-    STATE_CENTERS,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
@@ -463,125 +453,104 @@ class Experiment(
 
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
-        # preset hpi amplitude
-        amplitude = self.params.control_amplitude
-        # calibrated hpi amplitude
-        calib_amplitude: dict[str, float] = self._system_note.get(HPI_AMPLITUDE)
-        if calib_amplitude is not None:
-            for target in calib_amplitude:
-                # use the calibrated hpi amplitude if it is stored
-                amp = calib_amplitude.get(target)
-                if amp is not None:
-                    amplitude[target] = calib_amplitude[target]
-        return {
-            target: FlatTop(
-                duration=HPI_DURATION,
-                amplitude=amplitude[target],
-                tau=HPI_RAMPTIME,
-            )
-            for target in self._qubits
-        }
+        result = {}
+        for target in self.ge_targets:
+            param = self.calib_note.get_hpi_param(target)
+            if param is not None:
+                result[target] = FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
+            else:
+                result[target] = FlatTop(
+                    duration=HPI_DURATION,
+                    amplitude=self.params.control_amplitude[target],
+                    tau=HPI_RAMPTIME,
+                )
+        return result
 
     @property
     def pi_pulse(self) -> dict[str, Waveform]:
-        # preset hpi pulse
-        hpi = self.hpi_pulse
-        # generate the pi pulse from the hpi pulse
-        pi = {target: hpi[target].repeated(2) for target in self._qubits}
-        # calibrated pi amplitude
-        calib_amplitude: dict[str, float] = self._system_note.get(PI_AMPLITUDE)
-        if calib_amplitude is not None:
-            for target in calib_amplitude:
-                # use the calibrated pi amplitude if it is stored
-                amp = calib_amplitude.get(target)
-                if amp is not None:
-                    pi[target] = FlatTop(
-                        duration=PI_DURATION,
-                        amplitude=amp,
-                        tau=PI_RAMPTIME,
-                    )
-        return {target: pi[target] for target in self._qubits}
+        result = {}
+        for target in self.ge_targets:
+            param = self.calib_note.get_pi_param(target)
+            if param is not None:
+                result[target] = FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
+        return result
 
     @property
     def drag_hpi_pulse(self) -> dict[str, Waveform]:
-        calib_amplitude: dict[str, float] = self._system_note.get(DRAG_HPI_AMPLITUDE)
-        calib_beta: dict[str, float] = self._system_note.get(DRAG_HPI_BETA)
-
-        if calib_amplitude is None or calib_beta is None:
-            return {}
-
-        return {
-            target: Drag(
-                duration=self.drag_hpi_duration,
-                amplitude=calib_amplitude[target],
-                beta=calib_beta[target],
-            )
-            for target in self._qubits
-            if target in calib_amplitude and target in calib_beta
-        }
+        result = {}
+        for target in self.ge_targets:
+            param = self.calib_note.get_drag_hpi_param(target)
+            if param is not None:
+                result[target] = Drag(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    beta=param["beta"],
+                )
+        return result
 
     @property
     def drag_pi_pulse(self) -> dict[str, Waveform]:
-        calib_amplitude: dict[str, float] = self._system_note.get(DRAG_PI_AMPLITUDE)
-        calib_beta: dict[str, float] = self._system_note.get(DRAG_PI_BETA)
-
-        if calib_amplitude is None or calib_beta is None:
-            return {}
-
-        return {
-            target: Drag(
-                duration=self.drag_pi_duration,
-                amplitude=calib_amplitude[target],
-                beta=calib_beta[target],
-            )
-            for target in self._qubits
-            if target in calib_amplitude and target in calib_beta
-        }
+        result = {}
+        for target in self.ge_targets:
+            param = self.calib_note.get_drag_pi_param(target)
+            if param is not None:
+                result[target] = Drag(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    beta=param["beta"],
+                )
+        return result
 
     @property
     def ef_hpi_pulse(self) -> dict[str, Waveform]:
-        amplitude = self._system_note.get(HPI_AMPLITUDE)
-        if amplitude is None:
-            raise ValueError("EF π/2 amplitude is not stored.")
-        ef_labels = [Target.ef_label(target) for target in self._qubits]
-        return {
-            target: FlatTop(
-                duration=HPI_DURATION,
-                amplitude=amplitude[target],
-                tau=HPI_RAMPTIME,
-            )
-            for target in ef_labels
-        }
+        result = {}
+        for target in self.ef_targets:
+            param = self.calib_note.get_hpi_param(target)
+            if param is not None:
+                result[target] = FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
+        return result
 
     @property
     def ef_pi_pulse(self) -> dict[str, Waveform]:
-        amplitude = self._system_note.get(PI_AMPLITUDE)
-        if amplitude is None:
-            raise ValueError("EF π amplitude is not stored.")
-        ef_labels = [Target.ef_label(target) for target in self._qubits]
-
-        return {
-            target: FlatTop(
-                duration=PI_DURATION,
-                amplitude=amplitude[target],
-                tau=PI_RAMPTIME,
-            )
-            for target in ef_labels
-        }
+        result = {}
+        for target in self.ef_targets:
+            param = self.calib_note.get_pi_param(target)
+            if param is not None:
+                result[target] = FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
+        return result
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
-        params: dict[str, dict] | None
-        params = self._system_note.get(RABI_PARAMS)
-        if params is not None:
-            rabi_params = {
-                target: RabiParam(**param)
-                for target, param in params.items()
-                if target in self.qubit_labels
-            }
-            self._rabi_params.update(rabi_params)
-
-        return self._rabi_params
+        result = {}
+        for target in self.ge_targets | self.ef_targets:
+            param = self.calib_note.get_rabi_param(target)
+            if param is not None:
+                result[target] = RabiParam(
+                    target=param["target"],
+                    frequency=param["frequency"],
+                    amplitude=param["amplitude"],
+                    phase=param["phase"],
+                    offset=param["offset"],
+                    noise=param["noise"],
+                    angle=param["angle"],
+                )
+        return result
 
     @property
     def ge_rabi_params(self) -> dict[str, RabiParam]:
@@ -609,22 +578,15 @@ class Experiment(
 
     @property
     def state_centers(self) -> dict[str, dict[int, complex]]:
-        centers: dict[str, dict[str, list[float]]] | None
-        centers = self._system_note.get(STATE_CENTERS)
-        if centers is not None:
-            return {
-                target: {
+        result = {}
+        for target in self.qubit_labels:
+            center = self.calib_note.get_state_center(target)
+            if center is not None:
+                result[target] = {
                     int(state): complex(center[0], center[1])
-                    for state, center in centers.items()
+                    for state, center in center["states"].items()
                 }
-                for target, centers in centers.items()
-                if target in self.qubit_labels
-            }
-
-        return {
-            target: classifier.centers
-            for target, classifier in self.classifiers.items()
-        }
+        return result
 
     @property
     def clifford_generator(self) -> CliffordGenerator:
@@ -1080,7 +1042,9 @@ class Experiment(
         x180: TargetMap[Waveform] | Waveform | None = None,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError(f"CR parameters for {cr_label} are not stored.")
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
@@ -1093,21 +1057,18 @@ class Experiment(
             pi_pulse = x180[control_qubit]
 
         if cr_amplitude is not None and cancel_amplitude is None:
-            cr_cancel_ratio = (
-                cr_params["cancel_pulse"]["amplitude"]
-                / cr_params["cr_pulse"]["amplitude"]
-            )
+            cr_cancel_ratio = cr_param["cr_cancel_ratio"]
             cancel_amplitude = cr_amplitude * cr_cancel_ratio
 
         return CrossResonance(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
-            cr_amplitude=cr_amplitude or cr_params["cr_pulse"]["amplitude"],
-            cr_duration=cr_duration or cr_params["duration"],
-            cr_ramptime=cr_ramptime or cr_params["ramptime"],
-            cr_phase=cr_phase or cr_params["cr_pulse"]["phase"],
-            cancel_amplitude=cancel_amplitude or cr_params["cancel_pulse"]["amplitude"],
-            cancel_phase=cancel_phase or cr_params["cancel_pulse"]["phase"],
+            cr_amplitude=cr_amplitude or cr_param["cr_amplitude"],
+            cr_duration=cr_duration or cr_param["duration"],
+            cr_ramptime=cr_ramptime or cr_param["ramptime"],
+            cr_phase=cr_phase or cr_param["cr_phase"],
+            cancel_amplitude=cancel_amplitude or cr_param["cancel_amplitude"],
+            cancel_phase=cancel_phase or cr_param["cancel_phase"],
             echo=echo,
             pi_pulse=pi_pulse,
         )

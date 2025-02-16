@@ -235,8 +235,11 @@ class CalibrationMixin(
 
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
+                hpi_param = self.calib_note.get_drag_hpi_param(target)
+                if hpi_param is None:
+                    raise ValueError("DRAG HPI parameters are not stored.")
                 if use_stored_beta:
-                    beta = self.system_note.get(DRAG_HPI_BETA)[target]
+                    beta = hpi_param["beta"]
                 else:
                     beta = -drag_coeff / self.qubits[target].alpha
 
@@ -249,7 +252,7 @@ class CalibrationMixin(
                 rabi_rate = 0.25 / area
 
                 if use_stored_amplitude:
-                    ampl = self.system_note.get(DRAG_HPI_AMPLITUDE)[target]
+                    ampl = hpi_param["amplitude"]
                 else:
                     ampl = self.calc_control_amplitudes(
                         rabi_rate=rabi_rate,
@@ -257,8 +260,11 @@ class CalibrationMixin(
                     )[target]
 
             elif pulse_type == "pi":
+                pi_param = self.calib_note.get_drag_pi_param(target)
+                if pi_param is None:
+                    raise ValueError("DRAG PI parameters are not stored.")
                 if use_stored_beta:
-                    beta = self.system_note.get(DRAG_PI_BETA)[target]
+                    beta = pi_param["beta"]
                 else:
                     beta = -drag_coeff / self.qubits[target].alpha
 
@@ -271,7 +277,7 @@ class CalibrationMixin(
                 rabi_rate = 0.5 / area
 
                 if use_stored_amplitude:
-                    ampl = self.system_note.get(DRAG_PI_AMPLITUDE)[target]
+                    ampl = pi_param["amplitude"]
                 else:
                     ampl = self.calc_control_amplitudes(
                         rabi_rate=rabi_rate,
@@ -382,9 +388,12 @@ class CalibrationMixin(
                             )
                     ps.barrier()
                     if pulse_type == "hpi":
+                        hpi_param = self.calib_note.get_drag_hpi_param(target)
+                        if hpi_param is None:
+                            raise ValueError("DRAG HPI parameters are not stored.")
                         x90p = Drag(
-                            duration=duration or DRAG_HPI_DURATION,
-                            amplitude=self.system_note.get(DRAG_HPI_AMPLITUDE)[target],
+                            duration=duration or hpi_param["duration"],
+                            amplitude=hpi_param["amplitude"],
                             beta=beta,
                         )
                         x90m = x90p.scaled(-1)
@@ -400,9 +409,12 @@ class CalibrationMixin(
                             ),
                         )
                     elif pulse_type == "pi":
+                        pi_param = self.calib_note.get_drag_pi_param(target)
+                        if pi_param is None:
+                            raise ValueError("DRAG PI parameters are not stored.")
                         x180p = Drag(
-                            duration=duration or DRAG_PI_DURATION,
-                            amplitude=self.system_note.get(DRAG_PI_AMPLITUDE)[target],
+                            duration=duration or pi_param["duration"],
+                            amplitude=pi_param["amplitude"],
                             beta=beta,
                         )
                         x180m = x180p.scaled(-1)
@@ -1166,14 +1178,16 @@ class CalibrationMixin(
         calibrated_value = (result_0["root"] + result_1["root"]) / 2
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
         cr_duration = calibrated_value if sweep_parameter == "duration" else duration
         cr_amplitude = calibrated_value if sweep_parameter == "amplitude" else amplitude
-        cr_phase = cr_params["cr_pulse"]["phase"]
-        cr_cancel_ratio = cr_params["cr_cancel_ratio"]
+        cr_phase = cr_param["cr_phase"]
+        cr_cancel_ratio = cr_param["cr_cancel_ratio"]
         cancel_amplitude = cr_amplitude * cr_cancel_ratio
-        cancel_phase = cr_params["cancel_pulse"]["phase"]
+        cancel_phase = cr_param["cancel_phase"]
 
         self.system_note.put(  # deprecated
             CR_PARAMS,
@@ -1232,12 +1246,14 @@ class CalibrationMixin(
         amplitude_range = np.array(amplitude_range)
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
-        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
-        cr_phase = cr_params["cr_pulse"]["phase"]
-        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
-        cancel_phase = cr_params["cancel_pulse"]["phase"]
+        cr_amplitude = cr_param["cr_amplitude"]
+        cr_phase = cr_param["cr_phase"]
+        cancel_amplitude = cr_param["cancel_amplitude"]
+        cancel_phase = cr_param["cancel_phase"]
         cr_cancel_ratio = cancel_amplitude / cr_amplitude
 
         if x180 is None:
@@ -1354,12 +1370,14 @@ class CalibrationMixin(
         duration_range = np.array(duration_range)
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
-        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
-        cr_phase = cr_params["cr_pulse"]["phase"]
-        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
-        cancel_phase = cr_params["cancel_pulse"]["phase"]
+        cr_amplitude = cr_param["cr_amplitude"]
+        cr_phase = cr_param["cr_phase"]
+        cancel_amplitude = cr_param["cancel_amplitude"]
+        cancel_phase = cr_param["cancel_phase"]
         cr_cancel_ratio = cancel_amplitude / cr_amplitude
 
         if x180 is None:
@@ -1502,10 +1520,10 @@ class CalibrationMixin(
         ftarget: float = 1e-3,
         timeout: int = 300,
     ) -> Waveform:
-        initial_params = [
-            self.system_note.get(DRAG_HPI_AMPLITUDE)[qubit],
-            self.system_note.get(DRAG_HPI_BETA)[qubit],
-        ]
+        param = self.calib_note.get_drag_hpi_param(qubit)
+        if param is None:
+            raise ValueError("DRAG HPI parameters are not stored.")
+        initial_params = [param["amplitude"], param["beta"]]
         es = cma.CMAEvolutionStrategy(
             initial_params,
             sigma0,
@@ -1583,12 +1601,14 @@ class CalibrationMixin(
         interval: int = DEFAULT_INTERVAL,
     ):
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
-        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
-        cr_phase = cr_params["cr_pulse"]["phase"]
-        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
-        cancel_phase = cr_params["cancel_pulse"]["phase"]
+        cr_amplitude = cr_param["cr_amplitude"]
+        cr_phase = cr_param["cr_phase"]
+        cancel_amplitude = cr_param["cancel_amplitude"]
+        cancel_phase = cr_param["cancel_phase"]
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:

@@ -158,6 +158,8 @@ class ExperimentNote:
         file_path : Path or str, optional
             The path to delete the JSON file. Defaults to the path specified in the constructor.
         """
+        self.clear()
+
         file_path = file_path or self._file_path
         file_path = Path(file_path)
 
