@@ -118,7 +118,8 @@ class ExperimentNote:
             file_path = file_path or self._file_path
             Path(file_path).parent.mkdir(parents=True, exist_ok=True)
             with open(file_path, "w") as file:
-                json.dump(self._dict, file, indent=4)
+                sorted_dict = self._sort_dict_recursively(self._dict, depth=2)
+                json.dump(sorted_dict, file, indent=4)
             print(f"ExperimentNote saved to '{file_path}'.")
         except Exception as e:
             print(f"Failed to save ExperimentNote: {e}")
@@ -233,3 +234,40 @@ class ExperimentNote:
                 if isinstance(value, float) and np.isnan(value):
                     value = None
                 old_dict[key] = value
+
+    def _sort_dict_recursively(
+        self,
+        d: dict,
+        depth: int | None = None,
+        current_depth: int = 0,
+    ):
+        """
+        Recursively sorts a dictionary by key.
+
+        Parameters
+        ----------
+        d : dict
+            The dictionary to sort.
+        depth : int, optional
+            The depth to sort to. Defaults to None.
+
+        Returns
+        -------
+        dict
+            The sorted dictionary.
+        """
+        if isinstance(d, dict):
+            if depth is not None and current_depth >= depth:
+                return d  # Do not sort if depth is reached
+            return {
+                k: self._sort_dict_recursively(v, depth, current_depth + 1)
+                for k, v in sorted(d.items())
+            }
+
+        elif isinstance(d, list):
+            if depth is not None and current_depth >= depth:
+                return d  # Do not sort if depth is reached
+            return [self._sort_dict_recursively(v, depth, current_depth + 1) for v in d]
+
+        else:
+            return d  # Return value if not a dictionary or list
