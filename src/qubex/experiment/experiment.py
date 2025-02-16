@@ -6,7 +6,7 @@ from dataclasses import asdict
 from datetime import datetime
 from functools import reduce
 from pathlib import Path
-from typing import Collection, Final, Literal
+from typing import Collection, Final, Literal, Sequence
 
 import numpy as np
 from IPython.display import display
@@ -1030,8 +1030,10 @@ class Experiment(
 
     def zx90(
         self,
-        control_qubit: str,
-        target_qubit: str,
+        control_qubit: str | Sequence[str],
+        target_qubit: str | None = None,
+        /,
+        *,
         cr_duration: float | None = None,
         cr_ramptime: float | None = None,
         cr_amplitude: float | None = None,
@@ -1041,6 +1043,21 @@ class Experiment(
         echo: bool = True,
         x180: TargetMap[Waveform] | Waveform | None = None,
     ) -> PulseSchedule:
+        # TODO: Remove this in the future
+        if isinstance(control_qubit, str) and isinstance(target_qubit, str):
+            console.print(
+                f"""[yellow]Deprecated use: zx90("{control_qubit}", "{target_qubit}")
+Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{target_qubit}")) instead.[/yellow]"""
+            )
+        elif isinstance(control_qubit, str):
+            try:
+                control_qubit, target_qubit = Target.cr_qubit_pair(control_qubit)
+            except ValueError:
+                if target_qubit is None:
+                    raise ValueError("Target qubit is not specified.")
+        elif isinstance(control_qubit, Sequence):
+            control_qubit, target_qubit = control_qubit
+
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self.calib_note.get_cr_param(cr_label)
         if cr_param is None:
@@ -1075,11 +1092,26 @@ class Experiment(
 
     def cnot(
         self,
-        control_qubit: str,
-        target_qubit: str,
+        control_qubit: str | Sequence[str],
+        target_qubit: str | None = None,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
     ) -> PulseSchedule:
+        # TODO: Remove this in the future
+        if isinstance(control_qubit, str) and isinstance(target_qubit, str):
+            console.print(
+                f"""[yellow]Deprecated use: zx90("{control_qubit}", "{target_qubit}")
+Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{target_qubit}")) instead.[/yellow]"""
+            )
+        elif isinstance(control_qubit, str):
+            try:
+                control_qubit, target_qubit = Target.cr_qubit_pair(control_qubit)
+            except ValueError:
+                if target_qubit is None:
+                    raise ValueError("Target qubit is not specified.")
+        elif isinstance(control_qubit, Sequence):
+            control_qubit, target_qubit = control_qubit
+
         cr_label = f"{control_qubit}-{target_qubit}"
         zx90 = zx90 or self.zx90(control_qubit, target_qubit)
         if x90 is None:
