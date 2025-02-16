@@ -145,10 +145,7 @@ class BenchmarkingMixin(
         z90 = VirtualZ(np.pi / 2)
 
         if zx90 is None:
-            zx90 = self.zx90(
-                control_qubit=control_qubit,
-                target_qubit=target_qubit,
-            )
+            zx90 = self.zx90(cr_label)
 
         if interleaved_waveform is None:
             cliffords, inverse = self.clifford_generator.create_rb_sequences(

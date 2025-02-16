@@ -176,7 +176,7 @@ class CalibrationMixin(
 
             def sequence(x: float) -> PulseSchedule:
                 with PulseSchedule([ge_label, ef_label]) as ps:
-                    ps.add(ge_label, self.pi_pulse[ge_label])
+                    ps.add(ge_label, self.hpi_pulse[ge_label].repeated(2))
                     ps.barrier()
                     ps.add(ef_label, pulse.scaled(x).repeated(repetitions))
                 return ps
