@@ -410,7 +410,7 @@ class AmplCalibData(SweepData):
     """
 
     sweep_range: NDArray
-    calib_value: float | None = None
+    calib_value: float = np.nan
 
     @classmethod
     def new(cls, sweep_data: SweepData, calib_value: float) -> AmplCalibData:

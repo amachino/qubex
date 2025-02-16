@@ -476,8 +476,10 @@ class CalibrationMixin(
         self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.hpi_params = {
             target: {
+                "target": target,
                 "duration": HPI_DURATION,
                 "amplitude": ampl[target],
+                "tau": HPI_RAMPTIME,
             }
             for target in targets
         }
@@ -508,8 +510,10 @@ class CalibrationMixin(
         self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.pi_params = {
             target: {
+                "target": target,
                 "duration": PI_DURATION,
                 "amplitude": ampl[target],
+                "tau": PI_RAMPTIME,
             }
             for target in targets
         }
@@ -540,8 +544,10 @@ class CalibrationMixin(
         self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.hpi_params = {
             target: {
+                "target": target,
                 "duration": HPI_DURATION,
                 "amplitude": ampl[target],
+                "tau": HPI_RAMPTIME,
             }
             for target in targets
         }
@@ -572,8 +578,10 @@ class CalibrationMixin(
         self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.pi_params = {
             target: {
+                "target": target,
                 "duration": PI_DURATION,
                 "amplitude": ampl[target],
+                "tau": PI_RAMPTIME,
             }
             for target in targets
         }
@@ -615,14 +623,6 @@ class CalibrationMixin(
                 shots=shots,
                 interval=interval,
             )
-            self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
-            self.calib_note.drag_hpi_params = {
-                target: {
-                    "duration": self.drag_hpi_duration,
-                    "amplitude": amplitude[target],
-                }
-                for target in targets
-            }
 
             if calibrate_beta:
                 print("\nCalibrating DRAG beta:")
@@ -641,9 +641,12 @@ class CalibrationMixin(
                     target: -drag_coeff / self.qubits[target].alpha
                     for target in targets
                 }
+
+            self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
             self.system_note.put(DRAG_HPI_BETA, beta)  # deprecated
             self.calib_note.drag_hpi_params = {
                 target: {
+                    "target": target,
                     "duration": self.drag_hpi_duration,
                     "amplitude": amplitude[target],
                     "beta": beta[target],
@@ -695,14 +698,6 @@ class CalibrationMixin(
                 shots=shots,
                 interval=interval,
             )
-            self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
-            self.calib_note.drag_pi_params = {
-                target: {
-                    "duration": self.drag_pi_duration,
-                    "amplitude": amplitude[target],
-                }
-                for target in targets
-            }
 
             if calibrate_beta:
                 print("Calibrating DRAG beta:")
@@ -722,9 +717,12 @@ class CalibrationMixin(
                     target: -drag_coeff / self.qubits[target].alpha
                     for target in targets
                 }
+
+            self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
             self.system_note.put(DRAG_PI_BETA, beta)  # deprecated
             self.calib_note.drag_pi_params = {
                 target: {
+                    "target": target,
                     "duration": self.drag_pi_duration,
                     "amplitude": amplitude[target],
                     "beta": beta[target],
@@ -1078,8 +1076,13 @@ class CalibrationMixin(
         )
         self.calib_note.cr_params = {
             f"{control_qubit}-{target_qubit}": {
-                "cr_pulse": cr_pulse,
-                "cancel_pulse": cancel_pulse,
+                "target": f"{control_qubit}-{target_qubit}",
+                "duration": cr_ramptime * 2,
+                "ramptime": cr_ramptime,
+                "cr_amplitude": cr_pulse["amplitude"],
+                "cr_phase": cr_pulse["phase"],
+                "cancel_amplitude": cancel_pulse["amplitude"],
+                "cancel_phase": cancel_pulse["phase"],
                 "cr_cancel_ratio": cr_cancel_ratio,
             },
         }
@@ -1191,16 +1194,14 @@ class CalibrationMixin(
         )
         self.calib_note.cr_params = {
             cr_label: {
+                "target": cr_label,
                 "duration": cr_duration,
                 "ramptime": cr_ramptime,
-                "cr_pulse": {
-                    "amplitude": cr_amplitude,
-                    "phase": cr_phase,
-                },
-                "cancel_pulse": {
-                    "amplitude": cancel_amplitude,
-                    "phase": cancel_phase,
-                },
+                "cr_amplitude": cr_amplitude,
+                "cr_phase": cr_phase,
+                "cancel_amplitude": cancel_amplitude,
+                "cancel_phase": cancel_phase,
+                "cr_cancel_ratio": cr_cancel_ratio,
             },
         }
 
@@ -1315,16 +1316,14 @@ class CalibrationMixin(
             )
             self.calib_note.cr_params = {
                 cr_label: {
+                    "target": cr_label,
                     "duration": duration,
                     "ramptime": cr_ramptime,
-                    "cr_pulse": {
-                        "amplitude": amplitude,
-                        "phase": cr_phase,
-                    },
-                    "cancel_pulse": {
-                        "amplitude": amplitude * cr_cancel_ratio,
-                        "phase": cancel_phase,
-                    },
+                    "cr_amplitude": amplitude,
+                    "cr_phase": cr_phase,
+                    "cancel_amplitude": amplitude * cr_cancel_ratio,
+                    "cancel_phase": cancel_phase,
+                    "cr_cancel_ratio": cr_cancel_ratio,
                 },
             }
 
@@ -1439,16 +1438,14 @@ class CalibrationMixin(
             )
             self.calib_note.cr_params = {
                 cr_label: {
+                    "target": cr_label,
                     "duration": duration,
                     "ramptime": cr_ramptime,
-                    "cr_pulse": {
-                        "amplitude": amplitude,
-                        "phase": cr_phase,
-                    },
-                    "cancel_pulse": {
-                        "amplitude": amplitude * cr_cancel_ratio,
-                        "phase": cancel_phase,
-                    },
+                    "cr_amplitude": amplitude,
+                    "cr_phase": cr_phase,
+                    "cancel_amplitude": amplitude * cr_cancel_ratio,
+                    "cancel_phase": cancel_phase,
+                    "cr_cancel_ratio": cr_cancel_ratio,
                 },
             }
 
@@ -1680,16 +1677,14 @@ class CalibrationMixin(
         )
         self.calib_note.cr_params = {
             cr_label: {
+                "target": cr_label,
                 "duration": duration,
                 "ramptime": cr_ramptime,
-                "cr_pulse": {
-                    "amplitude": x[0],
-                    "phase": x[1],
-                },
-                "cancel_pulse": {
-                    "amplitude": x[2],
-                    "phase": x[3],
-                },
+                "cr_amplitude": x[0],
+                "cr_phase": x[1],
+                "cancel_amplitude": x[2],
+                "cancel_phase": x[3],
+                "cr_cancel_ratio": x[2] / x[0],
             },
         }
 

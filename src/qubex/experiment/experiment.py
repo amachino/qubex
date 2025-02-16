@@ -667,7 +667,16 @@ class Experiment(
             {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
         )
         self.calib_note.rabi_params = {
-            label: asdict(rabi_param) for label, rabi_param in rabi_params.items()
+            label: {
+                "target": rabi_param.target,
+                "frequency": rabi_param.frequency,
+                "amplitude": rabi_param.amplitude,
+                "phase": rabi_param.phase,
+                "offset": rabi_param.offset,
+                "noise": rabi_param.noise,
+                "angle": rabi_param.angle,
+            }
+            for label, rabi_param in rabi_params.items()
         }
         console.print("Rabi parameters are stored.")
 

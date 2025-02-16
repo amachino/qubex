@@ -439,8 +439,11 @@ class MeasurementMixin(
         )
         self.calib_note.state_centers = {
             target: {
-                str(state): (center.real, center.imag)
-                for state, center in classifiers[target].centers.items()
+                "target": target,
+                "states": {
+                    str(state): [center.real, center.imag]
+                    for state, center in classifiers[target].centers.items()
+                },
             }
             for target in targets
         }
