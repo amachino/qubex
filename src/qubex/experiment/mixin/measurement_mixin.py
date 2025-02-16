@@ -6,6 +6,7 @@ from typing import Collection, Literal, Optional, Sequence
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
+from rich.console import Console
 from tqdm import tqdm
 
 from ...analysis import IQPlotter, fitting
@@ -36,6 +37,8 @@ from ...typing import (
 from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE, STATE_CENTERS
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
+
+console = Console()
 
 
 class MeasurementMixin(
@@ -1066,20 +1069,36 @@ class MeasurementMixin(
 
     def measure_bell_state(
         self,
-        control_qubit: str,
-        target_qubit: str,
+        control_qubit: str | Sequence[str],
+        target_qubit: str | None = None,
+        /,
+        *,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
+        # TODO: Remove this in the future
+        if isinstance(control_qubit, str) and isinstance(target_qubit, str):
+            console.print(
+                f"""[yellow]Deprecated use: zx90("{control_qubit}", "{target_qubit}")
+Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{target_qubit}")) instead.[/yellow]"""
+            )
+        elif isinstance(control_qubit, str):
+            try:
+                control_qubit, target_qubit = Target.cr_qubit_pair(control_qubit)
+            except ValueError:
+                if target_qubit is None:
+                    raise ValueError("Target qubit is not specified.")
+        elif isinstance(control_qubit, Sequence):
+            control_qubit, target_qubit = control_qubit
+
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
         cnot = self.cnot(
-            control_qubit=control_qubit,
-            target_qubit=target_qubit,
+            (control_qubit, target_qubit),
             zx90=zx90,
         )
         result = self.measure(
