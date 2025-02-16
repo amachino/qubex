@@ -84,14 +84,14 @@ PORT_MAPPING: Final = {
         0: PortType.READ_OUT,
         1: PortType.READ_IN,
         2: PortType.PUMP,
-        3: PortType.MNTR_OUT,  # TODO: Check if this is correct
+        3: PortType.MNTR_OUT,
         4: PortType.MNTR_IN,
         5: PortType.CTRL,
         6: PortType.CTRL,
         7: PortType.CTRL,
         8: PortType.CTRL,
         9: PortType.MNTR_IN,
-        10: PortType.MNTR_OUT,  # TODO: Check if this is correct
+        10: PortType.MNTR_OUT,
         11: PortType.PUMP,
         12: PortType.READ_IN,
         13: PortType.READ_OUT,

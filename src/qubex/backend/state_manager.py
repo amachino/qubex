@@ -448,12 +448,13 @@ This operation will overwrite the existing device settings. Do you want to conti
         for box in boxes:
             result[box.id] = {"ports": {}}
             for port in box.ports:
-                try:
-                    result[box.id]["ports"][port.number] = (
-                        self.device_controller.dump_port(box.id, port.number)
-                    )
-                except Exception as e:
-                    print(e)
+                if port.type not in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
+                    try:
+                        result[box.id]["ports"][port.number] = (
+                            self.device_controller.dump_port(box.id, port.number)
+                        )
+                    except Exception as e:
+                        print(e)
         return result
 
     def _update_device_controller(

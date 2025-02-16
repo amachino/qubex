@@ -30,9 +30,11 @@ def check_skew(
     skew_file: str = "/home/shared/config/skew.yaml",
 ) -> None:
     """Check the skew of the boxes."""
+    box_ids = list(box_ids)
+
     with open(skew_file, "r") as file:
         config = yaml.safe_load(file)
-    ref_port = config["reference_port"].split(".")[0]
+    ref_port = config["reference_port"].split("-")[0]
 
     confirmed = Confirm.ask(
         f"""
@@ -63,9 +65,11 @@ def adjust_skew(
     output_path: str = "./skew.yaml",
 ) -> None:
     """Adjust the skew of the boxes."""
+    box_ids = list(box_ids)
+
     with open(skew_file, "r") as file:
         config = yaml.safe_load(file)
-    ref_port = config["reference_port"].split(".")[0]
+    ref_port = config["reference_port"].split("-")[0]
 
     confirmed = Confirm.ask(
         f"""
