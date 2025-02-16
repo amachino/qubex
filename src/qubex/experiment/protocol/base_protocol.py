@@ -19,7 +19,7 @@ from ...backend import (
 )
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
-from ...pulse import PulseSchedule, Waveform
+from ...pulse import PulseSchedule, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..calibration_note import CalibrationNote
 from ..experiment_constants import RABI_FREQUENCY
@@ -557,6 +557,134 @@ class BaseProtocol(Protocol):
         -------
         dict[str, float]
             Control amplitudes for the Rabi rate.
+        """
+        ...
+
+    def x90(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        """
+        Generate a π/2 pulse along the x-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            π/2 pulse along the x-axis.
+        """
+        ...
+
+    def x180(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+        use_hpi: bool = False,
+    ) -> Waveform:
+        """
+        Generate a π pulse along the x-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+        use_hpi : bool, optional
+            Whether to generate the π pulse as π/2 pulse * 2. Defaults to False.
+
+        Returns
+        -------
+        Waveform
+            π pulse along the x-axis.
+        """
+        ...
+
+    def y90(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        """
+        Generate a π/2 pulse along the y-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            π/2 pulse along the y-axis.
+        """
+        ...
+
+    def y180(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+        use_hpi: bool = False,
+    ) -> Waveform:
+        """
+        Generate a π pulse along the y-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+        use_hpi : bool, optional
+            Whether to generate the π pulse as π/2 pulse * 2. Defaults to False.
+
+        Returns
+        -------
+        Waveform
+            π pulse along the y-axis.
+        """
+        ...
+
+    def z90(
+        self,
+    ) -> VirtualZ:
+        """
+        Generate a π/2 virtual pulse along the z-axis.
+
+        Returns
+        -------
+        VirtualZ
+            π/2 virtual pulse along the z-axis.
+        """
+        ...
+
+    def z180(
+        self,
+    ) -> VirtualZ:
+        """
+        Generate a π virtual pulse along the z-axis.
+
+        Returns
+        -------
+        VirtualZ
+            π virtual pulse along the z-axis.
         """
         ...
 

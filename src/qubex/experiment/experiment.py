@@ -1028,6 +1028,72 @@ class Experiment(
 
         return amplitudes
 
+    def x90(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        if type is None:
+            type = "drag" if target in self.drag_pi_pulse else "flattop"
+        try:
+            if type == "flattop":
+                return self.hpi_pulse[target]
+            elif type == "drag":
+                return self.drag_hpi_pulse[target]
+        except KeyError:
+            raise ValueError(f"Invalid target: {target}")
+
+    def x180(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+        use_hpi: bool = False,
+    ) -> Waveform:
+        if type is None:
+            type = "drag" if target in self.drag_pi_pulse else "flattop"
+        if use_hpi:
+            return self.x90(target, type=type).repeated(2)
+        try:
+            if type == "flattop":
+                return self.pi_pulse[target]
+            elif type == "drag":
+                return self.drag_pi_pulse[target]
+        except KeyError:
+            raise ValueError(f"Invalid target: {target}")
+
+    def y90(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        return self.x90(target, type=type).shifted(np.pi / 2)
+
+    def y180(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+        use_hpi: bool = False,
+    ) -> Waveform:
+        return self.x180(target, type=type, use_hpi=use_hpi).shifted(np.pi / 2)
+
+    def z90(
+        self,
+    ) -> VirtualZ:
+        return VirtualZ(np.pi / 2)
+
+    def z180(
+        self,
+    ) -> VirtualZ:
+        return VirtualZ(np.pi)
+
     def zx90(
         self,
         control_qubit: str | Sequence[str],
