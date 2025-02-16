@@ -13,18 +13,18 @@ from .experiment_constants import (
     HPI_PARAMS,
     PI_PARAMS,
     RABI_PARAMS,
-    STATE_CENTERS,
+    STATE_PARAMS,
 )
 from .experiment_note import ExperimentNote
 
 logger = getLogger(__name__)
 
 
-class Property(TypedDict, total=False):
+class Parameter(TypedDict, total=False):
     timestamp: str
 
 
-class RabiParam(Property):
+class RabiParam(Parameter):
     target: str
     amplitude: float
     frequency: float
@@ -34,26 +34,26 @@ class RabiParam(Property):
     angle: float
 
 
-class FlatTopParam(Property):
+class StateParam(Parameter):
+    target: str
+    centers: dict[str, list[float]]
+
+
+class FlatTopParam(Parameter):
     target: str
     amplitude: float
     duration: float
     tau: float
 
 
-class DragParam(Property):
+class DragParam(Parameter):
     target: str
     amplitude: float
     duration: float
     beta: float
 
 
-class StateCenter(Property):
-    target: str
-    states: dict[str, list[float]]
-
-
-class CrossResonanceParam(Property):
+class CrossResonanceParam(Parameter):
     target: str
     duration: float
     ramptime: float
@@ -117,12 +117,12 @@ class CalibrationNote(ExperimentNote):
         self.put(DRAG_PI_PARAMS, value)
 
     @property
-    def state_centers(self) -> dict[str, StateCenter]:
-        return self.get(STATE_CENTERS)
+    def state_params(self) -> dict[str, StateParam]:
+        return self.get(STATE_PARAMS)
 
-    @state_centers.setter
-    def state_centers(self, value: dict[str, StateCenter]):
-        self.put(STATE_CENTERS, value)
+    @state_params.setter
+    def state_params(self, value: dict[str, StateParam]):
+        self.put(STATE_PARAMS, value)
 
     @property
     def cr_params(self) -> dict[str, CrossResonanceParam]:
@@ -167,12 +167,12 @@ class CalibrationNote(ExperimentNote):
     ) -> DragParam | None:
         return self.get_property(DRAG_PI_PARAMS, target, cutoff)
 
-    def get_state_center(
+    def get_state_param(
         self,
         target: str,
         cutoff: int | None = None,
-    ) -> StateCenter | None:
-        return self.get_property(STATE_CENTERS, target, cutoff)
+    ) -> StateParam | None:
+        return self.get_property(STATE_PARAMS, target, cutoff)
 
     def get_cr_param(
         self,
@@ -188,8 +188,6 @@ class CalibrationNote(ExperimentNote):
         cutoff: int | None = None,
     ) -> Any:
         property = self.get(key)
-        if property is None:
-            return None
         value = property.get(target)
         if value is None:
             return None
@@ -212,7 +210,7 @@ class CalibrationNote(ExperimentNote):
     ) -> dict[str, Any]:
         property = super().get(key)
         if property is None:
-            raise KeyError(f"Key '{key}' not found.")
+            return {}
         if cutoff is None:
             return property
         value = {}

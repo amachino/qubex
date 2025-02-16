@@ -49,6 +49,7 @@ from ..pulse import (
     Drag,
     FlatTop,
     PulseSchedule,
+    PulseSequence,
     VirtualZ,
     Waveform,
 )
@@ -580,11 +581,11 @@ class Experiment(
     def state_centers(self) -> dict[str, dict[int, complex]]:
         result = {}
         for target in self.qubit_labels:
-            center = self.calib_note.get_state_center(target)
-            if center is not None:
+            param = self.calib_note.get_state_param(target)
+            if param is not None:
                 result[target] = {
                     int(state): complex(center[0], center[1])
-                    for state, center in center["states"].items()
+                    for state, center in param["centers"].items()
                 }
         return result
 
@@ -1094,6 +1095,18 @@ class Experiment(
     ) -> VirtualZ:
         return VirtualZ(np.pi)
 
+    def hadamard(
+        self,
+        target: str,
+    ) -> PulseSequence:
+        return PulseSequence(
+            [
+                self.z90(),
+                self.x90(target),
+                self.z90(),
+            ]
+        )
+
     def zx90(
         self,
         control_qubit: str | Sequence[str],
@@ -1111,9 +1124,9 @@ class Experiment(
     ) -> PulseSchedule:
         # TODO: Remove this in the future
         if isinstance(control_qubit, str) and isinstance(target_qubit, str):
-            console.print(
-                f"""[yellow]Deprecated use: zx90("{control_qubit}", "{target_qubit}")
-Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{target_qubit}")) instead.[/yellow]"""
+            print(
+                f"""Deprecated use: zx90("{control_qubit}", "{target_qubit}")
+Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{target_qubit}")) instead."""
             )
         elif isinstance(control_qubit, str):
             try:
@@ -1156,30 +1169,23 @@ Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{
             pi_pulse=pi_pulse,
         )
 
-    def cnot(
+    def _cnot(
         self,
-        control_qubit: str | Sequence[str],
-        target_qubit: str | None = None,
+        target: str | Sequence[str],
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
     ) -> PulseSchedule:
-        # TODO: Remove this in the future
-        if isinstance(control_qubit, str) and isinstance(target_qubit, str):
-            console.print(
-                f"""[yellow]Deprecated use: zx90("{control_qubit}", "{target_qubit}")
-Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{target_qubit}")) instead.[/yellow]"""
-            )
-        elif isinstance(control_qubit, str):
+        if isinstance(target, str):
             try:
-                control_qubit, target_qubit = Target.cr_qubit_pair(control_qubit)
+                control_qubit, target_qubit = Target.cr_qubit_pair(target)
             except ValueError:
-                if target_qubit is None:
-                    raise ValueError("Target qubit is not specified.")
-        elif isinstance(control_qubit, Sequence):
-            control_qubit, target_qubit = control_qubit
+                raise ValueError("Invalid target.")
+        elif isinstance(target, Sequence):
+            control_qubit, target_qubit = target
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        zx90 = zx90 or self.zx90(control_qubit, target_qubit)
+        zx90 = zx90 or self.zx90(cr_label)
+
         if x90 is None:
             if target_qubit in self.drag_hpi_pulse:
                 x90 = self.drag_hpi_pulse[target_qubit]
@@ -1192,3 +1198,44 @@ Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{
             ps.add(target_qubit, x90.scaled(-1))
 
         return ps
+
+    def cnot(
+        self,
+        control_qubit: str | Sequence[str],
+        target_qubit: str | None = None,
+        zx90: PulseSchedule | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule:
+        # TODO: Remove this in the future
+        if isinstance(control_qubit, str) and isinstance(target_qubit, str):
+            print(
+                f"""Deprecated use: cnot("{control_qubit}", "{target_qubit}")
+Please use cnot("{control_qubit}-{target_qubit}") or cnot(("{control_qubit}", "{target_qubit}")) instead."""
+            )
+        elif isinstance(control_qubit, str):
+            try:
+                control_qubit, target_qubit = Target.cr_qubit_pair(control_qubit)
+            except ValueError:
+                if target_qubit is None:
+                    raise ValueError("Target qubit is not specified.")
+        elif isinstance(control_qubit, Sequence):
+            control_qubit, target_qubit = control_qubit
+
+        cr_label = f"{control_qubit}-{target_qubit}"
+
+        if cr_label in self.available_targets:
+            zx90 = zx90 or self.zx90(cr_label)
+            return self._cnot(cr_label, zx90, x90)
+        else:
+            cr_label = f"{target_qubit}-{control_qubit}"
+            zx90 = zx90 or self.zx90(cr_label)
+            cnot = self._cnot(cr_label, zx90, x90)
+            hadamard_c = self.hadamard(control_qubit)
+            hadamard_t = self.hadamard(target_qubit)
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+                ps.add(control_qubit, hadamard_c)
+                ps.add(target_qubit, hadamard_t)
+                ps.call(cnot)
+                ps.add(control_qubit, hadamard_c)
+                ps.add(target_qubit, hadamard_t)
+            return ps

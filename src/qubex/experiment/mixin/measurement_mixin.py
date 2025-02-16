@@ -34,7 +34,7 @@ from ...typing import (
     ParametricWaveformDict,
     TargetMap,
 )
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE, STATE_CENTERS
+from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE, STATE_PARAMS
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
 
@@ -431,7 +431,7 @@ class MeasurementMixin(
                 )
 
         self.system_note.put(  # deprecated
-            STATE_CENTERS,
+            STATE_PARAMS,
             {
                 target: {
                     str(state): (center.real, center.imag)
@@ -440,10 +440,10 @@ class MeasurementMixin(
                 for target in targets
             },
         )
-        self.calib_note.state_centers = {
+        self.calib_note.state_params = {
             target: {
                 "target": target,
-                "states": {
+                "centers": {
                     str(state): [center.real, center.imag]
                     for state, center in classifiers[target].centers.items()
                 },
@@ -1081,9 +1081,9 @@ class MeasurementMixin(
     ) -> dict:
         # TODO: Remove this in the future
         if isinstance(control_qubit, str) and isinstance(target_qubit, str):
-            console.print(
-                f"""[yellow]Deprecated use: zx90("{control_qubit}", "{target_qubit}")
-Please use zx90("{control_qubit}-{target_qubit}") or zx90(("{control_qubit}", "{target_qubit}")) instead.[/yellow]"""
+            print(
+                f"""Deprecated use: measure_bell_state("{control_qubit}", "{target_qubit}")
+Please use measure_bell_state("{control_qubit}-{target_qubit}") or measure_bell_state(("{control_qubit}", "{target_qubit}")) instead."""
             )
         elif isinstance(control_qubit, str):
             try:
