@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from logging import getLogger
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -15,6 +16,8 @@ from .experiment_constants import (
     STATE_CENTERS,
 )
 from .experiment_note import ExperimentNote
+
+logger = getLogger(__name__)
 
 
 class Property(TypedDict, total=False):
@@ -128,6 +131,48 @@ class CalibrationNote(ExperimentNote):
     @cr_params.setter
     def cr_params(self, value: dict[str, CrossResonanceParam]):
         self.put(CR_PARAMS, value)
+
+    def get_property(
+        self,
+        key: str,
+        target: str,
+        cutoff: int | None = None,
+    ) -> dict[str, Any] | None:
+        property = self.get(key)
+        if property is None:
+            return None
+        value = property.get(target)
+        if value is None:
+            return None
+        if cutoff is None:
+            return value
+        timestamp = value["timestamp"]
+        time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+        days_passed = (datetime.now() - time).days
+        if days_passed >= cutoff:
+            logger.warning(
+                f"{key}['{target}'] is outdated and ignored ({days_passed} days passed)."
+            )
+            return None
+        return value
+
+    def get(
+        self,
+        key: str,
+        cutoff: int | None = None,
+    ) -> dict[str, Any]:
+        property = super().get(key)
+        if property is None:
+            raise KeyError(f"Key '{key}' not found.")
+        if cutoff is None:
+            return property
+        value = {}
+        for k, v in property.items():
+            timestamp = v["timestamp"]
+            time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+            if (datetime.now() - time).days < cutoff:
+                value[k] = v
+        return value
 
     def put(self, key: str, value: dict[str, Any]):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
