@@ -236,9 +236,7 @@ class CalibrationMixin(
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
                 hpi_param = self.calib_note.get_drag_hpi_param(target)
-                if hpi_param is None:
-                    raise ValueError("DRAG HPI parameters are not stored.")
-                if use_stored_beta:
+                if hpi_param is not None and use_stored_beta:
                     beta = hpi_param["beta"]
                 else:
                     beta = -drag_coeff / self.qubits[target].alpha
@@ -251,7 +249,7 @@ class CalibrationMixin(
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
 
-                if use_stored_amplitude:
+                if hpi_param is not None and use_stored_amplitude:
                     ampl = hpi_param["amplitude"]
                 else:
                     ampl = self.calc_control_amplitudes(
@@ -261,9 +259,7 @@ class CalibrationMixin(
 
             elif pulse_type == "pi":
                 pi_param = self.calib_note.get_drag_pi_param(target)
-                if pi_param is None:
-                    raise ValueError("DRAG PI parameters are not stored.")
-                if use_stored_beta:
+                if pi_param is not None and use_stored_beta:
                     beta = pi_param["beta"]
                 else:
                     beta = -drag_coeff / self.qubits[target].alpha
@@ -276,7 +272,7 @@ class CalibrationMixin(
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
 
-                if use_stored_amplitude:
+                if pi_param is not None and use_stored_amplitude:
                     ampl = pi_param["amplitude"]
                 else:
                     ampl = self.calc_control_amplitudes(
@@ -333,6 +329,25 @@ class CalibrationMixin(
                 yaxis_title="Normalized signal",
             )
 
+            if pulse_type == "hpi":
+                self.calib_note.drag_hpi_params = {
+                    target: {
+                        "target": target,
+                        "duration": pulse.duration,
+                        "amplitude": fit_result["amplitude"],
+                        "beta": beta,
+                    }
+                }
+            elif pulse_type == "pi":
+                self.calib_note.drag_pi_params = {
+                    target: {
+                        "target": target,
+                        "duration": pulse.duration,
+                        "amplitude": fit_result["amplitude"],
+                        "beta": beta,
+                    }
+                }
+
             return fit_result["amplitude"]
 
         result: dict[str, float] = {}
@@ -343,7 +358,6 @@ class CalibrationMixin(
         print(f"Calibration results for DRAG {pulse_type} amplitude:")
         for target, amplitude in result.items():
             print(f"  {target}: {amplitude:.6f}")
-
         return result
 
     def calibrate_drag_beta(
@@ -375,6 +389,16 @@ class CalibrationMixin(
                 if spectator.label in self.qubit_labels
             ]
 
+            if pulse_type == "hpi":
+                param = self.calib_note.get_drag_hpi_param(target)
+            elif pulse_type == "pi":
+                param = self.calib_note.get_drag_pi_param(target)
+            if param is None:
+                raise ValueError("DRAG parameters are not stored.")
+
+            drag_duration = duration or param["duration"]
+            drag_amplitude = param["amplitude"]
+
             def sequence(beta: float) -> PulseSchedule:
                 with PulseSchedule(all_targets) as ps:
                     for spectator in spectators:
@@ -388,12 +412,9 @@ class CalibrationMixin(
                             )
                     ps.barrier()
                     if pulse_type == "hpi":
-                        hpi_param = self.calib_note.get_drag_hpi_param(target)
-                        if hpi_param is None:
-                            raise ValueError("DRAG HPI parameters are not stored.")
                         x90p = Drag(
-                            duration=duration or hpi_param["duration"],
-                            amplitude=hpi_param["amplitude"],
+                            duration=drag_duration,
+                            amplitude=drag_amplitude,
                             beta=beta,
                         )
                         x90m = x90p.scaled(-1)
@@ -409,12 +430,9 @@ class CalibrationMixin(
                             ),
                         )
                     elif pulse_type == "pi":
-                        pi_param = self.calib_note.get_drag_pi_param(target)
-                        if pi_param is None:
-                            raise ValueError("DRAG PI parameters are not stored.")
                         x180p = Drag(
-                            duration=duration or pi_param["duration"],
-                            amplitude=pi_param["amplitude"],
+                            duration=drag_duration,
+                            amplitude=drag_amplitude,
                             beta=beta,
                         )
                         x180m = x180p.scaled(-1)
@@ -451,6 +469,26 @@ class CalibrationMixin(
             if np.isnan(beta):
                 beta = 0.0
             print(f"Calibrated beta: {beta:.6f}")
+
+            if pulse_type == "hpi":
+                self.calib_note.drag_hpi_params = {
+                    target: {
+                        "target": target,
+                        "duration": drag_duration,
+                        "amplitude": drag_amplitude,
+                        "beta": beta,
+                    }
+                }
+            elif pulse_type == "pi":
+                self.calib_note.drag_pi_params = {
+                    target: {
+                        "target": target,
+                        "duration": drag_duration,
+                        "amplitude": drag_amplitude,
+                        "beta": beta,
+                    }
+                }
+
             return beta
 
         result = {}
@@ -520,16 +558,6 @@ class CalibrationMixin(
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
         self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
-        self.calib_note.pi_params = {
-            target: {
-                "target": target,
-                "duration": PI_DURATION,
-                "amplitude": ampl[target],
-                "tau": PI_RAMPTIME,
-            }
-            for target in targets
-        }
-
         return result
 
     def calibrate_ef_hpi_pulse(
@@ -636,6 +664,8 @@ class CalibrationMixin(
                 interval=interval,
             )
 
+            self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
+
             if calibrate_beta:
                 print("\nCalibrating DRAG beta:")
                 beta = self.calibrate_drag_beta(
@@ -654,17 +684,7 @@ class CalibrationMixin(
                     for target in targets
                 }
 
-            self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
             self.system_note.put(DRAG_HPI_BETA, beta)  # deprecated
-            self.calib_note.drag_hpi_params = {
-                target: {
-                    "target": target,
-                    "duration": self.drag_hpi_duration,
-                    "amplitude": amplitude[target],
-                    "beta": beta[target],
-                }
-                for target in targets
-            }
 
         return {
             "amplitude": amplitude,
@@ -711,6 +731,8 @@ class CalibrationMixin(
                 interval=interval,
             )
 
+            self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
+
             if calibrate_beta:
                 print("Calibrating DRAG beta:")
                 beta = self.calibrate_drag_beta(
@@ -730,17 +752,7 @@ class CalibrationMixin(
                     for target in targets
                 }
 
-            self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
             self.system_note.put(DRAG_PI_BETA, beta)  # deprecated
-            self.calib_note.drag_pi_params = {
-                target: {
-                    "target": target,
-                    "duration": self.drag_pi_duration,
-                    "amplitude": amplitude[target],
-                    "beta": beta[target],
-                }
-                for target in targets
-            }
 
         return {
             "amplitude": amplitude,
