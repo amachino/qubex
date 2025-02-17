@@ -1268,11 +1268,9 @@ class CalibrationMixin(
         if cr_param is None:
             raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
-        cr_amplitude = cr_param["cr_amplitude"]
         cr_phase = cr_param["cr_phase"]
-        cancel_amplitude = cr_param["cancel_amplitude"]
         cancel_phase = cr_param["cancel_phase"]
-        cr_cancel_ratio = cancel_amplitude / cr_amplitude
+        cr_cancel_ratio = cr_param["cr_cancel_ratio"]
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
@@ -1392,11 +1390,9 @@ class CalibrationMixin(
         if cr_param is None:
             raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
-        cr_amplitude = cr_param["cr_amplitude"]
         cr_phase = cr_param["cr_phase"]
-        cancel_amplitude = cr_param["cancel_amplitude"]
         cancel_phase = cr_param["cancel_phase"]
-        cr_cancel_ratio = cancel_amplitude / cr_amplitude
+        cr_cancel_ratio = cr_param["cr_cancel_ratio"]
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
