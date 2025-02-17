@@ -6,6 +6,7 @@ from typing import Collection, Literal, Optional, Sequence
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
+from rich.console import Console
 from tqdm import tqdm
 
 from ...analysis import IQPlotter, fitting
@@ -33,9 +34,11 @@ from ...typing import (
     ParametricWaveformDict,
     TargetMap,
 )
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE, STATE_CENTERS
+from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE, STATE_PARAMS
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
+
+console = Console()
 
 
 class MeasurementMixin(
@@ -222,17 +225,6 @@ class MeasurementMixin(
         else:
             raise ValueError("Invalid Rabi level.")
 
-        if isinstance(sequence, dict):
-            # TODO: this parameter type (dict[str, Callable[..., Waveform]]) will be deprecated
-            targets = list(sequence.keys())
-            sequences = [
-                {
-                    target: sequence[target](param).repeated(repetitions).values
-                    for target in targets
-                }
-                for param in sweep_range
-            ]
-
         if callable(sequence):
             if isinstance(sequence(0), PulseSchedule):
                 sequences = [
@@ -272,22 +264,6 @@ class MeasurementMixin(
 
         if plot:
             plotter.show()
-
-        # with self.modified_frequencies(frequencies):
-        #     for seq in sequences:
-        #         measure_result = self.measure(
-        #             sequence=seq,
-        #             mode="avg",
-        #             shots=shots,
-        #             interval=interval,
-        #             control_window=control_window,
-        #             capture_window=capture_window,
-        #             capture_margin=capture_margin,
-        #         )
-        #         for target, data in measure_result.data.items():
-        #             signals[target].append(complex(data.kerneled))
-        #         if plot:
-        #             plotter.update(signals)
 
         sweep_data = {
             target: SweepData(
@@ -454,8 +430,8 @@ class MeasurementMixin(
                     f"  Average readout fidelity : {average_fidelities[target] * 100:.2f}%\n\n"
                 )
 
-        self.system_note.put(
-            STATE_CENTERS,
+        self.system_note.put(  # deprecated
+            STATE_PARAMS,
             {
                 target: {
                     str(state): (center.real, center.imag)
@@ -464,6 +440,16 @@ class MeasurementMixin(
                 for target in targets
             },
         )
+        self.calib_note.state_params = {
+            target: {
+                "target": target,
+                "centers": {
+                    str(state): [center.real, center.imag]
+                    for state, center in classifiers[target].centers.items()
+                },
+            }
+            for target in targets
+        }
 
         return {
             "readout_fidelties": fidelities,
@@ -956,7 +942,7 @@ class MeasurementMixin(
                 data=data.data,
                 plot=plot,
                 is_damped=is_damped,
-            )
+            )["rabi_param"]
             for target, data in sweep_data.items()
         }
 
@@ -1019,7 +1005,7 @@ class MeasurementMixin(
             with PulseSchedule(ge_labels + ef_labels) as ps:
                 # prepare qubits to the excited state
                 for ge in ge_labels:
-                    ps.add(ge, self.pi_pulse[ge])
+                    ps.add(ge, self.hpi_pulse[ge].repeated(2))
                 ps.barrier()
                 # apply the ef drive to induce the ef Rabi oscillation
                 for ef in ef_labels:
@@ -1053,7 +1039,7 @@ class MeasurementMixin(
                 data=data.data,
                 plot=plot,
                 is_damped=is_damped,
-            )
+            )["rabi_param"]
             for target, data in sweep_data.items()
         }
 
@@ -1085,18 +1071,19 @@ class MeasurementMixin(
         self,
         control_qubit: str,
         target_qubit: str,
+        *,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-        save_image: bool = False,
+        save_image: bool = True,
     ) -> dict:
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
         cnot = self.cnot(
-            control_qubit=control_qubit,
-            target_qubit=target_qubit,
+            control_qubit,
+            target_qubit,
             zx90=zx90,
         )
         result = self.measure(

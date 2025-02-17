@@ -19,8 +19,9 @@ from ...backend import (
 )
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
-from ...pulse import PulseSchedule, Waveform
+from ...pulse import PulseSchedule, VirtualZ, Waveform
 from ...typing import TargetMap
+from ..calibration_note import CalibrationNote
 from ..experiment_constants import RABI_FREQUENCY
 from ..experiment_note import ExperimentNote
 from ..experiment_record import ExperimentRecord
@@ -28,6 +29,16 @@ from ..experiment_util import ExperimentUtil
 
 
 class BaseProtocol(Protocol):
+    @property
+    def drag_hpi_duration(self) -> int:
+        """Get the DRAG π/2 duration."""
+        ...
+
+    @property
+    def drag_pi_duration(self) -> int:
+        """Get the DRAG π duration."""
+        ...
+
     @property
     def control_window(self) -> int | None:
         """Get the control window."""
@@ -156,6 +167,11 @@ class BaseProtocol(Protocol):
     @property
     def params_path(self) -> str:
         """Get the path of the parameter file."""
+        ...
+
+    @property
+    def calib_note(self) -> CalibrationNote:
+        """Get the calibration note."""
         ...
 
     @property
@@ -544,10 +560,139 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def x90(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        """
+        Generate a π/2 pulse along the x-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            π/2 pulse along the x-axis.
+        """
+        ...
+
+    def x180(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+        use_hpi: bool = False,
+    ) -> Waveform:
+        """
+        Generate a π pulse along the x-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+        use_hpi : bool, optional
+            Whether to generate the π pulse as π/2 pulse * 2. Defaults to False.
+
+        Returns
+        -------
+        Waveform
+            π pulse along the x-axis.
+        """
+        ...
+
+    def y90(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        """
+        Generate a π/2 pulse along the y-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            π/2 pulse along the y-axis.
+        """
+        ...
+
+    def y180(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+        use_hpi: bool = False,
+    ) -> Waveform:
+        """
+        Generate a π pulse along the y-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+        use_hpi : bool, optional
+            Whether to generate the π pulse as π/2 pulse * 2. Defaults to False.
+
+        Returns
+        -------
+        Waveform
+            π pulse along the y-axis.
+        """
+        ...
+
+    def z90(
+        self,
+    ) -> VirtualZ:
+        """
+        Generate a π/2 virtual pulse along the z-axis.
+
+        Returns
+        -------
+        VirtualZ
+            π/2 virtual pulse along the z-axis.
+        """
+        ...
+
+    def z180(
+        self,
+    ) -> VirtualZ:
+        """
+        Generate a π virtual pulse along the z-axis.
+
+        Returns
+        -------
+        VirtualZ
+            π virtual pulse along the z-axis.
+        """
+        ...
+
     def zx90(
         self,
         control_qubit: str,
         target_qubit: str,
+        *,
         cr_duration: float | None = None,
         cr_ramptime: float | None = None,
         cr_amplitude: float | None = None,
@@ -558,10 +703,20 @@ class BaseProtocol(Protocol):
         x180: TargetMap[Waveform] | Waveform | None = None,
     ) -> PulseSchedule: ...
 
+    def cx(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        zx90: PulseSchedule | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule: ...
+
     def cnot(
         self,
         control_qubit: str,
         target_qubit: str,
+        *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
     ) -> PulseSchedule: ...

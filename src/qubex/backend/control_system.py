@@ -84,14 +84,14 @@ PORT_MAPPING: Final = {
         0: PortType.READ_OUT,
         1: PortType.READ_IN,
         2: PortType.PUMP,
-        3: PortType.MNTR_OUT,  # TODO: Check if this is correct
+        3: PortType.MNTR_OUT,
         4: PortType.MNTR_IN,
         5: PortType.CTRL,
         6: PortType.CTRL,
         7: PortType.CTRL,
         8: PortType.CTRL,
         9: PortType.MNTR_IN,
-        10: PortType.MNTR_OUT,  # TODO: Check if this is correct
+        10: PortType.MNTR_OUT,
         11: PortType.PUMP,
         12: PortType.READ_IN,
         13: PortType.READ_OUT,
@@ -262,8 +262,10 @@ def create_ports(
         PortType.MNTR_OUT: 0,
     }
     for port_num, port_type in PORT_MAPPING[box_type].items():
-        if port_numbers is not None and port_num not in port_numbers:
-            continue
+        if port_type in (PortType.READ_IN, PortType.READ_OUT, PortType.CTRL):
+            # skip if the port is not used in the experiment
+            if port_numbers is not None and port_num not in port_numbers:
+                continue
         index = port_index[port_type]
         if port_type == PortType.NOT_AVAILABLE:
             port_id = f"{box_id}.NA{index}"

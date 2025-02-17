@@ -794,6 +794,7 @@ class Measurement:
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore
             interval=interval,
+            sysdb=self.device_controller.qubecalib.sysdb,
         )
 
     def _create_sequencer_from_schedule(
@@ -935,6 +936,7 @@ class Measurement:
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore
             interval=backend_interval,
+            sysdb=self.device_controller.qubecalib.sysdb,
         )
 
     def _create_measure_result(

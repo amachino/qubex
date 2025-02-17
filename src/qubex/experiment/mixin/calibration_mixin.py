@@ -176,7 +176,7 @@ class CalibrationMixin(
 
             def sequence(x: float) -> PulseSchedule:
                 with PulseSchedule([ge_label, ef_label]) as ps:
-                    ps.add(ge_label, self.pi_pulse[ge_label])
+                    ps.add(ge_label, self.hpi_pulse[ge_label].repeated(2))
                     ps.barrier()
                     ps.add(ef_label, pulse.scaled(x).repeated(repetitions))
                 return ps
@@ -235,8 +235,9 @@ class CalibrationMixin(
 
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
-                if use_stored_beta:
-                    beta = self.system_note.get(DRAG_HPI_BETA)[target]
+                hpi_param = self.calib_note.get_drag_hpi_param(target)
+                if hpi_param is not None and use_stored_beta:
+                    beta = hpi_param["beta"]
                 else:
                     beta = -drag_coeff / self.qubits[target].alpha
 
@@ -248,8 +249,8 @@ class CalibrationMixin(
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
 
-                if use_stored_amplitude:
-                    ampl = self.system_note.get(DRAG_HPI_AMPLITUDE)[target]
+                if hpi_param is not None and use_stored_amplitude:
+                    ampl = hpi_param["amplitude"]
                 else:
                     ampl = self.calc_control_amplitudes(
                         rabi_rate=rabi_rate,
@@ -257,8 +258,9 @@ class CalibrationMixin(
                     )[target]
 
             elif pulse_type == "pi":
-                if use_stored_beta:
-                    beta = self.system_note.get(DRAG_PI_BETA)[target]
+                pi_param = self.calib_note.get_drag_pi_param(target)
+                if pi_param is not None and use_stored_beta:
+                    beta = pi_param["beta"]
                 else:
                     beta = -drag_coeff / self.qubits[target].alpha
 
@@ -270,8 +272,8 @@ class CalibrationMixin(
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
 
-                if use_stored_amplitude:
-                    ampl = self.system_note.get(DRAG_PI_AMPLITUDE)[target]
+                if pi_param is not None and use_stored_amplitude:
+                    ampl = pi_param["amplitude"]
                 else:
                     ampl = self.calc_control_amplitudes(
                         rabi_rate=rabi_rate,
@@ -327,6 +329,25 @@ class CalibrationMixin(
                 yaxis_title="Normalized signal",
             )
 
+            if pulse_type == "hpi":
+                self.calib_note.drag_hpi_params = {
+                    target: {
+                        "target": target,
+                        "duration": pulse.duration,
+                        "amplitude": fit_result["amplitude"],
+                        "beta": beta,
+                    }
+                }
+            elif pulse_type == "pi":
+                self.calib_note.drag_pi_params = {
+                    target: {
+                        "target": target,
+                        "duration": pulse.duration,
+                        "amplitude": fit_result["amplitude"],
+                        "beta": beta,
+                    }
+                }
+
             return fit_result["amplitude"]
 
         result: dict[str, float] = {}
@@ -337,7 +358,6 @@ class CalibrationMixin(
         print(f"Calibration results for DRAG {pulse_type} amplitude:")
         for target, amplitude in result.items():
             print(f"  {target}: {amplitude:.6f}")
-
         return result
 
     def calibrate_drag_beta(
@@ -346,7 +366,7 @@ class CalibrationMixin(
         *,
         spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
+        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 41),
         n_turns: int = 1,
         duration: float | None = None,
         degree: int = 3,
@@ -369,6 +389,16 @@ class CalibrationMixin(
                 if spectator.label in self.qubit_labels
             ]
 
+            if pulse_type == "hpi":
+                param = self.calib_note.get_drag_hpi_param(target)
+            elif pulse_type == "pi":
+                param = self.calib_note.get_drag_pi_param(target)
+            if param is None:
+                raise ValueError("DRAG parameters are not stored.")
+
+            drag_duration = duration or param["duration"]
+            drag_amplitude = param["amplitude"]
+
             def sequence(beta: float) -> PulseSchedule:
                 with PulseSchedule(all_targets) as ps:
                     for spectator in spectators:
@@ -383,8 +413,8 @@ class CalibrationMixin(
                     ps.barrier()
                     if pulse_type == "hpi":
                         x90p = Drag(
-                            duration=duration or DRAG_HPI_DURATION,
-                            amplitude=self.system_note.get(DRAG_HPI_AMPLITUDE)[target],
+                            duration=drag_duration,
+                            amplitude=drag_amplitude,
                             beta=beta,
                         )
                         x90m = x90p.scaled(-1)
@@ -401,8 +431,8 @@ class CalibrationMixin(
                         )
                     elif pulse_type == "pi":
                         x180p = Drag(
-                            duration=duration or DRAG_PI_DURATION,
-                            amplitude=self.system_note.get(DRAG_PI_AMPLITUDE)[target],
+                            duration=drag_duration,
+                            amplitude=drag_amplitude,
                             beta=beta,
                         )
                         x180m = x180p.scaled(-1)
@@ -439,6 +469,26 @@ class CalibrationMixin(
             if np.isnan(beta):
                 beta = 0.0
             print(f"Calibrated beta: {beta:.6f}")
+
+            if pulse_type == "hpi":
+                self.calib_note.drag_hpi_params = {
+                    target: {
+                        "target": target,
+                        "duration": drag_duration,
+                        "amplitude": drag_amplitude,
+                        "beta": beta,
+                    }
+                }
+            elif pulse_type == "pi":
+                self.calib_note.drag_pi_params = {
+                    target: {
+                        "target": target,
+                        "duration": drag_duration,
+                        "amplitude": drag_amplitude,
+                        "beta": beta,
+                    }
+                }
+
             return beta
 
         result = {}
@@ -473,8 +523,16 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.system_note.put(HPI_AMPLITUDE, ampl)
-
+        self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
+        self.calib_note.hpi_params = {
+            target: {
+                "target": target,
+                "duration": HPI_DURATION,
+                "amplitude": ampl[target],
+                "tau": HPI_RAMPTIME,
+            }
+            for target in targets
+        }
         return result
 
     def calibrate_pi_pulse(
@@ -498,8 +556,16 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.system_note.put(PI_AMPLITUDE, ampl)
-
+        self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
+        self.calib_note.pi_params = {
+            target: {
+                "target": target,
+                "duration": PI_DURATION,
+                "amplitude": ampl[target],
+                "tau": PI_RAMPTIME,
+            }
+            for target in targets
+        }
         return result
 
     def calibrate_ef_hpi_pulse(
@@ -523,8 +589,16 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.system_note.put(HPI_AMPLITUDE, ampl)
-
+        self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
+        self.calib_note.hpi_params = {
+            target: {
+                "target": target,
+                "duration": HPI_DURATION,
+                "amplitude": ampl[target],
+                "tau": HPI_RAMPTIME,
+            }
+            for target in targets
+        }
         return result
 
     def calibrate_ef_pi_pulse(
@@ -548,8 +622,16 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.system_note.put(PI_AMPLITUDE, ampl)
-
+        self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
+        self.calib_note.pi_params = {
+            target: {
+                "target": target,
+                "duration": PI_DURATION,
+                "amplitude": ampl[target],
+                "tau": PI_RAMPTIME,
+            }
+            for target in targets
+        }
         return result
 
     def calibrate_drag_hpi_pulse(
@@ -559,7 +641,7 @@ class CalibrationMixin(
         n_turns: int = 1,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
+        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 41),
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         shots: int = CALIBRATION_SHOTS,
@@ -587,7 +669,8 @@ class CalibrationMixin(
                 shots=shots,
                 interval=interval,
             )
-            self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)
+
+            self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
 
             if calibrate_beta:
                 print("\nCalibrating DRAG beta:")
@@ -606,7 +689,8 @@ class CalibrationMixin(
                     target: -drag_coeff / self.qubits[target].alpha
                     for target in targets
                 }
-            self.system_note.put(DRAG_HPI_BETA, beta)
+
+            self.system_note.put(DRAG_HPI_BETA, beta)  # deprecated
 
         return {
             "amplitude": amplitude,
@@ -622,7 +706,7 @@ class CalibrationMixin(
         n_turns: int = 1,
         n_iterations: int = 2,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-0.5, 1.5, 41),
+        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 41),
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         degree: int = 3,
@@ -652,7 +736,8 @@ class CalibrationMixin(
                 shots=shots,
                 interval=interval,
             )
-            self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)
+
+            self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
 
             if calibrate_beta:
                 print("Calibrating DRAG beta:")
@@ -672,7 +757,8 @@ class CalibrationMixin(
                     target: -drag_coeff / self.qubits[target].alpha
                     for target in targets
                 }
-            self.system_note.put(DRAG_PI_BETA, beta)
+
+            self.system_note.put(DRAG_PI_BETA, beta)  # deprecated
 
         return {
             "amplitude": amplitude,
@@ -1008,7 +1094,7 @@ class CalibrationMixin(
 
         cr_cancel_ratio = cancel_pulse["amplitude"] / cr_pulse["amplitude"]
 
-        self.system_note.put(
+        self.system_note.put(  # deprecated
             CR_PARAMS,
             {
                 f"{control_qubit}-{target_qubit}": {
@@ -1018,6 +1104,18 @@ class CalibrationMixin(
                 },
             },
         )
+        self.calib_note.cr_params = {
+            f"{control_qubit}-{target_qubit}": {
+                "target": f"{control_qubit}-{target_qubit}",
+                "duration": cr_ramptime * 2,
+                "ramptime": cr_ramptime,
+                "cr_amplitude": cr_pulse["amplitude"],
+                "cr_phase": cr_pulse["phase"],
+                "cancel_amplitude": cancel_pulse["amplitude"],
+                "cancel_phase": cancel_pulse["phase"],
+                "cr_cancel_ratio": cr_cancel_ratio,
+            },
+        }
 
         return {
             "cr_pulse": cr_pulse,
@@ -1098,16 +1196,18 @@ class CalibrationMixin(
         calibrated_value = (result_0["root"] + result_1["root"]) / 2
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
         cr_duration = calibrated_value if sweep_parameter == "duration" else duration
         cr_amplitude = calibrated_value if sweep_parameter == "amplitude" else amplitude
-        cr_phase = cr_params["cr_pulse"]["phase"]
-        cr_cancel_ratio = cr_params["cr_cancel_ratio"]
+        cr_phase = cr_param["cr_phase"]
+        cr_cancel_ratio = cr_param["cr_cancel_ratio"]
         cancel_amplitude = cr_amplitude * cr_cancel_ratio
-        cancel_phase = cr_params["cancel_pulse"]["phase"]
+        cancel_phase = cr_param["cancel_phase"]
 
-        self.system_note.put(
+        self.system_note.put(  # deprecated
             CR_PARAMS,
             {
                 cr_label: {
@@ -1124,6 +1224,18 @@ class CalibrationMixin(
                 },
             },
         )
+        self.calib_note.cr_params = {
+            cr_label: {
+                "target": cr_label,
+                "duration": cr_duration,
+                "ramptime": cr_ramptime,
+                "cr_amplitude": cr_amplitude,
+                "cr_phase": cr_phase,
+                "cancel_amplitude": cancel_amplitude,
+                "cancel_phase": cancel_phase,
+                "cr_cancel_ratio": cr_cancel_ratio,
+            },
+        }
 
         return {
             "calibrated_value": calibrated_value,
@@ -1152,13 +1264,13 @@ class CalibrationMixin(
         amplitude_range = np.array(amplitude_range)
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
-        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
-        cr_phase = cr_params["cr_pulse"]["phase"]
-        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
-        cancel_phase = cr_params["cancel_pulse"]["phase"]
-        cr_cancel_ratio = cancel_amplitude / cr_amplitude
+        cr_phase = cr_param["cr_phase"]
+        cancel_phase = cr_param["cancel_phase"]
+        cr_cancel_ratio = cr_param["cr_cancel_ratio"]
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
@@ -1217,7 +1329,7 @@ class CalibrationMixin(
         amplitude = fit_result["root"]
 
         if store_params:
-            self.system_note.put(
+            self.system_note.put(  # deprecated
                 CR_PARAMS,
                 {
                     cr_label: {
@@ -1234,6 +1346,18 @@ class CalibrationMixin(
                     },
                 },
             )
+            self.calib_note.cr_params = {
+                cr_label: {
+                    "target": cr_label,
+                    "duration": duration,
+                    "ramptime": cr_ramptime,
+                    "cr_amplitude": amplitude,
+                    "cr_phase": cr_phase,
+                    "cancel_amplitude": amplitude * cr_cancel_ratio,
+                    "cancel_phase": cancel_phase,
+                    "cr_cancel_ratio": cr_cancel_ratio,
+                },
+            }
 
         return {
             "amplitude_range": amplitude_range,
@@ -1262,13 +1386,13 @@ class CalibrationMixin(
         duration_range = np.array(duration_range)
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
-        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
-        cr_phase = cr_params["cr_pulse"]["phase"]
-        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
-        cancel_phase = cr_params["cancel_pulse"]["phase"]
-        cr_cancel_ratio = cancel_amplitude / cr_amplitude
+        cr_phase = cr_param["cr_phase"]
+        cancel_phase = cr_param["cancel_phase"]
+        cr_cancel_ratio = cr_param["cr_cancel_ratio"]
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
@@ -1327,7 +1451,7 @@ class CalibrationMixin(
         duration = round(fit_result["root"] / SAMPLING_PERIOD) * SAMPLING_PERIOD
 
         if store_params:
-            self.system_note.put(
+            self.system_note.put(  # deprecated
                 CR_PARAMS,
                 {
                     cr_label: {
@@ -1344,6 +1468,18 @@ class CalibrationMixin(
                     },
                 },
             )
+            self.calib_note.cr_params = {
+                cr_label: {
+                    "target": cr_label,
+                    "duration": duration,
+                    "ramptime": cr_ramptime,
+                    "cr_amplitude": amplitude,
+                    "cr_phase": cr_phase,
+                    "cancel_amplitude": amplitude * cr_cancel_ratio,
+                    "cancel_phase": cancel_phase,
+                    "cr_cancel_ratio": cr_cancel_ratio,
+                },
+            }
 
         return {
             "duration_range": duration_range,
@@ -1398,10 +1534,10 @@ class CalibrationMixin(
         ftarget: float = 1e-3,
         timeout: int = 300,
     ) -> Waveform:
-        initial_params = [
-            self.system_note.get(DRAG_HPI_AMPLITUDE)[qubit],
-            self.system_note.get(DRAG_HPI_BETA)[qubit],
-        ]
+        param = self.calib_note.get_drag_hpi_param(qubit)
+        if param is None:
+            raise ValueError("DRAG HPI parameters are not stored.")
+        initial_params = [param["amplitude"], param["beta"]]
         es = cma.CMAEvolutionStrategy(
             initial_params,
             sigma0,
@@ -1479,12 +1615,14 @@ class CalibrationMixin(
         interval: int = DEFAULT_INTERVAL,
     ):
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_params = self.system_note.get(CR_PARAMS)[cr_label]
+        cr_param = self.calib_note.get_cr_param(cr_label)
+        if cr_param is None:
+            raise ValueError("CR parameters are not stored.")
         cr_ramptime = ramptime
-        cr_amplitude = cr_params["cr_pulse"]["amplitude"]
-        cr_phase = cr_params["cr_pulse"]["phase"]
-        cancel_amplitude = cr_params["cancel_pulse"]["amplitude"]
-        cancel_phase = cr_params["cancel_pulse"]["phase"]
+        cr_amplitude = cr_param["cr_amplitude"]
+        cr_phase = cr_param["cr_phase"]
+        cancel_amplitude = cr_param["cancel_amplitude"]
+        cancel_phase = cr_param["cancel_phase"]
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
@@ -1554,7 +1692,7 @@ class CalibrationMixin(
         es.optimize(objective_func)
         x = es.result.xbest
 
-        self.system_note.put(
+        self.system_note.put(  # deprecated
             CR_PARAMS,
             {
                 cr_label: {
@@ -1571,6 +1709,18 @@ class CalibrationMixin(
                 },
             },
         )
+        self.calib_note.cr_params = {
+            cr_label: {
+                "target": cr_label,
+                "duration": duration,
+                "ramptime": cr_ramptime,
+                "cr_amplitude": x[0],
+                "cr_phase": x[1],
+                "cancel_amplitude": x[2],
+                "cancel_phase": x[3],
+                "cr_cancel_ratio": x[2] / x[0],
+            },
+        }
 
         return {
             "cr_amplitude": x[0],

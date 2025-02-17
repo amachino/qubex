@@ -16,10 +16,16 @@ class ExperimentNote:
     about an experiment that is not part of the main experiment data.
     """
 
-    def __init__(self, file_path: str = FILE_PATH):
+    def __init__(self, file_path: Path | str | None = None):
         """
         Initializes the ExperimentNote with an empty dictionary.
         """
+        if file_path is None:
+            file_path = Path(FILE_PATH)
+        else:
+            file_path = Path(file_path)
+
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         self._dict: dict[str, Any] = {}
         self._file_path = file_path
         self.load()
@@ -99,66 +105,70 @@ class ExperimentNote:
         self._dict.clear()
         print("All entries have been cleared from the ExperimentNote.")
 
-    def save(self, filename: str | None = None):
+    def save(self, file_path: Path | str | None = None):
         """
         Saves the ExperimentNote to a JSON file.
 
         Parameters
         ----------
-        filename : str, optional
-            The name of the file to save to. Defaults to 'experiment_note.json'.
+        file_path : Path or str, optional
+            The path to save the JSON file. Defaults to the path specified in the constructor.
         """
         try:
-            filename = filename or self._file_path
-            with open(filename, "w") as file:
-                json.dump(self._dict, file, indent=4)
-            print(f"ExperimentNote saved to '{filename}'.")
+            file_path = file_path or self._file_path
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w") as file:
+                sorted_dict = self._sort_dict_recursively(self._dict, depth=2)
+                json.dump(sorted_dict, file, indent=4)
+            print(f"ExperimentNote saved to '{file_path}'.")
         except Exception as e:
             print(f"Failed to save ExperimentNote: {e}")
 
-    def load(self, filename: str | None = None):
+    def load(self, file_path: Path | str | None = None):
         """
         Loads the ExperimentNote from a JSON file.
 
         Parameters
         ----------
-        filename : str, optional
-            The name of the file to load from. Defaults to 'experiment_note.json'.
+        file_path : Path or str, optional
+            The path to load the JSON file. Defaults to the path specified in the constructor.
         """
 
-        filename = filename or self._file_path
-        file_path = Path(filename)
+        file_path = file_path or self._file_path
+        file_path = Path(file_path)
 
         if not file_path.exists():
-            with open(filename, "w") as file:
+            with open(file_path, "w") as file:
                 json.dump({}, file)
         try:
-            with open(filename, "r") as file:
+            with open(file_path, "r") as file:
                 self._dict = json.load(file)
         except json.JSONDecodeError:
             print(
-                f"Error decoding JSON from '{filename}'. Starting with an empty ExperimentNote."
+                f"Error decoding JSON from '{file_path}'. Starting with an empty ExperimentNote."
             )
         except Exception as e:
             print(f"Failed to load ExperimentNote: {e}")
 
-    def delete(self, filename: str | None = None):
+    def delete(self, file_path: Path | str | None = None):
         """
         Deletes the JSON file containing the ExperimentNote.
 
         Parameters
         ----------
-        filename : str, optional
-            The name of the file to delete. Defaults to 'experiment_note.json'.
+        file_path : Path or str, optional
+            The path to delete the JSON file. Defaults to the path specified in the constructor.
         """
-        filename = filename or self._file_path
-        file_path = Path(filename)
+        self.clear()
+
+        file_path = file_path or self._file_path
+        file_path = Path(file_path)
 
         if file_path.exists():
             file_path.unlink()
-            print(f"ExperimentNote file '{filename}' deleted.")
+            print(f"ExperimentNote file '{file_path}' deleted.")
         else:
-            print(f"ExperimentNote file '{filename}' not found.")
+            print(f"ExperimentNote file '{file_path}' not found.")
 
     def __str__(self) -> str:
         """
@@ -223,5 +233,41 @@ class ExperimentNote:
             else:
                 if isinstance(value, float) and np.isnan(value):
                     value = None
-                else:
-                    old_dict[key] = value
+                old_dict[key] = value
+
+    def _sort_dict_recursively(
+        self,
+        d: dict,
+        depth: int | None = None,
+        current_depth: int = 0,
+    ):
+        """
+        Recursively sorts a dictionary by key.
+
+        Parameters
+        ----------
+        d : dict
+            The dictionary to sort.
+        depth : int, optional
+            The depth to sort to. Defaults to None.
+
+        Returns
+        -------
+        dict
+            The sorted dictionary.
+        """
+        if isinstance(d, dict):
+            if depth is not None and current_depth >= depth:
+                return d  # Do not sort if depth is reached
+            return {
+                k: self._sort_dict_recursively(v, depth, current_depth + 1)
+                for k, v in sorted(d.items())
+            }
+
+        elif isinstance(d, list):
+            if depth is not None and current_depth >= depth:
+                return d  # Do not sort if depth is reached
+            return [self._sort_dict_recursively(v, depth, current_depth + 1) for v in d]
+
+        else:
+            return d  # Return value if not a dictionary or list

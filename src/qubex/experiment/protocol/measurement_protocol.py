@@ -536,9 +536,10 @@ class MeasurementProtocol(Protocol):
         self,
         control_qubit: str,
         target_qubit: str,
+        *,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-        save_image: bool = False,
+        save_image: bool = True,
     ) -> dict: ...

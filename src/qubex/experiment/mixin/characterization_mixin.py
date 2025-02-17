@@ -372,12 +372,13 @@ class CharacterizationMixin(
                     sweep_data = sweep_result.data
 
                     for target, data in sweep_data.items():
-                        rabi_param = fitting.fit_rabi(
+                        fit_result = fitting.fit_rabi(
                             target=data.target,
                             times=data.sweep_range,
                             data=data.data,
                             plot=False,
                         )
+                        rabi_param = fit_result["rabi_param"]
                         rabi_rates_buffer[target].append(rabi_param.frequency)
                         data.rabi_param = shared_rabi_params[target]
                         chevron_data_buffer[target].append(data.normalized)
@@ -1122,15 +1123,12 @@ class CharacterizationMixin(
         spectator_qubit: str,
         *,
         time_range: ArrayLike = np.arange(0, 5001, 200),
-        x90: TargetMap[Waveform] | None = None,
-        x180: TargetMap[Waveform] | None = None,
+        x90: Waveform | TargetMap[Waveform] | None = None,
+        x180: Waveform | TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
-        x90 = x90 or self.hpi_pulse
-        x180 = x180 or self.pi_pulse
-
         qubit_1 = target_qubit
         qubit_2 = spectator_qubit
 

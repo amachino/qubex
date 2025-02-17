@@ -226,7 +226,7 @@ class RabiData(TargetData):
         self,
         use_zvalue: bool = False,
         yaxis_range: tuple[float, float] | None = None,
-    ) -> RabiParam:
+    ) -> dict:
         return fitting.fit_rabi(
             target=self.target,
             times=self.time_range,
@@ -410,7 +410,7 @@ class AmplCalibData(SweepData):
     """
 
     sweep_range: NDArray
-    calib_value: float | None = None
+    calib_value: float = np.nan
 
     @classmethod
     def new(cls, sweep_data: SweepData, calib_value: float) -> AmplCalibData:
