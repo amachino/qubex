@@ -534,9 +534,8 @@ class MeasurementProtocol(Protocol):
 
     def measure_bell_state(
         self,
-        control_qubit: str | Sequence[str],
-        target_qubit: str | None = None,
-        /,
+        control_qubit: str,
+        target_qubit: str,
         *,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,

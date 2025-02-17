@@ -1069,9 +1069,8 @@ class MeasurementMixin(
 
     def measure_bell_state(
         self,
-        control_qubit: str | Sequence[str],
-        target_qubit: str | None = None,
-        /,
+        control_qubit: str,
+        target_qubit: str,
         *,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -1079,26 +1078,12 @@ class MeasurementMixin(
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
-        # TODO: Remove this in the future
-        if isinstance(control_qubit, str) and isinstance(target_qubit, str):
-            print(
-                f"""Deprecated use: measure_bell_state("{control_qubit}", "{target_qubit}")
-Please use measure_bell_state("{control_qubit}-{target_qubit}") or measure_bell_state(("{control_qubit}", "{target_qubit}")) instead."""
-            )
-        elif isinstance(control_qubit, str):
-            try:
-                control_qubit, target_qubit = Target.cr_qubit_pair(control_qubit)
-            except ValueError:
-                if target_qubit is None:
-                    raise ValueError("Target qubit is not specified.")
-        elif isinstance(control_qubit, Sequence):
-            control_qubit, target_qubit = control_qubit
-
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
         cnot = self.cnot(
-            (control_qubit, target_qubit),
+            control_qubit,
+            target_qubit,
             zx90=zx90,
         )
         result = self.measure(

@@ -533,7 +533,6 @@ class CalibrationMixin(
             }
             for target in targets
         }
-
         return result
 
     def calibrate_pi_pulse(
@@ -558,6 +557,15 @@ class CalibrationMixin(
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
         self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
+        self.calib_note.pi_params = {
+            target: {
+                "target": target,
+                "duration": PI_DURATION,
+                "amplitude": ampl[target],
+                "tau": PI_RAMPTIME,
+            }
+            for target in targets
+        }
         return result
 
     def calibrate_ef_hpi_pulse(
@@ -591,7 +599,6 @@ class CalibrationMixin(
             }
             for target in targets
         }
-
         return result
 
     def calibrate_ef_pi_pulse(
@@ -625,7 +632,6 @@ class CalibrationMixin(
             }
             for target in targets
         }
-
         return result
 
     def calibrate_drag_hpi_pulse(

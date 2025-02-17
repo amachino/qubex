@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Collection, ContextManager, Literal, Protocol, Sequence
+from typing import Collection, ContextManager, Literal, Protocol
 
 from numpy.typing import NDArray
 
@@ -690,9 +690,8 @@ class BaseProtocol(Protocol):
 
     def zx90(
         self,
-        control_qubit: str | Sequence[str],
-        target_qubit: str | None = None,
-        /,
+        control_qubit: str,
+        target_qubit: str,
         *,
         cr_duration: float | None = None,
         cr_ramptime: float | None = None,
@@ -704,11 +703,19 @@ class BaseProtocol(Protocol):
         x180: TargetMap[Waveform] | Waveform | None = None,
     ) -> PulseSchedule: ...
 
+    def cx(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        zx90: PulseSchedule | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule: ...
+
     def cnot(
         self,
-        control_qubit: str | Sequence[str],
-        target_qubit: str | None = None,
-        /,
+        control_qubit: str,
+        target_qubit: str,
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
