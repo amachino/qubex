@@ -1076,7 +1076,7 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-        save_image: bool = False,
+        save_image: bool = True,
     ) -> dict:
         if self.state_centers is None:
             self.build_classifier(plot=False)
