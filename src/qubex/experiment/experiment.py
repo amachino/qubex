@@ -973,8 +973,8 @@ class Experiment(
 
     def calc_control_amplitudes(
         self,
-        *,
         rabi_rate: float = RABI_FREQUENCY,
+        *,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
@@ -1023,11 +1023,46 @@ class Experiment(
         }
 
         if print_result:
-            print(f"control_amplitude for {rabi_rate * 1e3} MHz\n")
+            print(f"Control amplitude for rabi rate {rabi_rate * 1e3:.3f} MHz\n")
             for target, amplitude in amplitudes.items():
                 print(f"{target}: {amplitude:.6f}")
 
         return amplitudes
+
+    def calc_rabi_rates(
+        self,
+        control_amplitude: float = 1.0,
+        *,
+        print_result: bool = True,
+    ) -> dict[str, float]:
+        """
+        Calculates the Rabi rates for the control amplitude.
+
+        Parameters
+        ----------
+        control_amplitude : float, optional
+            Control amplitude. Defaults to 1.0.
+        print_result : bool, optional
+            Whether to print the result. Defaults to True.
+
+        Returns
+        -------
+        dict[str, float]
+            Rabi rates for the control amplitude.
+        """
+        default_ampl = self.params.control_amplitude
+
+        rabi_rates = {
+            target: control_amplitude * rabi_param.frequency / default_ampl[target]
+            for target, rabi_param in self.rabi_params.items()
+        }
+
+        if print_result:
+            print(f"Rabi rate for control amplitude {control_amplitude}\n")
+            for target, rabi_rate in rabi_rates.items():
+                print(f"{target}: {rabi_rate * 1e3:.3f} MHz")
+
+        return rabi_rates
 
     def x90(
         self,
@@ -1136,19 +1171,28 @@ class Experiment(
         else:
             pi_pulse = x180[control_qubit]
 
-        if cr_amplitude is not None and cancel_amplitude is None:
-            cr_cancel_ratio = cr_param["cr_cancel_ratio"]
-            cancel_amplitude = cr_amplitude * cr_cancel_ratio
+        if cr_amplitude is None:
+            cr_amplitude = cr_param["cr_amplitude"]
+        if cr_duration is None:
+            cr_duration = cr_param["duration"]
+        if cr_ramptime is None:
+            cr_ramptime = cr_param["ramptime"]
+        if cr_phase is None:
+            cr_phase = cr_param["cr_phase"]
+        if cancel_amplitude is None:
+            cancel_amplitude = cr_param["cancel_amplitude"]
+        if cancel_phase is None:
+            cancel_phase = cr_param["cancel_phase"]
 
         return CrossResonance(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
-            cr_amplitude=cr_amplitude or cr_param["cr_amplitude"],
-            cr_duration=cr_duration or cr_param["duration"],
-            cr_ramptime=cr_ramptime or cr_param["ramptime"],
-            cr_phase=cr_phase or cr_param["cr_phase"],
-            cancel_amplitude=cancel_amplitude or cr_param["cancel_amplitude"],
-            cancel_phase=cancel_phase or cr_param["cancel_phase"],
+            cr_amplitude=cr_amplitude,
+            cr_duration=cr_duration,
+            cr_ramptime=cr_ramptime,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
             echo=echo,
             pi_pulse=pi_pulse,
         )

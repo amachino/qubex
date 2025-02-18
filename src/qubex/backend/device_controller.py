@@ -6,6 +6,7 @@ from typing import Final
 
 try:
     from qubecalib import QubeCalib, Sequencer
+    from qubecalib.instrument.quel.quel1.tool import Skew
     from qubecalib.neopulse import Sequence
     from quel_ic_config import Quel1Box
 except ImportError:
@@ -130,6 +131,12 @@ class DeviceController:
     def clear_cache(self):
         if self._boxpool is not None:
             self._boxpool._box_config_cache.clear()
+
+    def load_skew_file(self, box_list: list[str], file_path: str | Path):
+        qc = self.qubecalib
+        system = qc.create_quel1system(box_list)
+        skew = Skew(system, qubecalib=qc)
+        skew.load(str(file_path))
 
     def link_status(self, box_name: str) -> dict[int, bool]:
         """

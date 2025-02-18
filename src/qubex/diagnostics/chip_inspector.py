@@ -77,7 +77,10 @@ class ChipInspector:
                 graph=self.graph,
                 params=params,
             )
-            inspection.execute()
+            try:
+                inspection.execute()
+            except Exception as e:
+                print(f"Error in {inspection.name}: {e}")
             inspections[type] = inspection
 
         return InspectionSummary(
