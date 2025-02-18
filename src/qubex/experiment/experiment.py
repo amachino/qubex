@@ -973,8 +973,8 @@ class Experiment(
 
     def calc_control_amplitudes(
         self,
-        *,
         rabi_rate: float = RABI_FREQUENCY,
+        *,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
@@ -1031,8 +1031,8 @@ class Experiment(
 
     def calc_rabi_rates(
         self,
-        *,
         control_amplitude: float = 1.0,
+        *,
         print_result: bool = True,
     ) -> dict[str, float]:
         """

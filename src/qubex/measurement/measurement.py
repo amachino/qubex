@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Final, Literal, Sequence
 
 import numpy as np
@@ -51,6 +52,7 @@ class Measurement:
         connect_devices: bool = False,
         use_neopulse: bool = False,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        skew_file_path: Path | str | None = None,
     ):
         """
         Initialize the Measurement.
@@ -67,6 +69,10 @@ class Measurement:
             The parameters directory, by default DEFAULT_PARAMS_DIR.
         fetch_device_state : bool, optional
             Whether to fetch the device state, by default True.
+        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+            The configuration mode, by default "ge-cr-cr".
+        skew_file_path : Path | str | None, optional
+            The skew file path, by default None.
 
         Examples
         --------
@@ -82,17 +88,19 @@ class Measurement:
         self._params_dir = params_dir
         self._use_neopulse = use_neopulse
         self._classifiers: TargetMap[StateClassifier] = {}
-        self._load_device_state(
+        self._initialize(
             fetch_device_state=fetch_device_state,
             connect_devices=connect_devices,
             configuration_mode=configuration_mode,
+            skew_file_path=skew_file_path,
         )
 
-    def _load_device_state(
+    def _initialize(
         self,
         fetch_device_state: bool,
         connect_devices: bool,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        skew_file_path: Path | str | None = None,
     ):
         self._state_manager = StateManager.shared()
         self.state_manager.load(
@@ -107,6 +115,11 @@ class Measurement:
             box_ids = [box.id for box in boxes]
         if len(box_ids) == 0:
             return
+
+        if skew_file_path is None:
+            skew_file_path = f"{self._config_dir}/skew.yaml"
+        self.device_controller.load_skew_file(box_ids, skew_file_path)
+
         if fetch_device_state:
             try:
                 self.state_manager.pull(box_ids)
@@ -120,7 +133,7 @@ class Measurement:
 
     def reload(self):
         """Reload the measuremnt settings."""
-        self._load_device_state(fetch_device_state=True, connect_devices=True)
+        self._initialize(fetch_device_state=True, connect_devices=True)
 
     @property
     def state_manager(self) -> StateManager:
