@@ -209,6 +209,7 @@ def print_chip_info(
     graph = LatticeGraph(chip.n_qubits)
 
     if len(info_type) == 0:
+        draw_individual_results = False
         info_type = (
             "chip_summary",
             "qubit_frequency",
@@ -220,6 +221,7 @@ def print_chip_info(
             "zx90_gate_fidelity",
         )
     elif "all" in info_type:
+        draw_individual_results = True
         info_type = (
             "chip_summary",
             "resonator_frequency",
@@ -243,7 +245,7 @@ def print_chip_info(
         inspector = ChipInspector(chip.id)
         summary = inspector.execute()
         summary.draw(
-            draw_individual_results=False,
+            draw_individual_results=draw_individual_results,
             save_image=save_image,
         )
 
