@@ -1094,8 +1094,9 @@ class MeasurementMixin(
             interval=interval,
         )
 
-        labels = [f"|{i}⟩" for i in result.probabilities.keys()]
-        prob = np.array(list(result.probabilities.values()))
+        probabilities = result.get_probabilities([control_qubit, target_qubit])
+        labels = [f"|{i}⟩" for i in probabilities.keys()]
+        prob = np.array(list(probabilities.values()))
         cm_inv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
 
         mitigated_prob = prob @ cm_inv

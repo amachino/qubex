@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
+from typing import Collection
 
 import numpy as np
 from numpy.typing import NDArray
@@ -106,33 +107,55 @@ class MeasureResult:
 
     @property
     def counts(self) -> dict[str, int]:
+        return self.get_counts()
+
+    @property
+    def probabilities(self) -> dict[str, float]:
+        return self.get_probabilities()
+
+    @property
+    def standard_deviations(self) -> dict[str, float]:
+        return self.get_standard_deviations()
+
+    def get_counts(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, int]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
+        if targets is None:
+            targets = self.data.keys()
         classified_data = np.column_stack(
-            [data.classified for data in self.data.values()]
+            [self.data[target].classified for target in targets]
         )
         classified_labels = np.array(
             ["".join(map(str, row)) for row in classified_data]
         )
         counts = dict(Counter(classified_labels))
-        counts = {key: counts[key] for key in sorted(counts.keys())}
+        counts = dict(sorted(counts.items()))
         return counts
 
-    @property
-    def probabilities(self) -> dict[str, float]:
+    def get_probabilities(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, float]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
-        total = sum(self.counts.values())
-        return {key: count / total for key, count in self.counts.items()}
+        total = sum(self.get_counts(targets).values())
+        return {key: count / total for key, count in self.get_counts(targets).items()}
 
-    @property
-    def standard_deviations(self) -> dict[str, float]:
+    def get_standard_deviations(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, float]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         return {
             key: np.sqrt(prob * (1 - prob) / total)
             for key, prob, total in zip(
-                self.counts.keys(), self.probabilities.values(), self.counts.values()
+                self.get_counts(targets).keys(),
+                self.get_probabilities(targets).values(),
+                self.get_counts(targets).values(),
             )
         }
 
