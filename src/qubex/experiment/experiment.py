@@ -457,7 +457,7 @@ class Experiment(
         result = {}
         for target in self.ge_targets:
             param = self.calib_note.get_hpi_param(target)
-            if param is not None:
+            if param is not None and None not in param.values():
                 result[target] = FlatTop(
                     duration=param["duration"],
                     amplitude=param["amplitude"],
@@ -476,7 +476,7 @@ class Experiment(
         result = {}
         for target in self.ge_targets:
             param = self.calib_note.get_pi_param(target)
-            if param is not None:
+            if param is not None and None not in param.values():
                 result[target] = FlatTop(
                     duration=param["duration"],
                     amplitude=param["amplitude"],
@@ -489,7 +489,7 @@ class Experiment(
         result = {}
         for target in self.ge_targets:
             param = self.calib_note.get_drag_hpi_param(target)
-            if param is not None:
+            if param is not None and None not in param.values():
                 result[target] = Drag(
                     duration=param["duration"],
                     amplitude=param["amplitude"],
@@ -502,7 +502,7 @@ class Experiment(
         result = {}
         for target in self.ge_targets:
             param = self.calib_note.get_drag_pi_param(target)
-            if param is not None:
+            if param is not None and None not in param.values():
                 result[target] = Drag(
                     duration=param["duration"],
                     amplitude=param["amplitude"],
@@ -515,7 +515,7 @@ class Experiment(
         result = {}
         for target in self.ef_targets:
             param = self.calib_note.get_hpi_param(target)
-            if param is not None:
+            if param is not None and None not in param.values():
                 result[target] = FlatTop(
                     duration=param["duration"],
                     amplitude=param["amplitude"],
@@ -528,7 +528,7 @@ class Experiment(
         result = {}
         for target in self.ef_targets:
             param = self.calib_note.get_pi_param(target)
-            if param is not None:
+            if param is not None and None not in param.values():
                 result[target] = FlatTop(
                     duration=param["duration"],
                     amplitude=param["amplitude"],
@@ -541,7 +541,7 @@ class Experiment(
         result = {}
         for target in self.ge_targets | self.ef_targets:
             param = self.calib_note.get_rabi_param(target)
-            if param is not None:
+            if param is not None and None not in param.values():
                 result[target] = RabiParam(
                     target=param["target"],
                     frequency=param["frequency"],

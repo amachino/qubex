@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -21,6 +22,8 @@ COLORS = [
     "#474747",
     "#9e9e9e",
 ]
+
+logger = logging.getLogger(__name__)
 
 
 def _plotly_config(filename: str) -> dict:
@@ -1875,13 +1878,18 @@ def fit_rotation(
     if p0 is None:
         N = len(times)
         dt = times[1] - times[0]
-        F = np.array(fft(data[:, 2]))
-        f = np.array(fftfreq(N, dt)[1 : N // 2])
-        i = np.argmax(np.abs(F[1 : N // 2]))
-        dominant_freq = np.abs(f[i])
+        freq = np.fft.fftfreq(N, dt)[1 : N // 2]
+        X = np.fft.fft(data[:, 0])[1 : N // 2]
+        Y = np.fft.fft(data[:, 1])[1 : N // 2]
+        Z = np.fft.fft(data[:, 2])[1 : N // 2]
+        idx = np.argmax(np.abs(X) ** 2 + np.abs(Y) ** 2 + np.abs(Z) ** 2)
+        dominant_freq = np.abs(freq[idx])
+        F = np.array([X[idx], Y[idx], Z[idx]])
+        n = np.cross(np.imag(F), np.real(F))
+        n /= np.linalg.norm(n)
         omega_est = 2 * np.pi * dominant_freq
-        theta_est = np.pi / 2
-        phi_est = 0.0
+        theta_est = np.arccos(n[2])
+        phi_est = np.arctan2(n[1], n[0])
         alpha_est = 0.0
         p0 = (omega_est, theta_est, phi_est, alpha_est)
 
@@ -1891,6 +1899,9 @@ def fit_rotation(
             (np.inf, np.pi, np.pi, 1e-3),
         )
 
+    logger.info("Fitting rotation data.")
+    logger.info(f"Initial guess: {p0}")
+
     result = least_squares(
         residuals,
         p0,
@@ -1899,14 +1910,14 @@ def fit_rotation(
     )
 
     fitted_params = result.x
-    Omega = fitted_params[0]
+    F = fitted_params[0]
     theta = fitted_params[1]
     phi = fitted_params[2]
     alpha = fitted_params[3]
     tau = 1 / alpha * 1e-3  # μs
-    Omega_x = Omega * np.sin(theta) * np.cos(phi)
-    Omega_y = Omega * np.sin(theta) * np.sin(phi)
-    Omega_z = Omega * np.cos(theta)
+    Omega_x = F * np.sin(theta) * np.cos(phi)
+    Omega_y = F * np.sin(theta) * np.sin(phi)
+    Omega_z = F * np.cos(theta)
     # print(f"Omega: ({Omega_x:.6f}, {Omega_y:.6f}, {Omega_z:.6f})")
 
     times_fine = np.linspace(np.min(times), np.max(times), 1000)
