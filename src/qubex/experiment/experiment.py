@@ -979,25 +979,6 @@ class Experiment(
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
     ) -> dict[str, float]:
-        """
-        Calculates the control amplitudes for the Rabi rate.
-
-        Parameters
-        ----------
-        rabi_rate : float, optional
-            Target Rabi rate in GHz. Defaults to RABI_FREQUENCY.
-        current_amplitudes : dict[str, float], optional
-            Current control amplitudes. Defaults to None.
-        current_rabi_params : dict[str, RabiParam], optional
-            Current Rabi parameters. Defaults to None.
-        print_result : bool, optional
-            Whether to print the result. Defaults to True.
-
-        Returns
-        -------
-        dict[str, float]
-            Control amplitudes for the Rabi rate.
-        """
         current_rabi_params = current_rabi_params or self.rabi_params
 
         if current_rabi_params is None:
@@ -1035,21 +1016,6 @@ class Experiment(
         *,
         print_result: bool = True,
     ) -> dict[str, float]:
-        """
-        Calculates the Rabi rates for the control amplitude.
-
-        Parameters
-        ----------
-        control_amplitude : float, optional
-            Control amplitude. Defaults to 1.0.
-        print_result : bool, optional
-            Whether to print the result. Defaults to True.
-
-        Returns
-        -------
-        dict[str, float]
-            Rabi rates for the control amplitude.
-        """
         default_ampl = self.params.control_amplitude
 
         rabi_rates = {
@@ -1231,7 +1197,7 @@ class Experiment(
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if cr_label in self.available_targets:
+        if cr_label in self.calib_note.cr_params:
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
             cnot = self.cx(control_qubit, target_qubit, zx90=zx90, x90=x90)
             return cnot
@@ -1240,7 +1206,13 @@ class Experiment(
             cnot = self.cx(target_qubit, control_qubit, zx90=zx90, x90=x90)
             hadamard_c = self.hadamard(control_qubit)
             hadamard_t = self.hadamard(target_qubit)
-            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+            with PulseSchedule(
+                [
+                    control_qubit,
+                    f"{target_qubit}-{control_qubit}",
+                    target_qubit,
+                ]
+            ) as ps:
                 ps.add(control_qubit, hadamard_c)
                 ps.add(target_qubit, hadamard_t)
                 ps.call(cnot)

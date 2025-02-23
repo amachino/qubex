@@ -560,6 +560,29 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def calc_rabi_rates(
+        self,
+        control_amplitude: float = 1.0,
+        *,
+        print_result: bool = True,
+    ) -> dict[str, float]:
+        """
+        Calculates the Rabi rates for the control amplitude.
+
+        Parameters
+        ----------
+        control_amplitude : float, optional
+            Control amplitude. Defaults to 1.0.
+        print_result : bool, optional
+            Whether to print the result. Defaults to True.
+
+        Returns
+        -------
+        dict[str, float]
+            Rabi rates for the control amplitude.
+        """
+        ...
+
     def x90(
         self,
         target: str,
