@@ -1231,7 +1231,7 @@ class Experiment(
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if cr_label in self.available_targets:
+        if cr_label in self.calib_note.cr_params:
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
             cnot = self.cx(control_qubit, target_qubit, zx90=zx90, x90=x90)
             return cnot
@@ -1240,7 +1240,13 @@ class Experiment(
             cnot = self.cx(target_qubit, control_qubit, zx90=zx90, x90=x90)
             hadamard_c = self.hadamard(control_qubit)
             hadamard_t = self.hadamard(target_qubit)
-            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+            with PulseSchedule(
+                [
+                    control_qubit,
+                    f"{target_qubit}-{control_qubit}",
+                    target_qubit,
+                ]
+            ) as ps:
                 ps.add(control_qubit, hadamard_c)
                 ps.add(target_qubit, hadamard_t)
                 ps.call(cnot)
