@@ -996,6 +996,7 @@ class CalibrationMixin(
         cr_phase: float = 0.0,
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
+        safe_factor: float = 1.2,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1041,7 +1042,7 @@ class CalibrationMixin(
 
         cr_label = f"{control_qubit}-{target_qubit}"
         half_duration = 0.5 * result["zx90_duration"] + cr_ramptime
-        cr_duration = (half_duration // 10 + 1) * 10
+        cr_duration = (safe_factor * half_duration // 10 + 1) * 10
 
         self.calib_note.cr_params = {
             cr_label: {
@@ -1069,7 +1070,7 @@ class CalibrationMixin(
         cr_amplitude: float = 1.0,
         cr_ramptime: float = 20.0,
         n_iterations: int = 4,
-        time_range: ArrayLike = np.arange(0, 401, 20),
+        time_range: ArrayLike = np.arange(0, 501, 20),
         use_stored_params: bool = True,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
@@ -1260,7 +1261,7 @@ class CalibrationMixin(
 
         amplitude = fit_result["root"]
 
-        if store_params:
+        if amplitude is not None and store_params:
             self.calib_note.cr_params = {
                 cr_label: {
                     "target": cr_label,
