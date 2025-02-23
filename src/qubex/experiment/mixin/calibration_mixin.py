@@ -1040,7 +1040,8 @@ class CalibrationMixin(
         print()
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_duration = ((0.5 * result["zx90_duration"] + cr_ramptime) // 10 + 1) * 10
+        half_duration = 0.5 * result["zx90_duration"] + cr_ramptime
+        cr_duration = (half_duration // 10 + 1) * 10
 
         self.calib_note.cr_params = {
             cr_label: {
@@ -1173,7 +1174,7 @@ class CalibrationMixin(
         ramptime: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
-        n_repetitions: int = 3,
+        n_repetitions: int = 1,
         degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -1191,10 +1192,13 @@ class CalibrationMixin(
         if ramptime is None:
             ramptime = cr_param["ramptime"]
         if amplitude_range is None:
-            cr_amplitude = cr_param["cr_amplitude"]
-            min_amplitude = np.clip(cr_amplitude * 0.5, 0.0, 1.0)
-            max_amplitude = np.clip(cr_amplitude * 1.5, 0.0, 1.0)
-            amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
+            cr_amplitude = cr_param.get("cr_amplitude")
+            if cr_amplitude is None:
+                amplitude_range = np.linspace(0, 1, 50)
+            else:
+                min_amplitude = np.clip(cr_amplitude * 0.5, 0.0, 1.0)
+                max_amplitude = np.clip(cr_amplitude * 1.5, 0.0, 1.0)
+                amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
         amplitude_range = np.array(amplitude_range)
         cr_phase = cr_param["cr_phase"]
         cancel_phase = cr_param["cancel_phase"]
