@@ -25,18 +25,11 @@ from ...pulse import (
 from ...typing import TargetMap
 from ..experiment_constants import (
     CALIBRATION_SHOTS,
-    CR_PARAMS,
     DRAG_COEFF,
-    DRAG_HPI_AMPLITUDE,
-    DRAG_HPI_BETA,
     DRAG_HPI_DURATION,
-    DRAG_PI_AMPLITUDE,
-    DRAG_PI_BETA,
     DRAG_PI_DURATION,
-    HPI_AMPLITUDE,
     HPI_DURATION,
     HPI_RAMPTIME,
-    PI_AMPLITUDE,
     PI_DURATION,
     PI_RAMPTIME,
 )
@@ -524,7 +517,7 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
+        # self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.hpi_params = {
             target: {
                 "target": target,
@@ -557,7 +550,7 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
+        # self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.pi_params = {
             target: {
                 "target": target,
@@ -590,7 +583,7 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
+        # self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.hpi_params = {
             target: {
                 "target": target,
@@ -623,7 +616,7 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
+        # self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.pi_params = {
             target: {
                 "target": target,
@@ -671,7 +664,7 @@ class CalibrationMixin(
                 interval=interval,
             )
 
-            self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
+            # self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
 
             if calibrate_beta:
                 print("\nCalibrating DRAG beta:")
@@ -691,7 +684,7 @@ class CalibrationMixin(
                     for target in targets
                 }
 
-            self.system_note.put(DRAG_HPI_BETA, beta)  # deprecated
+            # self.system_note.put(DRAG_HPI_BETA, beta)  # deprecated
 
         return {
             "amplitude": amplitude,
@@ -738,7 +731,7 @@ class CalibrationMixin(
                 interval=interval,
             )
 
-            self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
+            # self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
 
             if calibrate_beta:
                 print("Calibrating DRAG beta:")
@@ -759,7 +752,7 @@ class CalibrationMixin(
                     for target in targets
                 }
 
-            self.system_note.put(DRAG_PI_BETA, beta)  # deprecated
+            # self.system_note.put(DRAG_PI_BETA, beta)  # deprecated
 
         return {
             "amplitude": amplitude,
@@ -996,7 +989,7 @@ class CalibrationMixin(
         cr_phase: float = 0.0,
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
-        safe_factor: float = 1.2,
+        safe_factor: float = 1.1,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1072,6 +1065,7 @@ class CalibrationMixin(
         n_iterations: int = 4,
         time_range: ArrayLike = np.arange(0, 501, 20),
         use_stored_params: bool = True,
+        safe_factor: float = 1.1,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1113,6 +1107,7 @@ class CalibrationMixin(
                 cr_phase=params["cr_phase"],
                 cancel_amplitude=params["cancel_amplitude"],
                 cancel_phase=params["cancel_phase"],
+                safe_factor=safe_factor,
                 x90=x90,
                 shots=shots,
                 interval=interval,
@@ -1486,23 +1481,23 @@ class CalibrationMixin(
         es.optimize(objective_func)
         x = es.result.xbest
 
-        self.system_note.put(  # deprecated
-            CR_PARAMS,
-            {
-                cr_label: {
-                    "duration": duration,
-                    "ramptime": cr_ramptime,
-                    "cr_pulse": {
-                        "amplitude": x[0],
-                        "phase": x[1],
-                    },
-                    "cancel_pulse": {
-                        "amplitude": x[2],
-                        "phase": x[3],
-                    },
-                },
-            },
-        )
+        # self.system_note.put(  # deprecated
+        #     CR_PARAMS,
+        #     {
+        #         cr_label: {
+        #             "duration": duration,
+        #             "ramptime": cr_ramptime,
+        #             "cr_pulse": {
+        #                 "amplitude": x[0],
+        #                 "phase": x[1],
+        #             },
+        #             "cancel_pulse": {
+        #                 "amplitude": x[2],
+        #                 "phase": x[3],
+        #             },
+        #         },
+        #     },
+        # )
         self.calib_note.cr_params = {
             cr_label: {
                 "target": cr_label,

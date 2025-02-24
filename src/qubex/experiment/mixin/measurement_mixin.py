@@ -34,7 +34,7 @@ from ...typing import (
     ParametricWaveformDict,
     TargetMap,
 )
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE, STATE_PARAMS
+from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
 
@@ -430,16 +430,16 @@ class MeasurementMixin(
                     f"  Average readout fidelity : {average_fidelities[target] * 100:.2f}%\n\n"
                 )
 
-        self.system_note.put(  # deprecated
-            STATE_PARAMS,
-            {
-                target: {
-                    str(state): (center.real, center.imag)
-                    for state, center in classifiers[target].centers.items()
-                }
-                for target in targets
-            },
-        )
+        # self.system_note.put(  # deprecated
+        #     STATE_PARAMS,
+        #     {
+        #         target: {
+        #             str(state): (center.real, center.imag)
+        #             for state, center in classifiers[target].centers.items()
+        #         }
+        #         for target in targets
+        #     },
+        # )
         self.calib_note.state_params = {
             target: {
                 "target": target,

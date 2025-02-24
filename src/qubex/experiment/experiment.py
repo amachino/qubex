@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from dataclasses import asdict
 from datetime import datetime
 from functools import reduce
 from pathlib import Path
@@ -63,7 +62,6 @@ from .experiment_constants import (
     HPI_DURATION,
     HPI_RAMPTIME,
     RABI_FREQUENCY,
-    RABI_PARAMS,
     RABI_TIME_RANGE,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
@@ -625,10 +623,10 @@ class Experiment(
         if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
             self._rabi_params.update(rabi_params)
 
-        self._system_note.put(  # deprecated
-            RABI_PARAMS,
-            {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
-        )
+        # self._system_note.put(  # deprecated
+        #     RABI_PARAMS,
+        #     {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
+        # )
         self.calib_note.rabi_params = {
             label: {
                 "target": rabi_param.target,

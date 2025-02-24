@@ -40,6 +40,7 @@ class CPMG(PulseSequence):
         tau: float,
         pi: Waveform,
         n: int = 2,
+        alternating: bool = False,
         **kwargs,
     ):
         if tau % self.SAMPLING_PERIOD != 0:
@@ -53,8 +54,10 @@ class CPMG(PulseSequence):
             self.tau = tau
             self.pi = pi
             self.n = n
-            waveforms = [Blank(tau)]
-            for _ in range(n - 1):
-                waveforms += [pi, Blank(2 * tau)]
-            waveforms += [pi, Blank(tau)]
+            waveforms = []
+            for i in range(n):
+                if alternating and i % 2 == 1:
+                    waveforms += [Blank(tau), pi.scaled(-1), Blank(tau)]
+                else:
+                    waveforms += [Blank(tau), pi, Blank(tau)]
         super().__init__(waveforms, **kwargs)
