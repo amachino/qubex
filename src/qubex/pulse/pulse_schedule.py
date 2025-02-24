@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from ..style import COLORS
-from .pulse import Blank, Waveform
+from .pulse import Blank, Pulse, Waveform
 from .pulse_sequence import PhaseShift, PulseSequence
 
 
@@ -270,6 +270,15 @@ class PulseSchedule:
         new = PulseSchedule(self.targets)
         for _ in range(n):
             new.call(self)
+        return new
+
+    def inversed(self) -> PulseSchedule:
+        """
+        Returns an inversed pulse schedule.
+        """
+        new = PulseSchedule(self.targets)
+        for target, sequence in self._sequences.items():
+            new.add(target, Pulse(sequence.values[::-1]))
         return new
 
     def plot(
