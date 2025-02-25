@@ -1100,9 +1100,8 @@ class Experiment(
     ) -> PulseSequence:
         return PulseSequence(
             [
-                self.z90(),
-                self.x90(target),
-                self.z90(),
+                self.z180(),
+                self.y90(target),
             ]
         )
 
