@@ -272,13 +272,13 @@ class PulseSchedule:
             new.call(self)
         return new
 
-    def inversed(self) -> PulseSchedule:
+    def inverted(self) -> PulseSchedule:
         """
-        Returns an inversed pulse schedule.
+        Returns an inverted pulse schedule.
         """
         new = PulseSchedule(self.targets)
         for target, sequence in self._sequences.items():
-            new.add(target, Pulse(sequence.values[::-1]))
+            new.add(target, Pulse(-sequence.values[::-1]))
         return new
 
     def plot(

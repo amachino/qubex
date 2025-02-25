@@ -841,7 +841,7 @@ class CalibrationMixin(
         plot: bool = False,
     ) -> dict:
         if time_range is None:
-            time_range = np.arange(0, 1001, 20)
+            time_range = np.arange(0, 1001, 50)
         else:
             time_range = np.array(time_range)
 

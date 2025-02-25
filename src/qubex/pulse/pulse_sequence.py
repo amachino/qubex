@@ -68,6 +68,11 @@ class PulseSequence(Waveform):
         for obj in self._sequence:
             if isinstance(obj, PhaseShift):
                 current_phase += obj.theta
+            # TODO: Implement support for nested pulse sequences.
+            # elif isinstance(obj, PulseSequence):
+            #     for waveform in obj.waveforms:
+            #         waveforms.append(waveform.shifted(current_phase))
+            #     current_phase += obj.total_virtual_phase
             elif isinstance(obj, Waveform):
                 waveforms.append(obj.shifted(current_phase))
         return waveforms
