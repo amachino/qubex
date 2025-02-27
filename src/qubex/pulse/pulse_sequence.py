@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from typing import Literal, Sequence
 
@@ -8,6 +9,8 @@ import numpy.typing as npt
 
 from .pulse import Blank, Pulse
 from .waveform import Waveform
+
+logger = logging.getLogger(__name__)
 
 
 class PhaseShift:
@@ -61,18 +64,28 @@ class PulseSequence(Waveform):
         self._sequence = list(sequence)
 
     @property
-    def waveforms(self) -> Sequence[Waveform]:
+    def sequence(self) -> list[Pulse | PhaseShift]:
+        """Returns the flattened list of pulses and phase shifts in the pulse sequence."""
+        objects = []
+        for obj in self._sequence:
+            if isinstance(obj, PulseSequence):
+                objects.extend(obj.sequence)
+            else:
+                objects.append(obj)
+        return objects
+
+    @property
+    def waveforms(self) -> list[Pulse]:
         """Returns the list of waveforms in the pulse sequence."""
         waveforms = []
         current_phase = 0.0
-        for obj in self._sequence:
-            if isinstance(obj, PulseSequence):
-                waveforms.append(obj.shifted(current_phase))
-                current_phase += obj.total_virtual_phase
-            elif isinstance(obj, Pulse):
+        for obj in self.sequence:
+            if isinstance(obj, Pulse):
                 waveforms.append(obj.shifted(current_phase))
             elif isinstance(obj, PhaseShift):
                 current_phase += obj.theta
+            else:
+                logger.warning(f"Unknown object type: {type(obj)}")
         return waveforms
 
     @property
@@ -99,7 +112,7 @@ class PulseSequence(Waveform):
         """Returns the virtual phases of the pulse sequence."""
         phases = []
         current_phase = 0.0
-        for obj in self._sequence:
+        for obj in self.sequence:
             if isinstance(obj, PhaseShift):
                 current_phase += obj.theta
             elif isinstance(obj, Waveform):
@@ -109,11 +122,7 @@ class PulseSequence(Waveform):
     @property
     def total_virtual_phase(self) -> float:
         """Returns the total virtual phase of the pulse sequence."""
-        phase_shift = 0.0
-        for obj in self._sequence:
-            if isinstance(obj, PhaseShift):
-                phase_shift += obj.theta
-        return phase_shift
+        return self.virtual_phases[-1]
 
     def add(self, obj: Waveform | PhaseShift) -> None:
         """Adds the given waveform or phase shift to the pulse sequence."""
