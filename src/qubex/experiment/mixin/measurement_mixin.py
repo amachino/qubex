@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from typing import Collection, Literal, Optional, Sequence
 
@@ -18,7 +19,7 @@ from ...measurement import (
     StateClassifierGMM,
     StateClassifierKMeans,
 )
-from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
 from ...pulse import (
     Blank,
     PhaseShift,
@@ -37,6 +38,8 @@ from ...typing import (
 from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
+
+logger = logging.getLogger(__name__)
 
 console = Console()
 
@@ -619,33 +622,51 @@ class MeasurementMixin(
         def partial_waveform(waveform: Waveform, index: int) -> Waveform:
             """Returns a partial waveform up to the given index."""
 
-            # If the waveform is a PulseSequence, we need to handle the PhaseShift gate.
-            if isinstance(waveform, PulseSequence):
+            # If the index is 0, return an empty Pulse as the initial state.
+            if index == 0:
+                return Pulse([])
+
+            elif isinstance(waveform, Pulse):
+                # If the index is greater than the waveform length, return the waveform itself.
+                if index >= waveform.length:
+                    return waveform
+                # If the index is less than the waveform length, return a partial waveform.
+                else:
+                    return Pulse(waveform.values[0 : index - 1])
+
+            # If the waveform is a PulseSequence, we need to extract the partial sequence.
+            elif isinstance(waveform, PulseSequence):
                 current_index = 0
                 pulse_sequence = PulseSequence([])
-                for pulse in waveform._sequence:
-                    # If the pulse is a PhaseShift gate, we can simply add it to the sequence.
-                    if isinstance(pulse, PhaseShift):
-                        pulse_sequence = pulse_sequence.added(pulse)
+
+                # Iterate over the objects in the sequence.
+                for obj in waveform.sequence:
+                    # If the object is a PhaseShift gate, we can simply add it to the sequence.
+                    if isinstance(obj, PhaseShift):
+                        pulse_sequence.add(obj)
                         continue
-                    # If the pulse is a Pulse and the length is greater than the index, we need to create a partial pulse.
-                    elif current_index + pulse.length > index:
-                        pulse = Pulse(pulse.values[0 : index - current_index])
-                        pulse_sequence = pulse_sequence.added(pulse)
-                        break
-                    # If the pulse is a Pulse and the length is less than the index, we can add the pulse to the sequence.
+                    elif isinstance(obj, Pulse):
+                        # If the object is a Pulse, we need to check the index.
+                        if index - current_index == 0:
+                            continue
+                        elif index - current_index < obj.length:
+                            pulse = Pulse(obj.values[0 : index - current_index - 1])
+                            pulse_sequence.add(pulse)
+                            break
+                        else:
+                            pulse_sequence.add(obj)
+                            current_index += obj.length
                     else:
-                        pulse_sequence = pulse_sequence.added(pulse)
-                        current_index += pulse.length
+                        logger.error(f"Invalid type: {type(obj)}")
                 return pulse_sequence
-            # If the waveform is a Pulse, we can simply return the partial waveform.
             else:
-                return Pulse(waveform.values[0:index])
+                logger.error(f"Invalid type: {type(waveform)}")
+                return waveform
 
         if n_samples < pulse_length:
-            indices = np.linspace(0, pulse_length - 1, n_samples).astype(int)
+            indices = np.linspace(0, pulse_length, n_samples).astype(int)
         else:
-            indices = np.arange(pulse_length)
+            indices = np.arange(pulse_length + 1)
 
         sequences = [
             {target: partial_waveform(pulse, i) for target, pulse in pulses.items()}
@@ -662,7 +683,7 @@ class MeasurementMixin(
         )
 
         if plot:
-            times = pulses.popitem()[1].times[indices]
+            times = indices * SAMPLING_PERIOD
             for target, states in result.items():
                 vis.plot_bloch_vectors(
                     times=times,
