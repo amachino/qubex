@@ -16,6 +16,7 @@ try:
         simulator,
     )
     from .experiment import Experiment
+    from .pulse import Pulse, PulseArray, PulseSchedule
 except ImportError as e:
     logger.debug(f"Import error: {e}")
 
@@ -32,4 +33,7 @@ __all__ = [
     "pulse",
     "simulator",
     "Experiment",
+    "Pulse",
+    "PulseArray",
+    "PulseSchedule",
 ]

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from ..pulse import Blank
-from ..pulse_sequence import PulseSequence
+from ..pulse_array import PulseArray
 from ..waveform import Waveform
 
 
-class CPMG(PulseSequence):
+class CPMG(PulseArray):
     """
     A class representing the CPMG pulse sequence used in quantum experiments.
 

@@ -47,8 +47,8 @@ from ..pulse import (
     CrossResonance,
     Drag,
     FlatTop,
+    PulseArray,
     PulseSchedule,
-    PulseSequence,
     VirtualZ,
     Waveform,
 )
@@ -1097,8 +1097,8 @@ class Experiment(
     def hadamard(
         self,
         target: str,
-    ) -> PulseSequence:
-        return PulseSequence(
+    ) -> PulseArray:
+        return PulseArray(
             [
                 self.z180(),
                 self.y90(target),

@@ -24,8 +24,8 @@ from ...pulse import (
     Blank,
     PhaseShift,
     Pulse,
+    PulseArray,
     PulseSchedule,
-    PulseSequence,
     Rect,
     Waveform,
 )
@@ -580,7 +580,7 @@ class MeasurementMixin(
 
     def pulse_tomography(
         self,
-        waveforms: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
@@ -591,30 +591,28 @@ class MeasurementMixin(
     ) -> TargetMap[NDArray[np.float64]]:
         self.validate_rabi_params()
 
-        if isinstance(waveforms, PulseSchedule):
-            sequences = waveforms.get_sequences()
+        if isinstance(sequence, PulseSchedule):
+            pulses = sequence.get_sequences()
         else:
-            sequences = waveforms
+            pulses = {}
+            pulse_length_set = set()
+            for target, waveform in sequence.items():
+                if isinstance(waveform, Waveform):
+                    pulse = waveform
+                elif isinstance(waveform, Sequence):
+                    pulse = Pulse(waveform)
+                else:
+                    raise ValueError("Invalid waveform.")
+                pulses[target] = pulse
+                pulse_length_set.add(pulse.length)
+            if len(pulse_length_set) != 1:
+                raise ValueError("The lengths of the waveforms must be the same.")
 
-        pulses: dict[str, Waveform] = {}
-        pulse_length_set = set()
-        for target, waveform in sequences.items():
-            if isinstance(waveform, Waveform):
-                pulse = waveform
-            elif isinstance(waveform, list) or isinstance(waveform, np.ndarray):
-                pulse = Pulse(waveform)
-            else:
-                raise ValueError("Invalid waveform.")
-            pulses[target] = pulse
-            pulse_length_set.add(pulse.length)
-        if len(pulse_length_set) != 1:
-            raise ValueError("The lengths of the waveforms must be the same.")
-
-        pulse_length = pulse_length_set.pop()
+        pulse_length = next(iter(pulses.values())).length
 
         if plot:
-            if isinstance(waveforms, PulseSchedule):
-                waveforms.plot(title="Pulse sequence")
+            if isinstance(sequence, PulseSchedule):
+                sequence.plot(title="Pulse sequence")
             else:
                 for target in pulses:
                     pulses[target].plot(title=f"Waveform : {target}")
@@ -634,16 +632,16 @@ class MeasurementMixin(
                 else:
                     return Pulse(waveform.values[0 : index - 1])
 
-            # If the waveform is a PulseSequence, we need to extract the partial sequence.
-            elif isinstance(waveform, PulseSequence):
+            # If the waveform is a PulseArray, we need to extract the partial sequence.
+            elif isinstance(waveform, PulseArray):
                 current_index = 0
-                pulse_sequence = PulseSequence([])
+                pulse_array = PulseArray([])
 
-                # Iterate over the objects in the sequence.
-                for obj in waveform.sequence:
-                    # If the object is a PhaseShift gate, we can simply add it to the sequence.
+                # Iterate over the objects in the PulseArray.
+                for obj in waveform.elements:
+                    # If the object is a PhaseShift gate, we can simply add it to the array.
                     if isinstance(obj, PhaseShift):
-                        pulse_sequence.add(obj)
+                        pulse_array.add(obj)
                         continue
                     elif isinstance(obj, Pulse):
                         # If the object is a Pulse, we need to check the index.
@@ -651,14 +649,14 @@ class MeasurementMixin(
                             continue
                         elif index - current_index < obj.length:
                             pulse = Pulse(obj.values[0 : index - current_index - 1])
-                            pulse_sequence.add(pulse)
+                            pulse_array.add(pulse)
                             break
                         else:
-                            pulse_sequence.add(obj)
+                            pulse_array.add(obj)
                             current_index += obj.length
                     else:
                         logger.error(f"Invalid type: {type(obj)}")
-                return pulse_sequence
+                return pulse_array
             else:
                 logger.error(f"Invalid type: {type(waveform)}")
                 return waveform
@@ -668,13 +666,13 @@ class MeasurementMixin(
         else:
             indices = np.arange(pulse_length + 1)
 
-        sequences = [
+        waveforms = [
             {target: partial_waveform(pulse, i) for target, pulse in pulses.items()}
             for i in indices
         ]
 
         result = self.state_evolution_tomography(
-            sequences=sequences,
+            sequences=waveforms,
             x90=x90,
             initial_state=initial_state,
             shots=shots,

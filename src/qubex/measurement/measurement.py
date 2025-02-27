@@ -24,7 +24,7 @@ from ..backend import (
     StateManager,
     Target,
 )
-from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
+from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .state_classifier import StateClassifier
@@ -843,7 +843,7 @@ class Measurement:
                 ps.call(schedule)
                 ps.barrier()
                 for target in readout_targets:
-                    readout_pulse = PulseSequence(
+                    readout_pulse = PulseArray(
                         [
                             Blank(duration=capture_margin),
                             self._readout_pulse(target),

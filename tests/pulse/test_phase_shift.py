@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
 
-from qubex.pulse import PhaseShift, Pulse, PulseSequence
+from qubex.pulse import PhaseShift, Pulse, PulseArray
 
-dt = PulseSequence.SAMPLING_PERIOD
+dt = PulseArray.SAMPLING_PERIOD
 
 
 def test_empty_init():
@@ -20,7 +20,7 @@ def test_init():
 
 def test_phase_shift():
     """PhaseShift should be repeated a given number of times."""
-    seq = PulseSequence(
+    seq = PulseArray(
         [
             Pulse([1]),
             PhaseShift(np.pi / 2),

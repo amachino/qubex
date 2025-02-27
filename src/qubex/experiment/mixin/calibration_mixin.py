@@ -18,8 +18,8 @@ from ...pulse import (
     Drag,
     FlatTop,
     Pulse,
+    PulseArray,
     PulseSchedule,
-    PulseSequence,
     Waveform,
 )
 from ...typing import TargetMap
@@ -415,10 +415,10 @@ class CalibrationMixin(
                         y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
                         ps.add(
                             target,
-                            PulseSequence(
+                            PulseArray(
                                 [
                                     x90p,
-                                    PulseSequence([x90m, x90p] * n_turns),
+                                    PulseArray([x90m, x90p] * n_turns),
                                     y90m,
                                 ]
                             ),
@@ -433,9 +433,9 @@ class CalibrationMixin(
                         y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
                         ps.add(
                             target,
-                            PulseSequence(
+                            PulseArray(
                                 [
-                                    PulseSequence([x180p, x180m] * n_turns),
+                                    PulseArray([x180p, x180m] * n_turns),
                                     y90m,
                                 ]
                             ),

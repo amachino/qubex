@@ -9,7 +9,7 @@ from ...analysis import visualization as vis
 from ...backend import Target
 from ...clifford import Clifford
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from ...pulse import PulseSchedule, PulseSequence, VirtualZ, Waveform
+from ...pulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..experiment_result import ExperimentResult, RBData
 from ..protocol import BaseProtocol, BenchmarkingProtocol, MeasurementProtocol
@@ -28,7 +28,7 @@ class BenchmarkingMixin(
         x90: dict[str, Waveform] | None = None,
         zx90: PulseSchedule | dict[str, Waveform] | None = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | None = None,
         seed: int | None = None,
@@ -67,11 +67,11 @@ class BenchmarkingMixin(
         n: int,
         x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: (
-            Waveform | dict[str, PulseSequence] | dict[str, Waveform] | None
+            Waveform | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
-    ) -> PulseSequence:
+    ) -> PulseArray:
         if isinstance(x90, dict):
             x90 = x90.get(target)
         x90 = x90 or self.hpi_pulse[target]
@@ -114,7 +114,7 @@ class BenchmarkingMixin(
         for gate in inverse:
             add_gate(gate)
 
-        return PulseSequence(sequence)
+        return PulseArray(sequence)
 
     def rb_sequence_2q(
         self,
@@ -123,10 +123,10 @@ class BenchmarkingMixin(
         n: int,
         x90: TargetMap[Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
@@ -287,10 +287,10 @@ class BenchmarkingMixin(
         n_cliffords_range: ArrayLike = np.arange(0, 21, 2),
         x90: TargetMap[Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
@@ -375,7 +375,7 @@ class BenchmarkingMixin(
         n_trials: int = 30,
         x90: Waveform | dict[str, Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -479,7 +479,7 @@ class BenchmarkingMixin(
         n_trials: int = 30,
         x90: TargetMap[Waveform] | Waveform | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,

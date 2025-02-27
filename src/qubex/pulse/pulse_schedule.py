@@ -10,7 +10,7 @@ from plotly.subplots import make_subplots
 
 from ..style import COLORS
 from .pulse import Blank, Pulse, Waveform
-from .pulse_sequence import PhaseShift, PulseSequence
+from .pulse_array import PhaseShift, PulseArray
 
 
 class PulseSchedule:
@@ -49,7 +49,7 @@ class PulseSchedule:
                 for target in targets
             }
 
-        self._sequences = {target: PulseSequence() for target in targets}
+        self._sequences = {target: PulseArray() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
 
     @property
@@ -76,7 +76,7 @@ class PulseSchedule:
         return {target: props.get("object") for target, props in self.targets.items()}
 
     @property
-    def sequences(self) -> dict[str, PulseSequence]:
+    def sequences(self) -> dict[str, PulseArray]:
         """
         Returns the pulse sequences.
         """
@@ -416,7 +416,7 @@ class PulseSchedule:
         self,
         duration: float | None = None,
         align: Literal["start", "end"] = "start",
-    ) -> dict[str, PulseSequence]:
+    ) -> dict[str, PulseArray]:
         """
         Returns the pulse sequences.
 
@@ -485,7 +485,7 @@ class PulseSchedule:
         ranges: dict[str, list[range]] = {target: [] for target in targets}
         for target in targets:
             current_offset = 0
-            for waveform in self._sequences[target].waveforms:
+            for waveform in self._sequences[target].pulses:
                 next_offset = current_offset + waveform.length
                 if not isinstance(waveform, Blank):
                     ranges[target].append(range(current_offset, next_offset))

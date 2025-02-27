@@ -8,8 +8,8 @@ from .library import (
     Rect,
 )
 from .pulse import Blank, Pulse
+from .pulse_array import PhaseShift, PulseArray, PulseSequence, VirtualZ
 from .pulse_schedule import PulseSchedule
-from .pulse_sequence import PhaseShift, PulseSequence, VirtualZ
 from .waveform import Waveform
 
 __all__ = [
@@ -21,6 +21,7 @@ __all__ = [
     "Gaussian",
     "PhaseShift",
     "Pulse",
+    "PulseArray",
     "PulseSchedule",
     "PulseSequence",
     "RaisedCosine",
