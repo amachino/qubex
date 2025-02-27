@@ -6,8 +6,10 @@ from typing import Literal, Sequence
 
 import numpy as np
 import numpy.typing as npt
+import plotly.graph_objects as go
 from typing_extensions import deprecated
 
+from ..style import COLORS
 from .pulse import Blank, Pulse
 from .waveform import Waveform
 
@@ -239,6 +241,110 @@ class PulseArray(Waveform):
     def __repr__(self) -> str:
         pulses = ", ".join([pulse.__class__.__name__ for pulse in self._elements])
         return f"PulseArray([{pulses})]"
+
+    def plot_xy(
+        self,
+        *,
+        n_samples: int | None = None,
+        divide_by_two_pi: bool = False,
+        title: str | None = None,
+        xlabel: str = "Time (ns)",
+        ylabel: str = "Amplitude (arb. unit)",
+        line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
+        show_phase: bool = True,
+    ):
+        """
+        Plots the waveform with I/Q values.
+
+        Parameters
+        ----------
+        title : str, optional
+            Title of the plot.
+        xlabel : str, optional
+            Label of the x-axis.
+        ylabel : str, optional
+            Label of the y-axis.
+        """
+        if self.length == 0:
+            print("Waveform is empty.")
+            return
+
+        times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
+        real = np.append(self.real, self.real[-1])
+        imag = np.append(self.imag, self.imag[-1])
+        phase = np.append(self.virtual_phases, self.virtual_phases[-1])
+
+        if n_samples is not None and len(times) > n_samples:
+            indices = np.linspace(0, len(times) - 1, n_samples).astype(int)
+            times = times[indices]
+            real = real[indices]
+            imag = imag[indices]
+
+        if divide_by_two_pi:
+            real /= 2 * np.pi * 1e-3
+            imag /= 2 * np.pi * 1e-3
+
+        y_max = np.max(self.abs)
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=real,
+                mode="lines",
+                name="I",
+                line_shape=line_shape,
+                line=dict(color=COLORS[0]),
+            ),
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=times,
+                y=imag,
+                mode="lines",
+                name="Q",
+                line_shape=line_shape,
+                line=dict(color=COLORS[1]),
+            ),
+        )
+
+        if show_phase:
+            fig.add_trace(
+                go.Scatter(
+                    x=times,
+                    y=phase,
+                    name="φ",
+                    mode="lines",
+                    line_shape=line_shape,
+                    line=dict(color=COLORS[2], dash="dot"),
+                    yaxis="y2",
+                ),
+            )
+
+        fig.update_layout(
+            title=title,
+            xaxis_title=xlabel,
+            yaxis_title="Amplitude (MHz)" if divide_by_two_pi else ylabel,
+            yaxis=dict(
+                range=[-y_max * 1.2, y_max * 1.2],
+            ),
+            yaxis2=dict(
+                overlaying="y",
+                side="right",
+                range=[-np.pi * 1.2, np.pi * 1.2],
+                tickvals=[-np.pi, 0, np.pi],
+                ticktext=["-π", "0", "π"],
+            ),
+        )
+
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "svg",
+                    "scale": 3,
+                },
+            }
+        )
 
 
 @deprecated("Use `PulseArray` instead.")
