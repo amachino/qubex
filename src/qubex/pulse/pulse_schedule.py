@@ -29,14 +29,14 @@ class PulseSchedule:
         Examples
         --------
         >>> from qubex.pulse import PulseSchedule, FlatTop
-        >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as ps:
-        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        ...     ps.barrier()
-        ...     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
-        ...     ps.barrier()
-        ...     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
-        ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
-        >>> ps.plot()
+        >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as seq:
+        ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     seq.barrier()
+        ...     seq.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     seq.barrier()
+        ...     seq.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     seq.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> seq.plot()
         """
         if isinstance(targets, dict):
             self.targets = targets
@@ -95,8 +95,8 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule([...]) as ps:
-        ...     ps.add(...)
+        >>> with PulseSchedule([...]) as seq:
+        ...     seq.add(...)
         """
         return self
 
@@ -106,14 +106,14 @@ class PulseSchedule:
 
         The following codes are equivalent:
 
-        >>> ps = PulseSchedule([...])
-        >>> ps.add(...)
-        >>> ps.barrier()
+        >>> seq = PulseSchedule([...])
+        >>> seq.add(...)
+        >>> seq.barrier()
 
-        >>> with PulseSchedule([...]) as ps:
-        ...     ps.add(...)
+        >>> with PulseSchedule([...]) as seq:
+        ...     seq.add(...)
 
-        Note that the duration of sequences might be different if the context manager is not used.
+        Note that duration of sequences might be different if context manager is not used.
         """
         self.barrier()
 
@@ -155,8 +155,8 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule(["Q01"]) as ps:
-        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        >>> with PulseSchedule(["Q01"]) as seq:
+        ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         """
         if target not in self.targets:
             raise ValueError(f"Invalid target: {target}")
@@ -180,9 +180,9 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule(["Q01"]) as ps:
-        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        ...     ps.barrier()
+        >>> with PulseSchedule(["Q01"]) as seq:
+        ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     seq.barrier()
         """
         targets = targets or list(self.targets.keys())
         for target in targets:
@@ -212,11 +212,11 @@ class PulseSchedule:
         >>> with PulseSchedule(["RQ01", "RQ02"]) as read:
         ...     read.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
         ...     read.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
-        >>> with PulseSchedule(["Q01", "Q02", "RQ01", "RQ02"]) as ps:
-        ...     ps.call(ctrl)
-        ...     ps.barrier()
-        ...     ps.call(read)
-        >>> ps.plot()
+        >>> with PulseSchedule(["Q01", "Q02", "RQ01", "RQ02"]) as seq:
+        ...     seq.call(ctrl)
+        ...     seq.barrier()
+        ...     seq.call(read)
+        >>> seq.plot()
         """
         if schedule == self:
             raise ValueError("Cannot call itself.")
@@ -290,6 +290,7 @@ class PulseSchedule:
         divide_by_two_pi: bool = False,
         time_unit: Literal["ns", "samples"] = "ns",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
+        show_phase: bool = True,
     ):
         """
         Plots the pulse schedule.
@@ -297,14 +298,14 @@ class PulseSchedule:
         Examples
         --------
         >>> from qubex.pulse import PulseSchedule, FlatTop
-        >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as ps:
-        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        ...     ps.barrier()
-        ...     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
-        ...     ps.barrier()
-        ...     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
-        ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
-        >>> ps.plot()
+        >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as seq:
+        ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     seq.barrier()
+        ...     seq.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     seq.barrier()
+        ...     seq.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     seq.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> seq.plot()
         """
         if self._max_offset() == 0.0:
             print("No data to plot.")
@@ -322,7 +323,8 @@ class PulseSchedule:
             rows=n_targets,
             cols=1,
             shared_xaxes=True,
-            vertical_spacing=0.05,
+            # vertical_spacing=0.05,
+            specs=[[{"secondary_y": True}] for _ in range(n_targets)],
         )
         for i, (target, seq) in enumerate(sequences.items()):
             if time_unit == "ns":
@@ -331,11 +333,13 @@ class PulseSchedule:
                 times = np.arange(seq.length + 1)
             real = np.append(seq.real, seq.real[-1])
             imag = np.append(seq.imag, seq.imag[-1])
+            phase = np.append(seq.virtual_phases, seq.virtual_phases[-1])
 
             if len(times) > n_samples:
                 times = self._downsample(times, n_samples)
                 real = self._downsample(real, n_samples)
                 imag = self._downsample(imag, n_samples)
+                phase = self._downsample(phase, n_samples)
 
             if divide_by_two_pi:
                 real /= 2 * np.pi * 1e-3
@@ -353,6 +357,7 @@ class PulseSchedule:
                 ),
                 row=i + 1,
                 col=1,
+                secondary_y=False,
             )
             fig.add_trace(
                 go.Scatter(
@@ -366,7 +371,24 @@ class PulseSchedule:
                 ),
                 row=i + 1,
                 col=1,
+                secondary_y=False,
             )
+            if show_phase:
+                fig.add_trace(
+                    go.Scatter(
+                        x=times,
+                        y=phase,
+                        name="φ",
+                        mode="lines",
+                        line_shape=line_shape,
+                        line=dict(color=COLORS[2], dash="dot"),
+                        showlegend=(i == 0),
+                    ),
+                    row=i + 1,
+                    col=1,
+                    secondary_y=True,
+                )
+
         fig.update_layout(
             title=title,
             height=80 * n_targets + 140,
@@ -385,7 +407,16 @@ class PulseSchedule:
                 row=i + 1,
                 col=1,
                 title_text=target,
-                range=[-1.1 * y_max, 1.1 * y_max],
+                range=[-1.2 * y_max, 1.2 * y_max],
+                secondary_y=False,
+            )
+            fig.update_yaxes(
+                row=i + 1,
+                col=1,
+                range=[-np.pi * 1.2, np.pi * 1.2],
+                tickvals=[-np.pi, 0, np.pi],
+                ticktext=["-π", "0", "π"],
+                secondary_y=True,
             )
             annotations = []
             if self.frequencies.get(target) is not None:
