@@ -4,13 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-try:
-    from qubecalib import QubeCalib, Sequencer
-    from qubecalib.instrument.quel.quel1.tool import Skew
-    from qubecalib.neopulse import Sequence
-    from quel_ic_config import Quel1Box
-except ImportError:
-    pass
+from qubecalib import QubeCalib, Sequencer
+from qubecalib.instrument.quel.quel1.tool import Skew
+from qubecalib.neopulse import Sequence
+from quel_ic_config import Quel1Box
 
 SAMPLING_PERIOD: Final[float] = 2.0  # ns
 
