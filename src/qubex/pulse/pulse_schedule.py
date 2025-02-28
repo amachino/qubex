@@ -333,7 +333,7 @@ class PulseSchedule:
                 times = np.arange(seq.length + 1)
             real = np.append(seq.real, seq.real[-1])
             imag = np.append(seq.imag, seq.imag[-1])
-            phase = np.append(seq.virtual_phases, seq.virtual_phases[-1])
+            phase = np.append(seq.frame_shifts, seq.frame_shifts[-1])
 
             if len(times) > n_samples:
                 times = self._downsample(times, n_samples)

@@ -117,8 +117,8 @@ class PulseArray(Waveform):
         return values
 
     @property
-    def virtual_phases(self) -> npt.NDArray[np.float64]:
-        """Returns the virtual phases of the pulse array."""
+    def frame_shifts(self) -> npt.NDArray[np.float64]:
+        """Returns the frame shifts of the pulse array."""
         phases = []
         current_phase = 0.0
         for obj in self.elements:
@@ -131,9 +131,14 @@ class PulseArray(Waveform):
         return np.array(phases)
 
     @property
-    def total_virtual_phase(self) -> float:
-        """Returns the total virtual phase of the pulse array."""
-        return self.virtual_phases[-1]
+    def final_frame_shift(self) -> float:
+        """Returns the final frame shift of the pulse array."""
+        # NOTE: This is not the same as frame_shifts[-1]
+        current_phase = 0.0
+        for obj in self.elements:
+            if isinstance(obj, PhaseShift):
+                current_phase += obj.theta
+        return current_phase
 
     def add(self, obj: Waveform | PhaseShift) -> None:
         """Adds the given waveform or phase shift to the pulse sequence."""
@@ -248,7 +253,7 @@ class PulseArray(Waveform):
         pulses = ", ".join([pulse.__class__.__name__ for pulse in self._elements])
         return f"PulseArray([{pulses})]"
 
-    def plot_xy(
+    def plot(
         self,
         *,
         n_samples: int | None = None,
@@ -257,10 +262,10 @@ class PulseArray(Waveform):
         xlabel: str = "Time (ns)",
         ylabel: str = "Amplitude (arb. unit)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
-        show_phase: bool = True,
+        show_frame_shifts: bool = True,
     ):
         """
-        Plots the waveform with I/Q values.
+        Plots the waveform of the pulse array.
 
         Parameters
         ----------
@@ -270,6 +275,10 @@ class PulseArray(Waveform):
             Label of the x-axis.
         ylabel : str, optional
             Label of the y-axis.
+        line_shape : {"hv", "vh", "hvh", "vhv", "spline", "linear"}, optional
+            Determines the line shape.
+        show_frame_shifts : bool, optional
+            Whether to show the frame shifts.
         """
         if self.length == 0:
             print("Waveform is empty.")
@@ -278,7 +287,7 @@ class PulseArray(Waveform):
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
-        phase = np.append(self.virtual_phases, self.virtual_phases[-1]) % np.pi
+        frame_shifts = np.append(self.frame_shifts, self.frame_shifts[-1]) % np.pi
 
         if n_samples is not None and len(times) > n_samples:
             indices = np.linspace(0, len(times) - 1, n_samples).astype(int)
@@ -314,11 +323,11 @@ class PulseArray(Waveform):
             ),
         )
 
-        if show_phase:
+        if show_frame_shifts:
             fig.add_trace(
                 go.Scatter(
                     x=times,
-                    y=phase,
+                    y=frame_shifts,
                     name="φ",
                     mode="lines",
                     line_shape=line_shape,
@@ -328,14 +337,14 @@ class PulseArray(Waveform):
             )
 
         fig.update_layout(
-            title=title,
+            title=title or f"Pulse Sequence ({self.duration} ns)",
             xaxis_title=xlabel,
             yaxis=dict(
                 title="Amplitude (MHz)" if divide_by_two_pi else ylabel,
                 range=[-y_max * 1.2, y_max * 1.2],
             ),
             yaxis2=dict(
-                title="Phase (rad)",
+                title="Frame shift (rad)",
                 overlaying="y",
                 side="right",
                 range=[-np.pi * 1.2, np.pi * 1.2],
@@ -345,18 +354,18 @@ class PulseArray(Waveform):
             legend=dict(
                 orientation="h",
                 xanchor="right",
-                yanchor="top",
+                yanchor="bottom",
                 x=1,
-                y=1,
-                # make transparent legend background
-                bgcolor="rgba(0,0,0,0)",
+                y=0,
+                # semi-transparent background
+                bgcolor="rgba(255, 255, 255, 0.9)",
             ),
         )
 
         fig.show(
             config={
                 "toImageButtonOptions": {
-                    "format": "svg",
+                    "format": "png",
                     "scale": 3,
                 },
             }
