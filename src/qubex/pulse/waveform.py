@@ -42,6 +42,21 @@ class Waveform(ABC):
         return self.__class__.__name__
 
     @property
+    def scale(self) -> float:
+        """Returns the scaling factor of the waveform."""
+        return self._scale
+
+    @property
+    def detuning(self) -> float:
+        """Returns the detuning of the waveform in GHz."""
+        return self._detuning
+
+    @property
+    def phase(self) -> float:
+        """Returns the phase of the waveform in rad."""
+        return self._phase
+
+    @property
     @abstractmethod
     def length(self) -> int:
         """Returns the length of the waveform in samples."""

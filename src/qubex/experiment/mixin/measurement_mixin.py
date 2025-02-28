@@ -638,7 +638,7 @@ class MeasurementMixin(
                 pulse_array = PulseArray([])
 
                 # Iterate over the objects in the PulseArray.
-                for obj in waveform.elements:
+                for obj in waveform.flattened:
                     # If the object is a PhaseShift gate, we can simply add it to the array.
                     if isinstance(obj, PhaseShift):
                         pulse_array.add(obj)

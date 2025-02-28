@@ -74,46 +74,56 @@ class PulseArray(Waveform):
         return f"PulseArray([{', '.join(elements)}])"
 
     @property
-    def elements(self) -> list[Pulse | PhaseShift]:
+    def elements(self) -> list[Waveform | PhaseShift]:
+        """Returns the list of pulses and phase shifts in the pulse array."""
+        return self._elements
+
+    @property
+    def flattened(self) -> list[Pulse | PhaseShift]:
         """Returns the flattened list of pulses and phase shifts in the pulse array."""
         elements = []
         for obj in self._elements:
-            if isinstance(obj, PulseArray):
-                elements.extend(obj.elements)
-            else:
+            if isinstance(obj, (PulseArray, Pulse)):
+                if isinstance(obj, PulseArray):
+                    elements.extend(obj.flattened)
+                elif isinstance(obj, Pulse):
+                    elements.append(obj)
+            elif isinstance(obj, PhaseShift):
                 elements.append(obj)
+            else:
+                logger.warning(f"Unknown element type: {type(obj)}")
         return elements
 
     @property
-    def pulses(self) -> list[Pulse]:
+    def waveforms(self) -> list[Waveform]:
         """Returns the list of pulses in the pulse array."""
-        pulses: list[Pulse] = []
+        waveforms: list[Waveform] = []
         current_phase = 0.0
         for obj in self.elements:
-            if isinstance(obj, Pulse):
-                pulses.append(obj.shifted(current_phase))
+            if isinstance(obj, Waveform):
+                waveforms.append(obj.shifted(current_phase))
             elif isinstance(obj, PhaseShift):
                 current_phase += obj.theta
             else:
                 logger.warning(f"Unknown element type: {type(obj)}")
-        return pulses
+        return waveforms
 
     @property
     def length(self) -> int:
         """Returns the total length of the pulse array in samples."""
-        return sum([pulse.length for pulse in self.pulses])
+        return sum([waveform.length for waveform in self.waveforms])
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
         """Returns the concatenated values of the pulse array."""
-        if len(self.pulses) == 0:
+        if len(self.waveforms) == 0:
             return np.array([])
 
-        concat_values = np.concatenate([pulse.values for pulse in self.pulses])
+        concat_values = np.concatenate([waveform.values for waveform in self.waveforms])
         values = (
             concat_values
-            * self._scale
-            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase))
+            * self.scale
+            * np.exp(1j * (2 * np.pi * self.detuning * self.times + self.phase))
         )
         return values
 
@@ -122,7 +132,7 @@ class PulseArray(Waveform):
         """Returns the frame shifts of the pulse array."""
         phases = []
         current_phase = 0.0
-        for obj in self.elements:
+        for obj in self.flattened:
             if isinstance(obj, Pulse):
                 phases += [current_phase] * obj.length
             elif isinstance(obj, PhaseShift):
@@ -136,7 +146,7 @@ class PulseArray(Waveform):
         """Returns the final frame shift of the pulse array."""
         # NOTE: This is not the same as frame_shifts[-1]
         current_phase = 0.0
-        for obj in self.elements:
+        for obj in self.flattened:
             if isinstance(obj, PhaseShift):
                 current_phase += obj.theta
         return current_phase
@@ -235,7 +245,7 @@ class PulseArray(Waveform):
     def reversed(self) -> PulseArray:
         """Returns a copy of the pulse array with the time reversed."""
         new_array = PulseArray()
-        for obj in reversed(self.elements):
+        for obj in reversed(self.flattened):
             if isinstance(obj, Pulse):
                 new_array.add(obj.reversed())
             elif isinstance(obj, PhaseShift):

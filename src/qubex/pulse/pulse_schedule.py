@@ -334,7 +334,8 @@ class PulseSchedule:
                 times = np.arange(seq.length + 1)
             real = np.append(seq.real, seq.real[-1])
             imag = np.append(seq.imag, seq.imag[-1])
-            phase = np.append(seq.frame_shifts, seq.frame_shifts[-1])
+            phase = np.append(seq.frame_shifts, seq.final_frame_shift)
+            phase = (phase + np.pi) % (2 * np.pi) - np.pi
 
             if len(times) > n_samples:
                 times = self._downsample(times, n_samples)
@@ -516,7 +517,7 @@ class PulseSchedule:
         ranges: dict[str, list[range]] = {target: [] for target in targets}
         for target in targets:
             current_offset = 0
-            for waveform in self._channels[target].pulses:
+            for waveform in self._channels[target].waveforms:
                 next_offset = current_offset + waveform.length
                 if not isinstance(waveform, Blank):
                     ranges[target].append(range(current_offset, next_offset))
