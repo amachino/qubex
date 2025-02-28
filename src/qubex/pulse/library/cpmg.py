@@ -39,6 +39,7 @@ class CPMG(PulseArray):
 
     def __init__(
         self,
+        *,
         tau: float,
         pi: Waveform,
         n: int = 2,
