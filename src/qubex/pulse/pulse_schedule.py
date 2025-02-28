@@ -9,7 +9,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from ..style import COLORS
-from .pulse import Blank, Waveform
+from .blank import Blank
+from .pulse import Waveform
 from .pulse_array import PhaseShift, PulseArray
 
 

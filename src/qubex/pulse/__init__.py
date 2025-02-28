@@ -1,3 +1,4 @@
+from .blank import Blank
 from .library import (
     CPMG,
     CrossResonance,
@@ -7,8 +8,9 @@ from .library import (
     RaisedCosine,
     Rect,
 )
-from .pulse import Blank, Pulse
-from .pulse_array import PhaseShift, PulseArray, PulseSequence, VirtualZ
+from .phase_shift import PhaseShift, VirtualZ
+from .pulse import Pulse
+from .pulse_array import PulseArray, PulseSequence
 from .pulse_schedule import PulseSchedule
 from .waveform import Waveform
 

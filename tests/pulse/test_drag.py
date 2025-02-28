@@ -1,9 +1,10 @@
 import numpy as np
 import pytest
 
+import qubex as qx
 from qubex.pulse import Drag, Pulse
 
-dt = Pulse.SAMPLING_PERIOD
+dt = qx.pulse.get_sampling_period()
 
 
 def test_inheritance():

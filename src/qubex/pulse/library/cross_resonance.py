@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ..pulse_schedule import PulseSchedule
 from ..waveform import Waveform
-from .pulse_library import FlatTop
+from .flat_top import FlatTop
 
 
 class CrossResonance(PulseSchedule):
@@ -37,26 +37,48 @@ class CrossResonance(PulseSchedule):
         target_qubit: str,
         cr_amplitude: float,
         cr_duration: float,
-        cr_ramptime: float = 0.0,
-        cr_phase: float = 0.0,
-        cancel_amplitude: float = 0.0,
-        cancel_phase: float = 0.0,
+        cr_ramptime: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
         echo: bool = False,
         pi_pulse: Waveform | None = None,
     ):
+        cr_ramptime = cr_ramptime or 0.0
+        cr_phase = cr_phase or 0.0
+        cancel_amplitude = cancel_amplitude or 0.0
+        cancel_phase = cancel_phase or 0.0
+
         cr_label = f"{control_qubit}-{target_qubit}"
+
         cr_waveform = FlatTop(
             duration=cr_duration,
             amplitude=cr_amplitude,
             tau=cr_ramptime,
-            phase_shift=cr_phase,
+            phase=cr_phase,
         )
+
         cancel_waveform = FlatTop(
             duration=cr_duration,
             amplitude=cancel_amplitude,
             tau=cr_ramptime,
-            phase_shift=cancel_phase,
+            phase=cancel_phase,
         )
+
+        self.control_qubit = control_qubit
+        self.target_qubit = target_qubit
+        self.cr_amplitude = cr_amplitude
+        self.cr_duration = cr_duration
+        self.cr_ramptime = cr_ramptime
+        self.cr_phase = cr_phase
+        self.cancel_amplitude = cancel_amplitude
+        self.cancel_phase = cancel_phase
+        self.echo = echo
+        self.pi_pulse = pi_pulse
+        self.cr_label = cr_label
+        self.cr_waveform = cr_waveform
+        self.cancel_waveform = cancel_waveform
+
         with PulseSchedule([cr_label, target_qubit]) as cr:
             cr.add(cr_label, cr_waveform)
             cr.add(target_qubit, cancel_waveform)

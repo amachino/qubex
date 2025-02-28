@@ -16,9 +16,9 @@ try:
         simulator,
     )
     from .experiment import Experiment
-    from .pulse import Pulse, PulseArray, PulseSchedule
+    from .pulse import Blank, Pulse, PulseArray, PulseSchedule, VirtualZ
 except ImportError as e:
-    logger.debug(f"Import error: {e}")
+    logger.error(f"Import error: {e}")
 
 apply_template("qubex")
 
@@ -33,7 +33,9 @@ __all__ = [
     "pulse",
     "simulator",
     "Experiment",
+    "Blank",
     "Pulse",
     "PulseArray",
     "PulseSchedule",
+    "VirtualZ",
 ]

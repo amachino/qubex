@@ -10,20 +10,12 @@ import plotly.graph_objects as go
 from typing_extensions import deprecated
 
 from ..style import COLORS
-from .pulse import Blank, Pulse
+from .blank import Blank
+from .phase_shift import PhaseShift, VirtualZ
+from .pulse import Pulse
 from .waveform import Waveform
 
 logger = logging.getLogger(__name__)
-
-
-class PhaseShift:
-    def __init__(self, theta: float):
-        self.theta = theta
-
-
-class VirtualZ(PhaseShift):
-    def __init__(self, theta: float):
-        super().__init__(-theta)
 
 
 class PulseArray(Waveform):
@@ -61,14 +53,14 @@ class PulseArray(Waveform):
         self,
         elements: Sequence = [],
         *,
-        scale: float = 1.0,
-        detuning: float = 0.0,
-        phase_shift: float = 0.0,
+        scale: float | None = None,
+        detuning: float | None = None,
+        phase: float | None = None,
     ):
         super().__init__(
             scale=scale,
             detuning=detuning,
-            phase=phase_shift,
+            phase=phase,
         )
         self._elements: list[Waveform | PhaseShift] = list(elements)
 
