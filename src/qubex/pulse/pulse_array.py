@@ -227,9 +227,15 @@ class PulseArray(Waveform):
         return new_array
 
     def reversed(self) -> PulseArray:
-        """Returns a copy of the pulse array with the order of the waveforms reversed."""
-        new_array = deepcopy(self)
-        new_array._elements = list(reversed(new_array.pulses))
+        """Returns a copy of the pulse array with the time reversed."""
+        new_array = PulseArray()
+        for obj in reversed(self.elements):
+            if isinstance(obj, Pulse):
+                new_array.add(Pulse(obj.scaled(-1).values[::-1]))
+            elif isinstance(obj, PhaseShift):
+                new_array.add(PhaseShift(-obj.theta))
+            else:
+                logger.warning(f"Unknown element type: {type(obj)}")
         return new_array
 
     def added(self, obj: Waveform | PhaseShift) -> PulseArray:
@@ -272,7 +278,7 @@ class PulseArray(Waveform):
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
-        phase = np.append(self.virtual_phases, self.virtual_phases[-1])
+        phase = np.append(self.virtual_phases, self.virtual_phases[-1]) % np.pi
 
         if n_samples is not None and len(times) > n_samples:
             indices = np.linspace(0, len(times) - 1, n_samples).astype(int)
@@ -324,16 +330,26 @@ class PulseArray(Waveform):
         fig.update_layout(
             title=title,
             xaxis_title=xlabel,
-            yaxis_title="Amplitude (MHz)" if divide_by_two_pi else ylabel,
             yaxis=dict(
+                title="Amplitude (MHz)" if divide_by_two_pi else ylabel,
                 range=[-y_max * 1.2, y_max * 1.2],
             ),
             yaxis2=dict(
+                title="Phase (rad)",
                 overlaying="y",
                 side="right",
                 range=[-np.pi * 1.2, np.pi * 1.2],
                 tickvals=[-np.pi, 0, np.pi],
                 ticktext=["-π", "0", "π"],
+            ),
+            legend=dict(
+                orientation="h",
+                xanchor="right",
+                yanchor="top",
+                x=1,
+                y=1,
+                # make transparent legend background
+                bgcolor="rgba(0,0,0,0)",
             ),
         )
 
