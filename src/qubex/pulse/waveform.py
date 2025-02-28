@@ -19,8 +19,8 @@ class Waveform(ABC):
         Scaling factor of the waveform.
     detuning : float, optional
         Detuning of the waveform in GHz.
-    phase_shift : float, optional
-        Phase shift of the waveform in rad.
+    phase : float, optional
+        Phase of the waveform in rad.
     """
 
     SAMPLING_PERIOD: float = 2.0  # ns
@@ -28,13 +28,18 @@ class Waveform(ABC):
     def __init__(
         self,
         *,
-        scale: float = 1.0,
-        detuning: float = 0.0,
-        phase_shift: float = 0.0,
+        scale: float | None = None,
+        detuning: float | None = None,
+        phase: float | None = None,
     ):
-        self._scale = scale
-        self._detuning = detuning
-        self._phase_shift = phase_shift
+        self._scale = scale or 1.0
+        self._detuning = detuning or 0.0
+        self._phase = phase or 0.0
+
+    @property
+    def name(self) -> str:
+        """Returns the label of the waveform."""
+        return self.__class__.__name__
 
     @property
     @abstractmethod
@@ -102,6 +107,10 @@ class Waveform(ABC):
     def repeated(self, n: int) -> Waveform:
         """Returns a copy of the waveform repeated n times."""
 
+    @abstractmethod
+    def reversed(self) -> Waveform:
+        """Returns a copy of the waveform with the time reversed."""
+
     def _number_of_samples(
         self,
         duration: float,
@@ -165,7 +174,7 @@ class Waveform(ABC):
             Title of the plot.
         """
         if title is None:
-            title = f"Waveform ({self.duration} ns)"
+            title = f"{self.name} ({self.duration} ns)"
         if polar:
             self.plot_polar(
                 title=title,
@@ -245,7 +254,7 @@ class Waveform(ABC):
         fig.show(
             config={
                 "toImageButtonOptions": {
-                    "format": "svg",
+                    "format": "png",
                     "scale": 3,
                 },
             }
@@ -315,7 +324,7 @@ class Waveform(ABC):
         fig.show(
             config={
                 "toImageButtonOptions": {
-                    "format": "svg",
+                    "format": "png",
                     "scale": 3,
                 },
             }

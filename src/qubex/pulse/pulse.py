@@ -36,9 +36,12 @@ class Pulse(Waveform):
         super().__init__(
             scale=scale,
             detuning=detuning,
-            phase_shift=phase_shift,
+            phase=phase_shift,
         )
         self._values = np.array(values, dtype=np.complex128)
+
+    def __repr__(self) -> str:
+        return f"{self.name}({self.length})"
 
     @property
     def length(self) -> int:
@@ -51,7 +54,7 @@ class Pulse(Waveform):
         return (
             self._values
             * self._scale
-            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase_shift))
+            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase))
         )
 
     def copy(self) -> Pulse:
@@ -99,13 +102,19 @@ class Pulse(Waveform):
     def shifted(self, phase: float) -> Pulse:
         """Returns a copy of the pulse shifted by the given phase."""
         new_pulse = deepcopy(self)
-        new_pulse._phase_shift += phase
+        new_pulse._phase += phase
         return new_pulse
 
     def repeated(self, n: int) -> Pulse:
         """Returns a copy of the pulse repeated n times."""
         new_pulse = deepcopy(self)
         new_pulse._values = np.tile(self._values, n)
+        return new_pulse
+
+    def reversed(self) -> Pulse:
+        """Returns a copy of the pulse with the time reversed."""
+        new_pulse = deepcopy(self)
+        new_pulse._values = np.flip(-1 * self._values)
         return new_pulse
 
 

@@ -68,9 +68,18 @@ class PulseArray(Waveform):
         super().__init__(
             scale=scale,
             detuning=detuning,
-            phase_shift=phase_shift,
+            phase=phase_shift,
         )
         self._elements: list[Waveform | PhaseShift] = list(elements)
+
+    def __repr__(self) -> str:
+        elements = []
+        for obj in self._elements:
+            if isinstance(obj, (PhaseShift, VirtualZ)):
+                elements.append(f"{obj.__class__.__name__}({obj.theta:.2f})")
+            else:
+                elements.append(f"{obj.__class__.__name__}({obj.length})")
+        return f"PulseArray([{', '.join(elements)}])"
 
     @property
     def elements(self) -> list[Pulse | PhaseShift]:
@@ -112,7 +121,7 @@ class PulseArray(Waveform):
         values = (
             concat_values
             * self._scale
-            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase_shift))
+            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase))
         )
         return values
 
@@ -222,7 +231,7 @@ class PulseArray(Waveform):
     def shifted(self, phase: float) -> PulseArray:
         """Returns a copy of the pulse array shifted by the given phase."""
         new_array = deepcopy(self)
-        new_array._phase_shift += phase
+        new_array._phase += phase
         return new_array
 
     def repeated(self, n: int) -> PulseArray:
@@ -236,7 +245,7 @@ class PulseArray(Waveform):
         new_array = PulseArray()
         for obj in reversed(self.elements):
             if isinstance(obj, Pulse):
-                new_array.add(Pulse(obj.scaled(-1).values[::-1]))
+                new_array.add(obj.reversed())
             elif isinstance(obj, PhaseShift):
                 new_array.add(PhaseShift(-obj.theta))
             else:
@@ -248,10 +257,6 @@ class PulseArray(Waveform):
         new_array = deepcopy(self)
         new_array._elements.append(obj)
         return new_array
-
-    def __repr__(self) -> str:
-        pulses = ", ".join([pulse.__class__.__name__ for pulse in self._elements])
-        return f"PulseArray([{pulses})]"
 
     def plot(
         self,
@@ -287,7 +292,8 @@ class PulseArray(Waveform):
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
-        frame_shifts = np.append(self.frame_shifts, self.frame_shifts[-1]) % np.pi
+        frame_shifts = np.append(self.frame_shifts, self.final_frame_shift)
+        frame_shifts = (frame_shifts + np.pi) % (2 * np.pi) - np.pi
 
         if n_samples is not None and len(times) > n_samples:
             indices = np.linspace(0, len(times) - 1, n_samples).astype(int)

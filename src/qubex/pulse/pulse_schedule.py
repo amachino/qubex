@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Literal
+from typing import Any, Collection, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from ..style import COLORS
-from .pulse import Blank, Pulse, Waveform
+from .pulse import Blank, Waveform
 from .pulse_array import PhaseShift, PulseArray
 
 
@@ -49,7 +49,7 @@ class PulseSchedule:
                 for target in targets
             }
 
-        self._sequences = {target: PulseArray() for target in targets}
+        self._channels = {target: PulseArray() for target in targets}
         self._offsets = {target: 0.0 for target in targets}
 
     @property
@@ -76,11 +76,11 @@ class PulseSchedule:
         return {target: props.get("object") for target, props in self.targets.items()}
 
     @property
-    def sequences(self) -> dict[str, PulseArray]:
+    def channels(self) -> dict[str, PulseArray]:
         """
-        Returns the pulse sequences.
+        Returns the pulse channels.
         """
-        return self._sequences.copy()
+        return self._channels.copy()
 
     @property
     def sampled_sequences(self) -> dict[str, npt.NDArray[np.complex128]]:
@@ -124,7 +124,7 @@ class PulseSchedule:
         """
         if not self.is_valid():
             raise ValueError("Inconsistent sequence lengths.")
-        return next(iter(self._sequences.values())).length
+        return next(iter(self._channels.values())).length
 
     @property
     def duration(self) -> float:
@@ -161,14 +161,14 @@ class PulseSchedule:
         if target not in self.targets:
             raise ValueError(f"Invalid target: {target}")
 
-        self._sequences[target].add(obj)
+        self._channels[target].add(obj)
 
         if isinstance(obj, Waveform):
             self._offsets[target] += obj.duration
 
     def barrier(
         self,
-        targets: list[str] | None = None,
+        targets: Collection[str] | None = None,
     ):
         """
         Add a barrier to the pulse schedule.
@@ -184,7 +184,10 @@ class PulseSchedule:
         ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         ...     seq.barrier()
         """
-        targets = targets or list(self.targets.keys())
+        if targets is None:
+            targets = list(self.targets)
+        else:
+            targets = list(targets)
         for target in targets:
             self.add(
                 target,
@@ -241,7 +244,7 @@ class PulseSchedule:
         Returns a scaled pulse schedule.
         """
         new = PulseSchedule(self.targets)
-        for target, sequence in self._sequences.items():
+        for target, sequence in self._channels.items():
             new.add(target, sequence.scaled(scale))
         return new
 
@@ -250,7 +253,7 @@ class PulseSchedule:
         Returns a detuned pulse schedule.
         """
         new = PulseSchedule(self.targets)
-        for target, sequence in self._sequences.items():
+        for target, sequence in self._channels.items():
             new.add(target, sequence.detuned(detuning))
         return new
 
@@ -259,7 +262,7 @@ class PulseSchedule:
         Returns a shifted pulse schedule.
         """
         new = PulseSchedule(self.targets)
-        for target, sequence in self._sequences.items():
+        for target, sequence in self._channels.items():
             new.add(target, sequence.shifted(phase))
         return new
 
@@ -272,19 +275,17 @@ class PulseSchedule:
             new.call(self)
         return new
 
-    def inverted(self) -> PulseSchedule:
-        """
-        Returns an inverted pulse schedule.
-        """
+    def reversed(self) -> PulseSchedule:
+        """Returns a time-reversed pulse schedule."""
         new = PulseSchedule(self.targets)
-        for target, sequence in self._sequences.items():
-            new.add(target, Pulse(-sequence.values[::-1]))
+        for target, sequence in self._channels.items():
+            new.add(target, sequence.reversed())
         return new
 
     def plot(
         self,
         *,
-        title: str = "Pulse Schedule",
+        title: str = "Pulse Sequence",
         width: int = 800,
         n_samples: int = 1024,
         divide_by_two_pi: bool = False,
@@ -323,7 +324,6 @@ class PulseSchedule:
             rows=n_targets,
             cols=1,
             shared_xaxes=True,
-            # vertical_spacing=0.05,
             specs=[[{"secondary_y": True}] for _ in range(n_targets)],
         )
         for i, (target, seq) in enumerate(sequences.items()):
@@ -432,7 +432,6 @@ class PulseSchedule:
                 showarrow=False,
                 row=i + 1,
                 col=1,
-                # set bg color to white
                 bgcolor="rgba(255, 255, 255, 0.8)",
             )
         fig.show()
@@ -441,7 +440,7 @@ class PulseSchedule:
         """
         Returns True if the pulse schedule is valid.
         """
-        return len(set(seq.length for seq in self._sequences.values())) == 1
+        return len(set(seq.length for seq in self._channels.values())) == 1
 
     def get_sequences(
         self,
@@ -467,10 +466,10 @@ class PulseSchedule:
             pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
             return {
                 target: seq.padded(duration, pad_side)
-                for target, seq in self._sequences.items()
+                for target, seq in self._channels.items()
             }
         else:
-            return self._sequences.copy()
+            return self._channels.copy()
 
     def get_sampled_sequences(
         self,
@@ -516,7 +515,7 @@ class PulseSchedule:
         ranges: dict[str, list[range]] = {target: [] for target in targets}
         for target in targets:
             current_offset = 0
-            for waveform in self._sequences[target].pulses:
+            for waveform in self._channels[target].pulses:
                 next_offset = current_offset + waveform.length
                 if not isinstance(waveform, Blank):
                     ranges[target].append(range(current_offset, next_offset))

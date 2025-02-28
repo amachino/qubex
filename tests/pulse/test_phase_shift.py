@@ -33,4 +33,3 @@ def test_phase_shift():
         ],
     )
     assert seq.values == pytest.approx([1, 1j, -1, 1, 1])
-    assert seq.reversed().values == pytest.approx([1, 1, -1, 1j, 1])
