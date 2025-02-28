@@ -97,38 +97,54 @@ class PulseArray(Waveform):
                 logger.warning(f"Unknown element type: {type(obj)}")
         return elements
 
-    @property
-    def waveforms(self) -> list[Waveform]:
+    def get_waveforms(
+        self,
+        apply_frame_shifts: bool = True,
+    ) -> list[Waveform]:
         """Returns the list of pulses in the pulse array."""
         waveforms: list[Waveform] = []
         current_phase = 0.0
-        for obj in self.elements:
-            if isinstance(obj, Waveform):
-                waveforms.append(obj.shifted(current_phase))
-            elif isinstance(obj, PhaseShift):
-                current_phase += obj.theta
-            else:
-                logger.warning(f"Unknown element type: {type(obj)}")
+        if apply_frame_shifts:
+            for obj in self.flattened():
+                if isinstance(obj, Waveform):
+                    waveforms.append(obj.shifted(current_phase))
+                elif isinstance(obj, PhaseShift):
+                    current_phase += obj.theta
+                else:
+                    logger.warning(f"Unknown element type: {type(obj)}")
+        else:
+            for obj in self.flattened():
+                if isinstance(obj, Waveform):
+                    waveforms.append(obj)
         return waveforms
 
-    @property
-    def length(self) -> int:
-        """Returns the total length of the pulse array in samples."""
-        return sum([waveform.length for waveform in self.waveforms])
-
-    @property
-    def values(self) -> npt.NDArray[np.complex128]:
+    def get_values(
+        self,
+        apply_frame_shifts: bool = True,
+    ) -> npt.NDArray[np.complex128]:
         """Returns the concatenated values of the pulse array."""
-        if len(self.waveforms) == 0:
+        if len(self.elements) == 0:
             return np.array([])
 
-        concat_values = np.concatenate([waveform.values for waveform in self.waveforms])
+        concat_values = np.concatenate(
+            [waveform.values for waveform in self.get_waveforms(apply_frame_shifts)]
+        )
         values = (
             concat_values
             * self.scale
             * np.exp(1j * (2 * np.pi * self.detuning * self.times + self.phase))
         )
         return values
+
+    @property
+    def length(self) -> int:
+        """Returns the total length of the pulse array in samples."""
+        return sum([waveform.length for waveform in self.get_waveforms()])
+
+    @property
+    def values(self) -> npt.NDArray[np.complex128]:
+        """Returns the concatenated values of the pulse array."""
+        return self.get_values()
 
     @property
     def frame_shifts(self) -> npt.NDArray[np.float64]:
@@ -267,18 +283,22 @@ class PulseArray(Waveform):
         self,
         *,
         n_samples: int | None = None,
+        show_physical_pulse: bool = True,
         divide_by_two_pi: bool = False,
         title: str | None = None,
         xlabel: str = "Time (ns)",
         ylabel: str = "Amplitude (arb. unit)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
-        show_frame_shifts: bool = True,
     ):
         """
         Plots the waveform of the pulse array.
 
         Parameters
         ----------
+        n_samples : int, optional
+            Number of samples to plot.
+        divide_by_two_pi : bool, optional
+            Whether to divide the values by 2π.
         title : str, optional
             Title of the plot.
         xlabel : str, optional
@@ -287,18 +307,23 @@ class PulseArray(Waveform):
             Label of the y-axis.
         line_shape : {"hv", "vh", "hvh", "vhv", "spline", "linear"}, optional
             Determines the line shape.
-        show_frame_shifts : bool, optional
-            Whether to show the frame shifts.
         """
         if self.length == 0:
             print("Waveform is empty.")
             return
 
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
-        real = np.append(self.real, self.real[-1])
-        imag = np.append(self.imag, self.imag[-1])
-        frame_shifts = np.append(self.frame_shifts, self.final_frame_shift)
-        frame_shifts = (frame_shifts + np.pi) % (2 * np.pi) - np.pi
+
+        if show_physical_pulse:
+            values = self.get_values(apply_frame_shifts=True)
+        else:
+            values = self.get_values(apply_frame_shifts=False)
+        real = np.real(values)
+        imag = np.imag(values)
+        real = np.append(real, real[-1])
+        imag = np.append(imag, imag[-1])
+        phase = -np.append(self.frame_shifts, self.final_frame_shift)
+        phase = (phase + np.pi) % (2 * np.pi) - np.pi
 
         if n_samples is not None and len(times) > n_samples:
             indices = np.linspace(0, len(times) - 1, n_samples).astype(int)
@@ -318,7 +343,7 @@ class PulseArray(Waveform):
                 x=times,
                 y=real,
                 mode="lines",
-                name="I",
+                name="I" if show_physical_pulse else "X",
                 line_shape=line_shape,
                 line=dict(color=COLORS[0]),
             ),
@@ -328,17 +353,17 @@ class PulseArray(Waveform):
                 x=times,
                 y=imag,
                 mode="lines",
-                name="Q",
+                name="Q" if show_physical_pulse else "Y",
                 line_shape=line_shape,
                 line=dict(color=COLORS[1]),
             ),
         )
 
-        if show_frame_shifts:
+        if not show_physical_pulse:
             fig.add_trace(
                 go.Scatter(
                     x=times,
-                    y=frame_shifts,
+                    y=phase,
                     name="φ",
                     mode="lines",
                     line_shape=line_shape,
@@ -355,7 +380,7 @@ class PulseArray(Waveform):
                 range=[-y_max * 1.2, y_max * 1.2],
             ),
             yaxis2=dict(
-                title="Frame shift (rad)",
+                title="Phase shift (rad)",
                 overlaying="y",
                 side="right",
                 range=[-np.pi * 1.2, np.pi * 1.2],

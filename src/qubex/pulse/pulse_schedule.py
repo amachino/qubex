@@ -287,13 +287,13 @@ class PulseSchedule:
     def plot(
         self,
         *,
+        show_physical_pulse: bool = False,
         title: str = "Pulse Sequence",
         width: int = 800,
         n_samples: int = 1024,
         divide_by_two_pi: bool = False,
         time_unit: Literal["ns", "samples"] = "ns",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
-        show_phase: bool = True,
     ):
         """
         Plots the pulse schedule.
@@ -333,9 +333,16 @@ class PulseSchedule:
                 times = np.append(seq.times, seq.times[-1] + seq.SAMPLING_PERIOD)
             else:
                 times = np.arange(seq.length + 1)
-            real = np.append(seq.real, seq.real[-1])
-            imag = np.append(seq.imag, seq.imag[-1])
-            phase = np.append(seq.frame_shifts, seq.final_frame_shift)
+
+            if show_physical_pulse:
+                values = seq.get_values(apply_frame_shifts=True)
+            else:
+                values = seq.get_values(apply_frame_shifts=False)
+            real = np.real(values)
+            imag = np.imag(values)
+            real = np.append(real, real[-1])
+            imag = np.append(imag, imag[-1])
+            phase = -np.append(seq.frame_shifts, seq.final_frame_shift)
             phase = (phase + np.pi) % (2 * np.pi) - np.pi
 
             if len(times) > n_samples:
@@ -352,7 +359,7 @@ class PulseSchedule:
                 go.Scatter(
                     x=times,
                     y=real,
-                    name="I",
+                    name="I" if show_physical_pulse else "X",
                     mode="lines",
                     line_shape=line_shape,
                     line=dict(color=COLORS[0]),
@@ -366,7 +373,7 @@ class PulseSchedule:
                 go.Scatter(
                     x=times,
                     y=imag,
-                    name="Q",
+                    name="Q" if show_physical_pulse else "Y",
                     mode="lines",
                     line_shape=line_shape,
                     line=dict(color=COLORS[1]),
@@ -376,7 +383,7 @@ class PulseSchedule:
                 col=1,
                 secondary_y=False,
             )
-            if show_phase:
+            if not show_physical_pulse:
                 fig.add_trace(
                     go.Scatter(
                         x=times,
@@ -413,14 +420,15 @@ class PulseSchedule:
                 range=[-1.2 * y_max, 1.2 * y_max],
                 secondary_y=False,
             )
-            fig.update_yaxes(
-                row=i + 1,
-                col=1,
-                range=[-np.pi * 1.2, np.pi * 1.2],
-                tickvals=[-np.pi, 0, np.pi],
-                ticktext=["-π", "0", "π"],
-                secondary_y=True,
-            )
+            if not show_physical_pulse:
+                fig.update_yaxes(
+                    row=i + 1,
+                    col=1,
+                    range=[-np.pi * 1.2, np.pi * 1.2],
+                    tickvals=[-np.pi, 0, np.pi],
+                    ticktext=["-π", "0", "π"],
+                    secondary_y=True,
+                )
             annotations = []
             if self.frequencies.get(target) is not None:
                 annotations.append(f"{self.frequencies[target]:.2f} GHz")
@@ -518,7 +526,7 @@ class PulseSchedule:
         ranges: dict[str, list[range]] = {target: [] for target in targets}
         for target in targets:
             current_offset = 0
-            for waveform in self._channels[target].waveforms:
+            for waveform in self._channels[target].get_waveforms():
                 next_offset = current_offset + waveform.length
                 if not isinstance(waveform, Blank):
                     ranges[target].append(range(current_offset, next_offset))

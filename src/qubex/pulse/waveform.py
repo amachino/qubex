@@ -248,7 +248,7 @@ class Waveform(ABC):
                 x=times,
                 y=real,
                 mode="lines",
-                name="I",
+                name="X",
                 line_shape=line_shape,
             )
         )
@@ -257,7 +257,7 @@ class Waveform(ABC):
                 x=times,
                 y=imag,
                 mode="lines",
-                name="Q",
+                name="Y",
                 line_shape=line_shape,
             )
         )
