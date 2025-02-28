@@ -190,10 +190,11 @@ class PulseSchedule:
         else:
             targets = list(targets)
         for target in targets:
-            self.add(
-                target,
-                Blank(duration=self._max_offset(targets) - self._offsets[target]),
-            )
+            if self._max_offset(targets) - self._offsets[target] > 0:
+                self.add(
+                    target,
+                    Blank(duration=self._max_offset(targets) - self._offsets[target]),
+                )
 
     def call(
         self,
@@ -278,9 +279,9 @@ class PulseSchedule:
 
     def reversed(self) -> PulseSchedule:
         """Returns a time-reversed pulse schedule."""
-        new = PulseSchedule(self.targets)
-        for target, sequence in self._channels.items():
-            new.add(target, sequence.reversed())
+        with PulseSchedule(self.targets) as new:
+            for target, sequence in self._channels.items():
+                new.add(target, sequence.reversed())
         return new
 
     def plot(

@@ -78,17 +78,17 @@ class PulseArray(Waveform):
         """Returns the list of pulses and phase shifts in the pulse array."""
         return self._elements
 
-    @property
     def flattened(self) -> list[Pulse | PhaseShift]:
         """Returns the flattened list of pulses and phase shifts in the pulse array."""
+        copy = deepcopy(self)
         elements = []
-        for obj in self.elements:
+        for obj in copy.elements:
             if isinstance(obj, (PulseArray, Pulse)):
                 obj._scale *= self.scale
                 obj._phase += self.phase
                 obj._detuning += self.detuning
                 if isinstance(obj, PulseArray):
-                    elements.extend(obj.flattened)
+                    elements.extend(obj.flattened())
                 elif isinstance(obj, Pulse):
                     elements.append(obj)
             elif isinstance(obj, PhaseShift):
@@ -135,7 +135,7 @@ class PulseArray(Waveform):
         """Returns the frame shifts of the pulse array."""
         phases = []
         current_phase = 0.0
-        for obj in self.flattened:
+        for obj in self.flattened():
             if isinstance(obj, Pulse):
                 phases += [current_phase] * obj.length
             elif isinstance(obj, PhaseShift):
@@ -149,7 +149,7 @@ class PulseArray(Waveform):
         """Returns the final frame shift of the pulse array."""
         # NOTE: This is not the same as frame_shifts[-1]
         current_phase = 0.0
-        for obj in self.flattened:
+        for obj in self.flattened():
             if isinstance(obj, PhaseShift):
                 current_phase += obj.theta
         return current_phase
@@ -248,7 +248,7 @@ class PulseArray(Waveform):
     def reversed(self) -> PulseArray:
         """Returns a copy of the pulse array with the time reversed."""
         new_array = PulseArray()
-        for obj in reversed(self.flattened):
+        for obj in reversed(self.flattened()):
             if isinstance(obj, Pulse):
                 new_array.add(obj.reversed())
             elif isinstance(obj, PhaseShift):
