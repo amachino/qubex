@@ -82,8 +82,11 @@ class PulseArray(Waveform):
     def flattened(self) -> list[Pulse | PhaseShift]:
         """Returns the flattened list of pulses and phase shifts in the pulse array."""
         elements = []
-        for obj in self._elements:
+        for obj in self.elements:
             if isinstance(obj, (PulseArray, Pulse)):
+                obj._scale *= self.scale
+                obj._phase += self.phase
+                obj._detuning += self.detuning
                 if isinstance(obj, PulseArray):
                     elements.extend(obj.flattened)
                 elif isinstance(obj, Pulse):
