@@ -1,4 +1,3 @@
-import numpy as np
 import pytest
 
 import qubex as qx
@@ -21,7 +20,11 @@ def test_empty_init():
 def test_init():
     """FlatTop should be initialized with valid parameters."""
     pulse = FlatTop(duration=5 * dt, amplitude=1, tau=2 * dt)
+    assert pulse.name == "FlatTop"
+    assert pulse.length == 5
     assert pulse.duration == 5 * dt
+    assert pulse.amplitude == 1
+    assert pulse.tau == 2 * dt
     assert pulse.values == pytest.approx(
         [
             0.14644661 + 0.0j,
@@ -37,7 +40,7 @@ def test_zero_duration():
     """FlatTop should be initialized with zero duration."""
     pulse = FlatTop(duration=0, amplitude=1, tau=0)
     assert pulse.duration == 0
-    assert (pulse.values == np.array([], dtype=np.complex128)).all()
+    assert pulse.values == pytest.approx([])
 
 
 def test_invalid_duration():

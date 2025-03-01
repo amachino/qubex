@@ -129,12 +129,7 @@ class PulseArray(Waveform):
         concat_values = np.concatenate(
             [waveform.values for waveform in self.get_waveforms(apply_frame_shifts)]
         )
-        values = (
-            concat_values
-            * self.scale
-            * np.exp(1j * (2 * np.pi * self.detuning * self.times + self.phase))
-        )
-        return values
+        return concat_values
 
     @property
     def length(self) -> int:

@@ -1,4 +1,3 @@
-import numpy as np
 import pytest
 
 import qubex as qx
@@ -21,7 +20,12 @@ def test_empty_init():
 def test_init():
     """Gaussian should be initialized with valid parameters."""
     pulse = Gaussian(duration=5 * dt, amplitude=1, sigma=2 * dt, beta=1)
+    assert pulse.name == "Gaussian"
+    assert pulse.length == 5
     assert pulse.duration == 5 * dt
+    assert pulse.amplitude == 1
+    assert pulse.sigma == 2 * dt
+    assert pulse.beta == 1
     assert pulse.values == pytest.approx(
         [
             0.60653066 + 0.15163266j,
@@ -37,7 +41,7 @@ def test_zero_duration():
     """Gaussian should be initialized with zero duration."""
     pulse = Gaussian(duration=0, amplitude=1, sigma=1, beta=1)
     assert pulse.duration == 0
-    assert (pulse.values == np.array([], dtype=np.complex128)).all()
+    assert pulse.values == pytest.approx([])
 
 
 def test_invalid_parameter():

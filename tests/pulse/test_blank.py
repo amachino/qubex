@@ -21,6 +21,8 @@ def test_empty_init():
 def test_init():
     """Blank should be initialized with a duration."""
     pulse = Blank(duration=5 * dt)
+    assert pulse.name == "Blank"
+    assert pulse.length == 5
     assert pulse.duration == 5 * dt
     assert (pulse.values == [0, 0, 0, 0, 0]).all()
 

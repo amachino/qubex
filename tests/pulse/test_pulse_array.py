@@ -8,49 +8,56 @@ dt = qx.pulse.get_sampling_period()
 
 
 def test_inheritance():
-    """PulseSequence should inherit from Waveform."""
+    """PulseArray should inherit from Waveform."""
     assert issubclass(PulseArray, Waveform)
 
 
 def test_empty_init():
-    """PulseSequence should be initialized without any parameters."""
+    """PulseArray should be initialized without any parameters."""
     seq = PulseArray()
     assert seq.length == 0
     assert seq.duration == 0
 
 
 def test_empty_list():
-    """PulseSequence should be initialized with an empty list."""
+    """PulseArray should be initialized with an empty list."""
     seq = PulseArray([])
+    assert seq.name == "PulseArray"
     assert seq.length == 0
-    assert seq.duration == 0
+    assert seq.duration == 0.0
+    assert seq.phase == 0.0
+    assert seq.scale == 1.0
+    assert seq.detuning == 0.0
+    assert seq.values == pytest.approx([])
+    assert seq.times == pytest.approx([])
 
 
 def test_init():
-    """PulseSequence should be initialized with valid parameters."""
+    """PulseArray should be initialized with valid parameters."""
     pulse_1 = Pulse([0, -0.5, +0.5j])
     pulse_2 = Pulse([1, 2, 3])
-    seq = PulseArray([pulse_1, pulse_2.repeated(2)])
+    seq = PulseArray([pulse_1.scaled(2), pulse_2.repeated(2)])
     assert seq.length == 9
     assert seq.duration == 9 * dt
     assert seq.times == pytest.approx(np.arange(9) * dt)
-    assert seq.values == pytest.approx([0, -0.5, 0.5j, 1, 2, 3, 1, 2, 3])
-    assert seq.real == pytest.approx([0, -0.5, 0, 1, 2, 3, 1, 2, 3])
-    assert seq.imag == pytest.approx([0, 0, 0.5, 0, 0, 0, 0, 0, 0])
-    assert seq.abs == pytest.approx([0, 0.5, 0.5, 1, 2, 3, 1, 2, 3])
+    assert seq.values == pytest.approx([0, -1, 1j, 1, 2, 3, 1, 2, 3])
+    assert seq.real == pytest.approx([0, -1, 0, 1, 2, 3, 1, 2, 3])
+    assert seq.imag == pytest.approx([0, 0, 1, 0, 0, 0, 0, 0, 0])
+    assert seq.abs == pytest.approx([0, 1, 1, 1, 2, 3, 1, 2, 3])
     assert seq.angle == pytest.approx([0, np.pi, np.pi / 2, 0, 0, 0, 0, 0, 0])
 
 
 def test_copy():
-    """PulseSequence should be copied."""
+    """PulseArray should be copied."""
     seq = PulseArray([Pulse([1, 2, 3]), Pulse([4, 5, 6])])
     copy = seq.copy()
+    assert isinstance(copy, PulseArray)
     assert copy is not seq
     assert copy.values == pytest.approx(seq.values)
 
 
 def test_paddded():
-    """PulseSequence should be padded with zeros."""
+    """PulseArray should be padded with zeros."""
     seq = PulseArray([Pulse([1, 1]), Pulse([2, 2])])
     padded = seq.padded(10 * dt)
     assert padded != seq
@@ -64,15 +71,16 @@ def test_paddded():
 
 
 def test_scaled():
-    """PulseSequence should be scaled by a given parameter."""
-    seq = PulseArray([Pulse([1, 2, 3]), Pulse([4, 5, 6])])
+    """PulseArray should be scaled by a given parameter."""
+    pulse = Pulse([1, 2, 3])
+    seq = PulseArray([pulse, pulse.scaled(2)])
     scaled = seq.scaled(0.1)
     assert scaled != seq
-    assert scaled.values == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    assert scaled.values == pytest.approx([0.1, 0.2, 0.3, 0.2, 0.4, 0.6])
 
 
 def test_detuned():
-    """PulseSequence should be detuned by a given parameter."""
+    """PulseArray should be detuned by a given parameter."""
     seq = PulseArray([Pulse([0.1, 0.1, 0.1])])
     detuned = seq.detuned(0.001)
     assert detuned != seq
@@ -86,7 +94,7 @@ def test_detuned():
 
 
 def test_shifted():
-    """PulseSequence should be shifted by a given parameter."""
+    """PulseArray should be shifted by a given parameter."""
     seq = PulseArray([Pulse([1, -1, 1j])])
     shifted = seq.shifted(np.pi / 2)
     assert shifted != seq
@@ -94,8 +102,16 @@ def test_shifted():
 
 
 def test_repeated():
-    """PulseSequence should be repeated a given number of times."""
+    """PulseArray should be repeated a given number of times."""
     seq = PulseArray([Pulse([1, 2, 3]), Pulse([4, 5, 6])])
     repeated = seq.repeated(2)
     assert repeated != seq
     assert repeated.values == pytest.approx([1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6])
+
+
+def test_nested():
+    """PulseArray should be nested."""
+    pulse = Pulse([1, 2, 3])
+    seq = PulseArray([pulse, pulse.scaled(2)])
+    nested = PulseArray([seq, seq.scaled(2)])
+    assert nested.values == pytest.approx([1, 2, 3, 2, 4, 6, 2, 4, 6, 4, 8, 12])

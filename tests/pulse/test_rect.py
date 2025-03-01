@@ -21,15 +21,19 @@ def test_empty_init():
 def test_init():
     """Rect should be initialized with valid parameters."""
     pulse = Rect(duration=5 * dt, amplitude=0.1)
+    assert pulse.name == "Rect"
+    assert pulse.length == 5
     assert pulse.duration == 5 * dt
-    assert (pulse.values == [0.1, 0.1, 0.1, 0.1, 0.1]).all()
+    assert pulse.amplitude == 0.1
+    assert pulse.values == pytest.approx([0.1, 0.1, 0.1, 0.1, 0.1])
+    assert pulse.times == pytest.approx([0, dt, 2 * dt, 3 * dt, 4 * dt])
 
 
 def test_zero_duration():
     """Rect should be initialized with zero duration."""
     pulse = Rect(duration=0, amplitude=0.1)
     assert pulse.duration == 0
-    assert (pulse.values == np.array([], dtype=np.complex128)).all()
+    assert pulse.values == pytest.approx([])
 
 
 def test_invalid_duration():

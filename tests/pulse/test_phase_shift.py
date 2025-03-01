@@ -34,3 +34,28 @@ def test_phase_shift():
         ],
     )
     assert seq.values == pytest.approx([1, 1j, -1, 1, 1])
+
+
+def test_nested():
+    """PhaseShift should be used in a nested PulseArray."""
+    seq = PulseArray(
+        [
+            PulseArray(
+                [
+                    Pulse([1]),
+                    PhaseShift(np.pi / 2),
+                    Pulse([1]),
+                ],
+            ),
+            PhaseShift(np.pi / 2),
+            PulseArray(
+                [
+                    Pulse([1]),
+                    PhaseShift(np.pi / 2),
+                    Pulse([1]),
+                ],
+            ),
+            Pulse([1]),
+        ],
+    )
+    assert seq.values == pytest.approx([1, 1j, -1, -1j, -1j])
