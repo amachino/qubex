@@ -668,7 +668,7 @@ class MeasurementMixin(
             indices = np.arange(pulse_length + 1)
 
         flattened_pulses = {
-            target: pulse.flattened() if isinstance(pulse, PulseSchedule) else pulse
+            target: pulse.flattened() if isinstance(pulse, PulseArray) else pulse
             for target, pulse in pulses.items()
         }
 

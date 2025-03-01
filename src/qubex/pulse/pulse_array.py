@@ -127,10 +127,14 @@ class PulseArray(Waveform):
         if len(self.elements) == 0:
             return np.array([])
 
-        concat_values = np.concatenate(
-            [waveform.values for waveform in self.get_waveforms(apply_frame_shifts)]
-        )
-        return concat_values
+        waveforms = self.get_waveforms(apply_frame_shifts)
+
+        if len(waveforms) == 0:
+            return np.array([])
+        elif len(waveforms) == 1:
+            return waveforms[0].values
+        else:
+            return np.concatenate([waveform.values for waveform in waveforms])
 
     @property
     def length(self) -> int:
@@ -291,7 +295,7 @@ class PulseArray(Waveform):
         self,
         *,
         n_samples: int | None = None,
-        show_physical_pulse: bool = True,
+        show_physical_pulse: bool = False,
         divide_by_two_pi: bool = False,
         title: str | None = None,
         xlabel: str = "Time (ns)",
