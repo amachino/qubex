@@ -546,9 +546,9 @@ class MeasurementMixin(
         self,
         *,
         sequences: (
-            Sequence[TargetMap[IQArray]]
+            Sequence[PulseSchedule]
             | Sequence[TargetMap[Waveform]]
-            | Sequence[PulseSchedule]
+            | Sequence[TargetMap[IQArray]]
         ),
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
@@ -580,7 +580,7 @@ class MeasurementMixin(
 
     def pulse_tomography(
         self,
-        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
+        sequence: PulseSchedule | TargetMap[Waveform] | TargetMap[IQArray],
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
@@ -638,7 +638,7 @@ class MeasurementMixin(
                 pulse_array = PulseArray([])
 
                 # Iterate over the objects in the PulseArray.
-                for obj in waveform.flattened:
+                for obj in waveform.elements:
                     # If the object is a PhaseShift gate, we can simply add it to the array.
                     if isinstance(obj, PhaseShift):
                         pulse_array.add(obj)
@@ -655,6 +655,7 @@ class MeasurementMixin(
                             pulse_array.add(obj)
                             current_index += obj.length
                     else:
+                        # NOTE: PulseArray should be flattened before calling this function.
                         logger.error(f"Invalid type: {type(obj)}")
                 return pulse_array
             else:
@@ -666,13 +667,21 @@ class MeasurementMixin(
         else:
             indices = np.arange(pulse_length + 1)
 
-        waveforms = [
-            {target: partial_waveform(pulse, i) for target, pulse in pulses.items()}
+        flattened_pulses = {
+            target: pulse.flattened() if isinstance(pulse, PulseSchedule) else pulse
+            for target, pulse in pulses.items()
+        }
+
+        sequences = [
+            {
+                target: partial_waveform(pulse, i)
+                for target, pulse in flattened_pulses.items()
+            }
             for i in indices
         ]
 
         result = self.state_evolution_tomography(
-            sequences=waveforms,
+            sequences=sequences,
             x90=x90,
             initial_state=initial_state,
             shots=shots,

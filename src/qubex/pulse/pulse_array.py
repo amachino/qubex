@@ -78,7 +78,8 @@ class PulseArray(Waveform):
         """Returns the list of pulses and phase shifts in the pulse array."""
         return self._elements
 
-    def flattened(self) -> list[Pulse | PhaseShift]:
+    @property
+    def flattened_elements(self) -> list[Pulse | PhaseShift]:
         """Returns the flattened list of pulses and phase shifts in the pulse array."""
         copy = deepcopy(self)
         elements = []
@@ -88,7 +89,7 @@ class PulseArray(Waveform):
                 obj._phase += self.phase
                 obj._detuning += self.detuning
                 if isinstance(obj, PulseArray):
-                    elements.extend(obj.flattened())
+                    elements.extend(obj.flattened_elements)
                 elif isinstance(obj, Pulse):
                     elements.append(obj)
             elif isinstance(obj, PhaseShift):
@@ -105,7 +106,7 @@ class PulseArray(Waveform):
         waveforms: list[Waveform] = []
         current_phase = 0.0
         if apply_frame_shifts:
-            for obj in self.flattened():
+            for obj in self.flattened_elements:
                 if isinstance(obj, Waveform):
                     waveforms.append(obj.shifted(current_phase))
                 elif isinstance(obj, PhaseShift):
@@ -113,7 +114,7 @@ class PulseArray(Waveform):
                 else:
                     logger.warning(f"Unknown element type: {type(obj)}")
         else:
-            for obj in self.flattened():
+            for obj in self.flattened_elements:
                 if isinstance(obj, Waveform):
                     waveforms.append(obj)
         return waveforms
@@ -146,7 +147,7 @@ class PulseArray(Waveform):
         """Returns the frame shifts of the pulse array."""
         phases = []
         current_phase = 0.0
-        for obj in self.flattened():
+        for obj in self.flattened_elements:
             if isinstance(obj, Pulse):
                 phases += [current_phase] * obj.length
             elif isinstance(obj, PhaseShift):
@@ -160,7 +161,7 @@ class PulseArray(Waveform):
         """Returns the final frame shift of the pulse array."""
         # NOTE: This is not the same as frame_shifts[-1]
         current_phase = 0.0
-        for obj in self.flattened():
+        for obj in self.flattened_elements:
             if isinstance(obj, PhaseShift):
                 current_phase += obj.theta
         return current_phase
@@ -256,10 +257,16 @@ class PulseArray(Waveform):
         new_array._elements = list(new_array._elements) * n
         return new_array
 
+    def added(self, obj: Waveform | PhaseShift) -> PulseArray:
+        """Returns a copy of the pulse array with the given waveform or phase shift added."""
+        new_array = deepcopy(self)
+        new_array._elements.append(obj)
+        return new_array
+
     def reversed(self) -> PulseArray:
         """Returns a copy of the pulse array with the time reversed."""
         new_array = PulseArray()
-        for obj in reversed(self.flattened()):
+        for obj in reversed(self.flattened_elements):
             if isinstance(obj, Pulse):
                 new_array.add(obj.reversed())
             elif isinstance(obj, PhaseShift):
@@ -268,10 +275,16 @@ class PulseArray(Waveform):
                 logger.warning(f"Unknown element type: {type(obj)}")
         return new_array
 
-    def added(self, obj: Waveform | PhaseShift) -> PulseArray:
-        """Returns a copy of the pulse array with the given waveform or phase shift added."""
-        new_array = deepcopy(self)
-        new_array._elements.append(obj)
+    def flattened(self) -> PulseArray:
+        """Returns a copy of the pulse array with the nested pulse arrays flattened."""
+        new_array = PulseArray()
+        for obj in self.flattened_elements:
+            if isinstance(obj, Pulse):
+                new_array.add(obj)
+            elif isinstance(obj, PhaseShift):
+                new_array.add(obj)
+            else:
+                logger.warning(f"Unknown element type: {type(obj)}")
         return new_array
 
     def plot(
