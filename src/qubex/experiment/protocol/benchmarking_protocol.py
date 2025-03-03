@@ -50,7 +50,7 @@ class BenchmarkingProtocol(Protocol):
             Number of Clifford gates.
         x90 : Waveform | dict[str, Waveform], optional
             π/2 pulse used for the experiment. Defaults to None.
-        interleaved_waveform : Waveform | dict[str, PulseSequence] | dict[str, Waveform], optional
+        interleaved_waveform : Waveform | dict[str, PulseArray] | dict[str, Waveform], optional
             Waveform of the interleaved gate. Defaults to None.
         interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
@@ -59,7 +59,7 @@ class BenchmarkingProtocol(Protocol):
 
         Returns
         -------
-        PulseSequence
+        PulseArray
             Randomized benchmarking sequence.
 
         Examples
@@ -113,7 +113,7 @@ class BenchmarkingProtocol(Protocol):
             π/2 pulse used for 1Q gates. Defaults to None.
         zx90 : PulseSchedule | dict[str, Waveform], optional
             ZX90 pulses used for 2Q gates. Defaults to None.
-        interleaved_waveform : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+        interleaved_waveform : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
             Waveform of the interleaved gate. Defaults to None.
         interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
@@ -271,7 +271,7 @@ class BenchmarkingProtocol(Protocol):
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform | dict[str, Waveform], optional
             π/2 pulse used for the experiment. Defaults to None.
-        zx90 : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+        zx90 : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
             ZX90 pulses used for 2Q gates. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
@@ -329,7 +329,7 @@ class BenchmarkingProtocol(Protocol):
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        zx90 : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+        zx90 : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
             ZX90 pulses used for 2Q gates. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".

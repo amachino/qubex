@@ -20,7 +20,7 @@ class CPMG(PulseArray):
     n : int, optional
         The number of pi pulses in the sequence.
     **kwargs
-        Additional keyword arguments passed to the PulseSequence constructor.
+        Additional keyword arguments passed to the PulseArray constructor.
 
     Attributes
     ----------

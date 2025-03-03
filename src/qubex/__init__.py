@@ -16,7 +16,7 @@ try:
         simulator,
     )
     from .experiment import Experiment
-    from .pulse import Blank, Pulse, PulseArray, PulseSchedule, VirtualZ
+    from .pulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
 except ImportError as e:
     logger.error(f"Import error: {e}")
 
@@ -36,6 +36,7 @@ __all__ = [
     "Blank",
     "Pulse",
     "PulseArray",
+    "PulseChannel",
     "PulseSchedule",
     "VirtualZ",
 ]

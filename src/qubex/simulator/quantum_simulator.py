@@ -601,21 +601,21 @@ class QuantumSimulator:
         rabi_rates = pulse_schedule.values
         durations = [Waveform.SAMPLING_PERIOD] * pulse_schedule.length
         frequencies = {}
-        objects = {}
+        targets = {}
         for label in rabi_rates:
-            if frequency := pulse_schedule.frequencies.get(label):
+            if frequency := pulse_schedule.get_frequency(label):
                 frequencies[label] = frequency
             else:
                 raise ValueError(f"Frequency for {label} is not provided.")
-            if object := pulse_schedule.targets.get(label):
-                objects[label] = object
+            if object := pulse_schedule.get_target(label):
+                targets[label] = object
             else:
                 raise ValueError(f"Object for {label} is not provided.")
         controls = []
         for label, waveform in rabi_rates.items():
             controls.append(
                 Control(
-                    target=objects[label],
+                    target=targets[label],
                     frequency=frequencies[label],
                     waveform=waveform,
                     durations=durations,
