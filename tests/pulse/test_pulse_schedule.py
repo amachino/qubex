@@ -8,69 +8,183 @@ dt = qx.pulse.get_sampling_period()
 
 
 def test_empty_init():
-    """PulseSchedule should raise a TypeError if no parameters are provided."""
-    with pytest.raises(TypeError):
-        PulseSchedule()  # type: ignore
-
-
-def test_empty_list():
-    """PulseSchedule should be initialized with an empty list."""
-    sched = PulseSchedule([])
-    assert sched.targets == {}
+    """PulseSchedule should be initialized without any parameters."""
+    sched = PulseSchedule()
+    assert sched.labels == []
+    assert sched.values == {}
+    assert sched.length == 0
+    assert sched.duration == 0.0
 
 
 def test_init():
     """PulseSchedule should be initialized with valid parameters."""
     sched = PulseSchedule(["Q00", "Q01"])
-    assert sched.targets == {
-        "Q00": {
-            "frequency": None,
-            "object": None,
-        },
-        "Q01": {
-            "frequency": None,
-            "object": None,
-        },
-    }
+    assert sched.labels == ["Q00", "Q01"]
+    assert sched.values["Q00"] == pytest.approx([])
+    assert sched.values["Q01"] == pytest.approx([])
+    assert sched.length == 0
+    assert sched.duration == 0.0
 
 
 def test_add():
     """PulseSchedule should add a pulse to the sequence."""
-    with PulseSchedule(["Q00", "Q01"]) as sched:
+    with PulseSchedule() as sched:
         sched.add("Q00", Pulse([1, 0, 1j]))
         sched.add("Q01", Pulse([1j, 0, 1]))
-    seqs = sched.get_sampled_sequences()
-    assert seqs["Q00"] == pytest.approx([1, 0, 1j])
-    assert seqs["Q01"] == pytest.approx([1j, 0, 1])
+    assert sched.labels == ["Q00", "Q01"]
+    assert sched.values["Q00"] == pytest.approx([1, 0, 1j])
+    assert sched.values["Q01"] == pytest.approx([1j, 0, 1])
+    assert sched.length == 3
+    assert sched.duration == 3 * dt
+
+
+def test_label_order():
+    """PulseSchedule should maintain the order of labels."""
+    with PulseSchedule(["Q01", "Q00"]) as sched:
+        sched.add("Q01", Pulse([1]))
+        sched.add("Q00", Pulse([1]))
+    assert sched.labels == ["Q01", "Q00"]
+
+    with PulseSchedule() as sched:
+        sched.add("Q01", Pulse([1]))
+        sched.add("Q00", Pulse([1]))
+    assert sched.labels == ["Q01", "Q00"]
 
 
 def test_barrier():
     """PulseSchedule should add a barrier to the sequence."""
-    with PulseSchedule(["Q00", "Q01"]) as sched:
+    with PulseSchedule() as sched:
         sched.add("Q00", Pulse([1, 0, 1j]))
         sched.barrier()
         sched.add("Q01", Pulse([1j, 0, 1]))
-    seqs = sched.get_sampled_sequences()
-    assert seqs["Q00"] == pytest.approx([1, 0, 1j, 0, 0, 0])
-    assert seqs["Q01"] == pytest.approx([0, 0, 0, 1j, 0, 1])
+    assert sched.values["Q00"] == pytest.approx([1, 0, 1j, 0, 0, 0])
+    assert sched.values["Q01"] == pytest.approx([0, 0, 0, 1j, 0, 1])
 
 
 def test_specific_barrier():
     """PulseSchedule should add a barrier to specific qubits."""
-    with PulseSchedule(["Q00", "Q01", "Q02", "Q03"]) as sched:
+    with PulseSchedule() as sched:
         sched.add("Q00", Pulse([1]))
         sched.barrier(["Q00", "Q01"])
         sched.add("Q01", Pulse([1, 1, 1]))
         sched.add("Q02", Pulse([1, 1, 1]))
-    seqs = sched.get_sampled_sequences()
-    assert seqs["Q00"] == pytest.approx([1, 0, 0, 0])
-    assert seqs["Q01"] == pytest.approx([0, 1, 1, 1])
-    assert seqs["Q02"] == pytest.approx([1, 1, 1, 0])
+
+    assert sched.values["Q00"] == pytest.approx([1, 0, 0, 0])
+    assert sched.values["Q01"] == pytest.approx([0, 1, 1, 1])
+    assert sched.values["Q02"] == pytest.approx([1, 1, 1, 0])
+
+
+def test_call():
+    """PulseSchedule should call another PulseSchedule."""
+    with PulseSchedule() as sched1:
+        sched1.add("Q00", Pulse([1, 1]))
+
+    with PulseSchedule() as sched2:
+        sched2.call(sched1)
+        sched2.add("Q01", Pulse([1, 1]))
+
+    assert sched2.values["Q00"] == pytest.approx([1, 1])
+    assert sched2.values["Q01"] == pytest.approx([1, 1])
+
+
+def test_copy():
+    """PulseSchedule should be copied."""
+    with PulseSchedule() as sched1:
+        sched1.add("Q00", Pulse([1, 1]))
+
+    sched2 = sched1.copy()
+    assert isinstance(sched2, PulseSchedule)
+    assert sched1 != sched2
+    assert sched2.values["Q00"] == pytest.approx([1, 1])
+
+
+def test_scaled():
+    """PulseSchedule should be scaled by a given parameter."""
+    with PulseSchedule() as sched:
+        sched.add("Q00", Pulse([1, 2, 3]))
+        sched.add("Q01", Pulse([1j, 2j, 3j]))
+
+    scaled = sched.scaled(0.5)
+    assert scaled != sched
+    assert scaled.values["Q00"] == pytest.approx([0.5, 1, 1.5])
+    assert scaled.values["Q01"] == pytest.approx([0.5j, 1j, 1.5j])
+
+
+def test_detuned():
+    """PulseSchedule should be detuned by a given parameter."""
+    with PulseSchedule() as sched:
+        sched.add("Q00", Pulse([1, 2, 3]))
+        sched.add("Q01", Pulse([1j, 2j, 3j]))
+
+    detuned = sched.detuned(0.001)
+    assert detuned != sched
+    assert detuned.values["Q00"] == pytest.approx(
+        [
+            1,
+            2 * np.exp(1j * 0.001 * 2 * np.pi * dt),
+            3 * np.exp(2j * 0.001 * 2 * np.pi * dt),
+        ]
+    )
+    assert detuned.values["Q01"] == pytest.approx(
+        [
+            1j,
+            2j * np.exp(1j * 0.001 * 2 * np.pi * dt),
+            3j * np.exp(2j * 0.001 * 2 * np.pi * dt),
+        ]
+    )
+
+
+def test_shifted():
+    """PulseSchedule should be shifted by a given parameter."""
+    with PulseSchedule() as sched:
+        sched.add("Q00", Pulse([1, 2, 3]))
+        sched.add("Q01", Pulse([1j, 2j, 3j]))
+
+    shifted = sched.shifted(np.pi / 2)
+    assert shifted != sched
+    assert shifted.values["Q00"] == pytest.approx([1j, 2j, 3j])
+    assert shifted.values["Q01"] == pytest.approx([-1, -2, -3])
+
+
+def test_repeated():
+    """PulseSchedule should be repeated a given number of times."""
+    with PulseSchedule() as sched:
+        sched.add("Q00", Pulse([1, 2, 3]))
+        sched.add("Q01", Pulse([1j, 2j, 3j]))
+
+    repeated = sched.repeated(2)
+    assert repeated != sched
+    assert repeated.values["Q00"] == pytest.approx([1, 2, 3, 1, 2, 3])
+    assert repeated.values["Q01"] == pytest.approx([1j, 2j, 3j, 1j, 2j, 3j])
+
+
+def test_reversed():
+    """PulseSchedule should be time-reversed."""
+    with PulseSchedule() as sched:
+        sched.add("Q00", Pulse([1, 2, 3]))
+        sched.add("Q01", Pulse([1j, 2j, 3j]))
+
+    reversed = sched.reversed()
+    assert reversed != sched
+    assert reversed.values["Q00"] == pytest.approx([-3, -2, -1])
+    assert reversed.values["Q01"] == pytest.approx([-3j, -2j, -1j])
+
+
+def test_get_sequences():
+    """PulseSchedule should return the sequences."""
+    with PulseSchedule() as sched:
+        sched.add("Q00", Pulse([1, 0, 1j]))
+        sched.add("Q01", Pulse([1j, 0, 1]))
+    seq = sched.get_sequences()
+    assert seq["Q00"] != sched._channels["Q00"].sequence
+    assert seq["Q01"] != sched._channels["Q01"].sequence
+    assert seq["Q00"].values == pytest.approx([1, 0, 1j])
+    assert seq["Q01"].values == pytest.approx([1j, 0, 1])
 
 
 def test_get_sampled_sequences():
     """PulseSchedule should return the sampled sequences."""
-    with PulseSchedule(["Q00", "Q01"]) as sched:
+    with PulseSchedule() as sched:
         sched.add("Q00", Pulse([1, 0, 1j]))
         sched.add("Q01", Pulse([1j, 0, 1]))
     seq_start = sched.get_sampled_sequences(duration=5 * dt, align="start")
@@ -83,7 +197,7 @@ def test_get_sampled_sequences():
 
 def test_get_pulse_ranges():
     """PulseSchedule should return the pulse ranges."""
-    with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as sched:
+    with PulseSchedule() as sched:
         sched.add("Q01", Pulse([1, 1, 1]))
         sched.barrier()
         sched.add("Q02", Pulse([1, 1, 1]))
@@ -109,57 +223,54 @@ def test_get_pulse_ranges():
 
 def test_usecase():
     """PulseSchedule should be working in a typical usecase."""
-    x90 = qx.Pulse([1, 1])
+    x90 = qx.Pulse([1, 1]).scaled(0.5)
     x180 = x90.scaled(2)
     y90 = x90.shifted(np.pi / 2)
     z90 = qx.VirtualZ(np.pi / 2)
     z180 = qx.VirtualZ(np.pi)
     h = qx.PulseArray([z180, y90])
 
-    with qx.PulseSchedule(["Q00"]) as sched1:
+    with qx.PulseSchedule() as sched1:
         sched1.add("Q00", h)
         sched1.add("Q00", z90)
         sched1.add("Q00", x180)
         sched1.add("Q00", z90)
         sched1.add("Q00", h)
 
-    sequence1 = sched1.get_sequences()["Q00"]
-    waveform1 = sched1.get_sampled_sequences()["Q00"]
-    assert waveform1 == pytest.approx(sequence1.values)
-    assert waveform1 == pytest.approx(
+    seq1 = sched1.get_sampled_sequence("Q00")
+    phase1 = sched1.get_final_frame_shift("Q00")
+    assert seq1 == pytest.approx(
         [
-            -1j,
-            -1j,
-            2j,
-            2j,
-            -1j,
-            -1j,
+            -0.5j,
+            -0.5j,
+            1j,
+            1j,
+            -0.5j,
+            -0.5j,
         ]
     )
-    final_phase = (sequence1.final_frame_shift + np.pi) % (np.pi * 2) - np.pi
-    assert np.abs(final_phase) == pytest.approx(np.pi)
+    assert np.abs(phase1) == pytest.approx(np.pi)
 
     with qx.PulseSchedule(["Q00"]) as sched2:
         sched2.call(sched1)
         sched2.call(sched1.reversed())
 
-    sequence2 = sched2.get_sequences()["Q00"]
-    waveform2 = sched2.get_sampled_sequences()["Q00"]
-    assert waveform2 == pytest.approx(sequence2.values)
-    assert waveform2 == pytest.approx(
+    seq2 = sched2.get_sampled_sequence("Q00")
+    phase2 = sched2.get_final_frame_shift("Q00")
+    assert seq2 == pytest.approx(
         [
-            -1j,
-            -1j,
-            2j,
-            2j,
-            -1j,
-            -1j,
+            -0.5j,
+            -0.5j,
             1j,
             1j,
-            -2j,
-            -2j,
-            1j,
-            1j,
+            -0.5j,
+            -0.5j,
+            0.5j,
+            0.5j,
+            -1j,
+            -1j,
+            0.5j,
+            0.5j,
         ]
     )
-    assert sequence2.final_frame_shift == pytest.approx(0)
+    assert phase2 == pytest.approx(0)

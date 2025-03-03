@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Collection, Literal
+from dataclasses import dataclass, field
+from typing import Collection, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -14,18 +15,29 @@ from .pulse import Waveform
 from .pulse_array import PhaseShift, PulseArray
 
 
+@dataclass
+class Channel:
+    label: str
+    sequence: PulseArray = field(default_factory=PulseArray)
+    offset: float = 0.0
+    frequency: float | None = None
+    target: str | None = None
+    frame: str | None = None
+
+
 class PulseSchedule:
     def __init__(
         self,
-        targets: list[str] | dict[str, Any],
+        channels: list[str] | dict[str, Channel] | None = None,
+        /,
     ):
         """
         A class to represent a pulse schedule.
 
         Parameters
         ----------
-        targets : list[str] | dict[str, Any]
-            The control targets.
+        channels : list[str] | dict[str, Any]
+            The
 
         Examples
         --------
@@ -39,56 +51,16 @@ class PulseSchedule:
         ...     seq.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> seq.plot()
         """
-        if isinstance(targets, dict):
-            self.targets = targets
+        if channels is None:
+            self._channels = {}
+        elif isinstance(channels, list):
+            self._channels = {label: Channel(label) for label in channels}
+        elif isinstance(channels, dict):
+            self._channels = deepcopy(channels)
         else:
-            self.targets = {
-                target: {
-                    "frequency": None,
-                    "object": None,
-                }
-                for target in targets
-            }
+            raise ValueError("Invalid channels.")
 
-        self._channels = {target: PulseArray() for target in targets}
-        self._offsets = {target: 0.0 for target in targets}
-
-    @property
-    def labels(self) -> list[str]:
-        """
-        Returns the target labels.
-        """
-        return list(self.targets.keys())
-
-    @property
-    def frequencies(self) -> dict[str, float | None]:
-        """
-        Returns the target frequencies of the sequences.
-        """
-        return {
-            target: props.get("frequency") for target, props in self.targets.items()
-        }
-
-    @property
-    def objects(self) -> dict[str, str | None]:
-        """
-        Returns the target objects of the sequences.
-        """
-        return {target: props.get("object") for target, props in self.targets.items()}
-
-    @property
-    def channels(self) -> dict[str, PulseArray]:
-        """
-        Returns the pulse channels.
-        """
-        return self._channels.copy()
-
-    @property
-    def sampled_sequences(self) -> dict[str, npt.NDArray[np.complex128]]:
-        """
-        Returns the sampled pulse sequences.
-        """
-        return self.get_sampled_sequences()
+        self._global_offset = 0.0
 
     def __enter__(self):
         """
@@ -119,13 +91,29 @@ class PulseSchedule:
         self.barrier()
 
     @property
+    def labels(self) -> list[str]:
+        """
+        Returns the channel labels.
+        """
+        return list(self._channels.keys())
+
+    @property
+    def values(self) -> dict[str, npt.NDArray[np.complex128]]:
+        """
+        Returns the sampled pulse sequences.
+        """
+        return self.get_sampled_sequences()
+
+    @property
     def length(self) -> int:
         """
         Returns the length of the pulse schedule in samples.
         """
+        if len(self._channels) == 0:
+            return 0
         if not self.is_valid():
             raise ValueError("Inconsistent sequence lengths.")
-        return next(iter(self._channels.values())).length
+        return len(next(iter(self.values.values())))
 
     @property
     def duration(self) -> float:
@@ -136,7 +124,8 @@ class PulseSchedule:
 
     def add(
         self,
-        target: str,
+        /,
+        label: str,
         obj: Waveform | PhaseShift,
     ):
         """
@@ -144,40 +133,34 @@ class PulseSchedule:
 
         Parameters
         ----------
-        target : str
-            The target label.
+        label : str
+            The channel label.
         obj : Waveform | PhaseShift
             The waveform or phase shift to add.
-
-        Raises
-        ------
-        ValueError
-            If the target is not valid.
 
         Examples
         --------
         >>> with PulseSchedule(["Q01"]) as seq:
         ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         """
-        if target not in self.targets:
-            raise ValueError(f"Invalid target: {target}")
+        self._add_channels_if_not_exist([label])
 
-        self._channels[target].add(obj)
+        self._channels[label].sequence.add(obj)
 
         if isinstance(obj, Waveform):
-            self._offsets[target] += obj.duration
+            self._channels[label].offset += obj.duration
 
     def barrier(
         self,
-        targets: Collection[str] | None = None,
+        labels: Collection[str] | None = None,
     ):
         """
         Add a barrier to the pulse schedule.
 
         Parameters
         ----------
-        targets : list[str], optional
-            The target labels to add the barrier to.
+        labels : list[str], optional
+            The channel labels to add the barrier.
 
         Examples
         --------
@@ -185,16 +168,18 @@ class PulseSchedule:
         ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         ...     seq.barrier()
         """
-        if targets is None:
-            targets = list(self.targets)
+        if labels is None:
+            labels = self.labels
+            self._global_offset = self._max_offset()
         else:
-            targets = list(targets)
-        for target in targets:
-            if self._max_offset(targets) - self._offsets[target] > 0:
-                self.add(
-                    target,
-                    Blank(duration=self._max_offset(targets) - self._offsets[target]),
-                )
+            labels = list(labels)
+
+        self._add_channels_if_not_exist(labels)
+
+        for label in labels:
+            diff = self._max_offset(labels) - self._channels[label].offset
+            if diff > 0:
+                self.add(label, Blank(duration=diff))
 
     def call(
         self,
@@ -226,10 +211,6 @@ class PulseSchedule:
         if schedule == self:
             raise ValueError("Cannot call itself.")
 
-        for target in schedule.targets:
-            if target not in self.targets:
-                raise ValueError(f"The target {target} is not in the current schedule.")
-
         self.barrier(schedule.labels)
         sequences = schedule.get_sequences()
         for target, sequence in sequences.items():
@@ -245,44 +226,44 @@ class PulseSchedule:
         """
         Returns a scaled pulse schedule.
         """
-        new = PulseSchedule(self.targets)
-        for target, sequence in self._channels.items():
-            new.add(target, sequence.scaled(scale))
-        return new
+        new_sched = deepcopy(self)
+        for channel in new_sched._channels.values():
+            channel.sequence._scale *= scale
+        return new_sched
 
     def detuned(self, detuning: float) -> PulseSchedule:
         """
         Returns a detuned pulse schedule.
         """
-        new = PulseSchedule(self.targets)
-        for target, sequence in self._channels.items():
-            new.add(target, sequence.detuned(detuning))
-        return new
+        new_sched = deepcopy(self)
+        for channel in new_sched._channels.values():
+            channel.sequence._detuning += detuning
+        return new_sched
 
     def shifted(self, phase: float) -> PulseSchedule:
         """
         Returns a shifted pulse schedule.
         """
-        new = PulseSchedule(self.targets)
-        for target, sequence in self._channels.items():
-            new.add(target, sequence.shifted(phase))
-        return new
+        new_sched = deepcopy(self)
+        for channel in new_sched._channels.values():
+            channel.sequence._phase += phase
+        return new_sched
 
     def repeated(self, n: int) -> PulseSchedule:
         """
         Returns a repeated pulse schedule.
         """
-        new = PulseSchedule(self.targets)
+        new_sched = PulseSchedule()
         for _ in range(n):
-            new.call(self)
-        return new
+            new_sched.call(self)
+        return new_sched
 
     def reversed(self) -> PulseSchedule:
         """Returns a time-reversed pulse schedule."""
-        with PulseSchedule(self.targets) as new:
-            for target, sequence in self._channels.items():
-                new.add(target, sequence.reversed())
-        return new
+        with PulseSchedule() as new_sched:
+            for label, channel in self._channels.items():
+                new_sched.add(label, channel.sequence.reversed())
+        return new_sched
 
     def plot(
         self,
@@ -314,19 +295,19 @@ class PulseSchedule:
             print("No data to plot.")
             return
 
-        n_targets = len(self.targets)
+        n_channels = len(self._channels)
 
-        if n_targets == 0:
+        if n_channels == 0:
             print("No data to plot.")
             return
 
         sequences = self.get_sequences()
 
         fig = make_subplots(
-            rows=n_targets,
+            rows=n_channels,
             cols=1,
             shared_xaxes=True,
-            specs=[[{"secondary_y": True}] for _ in range(n_targets)],
+            specs=[[{"secondary_y": True}] for _ in range(n_channels)],
         )
         for i, (target, seq) in enumerate(sequences.items()):
             if time_unit == "ns":
@@ -401,11 +382,11 @@ class PulseSchedule:
 
         fig.update_layout(
             title=title,
-            height=80 * n_targets + 140,
+            height=80 * n_channels + 140,
             width=width,
         )
         fig.update_xaxes(
-            row=n_targets,
+            row=n_channels,
             col=1,
             title_text="Time (ns)" if time_unit == "ns" else "Time (samples)",
         )
@@ -430,10 +411,12 @@ class PulseSchedule:
                     secondary_y=True,
                 )
             annotations = []
-            if self.frequencies.get(target) is not None:
-                annotations.append(f"{self.frequencies[target]:.2f} GHz")
-            if self.objects.get(target) is not None:
-                annotations.append(f"{self.objects[target]}")
+            frequency = self._channels[target].frequency
+            if frequency is not None:
+                annotations.append(f"{frequency:.2f} GHz")
+            target = self._channels[target].target
+            if target is not None:
+                annotations.append(f"{target}")
             fig.add_annotation(
                 x=0.02,
                 y=0.06,
@@ -451,7 +434,36 @@ class PulseSchedule:
         """
         Returns True if the pulse schedule is valid.
         """
-        return len(set(seq.length for seq in self._channels.values())) == 1
+        return len(set(ch.sequence.length for ch in self._channels.values())) == 1
+
+    def get_sequence(
+        self,
+        label: str,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+    ) -> PulseArray:
+        """
+        Returns the pulse sequence for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+        duration : float, optional
+            The duration of the sequences.
+        align : {"start", "end"}, optional
+            The alignment of the sequences.
+
+        Returns
+        -------
+        PulseArray
+            The pulse sequence for the channel.
+        """
+        if duration is not None:
+            pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
+            return self._channels[label].sequence.padded(duration, pad_side)
+        else:
+            return self._channels[label].sequence.copy()
 
     def get_sequences(
         self,
@@ -470,17 +482,38 @@ class PulseSchedule:
 
         Returns
         -------
-        dict[str, PulseSequence]
+        dict[str, PulseArray]
             The pulse sequences.
         """
-        if duration is not None:
-            pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
-            return {
-                target: seq.padded(duration, pad_side)
-                for target, seq in self._channels.items()
-            }
-        else:
-            return self._channels.copy()
+        return {
+            label: self.get_sequence(label, duration, align) for label in self.labels
+        }
+
+    def get_sampled_sequence(
+        self,
+        label: str,
+        duration: float | None = None,
+        align: Literal["start", "end"] = "start",
+    ) -> npt.NDArray[np.complex128]:
+        """
+        Returns the sampled pulse sequence for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+        duration : float, optional
+            The duration of the sequences.
+        align : {"start", "end"}, optional
+            The alignment of the sequences.
+
+        Returns
+        -------
+        npt.NDArray[np.complex128]
+            The sampled pulse sequence for the channel.
+        """
+        sequence = self.get_sequence(label, duration, align)
+        return sequence.values
 
     def get_sampled_sequences(
         self,
@@ -502,8 +535,44 @@ class PulseSchedule:
         dict[str, npt.NDArray[np.complex128]]
             The sampled pulse sequences
         """
-        sequences = self.get_sequences(duration, align)
-        return {target: sequence.values for target, sequence in sequences.items()}
+        return {
+            label: self.get_sampled_sequence(label, duration, align)
+            for label in self.labels
+        }
+
+    def get_final_frame_shift(
+        self,
+        label: str,
+    ) -> float:
+        """
+        Returns the final frame shift for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+
+        Returns
+        -------
+        float
+            The final frame shift.
+        """
+        phase = self._channels[label].sequence.final_frame_shift
+        phase = (phase + np.pi) % (np.pi * 2) - np.pi
+        return phase
+
+    def get_final_frame_shifts(
+        self,
+    ) -> dict[str, float]:
+        """
+        Returns the final frame shifts.
+
+        Returns
+        -------
+        dict[str, float]
+            The final frame shifts.
+        """
+        return {label: self.get_final_frame_shift(label) for label in self.labels}
 
     def get_pulse_ranges(
         self,
@@ -526,23 +595,32 @@ class PulseSchedule:
         ranges: dict[str, list[range]] = {target: [] for target in targets}
         for target in targets:
             current_offset = 0
-            for waveform in self._channels[target].get_waveforms():
+            for waveform in self._channels[target].sequence.get_waveforms():
                 next_offset = current_offset + waveform.length
                 if not isinstance(waveform, Blank):
                     ranges[target].append(range(current_offset, next_offset))
                 current_offset = next_offset
         return ranges
 
+    def _add_channels_if_not_exist(self, labels: list[str]):
+        for label in labels:
+            if label not in self.labels:
+                self._channels[label] = Channel(label)
+                if self._global_offset > 0:
+                    self.add(label, Blank(duration=self._global_offset))
+
     def _max_offset(
         self,
-        targets: list[str] | None = None,
+        labels: list[str] | None = None,
     ) -> float:
-        if targets is None:
-            offsets = list(self._offsets.values())
+        if labels is None:
+            offsets = [channel.offset for channel in self._channels.values()]
         else:
-            offsets = [self._offsets[target] for target in targets]
+            offsets = [self._channels[label].offset for label in labels]
 
-        return max(offsets, default=0.0)
+        max_offset = max(offsets, default=0.0)
+
+        return max_offset
 
     @staticmethod
     def _downsample(

@@ -598,7 +598,7 @@ class QuantumSimulator:
     def _convert_pulse_schedule_to_controls(
         pulse_schedule: PulseSchedule,
     ) -> list[Control]:
-        rabi_rates = pulse_schedule.sampled_sequences
+        rabi_rates = pulse_schedule.values
         durations = [Waveform.SAMPLING_PERIOD] * pulse_schedule.length
         frequencies = {}
         objects = {}
@@ -607,7 +607,7 @@ class QuantumSimulator:
                 frequencies[label] = frequency
             else:
                 raise ValueError(f"Frequency for {label} is not provided.")
-            if object := pulse_schedule.objects.get(label):
+            if object := pulse_schedule.targets.get(label):
                 objects[label] = object
             else:
                 raise ValueError(f"Object for {label} is not provided.")
