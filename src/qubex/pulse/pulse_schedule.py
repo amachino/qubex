@@ -42,14 +42,14 @@ class PulseSchedule:
         Examples
         --------
         >>> from qubex.pulse import PulseSchedule, FlatTop
-        >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as seq:
-        ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        ...     seq.barrier()
-        ...     seq.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
-        ...     seq.barrier()
-        ...     seq.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
-        ...     seq.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
-        >>> seq.plot()
+        >>> with PulseSchedule() as ps:
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> ps.plot()
         """
         self._channels = {}
 
@@ -74,8 +74,8 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule([...]) as seq:
-        ...     seq.add(...)
+        >>> with PulseSchedule() as ps:
+        ...     ps.add(...)
         """
         return self
 
@@ -85,12 +85,12 @@ class PulseSchedule:
 
         The following codes are equivalent:
 
-        >>> seq = PulseSchedule([...])
-        >>> seq.add(...)
-        >>> seq.barrier()
+        >>> ps = PulseSchedule()
+        >>> ps.add(...)
+        >>> ps.barrier()
 
-        >>> with PulseSchedule([...]) as seq:
-        ...     seq.add(...)
+        >>> with PulseSchedule([...]) as ps:
+        ...     ps.add(...)
 
         Note that duration of sequences might be different if context manager is not used.
         """
@@ -146,8 +146,8 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule(["Q01"]) as seq:
-        ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        >>> with PulseSchedule() as ps:
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         """
         self._add_channels_if_not_exist([label])
 
@@ -170,9 +170,9 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule(["Q01"]) as seq:
-        ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        ...     seq.barrier()
+        >>> with PulseSchedule() as ps:
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
         """
         if labels is None:
             labels = self.labels
@@ -201,18 +201,18 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> with PulseSchedule(["Q01", "Q02"]) as ctrl:
+        >>> with PulseSchedule() as ctrl:
         ...     ctrl.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
         ...     ctrl.barrier()
         ...     ctrl.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
-        >>> with PulseSchedule(["RQ01", "RQ02"]) as read:
+        >>> with PulseSchedule() as read:
         ...     read.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
         ...     read.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
-        >>> with PulseSchedule(["Q01", "Q02", "RQ01", "RQ02"]) as seq:
-        ...     seq.call(ctrl)
-        ...     seq.barrier()
-        ...     seq.call(read)
-        >>> seq.plot()
+        >>> with PulseSchedule() as ps:
+        ...     ps.call(ctrl)
+        ...     ps.barrier()
+        ...     ps.call(read)
+        >>> ps.plot()
         """
         if schedule == self:
             raise ValueError("Cannot call itself.")
@@ -287,15 +287,14 @@ class PulseSchedule:
 
         Examples
         --------
-        >>> from qubex.pulse import PulseSchedule, FlatTop
-        >>> with PulseSchedule(["Q01", "RQ01", "Q02", "RQ02"]) as seq:
-        ...     seq.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
-        ...     seq.barrier()
-        ...     seq.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
-        ...     seq.barrier()
-        ...     seq.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
-        ...     seq.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
-        >>> seq.plot()
+        >>> with PulseSchedule() as ps:
+        ...     ps.add("Q01", FlatTop(duration=30, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("Q02", FlatTop(duration=100, amplitude=1, tau=10))
+        ...     ps.barrier()
+        ...     ps.add("RQ01", FlatTop(duration=200, amplitude=1, tau=10))
+        ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
+        >>> ps.plot()
         """
         if self._max_offset() == 0.0:
             print("No data to plot.")
