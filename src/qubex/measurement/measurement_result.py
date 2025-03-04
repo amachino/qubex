@@ -8,7 +8,7 @@ from typing import Collection
 import numpy as np
 from numpy.typing import NDArray
 
-from ..analysis.visualization import plot_fft, plot_state_distribution, plot_waveform
+from ..analysis import visualization as viz
 from ..backend import SAMPLING_PERIOD
 
 SAMPLING_PERIOD_SINGLE = SAMPLING_PERIOD
@@ -21,10 +21,12 @@ class MeasureMode(Enum):
 
     @property
     def integral_mode(self) -> str:
-        return {
-            MeasureMode.SINGLE: "single",
-            MeasureMode.AVG: "integral",
-        }[self]
+        if self == MeasureMode.SINGLE:
+            return "single"
+        elif self == MeasureMode.AVG:
+            return "integral"
+        else:
+            raise ValueError(f"Invalid mode: {self}")
 
 
 @dataclass(frozen=True)
@@ -73,29 +75,44 @@ class MeasureData:
             self.probabilities * (1 - self.probabilities) / sum(self.counts.values())
         )
 
-    def plot(self, save_image: bool = False):
+    def plot(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
         if self.mode == MeasureMode.SINGLE:
-            plot_state_distribution(
+            return viz.plot_state_distribution(
                 data={self.target: self.kerneled},
                 title=f"Readout IQ data : {self.target}",
+                return_figure=return_figure,
                 save_image=save_image,
             )
         elif self.mode == MeasureMode.AVG:
-            plot_waveform(
+            return viz.plot_waveform(
                 data=self.raw,
                 sampling_period=SAMPLING_PERIOD_AVG,
                 title=f"Readout waveform : {self.target}",
                 xlabel="Capture time (ns)",
                 ylabel="Signal (arb. unit)",
+                return_figure=return_figure,
+                save_image=save_image,
             )
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
-    def plot_fft(self):
-        plot_fft(
+    def plot_fft(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
+        return viz.plot_fft(
             x=self.times,
             y=self.raw,
             title=f"Fourier transform : {self.target}",
             xlabel="Frequency (GHz)",
             ylabel="Signal (arb. unit)",
+            return_figure=return_figure,
+            save_image=save_image,
         )
 
 
@@ -159,14 +176,42 @@ class MeasureResult:
             )
         }
 
-    def plot(self, save_image: bool = False):
+    def plot(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
         if self.mode == MeasureMode.SINGLE:
             data = {qubit: data.kerneled for qubit, data in self.data.items()}
-            plot_state_distribution(data=data, save_image=save_image)
+            return viz.plot_state_distribution(
+                data=data,
+                return_figure=return_figure,
+                save_image=save_image,
+            )
         elif self.mode == MeasureMode.AVG:
-            for measure_data in self.data.values():
-                measure_data.plot(save_image=save_image)
+            figures = []
+            for data in self.data.values():
+                fig = data.plot(
+                    return_figure=return_figure,
+                    save_image=save_image,
+                )
+                figures.append(fig)
+            if return_figure:
+                return figures
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
-    def plot_fft(self):
-        for measure_data in self.data.values():
-            measure_data.plot_fft()
+    def plot_fft(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
+        figures = []
+        for data in self.data.values():
+            fig = data.plot_fft(
+                return_figure=return_figure,
+                save_image=save_image,
+            )
+            figures.append(fig)
+        if return_figure:
+            return figures

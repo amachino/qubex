@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Final, Literal, Sequence
+from typing import Collection, Final, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -45,7 +45,7 @@ class Measurement:
         self,
         *,
         chip_id: str,
-        qubits: Sequence[str] | None = None,
+        qubits: Collection[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
         fetch_device_state: bool = True,
@@ -302,17 +302,17 @@ class Measurement:
 
     def measure_noise(
         self,
-        targets: list[str],
-        duration: int,
+        targets: Collection[str],
+        duration: float,
     ) -> MeasureResult:
         """
         Measure the readout noise.
 
         Parameters
         ----------
-        targets : list[str]
+        targets : Collection[str]
             The list of target names.
-        duration : int, optional
+        duration : float, optional
             The duration in ns.
 
         Returns
@@ -335,11 +335,11 @@ class Measurement:
             sequence=sequence,
             repeats=shots,
             interval=DEFAULT_INTERVAL,
-            integral_mode="single",
+            integral_mode="integral",
         )
         return self._create_measure_result(
             backend_result=backend_result,
-            measure_mode=MeasureMode.SINGLE,
+            measure_mode=MeasureMode.AVG,
             shots=shots,
         )
 
@@ -461,7 +461,7 @@ class Measurement:
 
     def measure_batch(
         self,
-        waveforms_list: Sequence[TargetMap[IQArray]],
+        waveforms_list: Collection[TargetMap[IQArray]],
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
@@ -477,7 +477,7 @@ class Measurement:
 
         Parameters
         ----------
-        waveforms_list : Sequence[TargetMap[IQArray]]
+        waveforms_list : Collection[TargetMap[IQArray]]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays with the sampling period of 2 ns.
         mode : Literal["single", "avg"], optional
@@ -969,7 +969,7 @@ class Measurement:
 
             if measure_mode == MeasureMode.SINGLE:
                 # iqs[capture_index]: ndarray[duration, shots]
-                raw = iqs[capture_index].T.squeeze()
+                raw = iqs[capture_index].T.squeeze() * 2 ** (-32)
                 kerneled = np.mean(iqs[capture_index], axis=0) * 2 ** (-32)
                 classifier = self.classifiers.get(qubit)
                 if classifier is not None:
@@ -977,7 +977,7 @@ class Measurement:
                     n_states = classifier.n_states
             elif measure_mode == MeasureMode.AVG:
                 # iqs[capture_index]: ndarray[duration, 1]
-                raw = iqs[capture_index].squeeze()
+                raw = iqs[capture_index].squeeze() * 2 ** (-32) / shots
                 kerneled = np.mean(iqs) * 2 ** (-32) / shots
             else:
                 raise ValueError(f"Invalid measure mode: {measure_mode}")

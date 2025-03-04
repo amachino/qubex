@@ -15,7 +15,6 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
-from ..analysis import visualization as viz
 from ..analysis.fitting import RabiParam
 from ..backend import (
     Box,
@@ -870,14 +869,9 @@ class Experiment(
             targets = list(targets)
 
         result = self.measurement.measure_noise(targets, duration)
-        for target, data in result.data.items():
+        for data in result.data.values():
             if plot:
-                viz.plot_waveform(
-                    np.array(data.raw, dtype=np.complex64) * 2 ** (-32),
-                    title=f"Readout noise : {target}",
-                    xlabel="Capture time (μs)",
-                    sampling_period=8e-3,
-                )
+                data.plot()
         return result
 
     def check_waveform(

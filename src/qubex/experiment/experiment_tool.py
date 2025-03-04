@@ -600,14 +600,9 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     console.print(table)
 
 
-def print_box_info(box_id: str | None = None, fetch: bool = True) -> None:
+def print_box_info(box_id: str, fetch: bool = True) -> None:
     """Print the information of a box."""
-    if box_id is None:
-        box_ids = [box.id for box in state_manager.experiment_system.boxes]
-    else:
-        box_ids = [box_id]
-    for box_id in box_ids:
-        state_manager.print_box_info(box_id, fetch=fetch)
+    state_manager.print_box_info(box_id, fetch=fetch)
 
 
 def print_target_frequencies(qubits: Collection[str] | str | None = None) -> None:
