@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import os
+from pathlib import Path
 from typing import Literal, Mapping
 
 import numpy as np
@@ -21,12 +22,16 @@ def save_figure_image(
     fig: go.Figure,
     name: str = "image",
     *,
-    images_dir: str = "./images",
+    images_dir: Path | str = "./images",
     format: Literal["png", "svg", "jpeg", "webp"] = "png",
-    width: int = 600,
-    height: int = 300,
-    scale: int = 3,
+    width: int | None = None,
+    height: int | None = None,
+    scale: int | None = None,
 ):
+    width = width or 600
+    height = height or 300
+    scale = scale or 3
+
     if not os.path.exists(images_dir):
         os.makedirs(images_dir)
 
@@ -92,6 +97,7 @@ def plot(
     else:
         fig.show(
             config=get_config(
+                filename="plot",
                 width=width,
                 height=height,
             )
@@ -144,6 +150,7 @@ def plot_fft(
     else:
         fig.show(
             config=get_config(
+                filename="plot_fft",
                 width=width,
                 height=height,
             )
@@ -210,6 +217,7 @@ def plot_bloch_vectors(
     else:
         fig.show(
             config=get_config(
+                filename="plot_bloch_vectors",
                 width=width,
                 height=height,
             )
@@ -267,6 +275,7 @@ def plot_waveform(
     else:
         fig.show(
             config=get_config(
+                filename="plot_waveform",
                 width=width,
                 height=height,
             )
@@ -344,6 +353,7 @@ def plot_state_distribution(
     else:
         fig.show(
             config=get_config(
+                filename="plot_state_distribution",
                 width=width,
                 height=height,
             )

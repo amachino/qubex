@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 import numpy as np
@@ -9,6 +10,7 @@ import plotly.graph_objects as go
 from numpy.typing import NDArray
 
 from ..analysis import fitting
+from ..analysis import visualization as viz
 from ..analysis.fitting import RabiParam
 from ..typing import TargetMap
 from .experiment_record import ExperimentRecord
@@ -137,9 +139,34 @@ class RabiData(TargetData):
         *,
         normalize: bool = False,
         use_zvalue: bool = False,
+        title: str | None = None,
+        xaxis_title: str | None = None,
+        yaxis_title: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        images_dir: Path | str | None = None,
     ):
+        fig = go.Figure()
+
+        fig.update_layout(
+            title=title or f"Rabi oscillation : {self.target}",
+            xaxis_title=xaxis_title or "Drive duration (ns)",
+            yaxis_title=yaxis_title or "Signal (arb. unit)",
+            width=width,
+            height=height,
+            template="qubex",
+        )
+
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
+            showarrow=False,
+        )
+
         if use_zvalue:
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -147,24 +174,12 @@ class RabiData(TargetData):
                     y=self.zvalues,
                 )
             )
-            fig.add_annotation(
-                xref="paper",
-                yref="paper",
-                x=0.95,
-                y=0.95,
-                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
-                showarrow=False,
-            )
             fig.update_layout(
-                title=f"Rabi oscillation : {self.target}",
-                xaxis_title="Drive duration (ns)",
                 yaxis_title="Z value",
                 yaxis_range=[-1.2, 1.2],
             )
-            fig.show()
         elif normalize:
             values = self.normalized
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -176,22 +191,11 @@ class RabiData(TargetData):
                     ),
                 )
             )
-            fig.add_annotation(
-                xref="paper",
-                yref="paper",
-                x=0.95,
-                y=0.95,
-                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
-                showarrow=False,
-            )
             fig.update_layout(
-                title=f"Rabi oscillation : {self.target}",
-                xaxis_title="Drive duration (ns)",
                 yaxis_title="Normalized signal",
+                yaxis_range=[-1.2, 1.2],
             )
-            fig.show()
         else:
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -208,20 +212,22 @@ class RabiData(TargetData):
                     name="Q",
                 )
             )
-            fig.add_annotation(
-                xref="paper",
-                yref="paper",
-                x=0.95,
-                y=0.95,
-                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
-                showarrow=False,
+
+        fig.show(
+            config=viz.get_config(
+                filename=f"rabi_data_{self.target}",
+                width=width,
+                height=height,
             )
-            fig.update_layout(
-                title=f"Rabi oscillation : {self.target}",
-                xaxis_title="Drive duration (ns)",
-                yaxis_title="Signal (arb. unit)",
+        )
+        if images_dir is not None:
+            viz.save_figure_image(
+                fig,
+                name=f"rabi_data_{self.target}",
+                images_dir=images_dir,
+                width=width,
+                height=height,
             )
-            fig.show()
 
     def fit(
         self,
@@ -270,7 +276,7 @@ class SweepData(TargetData):
     state_centers: dict[int, complex] | None = None
     title: str = "Sweep result"
     xaxis_title: str = "Sweep value"
-    yaxis_title: str = "Measured value"
+    yaxis_title: str = "Measured signal"
     xaxis_type: str = "linear"
     yaxis_type: str = "linear"
 
@@ -304,13 +310,29 @@ class SweepData(TargetData):
         *,
         normalize: bool = False,
         use_zvalue: bool = False,
+        title: str | None = None,
         xaxis_type: str | None = None,
         yaxis_type: str | None = None,
         xaxis_title: str | None = None,
         yaxis_title: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        images_dir: Path | str | None = None,
     ):
+        fig = go.Figure()
+
+        fig.update_layout(
+            title=title or f"{self.title} : {self.target}",
+            xaxis_title=xaxis_title or self.xaxis_title,
+            xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
+            yaxis_title=yaxis_title or self.yaxis_title,
+            yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+            width=width,
+            height=height,
+            template="qubex",
+        )
+
         if use_zvalue:
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -319,21 +341,15 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                title=f"{self.title} : {self.target}",
-                xaxis_title=xaxis_title or self.xaxis_title,
-                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
                 yaxis_title=yaxis_title or "Z value",
-                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
                 yaxis_range=[-1.2, 1.2],
             )
-            fig.show()
         elif normalize:
             param = self.rabi_param
             if param is None:
                 print("rabi_param must be provided for normalization.")
                 return  # type: ignore
             values = self.normalized
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -346,15 +362,10 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                title=f"{self.title} : {self.target}",
-                xaxis_title=xaxis_title or self.xaxis_title,
-                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=yaxis_title or self.yaxis_title,
-                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+                yaxis_title=yaxis_title or "Normalized signal",
+                yaxis_range=[-1.2, 1.2],
             )
-            fig.show()
         else:
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -371,14 +382,22 @@ class SweepData(TargetData):
                     name="Q",
                 )
             )
-            fig.update_layout(
-                title=f"{self.title} : {self.target}",
-                xaxis_title=xaxis_title or self.xaxis_title,
-                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=yaxis_title or self.yaxis_title,
-                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+
+        fig.show(
+            config=viz.get_config(
+                filename=f"sweep_data_{self.target}",
+                width=width,
+                height=height,
             )
-            fig.show()
+        )
+        if images_dir is not None:
+            viz.save_figure_image(
+                fig,
+                name=f"sweep_data_{self.target}",
+                images_dir=images_dir,
+                width=width,
+                height=height,
+            )
 
 
 @dataclass
