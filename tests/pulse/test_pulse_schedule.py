@@ -157,6 +157,10 @@ def test_repeated():
     assert repeated.values["Q00"] == pytest.approx([1, 2, 3, 1, 2, 3])
     assert repeated.values["Q01"] == pytest.approx([1j, 2j, 3j, 1j, 2j, 3j])
 
+    repeated = ps.repeated(0)
+    assert repeated.values["Q00"] == pytest.approx([])
+    assert repeated.values["Q01"] == pytest.approx([])
+
 
 def test_reversed():
     """PulseSchedule should be time-reversed."""

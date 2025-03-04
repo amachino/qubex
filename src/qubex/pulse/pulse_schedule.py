@@ -51,7 +51,7 @@ class PulseSchedule:
         ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
-        self._channels = {}
+        self._channels: dict[str, PulseChannel] = {}
 
         if channels is not None:
             if isinstance(channels, list):
@@ -260,8 +260,8 @@ class PulseSchedule:
         Returns a repeated pulse schedule.
         """
         new_sched = PulseSchedule()
-        for _ in range(n):
-            new_sched.call(self)
+        for label, channel in self._channels.items():
+            new_sched.add(label, channel.sequence.repeated(n))
         return new_sched
 
     def reversed(self) -> PulseSchedule:
@@ -415,24 +415,23 @@ class PulseSchedule:
                     ticktext=["-π", "0", "π"],
                     secondary_y=True,
                 )
-            annotations = []
             frequency = self._channels[label].frequency
-            if frequency is not None:
-                annotations.append(f"{frequency:.2f} GHz")
             target = self._channels[label].target
-            if label is not None:
+            if frequency is not None and target is not None:
+                annotations = []
+                annotations.append(f"{frequency:.2f} GHz")
                 annotations.append(f"{target}")
-            fig.add_annotation(
-                x=0.02,
-                y=0.06,
-                xref="x domain",
-                yref="y domain",
-                text=" → ".join(annotations),
-                showarrow=False,
-                row=i + 1,
-                col=1,
-                bgcolor="rgba(255, 255, 255, 0.8)",
-            )
+                fig.add_annotation(
+                    x=0.02,
+                    y=0.06,
+                    xref="x domain",
+                    yref="y domain",
+                    text=" → ".join(annotations),
+                    showarrow=False,
+                    row=i + 1,
+                    col=1,
+                    bgcolor="rgba(255, 255, 255, 0.8)",
+                )
         fig.show()
 
     def is_valid(self) -> bool:

@@ -297,8 +297,7 @@ class MeasurementMixin(
     ) -> ExperimentResult[SweepData]:
         def repeated_sequence(N: int) -> PulseSchedule:
             if isinstance(sequence, dict):
-                targets = list(sequence.keys())
-                with PulseSchedule(targets) as ps:
+                with PulseSchedule() as ps:
                     for target, pulse in sequence.items():
                         ps.add(target, pulse.repeated(N))
             elif isinstance(sequence, PulseSchedule):
@@ -310,7 +309,6 @@ class MeasurementMixin(
         result = self.sweep_parameter(
             sweep_range=np.arange(repetitions + 1),
             sequence=repeated_sequence,
-            repetitions=1,
             shots=shots,
             interval=interval,
             plot=plot,
