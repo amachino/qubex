@@ -829,7 +829,7 @@ class Measurement:
 
         # readout targets in the provided schedule
         readout_targets = [
-            target for target in schedule.targets if self.targets[target].is_read
+            label for label in schedule.labels if self.targets[label].is_read
         ]
 
         # add last readout pulse if necessary

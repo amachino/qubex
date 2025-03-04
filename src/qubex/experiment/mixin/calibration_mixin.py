@@ -10,7 +10,7 @@ from numpy.typing import ArrayLike
 from tqdm import tqdm
 
 from ...analysis import fitting
-from ...analysis import visualization as vis
+from ...analysis import visualization as viz
 from ...backend import SAMPLING_PERIOD, Target
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import (
@@ -894,8 +894,8 @@ class CalibrationMixin(
             ylabel="Bloch vector",
         )
         if plot:
-            vis.display_bloch_sphere(target_states_0)
-            vis.display_bloch_sphere(target_states_1)
+            viz.display_bloch_sphere(target_states_0)
+            viz.display_bloch_sphere(target_states_1)
         Omega_0 = fit_0["Omega"]
         Omega_1 = fit_1["Omega"]
         Omega = np.concatenate(

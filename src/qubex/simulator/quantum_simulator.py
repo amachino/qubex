@@ -11,7 +11,7 @@ import qctrlvisualizer as qv
 import qutip as qt
 from scipy.interpolate import interp1d
 
-from ..analysis import plot_bloch_vectors
+from ..analysis.visualization import plot_bloch_vectors
 from ..pulse import PulseSchedule, Waveform
 from .quantum_system import QuantumSystem
 

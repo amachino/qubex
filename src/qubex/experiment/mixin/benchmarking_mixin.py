@@ -5,7 +5,7 @@ from numpy.typing import ArrayLike
 from tqdm import tqdm
 
 from ...analysis import fitting
-from ...analysis import visualization as vis
+from ...analysis import visualization as viz
 from ...backend import Target
 from ...clifford import Clifford
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
@@ -263,7 +263,7 @@ class BenchmarkingMixin(
         )
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fit_result["fig"],
                 name=f"rb_{target}",
             )
@@ -457,7 +457,7 @@ class BenchmarkingMixin(
         )
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fit_result["fig"],
                 name=f"randomized_benchmarking_{target}",
             )
@@ -634,7 +634,7 @@ class BenchmarkingMixin(
             yaxis_title="Normalized signal",
         )
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 name=f"interleaved_randomized_benchmarking_{target}",
             )

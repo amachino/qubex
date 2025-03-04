@@ -11,8 +11,9 @@ from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from tqdm import tqdm
 
-from ...analysis import RabiParam, fitting
-from ...analysis import visualization as vis
+from ...analysis import fitting
+from ...analysis import visualization as viz
+from ...analysis.fitting import RabiParam
 from ...backend import MixingUtil, Target
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
 from ...pulse import CPMG, Blank, FlatTop, Gaussian, PulseSchedule, Rect, Waveform
@@ -179,7 +180,7 @@ class CharacterizationMixin(
                     height=400,
                 )
                 fig.show()
-                vis.save_figure_image(
+                viz.save_figure_image(
                     fig,
                     f"readout_snr_{target}",
                     width=600,
@@ -280,7 +281,7 @@ class CharacterizationMixin(
                     height=400,
                 )
                 fig.show()
-                vis.save_figure_image(
+                viz.save_figure_image(
                     fig,
                     f"readout_snr_{target}",
                     width=600,
@@ -407,7 +408,7 @@ class CharacterizationMixin(
                     fig.show()
 
                 if save_image:
-                    vis.save_figure_image(
+                    viz.save_figure_image(
                         fig,
                         name=f"chevron_pattern_{target}",
                         width=600,
@@ -775,7 +776,7 @@ class CharacterizationMixin(
 
                 if save_image and "fig" in fit_result:
                     fig = fit_result["fig"]
-                    vis.save_figure_image(
+                    viz.save_figure_image(
                         fig,
                         name=f"t1_{target}",
                     )
@@ -869,7 +870,7 @@ class CharacterizationMixin(
 
                 if save_image and "fig" in fit_result:
                     fig = fit_result["fig"]
-                    vis.save_figure_image(
+                    viz.save_figure_image(
                         fig,
                         name=f"t2_echo_{target}",
                     )
@@ -973,7 +974,7 @@ class CharacterizationMixin(
 
                     if save_image and "fig" in fit_result:
                         fig = fit_result["fig"]
-                        vis.save_figure_image(
+                        viz.save_figure_image(
                             fig,
                             name=f"ramsey_{target}",
                         )
@@ -1419,13 +1420,13 @@ class CharacterizationMixin(
             fig2.show()
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig1,
                 name=f"resonator_frequency_scan_{mux.label}_phase",
                 width=600,
                 height=450,
             )
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig2,
                 name=f"resonator_frequency_scan_{mux.label}_phase_diff",
             )
@@ -1507,7 +1508,7 @@ class CharacterizationMixin(
             fig.show()
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 name=f"resonator_spectroscopy_{mux.label}",
             )
@@ -1580,7 +1581,7 @@ class CharacterizationMixin(
 
         fig = fit_result["fig"]
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 name=f"reflection_coefficient_{target}",
                 width=800,
@@ -1799,7 +1800,7 @@ class CharacterizationMixin(
             fig.show()
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 name=f"qubit_spectroscopy_{target}",
                 width=600,

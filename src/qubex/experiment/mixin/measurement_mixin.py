@@ -11,7 +11,7 @@ from rich.console import Console
 from tqdm import tqdm
 
 from ...analysis import IQPlotter, fitting
-from ...analysis import visualization as vis
+from ...analysis import visualization as viz
 from ...backend import Target
 from ...measurement import (
     MeasureResult,
@@ -350,7 +350,7 @@ class MeasurementMixin(
                 f"|{state}⟩": result[state].data[target].kerneled for state in states
             }
             if plot:
-                vis.plot_state_distribution(
+                viz.plot_state_distribution(
                     data=data,
                     title=f"State distribution : {target}",
                 )
@@ -574,7 +574,7 @@ class MeasurementMixin(
         if plot:
             for target, states in result.items():
                 print(f"State evolution : {target}")
-                vis.display_bloch_sphere(states)
+                viz.display_bloch_sphere(states)
 
         return result
 
@@ -692,7 +692,7 @@ class MeasurementMixin(
         if plot:
             times = indices * SAMPLING_PERIOD
             for target, states in result.items():
-                vis.plot_bloch_vectors(
+                viz.plot_bloch_vectors(
                     times=times,
                     bloch_vectors=states,
                     title=f"State evolution : {target}",
@@ -1155,7 +1155,7 @@ class MeasurementMixin(
             fig.show()
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 f"bell_state_measurement_{control_qubit}-{target_qubit}",
             )

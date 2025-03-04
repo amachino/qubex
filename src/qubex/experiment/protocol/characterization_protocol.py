@@ -5,7 +5,7 @@ from typing import Collection, Literal, Protocol
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ...analysis import RabiParam
+from ...analysis.fitting import RabiParam
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import Waveform
 from ...typing import TargetMap

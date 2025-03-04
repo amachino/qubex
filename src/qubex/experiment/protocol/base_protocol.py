@@ -4,7 +4,7 @@ from typing import Collection, ContextManager, Literal, Protocol
 
 from numpy.typing import NDArray
 
-from ...analysis import RabiParam
+from ...analysis.fitting import RabiParam
 from ...backend import (
     Box,
     ControlParams,

@@ -8,7 +8,7 @@ from typing import Collection
 import numpy as np
 from numpy.typing import NDArray
 
-from ..analysis import plot_fft, plot_waveform, scatter_iq_data
+from ..analysis.visualization import plot_fft, plot_state_distribution, plot_waveform
 from ..backend import SAMPLING_PERIOD
 
 SAMPLING_PERIOD_SINGLE = SAMPLING_PERIOD
@@ -75,7 +75,7 @@ class MeasureData:
 
     def plot(self, save_image: bool = False):
         if self.mode == MeasureMode.SINGLE:
-            scatter_iq_data(
+            plot_state_distribution(
                 data={self.target: self.kerneled},
                 title=f"Readout IQ data : {self.target}",
                 save_image=save_image,
@@ -91,8 +91,8 @@ class MeasureData:
 
     def plot_fft(self):
         plot_fft(
-            times=self.times,
-            data=self.raw,
+            x=self.times,
+            y=self.raw,
             title=f"Fourier transform : {self.target}",
             xlabel="Frequency (GHz)",
             ylabel="Signal (arb. unit)",
@@ -162,7 +162,7 @@ class MeasureResult:
     def plot(self, save_image: bool = False):
         if self.mode == MeasureMode.SINGLE:
             data = {qubit: data.kerneled for qubit, data in self.data.items()}
-            scatter_iq_data(data=data, save_image=save_image)
+            plot_state_distribution(data=data, save_image=save_image)
         elif self.mode == MeasureMode.AVG:
             for measure_data in self.data.values():
                 measure_data.plot(save_image=save_image)
