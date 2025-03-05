@@ -1,17 +1,15 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Collection, Final, Literal
 
 import numpy as np
 import numpy.typing as npt
-
-try:
-    from qubecalib import Sequencer
-    from qubecalib import neopulse as pls
-except ImportError:
-    pass
+from qubecalib import Sequencer
+from qubecalib import neopulse as pls
+from typing_extensions import deprecated
 
 from ..backend import (
     DEFAULT_CONFIG_DIR,
@@ -39,6 +37,8 @@ DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 INTERVAL_STEP: Final = 10240  # ns
 MIN_DURATION: Final = 128  # ns
 
+logger = logging.getLogger(__name__)
+
 
 class Measurement:
     def __init__(
@@ -48,8 +48,7 @@ class Measurement:
         qubits: Collection[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
-        fetch_device_state: bool = True,
-        connect_devices: bool = False,
+        connect_devices: bool = True,
         use_neopulse: bool = False,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
@@ -67,8 +66,8 @@ class Measurement:
             The configuration directory, by default DEFAULT_CONFIG_DIR.
         params_dir : str, optional
             The parameters directory, by default DEFAULT_PARAMS_DIR.
-        fetch_device_state : bool, optional
-            Whether to fetch the device state, by default True.
+        connect_devices : bool, optional
+            Whether to connect the devices, by default True.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
         skew_file_path : Path | str | None, optional
@@ -89,7 +88,6 @@ class Measurement:
         self._use_neopulse = use_neopulse
         self._classifiers: TargetMap[StateClassifier] = {}
         self._initialize(
-            fetch_device_state=fetch_device_state,
             connect_devices=connect_devices,
             configuration_mode=configuration_mode,
             skew_file_path=skew_file_path,
@@ -97,7 +95,6 @@ class Measurement:
 
     def _initialize(
         self,
-        fetch_device_state: bool,
         connect_devices: bool,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
@@ -118,22 +115,21 @@ class Measurement:
 
         if skew_file_path is None:
             skew_file_path = f"{self._config_dir}/skew.yaml"
-        self.device_controller.load_skew_file(box_ids, skew_file_path)
+        try:
+            self.device_controller.load_skew_file(box_ids, skew_file_path)
+        except Exception:
+            print("Failed to load the skew file.")
 
-        if fetch_device_state:
-            try:
-                self.state_manager.pull(box_ids)
-            except Exception:
-                print("Failed to fetch the device state.")
         if connect_devices:
             try:
+                self.state_manager.pull(box_ids)
                 self.device_controller.connect(box_ids)
             except Exception:
                 print("Failed to connect the devices.")
 
     def reload(self):
         """Reload the measuremnt settings."""
-        self._initialize(fetch_device_state=True, connect_devices=True)
+        self._initialize(connect_devices=True)
 
     @property
     def state_manager(self) -> StateManager:
@@ -425,6 +421,7 @@ class Measurement:
         )
         measure_mode = MeasureMode(mode)
         if self._use_neopulse:
+            # deprecated
             sequence = self._create_sequence(
                 waveforms=waveforms,
                 control_window=control_window,
@@ -521,6 +518,7 @@ class Measurement:
                 capture_window=capture_window,
             )
             if self._use_neopulse:
+                # deprecated
                 sequence = self._create_sequence(
                     waveforms=waveforms,
                     control_window=control_window,
@@ -609,6 +607,7 @@ class Measurement:
             shots=shots,
         )
 
+    @deprecated("Use `create_sequencer` instead.")
     def _create_sequence(
         self,
         *,

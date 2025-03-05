@@ -545,6 +545,7 @@ class DeviceController:
             Measurement result.
         """
         if self._boxpool is None:
+            # deprecated
             self.clear_command_queue()
             self.add_sequencer(sequencer)
             return next(
