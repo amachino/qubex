@@ -102,8 +102,8 @@ class Experiment(
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
     params_dir : str, optional
         Directory of the parameter files. Defaults to DEFAULT_PARAMS_DIR.
-    fetch_device_state : bool, optional
-        Whether to fetch the device state. Defaults to True.
+    connect_devices : bool, optional
+        Whether to connect the devices. Defaults to True.
     linkup : bool, optional
         Whether to link up the devices. Defaults to True.
     drag_hpi_duration : int, optional
@@ -122,7 +122,7 @@ class Experiment(
     Examples
     --------
     >>> from qubex import Experiment
-    >>> experiment = Experiment(
+    >>> ex = Experiment(
     ...     chip_id="64Q",
     ...     qubits=["Q00", "Q01"],
     ... )
@@ -138,18 +138,17 @@ class Experiment(
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
         calib_note_path: Path | str | None = None,
-        fetch_device_state: bool = True,
+        connect_devices: bool = True,
         linkup: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
         drag_pi_duration: int = DRAG_PI_DURATION,
-        connect_devices: bool = True,
         control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        use_neopulse: bool = False,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        use_neopulse: bool = False,
     ):
         self._load_config(
             chip_id=chip_id,
@@ -180,7 +179,6 @@ class Experiment(
             qubits=qubits,
             config_dir=self._config_dir,
             params_dir=self._params_dir,
-            fetch_device_state=fetch_device_state,
             use_neopulse=use_neopulse,
             connect_devices=connect_devices,
             configuration_mode=configuration_mode,
