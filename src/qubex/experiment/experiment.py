@@ -18,6 +18,7 @@ from typing_extensions import deprecated
 from ..analysis.fitting import RabiParam
 from ..backend import (
     Box,
+    Chip,
     ControlParams,
     ControlSystem,
     DeviceController,
@@ -104,7 +105,7 @@ class Experiment(
         Directory of the parameter files. Defaults to DEFAULT_PARAMS_DIR.
     connect_devices : bool, optional
         Whether to connect the devices. Defaults to True.
-    linkup : bool, optional
+    linkup_devices : bool, optional
         Whether to link up the devices. Defaults to True.
     drag_hpi_duration : int, optional
         Duration of the DRAG HPI pulse. Defaults to DRAG_HPI_DURATION.
@@ -139,7 +140,7 @@ class Experiment(
         params_dir: str = DEFAULT_PARAMS_DIR,
         calib_note_path: Path | str | None = None,
         connect_devices: bool = True,
-        linkup: bool = True,
+        linkup_devices: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
         drag_pi_duration: int = DRAG_PI_DURATION,
         control_window: int | None = None,
@@ -192,7 +193,7 @@ class Experiment(
         )
         self._validate()
         self.print_environment()
-        if linkup:
+        if linkup_devices:
             try:
                 self.linkup()
             except Exception as e:
@@ -222,7 +223,7 @@ class Experiment(
         """Create the list of qubit labels."""
         if muxes is None and qubits is None:
             return []
-        quantum_system = self.state_manager.experiment_system.quantum_system
+        quantum_system = self.quantum_system
         qubit_labels = []
         if muxes is not None:
             for mux in muxes:
@@ -286,30 +287,6 @@ class Experiment(
         console.print(table)
 
     @property
-    def drag_hpi_duration(self) -> int:
-        return self._drag_hpi_duration
-
-    @property
-    def drag_pi_duration(self) -> int:
-        return self._drag_pi_duration
-
-    @property
-    def control_window(self) -> int | None:
-        return self._control_window
-
-    @property
-    def capture_window(self) -> int:
-        return self._capture_window
-
-    @property
-    def capture_margin(self) -> int:
-        return self._capture_margin
-
-    @property
-    def readout_duration(self) -> int:
-        return self._readout_duration
-
-    @property
     def tool(self):
         return experiment_tool
 
@@ -344,6 +321,10 @@ class Experiment(
     @property
     def params(self) -> ControlParams:
         return self.experiment_system.control_params
+
+    @property
+    def chip(self) -> Chip:
+        return self.experiment_system.chip
 
     @property
     def chip_id(self) -> str:
@@ -444,8 +425,32 @@ class Experiment(
         return self._system_note
 
     @property
+    def control_window(self) -> int | None:
+        return self._control_window
+
+    @property
+    def capture_window(self) -> int:
+        return self._capture_window
+
+    @property
+    def capture_margin(self) -> int:
+        return self._capture_margin
+
+    @property
+    def readout_duration(self) -> int:
+        return self._readout_duration
+
+    @property
     def note(self) -> ExperimentNote:
         return self._user_note
+
+    @property
+    def drag_hpi_duration(self) -> int:
+        return self._drag_hpi_duration
+
+    @property
+    def drag_pi_duration(self) -> int:
+        return self._drag_pi_duration
 
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
@@ -637,7 +642,7 @@ class Experiment(
     def get_pulse_for_state(
         self,
         target: str,
-        state: str,  # Literal["0", "1", "+", "-", "+i", "-i"],
+        state: str,  # ["0", "1", "+", "-", "+i", "-i"],
     ) -> Waveform:
         if state == "0":
             return Blank(0)

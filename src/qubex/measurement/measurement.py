@@ -49,9 +49,9 @@ class Measurement:
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
         connect_devices: bool = True,
-        use_neopulse: bool = False,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
+        use_neopulse: bool = False,
     ):
         """
         Initialize the Measurement.
