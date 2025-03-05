@@ -1,7 +1,23 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from qubex.experiment.experiment_note import ExperimentNote
+
+
+def test_empty_init():
+    """ExperimentNote should initialize with an empty dictionary."""
+    note = ExperimentNote()
+    assert note.file_path == Path(".experiment_note.json")
+
+
+def test_init(tmp_path):
+    """ExperimentNote should initialize with an empty dictionary."""
+    file_path = tmp_path / "note.json"
+    note = ExperimentNote(file_path=file_path)
+    assert note.file_path == file_path
+    assert file_path.exists()
 
 
 def test_put_invalid_values(tmp_path):

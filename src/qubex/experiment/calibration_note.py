@@ -70,11 +70,16 @@ class CalibrationNote(ExperimentNote):
         chip_id: str,
         file_path: Path | str | None = None,
     ):
+        self._chip_id = chip_id
         if file_path is None:
             file_path = Path(CALIBRATION_DIR) / f"{chip_id}.json"
         else:
             file_path = Path(file_path)
         super().__init__(file_path)
+
+    @property
+    def chip_id(self) -> str:
+        return self._chip_id
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:

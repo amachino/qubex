@@ -30,6 +30,18 @@ class ExperimentNote:
         self._file_path = file_path
         self.load()
 
+    @property
+    def file_path(self) -> Path:
+        """
+        Returns the file path of the ExperimentNote.
+
+        Returns
+        -------
+        Path
+            The file path of the ExperimentNote.
+        """
+        return self._file_path
+
     def put(self, key: str, value: Any):
         """
         Puts the key-value pair into the dictionary. Only allows JSON serializable values.
