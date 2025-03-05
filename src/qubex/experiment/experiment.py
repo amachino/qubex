@@ -620,10 +620,6 @@ class Experiment(
         if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
             self._rabi_params.update(rabi_params)
 
-        # self._system_note.put(  # deprecated
-        #     RABI_PARAMS,
-        #     {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
-        # )
         self.calib_note.rabi_params = {
             label: {
                 "target": rabi_param.target,

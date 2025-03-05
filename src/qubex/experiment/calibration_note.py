@@ -68,11 +68,12 @@ class CalibrationNote(ExperimentNote):
     def __init__(
         self,
         chip_id: str,
+        calibration_dir: str = CALIBRATION_DIR,
         file_path: Path | str | None = None,
     ):
         self._chip_id = chip_id
         if file_path is None:
-            file_path = Path(CALIBRATION_DIR) / f"{chip_id}.json"
+            file_path = Path(calibration_dir) / f"{chip_id}.json"
         else:
             file_path = Path(file_path)
         super().__init__(file_path)

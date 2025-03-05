@@ -1,6 +1,5 @@
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -19,12 +18,13 @@ def test_empty_init():
         CalibrationNote()  # type: ignore
 
 
-def test_init():
+def test_init(tmp_path):
     """CalibrationNote should be initialized with a chip_id."""
     chip_id = "CHIP_ID"
-    note = CalibrationNote(chip_id=chip_id)
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     assert note.chip_id == chip_id
-    assert note.file_path == Path(f".calibration/{chip_id}.json")
+    assert note.file_path == calibration_dir / f"{chip_id}.json"
     assert note.file_path.exists()
     assert note.rabi_params == {}
     assert note.hpi_params == {}

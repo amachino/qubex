@@ -517,7 +517,6 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        # self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.hpi_params = {
             target: {
                 "target": target,
@@ -550,7 +549,6 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        # self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.pi_params = {
             target: {
                 "target": target,
@@ -583,7 +581,6 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        # self.system_note.put(HPI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.hpi_params = {
             target: {
                 "target": target,
@@ -616,7 +613,6 @@ class CalibrationMixin(
         )
 
         ampl = {target: data.calib_value for target, data in result.data.items()}
-        # self.system_note.put(PI_AMPLITUDE, ampl)  # deprecated
         self.calib_note.pi_params = {
             target: {
                 "target": target,
@@ -664,8 +660,6 @@ class CalibrationMixin(
                 interval=interval,
             )
 
-            # self.system_note.put(DRAG_HPI_AMPLITUDE, amplitude)  # deprecated
-
             if calibrate_beta:
                 print("\nCalibrating DRAG beta:")
                 beta = self.calibrate_drag_beta(
@@ -683,8 +677,6 @@ class CalibrationMixin(
                     target: -drag_coeff / self.qubits[target].alpha
                     for target in targets
                 }
-
-            # self.system_note.put(DRAG_HPI_BETA, beta)  # deprecated
 
         return {
             "amplitude": amplitude,
@@ -731,8 +723,6 @@ class CalibrationMixin(
                 interval=interval,
             )
 
-            # self.system_note.put(DRAG_PI_AMPLITUDE, amplitude)  # deprecated
-
             if calibrate_beta:
                 print("Calibrating DRAG beta:")
                 beta = self.calibrate_drag_beta(
@@ -751,8 +741,6 @@ class CalibrationMixin(
                     target: -drag_coeff / self.qubits[target].alpha
                     for target in targets
                 }
-
-            # self.system_note.put(DRAG_PI_BETA, beta)  # deprecated
 
         return {
             "amplitude": amplitude,
@@ -1481,23 +1469,6 @@ class CalibrationMixin(
         es.optimize(objective_func)
         x = es.result.xbest
 
-        # self.system_note.put(  # deprecated
-        #     CR_PARAMS,
-        #     {
-        #         cr_label: {
-        #             "duration": duration,
-        #             "ramptime": cr_ramptime,
-        #             "cr_pulse": {
-        #                 "amplitude": x[0],
-        #                 "phase": x[1],
-        #             },
-        #             "cancel_pulse": {
-        #                 "amplitude": x[2],
-        #                 "phase": x[3],
-        #             },
-        #         },
-        #     },
-        # )
         self.calib_note.cr_params = {
             cr_label: {
                 "target": cr_label,
