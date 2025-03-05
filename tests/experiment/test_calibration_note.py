@@ -1,3 +1,5 @@
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -40,22 +42,22 @@ def test_update_rabi_param():
         "Q00",
         {
             "target": "Q00",
-            "amplitude": 0.0,
-            "frequency": 0.0,
-            "phase": 0.0,
-            "offset": 0.0,
-            "noise": 0.0,
-            "angle": 0.0,
+            "amplitude": 0.5,
+            "frequency": 0.5,
+            "phase": 0.5,
+            "offset": 0.5,
+            "noise": 0.5,
+            "angle": 0.5,
         },
     )
     param = note.get_rabi_param("Q00") or {}
     assert param["target"] == "Q00"
-    assert param["amplitude"] == 0.0
-    assert param["frequency"] == 0.0
-    assert param["phase"] == 0.0
-    assert param["offset"] == 0.0
-    assert param["noise"] == 0.0
-    assert param["angle"] == 0.0
+    assert param["amplitude"] == 0.5
+    assert param["frequency"] == 0.5
+    assert param["phase"] == 0.5
+    assert param["offset"] == 0.5
+    assert param["noise"] == 0.5
+    assert param["angle"] == 0.5
 
 
 def test_update_hpi_param():
@@ -65,16 +67,16 @@ def test_update_hpi_param():
         "Q00",
         {
             "target": "Q00",
-            "amplitude": 0.0,
-            "duration": 0.0,
-            "tau": 0.0,
+            "amplitude": 0.5,
+            "duration": 0.5,
+            "tau": 0.5,
         },
     )
     param = note.get_hpi_param("Q00") or {}
     assert param["target"] == "Q00"
-    assert param["amplitude"] == 0.0
-    assert param["duration"] == 0.0
-    assert param["tau"] == 0.0
+    assert param["amplitude"] == 0.5
+    assert param["duration"] == 0.5
+    assert param["tau"] == 0.5
 
 
 def test_update_pi_param():
@@ -84,16 +86,16 @@ def test_update_pi_param():
         "Q00",
         {
             "target": "Q00",
-            "amplitude": 0.0,
-            "duration": 0.0,
-            "tau": 0.0,
+            "amplitude": 0.5,
+            "duration": 0.5,
+            "tau": 0.5,
         },
     )
     param = note.get_pi_param("Q00") or {}
     assert param["target"] == "Q00"
-    assert param["amplitude"] == 0.0
-    assert param["duration"] == 0.0
-    assert param["tau"] == 0.0
+    assert param["amplitude"] == 0.5
+    assert param["duration"] == 0.5
+    assert param["tau"] == 0.5
 
 
 def test_update_drag_hpi_param():
@@ -103,16 +105,16 @@ def test_update_drag_hpi_param():
         "Q00",
         {
             "target": "Q00",
-            "amplitude": 0.0,
-            "duration": 0.0,
-            "beta": 0.0,
+            "amplitude": 0.5,
+            "duration": 0.5,
+            "beta": 0.5,
         },
     )
     param = note.get_drag_hpi_param("Q00") or {}
     assert param["target"] == "Q00"
-    assert param["amplitude"] == 0.0
-    assert param["duration"] == 0.0
-    assert param["beta"] == 0.0
+    assert param["amplitude"] == 0.5
+    assert param["duration"] == 0.5
+    assert param["beta"] == 0.5
 
 
 def test_update_drag_pi_param():
@@ -122,16 +124,16 @@ def test_update_drag_pi_param():
         "Q00",
         {
             "target": "Q00",
-            "amplitude": 0.0,
-            "duration": 0.0,
-            "beta": 0.0,
+            "amplitude": 0.5,
+            "duration": 0.5,
+            "beta": 0.5,
         },
     )
     param = note.get_drag_pi_param("Q00") or {}
     assert param["target"] == "Q00"
-    assert param["amplitude"] == 0.0
-    assert param["duration"] == 0.0
-    assert param["beta"] == 0.0
+    assert param["amplitude"] == 0.5
+    assert param["duration"] == 0.5
+    assert param["beta"] == 0.5
 
 
 def test_update_state_param():
@@ -141,13 +143,13 @@ def test_update_state_param():
         "Q00",
         {
             "target": "Q00",
-            "centers": {"0": [0.0, 0.0], "1": [1.0, 1.0]},
+            "centers": {"0": [0.5, 0.5], "1": [0.5, 0.5]},
         },
     )
     param = note.get_state_param("Q00") or {}
     assert param["target"] == "Q00"
-    assert param["centers"]["0"] == [0.0, 0.0]
-    assert param["centers"]["1"] == [1.0, 1.0]
+    assert param["centers"]["0"] == [0.5, 0.5]
+    assert param["centers"]["1"] == [0.5, 0.5]
 
 
 def test_update_cr_param():
@@ -157,21 +159,80 @@ def test_update_cr_param():
         "Q00",
         {
             "target": "Q00",
-            "duration": 0.0,
-            "ramptime": 0.0,
-            "cr_amplitude": 0.0,
-            "cr_phase": 0.0,
-            "cancel_amplitude": 0.0,
-            "cancel_phase": 0.0,
-            "cr_cancel_ratio": 0.0,
+            "duration": 0.5,
+            "ramptime": 0.5,
+            "cr_amplitude": 0.5,
+            "cr_phase": 0.5,
+            "cancel_amplitude": 0.5,
+            "cancel_phase": 0.5,
+            "cr_cancel_ratio": 0.5,
         },
     )
     param = note.get_cr_param("Q00") or {}
     assert param["target"] == "Q00"
-    assert param["duration"] == 0.0
-    assert param["ramptime"] == 0.0
-    assert param["cr_amplitude"] == 0.0
-    assert param["cr_phase"] == 0.0
-    assert param["cancel_amplitude"] == 0.0
-    assert param["cancel_phase"] == 0.0
-    assert param["cr_cancel_ratio"] == 0.0
+    assert param["duration"] == 0.5
+    assert param["ramptime"] == 0.5
+    assert param["cr_amplitude"] == 0.5
+    assert param["cr_phase"] == 0.5
+    assert param["cancel_amplitude"] == 0.5
+    assert param["cancel_phase"] == 0.5
+    assert param["cr_cancel_ratio"] == 0.5
+
+
+def test_timestamp():
+    """CalibrationNote should return the timestamp of the last update."""
+    note = CalibrationNote(chip_id="CHIP_ID")
+    note.update_rabi_param(
+        "Q00",
+        {
+            "target": "Q00",
+            "amplitude": 0.5,
+            "frequency": 0.5,
+            "phase": 0.5,
+            "offset": 0.5,
+            "noise": 0.5,
+            "angle": 0.5,
+        },
+    )
+    param = note.get_rabi_param("Q00") or {}
+    timestamp = param.get("timestamp")
+    assert timestamp is not None
+    time.sleep(1)
+    note.update_rabi_param(
+        "Q00",
+        {
+            "target": "Q00",
+            "amplitude": 1.0,
+            "frequency": 1.0,
+            "phase": 1.0,
+            "offset": 1.0,
+            "noise": 1.0,
+            "angle": 1.0,
+        },
+    )
+    updated_param = note.get_rabi_param("Q00") or {}
+    updated_timestamp = updated_param.get("timestamp")
+    assert updated_timestamp is not None
+    assert updated_timestamp > timestamp
+
+
+def test_get_param_with_cutoff_days():
+    """CalibrationNote should return None if the param is older than the cutoff_days."""
+    note = CalibrationNote(chip_id="CHIP_ID")
+    note.update_rabi_param(
+        "Q00",
+        {
+            "target": "Q00",
+            "amplitude": 0.5,
+            "frequency": 0.5,
+            "phase": 0.5,
+            "offset": 0.5,
+            "noise": 0.5,
+            "angle": 0.5,
+            "timestamp": datetime.strftime(
+                datetime.now() - timedelta(days=2), "%Y-%m-%d %H:%M:%S"
+            ),
+        },
+    )
+    assert note.get_rabi_param("Q00", cutoff_days=1) is None
+    assert note.get_rabi_param("Q00", cutoff_days=3) is not None

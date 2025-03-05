@@ -7,7 +7,7 @@ from qubex.experiment.experiment_note import ExperimentNote
 
 
 def test_empty_init():
-    """ExperimentNote should initialize with an empty dictionary."""
+    """ExperimentNote should be initialized with a default file path."""
     note = ExperimentNote()
     assert note.file_path == Path(".experiment_note.json")
 
