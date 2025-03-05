@@ -59,9 +59,7 @@ class ExperimentNote:
             self._dict[key] = value
 
         if old_value is not None:
-            print(
-                f"Key '{key}' updated: changed from '{old_value}' to '{self._dict[key]}'."
-            )
+            print(f"Key '{key}' updated with value '{value}'.")
         else:
             print(f"Key '{key}' added with value '{value}'.")
 
