@@ -9,7 +9,7 @@ from typing import Literal
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
-from typing_extensions import Sequence, deprecated
+from typing_extensions import Sequence
 
 from .config_loader import DEFAULT_CONFIG_DIR, DEFAULT_PARAMS_DIR, ConfigLoader
 from .control_system import CapPort, GenPort, PortType
@@ -61,7 +61,6 @@ class StateManager:
             cls._instance = cls()
         return cls._instance
 
-    @deprecated("Use StateManager.shared() instead.")
     def __init__(self):
         """
         Initialize the StateManager.
