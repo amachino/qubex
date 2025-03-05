@@ -71,9 +71,9 @@ class ExperimentNote:
             self._dict[key] = value
 
         if old_value is not None:
-            print(f"Key '{key}' updated with value '{value}'.")
+            print(f"Data updated: '{value}'")
         else:
-            print(f"Key '{key}' added with value '{value}'.")
+            print(f"Data added: '{value}'")
 
     def get(self, key: str) -> Any:
         """

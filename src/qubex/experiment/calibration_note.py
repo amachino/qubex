@@ -144,12 +144,26 @@ class CalibrationNote(ExperimentNote):
     ) -> RabiParam | None:
         return self.get_property(RABI_PARAMS, target, cutoff)
 
+    def update_rabi_param(
+        self,
+        target: str,
+        value: RabiParam,
+    ):
+        self.put_property(RABI_PARAMS, target, value)
+
     def get_hpi_param(
         self,
         target: str,
         cutoff: int | None = None,
     ) -> FlatTopParam | None:
         return self.get_property(HPI_PARAMS, target, cutoff)
+
+    def update_hpi_param(
+        self,
+        target: str,
+        value: FlatTopParam,
+    ):
+        self.put_property(HPI_PARAMS, target, value)
 
     def get_pi_param(
         self,
@@ -158,12 +172,26 @@ class CalibrationNote(ExperimentNote):
     ) -> FlatTopParam | None:
         return self.get_property(PI_PARAMS, target, cutoff)
 
+    def update_pi_param(
+        self,
+        target: str,
+        value: FlatTopParam,
+    ):
+        self.put_property(PI_PARAMS, target, value)
+
     def get_drag_hpi_param(
         self,
         target: str,
         cutoff: int | None = None,
     ) -> DragParam | None:
         return self.get_property(DRAG_HPI_PARAMS, target, cutoff)
+
+    def update_drag_hpi_param(
+        self,
+        target: str,
+        value: DragParam,
+    ):
+        self.put_property(DRAG_HPI_PARAMS, target, value)
 
     def get_drag_pi_param(
         self,
@@ -172,6 +200,13 @@ class CalibrationNote(ExperimentNote):
     ) -> DragParam | None:
         return self.get_property(DRAG_PI_PARAMS, target, cutoff)
 
+    def update_drag_pi_param(
+        self,
+        target: str,
+        value: DragParam,
+    ):
+        self.put_property(DRAG_PI_PARAMS, target, value)
+
     def get_state_param(
         self,
         target: str,
@@ -179,12 +214,26 @@ class CalibrationNote(ExperimentNote):
     ) -> StateParam | None:
         return self.get_property(STATE_PARAMS, target, cutoff)
 
+    def update_state_param(
+        self,
+        target: str,
+        value: StateParam,
+    ):
+        self.put_property(STATE_PARAMS, target, value)
+
     def get_cr_param(
         self,
         target: str,
         cutoff: int | None = None,
     ) -> CrossResonanceParam | None:
         return self.get_property(CR_PARAMS, target, cutoff)
+
+    def update_cr_param(
+        self,
+        target: str,
+        value: CrossResonanceParam,
+    ):
+        self.put_property(CR_PARAMS, target, value)
 
     def get_property(
         self,
@@ -208,6 +257,14 @@ class CalibrationNote(ExperimentNote):
             return None
         return value
 
+    def put_property(
+        self,
+        key: str,
+        target: str,
+        value: Any,
+    ):
+        self.put(key, {target: value})
+
     def get(
         self,
         key: str,
@@ -226,7 +283,11 @@ class CalibrationNote(ExperimentNote):
                 value[k] = v
         return value
 
-    def put(self, key: str, value: dict[str, Any]):
+    def put(
+        self,
+        key: str,
+        value: dict[str, Any],
+    ):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for v in value.values():
             v["timestamp"] = timestamp
