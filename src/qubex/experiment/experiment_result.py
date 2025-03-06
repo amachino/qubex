@@ -157,15 +157,6 @@ class RabiData(TargetData):
             template="qubex",
         )
 
-        fig.add_annotation(
-            xref="paper",
-            yref="paper",
-            x=0.95,
-            y=0.95,
-            text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
-            showarrow=False,
-        )
-
         if use_zvalue:
             fig.add_trace(
                 go.Scatter(

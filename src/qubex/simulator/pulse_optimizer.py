@@ -58,8 +58,8 @@ class OptimizationResult:
             )
             fig.update_layout(
                 title=f"Waveform : {target}",
-                xlabel="Time (ns)",
-                ylabel="Amplitude (MHz)",
+                xaxis_title="Time (ns)",
+                yaxis_title="Amplitude (MHz)",
             )
             fig.show()
 
@@ -73,8 +73,8 @@ class OptimizationResult:
         )
         fig.update_layout(
             title="Optimization history",
-            xlabel="Number of iterations",
-            ylabel="Loss function",
+            xaxis_title="Number of iterations",
+            yaxis_title="Loss function",
             yaxis=dict(
                 type="log",
             ),

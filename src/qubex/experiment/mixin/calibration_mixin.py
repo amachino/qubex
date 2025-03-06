@@ -1137,8 +1137,8 @@ class CalibrationMixin(
 
         fig.update_layout(
             title="CR Hamiltonian coefficients",
-            xlabel="Number of steps",
-            ylabel="Coefficient (MHz)",
+            xaxis_title="Number of steps",
+            yaxis_title="Coefficient (MHz)",
             xaxis=dict(tickmode="array", tickvals=np.arange(len(value))),
         )
         if plot:

@@ -133,8 +133,8 @@ class Control:
         )
         fig.update_layout(
             title="Control signal",
-            xlabel="Time (ns)",
-            ylabel="Amplitude (MHz)",
+            xaxis_title="Time (ns)",
+            yaxis_title="Amplitude (MHz)",
         )
         fig.show()
 
@@ -363,8 +363,8 @@ class SimulationResult:
             title="Population dynamics"
             if label is None
             else f"Population dynamics : {label}",
-            xlabel="Time (ns)",
-            ylabel="Population",
+            xaxis_title="Time (ns)",
+            yaxis_title="Population",
         )
         fig.show()
 

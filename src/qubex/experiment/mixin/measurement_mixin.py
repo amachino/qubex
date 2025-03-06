@@ -1134,8 +1134,8 @@ class MeasurementMixin(
         )
         fig.update_layout(
             title=f"Bell state measurement: {control_qubit}-{target_qubit}",
-            xlabel="State label",
-            ylabel="Probability",
+            xaxis_title="State label",
+            yaxis_title="Probability",
             barmode="group",
             yaxis_range=[0, 1],
         )

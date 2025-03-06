@@ -172,7 +172,7 @@ class CharacterizationMixin(
                 fig.update_layout(
                     title=f"Readout SNR : {target}",
                     xaxis3_title="Readout amplitude (arb. units)",
-                    ylabel="Signal",
+                    yaxis_title="Signal",
                     yaxis2_title="Noise",
                     yaxis3_title="SNR",
                     showlegend=False,
@@ -273,7 +273,7 @@ class CharacterizationMixin(
                 fig.update_layout(
                     title=f"Readout SNR : {target}",
                     xaxis3_title="Readout duration (ns)",
-                    ylabel="Signal",
+                    yaxis_title="Signal",
                     yaxis2_title="Noise",
                     yaxis3_title="SNR",
                     showlegend=False,
@@ -399,8 +399,8 @@ class CharacterizationMixin(
                 )
                 fig.update_layout(
                     title=f"Chevron pattern : {target}",
-                    xlabel="Drive frequency (GHz)",
-                    ylabel="Time (ns)",
+                    xaxis_title="Drive frequency (GHz)",
+                    yaxis_title="Time (ns)",
                     width=600,
                     height=400,
                 )
@@ -1267,8 +1267,8 @@ class CharacterizationMixin(
             )
             fig.update_layout(
                 title=f"Phase shift : {mux.label}",
-                xlabel="Frequency (GHz)",
-                ylabel="Unwrapped phase (rad)",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
                 showlegend=True,
             )
             fig.show()
@@ -1411,8 +1411,8 @@ class CharacterizationMixin(
         )
         fig2.update_layout(
             title=f"Resonator frequency scan : {mux.label}",
-            xlabel="Readout frequency (GHz)",
-            ylabel="Phase diff (rad)",
+            xaxis_title="Readout frequency (GHz)",
+            yaxis_title="Phase diff (rad)",
         )
 
         if plot:
@@ -1500,8 +1500,8 @@ class CharacterizationMixin(
             )
             fig.update_layout(
                 title=f"Resonator spectroscopy : {mux.label}",
-                xlabel="Frequency (GHz)",
-                ylabel="Power (dB)",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Power (dB)",
                 width=600,
                 height=300,
             )
@@ -1792,8 +1792,8 @@ class CharacterizationMixin(
             )
             fig.update_layout(
                 title=f"Qubit spectroscopy : {target}",
-                xlabel="Frequency (GHz)",
-                ylabel="Power (dB)",
+                xaxis_title="Frequency (GHz)",
+                yaxis_title="Power (dB)",
                 width=600,
                 height=300,
             )
