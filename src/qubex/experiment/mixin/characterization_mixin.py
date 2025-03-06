@@ -953,8 +953,8 @@ class CharacterizationMixin(
                 if target in target_qubits:
                     fit_result = fitting.fit_ramsey(
                         target=target,
-                        x=sweep_data.sweep_range,
-                        y=sweep_data.normalized,
+                        times=sweep_data.sweep_range,
+                        data=sweep_data.normalized,
                         plot=plot,
                     )
                     if "tau" in fit_result and "f" in fit_result:

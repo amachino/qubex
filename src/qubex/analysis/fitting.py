@@ -97,12 +97,12 @@ def normalize(
 
 
 def func_cos(
-    t: NDArray[np.float64],
+    t: NDArray,
     A: complex,
     omega: float,
     phi: float,
     C: float,
-) -> NDArray[np.complex128]:
+) -> NDArray:
     """
     Calculate a cosine function with given parameters.
 
@@ -123,13 +123,13 @@ def func_cos(
 
 
 def func_damped_cos(
-    t: NDArray[np.float64],
-    A: float,
+    t: NDArray,
+    A: complex,
     omega: float,
     phi: float,
     C: float,
     tau: float,
-) -> NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate a damped cosine function with given parameters.
 
@@ -137,7 +137,7 @@ def func_damped_cos(
     ----------
     t : NDArray[np.float64]
         Time points for the function evaluation.
-    A : float
+    A : complex
         Amplitude of the cosine function.
     omega : float
         Angular frequency of the cosine function.
@@ -152,11 +152,11 @@ def func_damped_cos(
 
 
 def func_exp_decay(
-    t: NDArray[np.float64],
+    t: NDArray,
     A: float,
     tau: float,
     C: float,
-) -> NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate an exponential decay function with given parameters.
 
@@ -175,12 +175,12 @@ def func_exp_decay(
 
 
 def func_lorentzian(
-    f: NDArray[np.float64],
+    f: NDArray,
     A: float,
     f0: float,
     gamma: float,
     C: float,
-) -> NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate a Lorentzian function with given parameters.
 
@@ -201,12 +201,12 @@ def func_lorentzian(
 
 
 def func_sqrt_lorentzian(
-    f: NDArray[np.float64],
+    f: NDArray,
     A: float,
     f0: float,
     Omega: float,
     C: float,
-) -> NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate a square root Lorentzian function with given parameters.
 
@@ -227,13 +227,13 @@ def func_sqrt_lorentzian(
 
 
 def func_resonance(
-    f: NDArray[np.float64],
+    f: NDArray,
     f_r: float,
     kappa_ex: float,
     kappa_in: float,
     A: float,
     phi: float,
-):
+) -> NDArray:
     """
     Calculate a resonance function with given parameters.
 
@@ -254,8 +254,8 @@ def func_resonance(
 
 
 def fit_polynomial(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
+    x: ArrayLike,
+    y: ArrayLike,
     *,
     degree: int,
     plot: bool = True,
@@ -271,9 +271,9 @@ def fit_polynomial(
 
     Parameters
     ----------
-    x : NDArray[np.float64]
+    x : ArrayLike
         x values for the data.
-    y : NDArray[np.float64]
+    y : ArrayLike
         y values for the data.
     degree : int
         Degree of the polynomial.
@@ -297,6 +297,9 @@ def fit_polynomial(
     dict
         Fitted parameters and the figure.
     """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
     popt = np.polyfit(x, y, degree)
     fun = np.poly1d(popt)
     y_fit = fun(x)
@@ -521,8 +524,8 @@ def fit_cosine(
 
 
 def fit_exp_decay(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
+    x: ArrayLike,
+    y: ArrayLike,
     *,
     p0=None,
     bounds=None,
@@ -539,9 +542,9 @@ def fit_exp_decay(
 
     Parameters
     ----------
-    x : NDArray[np.float64]
+    x : ArrayLike
         Time points for the decay data.
-    y : NDArray[np.float64]
+    y : ArrayLike
         Amplitude data for the decay.
     p0 : optional
         Initial guess for the fitting parameters.
@@ -567,6 +570,9 @@ def fit_exp_decay(
     dict
         Fitted parameters and the figure.
     """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
     if p0 is None:
         tau_guess = 20_000
         p0 = (
@@ -655,8 +661,8 @@ def fit_exp_decay(
 
 
 def fit_lorentzian(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
+    x: ArrayLike,
+    y: ArrayLike,
     *,
     p0=None,
     plot: bool = True,
@@ -672,9 +678,9 @@ def fit_lorentzian(
 
     Parameters
     ----------
-    x : NDArray[np.float64]
+    x : ArrayLike
         Frequency range for the Lorentzian data.
-    y : NDArray[np.float64]
+    y : ArrayLike
         Amplitude data for the Lorentzian data.
     p0 : optional
         Initial guess for the fitting parameters.
@@ -698,6 +704,9 @@ def fit_lorentzian(
     dict
         Fitted parameters and the figure.
     """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
     if p0 is None:
         p0 = (
             np.abs(np.max(y) - np.min(y)),
@@ -791,8 +800,8 @@ def fit_lorentzian(
 
 
 def fit_sqrt_lorentzian(
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
+    x: ArrayLike,
+    y: ArrayLike,
     *,
     p0=None,
     bounds=None,
@@ -809,9 +818,9 @@ def fit_sqrt_lorentzian(
 
     Parameters
     ----------
-    x : NDArray[np.float64]
+    x : ArrayLike
         Frequency range for the square root Lorentzian data.
-    y : NDArray[np.float64]
+    y : ArrayLike
         Amplitude data for the square root Lorentzian data.
     p0 : optional
         Initial guess for the fitting parameters.
@@ -837,6 +846,9 @@ def fit_sqrt_lorentzian(
     dict
         Fitted parameters and the figure.
     """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
     if p0 is None:
         p0 = (
             np.min(y) - np.max(y),
@@ -944,8 +956,8 @@ def fit_sqrt_lorentzian(
 def fit_rabi(
     *,
     target: str,
-    times: NDArray[np.float64],
-    data: NDArray[np.complex64],
+    times: NDArray,
+    data: NDArray,
     phase_est: float = 0.0,
     tau_est: float = 10_000,
     plot: bool = True,
@@ -962,7 +974,7 @@ def fit_rabi(
         Identifier of the target.
     times : NDArray[np.float64]
         Array of time points for the Rabi oscillations.
-    data : NDArray[np.complex128]
+    data : NDArray[np.complex64]
         Complex signal data corresponding to the Rabi oscillations.
     phase_est : float, optional
         Initial phase of the Rabi oscillation.
@@ -982,7 +994,8 @@ def fit_rabi(
     dict
         Fitted parameters and the figure.
     """
-    data = np.array(data, dtype=np.complex64)
+    times = np.asarray(times, dtype=np.float64)
+    data = np.asarray(data, dtype=np.complex64)
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
     if len(data) < 2:
@@ -1055,7 +1068,12 @@ def fit_rabi(
     frequency = omega / (2 * np.pi)
     frequency_err = omega_err / (2 * np.pi)
 
-    r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
+    if is_damped:
+        r2 = 1 - np.sum((y - func_damped_cos(x, *popt)) ** 2) / np.sum(
+            (y - np.mean(y)) ** 2
+        )
+    else:
+        r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
@@ -1133,8 +1151,8 @@ def fit_rabi(
 def fit_detuned_rabi(
     *,
     target: str,
-    control_frequencies: NDArray[np.float64],
-    rabi_frequencies: NDArray[np.float64],
+    control_frequencies: NDArray,
+    rabi_frequencies: NDArray,
     plot: bool = True,
 ) -> dict:
     """
@@ -1156,6 +1174,8 @@ def fit_detuned_rabi(
     dict
         Fitted parameters and the figure.
     """
+    control_frequencies = np.asarray(control_frequencies, dtype=np.float64)
+    rabi_frequencies = np.asarray(rabi_frequencies, dtype=np.float64)
 
     def func(f_control, f_resonance, f_rabi):
         return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
@@ -1236,8 +1256,8 @@ def fit_detuned_rabi(
 def fit_ramsey(
     *,
     target: str,
-    x: NDArray[np.float64],
-    y: NDArray[np.float64],
+    times: NDArray,
+    data: NDArray,
     tau_est: float = 10_000,
     p0=None,
     bounds=None,
@@ -1255,9 +1275,9 @@ def fit_ramsey(
     ----------
     target : str
         Identifier of the target.
-    x : NDArray[np.float64]
+    times : NDArray[np.float64]
         Array of time points for the Ramsey fringe.
-    y : NDArray[np.float64]
+    data : NDArray[np.float64]
         Amplitude data for the Ramsey fringe.
     tau_est : float, optional
         Initial guess for the damping time constant.
@@ -1283,16 +1303,19 @@ def fit_ramsey(
     dict
         Fitted parameters and the figure.
     """
-    dt = x[1] - x[0]
-    N = len(x)
+    times = np.asarray(times, dtype=np.float64)
+    data = np.asarray(data, dtype=np.float64)
+
+    dt = times[1] - times[0]
+    N = len(times)
     f = np.fft.fftfreq(N, dt)[1 : N // 2]
-    F = np.fft.fft(y)[1 : N // 2]
+    F = np.fft.fft(data)[1 : N // 2]
     i = np.argmax(np.abs(F))
 
     amplitude_est = 2 * np.abs(F[i]) / N
     omega_est = 2 * np.pi * f[i]
     phase_est = np.angle(F[i])
-    offset_est = (np.max(y) + np.min(y)) / 2
+    offset_est = (np.max(data) + np.min(data)) / 2
 
     if p0 is None:
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
@@ -1304,7 +1327,7 @@ def fit_ramsey(
         )
 
     try:
-        popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+        popt, pcov = curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return {}
@@ -1314,11 +1337,11 @@ def fit_ramsey(
     f = omega / (2 * np.pi)
     f_err = omega_err / (2 * np.pi)
 
-    r2 = 1 - np.sum((y - func_damped_cos(x, *popt)) ** 2) / np.sum(
-        (y - np.mean(y)) ** 2
+    r2 = 1 - np.sum((data - func_damped_cos(times, *popt)) ** 2) / np.sum(
+        (data - np.mean(data)) ** 2
     )
 
-    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    x_fine = np.linspace(np.min(times), np.max(times), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
 
     fig = go.Figure()
@@ -1332,8 +1355,8 @@ def fit_ramsey(
     )
     fig.add_trace(
         go.Scatter(
-            x=x * 1e-3,
-            y=y,
+            x=times * 1e-3,
+            y=data,
             mode="markers",
             name="Data",
         )
@@ -1360,9 +1383,9 @@ def fit_ramsey(
         print(f"Target: {target}")
         print("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
         print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f = {f * 1e3:.3g} ± {f_err * 1e3:.1g} MHz")
+        print(f"  f = {f:.3g} ± {f_err:.1g}")
         print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
-        print(f"  τ = {tau * 1e-3:.3g} ± {tau_err * 1e-3:.1g}")
+        print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
         print(f"  C = {C:.3g} ± {C_err:.1g}")
         print("")
 
@@ -1410,9 +1433,9 @@ def fit_rb(
     target : str
         Identifier of the target.
     x : NDArray[np.float64]
-        Time points for the decay data.
+        Number of Cliffords for the randomized benchmarking.
     y : NDArray[np.float64]
-        Amplitude data for the decay.
+        Amplitude data for the randomized benchmarking.
     error_y : NDArray[np.float64], optional
         Error data for the decay.
     dimension : int, optional
@@ -1448,7 +1471,7 @@ def fit_rb(
             (1.0, 1.0, 1.0),
         )
 
-    def func_rb(n: NDArray[np.float64], A: float, p: float, C: float):
+    def func_rb(n: NDArray, A: float, p: float, C: float):
         return A * p**n + C
 
     try:
@@ -1467,6 +1490,8 @@ def fit_rb(
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_rb(x_fine, *popt)
+
+    r2 = 1 - np.sum((y - func_rb(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
     fig = go.Figure()
     fig.add_trace(
@@ -1505,15 +1530,15 @@ def fit_rb(
     if plot:
         fig.show(config=_plotly_config(f"rb_{target}"))
 
-    print(f"Target: {target}")
-    print("Fit: A * p^n + C")
-    print(f"  A = {A:.6f} ± {A_err:.6f}")
-    print(f"  p = {p:.6f} ± {p_err:.6f}")
-    print(f"  C = {C:.6f} ± {C_err:.6f}")
-    print(f"Depolarizing rate: {depolarizing_rate:.6f}")
-    print(f"Average gate error: {avg_gate_error:.6f}")
-    print(f"Average gate fidelity: {avg_gate_fidelity:.6f}")
-    print("")
+        print(f"Target: {target}")
+        print("Fit: A * p^n + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  p = {p:.3g} ± {p_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"Depolarizing rate: {depolarizing_rate:.6f}")
+        print(f"Average gate error: {avg_gate_error:.6f}")
+        print(f"Average gate fidelity: {avg_gate_fidelity:.6f}")
+        print("")
 
     return {
         "A": A,
@@ -1525,6 +1550,8 @@ def fit_rb(
         "depolarizing_rate": depolarizing_rate,
         "avg_gate_error": avg_gate_error,
         "avg_gate_fidelity": avg_gate_fidelity,
+        "avg_gate_fidelity_err": avg_gate_fidelity_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -1653,8 +1680,8 @@ def plot_irb(
 def fit_ampl_calib_data(
     *,
     target: str,
-    amplitude_range: NDArray[np.float64],
-    data: NDArray[np.float64],
+    amplitude_range: NDArray,
+    data: NDArray,
     p0=None,
     maximize: bool = True,
     plot: bool = True,
@@ -1687,6 +1714,8 @@ def fit_ampl_calib_data(
     dict
         Fitted parameters and the figure.
     """
+    amplitude_range = np.asarray(amplitude_range, dtype=np.float64)
+    data = np.asarray(data, dtype=np.float64)
 
     if maximize:
         data = -data
@@ -1694,16 +1723,24 @@ def fit_ampl_calib_data(
     def cos_func(t, ampl, omega, phi, offset):
         return ampl * np.cos(omega * t + phi) + offset
 
+    x = amplitude_range
+    y = data
+    dt = x[1] - x[0]
+    N = len(x)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(y)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    phase_est = np.angle(F[i])
+    offset_est = (np.max(y) + np.min(y)) / 2
+
     if p0 is None:
-        p0 = (
-            np.abs(np.max(data) - np.min(data)) / 2,
-            2 * np.pi / (amplitude_range[-1] - amplitude_range[0]),
-            np.pi,
-            (np.max(data) + np.min(data)) / 2,
-        )
+        p0 = (amplitude_est, omega_est, phase_est, offset_est)
 
     try:
-        popt, pcov = curve_fit(cos_func, amplitude_range, data, p0=p0)
+        popt, pcov = curve_fit(cos_func, x, y, p0=p0)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return {
@@ -1712,14 +1749,16 @@ def fit_ampl_calib_data(
 
     result = minimize(
         cos_func,
-        x0=np.mean(amplitude_range),
+        x0=np.mean(x),
         args=tuple(popt),
-        bounds=[(np.min(amplitude_range), np.max(amplitude_range))],
+        bounds=[(np.min(x), np.max(x))],
     )
     min_x = result.x[0]
     min_y = cos_func(min_x, *popt)
 
-    x_fine = np.linspace(np.min(amplitude_range), np.max(amplitude_range), 1000)
+    r2 = 1 - np.sum((y - cos_func(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = cos_func(x_fine, *popt)
 
     fig = go.Figure()
@@ -1733,8 +1772,8 @@ def fit_ampl_calib_data(
     )
     fig.add_trace(
         go.Scatter(
-            x=amplitude_range,
-            y=-data if maximize else data,
+            x=x,
+            y=-y if maximize else y,
             mode="markers",
             name="Data",
         )
@@ -1756,10 +1795,11 @@ def fit_ampl_calib_data(
     if plot:
         fig.show(config=_plotly_config(f"ampl_calib_{target}"))
 
-    print(f"Calibrated amplitude: {min_x:.6g}")
+        print(f"Calibrated amplitude: {min_x:.6g}")
 
     return {
         "amplitude": min_x,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -1769,8 +1809,8 @@ def fit_ampl_calib_data(
 def fit_reflection_coefficient(
     *,
     target: str,
-    freq_range: NDArray[np.float64],
-    data: NDArray[np.complex128],
+    freq_range: NDArray,
+    data: NDArray,
     p0=None,
     bounds=None,
     plot: bool = True,
@@ -1785,7 +1825,7 @@ def fit_reflection_coefficient(
         Identifier of the target.
     freq_range : NDArray[np.float64]
         Frequency range for the reflection coefficient data.
-    data : NDArray[np.complex128]
+    data : NDArray[np.complex64]
         Complex reflection coefficient data.
     p0 : optional
         Initial guess for the fitting parameters.
@@ -1799,6 +1839,8 @@ def fit_reflection_coefficient(
     dict
         Fitted parameters and the figure.
     """
+    freq_range = np.asarray(freq_range, dtype=np.float64)
+    data = np.asarray(data, dtype=np.complex64)
 
     if p0 is None:
         p0 = (
@@ -1830,6 +1872,10 @@ def fit_reflection_coefficient(
     fitted_params = result.x
 
     f_r, kappa_ex, kappa_in, A, phi = fitted_params
+
+    r2 = 1 - np.sum(residuals(fitted_params, freq_range, data) ** 2) / np.sum(
+        np.abs(data - np.mean(data)) ** 2
+    )
 
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonance(x_fine, *fitted_params)
@@ -1984,6 +2030,7 @@ def fit_reflection_coefficient(
         "kappa_in": kappa_in,
         "A": A,
         "phi": phi,
+        "r2": r2,
         "fig": fig,
     }
 
@@ -2123,6 +2170,10 @@ def fit_rotation(
     Omega_x = F * np.sin(theta) * np.cos(phi)
     Omega_y = F * np.sin(theta) * np.sin(phi)
     Omega_z = F * np.cos(theta)
+
+    r2 = 1 - np.sum(residuals(fitted_params, times, data) ** 2) / np.sum(
+        np.abs(data - np.mean(data))
+    )
 
     times_fine = np.linspace(np.min(times), np.max(times), 1000)
     fit = rotate(times_fine, *fitted_params)
@@ -2264,6 +2315,7 @@ def fit_rotation(
 
     return {
         "Omega": np.array([Omega_x, Omega_y, Omega_z]),
+        "r2": r2,
         "fig": fig,
         "fig3d": fig3d,
     }

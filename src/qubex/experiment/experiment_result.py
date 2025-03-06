@@ -634,8 +634,8 @@ class RamseyData(SweepData):
     def fit(self) -> dict:
         return fitting.fit_ramsey(
             target=self.target,
-            x=self.sweep_range,
-            y=self.normalized,
+            times=self.sweep_range,
+            data=self.normalized,
         )
 
 
