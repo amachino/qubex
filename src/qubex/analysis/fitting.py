@@ -482,6 +482,7 @@ def fit_cosine(
         x=0.95,
         y=0.95,
         text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.9)",
         showarrow=False,
     )
     fig.update_layout(
@@ -624,6 +625,7 @@ def fit_exp_decay(
         x=0.95,
         y=0.95,
         text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.9)",
         showarrow=False,
     )
     fig.update_layout(
@@ -761,6 +763,7 @@ def fit_lorentzian(
         x=0.95,
         y=0.95,
         text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.9)",
         showarrow=False,
     )
     fig.update_layout(
@@ -915,6 +918,7 @@ def fit_sqrt_lorentzian(
         x=0.95,
         y=0.95,
         text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.9)",
         showarrow=False,
     )
     fig.update_layout(
@@ -1104,6 +1108,7 @@ def fit_rabi(
         x=0.95,
         y=0.95,
         text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.9)",
         showarrow=False,
     )
     fig.update_layout(
@@ -1227,6 +1232,7 @@ def fit_detuned_rabi(
         x=0.95,
         y=0.95,
         text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.9)",
         showarrow=False,
     )
     fig.update_layout(

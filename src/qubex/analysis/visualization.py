@@ -112,7 +112,7 @@ def plot(
 
 
 def plot_fft(
-    x: NDArray[np.float64],
+    x: NDArray,
     y: NDArray,
     *,
     mode: Literal["lines", "markers", "lines+markers"] = "lines",
@@ -165,8 +165,8 @@ def plot_fft(
 
 
 def plot_bloch_vectors(
-    times: NDArray[np.float64],
-    bloch_vectors: NDArray[np.float64],
+    times: NDArray,
+    bloch_vectors: NDArray,
     *,
     mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
     title: str = "State evolution",
@@ -232,7 +232,7 @@ def plot_bloch_vectors(
 
 
 def plot_waveform(
-    data: NDArray[np.complex128],
+    data: NDArray,
     *,
     sampling_period: float = 2.0,
     mode: Literal["lines", "markers", "lines+markers"] = "lines",
