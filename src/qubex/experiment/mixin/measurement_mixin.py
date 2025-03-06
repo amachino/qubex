@@ -214,8 +214,8 @@ class MeasurementMixin(
         capture_margin: int | None = None,
         plot: bool = True,
         title: str = "Sweep result",
-        xaxis_title: str = "Sweep value",
-        yaxis_title: str = "Measured value",
+        xlabel: str = "Sweep value",
+        ylabel: str = "Measured value",
         xaxis_type: Literal["linear", "log"] = "linear",
         yaxis_type: Literal["linear", "log"] = "linear",
     ) -> ExperimentResult[SweepData]:
@@ -276,8 +276,8 @@ class MeasurementMixin(
                 rabi_param=rabi_params.get(target),
                 state_centers=self.state_centers.get(target),
                 title=title,
-                xaxis_title=xaxis_title,
-                yaxis_title=yaxis_title,
+                xlabel=xlabel,
+                ylabel=ylabel,
                 xaxis_type=xaxis_type,
                 yaxis_type=yaxis_type,
             )
@@ -312,7 +312,7 @@ class MeasurementMixin(
             shots=shots,
             interval=interval,
             plot=plot,
-            xaxis_title="Number of repetitions",
+            xlabel="Number of repetitions",
         )
 
         if plot:
@@ -1134,8 +1134,8 @@ class MeasurementMixin(
         )
         fig.update_layout(
             title=f"Bell state measurement: {control_qubit}-{target_qubit}",
-            xaxis_title="State label",
-            yaxis_title="Probability",
+            xlabel="State label",
+            ylabel="Probability",
             barmode="group",
             yaxis_range=[0, 1],
         )

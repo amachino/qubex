@@ -262,8 +262,8 @@ def fit_polynomial(
     plot: bool = True,
     target: str | None = None,
     title: str = "Polynomial fit",
-    xaxis_title: str = "x",
-    yaxis_title: str = "y",
+    xlabel: str = "x",
+    ylabel: str = "y",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -284,9 +284,9 @@ def fit_polynomial(
         Identifier of the target.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -338,8 +338,8 @@ def fit_polynomial(
         )
     fig.update_layout(
         title=f"{title} : {target}" if target else title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -365,8 +365,8 @@ def fit_cosine(
     is_damped: bool = False,
     target: str | None = None,
     title: str = "Cosine fit",
-    xaxis_title: str = "x",
-    yaxis_title: str = "y",
+    xlabel: str = "x",
+    ylabel: str = "y",
     plot: bool = True,
 ) -> dict:
     """
@@ -388,9 +388,9 @@ def fit_cosine(
         Identifier of the target.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     plot : bool, optional
         Whether to plot the data and the fit.
@@ -423,13 +423,19 @@ def fit_cosine(
         )
         popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
 
-    amplitude = popt[0]
-    omega = popt[1]
-    phase = popt[2]
-    offset = popt[3]
-    frequency = omega / (2 * np.pi)
+    if is_damped:
+        A, omega, phi, C, tau = popt
+        A_err, omega_err, phi_err, C_err, tau_err = np.sqrt(np.diag(pcov))
+    else:
+        A, omega, phi, C = popt
+        A_err, omega_err, phi_err, C_err = np.sqrt(np.diag(pcov))[:4]
+        tau, tau_err = None, None
 
-    tau = popt[4] if is_damped else None
+    f = omega / (2 * np.pi)
+    f_err = omega_err / (2 * np.pi)
+
+    if is_damped:
+        tau = popt[4] if is_damped else None
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
@@ -458,14 +464,18 @@ def fit_cosine(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"f = {frequency * 1e3:.2f} MHz"
-        + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
+        text=f"f = {f * 1e3:.2f} ± {f_err * 1e3:.2f} MHz"
+        + (
+            f", τ = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs"
+            if tau and tau_err
+            else ""
+        ),
         showarrow=False,
     )
     fig.update_layout(
         title=f"{title} : {target}" if target else title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
     )
 
     if plot:
@@ -473,11 +483,16 @@ def fit_cosine(
         fig.show(config=_plotly_config(filename))
 
     return {
-        "amplitude": amplitude,
-        "frequency": frequency,
-        "phase": phase,
-        "offset": offset,
+        "A": A,
+        "f": f,
+        "phi": phi,
+        "C": C,
         "tau": tau,
+        "A_err": A_err,
+        "f_err": f_err,
+        "phi_err": phi_err,
+        "C_err": C_err,
+        "tau_err": tau_err,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -493,8 +508,8 @@ def fit_exp_decay(
     plot: bool = True,
     target: str | None = None,
     title: str = "Decay time",
-    xaxis_title: str = "Time (μs)",
-    yaxis_title: str = "Signal (arb. unit)",
+    xlabel: str = "Time (μs)",
+    ylabel: str = "Signal (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "log",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -517,9 +532,9 @@ def fit_exp_decay(
         Identifier of the target.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -584,8 +599,8 @@ def fit_exp_decay(
     )
     fig.update_layout(
         title=f"{title} : {target}" if target else title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -618,8 +633,8 @@ def fit_lorentzian(
     plot: bool = True,
     target: str | None = None,
     title: str = "Lorentzian fit",
-    xaxis_title: str = "Frequency (GHz)",
-    yaxis_title: str = "Signal (arb. unit)",
+    xlabel: str = "Frequency (GHz)",
+    ylabel: str = "Signal (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -640,9 +655,9 @@ def fit_lorentzian(
         Identifier of the target.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -700,8 +715,8 @@ def fit_lorentzian(
     )
     fig.update_layout(
         title=f"{title} : {target}" if target else title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -740,8 +755,8 @@ def fit_sqrt_lorentzian(
     plot: bool = True,
     target: str | None = None,
     title: str = "Square root Lorentzian fit",
-    xaxis_title: str = "Frequency (GHz)",
-    yaxis_title: str = "Signal (arb. unit)",
+    xlabel: str = "Frequency (GHz)",
+    ylabel: str = "Signal (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -764,9 +779,9 @@ def fit_sqrt_lorentzian(
         Identifier of the target.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -829,8 +844,8 @@ def fit_sqrt_lorentzian(
     )
     fig.update_layout(
         title=f"{title} : {target}" if target else title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -869,7 +884,7 @@ def fit_rabi(
     tau_est: float = 10_000,
     plot: bool = True,
     is_damped: bool = False,
-    yaxis_title: str | None = None,
+    ylabel: str | None = None,
     yaxis_range: tuple[float, float] | None = None,
 ) -> dict:
     """
@@ -891,7 +906,7 @@ def fit_rabi(
         Whether to plot the data and the fit.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     yaxis_range : tuple[float, float], optional
         Range for the y-axis.
@@ -1001,7 +1016,7 @@ def fit_rabi(
     fig.update_layout(
         title=(f"Rabi oscillation : {target}"),
         xaxis_title="Drive duration (ns)",
-        yaxis_title=yaxis_title or "Signal (arb. unit)",
+        yaxis_title=ylabel or "Signal (arb. unit)",
         yaxis_range=yaxis_range,
     )
 
@@ -1123,8 +1138,8 @@ def fit_ramsey(
     bounds=None,
     plot: bool = True,
     title: str = "Ramsey fringe",
-    xaxis_title: str = "Time (μs)",
-    yaxis_title: str = "Signal (arb. unit)",
+    xlabel: str = "Time (μs)",
+    ylabel: str = "Signal (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -1147,9 +1162,9 @@ def fit_ramsey(
         Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -1218,8 +1233,8 @@ def fit_ramsey(
     )
     fig.update_layout(
         title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -1259,8 +1274,8 @@ def fit_rb(
     bounds=None,
     plot: bool = True,
     title: str = "Randomized benchmarking",
-    xaxis_title: str = "Number of Cliffords",
-    yaxis_title: str = "Normalized signal",
+    xlabel: str = "Number of Cliffords",
+    ylabel: str = "Normalized signal",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -1287,9 +1302,9 @@ def fit_rb(
         Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -1358,8 +1373,8 @@ def fit_rb(
     )
     fig.update_layout(
         title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -1409,8 +1424,8 @@ def plot_irb(
     C_irb: float,
     gate_fidelity: float,
     title: str = "Interleaved randomized benchmarking",
-    xaxis_title: str = "Number of Cliffords",
-    yaxis_title: str = "Normalized signal",
+    xlabel: str = "Number of Cliffords",
+    ylabel: str = "Normalized signal",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> go.Figure:
@@ -1437,9 +1452,9 @@ def plot_irb(
         Depolarizing parameter of the interleaved randomized benchmarking.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -1503,8 +1518,8 @@ def plot_irb(
     )
     fig.update_layout(
         title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -1521,8 +1536,8 @@ def fit_ampl_calib_data(
     maximize: bool = True,
     plot: bool = True,
     title: str = "Amplitude calibration",
-    xaxis_title: str = "Amplitude (arb. unit)",
-    yaxis_title: str = "Signal (arb. unit)",
+    xlabel: str = "Amplitude (arb. unit)",
+    ylabel: str = "Signal (arb. unit)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -1610,8 +1625,8 @@ def fit_ampl_calib_data(
     )
     fig.update_layout(
         title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -1859,8 +1874,8 @@ def fit_rotation(
     plot: bool = True,
     plot3d: bool = False,
     title: str = "State evolution",
-    xaxis_title: str = "Time (ns)",
-    yaxis_title: str = "Expectation value",
+    xlabel: str = "Time (ns)",
+    ylabel: str = "Expectation value",
 ) -> dict:
     """
     Fit 3D rotation data to obtain the rotation coefficients and detuning frequency.
@@ -1881,9 +1896,9 @@ def fit_rotation(
         Whether to plot the data and the fit in 3D.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
 
     Returns
@@ -2054,8 +2069,8 @@ def fit_rotation(
     )
     fig.update_layout(
         title=title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         yaxis=dict(range=[-1.1, 1.1]),
     )
 

@@ -194,8 +194,8 @@ class MeasurementProtocol(Protocol):
         capture_margin: int | None = None,
         plot: bool = True,
         title: str = "Sweep result",
-        xaxis_title: str = "Sweep value",
-        yaxis_title: str = "Measured value",
+        xlabel: str = "Sweep value",
+        ylabel: str = "Measured value",
         xaxis_type: Literal["linear", "log"] = "linear",
         yaxis_type: Literal["linear", "log"] = "linear",
     ) -> ExperimentResult[SweepData]:
@@ -226,9 +226,9 @@ class MeasurementProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         title : str, optional
             Title of the plot. Defaults to "Sweep result".
-        xaxis_title : str, optional
+        xlabel : str, optional
             Title of the x-axis. Defaults to "Sweep value".
-        yaxis_title : str, optional
+        ylabel : str, optional
             Title of the y-axis. Defaults to "Measured value".
         xaxis_type : Literal["linear", "log"], optional
             Type of the x-axis. Defaults to "linear".

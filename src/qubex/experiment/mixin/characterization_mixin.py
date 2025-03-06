@@ -172,7 +172,7 @@ class CharacterizationMixin(
                 fig.update_layout(
                     title=f"Readout SNR : {target}",
                     xaxis3_title="Readout amplitude (arb. unit)",
-                    yaxis_title="Signal",
+                    ylabel="Signal",
                     yaxis2_title="Noise",
                     yaxis3_title="SNR",
                     showlegend=False,
@@ -273,7 +273,7 @@ class CharacterizationMixin(
                 fig.update_layout(
                     title=f"Readout SNR : {target}",
                     xaxis3_title="Readout duration (ns)",
-                    yaxis_title="Signal",
+                    ylabel="Signal",
                     yaxis2_title="Noise",
                     yaxis3_title="SNR",
                     showlegend=False,
@@ -399,8 +399,8 @@ class CharacterizationMixin(
                 )
                 fig.update_layout(
                     title=f"Chevron pattern : {target}",
-                    xaxis_title="Drive frequency (GHz)",
-                    yaxis_title="Time (ns)",
+                    xlabel="Drive frequency (GHz)",
+                    ylabel="Time (ns)",
                     width=600,
                     height=400,
                 )
@@ -688,7 +688,7 @@ class CharacterizationMixin(
                 y=np.array(values),
                 plot=plot,
                 title="Readout frequency calibration",
-                xaxis_title="Readout frequency (GHz)",
+                xlabel="Readout frequency (GHz)",
             )
             if "f0" in fit_result:
                 fit_data[target] = fit_result["f0"]
@@ -752,8 +752,8 @@ class CharacterizationMixin(
                 interval=interval,
                 plot=plot,
                 title="T1 decay",
-                xaxis_title="Time (μs)",
-                yaxis_title="Measured value",
+                xlabel="Time (μs)",
+                ylabel="Measured value",
                 xaxis_type=xaxis_type,
             )
 
@@ -764,8 +764,8 @@ class CharacterizationMixin(
                     y=0.5 * (1 - sweep_data.normalized),
                     plot=plot,
                     title="T1",
-                    xaxis_title="Time (μs)",
-                    yaxis_title="Normalized signal",
+                    xlabel="Time (μs)",
+                    ylabel="Normalized signal",
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
@@ -860,8 +860,8 @@ class CharacterizationMixin(
                     y=0.5 * (1 - sweep_data.normalized),
                     plot=plot,
                     title="T2 echo",
-                    xaxis_title="Time (μs)",
-                    yaxis_title="Normalized signal",
+                    xlabel="Time (μs)",
+                    ylabel="Normalized signal",
                 )
                 if "tau" in fit_result:
                     t2 = fit_result["tau"]
@@ -1092,8 +1092,8 @@ class CharacterizationMixin(
             interval=interval,
             plot=plot,
             title=f"JAZZ : {target_qubit}-{spectator_qubit}",
-            xaxis_title="Time (ns)",
-            yaxis_title="Measured value",
+            xlabel="Time (ns)",
+            ylabel="Measured value",
         )
 
         fit_result = fitting.fit_cosine(
@@ -1102,11 +1102,11 @@ class CharacterizationMixin(
             is_damped=True,
             plot=plot,
             title=f"JAZZ : {target_qubit}-{spectator_qubit}",
-            xaxis_title="Wait time (ns)",
-            yaxis_title=f"Normalized value : {target_qubit}",
+            xlabel="Wait time (ns)",
+            ylabel=f"Normalized value : {target_qubit}",
         )
 
-        xi = fit_result["frequency"]
+        xi = fit_result["f"]
         zeta = 2 * xi
 
         print(f"ξ: {xi * 1e6:.2f} kHz")
@@ -1267,8 +1267,8 @@ class CharacterizationMixin(
             )
             fig.update_layout(
                 title=f"Phase shift : {mux.label}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Unwrapped phase (rad)",
+                xlabel="Frequency (GHz)",
+                ylabel="Unwrapped phase (rad)",
                 showlegend=True,
             )
             fig.show()
@@ -1411,8 +1411,8 @@ class CharacterizationMixin(
         )
         fig2.update_layout(
             title=f"Resonator frequency scan : {mux.label}",
-            xaxis_title="Readout frequency (GHz)",
-            yaxis_title="Phase diff (rad)",
+            xlabel="Readout frequency (GHz)",
+            ylabel="Phase diff (rad)",
         )
 
         if plot:
@@ -1500,8 +1500,8 @@ class CharacterizationMixin(
             )
             fig.update_layout(
                 title=f"Resonator spectroscopy : {mux.label}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Power (dB)",
+                xlabel="Frequency (GHz)",
+                ylabel="Power (dB)",
                 width=600,
                 height=300,
             )
@@ -1792,8 +1792,8 @@ class CharacterizationMixin(
             )
             fig.update_layout(
                 title=f"Qubit spectroscopy : {target}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Power (dB)",
+                xlabel="Frequency (GHz)",
+                ylabel="Power (dB)",
                 width=600,
                 height=300,
             )

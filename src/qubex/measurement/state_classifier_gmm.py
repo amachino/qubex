@@ -370,8 +370,8 @@ class StateClassifierGMM(StateClassifier):
 
         fig.update_layout(
             title=f"State classification : {target}",
-            xaxis_title="In-Phase (arb. unit)",
-            yaxis_title="Quadrature (arb. unit)",
+            xlabel="In-Phase (arb. unit)",
+            ylabel="Quadrature (arb. unit)",
             showlegend=True,
             width=500,
             height=400,

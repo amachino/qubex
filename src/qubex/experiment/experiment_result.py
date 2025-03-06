@@ -140,8 +140,8 @@ class RabiData(TargetData):
         normalize: bool = False,
         use_zvalue: bool = False,
         title: str | None = None,
-        xaxis_title: str | None = None,
-        yaxis_title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
         width: int | None = None,
         height: int | None = None,
         images_dir: Path | str | None = None,
@@ -150,8 +150,8 @@ class RabiData(TargetData):
 
         fig.update_layout(
             title=title or f"Rabi oscillation : {self.target}",
-            xaxis_title=xaxis_title or "Drive duration (ns)",
-            yaxis_title=yaxis_title or "Signal (arb. unit)",
+            xaxis_title=xlabel or "Drive duration (ns)",
+            yaxis_title=ylabel or "Signal (arb. unit)",
             width=width,
             height=height,
             template="qubex",
@@ -261,9 +261,9 @@ class SweepData(TargetData):
         Centers of the states.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -275,8 +275,8 @@ class SweepData(TargetData):
     rabi_param: RabiParam | None = None
     state_centers: dict[int, complex] | None = None
     title: str = "Sweep result"
-    xaxis_title: str = "Sweep value"
-    yaxis_title: str = "Measured signal"
+    xlabel: str = "Sweep value"
+    ylabel: str = "Measured signal"
     xaxis_type: str = "linear"
     yaxis_type: str = "linear"
 
@@ -313,8 +313,8 @@ class SweepData(TargetData):
         title: str | None = None,
         xaxis_type: str | None = None,
         yaxis_type: str | None = None,
-        xaxis_title: str | None = None,
-        yaxis_title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
         width: int | None = None,
         height: int | None = None,
         images_dir: Path | str | None = None,
@@ -323,9 +323,9 @@ class SweepData(TargetData):
 
         fig.update_layout(
             title=title or f"{self.title} : {self.target}",
-            xaxis_title=xaxis_title or self.xaxis_title,
+            xaxis_title=xlabel or self.xlabel,
             xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-            yaxis_title=yaxis_title or self.yaxis_title,
+            yaxis_title=ylabel or self.ylabel,
             yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
             width=width,
             height=height,
@@ -341,7 +341,7 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                yaxis_title=yaxis_title or "Z value",
+                yaxis_title=ylabel or "Z value",
                 yaxis_range=[-1.2, 1.2],
             )
         elif normalize:
@@ -362,7 +362,7 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                yaxis_title=yaxis_title or "Normalized signal",
+                yaxis_title=ylabel or "Normalized signal",
                 yaxis_range=[-1.2, 1.2],
             )
         else:
@@ -417,9 +417,9 @@ class AmplCalibData(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -440,8 +440,8 @@ class AmplCalibData(SweepData):
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             calib_value=calib_value,
@@ -472,9 +472,9 @@ class T1Data(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -494,8 +494,8 @@ class T1Data(SweepData):
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t1=t1,
@@ -507,8 +507,8 @@ class T1Data(SweepData):
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
             title="T1",
-            xaxis_title="Time (μs)",
-            yaxis_title="Population",
+            xlabel="Time (μs)",
+            ylabel="Population",
             xaxis_type="log",
             yaxis_type="linear",
         )
@@ -531,9 +531,9 @@ class T2Data(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -553,8 +553,8 @@ class T2Data(SweepData):
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t2=t2,
@@ -566,8 +566,8 @@ class T2Data(SweepData):
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
             title="T2",
-            xaxis_title="Time (μs)",
-            yaxis_title="Population",
+            xlabel="Time (μs)",
+            ylabel="Population",
         )
 
 
@@ -588,9 +588,9 @@ class RamseyData(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -622,8 +622,8 @@ class RamseyData(SweepData):
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t2=t2,
@@ -656,9 +656,9 @@ class RBData(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -690,8 +690,8 @@ class RBData(SweepData):
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             depolarizing_rate=depolarizing_rate,
@@ -735,7 +735,7 @@ class AmplRabiData(TargetData):
         fig.update_layout(
             title=f"Drive amplitude and Rabi rate : {self.target}",
             xaxis_title="Drive amplitude (arb. unit)",
-            yaxis_title="Rabi rate (MHz)",
+            ylabel="Rabi rate (MHz)",
         )
         fig.show()
 
@@ -771,7 +771,7 @@ class FreqRabiData(TargetData):
         fig.update_layout(
             title=f"Drive frequency and Rabi rate : {self.target}",
             xaxis_title="Drive frequency (GHz)",
-            yaxis_title="Rabi rate (MHz)",
+            ylabel="Rabi rate (MHz)",
         )
         fig.show()
 

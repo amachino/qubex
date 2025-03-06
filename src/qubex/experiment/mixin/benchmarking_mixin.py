@@ -255,8 +255,8 @@ class BenchmarkingMixin(
             y=(sweep_data.normalized + 1) / 2,
             bounds=((0, 0, 0), (0.5, 1, 1)),
             title="Randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Normalized signal",
+            xlabel="Number of Cliffords",
+            ylabel="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
             plot=plot,
@@ -352,8 +352,8 @@ class BenchmarkingMixin(
             y=np.array(fidelities),
             dimension=4,
             title="Randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Normalized signal",
+            xlabel="Number of Cliffords",
+            ylabel="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
             plot=plot,
@@ -450,8 +450,8 @@ class BenchmarkingMixin(
             dimension=4 if is_2q else 2,
             plot=plot,
             title="Randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Normalized signal",
+            xlabel="Number of Cliffords",
+            ylabel="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
         )
@@ -630,8 +630,8 @@ class BenchmarkingMixin(
             C_irb=C_irb,
             gate_fidelity=gate_fidelity,
             title="Interleaved randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Normalized signal",
+            xlabel="Number of Cliffords",
+            ylabel="Normalized signal",
         )
         if save_image:
             viz.save_figure_image(

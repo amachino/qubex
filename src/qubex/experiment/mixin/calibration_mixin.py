@@ -100,7 +100,7 @@ class CalibrationMixin(
                 data=sweep_data.normalized,
                 plot=plot,
                 title=f"{pulse_type} pulse calibration",
-                yaxis_title="Normalized signal",
+                ylabel="Normalized signal",
             )
 
             return AmplCalibData.new(
@@ -190,7 +190,7 @@ class CalibrationMixin(
                 amplitude_range=ampl_range,
                 data=sweep_data.normalized,
                 title=f"ef {pulse_type} pulse calibration",
-                yaxis_title="Normalized signal",
+                ylabel="Normalized signal",
             )
 
             return AmplCalibData.new(
@@ -320,7 +320,7 @@ class CalibrationMixin(
                 amplitude_range=ampl_range,
                 data=sweep_data.normalized,
                 title=f"DRAG {pulse_type} amplitude calibration",
-                yaxis_title="Normalized signal",
+                ylabel="Normalized signal",
             )
 
             if pulse_type == "hpi":
@@ -456,8 +456,8 @@ class CalibrationMixin(
                 y=values,
                 degree=degree,
                 title=f"DRAG {pulse_type} beta calibration",
-                xaxis_title="Beta",
-                yaxis_title="Normalized signal",
+                xlabel="Beta",
+                ylabel="Normalized signal",
             )
             beta = fit_result["root"]
             if np.isnan(beta):
@@ -870,16 +870,16 @@ class CalibrationMixin(
             target_states_0,
             plot=plot,
             title="Cross resonance dynamics : |0〉",
-            xaxis_title="Drive time (ns)",
-            yaxis_title="Bloch vector",
+            xlabel="Drive time (ns)",
+            ylabel="Bloch vector",
         )
         fit_1 = fitting.fit_rotation(
             time_range,
             target_states_1,
             plot=plot,
             title="Cross resonance dynamics : |1〉",
-            xaxis_title="Drive time (ns)",
-            yaxis_title="Bloch vector",
+            xlabel="Drive time (ns)",
+            ylabel="Bloch vector",
         )
         if plot:
             viz.display_bloch_sphere(target_states_0)
@@ -1137,8 +1137,8 @@ class CalibrationMixin(
 
         fig.update_layout(
             title="CR Hamiltonian coefficients",
-            xaxis_title="Number of steps",
-            yaxis_title="Coefficient (MHz)",
+            xlabel="Number of steps",
+            ylabel="Coefficient (MHz)",
             xaxis=dict(tickmode="array", tickvals=np.arange(len(value))),
         )
         if plot:
@@ -1238,8 +1238,8 @@ class CalibrationMixin(
             y=signal,
             degree=degree,
             title="ZX90 calibration",
-            xaxis_title="Amplitude (arb. unit)",
-            yaxis_title="Signal",
+            xlabel="Amplitude (arb. unit)",
+            ylabel="Signal",
         )
 
         amplitude = fit_result["root"]
