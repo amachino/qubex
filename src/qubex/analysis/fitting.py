@@ -1793,6 +1793,15 @@ def fit_ampl_calib_data(
         showarrow=True,
         arrowhead=1,
     )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.9)",
+        showarrow=False,
+    )
     fig.update_layout(
         title=f"{title} : {target}",
         xaxis_title=xlabel,

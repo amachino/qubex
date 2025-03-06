@@ -796,6 +796,9 @@ class Experiment(
             with self.state_manager.modified_frequencies(frequencies):
                 yield
 
+    def save_calib_data(self):
+        self.calib_note.save()
+
     @deprecated("Use `calib_note.save()` instead.")
     def save_defaults(self):
         self._system_note.save()
