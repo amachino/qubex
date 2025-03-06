@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
+from functools import reduce
 from pathlib import Path
 from typing import Collection, Final, Literal
 
@@ -186,6 +187,26 @@ class Measurement:
         """Update the state classifiers."""
         for target, classifier in classifiers.items():
             self._classifiers[target] = classifier  # type: ignore
+
+    def get_confusion_matrix(
+        self,
+        targets: Collection[str],
+    ) -> npt.NDArray:
+        targets = list(targets)
+        confusion_matrices = []
+        for target in targets:
+            cm = self.classifiers[target].confusion_matrix
+            n_shots = cm[0].sum()
+            confusion_matrices.append(cm / n_shots)
+        return reduce(np.kron, confusion_matrices)
+
+    def get_inverse_confusion_matrix(
+        self,
+        targets: Collection[str],
+    ) -> npt.NDArray:
+        targets = list(targets)
+        confusion_matrix = self.get_confusion_matrix(targets)
+        return np.linalg.inv(confusion_matrix)
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """

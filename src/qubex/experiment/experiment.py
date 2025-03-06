@@ -3,12 +3,10 @@ from __future__ import annotations
 import sys
 from contextlib import contextmanager
 from datetime import datetime
-from functools import reduce
 from pathlib import Path
 from typing import Collection, Final, Literal
 
 import numpy as np
-from IPython.display import display
 from numpy.typing import ArrayLike, NDArray
 from rich.console import Console
 from rich.prompt import Confirm
@@ -672,21 +670,13 @@ class Experiment(
         self,
         targets: Collection[str],
     ) -> NDArray:
-        targets = list(targets)
-        confusion_matrices = []
-        for target in targets:
-            cm = self.classifiers[target].confusion_matrix
-            n_shots = cm[0].sum()
-            confusion_matrices.append(cm / n_shots)
-        return reduce(np.kron, confusion_matrices)
+        return self.measurement.get_confusion_matrix(targets)
 
     def get_inverse_confusion_matrix(
         self,
         targets: Collection[str],
     ) -> NDArray:
-        targets = list(targets)
-        confusion_matrix = self.get_confusion_matrix(targets)
-        return np.linalg.inv(confusion_matrix)
+        return self.measurement.get_inverse_confusion_matrix(targets)
 
     def check_status(self):
         # link status
@@ -805,10 +795,6 @@ class Experiment(
         else:
             with self.state_manager.modified_frequencies(frequencies):
                 yield
-
-    @deprecated("Use `calib_note` instead.")
-    def print_defaults(self):
-        display(self._system_note)
 
     @deprecated("Use `calib_note.save()` instead.")
     def save_defaults(self):

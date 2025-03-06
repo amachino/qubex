@@ -30,36 +30,6 @@ from ..experiment_util import ExperimentUtil
 
 class BaseProtocol(Protocol):
     @property
-    def drag_hpi_duration(self) -> int:
-        """Get the DRAG π/2 duration."""
-        ...
-
-    @property
-    def drag_pi_duration(self) -> int:
-        """Get the DRAG π duration."""
-        ...
-
-    @property
-    def control_window(self) -> int | None:
-        """Get the control window."""
-        ...
-
-    @property
-    def capture_window(self) -> int:
-        """Get the capture window."""
-        ...
-
-    @property
-    def capture_margin(self) -> int:
-        """Get the capture margin."""
-        ...
-
-    @property
-    def readout_duration(self) -> int:
-        """Get the readout duration."""
-        ...
-
-    @property
     def util(self) -> type[ExperimentUtil]:
         """Get the experiment util."""
         ...
@@ -182,6 +152,36 @@ class BaseProtocol(Protocol):
     @property
     def note(self) -> ExperimentNote:
         """Get the user note."""
+        ...
+
+    @property
+    def control_window(self) -> int | None:
+        """Get the control window."""
+        ...
+
+    @property
+    def capture_window(self) -> int:
+        """Get the capture window."""
+        ...
+
+    @property
+    def capture_margin(self) -> int:
+        """Get the capture margin."""
+        ...
+
+    @property
+    def readout_duration(self) -> int:
+        """Get the readout duration."""
+        ...
+
+    @property
+    def drag_hpi_duration(self) -> int:
+        """Get the DRAG π/2 duration."""
+        ...
+
+    @property
+    def drag_pi_duration(self) -> int:
+        """Get the DRAG π duration."""
         ...
 
     @property
