@@ -435,7 +435,11 @@ def fit_cosine(
     f_err = omega_err / (2 * np.pi)
 
     if is_damped:
-        tau = popt[4] if is_damped else None
+        r2 = 1 - np.sum((y - func_damped_cos(x, *popt)) ** 2) / np.sum(
+            (y - np.mean(y)) ** 2
+        )
+    else:
+        r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
@@ -464,12 +468,7 @@ def fit_cosine(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"f = {f * 1e3:.2f} ± {f_err * 1e3:.2f} MHz"
-        + (
-            f", τ = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs"
-            if tau and tau_err
-            else ""
-        ),
+        text=f"R² = {r2:.3f}",
         showarrow=False,
     )
     fig.update_layout(
@@ -482,6 +481,17 @@ def fit_cosine(
         filename = f"fit_cosine_{target}" if target else "fit_cosine"
         fig.show(config=_plotly_config(filename))
 
+        if target:
+            print(f"Target: {target}")
+        print("Fit: A * cos(2πft + φ) + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f = {f:.3g} ± {f_err:.1g}")
+        print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        if is_damped:
+            print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
+        print("")
+
     return {
         "A": A,
         "f": f,
@@ -493,6 +503,7 @@ def fit_cosine(
         "phi_err": phi_err,
         "C_err": C_err,
         "tau_err": tau_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -569,6 +580,8 @@ def fit_exp_decay(
     A, tau, C = popt
     A_err, tau_err, C_err = np.sqrt(np.diag(pcov))
 
+    r2 = 1 - np.sum((y - func_exp_decay(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
+
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_exp_decay(x_fine, *popt)
 
@@ -594,7 +607,7 @@ def fit_exp_decay(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"τ = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs",
+        text=f"R² = {r2:.3f}",
         showarrow=False,
     )
     fig.update_layout(
@@ -609,16 +622,22 @@ def fit_exp_decay(
         filename = f"fit_exp_decay_{target}" if target else "fit_exp_decay"
         fig.show(config=_plotly_config(filename))
 
-    print(f"Target: {target}")
-    print("Fit: A * exp(-t / tau) + C")
-    print(f"  A = {A:.2f} ± {A_err:.2f}")
-    print(f"  tau = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs")
-    print(f"  C = {C:.2f} ± {C_err:.2f}")
-    print("")
+        if target:
+            print(f"Target: {target}")
+        print("Fit: A * exp(-t / τ) + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  τ = {tau * 1e-3:.3g} ± {tau_err * 1e-3:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print("")
 
     return {
+        "A": A,
         "tau": tau,
+        "C": C,
+        "A_err": A_err,
         "tau_err": tau_err,
+        "C_err": C_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -686,6 +705,10 @@ def fit_lorentzian(
     A, f0, gamma, C = popt
     A_err, f0_err, gamma_err, C_err = np.sqrt(np.diag(pcov))
 
+    r2 = 1 - np.sum((y - func_lorentzian(x, *popt)) ** 2) / np.sum(
+        (y - np.mean(y)) ** 2
+    )
+
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_lorentzian(x_fine, *popt)
 
@@ -708,10 +731,18 @@ def fit_lorentzian(
     )
     fig.add_annotation(
         x=f0,
-        y=A,
+        y=func_lorentzian(f0, *popt),
         text=f"max: {f0:.6g}",
         showarrow=True,
         arrowhead=1,
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        showarrow=False,
     )
     fig.update_layout(
         title=f"{title} : {target}" if target else title,
@@ -725,11 +756,13 @@ def fit_lorentzian(
         filename = f"fit_lorentzian_{target}" if target else "fit_lorentzian"
         fig.show(config=_plotly_config(filename))
 
-    print("Fit : A / ( 1 + ( (f - f0) / gamma )^2 ) + C")
-    print(f"  A = {A:.2f} ± {A_err:.2f}")
-    print(f"  f0 = {f0:.6f} ± {f0_err:.6f} GHz")
-    print(f"  gamma = {gamma * 1e3:.2f} ± {gamma_err * 1e3:.2f} MHz")
-    print(f"  C = {C:.2f} ± {C_err:.2f}")
+        if target:
+            print(f"Target: {target}")
+        print("Fit : A / [1 + {(f - f0) / γ}^2] + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f0 = {f0:.3g} ± {f0_err:.1g}")
+        print(f"  γ = {gamma:.3g} ± {gamma_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.2f}")
 
     return {
         "A": A,
@@ -740,6 +773,7 @@ def fit_lorentzian(
         "f0_err": f0_err,
         "gamma_err": gamma_err,
         "C_err": C_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -822,6 +856,10 @@ def fit_sqrt_lorentzian(
     A, f0, Omega, C = popt
     A_err, f0_err, Omega_err, C_err = np.sqrt(np.diag(pcov))
 
+    r2 = 1 - np.sum((y - func_sqrt_lorentzian(x, *popt)) ** 2) / np.sum(
+        (y - np.mean(y)) ** 2
+    )
+
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_sqrt_lorentzian(x_fine, *popt)
 
@@ -842,6 +880,21 @@ def fit_sqrt_lorentzian(
             name="Data",
         )
     )
+    fig.add_annotation(
+        x=f0,
+        y=func_sqrt_lorentzian(f0, *popt),
+        text=f"max: {f0:.6g}",
+        showarrow=True,
+        arrowhead=1,
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        showarrow=False,
+    )
     fig.update_layout(
         title=f"{title} : {target}" if target else title,
         xaxis_title=xlabel,
@@ -854,11 +907,13 @@ def fit_sqrt_lorentzian(
         filename = f"fit_sqrt_lorentzian_{target}" if target else "fit_sqrt_lorentzian"
         fig.show(config=_plotly_config(filename))
 
-    print("Fit : A / sqrt{ 1 + ( (f - f0) / Omega )^2 } + C")
-    print(f"  A = {A:.2f} ± {A_err:.2f}")
-    print(f"  f0 = {f0:.6f} ± {f0_err:.6f} GHz")
-    print(f"  Omega = {Omega * 1e3:.2f} ± {Omega_err * 1e3:.2f} MHz")
-    print(f"  C = {C:.2f} ± {C_err:.2f}")
+        if target:
+            print(f"Target: {target}")
+        print("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f0 = {f0:.3g} ± {f0_err:.1g}")
+        print(f"  Ω = {Omega:.3g} ± {Omega_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
 
     return {
         "A": A,
@@ -869,6 +924,7 @@ def fit_sqrt_lorentzian(
         "f0_err": f0_err,
         "Omega_err": Omega_err,
         "C_err": C_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,

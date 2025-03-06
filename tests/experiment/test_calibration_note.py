@@ -35,9 +35,11 @@ def test_init(tmp_path):
     assert note.cr_params == {}
 
 
-def test_update_rabi_param():
+def test_update_rabi_param(tmp_path):
     """CalibrationNote should update the rabi_param."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_rabi_param(
         "Q00",
         {
@@ -60,9 +62,11 @@ def test_update_rabi_param():
     assert param["angle"] == 0.5
 
 
-def test_update_hpi_param():
+def test_update_hpi_param(tmp_path):
     """CalibrationNote should update the hpi_param."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_hpi_param(
         "Q00",
         {
@@ -79,9 +83,11 @@ def test_update_hpi_param():
     assert param["tau"] == 0.5
 
 
-def test_update_pi_param():
+def test_update_pi_param(tmp_path):
     """CalibrationNote should update the pi_param."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_pi_param(
         "Q00",
         {
@@ -98,9 +104,11 @@ def test_update_pi_param():
     assert param["tau"] == 0.5
 
 
-def test_update_drag_hpi_param():
+def test_update_drag_hpi_param(tmp_path):
     """CalibrationNote should update the drag_hpi_param."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_drag_hpi_param(
         "Q00",
         {
@@ -117,9 +125,11 @@ def test_update_drag_hpi_param():
     assert param["beta"] == 0.5
 
 
-def test_update_drag_pi_param():
+def test_update_drag_pi_param(tmp_path):
     """CalibrationNote should update the drag_pi_param."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_drag_pi_param(
         "Q00",
         {
@@ -136,9 +146,11 @@ def test_update_drag_pi_param():
     assert param["beta"] == 0.5
 
 
-def test_update_state_param():
+def test_update_state_param(tmp_path):
     """CalibrationNote should update the state_param."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_state_param(
         "Q00",
         {
@@ -152,9 +164,11 @@ def test_update_state_param():
     assert param["centers"]["1"] == [0.5, 0.5]
 
 
-def test_update_cr_param():
+def test_update_cr_param(tmp_path):
     """CalibrationNote should update the cr_param."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_cr_param(
         "Q00",
         {
@@ -179,9 +193,11 @@ def test_update_cr_param():
     assert param["cr_cancel_ratio"] == 0.5
 
 
-def test_timestamp():
+def test_timestamp(tmp_path):
     """CalibrationNote should return the timestamp of the last update."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_rabi_param(
         "Q00",
         {
@@ -216,9 +232,11 @@ def test_timestamp():
     assert updated_timestamp > timestamp
 
 
-def test_get_param_with_cutoff_days():
+def test_get_param_with_cutoff_days(tmp_path):
     """CalibrationNote should return None if the param is older than the cutoff_days."""
-    note = CalibrationNote(chip_id="CHIP_ID")
+    chip_id = "CHIP_ID"
+    calibration_dir = tmp_path / ".calibration"
+    note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     note.update_rabi_param(
         "Q00",
         {
