@@ -81,7 +81,7 @@ class MeasureData:
         save_image: bool = False,
     ):
         if self.mode == MeasureMode.SINGLE:
-            return viz.plot_state_distribution(
+            return viz.scatter_iq_data(
                 data={self.target: self.kerneled},
                 title=f"Readout IQ data : {self.target}",
                 return_figure=return_figure,
@@ -183,7 +183,7 @@ class MeasureResult:
     ):
         if self.mode == MeasureMode.SINGLE:
             data = {qubit: data.kerneled for qubit, data in self.data.items()}
-            return viz.plot_state_distribution(
+            return viz.scatter_iq_data(
                 data=data,
                 return_figure=return_figure,
                 save_image=save_image,

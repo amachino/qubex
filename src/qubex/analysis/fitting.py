@@ -9,7 +9,6 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
-from scipy.fft import fft, fftfreq
 from scipy.optimize import curve_fit, least_squares, minimize
 from sklearn.decomposition import PCA
 
@@ -99,11 +98,11 @@ def normalize(
 
 def func_cos(
     t: NDArray[np.float64],
-    A: float,
+    A: complex,
     omega: float,
     phi: float,
     C: float,
-) -> NDArray[np.float64]:
+) -> NDArray[np.complex128]:
     """
     Calculate a cosine function with given parameters.
 
@@ -111,7 +110,7 @@ def func_cos(
     ----------
     t : NDArray[np.float64]
         Time points for the function evaluation.
-    A : float
+    A : complex
         Amplitude of the cosine function.
     omega : float
         Angular frequency of the cosine function.
@@ -403,22 +402,33 @@ def fit_cosine(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
-    wave_count_est = estimate_wave_count(x, y)
-    amplitude_est = (np.max(y) - np.min(y)) / 2
-    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
+    dt = x[1] - x[0]
+    N = len(x)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(y)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+
+    # Estimate the initial parameters
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    phase_est = np.angle(F[i])
     offset_est = (np.max(y) + np.min(y)) / 2
+
+    logger.debug(
+        f"Initial guess: A = {amplitude_est:.3g}, f = {omega_est:.3g}, φ = {phase_est:.3g}, C = {offset_est:.3g}"
+    )
 
     if is_damped:
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
         bounds = (
-            (0, 0, 0, -np.inf, 0),
+            (0, 0, -np.pi, -np.inf, 0),
             (np.inf, np.inf, np.pi, np.inf, np.inf),
         )
         popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
     else:
         p0 = (amplitude_est, omega_est, phase_est, offset_est)
         bounds = (
-            (0, 0, 0, -np.inf),
+            (0, 0, -np.pi, -np.inf),
             (np.inf, np.inf, np.pi, np.inf),
         )
         popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
@@ -972,7 +982,6 @@ def fit_rabi(
     dict
         Fitted parameters and the figure.
     """
-    print(f"Target: {target}")
     data = np.array(data, dtype=np.complex64)
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
@@ -996,10 +1005,16 @@ def fit_rabi(
     x = times
     y = rotated.imag
 
+    dt = times[1] - times[0]
+    N = len(times)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(y)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+
     # Estimate the initial parameters
-    wave_count_est = estimate_wave_count(x, y)
-    amplitude_est = (np.max(y) - np.min(y)) / 2
-    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    phase_est = np.angle(F[i])
     offset_est = (np.max(y) + np.min(y)) / 2
 
     try:
@@ -1008,14 +1023,14 @@ def fit_rabi(
         if is_damped:
             p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
             bounds = (
-                (0, 0, 0, -np.inf, 0),
+                (0, 0, -np.inf, -np.inf, 0),
                 (np.inf, np.inf, np.pi, np.inf, np.inf),
             )
             popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
-                (0, 0, 0, -np.inf),
+                (0, 0, -np.inf, -np.inf),
                 (np.inf, np.inf, np.pi, np.inf),
             )
             popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
@@ -1027,15 +1042,20 @@ def fit_rabi(
             )
         }
 
-    amplitude = popt[0]
-    omega = popt[1]
-    phase = popt[2]
-    offset = popt[3]
+    if is_damped:
+        amplitude, omega, phase, offset, tau = popt
+        amplitude_err, omega_err, phase_err, offset_err, tau_err = np.sqrt(
+            np.diag(pcov)
+        )
+    else:
+        amplitude, omega, phase, offset = popt
+        amplitude_err, omega_err, phase_err, offset_err = np.sqrt(np.diag(pcov))[:4]
+        tau, tau_err = None, None
+
     frequency = omega / (2 * np.pi)
+    frequency_err = omega_err / (2 * np.pi)
 
-    tau = popt[4] if is_damped else None
-
-    print(f"Rabi frequency: {frequency * 1e3:.6g} MHz")
+    r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
@@ -1065,12 +1085,11 @@ def fit_rabi(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"f = {frequency * 1e3:.2f} MHz"
-        + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
+        text=f"R² = {r2:.3f}",
         showarrow=False,
     )
     fig.update_layout(
-        title=(f"Rabi oscillation : {target}"),
+        title=(f"Rabi oscillation of {target} : {frequency * 1e3:.2f} MHz"),
         xaxis_title="Drive duration (ns)",
         yaxis_title=ylabel or "Signal (arb. unit)",
         yaxis_range=yaxis_range,
@@ -1078,6 +1097,9 @@ def fit_rabi(
 
     if plot:
         fig.show(config=_plotly_config(f"rabi_{target}"))
+
+        print(f"Target: {target}")
+        print(f"Rabi frequency: {frequency * 1e3:.3g} ± {frequency_err * 1e3:.1g} MHz")
 
     return {
         "rabi_param": RabiParam(
@@ -1089,6 +1111,19 @@ def fit_rabi(
             noise=noise,
             angle=angle,
         ),
+        "amplitude": amplitude,
+        "frequency": frequency,
+        "phase": phase,
+        "offset": offset,
+        "tau": tau,
+        "amplitude_err": amplitude_err,
+        "frequency_err": frequency_err,
+        "phase_err": phase_err,
+        "offset_err": offset_err,
+        "tau_err": tau_err,
+        "angle": angle,
+        "noise": noise,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -1140,6 +1175,8 @@ def fit_detuned_rabi(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func(x_fine, *popt) * 1e3
 
+    r2 = 1 - np.sum((y - func(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
+
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -1164,6 +1201,14 @@ def fit_detuned_rabi(
         showarrow=True,
         arrowhead=1,
     )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        showarrow=False,
+    )
     fig.update_layout(
         title=f"Detuned Rabi oscillation : {target}",
         xaxis_title="Drive frequency (GHz)",
@@ -1173,14 +1218,17 @@ def fit_detuned_rabi(
     if plot:
         fig.show(config=_plotly_config(f"detuned_rabi_{target}"))
 
-    print("Resonance frequency")
-    print(f"  {target}: {f_resonance:.6f}")
+        print("Resonance frequency")
+        print(f"  {target}: {f_resonance:.6f}")
 
     return {
         "f_resonance": f_resonance,
         "f_resonance_err": f_resonance_err,
         "f_rabi": f_rabi,
         "f_rabi_err": f_rabi_err,
+        "r2": r2,
+        "popt": popt,
+        "pcov": pcov,
         "fig": fig,
     }
 
@@ -1190,6 +1238,7 @@ def fit_ramsey(
     target: str,
     x: NDArray[np.float64],
     y: NDArray[np.float64],
+    tau_est: float = 10_000,
     p0=None,
     bounds=None,
     plot: bool = True,
@@ -1210,6 +1259,8 @@ def fit_ramsey(
         Array of time points for the Ramsey fringe.
     y : NDArray[np.float64]
         Amplitude data for the Ramsey fringe.
+    tau_est : float, optional
+        Initial guess for the damping time constant.
     p0 : optional
         Initial guess for the fitting parameters.
     bounds : optional
@@ -1232,20 +1283,24 @@ def fit_ramsey(
     dict
         Fitted parameters and the figure.
     """
-    wave_count_est = estimate_wave_count(x, y)
-    amplitude_est = (np.max(y) - np.min(y)) / 2
-    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
-    phase_est = 0.0
-    offset_est = 0.0
-    tau_est = 10_000
+    dt = x[1] - x[0]
+    N = len(x)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(y)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    phase_est = np.angle(F[i])
+    offset_est = (np.max(y) + np.min(y)) / 2
 
     if p0 is None:
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
 
     if bounds is None:
         bounds = (
-            (0, omega_est * 0.9, 0, -np.inf, 0),
-            (np.inf, omega_est * 1.1, np.pi, np.inf, np.inf),
+            (0, 0, -np.pi, -np.inf, 0),
+            (np.inf, np.inf, np.pi, np.inf, np.inf),
         )
 
     try:
@@ -1258,6 +1313,10 @@ def fit_ramsey(
     A_err, omega_err, phi_err, C_err, tau_err = np.sqrt(np.diag(pcov))
     f = omega / (2 * np.pi)
     f_err = omega_err / (2 * np.pi)
+
+    r2 = 1 - np.sum((y - func_damped_cos(x, *popt)) ** 2) / np.sum(
+        (y - np.mean(y)) ** 2
+    )
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
@@ -1298,21 +1357,29 @@ def fit_ramsey(
     if plot:
         fig.show(config=_plotly_config(f"ramsey_{target}"))
 
-    print(f"Target: {target}")
-    print("Fit: A * exp(-t / tau) * cos(omega * t + phi) + C")
-    print(f"  A = {A:.2f} ± {A_err:.2f}")
-    print(f"  omega = {omega * 1e3:.2f} ± {omega_err * 1e3:.2f} rad/μs")
-    print(f"  phi = {phi:.2f} ± {phi_err:.2f} rad")
-    print(f"  tau = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs")
-    print(f"  C = {C:.2f} ± {C_err:.2f}")
-    print(f"f = {f * 1e3:.3f} ± {f_err * 1e3:.3f} MHz")
-    print("")
+        print(f"Target: {target}")
+        print("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f = {f * 1e3:.3g} ± {f_err * 1e3:.1g} MHz")
+        print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
+        print(f"  τ = {tau * 1e-3:.3g} ± {tau_err * 1e-3:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print("")
 
     return {
+        "A": A,
+        "omega": omega,
+        "phi": phi,
+        "C": C,
         "tau": tau,
+        "A_err": A_err,
+        "omega_err": omega_err,
+        "phi_err": phi_err,
+        "C_err": C_err,
         "tau_err": tau_err,
         "f": f,
         "f_err": f_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -2224,14 +2291,3 @@ def rotate(
     points = np.array(data)
     rotated_points = points * np.exp(1j * angle)
     return rotated_points
-
-
-def estimate_wave_count(times, data) -> float:
-    N = len(times)
-    dt = times[1] - times[0]
-    F = np.array(fft(data))
-    f = np.array(fftfreq(N, dt)[1 : N // 2])
-    i = np.argmax(np.abs(F[1 : N // 2]))
-    dominant_freq = np.abs(f[i])
-    wave_count_est = dominant_freq * (times[-1] - times[0])
-    return wave_count_est

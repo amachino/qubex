@@ -289,10 +289,10 @@ def plot_waveform(
         )
 
 
-def plot_state_distribution(
+def scatter_iq_data(
     data: Mapping[str, IQArray],
     *,
-    title: str = "State distribution",
+    title: str = "I/Q plane",
     xlabel: str = "In-phase (arb. unit)",
     ylabel: str = "Quadrature (arb. unit)",
     width: int = 500,

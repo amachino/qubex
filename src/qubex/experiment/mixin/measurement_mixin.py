@@ -348,7 +348,7 @@ class MeasurementMixin(
                 f"|{state}⟩": result[state].data[target].kerneled for state in states
             }
             if plot:
-                viz.plot_state_distribution(
+                viz.scatter_iq_data(
                     data=data,
                     title=f"State distribution : {target}",
                 )
