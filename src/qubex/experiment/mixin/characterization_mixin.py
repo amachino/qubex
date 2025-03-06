@@ -684,8 +684,8 @@ class CharacterizationMixin(
             freq = self.resonators[target].frequency
             fit_result = fitting.fit_lorentzian(
                 target=target,
-                freq_range=detuning_range + freq,
-                data=np.array(values),
+                x=detuning_range + freq,
+                y=np.array(values),
                 plot=plot,
                 title="Readout frequency calibration",
                 xaxis_title="Readout frequency (GHz)",
@@ -1733,8 +1733,8 @@ class CharacterizationMixin(
         )
         result = fitting.fit_sqrt_lorentzian(
             target=target,
-            freq_range=frequency_range,
-            data=data,
+            x=frequency_range,
+            y=data,
             title="Qubit resonance fit",
         )
         rabi_rate = result["Omega"]

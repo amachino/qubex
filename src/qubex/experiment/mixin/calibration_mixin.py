@@ -870,16 +870,16 @@ class CalibrationMixin(
             target_states_0,
             plot=plot,
             title="Cross resonance dynamics : |0〉",
-            xlabel="Drive time (ns)",
-            ylabel="Bloch vector",
+            xaxis_title="Drive time (ns)",
+            yaxis_title="Bloch vector",
         )
         fit_1 = fitting.fit_rotation(
             time_range,
             target_states_1,
             plot=plot,
             title="Cross resonance dynamics : |1〉",
-            xlabel="Drive time (ns)",
-            ylabel="Bloch vector",
+            xaxis_title="Drive time (ns)",
+            yaxis_title="Bloch vector",
         )
         if plot:
             viz.display_bloch_sphere(target_states_0)

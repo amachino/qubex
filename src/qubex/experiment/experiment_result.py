@@ -121,7 +121,7 @@ class RabiData(TargetData):
     @property
     def normalized(self) -> NDArray[np.float64]:
         param = self.rabi_param
-        return fitting.normalize(self.data, param, self.state_centers)
+        return fitting.normalize(self.data, param)
 
     @property
     def zvalues(self) -> NDArray[np.float64]:
@@ -292,7 +292,7 @@ class SweepData(TargetData):
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
-        return fitting.normalize(self.data, param, self.state_centers)
+        return fitting.normalize(self.data, param)
 
     @property
     def zvalues(self) -> NDArray[np.float64]:
