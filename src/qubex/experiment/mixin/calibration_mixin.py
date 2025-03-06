@@ -1238,7 +1238,7 @@ class CalibrationMixin(
             y=signal,
             degree=degree,
             title="ZX90 calibration",
-            xlabel="Amplitude (arb. unit)",
+            xlabel="Amplitude (arb. units)",
             ylabel="Signal",
         )
 

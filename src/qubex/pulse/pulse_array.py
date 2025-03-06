@@ -299,7 +299,7 @@ class PulseArray(Waveform):
         divide_by_two_pi: bool = False,
         title: str | None = None,
         xlabel: str = "Time (ns)",
-        ylabel: str = "Amplitude (arb. unit)",
+        ylabel: str = "Amplitude (arb. units)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """

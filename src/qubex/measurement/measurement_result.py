@@ -93,7 +93,7 @@ class MeasureData:
                 sampling_period=SAMPLING_PERIOD_AVG,
                 title=f"Readout waveform : {self.target}",
                 xlabel="Capture time (ns)",
-                ylabel="Signal (arb. unit)",
+                ylabel="Signal (arb. units)",
                 return_figure=return_figure,
                 save_image=save_image,
             )
@@ -110,7 +110,7 @@ class MeasureData:
             y=self.raw,
             title=f"Fourier transform : {self.target}",
             xlabel="Frequency (GHz)",
-            ylabel="Signal (arb. unit)",
+            ylabel="Signal (arb. units)",
             return_figure=return_figure,
             save_image=save_image,
         )

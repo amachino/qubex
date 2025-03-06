@@ -315,8 +315,8 @@ class StateClassifierKMeans(StateClassifier):
             )
         fig.update_layout(
             title=f"State classification : {target}",
-            xlabel="In-Phase (arb. unit)",
-            ylabel="Quadrature (arb. unit)",
+            xlabel="In-Phase (arb. units)",
+            ylabel="Quadrature (arb. units)",
             showlegend=True,
             width=500,
             height=400,

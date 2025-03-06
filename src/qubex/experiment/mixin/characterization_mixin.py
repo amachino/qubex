@@ -171,7 +171,7 @@ class CharacterizationMixin(
                 )
                 fig.update_layout(
                     title=f"Readout SNR : {target}",
-                    xaxis3_title="Readout amplitude (arb. unit)",
+                    xaxis3_title="Readout amplitude (arb. units)",
                     ylabel="Signal",
                     yaxis2_title="Noise",
                     yaxis3_title="SNR",
@@ -1395,7 +1395,7 @@ class CharacterizationMixin(
         )
         fig1.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
         fig1.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
-        fig1.update_yaxes(title_text="Amplitude (arb. unit)", row=2, col=1)
+        fig1.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
         fig1.update_layout(
             title=f"Resonator frequency scan : {mux.label}",
             height=450,
@@ -1703,7 +1703,7 @@ class CharacterizationMixin(
             )
             fig.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
             fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
-            fig.update_yaxes(title_text="Amplitude (arb. unit)", row=2, col=1)
+            fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
             fig.update_layout(
                 title=f"Control frequency scan : {qubit}",
                 height=450,

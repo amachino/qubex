@@ -21,8 +21,8 @@ class IQPlotter:
         self._widget = go.FigureWidget()
         self._widget.update_layout(
             title="I/Q plane",
-            xaxis_title="In-phase (arb. unit)",
-            yaxis_title="Quadrature (arb. unit)",
+            xaxis_title="In-phase (arb. units)",
+            yaxis_title="Quadrature (arb. units)",
             width=500,
             height=400,
             margin=dict(l=120, r=120),

@@ -209,7 +209,7 @@ class Waveform(ABC):
         divide_by_two_pi: bool = False,
         title: str | None = None,
         xlabel: str = "Time (ns)",
-        ylabel: str = "Amplitude (arb. unit)",
+        ylabel: str = "Amplitude (arb. units)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
@@ -280,7 +280,7 @@ class Waveform(ABC):
         *,
         title: str = "",
         xlabel: str = "Time (ns)",
-        ylabel_1: str = "Amplitude (arb. unit)",
+        ylabel_1: str = "Amplitude (arb. units)",
         ylabel_2: str = "Phase (rad)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):

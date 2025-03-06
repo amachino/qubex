@@ -534,7 +534,7 @@ def fit_exp_decay(
     target: str | None = None,
     title: str = "Decay time",
     xlabel: str = "Time (μs)",
-    ylabel: str = "Signal (arb. unit)",
+    ylabel: str = "Signal (arb. units)",
     xaxis_type: Literal["linear", "log"] = "log",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -671,7 +671,7 @@ def fit_lorentzian(
     target: str | None = None,
     title: str = "Lorentzian fit",
     xlabel: str = "Frequency (GHz)",
-    ylabel: str = "Signal (arb. unit)",
+    ylabel: str = "Signal (arb. units)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -812,7 +812,7 @@ def fit_sqrt_lorentzian(
     target: str | None = None,
     title: str = "Square root Lorentzian fit",
     xlabel: str = "Frequency (GHz)",
-    ylabel: str = "Signal (arb. unit)",
+    ylabel: str = "Signal (arb. units)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -1114,7 +1114,7 @@ def fit_rabi(
     fig.update_layout(
         title=(f"Rabi oscillation of {target} : {frequency * 1e3:.2f} MHz"),
         xaxis_title="Drive duration (ns)",
-        yaxis_title=ylabel or "Signal (arb. unit)",
+        yaxis_title=ylabel or "Signal (arb. units)",
         yaxis_range=yaxis_range,
     )
 
@@ -1222,7 +1222,7 @@ def fit_detuned_rabi(
     fig.add_annotation(
         x=f_resonance,
         y=np.abs(f_rabi * 1e3),
-        text=f"min: {f_resonance:.6f} ± {f_resonance_err:.6f} GHz",
+        text=f"min: {f_resonance:.6f} GHz",
         showarrow=True,
         arrowhead=1,
     )
@@ -1270,7 +1270,7 @@ def fit_ramsey(
     plot: bool = True,
     title: str = "Ramsey fringe",
     xlabel: str = "Time (μs)",
-    ylabel: str = "Signal (arb. unit)",
+    ylabel: str = "Signal (arb. units)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -1372,7 +1372,8 @@ def fit_ramsey(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"τ = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs, f = {f * 1e3:.3f} ± {f_err * 1e3:.3f} MHz",
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.9)",
         showarrow=False,
     )
     fig.update_layout(
@@ -1541,6 +1542,7 @@ def fit_rb(
         print(f"  A = {A:.3g} ± {A_err:.1g}")
         print(f"  p = {p:.3g} ± {p_err:.1g}")
         print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.3f}")
         print(f"Depolarizing rate: {depolarizing_rate:.6f}")
         print(f"Average gate error: {avg_gate_error:.6f}")
         print(f"Average gate fidelity: {avg_gate_fidelity:.6f}")
@@ -1692,8 +1694,8 @@ def fit_ampl_calib_data(
     maximize: bool = True,
     plot: bool = True,
     title: str = "Amplitude calibration",
-    xlabel: str = "Amplitude (arb. unit)",
-    ylabel: str = "Signal (arb. unit)",
+    xlabel: str = "Amplitude (arb. units)",
+    ylabel: str = "Signal (arb. units)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:

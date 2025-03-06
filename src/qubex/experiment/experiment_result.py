@@ -151,7 +151,7 @@ class RabiData(TargetData):
         fig.update_layout(
             title=title or f"Rabi oscillation : {self.target}",
             xaxis_title=xlabel or "Drive duration (ns)",
-            yaxis_title=ylabel or "Signal (arb. unit)",
+            yaxis_title=ylabel or "Signal (arb. units)",
             width=width,
             height=height,
             template="qubex",
@@ -734,7 +734,7 @@ class AmplRabiData(TargetData):
         )
         fig.update_layout(
             title=f"Drive amplitude and Rabi rate : {self.target}",
-            xaxis_title="Drive amplitude (arb. unit)",
+            xaxis_title="Drive amplitude (arb. units)",
             ylabel="Rabi rate (MHz)",
         )
         fig.show()
