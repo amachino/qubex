@@ -16,10 +16,13 @@ class CalibrationProtocol(Protocol):
     def calibrate_default_pulse(
         self,
         targets: Collection[str],
+        *,
         pulse_type: Literal["pi", "hpi"],
+        n_points: int = 20,
         n_rotations: int = 1,
+        r2_threshold: float = 0.5,
         plot: bool = True,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -31,12 +34,86 @@ class CalibrationProtocol(Protocol):
             Target qubits to calibrate.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        ...
+
+    def calibrate_hpi_pulse(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the π/2 pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str], optional
+            Target qubits to calibrate.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        ...
+
+    def calibrate_pi_pulse(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the π pulse.
+
+        Parameters
+        ----------
+        targes : Collection[str], optional
+            Target qubits to calibrate.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -50,9 +127,12 @@ class CalibrationProtocol(Protocol):
     def calibrate_ef_pulse(
         self,
         targets: Collection[str],
+        *,
         pulse_type: Literal["pi", "hpi"],
+        n_points: int = 20,
         n_rotations: int = 1,
-        shots: int = DEFAULT_SHOTS,
+        r2_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
@@ -64,10 +144,84 @@ class CalibrationProtocol(Protocol):
             Target qubits to calibrate.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
             Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        ...
+
+    def calibrate_ef_hpi_pulse(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the ef π/2 pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str], optional
+            Target qubits to calibrate.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        ...
+
+    def calibrate_ef_pi_pulse(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the ef π pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str], optional
+            Target qubits to calibrate.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
@@ -84,7 +238,9 @@ class CalibrationProtocol(Protocol):
         *,
         spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"],
+        n_points: int = 20,
         n_rotations: int = 4,
+        r2_threshold: float = 0.5,
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         use_stored_amplitude: bool = False,
@@ -103,8 +259,12 @@ class CalibrationProtocol(Protocol):
             Spectator state. Defaults to "+".
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
         duration : float, optional
             Duration of the pulse. Defaults to None.
         drag_coeff : float, optional
@@ -131,7 +291,7 @@ class CalibrationProtocol(Protocol):
         *,
         spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 41),
+        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
         n_turns: int = 1,
         duration: float | None = None,
         degree: int = 3,
@@ -150,7 +310,7 @@ class CalibrationProtocol(Protocol):
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.5, 1.5, 41).
+            Range of the beta to sweep. Defaults to np.linspace(-1.5, 1.5, 20).
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 1.
         duration : float, optional
@@ -169,124 +329,16 @@ class CalibrationProtocol(Protocol):
         """
         ...
 
-    def calibrate_hpi_pulse(
-        self,
-        targets: Collection[str] | None = None,
-        n_rotations: int = 1,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
-        """
-        Calibrates the π/2 pulse.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target qubits to calibrate.
-        n_rotations : int, optional
-            Number of rotations. Defaults to 1.
-        shots : int, optional
-            Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-
-        Returns
-        -------
-        ExperimentResult[AmplCalibData]
-            Result of the experiment.
-        """
-        ...
-
-    def calibrate_pi_pulse(
-        self,
-        targets: Collection[str] | None = None,
-        n_rotations: int = 1,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
-        """
-        Calibrates the π pulse.
-
-        Parameters
-        ----------
-        targes : Collection[str], optional
-            Target qubits to calibrate.
-        n_rotations : int, optional
-            Number of rotations. Defaults to 1.
-        shots : int, optional
-            Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-
-        Returns
-        -------
-        ExperimentResult[AmplCalibData]
-            Result of the experiment.
-        """
-        ...
-
-    def calibrate_ef_hpi_pulse(
-        self,
-        targets: Collection[str] | None = None,
-        n_rotations: int = 1,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
-        """
-        Calibrates the ef π/2 pulse.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target qubits to calibrate.
-        n_rotations : int, optional
-            Number of rotations. Defaults to 1.
-        shots : int, optional
-            Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-
-        Returns
-        -------
-        ExperimentResult[AmplCalibData]
-            Result of the experiment.
-        """
-        ...
-
-    def calibrate_ef_pi_pulse(
-        self,
-        targets: Collection[str] | None = None,
-        n_rotations: int = 1,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
-        """
-        Calibrates the ef π pulse.
-
-        Parameters
-        ----------
-        targets : Collection[str], optional
-            Target qubits to calibrate.
-        n_rotations : int, optional
-            Number of rotations. Defaults to 1.
-        shots : int, optional
-            Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-
-        Returns
-        -------
-        ExperimentResult[AmplCalibData]
-            Result of the experiment.
-        """
-        ...
-
     def calibrate_drag_hpi_pulse(
         self,
         targets: Collection[str] | None = None,
+        *,
+        spectator_state: str = "+",
+        n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
         duration: float | None = None,
@@ -301,12 +353,18 @@ class CalibrationProtocol(Protocol):
         ----------
         targets : Collection[str], optional
             Target qubits to calibrate.
+        spectator_state : str, optional
+            Spectator state. Defaults to "+".
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 1.
         n_iterations : int, optional
             Number of iterations. Defaults to 2.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
         beta_range : ArrayLike, optional
@@ -332,9 +390,11 @@ class CalibrationProtocol(Protocol):
         targets: Collection[str] | None = None,
         *,
         spectator_state: str = "+",
+        n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
         duration: float | None = None,
@@ -350,12 +410,18 @@ class CalibrationProtocol(Protocol):
         ----------
         targets : Collection[str], optional
             Target qubits to calibrate.
+        spectator_state : str, optional
+            Spectator state. Defaults to "+".
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 1.
         n_iterations : int, optional
             Number of iterations. Defaults to 2.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
         beta_range : ArrayLike, optional

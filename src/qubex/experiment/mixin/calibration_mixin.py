@@ -45,6 +45,7 @@ class CalibrationMixin(
     def calibrate_default_pulse(
         self,
         targets: Collection[str],
+        *,
         pulse_type: Literal["pi", "hpi"],
         n_points: int = 20,
         n_rotations: int = 1,
@@ -161,6 +162,7 @@ class CalibrationMixin(
     def calibrate_hpi_pulse(
         self,
         targets: Collection[str] | None = None,
+        *,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -209,6 +211,7 @@ class CalibrationMixin(
     def calibrate_ef_pulse(
         self,
         targets: Collection[str],
+        *,
         pulse_type: Literal["pi", "hpi"],
         n_points: int = 20,
         n_rotations: int = 1,
@@ -338,6 +341,7 @@ class CalibrationMixin(
     def calibrate_ef_hpi_pulse(
         self,
         targets: Collection[str] | None = None,
+        *,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -544,7 +548,7 @@ class CalibrationMixin(
         *,
         spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 41),
+        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
         n_turns: int = 1,
         duration: float | None = None,
         degree: int = 3,
@@ -684,6 +688,8 @@ class CalibrationMixin(
     def calibrate_drag_hpi_pulse(
         self,
         targets: Collection[str] | None = None,
+        *,
+        spectator_state: str = "+",
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
@@ -709,6 +715,7 @@ class CalibrationMixin(
 
             amplitude = self.calibrate_drag_amplitude(
                 targets=targets,
+                spectator_state=spectator_state,
                 pulse_type="hpi",
                 n_points=n_points,
                 n_rotations=n_rotations,
@@ -723,6 +730,7 @@ class CalibrationMixin(
             if calibrate_beta:
                 beta = self.calibrate_drag_beta(
                     targets=targets,
+                    spectator_state=spectator_state,
                     pulse_type="hpi",
                     beta_range=beta_range,
                     n_turns=n_turns,
