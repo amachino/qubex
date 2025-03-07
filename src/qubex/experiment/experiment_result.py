@@ -483,12 +483,24 @@ class T1Data(SweepData):
         Type of the y-axis.
     t1 : float, optional
         T1 time.
+    t1_error : float, optional
+        Error of the T1 time.
+    r2 : float, optional
+        Coefficient of determination
     """
 
     t1: float = np.nan
+    t1_error: float = np.nan
+    r2: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, t1: float) -> T1Data:
+    def new(
+        cls,
+        sweep_data: SweepData,
+        t1: float,
+        t1_error: float,
+        r2: float,
+    ) -> T1Data:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -500,6 +512,8 @@ class T1Data(SweepData):
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t1=t1,
+            t1_error=t1_error,
+            r2=r2,
         )
 
     def fit(self) -> dict:

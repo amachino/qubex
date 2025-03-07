@@ -772,9 +772,17 @@ class CharacterizationMixin(
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
-                if "tau" in fit_result:
+                if fit_result["status"] == "success":
                     t1 = fit_result["tau"]
-                    t1_data = T1Data.new(sweep_data, t1=t1)
+                    t1_error = fit_result["tau_err"]
+                    r2 = fit_result["r2"]
+
+                    t1_data = T1Data.new(
+                        sweep_data,
+                        t1=t1,
+                        t1_error=t1_error,
+                        r2=r2,
+                    )
                     data[target] = t1_data
 
                 if save_image and "fig" in fit_result:

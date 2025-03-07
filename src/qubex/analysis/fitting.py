@@ -592,7 +592,10 @@ def fit_exp_decay(
         popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return {}
+        return {
+            "status": "error",
+            "message": "Failed to fit the data.",
+        }
 
     A, tau, C = popt
     A_err, tau_err, C_err = np.sqrt(np.diag(pcov))
@@ -624,7 +627,7 @@ def fit_exp_decay(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"R² = {r2:.3f}",
+        text=f"τ = {tau * 1e-3:.1f} ± {tau_err * 1e-3:.1f} μs, R² = {r2:.3f}",
         bgcolor="rgba(255, 255, 255, 0.8)",
         showarrow=False,
     )
@@ -646,9 +649,10 @@ def fit_exp_decay(
         print(f"  A = {A:.3g} ± {A_err:.1g}")
         print(f"  τ = {tau * 1e-3:.3g} ± {tau_err * 1e-3:.1g}")
         print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.3f}")
         print("")
 
-    return {
+    result = {
         "A": A,
         "tau": tau,
         "C": C,
@@ -659,6 +663,12 @@ def fit_exp_decay(
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
+    }
+
+    return {
+        "status": "success",
+        "message": "Fitting successful.",
+        **result,
     }
 
 
