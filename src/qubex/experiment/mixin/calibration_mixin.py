@@ -7,7 +7,6 @@ import cma
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike
-from tqdm import tqdm
 
 from ...analysis import fitting
 from ...analysis import visualization as viz
@@ -1046,7 +1045,8 @@ class CalibrationMixin(
         cr_phase: float = 0.0,
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
-        safe_factor: float = 1.1,
+        safe_factor: float = 1.0,
+        duration_unit: float = 16.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1092,7 +1092,7 @@ class CalibrationMixin(
 
         cr_label = f"{control_qubit}-{target_qubit}"
         half_duration = 0.5 * result["zx90_duration"] + cr_ramptime
-        cr_duration = (safe_factor * half_duration // 10 + 1) * 10
+        cr_duration = (safe_factor * half_duration // duration_unit + 1) * duration_unit
 
         self.calib_note.cr_params = {
             cr_label: {
@@ -1118,11 +1118,11 @@ class CalibrationMixin(
         target_qubit: str,
         *,
         cr_amplitude: float = 1.0,
-        cr_ramptime: float = 20.0,
+        cr_ramptime: float = 16.0,
         n_iterations: int = 4,
         time_range: ArrayLike = np.arange(0, 501, 20),
         use_stored_params: bool = True,
-        safe_factor: float = 1.1,
+        safe_factor: float = 1.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1152,7 +1152,8 @@ class CalibrationMixin(
 
         coeffs_history = defaultdict(list)
 
-        for _ in tqdm(range(n_iterations)):
+        for i in range(n_iterations):
+            print(f"Iteration {i + 1}/{n_iterations}")
             params = params_history[-1]
 
             result = self.update_cr_params(
@@ -1227,8 +1228,7 @@ class CalibrationMixin(
         ramptime: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
-        n_repetitions: int = 1,
-        degree: int = 3,
+        degree: int = 5,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
         store_params: bool = True,
@@ -1238,12 +1238,16 @@ class CalibrationMixin(
     ):
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self.calib_note.get_cr_param(cr_label)
+
         if cr_param is None:
             raise ValueError("CR parameters are not stored.")
+
         if duration is None:
             duration = cr_param["duration"]
+
         if ramptime is None:
             ramptime = cr_param["ramptime"]
+
         if amplitude_range is None:
             cr_amplitude = cr_param.get("cr_amplitude")
             if cr_amplitude is None:
@@ -1253,6 +1257,7 @@ class CalibrationMixin(
                 max_amplitude = np.clip(cr_amplitude * 1.5, 0.0, 1.0)
                 amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
         amplitude_range = np.array(amplitude_range)
+
         cr_phase = cr_param["cr_phase"]
         cancel_phase = cr_param["cancel_phase"]
         cr_cancel_ratio = cr_param["cr_cancel_ratio"]
@@ -1265,7 +1270,7 @@ class CalibrationMixin(
         elif isinstance(x180, Waveform):
             x180 = {control_qubit: x180}
 
-        def ecr_sequence(amplitude: float) -> PulseSchedule:
+        def ecr_sequence(amplitude: float, n_repetitions: int) -> PulseSchedule:
             ecr = CrossResonance(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
@@ -1278,7 +1283,7 @@ class CalibrationMixin(
                 echo=True,
                 pi_pulse=x180[control_qubit],
             ).repeated(n_repetitions)
-            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+            with PulseSchedule() as ps:
                 if initial_state != "0":
                     ps.add(
                         control_qubit,
@@ -1288,8 +1293,18 @@ class CalibrationMixin(
                 ps.call(ecr)
             return ps
 
-        sweep_result = self.sweep_parameter(
-            ecr_sequence,
+        print(f"Sweeping {cr_label} amplitude with ECR sequence (n = 1)")
+        sweep_result_1 = self.sweep_parameter(
+            lambda x: ecr_sequence(x, 1),
+            sweep_range=amplitude_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        print(f"Sweeping {cr_label} amplitude with ECR sequence (n = 3)")
+        sweep_result_3 = self.sweep_parameter(
+            lambda x: ecr_sequence(x, 3),
             sweep_range=amplitude_range,
             shots=shots,
             interval=interval,
@@ -1297,9 +1312,33 @@ class CalibrationMixin(
         )
 
         if use_zvalues:
-            signal = sweep_result.data[target_qubit].zvalues
+            signal_n1 = sweep_result_1.data[target_qubit].zvalues
+            signal_n3 = sweep_result_3.data[target_qubit].zvalues
         else:
-            signal = sweep_result.data[target_qubit].normalized
+            signal_n1 = sweep_result_1.data[target_qubit].normalized
+            signal_n3 = sweep_result_3.data[target_qubit].normalized
+
+        fit_result_n1 = fitting.fit_polynomial(
+            target=target_qubit,
+            x=amplitude_range,
+            y=signal_n1,
+            degree=degree,
+            title="ZX90 calibration (n = 1)",
+            xlabel="Amplitude (arb. units)",
+            ylabel="Signal",
+        )
+
+        fit_result_n3 = fitting.fit_polynomial(
+            target=target_qubit,
+            x=amplitude_range,
+            y=signal_n3,
+            degree=degree,
+            title="ZX90 calibration (n = 3)",
+            xlabel="Amplitude (arb. units)",
+            ylabel="Signal",
+        )
+
+        signal = signal_n1 - signal_n3
 
         fit_result = fitting.fit_polynomial(
             target=target_qubit,
@@ -1331,6 +1370,14 @@ class CalibrationMixin(
             "amplitude_range": amplitude_range,
             "signal": signal,
             **fit_result,
+            "n1": {
+                "signal": signal_n1,
+                **fit_result_n1,
+            },
+            "n3": {
+                "signal": signal_n3,
+                **fit_result_n3,
+            },
         }
 
     def optimize_x90(
