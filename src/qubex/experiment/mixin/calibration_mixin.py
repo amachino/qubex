@@ -161,7 +161,9 @@ class CalibrationMixin(
     def calibrate_hpi_pulse(
         self,
         targets: Collection[str] | None = None,
+        n_points: int = 20,
         n_rotations: int = 1,
+        r2_threshold: float = 0.5,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -173,7 +175,9 @@ class CalibrationMixin(
         return self.calibrate_default_pulse(
             targets=targets,
             pulse_type="hpi",
+            n_points=n_points,
             n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
             shots=shots,
             interval=interval,
         )
@@ -181,7 +185,9 @@ class CalibrationMixin(
     def calibrate_pi_pulse(
         self,
         targets: Collection[str] | None = None,
+        n_points: int = 20,
         n_rotations: int = 1,
+        r2_threshold: float = 0.5,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -193,7 +199,9 @@ class CalibrationMixin(
         return self.calibrate_default_pulse(
             targets=targets,
             pulse_type="pi",
+            n_points=n_points,
             n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
             shots=shots,
             interval=interval,
         )
@@ -202,8 +210,10 @@ class CalibrationMixin(
         self,
         targets: Collection[str],
         pulse_type: Literal["pi", "hpi"],
+        n_points: int = 20,
         n_rotations: int = 1,
-        shots: int = DEFAULT_SHOTS,
+        r2_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         targets = list(targets)
@@ -211,7 +221,9 @@ class CalibrationMixin(
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
-        ef_labels = [Target.ef_label(label) for label in targets]
+        ef_labels = [
+            Target.ef_label(label) for label in targets if label in self.ef_rabi_params
+        ]
 
         def calibrate(target: str) -> AmplCalibData:
             ge_label = Target.ge_label(target)
@@ -235,20 +247,26 @@ class CalibrationMixin(
                 rabi_rate = 0.5 / area
             else:
                 raise ValueError("Invalid pulse type.")
+
             ampl = self.calc_control_amplitudes(
                 rabi_rate=rabi_rate,
                 print_result=False,
             )[ef_label]
+
             ampl_min = ampl * (1 - 0.5 / n_rotations)
             ampl_max = ampl * (1 + 0.5 / n_rotations)
-            ampl_min = 0 if ampl_min < 0 else ampl_min
-            ampl_max = 1 if ampl_max > 1 else ampl_max
-            ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            ampl_min = np.clip(ampl_min, 0, 1)
+            ampl_max = np.clip(ampl_max, 0, 1)
+            if ampl_min == ampl_max:
+                ampl_min = 0
+                ampl_max = 1
+            ampl_range = np.linspace(ampl_min, ampl_max, n_points)
+
             n_per_rotation = 2 if pulse_type == "pi" else 4
             repetitions = n_per_rotation * n_rotations
 
             def sequence(x: float) -> PulseSchedule:
-                with PulseSchedule([ge_label, ef_label]) as ps:
+                with PulseSchedule() as ps:
                     ps.add(ge_label, self.hpi_pulse[ge_label].repeated(2))
                     ps.barrier()
                     ps.add(ef_label, pulse.scaled(x).repeated(repetitions))
@@ -274,6 +292,31 @@ class CalibrationMixin(
 
             r2 = fit_result["r2"]
 
+            if r2 > r2_threshold:
+                if pulse_type == "hpi":
+                    self.calib_note.update_hpi_param(
+                        ef_label,
+                        {
+                            "target": ef_label,
+                            "duration": pulse.duration,
+                            "amplitude": fit_result["amplitude"],
+                            "tau": pulse.tau,
+                        },
+                    )
+                elif pulse_type == "pi":
+                    self.calib_note.update_pi_param(
+                        ef_label,
+                        {
+                            "target": ef_label,
+                            "duration": pulse.duration,
+                            "amplitude": fit_result["amplitude"],
+                            "tau": pulse.tau,
+                        },
+                    )
+            else:
+                print(f"Error: R² value is too low ({r2:.3f})")
+                print(f"Calibration data not stored for {ef_label}.")
+
             return AmplCalibData.new(
                 sweep_data=sweep_data,
                 calib_value=fit_result["amplitude"],
@@ -282,14 +325,63 @@ class CalibrationMixin(
 
         data: dict[str, AmplCalibData] = {}
         for target in ef_labels:
-            print(f"Calibrating {target}...\n")
+            print(f"Calibrating {pulse_type} pulse for {target}...\n")
             data[target] = calibrate(target)
 
+        print("")
         print(f"Calibration results for {pulse_type} pulse:")
         for target, calib_data in data.items():
             print(f"  {target}: {calib_data.calib_value:.6f}")
 
         return ExperimentResult(data=data)
+
+    def calibrate_ef_hpi_pulse(
+        self,
+        targets: Collection[str] | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        if targets is None:
+            targets = self.qubit_labels
+        else:
+            targets = list(targets)
+
+        return self.calibrate_ef_pulse(
+            targets=targets,
+            pulse_type="hpi",
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_ef_pi_pulse(
+        self,
+        targets: Collection[str] | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        if targets is None:
+            targets = self.qubit_labels
+        else:
+            targets = list(targets)
+
+        return self.calibrate_ef_pulse(
+            targets=targets,
+            pulse_type="pi",
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            shots=shots,
+            interval=interval,
+        )
 
     def calibrate_drag_amplitude(
         self,
@@ -576,70 +668,6 @@ class CalibrationMixin(
         for target, beta in result.items():
             print(f"  {target}: {beta:.6f}")
 
-        return result
-
-    def calibrate_ef_hpi_pulse(
-        self,
-        targets: Collection[str] | None = None,
-        n_rotations: int = 1,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
-        result = self.calibrate_ef_pulse(
-            targets=targets,
-            pulse_type="hpi",
-            n_rotations=n_rotations,
-            shots=shots,
-            interval=interval,
-        )
-
-        ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.calib_note.hpi_params = {
-            target: {
-                "target": target,
-                "duration": HPI_DURATION,
-                "amplitude": ampl[target],
-                "tau": HPI_RAMPTIME,
-            }
-            for target in targets
-        }
-        return result
-
-    def calibrate_ef_pi_pulse(
-        self,
-        targets: Collection[str] | None = None,
-        n_rotations: int = 1,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
-        result = self.calibrate_ef_pulse(
-            targets=targets,
-            pulse_type="pi",
-            n_rotations=n_rotations,
-            shots=shots,
-            interval=interval,
-        )
-
-        ampl = {target: data.calib_value for target, data in result.data.items()}
-        self.calib_note.pi_params = {
-            target: {
-                "target": target,
-                "duration": PI_DURATION,
-                "amplitude": ampl[target],
-                "tau": PI_RAMPTIME,
-            }
-            for target in targets
-        }
         return result
 
     def calibrate_drag_hpi_pulse(

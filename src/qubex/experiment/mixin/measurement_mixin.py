@@ -1018,7 +1018,7 @@ class MeasurementMixin(
 
         # ef rabi sequence with rect pulses of duration T
         def ef_rabi_sequence(T: int) -> PulseSchedule:
-            with PulseSchedule(ge_labels + ef_labels) as ps:
+            with PulseSchedule() as ps:
                 # prepare qubits to the excited state
                 for ge in ge_labels:
                     ps.add(ge, self.hpi_pulse[ge].repeated(2))

@@ -1781,6 +1781,7 @@ def fit_ampl_calib_data(
         print(f"Failed to fit the data for {target}.")
         return {
             "amplitude": np.nan,
+            "r2": np.nan,
         }
 
     result = minimize(
