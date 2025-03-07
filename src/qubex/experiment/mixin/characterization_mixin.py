@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from copy import deepcopy
 from typing import Collection, Literal
@@ -29,6 +30,8 @@ from ..experiment_result import (
 )
 from ..experiment_util import ExperimentUtil
 from ..protocol import BaseProtocol, CharacterizationProtocol, MeasurementProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class CharacterizationMixin(
@@ -1214,6 +1217,7 @@ class CharacterizationMixin(
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
+                logger.debug(f"LO: {lo}, CNCO: {cnco}")
                 for sub_idx, freq in enumerate(subrange):
                     if idx > 0 and sub_idx == 0:
                         # measure the phase at the previous frequency with the new LO/NCO settings
@@ -1264,6 +1268,7 @@ class CharacterizationMixin(
                 y=0.95,
                 text=f"Phase shift: {coefficients[0] * 1e-3:.3f} rad/MHz",
                 showarrow=False,
+                bgcolor="rgba(255, 255, 255, 0.8)",
             )
             fig.update_layout(
                 title=f"Phase shift : {mux.label}",
@@ -1482,29 +1487,31 @@ class CharacterizationMixin(
             )["phases_diff"]
             phase_diff = np.append(phase_diff, phase_diff[-1])
             result.append(phase_diff)
-        if plot:
-            fig = go.Figure()
-            fig.add_trace(
-                go.Heatmap(
-                    x=frequency_range,
-                    y=power_range,
-                    z=result,
-                    colorscale="Viridis",
-                    colorbar=dict(
-                        title=dict(
-                            text="Phase shift (rad)",
-                            side="right",
-                        ),
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Heatmap(
+                x=frequency_range,
+                y=power_range,
+                z=result,
+                colorscale="Viridis",
+                colorbar=dict(
+                    title=dict(
+                        text="Phase shift (rad)",
+                        side="right",
                     ),
-                )
+                ),
             )
-            fig.update_layout(
-                title=f"Resonator spectroscopy : {mux.label}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Power (dB)",
-                width=600,
-                height=300,
-            )
+        )
+        fig.update_layout(
+            title=f"Resonator spectroscopy : {mux.label}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Power (dB)",
+            width=600,
+            height=300,
+        )
+
+        if plot:
             fig.show()
 
         if save_image:
@@ -1580,6 +1587,7 @@ class CharacterizationMixin(
         )
 
         fig = fit_result["fig"]
+
         if save_image:
             viz.save_figure_image(
                 fig,

@@ -405,7 +405,7 @@ class PulseArray(Waveform):
                 yanchor="bottom",
                 x=1,
                 y=0,
-                bgcolor="rgba(255, 255, 255, 0.9)",
+                bgcolor="rgba(255, 255, 255, 0.8)",
             ),
         )
 
