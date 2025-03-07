@@ -389,19 +389,22 @@ class CalibrationMixin(
         *,
         spectator_state: str = "+",
         pulse_type: Literal["pi", "hpi"],
+        n_points: int = 20,
         n_rotations: int = 4,
+        r2_threshold: float = 0.5,
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         use_stored_amplitude: bool = False,
         use_stored_beta: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> dict[str, float]:
+    ) -> dict[str, dict]:
         targets = list(targets)
         rabi_params = self.rabi_params
         self.validate_rabi_params(rabi_params)
 
-        def calibrate(target: str) -> float:
+        def calibrate(target: str) -> dict:
+            # hpi
             if pulse_type == "hpi":
                 hpi_param = self.calib_note.get_drag_hpi_param(target)
                 if hpi_param is not None and use_stored_beta:
@@ -424,7 +427,7 @@ class CalibrationMixin(
                         rabi_rate=rabi_rate,
                         print_result=False,
                     )[target]
-
+            # pi
             elif pulse_type == "pi":
                 pi_param = self.calib_note.get_drag_pi_param(target)
                 if pi_param is not None and use_stored_beta:
@@ -452,20 +455,19 @@ class CalibrationMixin(
 
             ampl_min = ampl * (1 - 0.5 / n_rotations)
             ampl_max = ampl * (1 + 0.5 / n_rotations)
-            ampl_min = 0 if ampl_min < 0 else ampl_min
-            ampl_max = 1 if ampl_max > 1 else ampl_max
-            ampl_range = np.linspace(ampl_min, ampl_max, 20)
+            ampl_min = np.clip(ampl_min, 0, 1)
+            ampl_max = np.clip(ampl_max, 0, 1)
+            if ampl_min == ampl_max:
+                ampl_min = 0
+                ampl_max = 1
+            ampl_range = np.linspace(ampl_min, ampl_max, n_points)
+
             n_per_rotation = 2 if pulse_type == "pi" else 4
 
             spectators = self.get_spectators(target)
-            all_targets = [target] + [
-                spectator.label
-                for spectator in spectators
-                if spectator.label in self.qubit_labels
-            ]
 
             def sequence(x: float) -> PulseSchedule:
-                with PulseSchedule(all_targets) as ps:
+                with PulseSchedule() as ps:
                     for spectator in spectators:
                         if spectator.label in self.qubit_labels:
                             ps.add(
@@ -497,35 +499,43 @@ class CalibrationMixin(
                 ylabel="Normalized signal",
             )
 
-            if pulse_type == "hpi":
-                self.calib_note.drag_hpi_params = {
-                    target: {
-                        "target": target,
-                        "duration": pulse.duration,
-                        "amplitude": fit_result["amplitude"],
-                        "beta": beta,
-                    }
-                }
-            elif pulse_type == "pi":
-                self.calib_note.drag_pi_params = {
-                    target: {
-                        "target": target,
-                        "duration": pulse.duration,
-                        "amplitude": fit_result["amplitude"],
-                        "beta": beta,
-                    }
-                }
+            r2 = fit_result["r2"]
+            if r2 > r2_threshold:
+                if pulse_type == "hpi":
+                    self.calib_note.update_drag_hpi_param(
+                        target,
+                        {
+                            "target": target,
+                            "duration": pulse.duration,
+                            "amplitude": fit_result["amplitude"],
+                            "beta": beta,
+                        },
+                    )
+                elif pulse_type == "pi":
+                    self.calib_note.update_drag_pi_param(
+                        target,
+                        {
+                            "target": target,
+                            "duration": pulse.duration,
+                            "amplitude": fit_result["amplitude"],
+                            "beta": beta,
+                        },
+                    )
+            else:
+                print(f"Error: R² value is too low ({r2:.3f})")
+                print(f"Calibration data not stored for {target}.")
 
-            return fit_result["amplitude"]
+            return fit_result
 
-        result: dict[str, float] = {}
+        result: dict[str, dict] = {}
         for target in targets:
-            print(f"Calibrating {target}...\n")
+            print(f"Calibrating DRAG {pulse_type} amplitude for {target}...\n")
             result[target] = calibrate(target)
 
+        print("")
         print(f"Calibration results for DRAG {pulse_type} amplitude:")
-        for target, amplitude in result.items():
-            print(f"  {target}: {amplitude:.6f}")
+        for target, data in result.items():
+            print(f"  {target}: {data['amplitude']:.6f}")
         return result
 
     def calibrate_drag_beta(
@@ -550,13 +560,6 @@ class CalibrationMixin(
         self.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
-            spectators = self.get_spectators(target)
-            all_targets = [target] + [
-                spectator.label
-                for spectator in spectators
-                if spectator.label in self.qubit_labels
-            ]
-
             if pulse_type == "hpi":
                 param = self.calib_note.get_drag_hpi_param(target)
             elif pulse_type == "pi":
@@ -567,8 +570,10 @@ class CalibrationMixin(
             drag_duration = duration or param["duration"]
             drag_amplitude = param["amplitude"]
 
+            spectators = self.get_spectators(target)
+
             def sequence(beta: float) -> PulseSchedule:
-                with PulseSchedule(all_targets) as ps:
+                with PulseSchedule() as ps:
                     for spectator in spectators:
                         if spectator.label in self.qubit_labels:
                             ps.add(
@@ -623,7 +628,9 @@ class CalibrationMixin(
                 interval=interval,
                 plot=False,
             ).data[target]
+
             values = sweep_data.normalized
+
             fit_result = fitting.fit_polynomial(
                 target=target,
                 x=beta_range,
@@ -636,34 +643,38 @@ class CalibrationMixin(
             beta = fit_result["root"]
             if np.isnan(beta):
                 beta = 0.0
+
             print(f"Calibrated beta: {beta:.6f}")
 
             if pulse_type == "hpi":
-                self.calib_note.drag_hpi_params = {
-                    target: {
+                self.calib_note.update_drag_hpi_param(
+                    target,
+                    {
                         "target": target,
                         "duration": drag_duration,
                         "amplitude": drag_amplitude,
                         "beta": beta,
-                    }
-                }
+                    },
+                )
             elif pulse_type == "pi":
-                self.calib_note.drag_pi_params = {
-                    target: {
+                self.calib_note.update_drag_pi_param(
+                    target,
+                    {
                         "target": target,
                         "duration": drag_duration,
                         "amplitude": drag_amplitude,
                         "beta": beta,
-                    }
-                }
+                    },
+                )
 
             return beta
 
         result = {}
         for target in targets:
-            print(f"Calibrating {target}...\n")
+            print(f"Calibrating DRAG {pulse_type} beta for {target}...\n")
             result[target] = calibrate(target)
 
+        print("")
         print(f"Calibration results for DRAG {pulse_type} beta:")
         for target, beta in result.items():
             print(f"  {target}: {beta:.6f}")
@@ -673,9 +684,11 @@ class CalibrationMixin(
     def calibrate_drag_hpi_pulse(
         self,
         targets: Collection[str] | None = None,
+        n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
         duration: float | None = None,
@@ -694,11 +707,12 @@ class CalibrationMixin(
             use_stored_amplitude = True if i > 0 else False
             use_stored_beta = True if i > 0 else False
 
-            print("Calibrating DRAG amplitude:")
             amplitude = self.calibrate_drag_amplitude(
                 targets=targets,
                 pulse_type="hpi",
+                n_points=n_points,
                 n_rotations=n_rotations,
+                r2_threshold=r2_threshold,
                 duration=duration,
                 use_stored_amplitude=use_stored_amplitude,
                 use_stored_beta=use_stored_beta,
@@ -707,7 +721,6 @@ class CalibrationMixin(
             )
 
             if calibrate_beta:
-                print("\nCalibrating DRAG beta:")
                 beta = self.calibrate_drag_beta(
                     targets=targets,
                     pulse_type="hpi",
@@ -734,9 +747,11 @@ class CalibrationMixin(
         targets: Collection[str] | None = None,
         *,
         spectator_state: str = "+",
+        n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
         beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
         duration: float | None = None,
@@ -756,12 +771,13 @@ class CalibrationMixin(
             use_stored_amplitude = True if i > 0 else False
             use_stored_beta = True if i > 0 else False
 
-            print("Calibrating DRAG amplitude:")
             amplitude = self.calibrate_drag_amplitude(
                 targets=targets,
                 spectator_state=spectator_state,
                 pulse_type="pi",
+                n_points=n_points,
                 n_rotations=n_rotations,
+                r2_threshold=r2_threshold,
                 duration=duration,
                 use_stored_amplitude=use_stored_amplitude,
                 use_stored_beta=use_stored_beta,
@@ -770,7 +786,6 @@ class CalibrationMixin(
             )
 
             if calibrate_beta:
-                print("Calibrating DRAG beta:")
                 beta = self.calibrate_drag_beta(
                     targets=targets,
                     spectator_state=spectator_state,
