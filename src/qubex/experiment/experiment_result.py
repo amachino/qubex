@@ -419,13 +419,21 @@ class AmplCalibData(SweepData):
         Type of the y-axis.
     calib_value : float, optional
         Calibrated value.
+    r2 : float, optional
+        Coefficient of determination.
     """
 
     sweep_range: NDArray
     calib_value: float = np.nan
+    r2: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, calib_value: float) -> AmplCalibData:
+    def new(
+        cls,
+        sweep_data: SweepData,
+        calib_value: float,
+        r2: float,
+    ) -> AmplCalibData:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -437,6 +445,7 @@ class AmplCalibData(SweepData):
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             calib_value=calib_value,
+            r2=r2,
         )
 
     def fit(self) -> dict:

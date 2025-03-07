@@ -1840,8 +1840,6 @@ def fit_ampl_calib_data(
     if plot:
         fig.show(config=_plotly_config(f"ampl_calib_{target}"))
 
-        print(f"Calibrated amplitude: {min_x:.6g}")
-
     return {
         "amplitude": min_x,
         "r2": r2,
