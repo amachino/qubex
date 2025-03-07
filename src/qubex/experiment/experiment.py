@@ -172,7 +172,6 @@ class Experiment(
         self._readout_duration: Final = readout_duration
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
-        self._rabi_params: Final[dict[str, RabiParam]] = {}
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
@@ -267,7 +266,7 @@ class Experiment(
         print("env:", sys.prefix)
         print("config:", self.config_path)
         print("params:", self.params_path)
-        print("chip:", self.chip_id)
+        print("chip:", self.chip_id, f"({self.chip.name})")
         print("qubits:", self.qubit_labels)
         print("muxes:", self.mux_labels)
         print("boxes:", self.box_ids)
@@ -541,13 +540,14 @@ class Experiment(
             param = self.calib_note.get_rabi_param(target)
             if param is not None and None not in param.values():
                 result[target] = RabiParam(
-                    target=param["target"],
-                    frequency=param["frequency"],
-                    amplitude=param["amplitude"],
-                    phase=param["phase"],
-                    offset=param["offset"],
-                    noise=param["noise"],
-                    angle=param["angle"],
+                    target=param.get("target"),
+                    frequency=param.get("frequency"),
+                    amplitude=param.get("amplitude"),
+                    phase=param.get("phase"),
+                    offset=param.get("offset"),
+                    noise=param.get("noise"),
+                    angle=param.get("angle"),
+                    r2=param.get("r2"),
                 )
         return result
 
@@ -619,23 +619,29 @@ class Experiment(
     def store_rabi_params(
         self,
         rabi_params: dict[str, RabiParam],
+        r2_threshold: float = 0.5,
     ):
-        if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
-            self._rabi_params.update(rabi_params)
+        not_stored = []
+        for label, rabi_param in rabi_params.items():
+            if rabi_param.r2 < r2_threshold:
+                not_stored.append(label)
+            else:
+                self.calib_note.update_rabi_param(
+                    label,
+                    {
+                        "target": rabi_param.target,
+                        "frequency": rabi_param.frequency,
+                        "amplitude": rabi_param.amplitude,
+                        "phase": rabi_param.phase,
+                        "offset": rabi_param.offset,
+                        "noise": rabi_param.noise,
+                        "angle": rabi_param.angle,
+                        "r2": rabi_param.r2,
+                    },
+                )
 
-        self.calib_note.rabi_params = {
-            label: {
-                "target": rabi_param.target,
-                "frequency": rabi_param.frequency,
-                "amplitude": rabi_param.amplitude,
-                "phase": rabi_param.phase,
-                "offset": rabi_param.offset,
-                "noise": rabi_param.noise,
-                "angle": rabi_param.angle,
-            }
-            for label, rabi_param in rabi_params.items()
-        }
-        console.print("Rabi parameters are stored.")
+        if len(not_stored) > 0:
+            print(f"Rabi parameters are not stored for qubits: {not_stored}")
 
     def get_pulse_for_state(
         self,
@@ -796,7 +802,7 @@ class Experiment(
             with self.state_manager.modified_frequencies(frequencies):
                 yield
 
-    def save_calib_data(self):
+    def save_calib_note(self):
         self.calib_note.save()
 
     @deprecated("Use `calib_note.save()` instead.")

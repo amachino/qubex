@@ -208,8 +208,9 @@ def print_chip_info(
 
     graph = LatticeGraph(chip.n_qubits)
 
+    draw_individual_results = False
+
     if len(info_type) == 0:
-        draw_individual_results = False
         info_type = (
             "chip_summary",
             "qubit_frequency",

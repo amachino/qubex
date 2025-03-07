@@ -61,6 +61,8 @@ class RabiParam:
         Fluctuation of the Rabi oscillation.
     angle : float
         Angle of the Rabi oscillation.
+    r2 : float
+        Coefficient of determination.
     """
 
     target: str
@@ -70,6 +72,7 @@ class RabiParam:
     offset: float
     noise: float
     angle: float
+    r2: float
 
 
 def normalize(
@@ -362,7 +365,6 @@ def fit_cosine(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    phase_est: float = 0.0,
     tau_est: float = 10_000,
     is_damped: bool = False,
     target: str | None = None,
@@ -380,8 +382,6 @@ def fit_cosine(
         x values for the data.
     y : ArrayLike
         y values for the data.
-    phase_est : float, optional
-        Initial phase of the cosine function.
     tau_est : float, optional
         Initial guess for the damping time constant.
     is_damped : bool, optional
@@ -962,7 +962,6 @@ def fit_rabi(
     target: str,
     times: NDArray,
     data: NDArray,
-    phase_est: float = 0.0,
     tau_est: float = 10_000,
     plot: bool = True,
     is_damped: bool = False,
@@ -980,8 +979,6 @@ def fit_rabi(
         Array of time points for the Rabi oscillations.
     data : NDArray[np.complex64]
         Complex signal data corresponding to the Rabi oscillations.
-    phase_est : float, optional
-        Initial phase of the Rabi oscillation.
     tau_est : float, optional
         Initial guess for the damping time constant.
     plot : bool, optional
@@ -1054,9 +1051,18 @@ def fit_rabi(
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return {
+            "status": "error",
+            "message": "Failed to fit the data.",
             "rabi_param": RabiParam(
-                target, np.nan, np.nan, np.nan, np.nan, noise, angle
-            )
+                target=target,
+                amplitude=np.nan,
+                frequency=np.nan,
+                phase=np.nan,
+                offset=np.nan,
+                noise=noise,
+                angle=angle,
+                r2=np.nan,
+            ),
         }
 
     if is_damped:
@@ -1124,7 +1130,7 @@ def fit_rabi(
         print(f"Target: {target}")
         print(f"Rabi frequency: {frequency * 1e3:.3g} ± {frequency_err * 1e3:.1g} MHz")
 
-    return {
+    result = {
         "rabi_param": RabiParam(
             target=target,
             amplitude=amplitude,
@@ -1133,6 +1139,7 @@ def fit_rabi(
             offset=offset,
             noise=noise,
             angle=angle,
+            r2=r2,
         ),
         "amplitude": amplitude,
         "frequency": frequency,
@@ -1151,6 +1158,27 @@ def fit_rabi(
         "pcov": pcov,
         "fig": fig,
     }
+
+    if r2 < 0.5:
+        print("Error: R² < 0.5")
+        return {
+            "status": "error",
+            "message": "R² < 0.5",
+            **result,
+        }
+    if r2 < 0.9:
+        print("Warning: R² < 0.9")
+        return {
+            "status": "warning",
+            "message": "R² < 0.9",
+            **result,
+        }
+    else:
+        return {
+            "status": "success",
+            "message": "Fitting successful",
+            **result,
+        }
 
 
 def fit_detuned_rabi(

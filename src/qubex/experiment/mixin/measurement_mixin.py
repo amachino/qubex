@@ -951,16 +951,16 @@ class MeasurementMixin(
         sweep_data = sweep_result.data
 
         # fit the Rabi oscillation
-        rabi_params = {
-            target: fitting.fit_rabi(
+        rabi_params = {}
+        for target, data in sweep_data.items():
+            fit_result = fitting.fit_rabi(
                 target=data.target,
                 times=data.sweep_range,
                 data=data.data,
                 plot=plot,
                 is_damped=is_damped,
-            )["rabi_param"]
-            for target, data in sweep_data.items()
-        }
+            )
+            rabi_params[target] = fit_result["rabi_param"]
 
         # store the Rabi parameters if necessary
         if store_params:

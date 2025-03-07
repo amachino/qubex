@@ -32,6 +32,7 @@ class RabiParam(Parameter):
     offset: float
     noise: float
     angle: float
+    r2: float
 
 
 class StateParam(Parameter):

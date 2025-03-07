@@ -492,8 +492,8 @@ class BaseProtocol(Protocol):
         """
         ...
 
-    def save_calib_data(self):
-        """Save the calibration data."""
+    def save_calib_note(self):
+        """Save the calibration note."""
         ...
 
     def save_defaults(self):

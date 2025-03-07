@@ -59,6 +59,7 @@ class ExperimentResult(Generic[T]):
 
     data: TargetMap[T]
     rabi_params: TargetMap[RabiParam] | None = None
+    status: str = "success"
     created_at: str = field(
         default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     )
