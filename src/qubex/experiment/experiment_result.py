@@ -483,14 +483,14 @@ class T1Data(SweepData):
         Type of the y-axis.
     t1 : float, optional
         T1 time.
-    t1_error : float, optional
+    t1_err : float, optional
         Error of the T1 time.
     r2 : float, optional
         Coefficient of determination
     """
 
     t1: float = np.nan
-    t1_error: float = np.nan
+    t1_err: float = np.nan
     r2: float = np.nan
 
     @classmethod
@@ -498,7 +498,7 @@ class T1Data(SweepData):
         cls,
         sweep_data: SweepData,
         t1: float,
-        t1_error: float,
+        t1_err: float,
         r2: float,
     ) -> T1Data:
         return cls(
@@ -512,7 +512,7 @@ class T1Data(SweepData):
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t1=t1,
-            t1_error=t1_error,
+            t1_err=t1_err,
             r2=r2,
         )
 
@@ -556,12 +556,24 @@ class T2Data(SweepData):
         Type of the y-axis.
     t2 : float, optional
         T2 echo time.
+    t2_err : float, optional
+        Error of the T2 echo time.
+    r2 : float, optional
+        Coefficient of determination.
     """
 
     t2: float = np.nan
+    t2_err: float = np.nan
+    r2: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, t2: float) -> T2Data:
+    def new(
+        cls,
+        sweep_data: SweepData,
+        t2: float,
+        t2_err: float,
+        r2: float,
+    ) -> T2Data:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -573,6 +585,8 @@ class T2Data(SweepData):
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t2=t2,
+            t2_err=t2_err,
+            r2=r2,
         )
 
     def fit(self) -> dict:
@@ -617,11 +631,14 @@ class RamseyData(SweepData):
         Frequency of the Ramsey fringes.
     bare_freq : float, optional
         Bare frequency of the qubit.
+    r2 : float, optional
+        Coefficient of determination.
     """
 
     t2: float = np.nan
     ramsey_freq: float = np.nan
     bare_freq: float = np.nan
+    r2: float = np.nan
 
     @classmethod
     def new(
@@ -630,6 +647,7 @@ class RamseyData(SweepData):
         t2: float,
         ramsey_freq: float,
         bare_freq: float,
+        r2: float,
     ) -> RamseyData:
         return cls(
             target=sweep_data.target,
@@ -644,6 +662,7 @@ class RamseyData(SweepData):
             t2=t2,
             ramsey_freq=ramsey_freq,
             bare_freq=bare_freq,
+            r2=r2,
         )
 
     def fit(self) -> dict:

@@ -504,6 +504,7 @@ def fit_cosine(
         print(f"  C = {C:.3g} ± {C_err:.1g}")
         if is_damped:
             print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
+        print(f"  R² = {r2:.3f}")
         print("")
 
     return {
@@ -645,7 +646,7 @@ def fit_exp_decay(
 
         if target:
             print(f"Target: {target}")
-        print("Fit: A * exp(-t / τ) + C")
+        print("Fit: A * exp(-t/τ) + C")
         print(f"  A = {A:.3g} ± {A_err:.1g}")
         print(f"  τ = {tau * 1e-3:.3g} ± {tau_err * 1e-3:.1g}")
         print(f"  C = {C:.3g} ± {C_err:.1g}")
@@ -1374,7 +1375,10 @@ def fit_ramsey(
         popt, pcov = curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return {}
+        return {
+            "status": "error",
+            "message": "Failed to fit the data.",
+        }
 
     A, omega, phi, C, tau = popt
     A_err, omega_err, phi_err, C_err, tau_err = np.sqrt(np.diag(pcov))
@@ -1432,9 +1436,10 @@ def fit_ramsey(
         print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
         print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
         print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.3f}")
         print("")
 
-    return {
+    result = {
         "A": A,
         "omega": omega,
         "phi": phi,
@@ -1451,6 +1456,12 @@ def fit_ramsey(
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
+    }
+
+    return {
+        "status": "success",
+        "message": "Fitting successful.",
+        **result,
     }
 
 

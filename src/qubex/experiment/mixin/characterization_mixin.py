@@ -774,18 +774,17 @@ class CharacterizationMixin(
                 )
                 if fit_result["status"] == "success":
                     t1 = fit_result["tau"]
-                    t1_error = fit_result["tau_err"]
+                    t1_err = fit_result["tau_err"]
                     r2 = fit_result["r2"]
 
                     t1_data = T1Data.new(
                         sweep_data,
                         t1=t1,
-                        t1_error=t1_error,
+                        t1_err=t1_err,
                         r2=r2,
                     )
                     data[target] = t1_data
 
-                if save_image and "fig" in fit_result:
                     fig = fit_result["fig"]
                     viz.save_figure_image(
                         fig,
@@ -874,12 +873,19 @@ class CharacterizationMixin(
                     xlabel="Time (μs)",
                     ylabel="Normalized signal",
                 )
-                if "tau" in fit_result:
+                if fit_result["status"] == "success":
                     t2 = fit_result["tau"]
-                    t2_data = T2Data.new(sweep_data, t2=t2)
+                    t2_err = fit_result["tau_err"]
+                    r2 = fit_result["r2"]
+
+                    t2_data = T2Data.new(
+                        sweep_data,
+                        t2=t2,
+                        t2_err=t2_err,
+                        r2=r2,
+                    )
                     data[target] = t2_data
 
-                if save_image and "fig" in fit_result:
                     fig = fit_result["fig"]
                     viz.save_figure_image(
                         fig,
@@ -892,7 +898,7 @@ class CharacterizationMixin(
         self,
         targets: Collection[str] | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 20001, 100),
+        time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
@@ -968,22 +974,25 @@ class CharacterizationMixin(
                         data=sweep_data.normalized,
                         plot=plot,
                     )
-                    if "tau" in fit_result and "f" in fit_result:
+                    if fit_result["status"] == "success":
+                        f = self.qubits[target].frequency
+                        t2 = fit_result["tau"]
+                        ramsey_freq = fit_result["f"]
+                        bare_freq = f + detuning - ramsey_freq
+                        r2 = fit_result["r2"]
                         ramsey_data = RamseyData.new(
                             sweep_data=sweep_data,
-                            t2=fit_result["tau"],
-                            ramsey_freq=fit_result["f"],
-                            bare_freq=self.targets[target].frequency
-                            + detuning
-                            - fit_result["f"],
+                            t2=t2,
+                            ramsey_freq=ramsey_freq,
+                            bare_freq=bare_freq,
+                            r2=r2,
                         )
                         data[target] = ramsey_data
 
-                    print(f"Bare frequency with |{spectator_state}〉:")
-                    print(f"  {target}: {ramsey_data.bare_freq:.6f}")
-                    print("")
+                        print(f"Bare frequency with |{spectator_state}〉:")
+                        print(f"  {target}: {ramsey_data.bare_freq:.6f}")
+                        print("")
 
-                    if save_image and "fig" in fit_result:
                         fig = fit_result["fig"]
                         viz.save_figure_image(
                             fig,
