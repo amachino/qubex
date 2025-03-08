@@ -145,6 +145,7 @@ class RabiData(TargetData):
         ylabel: str | None = None,
         width: int | None = None,
         height: int | None = None,
+        return_figure: bool = False,
         images_dir: Path | str | None = None,
     ):
         fig = go.Figure()
@@ -220,6 +221,8 @@ class RabiData(TargetData):
                 width=width,
                 height=height,
             )
+        if return_figure:
+            return fig
 
     def fit(
         self,
@@ -309,6 +312,7 @@ class SweepData(TargetData):
         ylabel: str | None = None,
         width: int | None = None,
         height: int | None = None,
+        return_figure: bool = False,
         images_dir: Path | str | None = None,
     ):
         fig = go.Figure()
@@ -390,6 +394,8 @@ class SweepData(TargetData):
                 width=width,
                 height=height,
             )
+        if return_figure:
+            return fig
 
 
 @dataclass
