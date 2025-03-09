@@ -1206,7 +1206,7 @@ class CalibrationMixin(
             )
 
         fig.update_layout(
-            title="CR Hamiltonian coefficients",
+            title=f"CR Hamiltonian coefficients : {cr_label}",
             xaxis_title="Number of steps",
             yaxis_title="Coefficient (MHz)",
             xaxis=dict(tickmode="array", tickvals=np.arange(len(value))),
@@ -1319,7 +1319,7 @@ class CalibrationMixin(
             signal_n3 = sweep_result_3.data[target_qubit].normalized
 
         fit_result_n1 = fitting.fit_polynomial(
-            target=target_qubit,
+            target=cr_label,
             x=amplitude_range,
             y=signal_n1,
             degree=degree,
@@ -1329,7 +1329,7 @@ class CalibrationMixin(
         )
 
         fit_result_n3 = fitting.fit_polynomial(
-            target=target_qubit,
+            target=cr_label,
             x=amplitude_range,
             y=signal_n3,
             degree=degree,
@@ -1341,7 +1341,7 @@ class CalibrationMixin(
         signal = signal_n1 - signal_n3
 
         fit_result = fitting.fit_polynomial(
-            target=target_qubit,
+            target=cr_label,
             x=amplitude_range,
             y=signal,
             degree=degree,
