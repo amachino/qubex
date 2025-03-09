@@ -1157,6 +1157,7 @@ class CalibrationMixin(
 
         coeffs_history = defaultdict(list)
 
+        print(f"Conducting CR Hamiltonian tomography for {cr_label}...")
         for i in range(n_iterations):
             print(f"Iteration {i + 1}/{n_iterations}")
             params = params_history[-1]
