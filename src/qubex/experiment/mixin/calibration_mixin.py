@@ -967,6 +967,11 @@ class CalibrationMixin(
             )
         )
 
+        print("Qubit pair:")
+        print(f"  control : {control_qubit}")
+        print(f"  target  : {target_qubit}")
+        print()
+
         print("Rotation coefficients:")
         for key, value in coeffs.items():
             print(f"  {key} : {value * 1e3:+.3f} MHz")
