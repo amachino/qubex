@@ -1198,7 +1198,7 @@ class CalibrationMixin(
         for key, value in hamiltonian_coeffs.items():
             fig.add_trace(
                 go.Scatter(
-                    x=np.arange(len(value)),
+                    x=np.arange(1, len(value) + 1),
                     y=value * 1e3,
                     mode="lines+markers",
                     name=f"{key}/2",
