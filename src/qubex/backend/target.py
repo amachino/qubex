@@ -8,7 +8,7 @@ from pydantic.dataclasses import dataclass
 
 from .control_system import CapChannel, GenChannel
 from .model import Model
-from .quantum_system import Qubit, Resonator
+from .quantum_system import Mux, Qubit, Resonator
 
 
 class TargetType(Enum):
@@ -16,10 +16,11 @@ class TargetType(Enum):
     CTRL_EF = "CTRL_EF"
     CTRL_CR = "CTRL_CR"
     READ = "READ"
+    PUMP = "PUMP"
     UNKNOWN = "UNKNOWN"
 
 
-QuantumObject = Union[Qubit, Resonator]
+QuantumObject = Union[Qubit, Resonator, Mux]
 
 
 @dataclass
@@ -63,6 +64,8 @@ class Target(Model):
             return self.object.label
         elif isinstance(self.object, Resonator):
             return self.object.qubit
+        elif isinstance(self.object, Mux):
+            return ""
         else:
             raise ValueError("Invalid quantum object.")
 
@@ -99,6 +102,10 @@ class Target(Model):
     @property
     def is_read(self) -> bool:
         return self.type == TargetType.READ
+
+    @property
+    def is_pump(self) -> bool:
+        return self.type == TargetType.PUMP
 
     @classmethod
     def new_target(
@@ -186,6 +193,22 @@ class Target(Model):
             frequency=resonator.frequency,
             channel=channel,
             type=TargetType.READ,
+        )
+
+    @classmethod
+    def new_pump_target(
+        cls,
+        *,
+        mux: Mux,
+        frequency: float,
+        channel: GenChannel,
+    ) -> Target:
+        return cls(
+            label=mux.label,
+            object=mux,
+            frequency=frequency,
+            channel=channel,
+            type=TargetType.PUMP,
         )
 
     @classmethod

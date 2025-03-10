@@ -291,7 +291,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             quel1_box.reconnect()
             for port in box.ports:
                 if isinstance(port, GenPort):
-                    if port.type in (PortType.CTRL, PortType.READ_OUT):
+                    if port.type in (PortType.CTRL, PortType.READ_OUT, PortType.PUMP):
                         try:
                             quel1_box.config_port(
                                 port=port.number,

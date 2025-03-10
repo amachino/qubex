@@ -3,10 +3,12 @@
     ctrl: [R21B-5, R21B-0, R21B-2, R21B-6]
     read_out: U15A-13
     read_in: U15A-12
+    pump: U15A-11
   - mux: 1
     ctrl: [U15A-5, U15A-6, U15A-7, U15A-8]
     read_out: U15A-0
     read_in: U15A-1
+    pump: U15A-2
   - mux: 2
     ctrl: [R21B-7, R21B-11, R21B-13, R21B-8]
     read_out: R20A-13
