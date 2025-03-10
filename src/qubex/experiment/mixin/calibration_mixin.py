@@ -1143,12 +1143,9 @@ class CalibrationMixin(
             n_cycles: int = 2,
             n_points_per_period=10,
         ) -> np.ndarray:
-            dt = (
-                (zx90_duration / n_points_per_period)
-                // SAMPLING_PERIOD
-                * SAMPLING_PERIOD
-            )
-            duration = zx90_duration * n_cycles
+            period = 4 * zx90_duration
+            dt = (period / n_points_per_period) // SAMPLING_PERIOD * SAMPLING_PERIOD
+            duration = period * n_cycles
             return np.arange(0, duration + 1, dt)
 
         cr_label = f"{control_qubit}-{target_qubit}"
