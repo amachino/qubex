@@ -896,7 +896,7 @@ class CharacterizationMixin(
 
     def ramsey_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
@@ -908,6 +908,8 @@ class CharacterizationMixin(
     ) -> ExperimentResult[RamseyData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -994,10 +996,12 @@ class CharacterizationMixin(
                         print("")
 
                         fig = fit_result["fig"]
-                        viz.save_figure_image(
-                            fig,
-                            name=f"ramsey_{target}",
-                        )
+
+                        if save_image:
+                            viz.save_figure_image(
+                                fig,
+                                name=f"ramsey_{target}",
+                            )
 
         return ExperimentResult(data=data)
 
