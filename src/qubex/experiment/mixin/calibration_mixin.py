@@ -967,9 +967,14 @@ class CalibrationMixin(
             )
         )
 
-        print("Qubit pair:")
-        print(f"  control : {control_qubit}")
-        print(f"  target  : {target_qubit}")
+        f_control = self.qubits[control_qubit].frequency
+        f_target = self.qubits[target_qubit].frequency
+        f_delta = f_target - f_control
+
+        print("Qubit frequencies:")
+        print(f"  control ({control_qubit}) : {f_control * 1e3:.3f} MHz")
+        print(f"  target  ({target_qubit})  : {f_target * 1e3:.3f} MHz")
+        print(f"  Δ : {f_delta * 1e3:.3f} MHz")
         print()
 
         print("Rotation coefficients:")
@@ -1122,10 +1127,10 @@ class CalibrationMixin(
         control_qubit: str,
         target_qubit: str,
         *,
-        cr_amplitude: float = 1.0,
+        cr_amplitude: float | None = None,
         cr_ramptime: float = 16.0,
         n_iterations: int = 4,
-        time_range: ArrayLike = np.arange(0, 501, 20),
+        time_range: ArrayLike | None = None,
         use_stored_params: bool = True,
         safe_factor: float = 1.0,
         x90: TargetMap[Waveform] | None = None,
@@ -1133,18 +1138,44 @@ class CalibrationMixin(
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
-        time_range = np.array(time_range, dtype=float)
+        def _create_time_range(
+            zx90_duration: float,
+            n_cycles: int = 2,
+            n_points_per_period=10,
+        ) -> np.ndarray:
+            dt = (
+                (zx90_duration / n_points_per_period)
+                // SAMPLING_PERIOD
+                * SAMPLING_PERIOD
+            )
+            duration = zx90_duration * n_cycles
+            return np.arange(0, duration + 1, dt)
 
         cr_label = f"{control_qubit}-{target_qubit}"
+
+        f_control = self.qubits[control_qubit].frequency
+        f_target = self.qubits[target_qubit].frequency
+        f_delta = f_target - f_control
+        max_cr_rabi = 0.75 * f_delta
+        max_cr_amplitude = self.calc_control_amplitudes(
+            rabi_rate=max_cr_rabi,
+            print_result=False,
+        )[control_qubit]
+
         current_cr_param = self.calib_note.cr_params.get(cr_label)
+
         if use_stored_params and current_cr_param is not None:
+            cr_amplitude = current_cr_param["cr_amplitude"]
             cr_phase = current_cr_param["cr_phase"]
             cancel_amplitude = current_cr_param["cr_cancel_ratio"] * cr_amplitude
             cancel_phase = current_cr_param["cancel_phase"]
+            time_range = _create_time_range(current_cr_param["duration"])
         else:
+            cr_amplitude = max_cr_amplitude
             cr_phase = 0.0
             cancel_amplitude = 0.0
             cancel_phase = 0.0
+            time_range = np.arange(0, 1001, 50)
 
         params_history = [
             {
@@ -1178,12 +1209,7 @@ class CalibrationMixin(
                 plot=plot,
             )
 
-            period = result["zx90_duration"] * 4
-            n_points_per_period = 10
-            dt = (period / n_points_per_period) // SAMPLING_PERIOD * SAMPLING_PERIOD
-            n_cycles = 2
-            duration = period * n_cycles
-            time_range = np.arange(0, duration + 1, dt)
+            time_range = _create_time_range(result["zx90_duration"])
 
             params_history.append(
                 {
@@ -1212,7 +1238,7 @@ class CalibrationMixin(
             )
 
         fig.update_layout(
-            title=f"CR Hamiltonian coefficients : {cr_label}",
+            title=f"CR Hamiltonian coefficients : control = {cr_label}",
             xaxis_title="Number of steps",
             yaxis_title="Coefficient (MHz)",
             xaxis=dict(tickmode="array", tickvals=np.arange(len(value))),
@@ -1305,24 +1331,13 @@ class CalibrationMixin(
             sweep_range=amplitude_range,
             shots=shots,
             interval=interval,
-            plot=plot,
-        )
-
-        print(f"Sweeping {cr_label} amplitude with ECR sequence (n = 3)")
-        sweep_result_3 = self.sweep_parameter(
-            lambda x: ecr_sequence(x, 3),
-            sweep_range=amplitude_range,
-            shots=shots,
-            interval=interval,
-            plot=plot,
+            plot=False,
         )
 
         if use_zvalues:
             signal_n1 = sweep_result_1.data[target_qubit].zvalues
-            signal_n3 = sweep_result_3.data[target_qubit].zvalues
         else:
             signal_n1 = sweep_result_1.data[target_qubit].normalized
-            signal_n3 = sweep_result_3.data[target_qubit].normalized
 
         fit_result_n1 = fitting.fit_polynomial(
             target=cr_label,
@@ -1334,6 +1349,20 @@ class CalibrationMixin(
             ylabel="Signal",
         )
 
+        print(f"Sweeping {cr_label} amplitude with ECR sequence (n = 3)")
+        sweep_result_3 = self.sweep_parameter(
+            lambda x: ecr_sequence(x, 3),
+            sweep_range=amplitude_range,
+            shots=shots,
+            interval=interval,
+            plot=False,
+        )
+
+        if use_zvalues:
+            signal_n3 = sweep_result_3.data[target_qubit].zvalues
+        else:
+            signal_n3 = sweep_result_3.data[target_qubit].normalized
+
         fit_result_n3 = fitting.fit_polynomial(
             target=cr_label,
             x=amplitude_range,
@@ -1343,6 +1372,8 @@ class CalibrationMixin(
             xlabel="Amplitude (arb. units)",
             ylabel="Signal",
         )
+
+        print("Find the root of the difference between n = 1 and n = 3")
 
         signal = signal_n1 - signal_n3
 
@@ -1371,6 +1402,19 @@ class CalibrationMixin(
                     "cr_cancel_ratio": cr_cancel_ratio,
                 },
             }
+
+        print()
+        print("Calibrated CR parameters:")
+        print(f"  CR duration      : {duration:.1f} ns")
+        print(f"  CR ramptime      : {ramptime:.1f} ns")
+        print(f"  CR amplitude     : {amplitude:.6f}")
+        print(f"  CR phase         : {cr_phase:.6f}")
+        print(f"  Cancel amplitude : {amplitude * cr_cancel_ratio:.6f}")
+        print(f"  Cancel phase     : {cancel_phase:.6f}")
+        print()
+        if plot:
+            zx90 = self.zx90(control_qubit, target_qubit)
+            zx90.plot(title="ZX90 sequence", show_physical_pulse=True)
 
         return {
             "amplitude_range": amplitude_range,

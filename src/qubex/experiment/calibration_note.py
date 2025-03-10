@@ -69,7 +69,7 @@ class CalibrationNote(ExperimentNote):
     def __init__(
         self,
         chip_id: str,
-        calibration_dir: str = CALIBRATION_DIR,
+        calibration_dir: Path | str = CALIBRATION_DIR,
         file_path: Path | str | None = None,
     ):
         self._chip_id = chip_id
@@ -153,6 +153,12 @@ class CalibrationNote(ExperimentNote):
     ):
         self.put_property(RABI_PARAMS, target, value)
 
+    def remove_rabi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(RABI_PARAMS, target)
+
     def get_hpi_param(
         self,
         target: str,
@@ -166,6 +172,12 @@ class CalibrationNote(ExperimentNote):
         value: FlatTopParam,
     ):
         self.put_property(HPI_PARAMS, target, value)
+
+    def remove_hpi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(HPI_PARAMS, target)
 
     def get_pi_param(
         self,
@@ -181,6 +193,12 @@ class CalibrationNote(ExperimentNote):
     ):
         self.put_property(PI_PARAMS, target, value)
 
+    def remove_pi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(PI_PARAMS, target)
+
     def get_drag_hpi_param(
         self,
         target: str,
@@ -194,6 +212,12 @@ class CalibrationNote(ExperimentNote):
         value: DragParam,
     ):
         self.put_property(DRAG_HPI_PARAMS, target, value)
+
+    def remove_drag_hpi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(DRAG_HPI_PARAMS, target)
 
     def get_drag_pi_param(
         self,
@@ -209,6 +233,12 @@ class CalibrationNote(ExperimentNote):
     ):
         self.put_property(DRAG_PI_PARAMS, target, value)
 
+    def remove_drag_pi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(DRAG_PI_PARAMS, target)
+
     def get_state_param(
         self,
         target: str,
@@ -223,6 +253,12 @@ class CalibrationNote(ExperimentNote):
     ):
         self.put_property(STATE_PARAMS, target, value)
 
+    def remove_state_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(STATE_PARAMS, target)
+
     def get_cr_param(
         self,
         target: str,
@@ -236,6 +272,12 @@ class CalibrationNote(ExperimentNote):
         value: CrossResonanceParam,
     ):
         self.put_property(CR_PARAMS, target, value)
+
+    def remove_cr_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(CR_PARAMS, target)
 
     def get_property(
         self,
@@ -266,6 +308,21 @@ class CalibrationNote(ExperimentNote):
         value: Any,
     ):
         self.put(key, {target: value})
+
+    def remove_property(
+        self,
+        key: str,
+        target: str,
+    ):
+        property = self.get(key)
+        if property is None:
+            print(f"Key '{key}' not found.")
+            return
+        if target not in property:
+            print(f"Key '{target}' not found.")
+            return
+        del property[target]
+        print(f"Key '{target}' removed.")
 
     def get(
         self,

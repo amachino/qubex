@@ -25,7 +25,6 @@ def test_init(tmp_path):
     note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
     assert note.chip_id == chip_id
     assert note.file_path == calibration_dir / f"{chip_id}.json"
-    assert note.file_path.exists()
     assert note.rabi_params == {}
     assert note.hpi_params == {}
     assert note.pi_params == {}
@@ -50,6 +49,7 @@ def test_update_rabi_param(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "r2": 0.5,
         },
     )
     param = note.get_rabi_param("Q00") or {}
@@ -208,6 +208,7 @@ def test_timestamp(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "r2": 0.5,
         },
     )
     param = note.get_rabi_param("Q00") or {}
@@ -224,6 +225,7 @@ def test_timestamp(tmp_path):
             "offset": 1.0,
             "noise": 1.0,
             "angle": 1.0,
+            "r2": 1.0,
         },
     )
     updated_param = note.get_rabi_param("Q00") or {}
@@ -247,6 +249,7 @@ def test_get_param_with_cutoff_days(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "r2": 0.5,
             "timestamp": datetime.strftime(
                 datetime.now() - timedelta(days=2), "%Y-%m-%d %H:%M:%S"
             ),

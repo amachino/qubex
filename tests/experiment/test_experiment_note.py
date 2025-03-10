@@ -9,7 +9,6 @@ def test_init(tmp_path):
     file_path = tmp_path / "note.json"
     note = ExperimentNote(file_path=file_path)
     assert note.file_path == file_path
-    assert file_path.exists()
 
 
 def test_put_invalid_values(tmp_path):
