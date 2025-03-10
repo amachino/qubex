@@ -896,6 +896,8 @@ class CalibrationMixin(
         interval: int = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict:
+        cr_label = f"{control_qubit}-{target_qubit}"
+
         if time_range is None:
             time_range = np.arange(0, 1001, 50)
         else:
@@ -937,7 +939,7 @@ class CalibrationMixin(
             time_range,
             target_states_0,
             plot=plot,
-            title="Cross resonance dynamics : |0〉",
+            title=f"Cross resonance dynamics of {cr_label} : control = |0〉",
             xlabel="Drive time (ns)",
             ylabel="Bloch vector",
         )
@@ -945,7 +947,7 @@ class CalibrationMixin(
             time_range,
             target_states_1,
             plot=plot,
-            title="Cross resonance dynamics : |1〉",
+            title=f"Cross resonance dynamics of {cr_label} : control = |1〉",
             xlabel="Drive time (ns)",
             ylabel="Bloch vector",
         )
@@ -969,12 +971,12 @@ class CalibrationMixin(
 
         f_control = self.qubits[control_qubit].frequency
         f_target = self.qubits[target_qubit].frequency
-        f_delta = f_target - f_control
+        f_delta = f_control - f_target
 
         print("Qubit frequencies:")
         print(f"  control ({control_qubit}) : {f_control * 1e3:.3f} MHz")
-        print(f"  target  ({target_qubit})  : {f_target * 1e3:.3f} MHz")
-        print(f"  Δ : {f_delta * 1e3:.3f} MHz")
+        print(f"  target  ({target_qubit}) : {f_target * 1e3:.3f} MHz")
+        print(f"  Δ ({cr_label}) : {f_delta * 1e3:.3f} MHz")
         print()
 
         print("Rotation coefficients:")
@@ -1152,12 +1154,13 @@ class CalibrationMixin(
 
         f_control = self.qubits[control_qubit].frequency
         f_target = self.qubits[target_qubit].frequency
-        f_delta = f_target - f_control
+        f_delta = np.abs(f_target - f_control)
         max_cr_rabi = 0.75 * f_delta
         max_cr_amplitude = self.calc_control_amplitudes(
             rabi_rate=max_cr_rabi,
             print_result=False,
         )[control_qubit]
+        max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, 1.0)
 
         current_cr_param = self.calib_note.cr_params.get(cr_label)
 
@@ -1235,7 +1238,7 @@ class CalibrationMixin(
             )
 
         fig.update_layout(
-            title=f"CR Hamiltonian coefficients : control = {cr_label}",
+            title=f"CR Hamiltonian coefficients : {cr_label}",
             xaxis_title="Number of steps",
             yaxis_title="Coefficient (MHz)",
             xaxis=dict(tickmode="array", tickvals=np.arange(len(value))),
@@ -1411,7 +1414,10 @@ class CalibrationMixin(
         print()
         if plot:
             zx90 = self.zx90(control_qubit, target_qubit)
-            zx90.plot(title="ZX90 sequence", show_physical_pulse=True)
+            zx90.plot(
+                title=f"ZX90 sequence : {cr_label}",
+                show_physical_pulse=True,
+            )
 
         return {
             "amplitude_range": amplitude_range,
