@@ -957,6 +957,21 @@ class Experiment(
         )
         return result
 
+    def calc_control_amplitude(
+        self,
+        target: str,
+        rabi_rate: float,
+    ) -> float:
+        default_amplitude = self.params.control_amplitude.get(target)
+        if default_amplitude is None:
+            raise ValueError(f"Control amplitude for {target} is not defined.")
+
+        rabi_param = self.rabi_params.get(target)
+        if rabi_param is None:
+            raise ValueError(f"Rabi parameters for {target} are not stored.")
+
+        return rabi_rate * default_amplitude / rabi_param.frequency
+
     def calc_control_amplitudes(
         self,
         rabi_rate: float = RABI_FREQUENCY,
@@ -995,6 +1010,22 @@ class Experiment(
                 print(f"{target}: {amplitude:.6f}")
 
         return amplitudes
+
+    def calc_rabi_rate(
+        self,
+        target: str,
+        control_amplitude,
+    ) -> float:
+        # TODO: Support ef targets
+        default_amplitude = self.params.control_amplitude.get(target)
+        if default_amplitude is None:
+            raise ValueError(f"Control amplitude for {target} is not defined.")
+
+        rabi_param = self.rabi_params.get(target)
+        if rabi_param is None:
+            raise ValueError(f"Rabi parameters for {target} are not stored.")
+
+        return control_amplitude * rabi_param.frequency / default_amplitude
 
     def calc_rabi_rates(
         self,

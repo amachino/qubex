@@ -79,10 +79,7 @@ class CalibrationMixin(
                 raise ValueError("Invalid pulse type.")
 
             # calculate the control amplitude for the target rabi rate
-            ampl = self.calc_control_amplitudes(
-                rabi_rate=rabi_rate,
-                print_result=False,
-            )[target]
+            ampl = self.calc_control_amplitude(target, rabi_rate)
 
             # create a range of amplitudes around the estimated value
             ampl_min = ampl * (1 - 0.5 / n_rotations)
@@ -250,10 +247,7 @@ class CalibrationMixin(
             else:
                 raise ValueError("Invalid pulse type.")
 
-            ampl = self.calc_control_amplitudes(
-                rabi_rate=rabi_rate,
-                print_result=False,
-            )[ef_label]
+            ampl = self.calc_control_amplitude(ef_label, rabi_rate)
 
             ampl_min = ampl * (1 - 0.5 / n_rotations)
             ampl_max = ampl * (1 + 0.5 / n_rotations)
@@ -426,10 +420,7 @@ class CalibrationMixin(
                 if hpi_param is not None and use_stored_amplitude:
                     ampl = hpi_param["amplitude"]
                 else:
-                    ampl = self.calc_control_amplitudes(
-                        rabi_rate=rabi_rate,
-                        print_result=False,
-                    )[target]
+                    ampl = self.calc_control_amplitude(target, rabi_rate)
             # pi
             elif pulse_type == "pi":
                 pi_param = self.calib_note.get_drag_pi_param(target)
@@ -449,10 +440,7 @@ class CalibrationMixin(
                 if pi_param is not None and use_stored_amplitude:
                     ampl = pi_param["amplitude"]
                 else:
-                    ampl = self.calc_control_amplitudes(
-                        rabi_rate=rabi_rate,
-                        print_result=False,
-                    )[target]
+                    ampl = self.calc_control_amplitude(target, rabi_rate)
             else:
                 raise ValueError("Invalid pulse type.")
 
@@ -987,10 +975,10 @@ class CalibrationMixin(
         # xt (cross-talk) rotation
         xt_rotation = coeffs["IX"] + 1j * coeffs["IY"]
         xt_rotation_amplitude = np.abs(xt_rotation)
-        xt_rotation_amplitude_hw = self.calc_control_amplitudes(
+        xt_rotation_amplitude_hw = self.calc_control_amplitude(
+            target=target_qubit,
             rabi_rate=xt_rotation_amplitude,
-            print_result=False,
-        )[target_qubit]
+        )
         xt_rotation_phase = np.angle(xt_rotation)
         xt_rotation_phase_deg = np.angle(xt_rotation, deg=True)
         print("XT (crosstalk) rotation:")
@@ -1005,10 +993,10 @@ class CalibrationMixin(
         # cr (cross-resonance) rotation
         cr_rotation = coeffs["ZX"] + 1j * coeffs["ZY"]
         cr_rotation_amplitude = np.abs(cr_rotation)
-        cr_rotation_amplitude_hw = self.calc_control_amplitudes(
+        cr_rotation_amplitude_hw = self.calc_control_amplitude(
+            target=target_qubit,
             rabi_rate=cr_rotation_amplitude,
-            print_result=False,
-        )[target_qubit]
+        )
         cr_rotation_phase = np.angle(cr_rotation)
         cr_rotation_phase_deg = np.angle(cr_rotation, deg=True)
         zx90_duration = 1 / (4 * cr_rotation_amplitude)
@@ -1023,10 +1011,7 @@ class CalibrationMixin(
         print()
 
         # ZX90 gate
-        cr_rabi_rate = self.calc_rabi_rates(
-            control_amplitude=cr_amplitude,
-            print_result=False,
-        )[control_qubit]
+        cr_rabi_rate = self.calc_rabi_rate(control_qubit, cr_amplitude)
         print("Estimated ZX90 gate:")
         print(f"  drive    : {cr_rabi_rate * 1e3:.1f} MHz ({cr_amplitude:.3f})")
         print(f"  duration : {zx90_duration:.1f} ns")
@@ -1156,10 +1141,7 @@ class CalibrationMixin(
         f_target = self.qubits[target_qubit].frequency
         f_delta = np.abs(f_target - f_control)
         max_cr_rabi = 0.75 * f_delta
-        max_cr_amplitude = self.calc_control_amplitudes(
-            rabi_rate=max_cr_rabi,
-            print_result=False,
-        )[control_qubit]
+        max_cr_amplitude = self.calc_control_amplitude(control_qubit, max_cr_rabi)
         max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, 1.0)
 
         current_cr_param = self.calib_note.cr_params.get(cr_label)

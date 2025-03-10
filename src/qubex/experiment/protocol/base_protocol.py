@@ -535,6 +535,28 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def calc_control_amplitude(
+        self,
+        target: str,
+        rabi_rate: float,
+    ) -> float:
+        """
+        Calculates the control amplitude for the Rabi rate.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        rabi_rate : float
+            Target Rabi rate in GHz.
+
+        Returns
+        -------
+        float
+            Control amplitude for the Rabi rate.
+        """
+        ...
+
     def calc_control_amplitudes(
         self,
         *,
@@ -561,6 +583,28 @@ class BaseProtocol(Protocol):
         -------
         dict[str, float]
             Control amplitudes for the Rabi rate.
+        """
+        ...
+
+    def calc_rabi_rate(
+        self,
+        target: str,
+        control_amplitude: float,
+    ) -> float:
+        """
+        Calculates the Rabi rate for the control amplitude.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        control_amplitude : float
+            Control amplitude.
+
+        Returns
+        -------
+        float
+            Calibrated Rabi rate.
         """
         ...
 
