@@ -345,6 +345,26 @@ class MeasurementProtocol(Protocol):
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]: ...
 
+    def measure_state_distribution(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        n_states: Literal[2, 3] = 2,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> list[MeasureResult]: ...
+
+    def build_classifier(
+        self,
+        targets: str | Collection[str] | None = None,
+        *,
+        n_states: Literal[2, 3] = 2,
+        shots: int = 8192,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> dict: ...
+
     def state_tomography(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,

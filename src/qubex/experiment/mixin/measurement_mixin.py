@@ -320,6 +320,291 @@ class MeasurementMixin(
 
         return result
 
+    def obtain_rabi_params(
+        self,
+        targets: str | Collection[str] | None = None,
+        *,
+        time_range: ArrayLike = RABI_TIME_RANGE,
+        amplitudes: dict[str, float] | None = None,
+        frequencies: dict[str, float] | None = None,
+        is_damped: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        store_params: bool = True,
+        simultaneous: bool = False,
+    ) -> ExperimentResult[RabiData]:
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+        time_range = np.asarray(time_range)
+        if amplitudes is None:
+            ampl = self.params.control_amplitude
+            amplitudes = {target: ampl[target] for target in targets}
+        if simultaneous:
+            result = self.rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                frequencies=frequencies,
+                is_damped=is_damped,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                store_params=store_params,
+            )
+        else:
+            rabi_data = {}
+            rabi_params = {}
+            for target in targets:
+                data = self.rabi_experiment(
+                    amplitudes={target: amplitudes[target]},
+                    time_range=time_range,
+                    frequencies=frequencies,
+                    is_damped=is_damped,
+                    shots=shots,
+                    interval=interval,
+                    store_params=store_params,
+                    plot=plot,
+                ).data[target]
+                rabi_data[target] = data
+                rabi_params[target] = data.rabi_param
+            result = ExperimentResult(
+                data=rabi_data,
+                rabi_params=rabi_params,
+            )
+        return result
+
+    def obtain_ef_rabi_params(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        time_range: ArrayLike = RABI_TIME_RANGE,
+        is_damped: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[RabiData]:
+        if targets is None:
+            targets = self.qubit_labels
+        else:
+            targets = list(targets)
+
+        time_range = np.asarray(time_range)
+
+        ef_labels = [Target.ef_label(target) for target in targets]
+        ef_targets = [self.targets[ef] for ef in ef_labels]
+
+        ampl = self.params.control_amplitude
+        amplitudes = {ef.label: ampl[ef.qubit] / np.sqrt(2) for ef in ef_targets}
+
+        rabi_data = {}
+        rabi_params = {}
+        for label in ef_labels:
+            data = self.ef_rabi_experiment(
+                amplitudes={label: amplitudes[label]},
+                time_range=time_range,
+                is_damped=is_damped,
+                shots=shots,
+                interval=interval,
+                store_params=True,
+                plot=plot,
+            ).data[label]
+            rabi_data[label] = data
+            rabi_params[label] = data.rabi_param
+
+        result = ExperimentResult(
+            data=rabi_data,
+            rabi_params=rabi_params,
+        )
+        return result
+
+    def rabi_experiment(
+        self,
+        *,
+        amplitudes: dict[str, float],
+        time_range: ArrayLike = RABI_TIME_RANGE,
+        frequencies: dict[str, float] | None = None,
+        detuning: float | None = None,
+        is_damped: bool = True,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        store_params: bool = False,
+    ) -> ExperimentResult[RabiData]:
+        # target labels
+        targets = list(amplitudes.keys())
+
+        # drive time range
+        time_range = np.array(time_range, dtype=np.float64)
+
+        # target frequencies
+        if frequencies is None:
+            frequencies = {
+                target: self.targets[target].frequency for target in amplitudes
+            }
+
+        # rabi sequence with rect pulses of duration T
+        def rabi_sequence(T: int) -> PulseSchedule:
+            with PulseSchedule(targets) as ps:
+                for target in targets:
+                    ps.add(target, Rect(duration=T, amplitude=amplitudes[target]))
+            return ps
+
+        # detune target frequencies if necessary
+        if detuning is not None:
+            frequencies = {
+                target: frequencies[target] + detuning for target in amplitudes
+            }
+
+        # run the Rabi experiment by sweeping the drive time
+        sweep_result = self.sweep_parameter(
+            sequence=rabi_sequence,
+            sweep_range=time_range,
+            frequencies=frequencies,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        # sweep data with the target labels
+        sweep_data = sweep_result.data
+
+        # fit the Rabi oscillation
+        rabi_params = {}
+        for target, data in sweep_data.items():
+            fit_result = fitting.fit_rabi(
+                target=data.target,
+                times=data.sweep_range,
+                data=data.data,
+                plot=plot,
+                is_damped=is_damped,
+            )
+            rabi_params[target] = fit_result["rabi_param"]
+
+        # store the Rabi parameters if necessary
+        if store_params:
+            self.store_rabi_params(rabi_params)
+
+        # create the Rabi data for each target
+        rabi_data = {
+            target: RabiData(
+                target=target,
+                data=data.data,
+                time_range=time_range,
+                rabi_param=rabi_params[target],
+                state_centers=self.state_centers.get(target),
+            )
+            for target, data in sweep_data.items()
+        }
+
+        # create the experiment result
+        result = ExperimentResult(
+            data=rabi_data,
+            rabi_params=rabi_params,
+        )
+
+        # return the result
+        return result
+
+    def ef_rabi_experiment(
+        self,
+        *,
+        amplitudes: dict[str, float],
+        time_range: ArrayLike,
+        frequencies: dict[str, float] | None = None,
+        detuning: float | None = None,
+        is_damped: bool = True,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        store_params: bool = False,
+    ) -> ExperimentResult[RabiData]:
+        amplitudes = {
+            Target.ef_label(label): amplitude for label, amplitude in amplitudes.items()
+        }
+        ge_labels = [Target.ge_label(label) for label in amplitudes]
+        ef_labels = [Target.ef_label(label) for label in amplitudes]
+        ef_targets = [self.targets[ef] for ef in ef_labels]
+
+        # drive time range
+        time_range = np.array(time_range, dtype=np.float64)
+
+        # target frequencies
+        if frequencies is None:
+            frequencies = {
+                target: self.targets[target].frequency for target in amplitudes
+            }
+
+        # ef rabi sequence with rect pulses of duration T
+        def ef_rabi_sequence(T: int) -> PulseSchedule:
+            with PulseSchedule() as ps:
+                # prepare qubits to the excited state
+                for ge in ge_labels:
+                    ps.add(ge, self.hpi_pulse[ge].repeated(2))
+                ps.barrier()
+                # apply the ef drive to induce the ef Rabi oscillation
+                for ef in ef_labels:
+                    ps.add(ef, Rect(duration=T, amplitude=amplitudes[ef]))
+            return ps
+
+        # detune target frequencies if necessary
+        if detuning is not None:
+            frequencies = {
+                target: frequencies[target] + detuning for target in amplitudes
+            }
+
+        # run the Rabi experiment by sweeping the drive time
+        sweep_result = self.sweep_parameter(
+            sequence=ef_rabi_sequence,
+            sweep_range=time_range,
+            frequencies=frequencies,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        # sweep data with the ef labels
+        sweep_data = {ef.label: sweep_result.data[ef.qubit] for ef in ef_targets}
+
+        # fit the Rabi oscillation
+        rabi_params = {
+            target: fitting.fit_rabi(
+                target=target,
+                times=data.sweep_range,
+                data=data.data,
+                plot=plot,
+                is_damped=is_damped,
+            )["rabi_param"]
+            for target, data in sweep_data.items()
+        }
+
+        # store the Rabi parameters if necessary
+        if store_params:
+            self.store_rabi_params(rabi_params)
+
+        # create the Rabi data for each target
+        rabi_data = {
+            target: RabiData(
+                target=target,
+                data=data.data,
+                time_range=time_range,
+                rabi_param=rabi_params[target],
+            )
+            for target, data in sweep_data.items()
+        }
+
+        # create the experiment result
+        result = ExperimentResult(
+            data=rabi_data,
+            rabi_params=rabi_params,
+        )
+
+        # return the result
+        return result
+
     def measure_state_distribution(
         self,
         targets: Collection[str] | None = None,
@@ -359,7 +644,7 @@ class MeasurementMixin(
         targets: str | Collection[str] | None = None,
         *,
         n_states: Literal[2, 3] = 2,
-        shots: int = 10000,
+        shots: int = 8192,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
@@ -797,291 +1082,6 @@ class MeasurementMixin(
             fig.show()
 
         return result_pops, result_errs
-
-    def obtain_rabi_params(
-        self,
-        targets: str | Collection[str] | None = None,
-        *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
-        amplitudes: dict[str, float] | None = None,
-        frequencies: dict[str, float] | None = None,
-        is_damped: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = True,
-        simultaneous: bool = False,
-    ) -> ExperimentResult[RabiData]:
-        if targets is None:
-            targets = self.qubit_labels
-        elif isinstance(targets, str):
-            targets = [targets]
-        else:
-            targets = list(targets)
-        time_range = np.asarray(time_range)
-        if amplitudes is None:
-            ampl = self.params.control_amplitude
-            amplitudes = {target: ampl[target] for target in targets}
-        if simultaneous:
-            result = self.rabi_experiment(
-                amplitudes=amplitudes,
-                time_range=time_range,
-                frequencies=frequencies,
-                is_damped=is_damped,
-                shots=shots,
-                interval=interval,
-                plot=plot,
-                store_params=store_params,
-            )
-        else:
-            rabi_data = {}
-            rabi_params = {}
-            for target in targets:
-                data = self.rabi_experiment(
-                    amplitudes={target: amplitudes[target]},
-                    time_range=time_range,
-                    frequencies=frequencies,
-                    is_damped=is_damped,
-                    shots=shots,
-                    interval=interval,
-                    store_params=store_params,
-                    plot=plot,
-                ).data[target]
-                rabi_data[target] = data
-                rabi_params[target] = data.rabi_param
-            result = ExperimentResult(
-                data=rabi_data,
-                rabi_params=rabi_params,
-            )
-        return result
-
-    def obtain_ef_rabi_params(
-        self,
-        targets: Collection[str] | None = None,
-        *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
-        is_damped: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-    ) -> ExperimentResult[RabiData]:
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
-        time_range = np.asarray(time_range)
-
-        ef_labels = [Target.ef_label(target) for target in targets]
-        ef_targets = [self.targets[ef] for ef in ef_labels]
-
-        ampl = self.params.control_amplitude
-        amplitudes = {ef.label: ampl[ef.qubit] / np.sqrt(2) for ef in ef_targets}
-
-        rabi_data = {}
-        rabi_params = {}
-        for label in ef_labels:
-            data = self.ef_rabi_experiment(
-                amplitudes={label: amplitudes[label]},
-                time_range=time_range,
-                is_damped=is_damped,
-                shots=shots,
-                interval=interval,
-                store_params=True,
-                plot=plot,
-            ).data[label]
-            rabi_data[label] = data
-            rabi_params[label] = data.rabi_param
-
-        result = ExperimentResult(
-            data=rabi_data,
-            rabi_params=rabi_params,
-        )
-        return result
-
-    def rabi_experiment(
-        self,
-        *,
-        amplitudes: dict[str, float],
-        time_range: ArrayLike = RABI_TIME_RANGE,
-        frequencies: dict[str, float] | None = None,
-        detuning: float | None = None,
-        is_damped: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = False,
-    ) -> ExperimentResult[RabiData]:
-        # target labels
-        targets = list(amplitudes.keys())
-
-        # drive time range
-        time_range = np.array(time_range, dtype=np.float64)
-
-        # target frequencies
-        if frequencies is None:
-            frequencies = {
-                target: self.targets[target].frequency for target in amplitudes
-            }
-
-        # rabi sequence with rect pulses of duration T
-        def rabi_sequence(T: int) -> PulseSchedule:
-            with PulseSchedule(targets) as ps:
-                for target in targets:
-                    ps.add(target, Rect(duration=T, amplitude=amplitudes[target]))
-            return ps
-
-        # detune target frequencies if necessary
-        if detuning is not None:
-            frequencies = {
-                target: frequencies[target] + detuning for target in amplitudes
-            }
-
-        # run the Rabi experiment by sweeping the drive time
-        sweep_result = self.sweep_parameter(
-            sequence=rabi_sequence,
-            sweep_range=time_range,
-            frequencies=frequencies,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-        )
-
-        # sweep data with the target labels
-        sweep_data = sweep_result.data
-
-        # fit the Rabi oscillation
-        rabi_params = {}
-        for target, data in sweep_data.items():
-            fit_result = fitting.fit_rabi(
-                target=data.target,
-                times=data.sweep_range,
-                data=data.data,
-                plot=plot,
-                is_damped=is_damped,
-            )
-            rabi_params[target] = fit_result["rabi_param"]
-
-        # store the Rabi parameters if necessary
-        if store_params:
-            self.store_rabi_params(rabi_params)
-
-        # create the Rabi data for each target
-        rabi_data = {
-            target: RabiData(
-                target=target,
-                data=data.data,
-                time_range=time_range,
-                rabi_param=rabi_params[target],
-                state_centers=self.state_centers.get(target),
-            )
-            for target, data in sweep_data.items()
-        }
-
-        # create the experiment result
-        result = ExperimentResult(
-            data=rabi_data,
-            rabi_params=rabi_params,
-        )
-
-        # return the result
-        return result
-
-    def ef_rabi_experiment(
-        self,
-        *,
-        amplitudes: dict[str, float],
-        time_range: ArrayLike,
-        frequencies: dict[str, float] | None = None,
-        detuning: float | None = None,
-        is_damped: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = False,
-    ) -> ExperimentResult[RabiData]:
-        amplitudes = {
-            Target.ef_label(label): amplitude for label, amplitude in amplitudes.items()
-        }
-        ge_labels = [Target.ge_label(label) for label in amplitudes]
-        ef_labels = [Target.ef_label(label) for label in amplitudes]
-        ef_targets = [self.targets[ef] for ef in ef_labels]
-
-        # drive time range
-        time_range = np.array(time_range, dtype=np.float64)
-
-        # target frequencies
-        if frequencies is None:
-            frequencies = {
-                target: self.targets[target].frequency for target in amplitudes
-            }
-
-        # ef rabi sequence with rect pulses of duration T
-        def ef_rabi_sequence(T: int) -> PulseSchedule:
-            with PulseSchedule() as ps:
-                # prepare qubits to the excited state
-                for ge in ge_labels:
-                    ps.add(ge, self.hpi_pulse[ge].repeated(2))
-                ps.barrier()
-                # apply the ef drive to induce the ef Rabi oscillation
-                for ef in ef_labels:
-                    ps.add(ef, Rect(duration=T, amplitude=amplitudes[ef]))
-            return ps
-
-        # detune target frequencies if necessary
-        if detuning is not None:
-            frequencies = {
-                target: frequencies[target] + detuning for target in amplitudes
-            }
-
-        # run the Rabi experiment by sweeping the drive time
-        sweep_result = self.sweep_parameter(
-            sequence=ef_rabi_sequence,
-            sweep_range=time_range,
-            frequencies=frequencies,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-        )
-
-        # sweep data with the ef labels
-        sweep_data = {ef.label: sweep_result.data[ef.qubit] for ef in ef_targets}
-
-        # fit the Rabi oscillation
-        rabi_params = {
-            target: fitting.fit_rabi(
-                target=target,
-                times=data.sweep_range,
-                data=data.data,
-                plot=plot,
-                is_damped=is_damped,
-            )["rabi_param"]
-            for target, data in sweep_data.items()
-        }
-
-        # store the Rabi parameters if necessary
-        if store_params:
-            self.store_rabi_params(rabi_params)
-
-        # create the Rabi data for each target
-        rabi_data = {
-            target: RabiData(
-                target=target,
-                data=data.data,
-                time_range=time_range,
-                rabi_param=rabi_params[target],
-            )
-            for target, data in sweep_data.items()
-        }
-
-        # create the experiment result
-        result = ExperimentResult(
-            data=rabi_data,
-            rabi_params=rabi_params,
-        )
-
-        # return the result
-        return result
 
     def measure_bell_state(
         self,
