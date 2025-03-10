@@ -321,7 +321,7 @@ class BenchmarkingProtocol(Protocol):
             Target qubit.
         interleaved_waveform : Waveform
             Waveform of the interleaved gate.
-        interleaved_clifford : Clifford | dict[str, tuple[complex, str]]
+        interleaved_clifford : str | Clifford | dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 100).

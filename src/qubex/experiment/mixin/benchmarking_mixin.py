@@ -474,7 +474,7 @@ class BenchmarkingMixin(
         *,
         target: str,
         interleaved_waveform: Waveform | PulseSchedule,
-        interleaved_clifford: Clifford | dict[str, tuple[complex, str]],
+        interleaved_clifford: str | Clifford | dict[str, tuple[complex, str]],
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: TargetMap[Waveform] | Waveform | None = None,
@@ -508,6 +508,13 @@ class BenchmarkingMixin(
                 n_cliffords_range = np.arange(0, 1001, 100)
 
         n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
+        if isinstance(interleaved_clifford, str):
+            clifford = self.clifford.get(interleaved_clifford)
+            if clifford is None:
+                raise ValueError(f"Invalid Clifford: {interleaved_clifford}")
+            else:
+                interleaved_clifford = clifford
 
         rb_results = []
         irb_results = []
