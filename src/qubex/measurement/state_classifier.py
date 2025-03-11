@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import pickle
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -19,6 +21,37 @@ class StateClassifier(ABC):
     label_map: dict[int, int]
     confusion_matrix: NDArray
     scale: float
+    created_at: str
+
+    def save(self, path: Path | str):
+        """
+        Save the state classifier model to a file.
+
+        Parameters
+        ----------
+        path : Path | str
+            The path to save the model.
+        """
+        with open(path, "wb") as file:
+            pickle.dump(self, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    @staticmethod
+    def load(path: Path | str) -> StateClassifier:
+        """
+        Load a state classifier model from a file.
+
+        Parameters
+        ----------
+        path : Path | str
+            The path to load the model.
+
+        Returns
+        -------
+        StateClassifier
+            A state classifier model.
+        """
+        with open(path, "rb") as file:
+            return pickle.load(file)
 
     @property
     @abstractmethod

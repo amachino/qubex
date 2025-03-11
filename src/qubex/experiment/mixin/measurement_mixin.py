@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from pathlib import Path
 from typing import Collection, Literal, Optional, Sequence
 
 import numpy as np
@@ -35,7 +36,11 @@ from ...typing import (
     ParametricWaveformDict,
     TargetMap,
 )
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE
+from ..experiment_constants import (
+    CALIBRATION_SHOTS,
+    CLASSIFIER_DIR,
+    RABI_TIME_RANGE,
+)
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
 
@@ -644,6 +649,7 @@ class MeasurementMixin(
         targets: str | Collection[str] | None = None,
         *,
         n_states: Literal[2, 3] = 2,
+        save_dir: Path | str | None = None,
         shots: int = 8192,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -683,6 +689,15 @@ class MeasurementMixin(
         else:
             raise ValueError("Invalid classifier type.")
         self.measurement.update_classifiers(classifiers)
+
+        for label, classifier in classifiers.items():
+            if save_dir is not None:
+                path = Path(save_dir) / self.chip_id / f"{label}.pkl"
+            else:
+                path = Path(CLASSIFIER_DIR) / self.chip_id / f"{label}.pkl"
+            if not path.parent.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+            classifier.save(path)
 
         fidelities = {}
         average_fidelities = {}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import numpy as np
 import plotly.graph_objects as go
@@ -35,6 +36,7 @@ class StateClassifierKMeans(StateClassifier):
     model: KMeans
     label_map: dict[int, int]
     confusion_matrix: NDArray
+    created_at: str
 
     @property
     def n_states(self) -> int:
@@ -133,6 +135,7 @@ class StateClassifierKMeans(StateClassifier):
             label_map=label_map,
             confusion_matrix=confusion_matrix,
             scale=1.0,
+            created_at=datetime.now().isoformat(),
         )
 
     @staticmethod

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Collection, ContextManager, Literal, Protocol
 
 from numpy.typing import NDArray
@@ -269,6 +270,11 @@ class BaseProtocol(Protocol):
     @property
     def ef_rabi_params(self) -> dict[str, RabiParam]:
         """Get the ef Rabi parameters."""
+        ...
+
+    @property
+    def classifier_dir(self) -> Path:
+        """Get the classifier directory."""
         ...
 
     @property

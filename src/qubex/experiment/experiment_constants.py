@@ -1,4 +1,5 @@
 CALIBRATION_DIR = ".calibration"
+CLASSIFIER_DIR = ".classifier"
 
 USER_NOTE_PATH = ".user_note.json"
 SYSTEM_NOTE_PATH = ".system_note.json"

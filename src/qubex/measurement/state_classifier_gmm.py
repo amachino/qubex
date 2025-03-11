@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 import numpy as np
 import plotly.graph_objects as go
@@ -37,6 +38,7 @@ class StateClassifierGMM(StateClassifier):
     label_map: dict[int, int]
     confusion_matrix: NDArray
     scale: float
+    created_at: str
 
     @property
     def n_states(self) -> int:
@@ -166,6 +168,7 @@ class StateClassifierGMM(StateClassifier):
             label_map=label_map,
             confusion_matrix=confusion_matrix,
             scale=scale,
+            created_at=datetime.now().isoformat(),
         )
 
     @staticmethod

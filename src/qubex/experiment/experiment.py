@@ -55,6 +55,7 @@ from ..version import get_package_version
 from . import experiment_tool
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
+    CLASSIFIER_DIR,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     HPI_DURATION,
@@ -113,6 +114,8 @@ class Experiment(
         Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
     readout_duration : int, optional
         Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+    classifier_dir : Path | str, optional
+        Directory of the state classifiers. Defaults to CLASSIFIER_DIR.
     classifier_type : Literal["kmeans", "gmm"], optional
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
@@ -145,6 +148,7 @@ class Experiment(
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
+        classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         use_neopulse: bool = False,
@@ -170,6 +174,7 @@ class Experiment(
         self._capture_window: Final = capture_window
         self._capture_margin: Final = capture_margin
         self._readout_duration: Final = readout_duration
+        self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
         self._measurement = Measurement(
@@ -195,6 +200,16 @@ class Experiment(
                 self.linkup()
             except Exception as e:
                 print(e)
+
+        self._load_classifiers()
+
+    def _load_classifiers(self):
+        for qubit in self.qubit_labels:
+            classifier_path = self.classifier_dir / self.chip_id / f"{qubit}.pkl"
+            if classifier_path.exists():
+                self._measurement.classifiers[qubit] = StateClassifier.load(  # type: ignore
+                    classifier_path
+                )
 
     def _load_config(
         self,
@@ -566,6 +581,10 @@ class Experiment(
             for target, param in self.rabi_params.items()
             if self.targets[target].is_ef
         }
+
+    @property
+    def classifier_dir(self) -> Path:
+        return Path(self._classifier_dir)
 
     @property
     def classifier_type(self) -> Literal["kmeans", "gmm"]:
