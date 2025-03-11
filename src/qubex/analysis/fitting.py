@@ -1630,6 +1630,7 @@ def plot_irb(
     C_rb: float,
     C_irb: float,
     gate_fidelity: float,
+    plot: bool = True,
     title: str = "Interleaved randomized benchmarking",
     xlabel: str = "Number of Cliffords",
     ylabel: str = "Normalized signal",
@@ -1657,6 +1658,8 @@ def plot_irb(
         Depolarizing parameter of the randomized benchmarking.
     p_irb : float
         Depolarizing parameter of the interleaved randomized benchmarking.
+    plot : bool, optional
+        Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
     xlabel : str, optional
@@ -1730,7 +1733,8 @@ def plot_irb(
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
-    fig.show(config=_plotly_config(f"irb_{target}"))
+    if plot:
+        fig.show(config=_plotly_config(f"irb_{target}"))
     return fig
 
 

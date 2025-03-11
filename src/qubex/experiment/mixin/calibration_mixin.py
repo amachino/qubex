@@ -643,8 +643,6 @@ class CalibrationMixin(
             if np.isnan(beta):
                 beta = 0.0
 
-            print(f"Calibrated beta: {beta:.6f}")
-
             if pulse_type == "hpi":
                 self.calib_note.update_drag_hpi_param(
                     target,

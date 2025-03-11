@@ -284,7 +284,7 @@ class BenchmarkingMixin(
         self,
         *,
         target: str,
-        n_cliffords_range: ArrayLike = np.arange(0, 21, 2),
+        n_cliffords_range: ArrayLike = np.arange(0, 31, 3),
         x90: TargetMap[Waveform] | None = None,
         zx90: (
             PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
@@ -634,6 +634,7 @@ class BenchmarkingMixin(
             C_rb=C_rb,
             C_irb=C_irb,
             gate_fidelity=gate_fidelity,
+            plot=plot,
             title="Interleaved randomized benchmarking",
             xlabel="Number of Cliffords",
             ylabel="Normalized signal",
