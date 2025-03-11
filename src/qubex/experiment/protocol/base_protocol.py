@@ -545,6 +545,8 @@ class BaseProtocol(Protocol):
         self,
         target: str,
         rabi_rate: float,
+        *,
+        rabi_amplitude_ratio: float | None = None,
     ) -> float:
         """
         Calculates the control amplitude for the Rabi rate.
@@ -555,6 +557,8 @@ class BaseProtocol(Protocol):
             Target qubit.
         rabi_rate : float
             Target Rabi rate in GHz.
+        rabi_amplitude_ratio : float, optional
+            Ratio of the Rabi amplitude. Defaults to None.
 
         Returns
         -------

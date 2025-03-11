@@ -1120,6 +1120,7 @@ class CalibrationMixin(
         n_points_per_cycle: int = 10,
         time_range: ArrayLike | None = None,
         use_stored_params: bool = True,
+        tolerance: float = 10e-6,
         safe_factor: float = 1.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
@@ -1190,11 +1191,9 @@ class CalibrationMixin(
                 plot=plot,
             )
 
-            time_range = _create_time_range(result["zx90_duration"])
-
             params_history.append(
                 {
-                    "time_range": time_range,
+                    "time_range": _create_time_range(result["zx90_duration"]),
                     "cr_phase": result["cr_param"]["cr_phase"],
                     "cancel_amplitude": result["cr_param"]["cancel_amplitude"],
                     "cancel_phase": result["cr_param"]["cancel_phase"],
@@ -1202,6 +1201,23 @@ class CalibrationMixin(
             )
             for key, value in result["coeffs"].items():
                 coeffs_history[key].append(value)
+
+            if i > 0:
+                IX = coeffs_history["IX"][-1]
+                IY = coeffs_history["IY"][-1]
+                IX_diff = coeffs_history["IX"][-2] - IX
+                IY_diff = coeffs_history["IY"][-2] - IY
+
+                if abs(IX) < tolerance and abs(IY) < tolerance:
+                    print("Convergence reached.")
+                    print(f"  IX : {IX * 1e3:.3f} MHz")
+                    print(f"  IY : {IY * 1e3:.3f} MHz")
+                    break
+                if abs(IX_diff) < tolerance and abs(IY_diff) < tolerance:
+                    print("Convergence reached.")
+                    print(f"  IX_diff : {IX_diff * 1e3:.3f} MHz")
+                    print(f"  IY_diff : {IY_diff * 1e3:.3f} MHz")
+                    break
 
         hamiltonian_coeffs = {
             key: np.array(value) for key, value in coeffs_history.items()
@@ -1306,7 +1322,7 @@ class CalibrationMixin(
                 ps.call(ecr)
             return ps
 
-        print(f"Sweeping {cr_label} amplitude with ECR sequence (n = 1)")
+        print(f"Sweeping {cr_label} amplitude with a single ECR sequence...")
         sweep_result_1 = self.sweep_parameter(
             lambda x: ecr_sequence(x, 1),
             sweep_range=amplitude_range,
@@ -1330,7 +1346,7 @@ class CalibrationMixin(
             ylabel="Signal",
         )
 
-        print(f"Sweeping {cr_label} amplitude with ECR sequence (n = 3)")
+        print(f"Sweeping {cr_label} amplitude with a 3-repetition ECR sequence...")
         sweep_result_3 = self.sweep_parameter(
             lambda x: ecr_sequence(x, 3),
             sweep_range=amplitude_range,

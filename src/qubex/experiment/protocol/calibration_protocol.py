@@ -509,6 +509,7 @@ class CalibrationProtocol(Protocol):
         n_points_per_cycle: int = 10,
         time_range: ArrayLike | None = None,
         use_stored_params: bool = True,
+        tolerance: float = 10e-6,
         safe_factor: float = 1.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
