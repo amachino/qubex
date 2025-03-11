@@ -327,7 +327,6 @@ class CalibrationMixin(
 
         data: dict[str, AmplCalibData] = {}
         for target in ef_labels:
-            print(f"Calibrating {pulse_type} pulse for {target}...")
             data[target] = calibrate(target)
 
         print("")
@@ -532,13 +531,8 @@ class CalibrationMixin(
 
         result: dict[str, dict] = {}
         for target in targets:
-            print(f"Calibrating DRAG {pulse_type} amplitude for {target}...")
             result[target] = calibrate(target)
 
-        print("")
-        print(f"Calibration results for DRAG {pulse_type} amplitude:")
-        for target, data in result.items():
-            print(f"  {target}: {data['amplitude']:.6f}")
         return result
 
     def calibrate_drag_beta(
@@ -676,13 +670,7 @@ class CalibrationMixin(
 
         result = {}
         for target in targets:
-            print(f"Calibrating DRAG {pulse_type} beta for {target}...")
             result[target] = calibrate(target)
-
-        print("")
-        print(f"Calibration results for DRAG {pulse_type} beta:")
-        for target, beta in result.items():
-            print(f"  {target}: {beta:.6f}")
 
         return result
 
