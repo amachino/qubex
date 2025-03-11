@@ -61,6 +61,7 @@ class CalibrationProtocol(Protocol):
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -77,6 +78,8 @@ class CalibrationProtocol(Protocol):
             Number of rotations. Defaults to 1.
         r2_threshold : float, optional
             Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -96,6 +99,7 @@ class CalibrationProtocol(Protocol):
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -112,6 +116,8 @@ class CalibrationProtocol(Protocol):
             Number of rotations. Defaults to 1.
         r2_threshold : float, optional
             Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -132,6 +138,7 @@ class CalibrationProtocol(Protocol):
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -150,6 +157,8 @@ class CalibrationProtocol(Protocol):
             Number of rotations. Defaults to 1.
         r2_threshold : float, optional
             Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
@@ -169,6 +178,7 @@ class CalibrationProtocol(Protocol):
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -185,6 +195,8 @@ class CalibrationProtocol(Protocol):
             Number of rotations. Defaults to 1.
         r2_threshold : float, optional
             Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -204,6 +216,7 @@ class CalibrationProtocol(Protocol):
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -220,6 +233,8 @@ class CalibrationProtocol(Protocol):
             Number of rotations. Defaults to 1.
         r2_threshold : float, optional
             Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -245,6 +260,7 @@ class CalibrationProtocol(Protocol):
         drag_coeff: float = DRAG_COEFF,
         use_stored_amplitude: bool = False,
         use_stored_beta: bool = False,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
@@ -273,6 +289,8 @@ class CalibrationProtocol(Protocol):
             Whether to use the stored amplitude. Defaults to False.
         use_stored_beta : bool, optional
             Whether to use the stored beta. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -295,6 +313,7 @@ class CalibrationProtocol(Protocol):
         n_turns: int = 1,
         duration: float | None = None,
         degree: int = 3,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
@@ -317,6 +336,8 @@ class CalibrationProtocol(Protocol):
             Duration of the pulse. Defaults to None.
         degree : int, optional
             Degree of the polynomial to fit. Defaults to 3.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -343,6 +364,7 @@ class CalibrationProtocol(Protocol):
         beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -373,6 +395,8 @@ class CalibrationProtocol(Protocol):
             Duration of the pulse. Defaults to None.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional
@@ -400,6 +424,7 @@ class CalibrationProtocol(Protocol):
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         degree: int = 3,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -432,6 +457,8 @@ class CalibrationProtocol(Protocol):
             DRAG coefficient. Defaults to DRAG_COEFF.
         degree : int, optional
             Degree of the polynomial to fit. Defaults to 3.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : int, optional

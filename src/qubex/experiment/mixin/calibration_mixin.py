@@ -145,7 +145,7 @@ class CalibrationMixin(
 
         data: dict[str, AmplCalibData] = {}
         for target in targets:
-            print(f"Calibrating {pulse_type} pulse for {target}...\n")
+            print(f"Calibrating {pulse_type} pulse for {target}...")
             data[target] = calibrate(target)
 
         print("")
@@ -162,6 +162,7 @@ class CalibrationMixin(
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -176,6 +177,7 @@ class CalibrationMixin(
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
+            plot=plot,
             shots=shots,
             interval=interval,
         )
@@ -186,6 +188,7 @@ class CalibrationMixin(
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -200,6 +203,7 @@ class CalibrationMixin(
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
+            plot=plot,
             shots=shots,
             interval=interval,
         )
@@ -212,6 +216,7 @@ class CalibrationMixin(
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -275,13 +280,14 @@ class CalibrationMixin(
                 rabi_level="ef",
                 shots=shots,
                 interval=interval,
-                plot=True,
+                plot=plot,
             ).data[ge_label]
 
             fit_result = fitting.fit_ampl_calib_data(
                 target=ef_label,
                 amplitude_range=ampl_range,
                 data=sweep_data.normalized,
+                plot=plot,
                 title=f"ef {pulse_type} pulse calibration",
                 ylabel="Normalized signal",
             )
@@ -321,7 +327,7 @@ class CalibrationMixin(
 
         data: dict[str, AmplCalibData] = {}
         for target in ef_labels:
-            print(f"Calibrating {pulse_type} pulse for {target}...\n")
+            print(f"Calibrating {pulse_type} pulse for {target}...")
             data[target] = calibrate(target)
 
         print("")
@@ -338,6 +344,7 @@ class CalibrationMixin(
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -352,6 +359,7 @@ class CalibrationMixin(
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
+            plot=plot,
             shots=shots,
             interval=interval,
         )
@@ -362,6 +370,7 @@ class CalibrationMixin(
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
@@ -376,6 +385,7 @@ class CalibrationMixin(
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
+            plot=plot,
             shots=shots,
             interval=interval,
         )
@@ -393,6 +403,7 @@ class CalibrationMixin(
         drag_coeff: float = DRAG_COEFF,
         use_stored_amplitude: bool = False,
         use_stored_beta: bool = False,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, dict]:
@@ -486,6 +497,7 @@ class CalibrationMixin(
                 target=target,
                 amplitude_range=ampl_range,
                 data=sweep_data.normalized,
+                plot=plot,
                 title=f"DRAG {pulse_type} amplitude calibration",
                 ylabel="Normalized signal",
             )
@@ -520,7 +532,7 @@ class CalibrationMixin(
 
         result: dict[str, dict] = {}
         for target in targets:
-            print(f"Calibrating DRAG {pulse_type} amplitude for {target}...\n")
+            print(f"Calibrating DRAG {pulse_type} amplitude for {target}...")
             result[target] = calibrate(target)
 
         print("")
@@ -539,6 +551,7 @@ class CalibrationMixin(
         n_turns: int = 1,
         duration: float | None = None,
         degree: int = 3,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
@@ -627,6 +640,7 @@ class CalibrationMixin(
                 x=beta_range,
                 y=values,
                 degree=degree,
+                plot=plot,
                 title=f"DRAG {pulse_type} beta calibration",
                 xlabel="Beta",
                 ylabel="Normalized signal",
@@ -662,7 +676,7 @@ class CalibrationMixin(
 
         result = {}
         for target in targets:
-            print(f"Calibrating DRAG {pulse_type} beta for {target}...\n")
+            print(f"Calibrating DRAG {pulse_type} beta for {target}...")
             result[target] = calibrate(target)
 
         print("")
@@ -686,6 +700,7 @@ class CalibrationMixin(
         beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -710,6 +725,7 @@ class CalibrationMixin(
                 duration=duration,
                 use_stored_amplitude=use_stored_amplitude,
                 use_stored_beta=use_stored_beta,
+                plot=plot,
                 shots=shots,
                 interval=interval,
             )
@@ -723,6 +739,7 @@ class CalibrationMixin(
                     n_turns=n_turns,
                     duration=duration,
                     degree=3,
+                    plot=plot,
                     shots=shots,
                     interval=interval,
                 )
@@ -752,6 +769,7 @@ class CalibrationMixin(
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         degree: int = 3,
+        plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -776,6 +794,7 @@ class CalibrationMixin(
                 duration=duration,
                 use_stored_amplitude=use_stored_amplitude,
                 use_stored_beta=use_stored_beta,
+                plot=plot,
                 shots=shots,
                 interval=interval,
             )
@@ -789,6 +808,7 @@ class CalibrationMixin(
                     n_turns=n_turns,
                     duration=duration,
                     degree=degree,
+                    plot=plot,
                     shots=shots,
                     interval=interval,
                 )
