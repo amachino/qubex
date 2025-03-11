@@ -553,7 +553,7 @@ class CalibrationProtocol(Protocol):
         ramptime: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
-        degree: int = 5,
+        degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
         store_params: bool = True,

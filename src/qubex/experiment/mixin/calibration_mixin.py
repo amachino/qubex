@@ -1265,7 +1265,7 @@ class CalibrationMixin(
         ramptime: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
-        degree: int = 5,
+        degree: int = 3,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
         store_params: bool = True,
@@ -1393,6 +1393,10 @@ class CalibrationMixin(
         )
 
         calibrated_cr_amplitude = fit_result["root"]
+
+        if np.isnan(calibrated_cr_amplitude):
+            calibrated_cancel_amplitude = 1.0
+
         calibrated_cancel_amplitude = calibrated_cr_amplitude * cancel_cr_ratio
 
         if calibrated_cr_amplitude is not None and store_params:
