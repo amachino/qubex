@@ -179,7 +179,6 @@ def test_update_cr_param(tmp_path):
             "cr_phase": 0.5,
             "cancel_amplitude": 0.5,
             "cancel_phase": 0.5,
-            "cr_cancel_ratio": 0.5,
         },
     )
     param = note.get_cr_param("Q00") or {}
@@ -190,7 +189,6 @@ def test_update_cr_param(tmp_path):
     assert param["cr_phase"] == 0.5
     assert param["cancel_amplitude"] == 0.5
     assert param["cancel_phase"] == 0.5
-    assert param["cr_cancel_ratio"] == 0.5
 
 
 def test_timestamp(tmp_path):

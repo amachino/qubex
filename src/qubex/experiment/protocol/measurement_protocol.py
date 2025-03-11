@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Collection, Literal, Optional, Protocol, Sequence
 
 import numpy as np
@@ -360,6 +361,8 @@ class MeasurementProtocol(Protocol):
         targets: str | Collection[str] | None = None,
         *,
         n_states: Literal[2, 3] = 2,
+        save_classifier: bool = True,
+        save_dir: Path | str | None = None,
         shots: int = 8192,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,

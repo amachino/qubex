@@ -2303,7 +2303,7 @@ def fit_rotation(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"τ = {tau:.3f} μs",
+        text=f"τ = {tau:.3f} μs, R² = {r2:.3f}",
         showarrow=False,
     )
     fig.update_layout(

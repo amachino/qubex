@@ -1100,7 +1100,6 @@ class CalibrationMixin(
                 "cr_phase": new_cr_phase,
                 "cancel_amplitude": new_cancel_amplitude,
                 "cancel_phase": new_cancel_phase,
-                "cr_cancel_ratio": new_cancel_amplitude / new_cr_amplitude,
             }
         }
 
@@ -1117,6 +1116,8 @@ class CalibrationMixin(
         cr_amplitude: float | None = None,
         cr_ramptime: float = 16.0,
         n_iterations: int = 4,
+        n_cycles: int = 2,
+        n_points_per_cycle: int = 10,
         time_range: ArrayLike | None = None,
         use_stored_params: bool = True,
         safe_factor: float = 1.0,
@@ -1127,11 +1128,9 @@ class CalibrationMixin(
     ) -> dict:
         def _create_time_range(
             zx90_duration: float,
-            n_cycles: int = 2,
-            n_points_per_period=10,
         ) -> np.ndarray:
             period = 4 * zx90_duration
-            dt = (period / n_points_per_period) // SAMPLING_PERIOD * SAMPLING_PERIOD
+            dt = (period / n_points_per_cycle) // SAMPLING_PERIOD * SAMPLING_PERIOD
             duration = period * n_cycles
             return np.arange(0, duration + 1, dt)
 
@@ -1149,9 +1148,9 @@ class CalibrationMixin(
         if use_stored_params and current_cr_param is not None:
             cr_amplitude = current_cr_param["cr_amplitude"]
             cr_phase = current_cr_param["cr_phase"]
-            cancel_amplitude = current_cr_param["cr_cancel_ratio"] * cr_amplitude
+            cancel_amplitude = current_cr_param["cancel_amplitude"]
             cancel_phase = current_cr_param["cancel_phase"]
-            time_range = _create_time_range(current_cr_param["duration"])
+            time_range = _create_time_range(current_cr_param["duration"] * 2)
         else:
             cr_amplitude = max_cr_amplitude
             cr_phase = 0.0
@@ -1274,7 +1273,7 @@ class CalibrationMixin(
 
         cr_phase = cr_param["cr_phase"]
         cancel_phase = cr_param["cancel_phase"]
-        cr_cancel_ratio = cr_param["cr_cancel_ratio"]
+        cancel_cr_ratio = cr_param["cancel_amplitude"] / cr_param["cr_amplitude"]
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
@@ -1292,7 +1291,7 @@ class CalibrationMixin(
                 cr_duration=duration,
                 cr_ramptime=ramptime,
                 cr_phase=cr_phase,
-                cancel_amplitude=amplitude * cr_cancel_ratio,
+                cancel_amplitude=amplitude * cancel_cr_ratio,
                 cancel_phase=cancel_phase,
                 echo=True,
                 pi_pulse=x180[control_qubit],
@@ -1369,19 +1368,19 @@ class CalibrationMixin(
             ylabel="Signal",
         )
 
-        amplitude = fit_result["root"]
+        calibrated_cr_amplitude = fit_result["root"]
+        calibrated_cancel_amplitude = calibrated_cr_amplitude * cancel_cr_ratio
 
-        if amplitude is not None and store_params:
+        if calibrated_cr_amplitude is not None and store_params:
             self.calib_note.cr_params = {
                 cr_label: {
                     "target": cr_label,
                     "duration": duration,
                     "ramptime": ramptime,
-                    "cr_amplitude": amplitude,
+                    "cr_amplitude": calibrated_cr_amplitude,
                     "cr_phase": cr_phase,
-                    "cancel_amplitude": amplitude * cr_cancel_ratio,
+                    "cancel_amplitude": calibrated_cancel_amplitude,
                     "cancel_phase": cancel_phase,
-                    "cr_cancel_ratio": cr_cancel_ratio,
                 },
             }
 
@@ -1389,9 +1388,9 @@ class CalibrationMixin(
         print("Calibrated CR parameters:")
         print(f"  CR duration      : {duration:.1f} ns")
         print(f"  CR ramptime      : {ramptime:.1f} ns")
-        print(f"  CR amplitude     : {amplitude:.6f}")
+        print(f"  CR amplitude     : {calibrated_cr_amplitude:.6f}")
         print(f"  CR phase         : {cr_phase:.6f}")
-        print(f"  Cancel amplitude : {amplitude * cr_cancel_ratio:.6f}")
+        print(f"  Cancel amplitude : {calibrated_cr_amplitude:.6f}")
         print(f"  Cancel phase     : {cancel_phase:.6f}")
         print()
         if plot:
@@ -1629,7 +1628,6 @@ class CalibrationMixin(
                 "cr_phase": x[1],
                 "cancel_amplitude": x[2],
                 "cancel_phase": x[3],
-                "cr_cancel_ratio": x[2] / x[0],
             },
         }
 

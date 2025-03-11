@@ -62,7 +62,6 @@ class CrossResonanceParam(Parameter):
     cr_phase: float
     cancel_amplitude: float
     cancel_phase: float
-    cr_cancel_ratio: float
 
 
 class CalibrationNote(ExperimentNote):
