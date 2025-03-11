@@ -1395,7 +1395,7 @@ class CalibrationMixin(
         calibrated_cr_amplitude = fit_result["root"]
 
         if np.isnan(calibrated_cr_amplitude):
-            calibrated_cancel_amplitude = 1.0
+            calibrated_cr_amplitude = 1.0
 
         calibrated_cancel_amplitude = calibrated_cr_amplitude * cancel_cr_ratio
 
