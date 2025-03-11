@@ -587,7 +587,6 @@ class BenchmarkingMixin(
                     irb_signal = (irb_result.data[target].normalized + 1) / 2
                     irb_results.append(irb_signal)
 
-        print("Randomized benchmarking:")
         rb_mean = np.mean(rb_results, axis=0)
         rb_std = np.std(rb_results, axis=0)
         rb_fit_result = fitting.fit_rb(
@@ -596,13 +595,12 @@ class BenchmarkingMixin(
             y=rb_mean,
             error_y=rb_std,
             dimension=4 if is_2q else 2,
-            plot=plot,
+            plot=False,
         )
         A_rb = rb_fit_result["A"]
         p_rb = rb_fit_result["p"]
         C_rb = rb_fit_result["C"]
 
-        print("Interleaved randomized benchmarking:")
         irb_mean = np.mean(irb_results, axis=0)
         irb_std = np.std(irb_results, axis=0)
         irb_fit_result = fitting.fit_rb(
@@ -611,7 +609,7 @@ class BenchmarkingMixin(
             y=irb_mean,
             error_y=irb_std,
             dimension=4 if is_2q else 2,
-            plot=plot,
+            plot=False,
             title="Interleaved randomized benchmarking",
         )
         A_irb = irb_fit_result["A"]
