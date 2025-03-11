@@ -649,6 +649,7 @@ class MeasurementMixin(
         targets: str | Collection[str] | None = None,
         *,
         n_states: Literal[2, 3] = 2,
+        save_classifier: bool = True,
         save_dir: Path | str | None = None,
         shots: int = 8192,
         interval: int = DEFAULT_INTERVAL,
@@ -690,14 +691,15 @@ class MeasurementMixin(
             raise ValueError("Invalid classifier type.")
         self.measurement.update_classifiers(classifiers)
 
-        for label, classifier in classifiers.items():
-            if save_dir is not None:
-                path = Path(save_dir) / self.chip_id / f"{label}.pkl"
-            else:
-                path = Path(CLASSIFIER_DIR) / self.chip_id / f"{label}.pkl"
-            if not path.parent.exists():
-                path.parent.mkdir(parents=True, exist_ok=True)
-            classifier.save(path)
+        if save_classifier:
+            for label, classifier in classifiers.items():
+                if save_dir is not None:
+                    path = Path(save_dir) / self.chip_id / f"{label}.pkl"
+                else:
+                    path = Path(CLASSIFIER_DIR) / self.chip_id / f"{label}.pkl"
+                if not path.parent.exists():
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                classifier.save(path)
 
         fidelities = {}
         average_fidelities = {}
