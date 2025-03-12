@@ -1048,6 +1048,8 @@ class CalibrationMixin(
         cr_phase: float = 0.0,
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
+        update_cr_phase: bool = True,
+        update_cancel_phase: bool = True,
         safe_factor: float = 1.1,
         duration_unit: float = 16.0,
         x90: TargetMap[Waveform] | None = None,
@@ -1076,8 +1078,18 @@ class CalibrationMixin(
         cancel_pulse = -result["xt_rotation_amplitude_hw"] * np.exp(
             1j * result["xt_rotation_phase"]
         )
-        new_cr_pulse = current_cr_pulse * np.exp(1j * shift)
-        new_cancel_pulse = (current_cancel_pulse + cancel_pulse) * np.exp(1j * shift)
+
+        if update_cr_phase:
+            new_cr_pulse = current_cr_pulse * np.exp(1j * shift)
+        else:
+            new_cr_pulse = current_cr_pulse
+
+        if update_cancel_phase:
+            new_cancel_pulse = (current_cancel_pulse + cancel_pulse) * np.exp(
+                1j * shift
+            )
+        else:
+            new_cancel_pulse = current_cancel_pulse
 
         new_cr_amplitude = np.abs(new_cr_pulse)
         new_cr_phase = np.angle(new_cr_pulse)
