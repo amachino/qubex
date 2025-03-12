@@ -517,7 +517,7 @@ class CalibrationProtocol(Protocol):
         cancel_amplitude: float = 0.0,
         cancel_phase: float = 0.0,
         update_cr_phase: bool = True,
-        update_cancel_phase: bool = True,
+        update_cancel_pulse: bool = True,
         safe_factor: float = 1.1,
         duration_unit: float = 16.0,
         x90: TargetMap[Waveform] | None = None,
