@@ -1118,12 +1118,13 @@ class Experiment(
             if type == "flattop":
                 param = self.calib_note.get_pi_param(target)
                 if param is None:
-                    raise ValueError(f"pi_param for {target} are not stored.")
-                return FlatTop(
-                    duration=param["duration"],
-                    amplitude=param["amplitude"],
-                    tau=param["tau"],
-                )
+                    return self.x90(target, type=type).repeated(2)
+                else:
+                    return FlatTop(
+                        duration=param["duration"],
+                        amplitude=param["amplitude"],
+                        tau=param["tau"],
+                    )
             elif type == "drag":
                 param = self.calib_note.get_drag_pi_param(target)
                 if param is None:

@@ -145,6 +145,9 @@ class CalibrationMixin(
 
         data: dict[str, AmplCalibData] = {}
         for target in targets:
+            if target not in self.calib_note.rabi_params:
+                print(f"Rabi parameters are not stored for {target}.")
+                continue
             print(f"Calibrating {pulse_type} pulse for {target}...")
             data[target] = calibrate(target)
 
