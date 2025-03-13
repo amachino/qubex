@@ -1079,12 +1079,26 @@ class Experiment(
         type: Literal["flattop", "drag"] | None = None,
     ) -> Waveform:
         if type is None:
-            type = "drag" if target in self.drag_pi_pulse else "flattop"
+            type = "drag" if target in self.calib_note.drag_hpi_params else "flattop"
         try:
             if type == "flattop":
-                return self.hpi_pulse[target]
+                param = self.calib_note.get_hpi_param(target)
+                if param is None:
+                    raise ValueError(f"hpi_param for {target} are not stored.")
+                return FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
             elif type == "drag":
-                return self.drag_hpi_pulse[target]
+                param = self.calib_note.get_drag_hpi_param(target)
+                if param is None:
+                    raise ValueError(f"drag_hpi_param for {target} are not stored.")
+                return Drag(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    beta=param["beta"],
+                )
         except KeyError:
             raise ValueError(f"Invalid target: {target}")
 
@@ -1097,14 +1111,28 @@ class Experiment(
         use_hpi: bool = False,
     ) -> Waveform:
         if type is None:
-            type = "drag" if target in self.drag_pi_pulse else "flattop"
+            type = "drag" if target in self.calib_note.drag_pi_params else "flattop"
         if use_hpi:
             return self.x90(target, type=type).repeated(2)
         try:
             if type == "flattop":
-                return self.pi_pulse[target]
+                param = self.calib_note.get_pi_param(target)
+                if param is None:
+                    raise ValueError(f"pi_param for {target} are not stored.")
+                return FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
             elif type == "drag":
-                return self.drag_pi_pulse[target]
+                param = self.calib_note.get_drag_pi_param(target)
+                if param is None:
+                    raise ValueError(f"darg_pi_param for {target} are not stored.")
+                return Drag(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    beta=param["beta"],
+                )
         except KeyError:
             raise ValueError(f"Invalid target: {target}")
 
@@ -1168,10 +1196,7 @@ class Experiment(
             raise ValueError(f"CR parameters for {cr_label} are not stored.")
 
         if x180 is None:
-            if control_qubit in self.drag_pi_pulse:
-                pi_pulse = self.drag_pi_pulse[control_qubit]
-            else:
-                pi_pulse = self.pi_pulse[control_qubit]
+            pi_pulse = self.x180(control_qubit)
         elif isinstance(x180, Waveform):
             pi_pulse = x180
         else:
@@ -1215,10 +1240,7 @@ class Experiment(
         zx90 = zx90 or self.zx90(control_qubit, target_qubit)
 
         if x90 is None:
-            if target_qubit in self.drag_hpi_pulse:
-                x90 = self.drag_hpi_pulse[target_qubit]
-            else:
-                x90 = self.hpi_pulse[target_qubit]
+            x90 = self.x90(target_qubit)
 
         with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
             ps.call(zx90)
