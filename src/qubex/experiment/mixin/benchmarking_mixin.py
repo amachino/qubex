@@ -648,11 +648,11 @@ class BenchmarkingMixin(
             )
 
         print()
-        print(f"Average gate fidelity (RB): {avg_gate_fidelity_rb * 100:.3f}%")
-        print(f"Average gate fidelity (IRB): {avg_gate_fidelity_irb * 100:.3f}%")
+        print(f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.3f}%")
+        print(f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.3f}%")
         print()
-        print(f"Gate error: {gate_error * 100:.3f}%")
-        print(f"Gate fidelity: {gate_fidelity * 100:.3f}%")
+        print(f"Gate error    : {gate_error * 100:.3f}%")
+        print(f"Gate fidelity : {gate_fidelity * 100:.3f}%")
         print()
 
         return {
