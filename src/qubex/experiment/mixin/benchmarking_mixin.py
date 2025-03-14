@@ -74,7 +74,7 @@ class BenchmarkingMixin(
     ) -> PulseArray:
         if isinstance(x90, dict):
             x90 = x90.get(target)
-        x90 = x90 or self.hpi_pulse[target]
+        x90 = x90 or self.x90(target)
         z90 = VirtualZ(np.pi / 2)
 
         sequence: list[Waveform | VirtualZ] = []
@@ -140,8 +140,8 @@ class BenchmarkingMixin(
         if isinstance(x90, dict):
             xi90 = x90.get(control_qubit)
             ix90 = x90.get(target_qubit)
-        xi90 = xi90 or self.hpi_pulse[control_qubit]
-        ix90 = ix90 or self.hpi_pulse[target_qubit]
+        xi90 = xi90 or self.x90(control_qubit)
+        ix90 = ix90 or self.x90(target_qubit)
         z90 = VirtualZ(np.pi / 2)
 
         if zx90 is None:
