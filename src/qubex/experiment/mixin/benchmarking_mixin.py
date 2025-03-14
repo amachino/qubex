@@ -600,6 +600,7 @@ class BenchmarkingMixin(
         A_rb = rb_fit_result["A"]
         p_rb = rb_fit_result["p"]
         C_rb = rb_fit_result["C"]
+        avg_gate_fidelity_rb = rb_fit_result["avg_gate_fidelity"]
 
         irb_mean = np.mean(irb_results, axis=0)
         irb_std = np.std(irb_results, axis=0)
@@ -615,6 +616,7 @@ class BenchmarkingMixin(
         A_irb = irb_fit_result["A"]
         p_irb = irb_fit_result["p"]
         C_irb = irb_fit_result["C"]
+        avg_gate_fidelity_irb = irb_fit_result["avg_gate_fidelity"]
 
         dimension = 4 if is_2q else 2
         gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
@@ -645,10 +647,13 @@ class BenchmarkingMixin(
                 name=f"interleaved_randomized_benchmarking_{target}",
             )
 
-        print("")
+        print()
+        print(f"Average gate fidelity (RB): {avg_gate_fidelity_rb * 100:.3f}%")
+        print(f"Average gate fidelity (IRB): {avg_gate_fidelity_irb * 100:.3f}%")
+        print()
         print(f"Gate error: {gate_error * 100:.3f}%")
         print(f"Gate fidelity: {gate_fidelity * 100:.3f}%")
-        print("")
+        print()
 
         return {
             "gate_error": gate_error,

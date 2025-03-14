@@ -821,8 +821,11 @@ class Experiment(
             with self.state_manager.modified_frequencies(frequencies):
                 yield
 
-    def save_calib_note(self):
-        self.calib_note.save()
+    def save_calib_note(
+        self,
+        file_path: Path | str | None = None,
+    ):
+        self.calib_note.save(file_path=file_path)
 
     @deprecated("Use `calib_note.save()` instead.")
     def save_defaults(self):

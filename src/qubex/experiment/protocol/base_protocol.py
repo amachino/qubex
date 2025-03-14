@@ -498,7 +498,10 @@ class BaseProtocol(Protocol):
         """
         ...
 
-    def save_calib_note(self):
+    def save_calib_note(
+        self,
+        file_path: Path | str | None = None,
+    ):
         """Save the calibration note."""
         ...
 
