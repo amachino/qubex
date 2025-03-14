@@ -630,6 +630,7 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     ]
     graph.plot_lattice_data(
         title="Wiring Info",
+        values=[0] * experiment_system.chip.n_qubits,
         colorscale="RdBu",
         texts=texts,
     )
