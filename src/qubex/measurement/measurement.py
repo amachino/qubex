@@ -580,7 +580,11 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: int | None = None,
-        capture_margin: int | None = None,
+        add_last_measurement: bool = False,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -597,8 +601,16 @@ class Measurement:
             The number of shots, by default DEFAULT_SHOTS.
         interval : int, optional
             The interval in ns, by default DEFAULT_INTERVAL.
+        add_last_measurement : bool, optional
+            Whether to add the last measurement, by default False.
+        capture_window : int, optional
+            The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
         capture_margin : int, optional
             The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
+        readout_duration : int, optional
+            The readout duration in ns, by default DEFAULT_READOUT_DURATION.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit, by default None.
 
         Returns
         -------
@@ -614,8 +626,11 @@ class Measurement:
         sequencer = self._create_sequencer_from_schedule(
             schedule=schedule,
             interval=interval,
-            add_last_measurement=False,
+            add_last_measurement=add_last_measurement,
+            capture_window=capture_window,
             capture_margin=capture_margin,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -670,13 +685,15 @@ class Measurement:
                         capture.target(readout_target)
         return sequence
 
-    def _readout_pulse(
+    def readout_pulse(
         self,
         target: str,
-        duration: int = DEFAULT_READOUT_DURATION,
+        duration: float | None = None,
         amplitude: float | None = None,
     ) -> FlatTop:
         qubit = Target.qubit_label(target)
+        if duration is None:
+            duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
             amplitude = self.control_params.readout_amplitude[qubit]
         return FlatTop(
@@ -737,7 +754,7 @@ class Measurement:
         # |<- control_length -><- margin_length -><- capture_length ->|
         readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for qubit in qubits:
-            readout_pulse = self._readout_pulse(
+            readout_pulse = self.readout_pulse(
                 target=qubit,
                 duration=readout_duration,
                 amplitude=readout_amplitudes.get(qubit),
@@ -835,10 +852,19 @@ class Measurement:
         schedule: PulseSchedule,
         interval: int,
         add_last_measurement: bool = False,
-        capture_margin: int | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> Sequencer:
+        if capture_window is None:
+            capture_window = DEFAULT_CAPTURE_WINDOW
         if capture_margin is None:
             capture_margin = DEFAULT_CAPTURE_MARGIN
+        if readout_duration is None:
+            readout_duration = DEFAULT_READOUT_DURATION
+        if readout_amplitudes is None:
+            readout_amplitudes = self.control_params.readout_amplitude
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -847,31 +873,48 @@ class Measurement:
             (int(schedule.duration) + interval) // INTERVAL_STEP + 1
         ) * INTERVAL_STEP
 
-        # readout targets in the provided schedule
-        readout_targets = [
-            label for label in schedule.labels if self.targets[label].is_read
-        ]
-
         # add last readout pulse if necessary
         if add_last_measurement:
             # register all readout targets for the last measurement
             readout_targets = list(
-                {Target.read_label(target) for target in schedule.labels}
+                {
+                    Target.read_label(label)
+                    for label in schedule.labels
+                    if not self.targets[label].is_pump
+                }
             )
             # create a new schedule with the last readout pulse
             with PulseSchedule(schedule.labels + readout_targets) as ps:
                 ps.call(schedule)
                 ps.barrier()
                 for target in readout_targets:
-                    readout_pulse = PulseArray(
-                        [
-                            Blank(duration=capture_margin),
-                            self._readout_pulse(target),
-                        ]
+                    ps.add(
+                        target,
+                        PulseArray(
+                            [
+                                Blank(capture_margin),
+                                self.readout_pulse(
+                                    target=target,
+                                    duration=readout_duration,
+                                    amplitude=readout_amplitudes.get(target),
+                                ).padded(
+                                    total_duration=capture_window,
+                                    pad_side="right",
+                                ),
+                            ]
+                        ),
                     )
-                    ps.add(target, readout_pulse)
             # update the schedule
             schedule = ps
+        else:
+            # readout targets in the provided schedule
+            readout_targets = [
+                label for label in schedule.labels if self.targets[label].is_read
+            ]
+
+        # check the readout targets
+        if not readout_targets:
+            raise ValueError("No readout targets in the pulse schedule.")
 
         # get sampled sequences
         sampled_sequences = schedule.get_sampled_sequences()

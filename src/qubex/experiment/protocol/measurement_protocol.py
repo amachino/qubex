@@ -27,6 +27,11 @@ class MeasurementProtocol(Protocol):
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        add_last_measurement: bool = False,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> MeasureResult:
         """
         Execute the given schedule.
@@ -41,6 +46,16 @@ class MeasurementProtocol(Protocol):
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : int, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
+        add_last_measurement : bool, optional
+            Whether to add the last measurement. Defaults to False.
+        capture_window : float, optional
+            Capture window. Defaults to None.
+        capture_margin : float, optional
+            Capture margin. Defaults to None.
+        readout_duration : float, optional
+            Readout duration. Defaults to None.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target. Defaults to None.
 
         Returns
         -------

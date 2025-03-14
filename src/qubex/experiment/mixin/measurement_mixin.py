@@ -60,12 +60,22 @@ class MeasurementMixin(
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
+        add_last_measurement: bool = False,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> MeasureResult:
         return self.measurement.execute(
             schedule=schedule,
             mode=mode,
             shots=shots,
             interval=interval,
+            add_last_measurement=add_last_measurement,
+            capture_window=capture_window,
+            capture_margin=capture_margin,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
         )
 
     def measure(

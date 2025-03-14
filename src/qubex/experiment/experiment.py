@@ -1071,6 +1071,30 @@ class Experiment(
 
         return rabi_rates
 
+    def readout(
+        self,
+        target: str,
+        /,
+        *,
+        amplitude: float | None = None,
+        duration: float = DEFAULT_READOUT_DURATION,
+        capture_window: float = DEFAULT_CAPTURE_WINDOW,
+        capture_margin: float = DEFAULT_CAPTURE_MARGIN,
+    ) -> Waveform:
+        return PulseArray(
+            [
+                Blank(capture_margin),
+                self.measurement.readout_pulse(
+                    target=target,
+                    duration=duration,
+                    amplitude=amplitude,
+                ).padded(
+                    total_duration=capture_window,
+                    pad_side="right",
+                ),
+            ]
+        )
+
     def x90(
         self,
         target: str,
