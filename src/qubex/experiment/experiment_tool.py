@@ -577,6 +577,10 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     if qubits is None:
         qubits = [qubit.label for qubit in experiment_system.ge_targets]
 
+    ctrl_ports = {}
+    read_out_ports = {}
+    read_in_ports = {}
+
     for qubit in qubits:
         port_set = experiment_system.get_qubit_port_set(qubit)
         if port_set is None:
@@ -585,6 +589,7 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
         ctrl_port = port_set.ctrl_port
         read_out_port = port_set.read_out_port
         read_in_port = port_set.read_in_port
+
         mux = experiment_system.get_mux_by_readout_port(read_out_port)
         if ctrl_port is None or read_out_port is None or read_in_port is None:
             table.add_row(qubit, "-", "-", "-", "-")
@@ -598,7 +603,36 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
         read_in = f"{read_in_box}-{read_in_port.number}"
         table.add_row(mux_number, qubit, ctrl, read_out, read_in)
 
+        ctrl_ports[qubit] = ctrl
+        read_out_ports[qubit] = read_out
+        read_in_ports[qubit] = read_in
+
     console.print(table)
+
+    graph = LatticeGraph(experiment_system.chip.n_qubits)
+    ctrl_port_labels = [
+        ctrl_ports.get(qubit.label, "-") for qubit in experiment_system.qubits
+    ]
+    read_out_port_labels = [
+        read_out_ports.get(qubit.label, "-") for qubit in experiment_system.qubits
+    ]
+    read_in_port_labels = [
+        read_in_ports.get(qubit.label, "-") for qubit in experiment_system.qubits
+    ]
+    texts = [
+        f"[{qubit.label}]<br>{ctrl_port}<br>{read_out_port}<br>{read_in_port}"
+        for qubit, ctrl_port, read_out_port, read_in_port in zip(
+            experiment_system.qubits,
+            ctrl_port_labels,
+            read_out_port_labels,
+            read_in_port_labels,
+        )
+    ]
+    graph.plot_lattice_data(
+        title="Wiring Info",
+        colorscale="RdBu",
+        texts=texts,
+    )
 
 
 def print_box_info(box_id: str, fetch: bool = True) -> None:
