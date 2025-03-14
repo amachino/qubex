@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Union
+from typing import Collection, Union
 
 from pydantic.dataclasses import dataclass
 
@@ -20,14 +20,14 @@ class TargetType(Enum):
     UNKNOWN = "UNKNOWN"
 
 
-QuantumObject = Union[Qubit, Resonator, Mux]
+PhysicalObject = Union[Qubit, Resonator, Mux]
 
 
 @dataclass
 class CapTarget(Model):
     label: str
     frequency: float
-    object: QuantumObject
+    object: PhysicalObject
     channel: CapChannel
     type: TargetType
 
@@ -51,7 +51,7 @@ class CapTarget(Model):
 class Target(Model):
     label: str
     frequency: float
-    object: QuantumObject
+    object: PhysicalObject
     channel: GenChannel
     type: TargetType
 
@@ -107,13 +107,26 @@ class Target(Model):
     def is_pump(self) -> bool:
         return self.type == TargetType.PUMP
 
+    def is_related_to_qubits(self, qubits: Collection[str]) -> bool:
+        if isinstance(self.object, Qubit):
+            return self.object.label in qubits
+        elif isinstance(self.object, Resonator):
+            return self.object.qubit in qubits
+        elif isinstance(self.object, Mux):
+            return any(
+                qubit in qubits
+                for qubit in [resonator.qubit for resonator in self.object.resonators]
+            )
+        else:
+            raise ValueError("Invalid quantum object.")
+
     @classmethod
     def new_target(
         cls,
         *,
         label: str,
         frequency: float,
-        object: QuantumObject,
+        object: PhysicalObject,
         channel: GenChannel,
         type: TargetType = TargetType.UNKNOWN,
     ) -> Target:

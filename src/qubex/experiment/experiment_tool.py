@@ -608,15 +608,17 @@ def print_box_info(box_id: str, fetch: bool = True) -> None:
 
 def print_target_frequencies(qubits: Collection[str] | str | None = None) -> None:
     """Print the target frequencies of the qubits."""
+    experiment_system = state_manager.experiment_system
+
     if qubits is None:
-        qubits = [qubit.label for qubit in state_manager.experiment_system.qubits]
+        qubits = [qubit.label for qubit in experiment_system.qubits]
     elif isinstance(qubits, str):
         qubits = [qubits]
 
     targets = [
         target
-        for target in state_manager.experiment_system.targets
-        if target.qubit in qubits
+        for target in experiment_system.targets
+        if target.is_related_to_qubits(qubits)
     ]
 
     table = Table(

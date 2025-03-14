@@ -375,15 +375,15 @@ class Experiment(
         return {
             target.label: target
             for target in self.experiment_system.targets
-            if target.qubit in self.qubit_labels
+            if target.is_related_to_qubits(self.qubit_labels)
         }
 
     @property
     def available_targets(self) -> dict[str, Target]:
         return {
-            target.label: target
-            for target in self.experiment_system.targets
-            if target.qubit in self.qubit_labels and target.is_available
+            label: target
+            for label, target in self.targets.items()
+            if target.is_available
         }
 
     @property
