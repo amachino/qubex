@@ -253,17 +253,17 @@ class CalibrationProtocol(Protocol):
         *,
         spectator_state: str = "0",
         pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         r2_threshold: float = 0.5,
-        duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         use_stored_amplitude: bool = False,
         use_stored_beta: bool = False,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
-    ) -> dict[str, float]:
+    ) -> dict[str, dict]:
         """
         Calibrates the DRAG amplitude.
 
@@ -275,14 +275,14 @@ class CalibrationProtocol(Protocol):
             Spectator state. Defaults to "0".
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
+        duration : float, optional
+            Duration of the pulse. Defaults to None.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
             Number of rotations to |0> state. Defaults to 4.
         r2_threshold : float, optional
             Threshold for R² value. Defaults to 0.5.
-        duration : float, optional
-            Duration of the pulse. Defaults to None.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         use_stored_amplitude : bool, optional
@@ -298,7 +298,7 @@ class CalibrationProtocol(Protocol):
 
         Returns
         -------
-        dict[str, float]
+        dict[str, dict]
             Result of the calibration.
         """
         ...
@@ -309,9 +309,9 @@ class CalibrationProtocol(Protocol):
         *,
         spectator_state: str = "0",
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
-        n_turns: int = 1,
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
+        n_turns: int = 1,
         degree: int = 3,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
@@ -329,11 +329,11 @@ class CalibrationProtocol(Protocol):
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.5, 1.5, 20).
-        n_turns : int, optional
-            Number of turns to |0> state. Defaults to 1.
+            Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
             Duration of the pulse. Defaults to None.
+        n_turns : int, optional
+            Number of turns to |0> state. Defaults to 1.
         degree : int, optional
             Degree of the polynomial to fit. Defaults to 3.
         plot : bool, optional
@@ -359,9 +359,10 @@ class CalibrationProtocol(Protocol):
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
@@ -385,12 +386,14 @@ class CalibrationProtocol(Protocol):
             Number of turns to |0> state. Defaults to 1.
         n_iterations : int, optional
             Number of iterations. Defaults to 2.
+        degree : int, optional
+            Degree of the polynomial to fit. Defaults to 3.
         r2_threshold : float, optional
             Threshold for R² value. Defaults to 0.5.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to True.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.5, 1.5, 20).
+            Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
             Duration of the pulse. Defaults to None.
         drag_coeff : float, optional
@@ -418,12 +421,12 @@ class CalibrationProtocol(Protocol):
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
-        degree: int = 3,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -445,18 +448,18 @@ class CalibrationProtocol(Protocol):
             Number of turns to |0> state. Defaults to 1.
         n_iterations : int, optional
             Number of iterations. Defaults to 2.
+        degree : int, optional
+            Degree of the polynomial to fit. Defaults to 3.
         r2_threshold : float, optional
             Threshold for R² value. Defaults to 0.5.
         calibrate_beta : bool, optional
             Whether to calibrate the DRAG beta. Defaults to False.
         beta_range : ArrayLike, optional
-            Range of the beta to sweep. Defaults to np.linspace(-1.5, 1.5, 20).
+            Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
             Duration of the pulse. Defaults to None.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
-        degree : int, optional
-            Degree of the polynomial to fit. Defaults to 3.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional

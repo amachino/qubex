@@ -398,10 +398,10 @@ class CalibrationMixin(
         *,
         spectator_state: str = "0",
         pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         r2_threshold: float = 0.5,
-        duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         use_stored_amplitude: bool = False,
         use_stored_beta: bool = False,
@@ -544,9 +544,9 @@ class CalibrationMixin(
         *,
         spectator_state: str = "0",
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
-        n_turns: int = 1,
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
+        n_turns: int = 1,
         degree: int = 3,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
@@ -556,7 +556,6 @@ class CalibrationMixin(
             targets = self.qubit_labels
         else:
             targets = list(targets)
-        beta_range = np.array(beta_range, dtype=np.float64)
         rabi_params = self.rabi_params
         self.validate_rabi_params(rabi_params)
 
@@ -570,6 +569,9 @@ class CalibrationMixin(
 
             drag_duration = duration or param["duration"]
             drag_amplitude = param["amplitude"]
+            drag_beta = param["beta"]
+
+            sweep_range = np.array(beta_range) + drag_beta
 
             spectators = self.get_spectators(target)
 
@@ -624,7 +626,7 @@ class CalibrationMixin(
 
             sweep_data = self.sweep_parameter(
                 sequence=sequence,
-                sweep_range=beta_range,
+                sweep_range=sweep_range,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -634,7 +636,7 @@ class CalibrationMixin(
 
             fit_result = fitting.fit_polynomial(
                 target=target,
-                x=beta_range,
+                x=sweep_range,
                 y=values,
                 degree=degree,
                 plot=plot,
@@ -684,9 +686,10 @@ class CalibrationMixin(
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
@@ -727,7 +730,7 @@ class CalibrationMixin(
                     beta_range=beta_range,
                     n_turns=n_turns,
                     duration=duration,
-                    degree=3,
+                    degree=degree,
                     plot=plot,
                     shots=shots,
                     interval=interval,
@@ -752,12 +755,12 @@ class CalibrationMixin(
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-1.5, 1.5, 20),
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
-        degree: int = 3,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
