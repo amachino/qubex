@@ -1181,7 +1181,7 @@ class CalibrationMixin(
             cr_phase = 0.0
             cancel_amplitude = 0.0
             cancel_phase = 0.0
-            time_range = np.arange(0, 1001, 50)
+            time_range = np.arange(0, 401, 10)
 
         params_history = [
             {

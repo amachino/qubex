@@ -786,10 +786,12 @@ class CharacterizationMixin(
                     data[target] = t1_data
 
                     fig = fit_result["fig"]
-                    viz.save_figure_image(
-                        fig,
-                        name=f"t1_{target}",
-                    )
+
+                    if save_image:
+                        viz.save_figure_image(
+                            fig,
+                            name=f"t1_{target}",
+                        )
 
         return ExperimentResult(data=data)
 
@@ -887,10 +889,12 @@ class CharacterizationMixin(
                     data[target] = t2_data
 
                     fig = fit_result["fig"]
-                    viz.save_figure_image(
-                        fig,
-                        name=f"t2_echo_{target}",
-                    )
+
+                    if save_image:
+                        viz.save_figure_image(
+                            fig,
+                            name=f"t2_echo_{target}",
+                        )
 
         return ExperimentResult(data=data)
 
