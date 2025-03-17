@@ -704,23 +704,36 @@ class CalibrationMixin(
         for i in range(n_iterations):
             print(f"\nIteration {i + 1}/{n_iterations}")
 
-            use_stored_amplitude = True if i > 0 else False
-            use_stored_beta = True if i > 0 else False
-
-            amplitude = self.calibrate_drag_amplitude(
-                targets=targets,
-                spectator_state=spectator_state,
-                pulse_type="hpi",
-                n_points=n_points,
-                n_rotations=n_rotations,
-                r2_threshold=r2_threshold,
-                duration=duration,
-                use_stored_amplitude=use_stored_amplitude,
-                use_stored_beta=use_stored_beta,
-                plot=plot,
-                shots=shots,
-                interval=interval,
-            )
+            if i == 0:
+                amplitude = self.calibrate_drag_amplitude(
+                    targets=targets,
+                    spectator_state=spectator_state,
+                    pulse_type="hpi",
+                    n_points=n_points,
+                    n_rotations=1,
+                    r2_threshold=r2_threshold,
+                    duration=duration,
+                    use_stored_amplitude=False,
+                    use_stored_beta=False,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                amplitude = self.calibrate_drag_amplitude(
+                    targets=targets,
+                    spectator_state=spectator_state,
+                    pulse_type="hpi",
+                    n_points=n_points,
+                    n_rotations=n_rotations,
+                    r2_threshold=r2_threshold,
+                    duration=duration,
+                    use_stored_amplitude=True,
+                    use_stored_beta=True,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
 
             if calibrate_beta:
                 beta = self.calibrate_drag_beta(
@@ -773,23 +786,36 @@ class CalibrationMixin(
         for i in range(n_iterations):
             print(f"\nIteration {i + 1}/{n_iterations}")
 
-            use_stored_amplitude = True if i > 0 else False
-            use_stored_beta = True if i > 0 else False
-
-            amplitude = self.calibrate_drag_amplitude(
-                targets=targets,
-                spectator_state=spectator_state,
-                pulse_type="pi",
-                n_points=n_points,
-                n_rotations=n_rotations,
-                r2_threshold=r2_threshold,
-                duration=duration,
-                use_stored_amplitude=use_stored_amplitude,
-                use_stored_beta=use_stored_beta,
-                plot=plot,
-                shots=shots,
-                interval=interval,
-            )
+            if i == 0:
+                amplitude = self.calibrate_drag_amplitude(
+                    targets=targets,
+                    spectator_state=spectator_state,
+                    pulse_type="pi",
+                    n_points=n_points,
+                    n_rotations=1,
+                    r2_threshold=r2_threshold,
+                    duration=duration,
+                    use_stored_amplitude=False,
+                    use_stored_beta=False,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                amplitude = self.calibrate_drag_amplitude(
+                    targets=targets,
+                    spectator_state=spectator_state,
+                    pulse_type="pi",
+                    n_points=n_points,
+                    n_rotations=n_rotations,
+                    r2_threshold=r2_threshold,
+                    duration=duration,
+                    use_stored_amplitude=True,
+                    use_stored_beta=True,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
 
             if calibrate_beta:
                 beta = self.calibrate_drag_beta(
@@ -1181,7 +1207,7 @@ class CalibrationMixin(
             cr_phase = 0.0
             cancel_amplitude = 0.0
             cancel_phase = 0.0
-            time_range = np.arange(0, 401, 10)
+            time_range = np.arange(0, 1001, 20)
 
         params_history = [
             {
