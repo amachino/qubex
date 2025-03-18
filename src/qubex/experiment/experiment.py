@@ -1215,6 +1215,7 @@ class Experiment(
         cr_phase: float | None = None,
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
+        decoupling_amplitude: float | None = None,
         echo: bool = True,
         x180: TargetMap[Waveform] | Waveform | None = None,
     ) -> PulseSchedule:
@@ -1242,6 +1243,12 @@ class Experiment(
             cancel_amplitude = cr_param["cancel_amplitude"]
         if cancel_phase is None:
             cancel_phase = cr_param["cancel_phase"]
+        if decoupling_amplitude is None:
+            decoupling_amplitude = cr_param["decoupling_amplitude"]
+
+        cancel_pulse = (
+            cancel_amplitude * np.exp(1j * cancel_phase) + decoupling_amplitude
+        )
 
         return CrossResonance(
             control_qubit=control_qubit,
@@ -1250,8 +1257,8 @@ class Experiment(
             cr_duration=cr_duration,
             cr_ramptime=cr_ramptime,
             cr_phase=cr_phase,
-            cancel_amplitude=cancel_amplitude,
-            cancel_phase=cancel_phase,
+            cancel_amplitude=np.abs(cancel_pulse),
+            cancel_phase=np.angle(cancel_pulse),
             echo=echo,
             pi_pulse=pi_pulse,
         )

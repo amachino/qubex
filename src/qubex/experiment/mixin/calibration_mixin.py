@@ -1084,6 +1084,7 @@ class CalibrationMixin(
         update_cancel_pulse: bool = True,
         safe_factor: float = 1.1,
         duration_unit: float = 16.0,
+        decoupling_multiple: float = 10.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1141,6 +1142,11 @@ class CalibrationMixin(
         half_duration = 0.5 * result["zx90_duration"] + cr_ramptime
         cr_duration = (safe_factor * half_duration // duration_unit + 1) * duration_unit
 
+        decouple_amplitude = self.calc_control_amplitude(
+            target=target_qubit,
+            rabi_rate=result["cr_rotation_amplitude"] * decoupling_multiple,
+        )
+
         self.calib_note.cr_params = {
             cr_label: {
                 "target": cr_label,
@@ -1150,6 +1156,7 @@ class CalibrationMixin(
                 "cr_phase": new_cr_phase,
                 "cancel_amplitude": new_cancel_amplitude,
                 "cancel_phase": new_cancel_phase,
+                "decoupling_amplitude": decouple_amplitude,
             }
         }
 
@@ -1172,6 +1179,7 @@ class CalibrationMixin(
         use_stored_params: bool = True,
         tolerance: float = 10e-6,
         safe_factor: float = 1.1,
+        decoupling_multiple: float = 10.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1235,6 +1243,7 @@ class CalibrationMixin(
                 cancel_amplitude=params["cancel_amplitude"],
                 cancel_phase=params["cancel_phase"],
                 safe_factor=safe_factor,
+                decoupling_multiple=decoupling_multiple,
                 x90=x90,
                 shots=shots,
                 interval=interval,
@@ -1350,6 +1359,11 @@ class CalibrationMixin(
             x180 = {control_qubit: x180}
 
         def ecr_sequence(amplitude: float, n_repetitions: int) -> PulseSchedule:
+            cancel_pulse = amplitude * cancel_cr_ratio * np.exp(1j * cancel_phase)
+            decoupling_amplitude = (
+                amplitude / cr_param["cr_amplitude"] * cr_param["decoupling_amplitude"]
+            )
+            cancel_pulse = cancel_pulse + decoupling_amplitude
             ecr = CrossResonance(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
@@ -1357,8 +1371,8 @@ class CalibrationMixin(
                 cr_duration=duration,
                 cr_ramptime=ramptime,
                 cr_phase=cr_phase,
-                cancel_amplitude=amplitude * cancel_cr_ratio,
-                cancel_phase=cancel_phase,
+                cancel_amplitude=np.abs(cancel_pulse),
+                cancel_phase=np.angle(cancel_pulse),
                 echo=True,
                 pi_pulse=x180[control_qubit],
             ).repeated(n_repetitions)
@@ -1441,6 +1455,10 @@ class CalibrationMixin(
 
         calibrated_cancel_amplitude = calibrated_cr_amplitude * cancel_cr_ratio
 
+        decoupling_amplitude = (
+            calibrated_cr_amplitude / cr_param["cr_amplitude"]
+        ) * cr_param["decoupling_amplitude"]
+
         if calibrated_cr_amplitude is not None and store_params:
             self.calib_note.cr_params = {
                 cr_label: {
@@ -1451,6 +1469,7 @@ class CalibrationMixin(
                     "cr_phase": cr_phase,
                     "cancel_amplitude": calibrated_cancel_amplitude,
                     "cancel_phase": cancel_phase,
+                    "decoupling_amplitude": decoupling_amplitude,
                 },
             }
 
@@ -1460,8 +1479,9 @@ class CalibrationMixin(
         print(f"  CR ramptime      : {ramptime:.1f} ns")
         print(f"  CR amplitude     : {calibrated_cr_amplitude:.6f}")
         print(f"  CR phase         : {cr_phase:.6f}")
-        print(f"  Cancel amplitude : {calibrated_cr_amplitude:.6f}")
+        print(f"  Cancel amplitude : {calibrated_cancel_amplitude:.6f}")
         print(f"  Cancel phase     : {cancel_phase:.6f}")
+        print(f"  DD amplitude     : {decoupling_amplitude:.6f}")
         print()
         if plot:
             zx90 = self.zx90(control_qubit, target_qubit)
@@ -1698,6 +1718,7 @@ class CalibrationMixin(
                 "cr_phase": x[1],
                 "cancel_amplitude": x[2],
                 "cancel_phase": x[3],
+                "decoupling_amplitude": 0.0,
             },
         }
 
