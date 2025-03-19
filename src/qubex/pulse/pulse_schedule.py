@@ -432,7 +432,14 @@ class PulseSchedule:
                     col=1,
                     bgcolor="rgba(255, 255, 255, 0.8)",
                 )
-        fig.show()
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "scale": 3,
+                },
+            }
+        )
 
     def is_valid(self) -> bool:
         """
