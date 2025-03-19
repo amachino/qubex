@@ -1196,16 +1196,26 @@ class Experiment(
     def hadamard(
         self,
         target: str,
+        *,
+        decomposition: Literal["Z180-Y90", "Y90-X180"] = "Z180-Y90",
     ) -> PulseArray:
-        return PulseArray(
-            [
-                # TODO: Need phase correction for CR targets if VirtualZ is used.
-                # self.z180(),
-                # self.y90(target),
-                self.y90(target),
-                self.x180(target),
-            ]
-        )
+        if decomposition == "Z180-Y90":
+            return PulseArray(
+                [
+                    # TODO: Need phase correction for CR targets
+                    self.z180(),
+                    self.y90(target),
+                ]
+            )
+        elif decomposition == "Y90-X180":
+            return PulseArray(
+                [
+                    self.y90(target),
+                    self.x180(target),
+                ]
+            )
+        else:
+            raise ValueError(f"Invalid decomposition: {decomposition}. ")
 
     def zx90(
         self,
@@ -1282,7 +1292,7 @@ class Experiment(
 
         with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
             ps.call(zx90)
-            # TODO: Need VZ(-π/2) for CR targets which has control_qubit as target.
+            # TODO: Need VZ(-π/2) for CR targets which has control_qubit as target
             ps.add(control_qubit, VirtualZ(-np.pi / 2))
             ps.add(target_qubit, x90.scaled(-1))
 
@@ -1305,18 +1315,22 @@ class Experiment(
         else:
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
             cnot = self.cx(target_qubit, control_qubit, zx90=zx90, x90=x90)
-            hadamard_c = self.hadamard(control_qubit)
-            hadamard_t = self.hadamard(target_qubit)
+            z180 = self.z180()
+            hadamard_c = PulseArray([z180, self.y90(control_qubit)])
+            hadamard_t = PulseArray([z180, self.y90(target_qubit)])
+            cr_label = f"{target_qubit}-{control_qubit}"
             with PulseSchedule(
                 [
                     control_qubit,
-                    f"{target_qubit}-{control_qubit}",
+                    cr_label,
                     target_qubit,
                 ]
             ) as ps:
                 ps.add(control_qubit, hadamard_c)
                 ps.add(target_qubit, hadamard_t)
+                ps.add(cr_label, z180)
                 ps.call(cnot)
+                ps.add(cr_label, z180)
                 ps.add(control_qubit, hadamard_c)
                 ps.add(target_qubit, hadamard_t)
             return ps
