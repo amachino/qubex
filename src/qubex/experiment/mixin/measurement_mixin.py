@@ -884,7 +884,7 @@ class MeasurementMixin(
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        n_samples: int = 100,
+        n_samples: int | None = 100,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -962,10 +962,10 @@ class MeasurementMixin(
                 logger.error(f"Invalid type: {type(waveform)}")
                 return waveform
 
-        if n_samples < pulse_length:
-            indices = np.linspace(0, pulse_length, n_samples).astype(int)
-        else:
+        if n_samples is None or pulse_length < n_samples:
             indices = np.arange(pulse_length + 1)
+        else:
+            indices = np.linspace(0, pulse_length, n_samples).astype(int)
 
         flattened_pulses = {
             target: pulse.flattened() if isinstance(pulse, PulseArray) else pulse

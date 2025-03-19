@@ -1199,8 +1199,11 @@ class Experiment(
     ) -> PulseArray:
         return PulseArray(
             [
-                self.z180(),
+                # TODO: Need phase correction for CR targets if VirtualZ is used.
+                # self.z180(),
+                # self.y90(target),
                 self.y90(target),
+                self.x180(target),
             ]
         )
 
@@ -1279,6 +1282,7 @@ class Experiment(
 
         with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
             ps.call(zx90)
+            # TODO: Need VZ(-π/2) for CR targets which has control_qubit as target.
             ps.add(control_qubit, VirtualZ(-np.pi / 2))
             ps.add(target_qubit, x90.scaled(-1))
 
