@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from copy import deepcopy
 from typing import Collection, Literal
@@ -11,8 +12,9 @@ from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from tqdm import tqdm
 
-from ...analysis import RabiParam, fitting
-from ...analysis import visualization as vis
+from ...analysis import fitting
+from ...analysis import visualization as viz
+from ...analysis.fitting import RabiParam
 from ...backend import MixingUtil, Target
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
 from ...pulse import CPMG, Blank, FlatTop, Gaussian, PulseSchedule, Rect, Waveform
@@ -28,6 +30,8 @@ from ..experiment_result import (
 )
 from ..experiment_util import ExperimentUtil
 from ..protocol import BaseProtocol, CharacterizationProtocol, MeasurementProtocol
+
+logger = logging.getLogger(__name__)
 
 
 class CharacterizationMixin(
@@ -170,7 +174,7 @@ class CharacterizationMixin(
                 )
                 fig.update_layout(
                     title=f"Readout SNR : {target}",
-                    xaxis3_title="Readout amplitude (arb. unit)",
+                    xaxis3_title="Readout amplitude (arb. units)",
                     yaxis_title="Signal",
                     yaxis2_title="Noise",
                     yaxis3_title="SNR",
@@ -179,7 +183,7 @@ class CharacterizationMixin(
                     height=400,
                 )
                 fig.show()
-                vis.save_figure_image(
+                viz.save_figure_image(
                     fig,
                     f"readout_snr_{target}",
                     width=600,
@@ -280,7 +284,7 @@ class CharacterizationMixin(
                     height=400,
                 )
                 fig.show()
-                vis.save_figure_image(
+                viz.save_figure_image(
                     fig,
                     f"readout_snr_{target}",
                     width=600,
@@ -407,7 +411,7 @@ class CharacterizationMixin(
                     fig.show()
 
                 if save_image:
-                    vis.save_figure_image(
+                    viz.save_figure_image(
                         fig,
                         name=f"chevron_pattern_{target}",
                         width=600,
@@ -683,11 +687,11 @@ class CharacterizationMixin(
             freq = self.resonators[target].frequency
             fit_result = fitting.fit_lorentzian(
                 target=target,
-                freq_range=detuning_range + freq,
-                data=np.array(values),
+                x=detuning_range + freq,
+                y=np.array(values),
                 plot=plot,
                 title="Readout frequency calibration",
-                xaxis_title="Readout frequency (GHz)",
+                xlabel="Readout frequency (GHz)",
             )
             if "f0" in fit_result:
                 fit_data[target] = fit_result["f0"]
@@ -751,8 +755,8 @@ class CharacterizationMixin(
                 interval=interval,
                 plot=plot,
                 title="T1 decay",
-                xaxis_title="Time (μs)",
-                yaxis_title="Measured value",
+                xlabel="Time (μs)",
+                ylabel="Measured value",
                 xaxis_type=xaxis_type,
             )
 
@@ -763,22 +767,31 @@ class CharacterizationMixin(
                     y=0.5 * (1 - sweep_data.normalized),
                     plot=plot,
                     title="T1",
-                    xaxis_title="Time (μs)",
-                    yaxis_title="Normalized signal",
+                    xlabel="Time (μs)",
+                    ylabel="Normalized signal",
                     xaxis_type=xaxis_type,
                     yaxis_type="linear",
                 )
-                if "tau" in fit_result:
+                if fit_result["status"] == "success":
                     t1 = fit_result["tau"]
-                    t1_data = T1Data.new(sweep_data, t1=t1)
+                    t1_err = fit_result["tau_err"]
+                    r2 = fit_result["r2"]
+
+                    t1_data = T1Data.new(
+                        sweep_data,
+                        t1=t1,
+                        t1_err=t1_err,
+                        r2=r2,
+                    )
                     data[target] = t1_data
 
-                if save_image and "fig" in fit_result:
                     fig = fit_result["fig"]
-                    vis.save_figure_image(
-                        fig,
-                        name=f"t1_{target}",
-                    )
+
+                    if save_image:
+                        viz.save_figure_image(
+                            fig,
+                            name=f"t1_{target}",
+                        )
 
         return ExperimentResult(data=data)
 
@@ -859,28 +872,37 @@ class CharacterizationMixin(
                     y=0.5 * (1 - sweep_data.normalized),
                     plot=plot,
                     title="T2 echo",
-                    xaxis_title="Time (μs)",
-                    yaxis_title="Normalized signal",
+                    xlabel="Time (μs)",
+                    ylabel="Normalized signal",
                 )
-                if "tau" in fit_result:
+                if fit_result["status"] == "success":
                     t2 = fit_result["tau"]
-                    t2_data = T2Data.new(sweep_data, t2=t2)
+                    t2_err = fit_result["tau_err"]
+                    r2 = fit_result["r2"]
+
+                    t2_data = T2Data.new(
+                        sweep_data,
+                        t2=t2,
+                        t2_err=t2_err,
+                        r2=r2,
+                    )
                     data[target] = t2_data
 
-                if save_image and "fig" in fit_result:
                     fig = fit_result["fig"]
-                    vis.save_figure_image(
-                        fig,
-                        name=f"t2_echo_{target}",
-                    )
+
+                    if save_image:
+                        viz.save_figure_image(
+                            fig,
+                            name=f"t2_echo_{target}",
+                        )
 
         return ExperimentResult(data=data)
 
     def ramsey_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 20001, 100),
+        time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
@@ -890,6 +912,8 @@ class CharacterizationMixin(
     ) -> ExperimentResult[RamseyData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -952,31 +976,36 @@ class CharacterizationMixin(
                 if target in target_qubits:
                     fit_result = fitting.fit_ramsey(
                         target=target,
-                        x=sweep_data.sweep_range,
-                        y=sweep_data.normalized,
+                        times=sweep_data.sweep_range,
+                        data=sweep_data.normalized,
                         plot=plot,
                     )
-                    if "tau" in fit_result and "f" in fit_result:
+                    if fit_result["status"] == "success":
+                        f = self.qubits[target].frequency
+                        t2 = fit_result["tau"]
+                        ramsey_freq = fit_result["f"]
+                        bare_freq = f + detuning - ramsey_freq
+                        r2 = fit_result["r2"]
                         ramsey_data = RamseyData.new(
                             sweep_data=sweep_data,
-                            t2=fit_result["tau"],
-                            ramsey_freq=fit_result["f"],
-                            bare_freq=self.targets[target].frequency
-                            + detuning
-                            - fit_result["f"],
+                            t2=t2,
+                            ramsey_freq=ramsey_freq,
+                            bare_freq=bare_freq,
+                            r2=r2,
                         )
                         data[target] = ramsey_data
 
-                    print(f"Bare frequency with |{spectator_state}〉:")
-                    print(f"  {target}: {ramsey_data.bare_freq:.6f}")
-                    print("")
+                        print(f"Bare frequency with |{spectator_state}〉:")
+                        print(f"  {target}: {ramsey_data.bare_freq:.6f}")
+                        print("")
 
-                    if save_image and "fig" in fit_result:
                         fig = fit_result["fig"]
-                        vis.save_figure_image(
-                            fig,
-                            name=f"ramsey_{target}",
-                        )
+
+                        if save_image:
+                            viz.save_figure_image(
+                                fig,
+                                name=f"ramsey_{target}",
+                            )
 
         return ExperimentResult(data=data)
 
@@ -1091,8 +1120,8 @@ class CharacterizationMixin(
             interval=interval,
             plot=plot,
             title=f"JAZZ : {target_qubit}-{spectator_qubit}",
-            xaxis_title="Time (ns)",
-            yaxis_title="Measured value",
+            xlabel="Time (ns)",
+            ylabel="Measured value",
         )
 
         fit_result = fitting.fit_cosine(
@@ -1101,11 +1130,11 @@ class CharacterizationMixin(
             is_damped=True,
             plot=plot,
             title=f"JAZZ : {target_qubit}-{spectator_qubit}",
-            xaxis_title="Wait time (ns)",
-            yaxis_title=f"Normalized value : {target_qubit}",
+            xlabel="Wait time (ns)",
+            ylabel=f"Normalized value : {target_qubit}",
         )
 
-        xi = fit_result["frequency"]
+        xi = fit_result["f"]
         zeta = 2 * xi
 
         print(f"ξ: {xi * 1e6:.2f} kHz")
@@ -1122,7 +1151,7 @@ class CharacterizationMixin(
         target_qubit: str,
         spectator_qubit: str,
         *,
-        time_range: ArrayLike = np.arange(0, 5001, 200),
+        time_range: ArrayLike = np.arange(0, 20001, 500),
         x90: Waveform | TargetMap[Waveform] | None = None,
         x180: Waveform | TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
@@ -1213,6 +1242,7 @@ class CharacterizationMixin(
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
+                logger.debug(f"LO: {lo}, CNCO: {cnco}")
                 for sub_idx, freq in enumerate(subrange):
                     if idx > 0 and sub_idx == 0:
                         # measure the phase at the previous frequency with the new LO/NCO settings
@@ -1263,6 +1293,7 @@ class CharacterizationMixin(
                 y=0.95,
                 text=f"Phase shift: {coefficients[0] * 1e-3:.3f} rad/MHz",
                 showarrow=False,
+                bgcolor="rgba(255, 255, 255, 0.8)",
             )
             fig.update_layout(
                 title=f"Phase shift : {mux.label}",
@@ -1394,7 +1425,7 @@ class CharacterizationMixin(
         )
         fig1.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
         fig1.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
-        fig1.update_yaxes(title_text="Amplitude (arb. unit)", row=2, col=1)
+        fig1.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
         fig1.update_layout(
             title=f"Resonator frequency scan : {mux.label}",
             height=450,
@@ -1419,13 +1450,13 @@ class CharacterizationMixin(
             fig2.show()
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig1,
                 name=f"resonator_frequency_scan_{mux.label}_phase",
                 width=600,
                 height=450,
             )
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig2,
                 name=f"resonator_frequency_scan_{mux.label}_phase_diff",
             )
@@ -1481,33 +1512,35 @@ class CharacterizationMixin(
             )["phases_diff"]
             phase_diff = np.append(phase_diff, phase_diff[-1])
             result.append(phase_diff)
-        if plot:
-            fig = go.Figure()
-            fig.add_trace(
-                go.Heatmap(
-                    x=frequency_range,
-                    y=power_range,
-                    z=result,
-                    colorscale="Viridis",
-                    colorbar=dict(
-                        title=dict(
-                            text="Phase shift (rad)",
-                            side="right",
-                        ),
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Heatmap(
+                x=frequency_range,
+                y=power_range,
+                z=result,
+                colorscale="Viridis",
+                colorbar=dict(
+                    title=dict(
+                        text="Phase shift (rad)",
+                        side="right",
                     ),
-                )
+                ),
             )
-            fig.update_layout(
-                title=f"Resonator spectroscopy : {mux.label}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Power (dB)",
-                width=600,
-                height=300,
-            )
+        )
+        fig.update_layout(
+            title=f"Resonator spectroscopy : {mux.label}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Power (dB)",
+            width=600,
+            height=300,
+        )
+
+        if plot:
             fig.show()
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 name=f"resonator_spectroscopy_{mux.label}",
             )
@@ -1579,8 +1612,9 @@ class CharacterizationMixin(
         )
 
         fig = fit_result["fig"]
+
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 name=f"reflection_coefficient_{target}",
                 width=800,
@@ -1702,7 +1736,7 @@ class CharacterizationMixin(
             )
             fig.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
             fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
-            fig.update_yaxes(title_text="Amplitude (arb. unit)", row=2, col=1)
+            fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
             fig.update_layout(
                 title=f"Control frequency scan : {qubit}",
                 height=450,
@@ -1732,8 +1766,8 @@ class CharacterizationMixin(
         )
         result = fitting.fit_sqrt_lorentzian(
             target=target,
-            freq_range=frequency_range,
-            data=data,
+            x=frequency_range,
+            y=data,
             title="Qubit resonance fit",
         )
         rabi_rate = result["Omega"]
@@ -1799,7 +1833,7 @@ class CharacterizationMixin(
             fig.show()
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 name=f"qubit_spectroscopy_{target}",
                 width=600,

@@ -5,11 +5,11 @@ from numpy.typing import ArrayLike
 from tqdm import tqdm
 
 from ...analysis import fitting
-from ...analysis import visualization as vis
+from ...analysis import visualization as viz
 from ...backend import Target
 from ...clifford import Clifford
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from ...pulse import PulseSchedule, PulseSequence, VirtualZ, Waveform
+from ...pulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..experiment_result import ExperimentResult, RBData
 from ..protocol import BaseProtocol, BenchmarkingProtocol, MeasurementProtocol
@@ -28,7 +28,7 @@ class BenchmarkingMixin(
         x90: dict[str, Waveform] | None = None,
         zx90: PulseSchedule | dict[str, Waveform] | None = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | None = None,
         seed: int | None = None,
@@ -67,14 +67,14 @@ class BenchmarkingMixin(
         n: int,
         x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: (
-            Waveform | dict[str, PulseSequence] | dict[str, Waveform] | None
+            Waveform | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
-    ) -> PulseSequence:
+    ) -> PulseArray:
         if isinstance(x90, dict):
             x90 = x90.get(target)
-        x90 = x90 or self.hpi_pulse[target]
+        x90 = x90 or self.x90(target)
         z90 = VirtualZ(np.pi / 2)
 
         sequence: list[Waveform | VirtualZ] = []
@@ -114,7 +114,7 @@ class BenchmarkingMixin(
         for gate in inverse:
             add_gate(gate)
 
-        return PulseSequence(sequence)
+        return PulseArray(sequence)
 
     def rb_sequence_2q(
         self,
@@ -123,10 +123,10 @@ class BenchmarkingMixin(
         n: int,
         x90: TargetMap[Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
@@ -140,8 +140,8 @@ class BenchmarkingMixin(
         if isinstance(x90, dict):
             xi90 = x90.get(control_qubit)
             ix90 = x90.get(target_qubit)
-        xi90 = xi90 or self.hpi_pulse[control_qubit]
-        ix90 = ix90 or self.hpi_pulse[target_qubit]
+        xi90 = xi90 or self.x90(control_qubit)
+        ix90 = ix90 or self.x90(target_qubit)
         z90 = VirtualZ(np.pi / 2)
 
         if zx90 is None:
@@ -255,15 +255,15 @@ class BenchmarkingMixin(
             y=(sweep_data.normalized + 1) / 2,
             bounds=((0, 0, 0), (0.5, 1, 1)),
             title="Randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Normalized signal",
+            xlabel="Number of Cliffords",
+            ylabel="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
             plot=plot,
         )
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fit_result["fig"],
                 name=f"rb_{target}",
             )
@@ -284,13 +284,13 @@ class BenchmarkingMixin(
         self,
         *,
         target: str,
-        n_cliffords_range: ArrayLike = np.arange(0, 21, 2),
+        n_cliffords_range: ArrayLike = np.arange(0, 31, 3),
         x90: TargetMap[Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
@@ -335,14 +335,15 @@ class BenchmarkingMixin(
                 plot=False,
             )
             if mitigate_readout:
-                prob = np.array(list(result.probabilities.values()))
+                probabilities = result.get_probabilities([control_qubit, target_qubit])
+                prob = np.array(list(probabilities.values()))
                 cm_inv = self.get_inverse_confusion_matrix(
                     [control_qubit, target_qubit]
                 )
                 prob_mitigated = prob @ cm_inv
                 p00 = prob_mitigated[0]
             else:
-                p00 = result.probabilities["00"]
+                p00 = probabilities["00"]
             fidelities.append(p00)
 
         fit_result = fitting.fit_rb(
@@ -351,8 +352,8 @@ class BenchmarkingMixin(
             y=np.array(fidelities),
             dimension=4,
             title="Randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Normalized signal",
+            xlabel="Number of Cliffords",
+            ylabel="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
             plot=plot,
@@ -374,7 +375,7 @@ class BenchmarkingMixin(
         n_trials: int = 30,
         x90: Waveform | dict[str, Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -449,14 +450,14 @@ class BenchmarkingMixin(
             dimension=4 if is_2q else 2,
             plot=plot,
             title="Randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Normalized signal",
+            xlabel="Number of Cliffords",
+            ylabel="Normalized signal",
             xaxis_type="linear",
             yaxis_type="linear",
         )
 
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fit_result["fig"],
                 name=f"randomized_benchmarking_{target}",
             )
@@ -473,12 +474,12 @@ class BenchmarkingMixin(
         *,
         target: str,
         interleaved_waveform: Waveform | PulseSchedule,
-        interleaved_clifford: Clifford | dict[str, tuple[complex, str]],
+        interleaved_clifford: str | Clifford | dict[str, tuple[complex, str]],
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int = 30,
         x90: TargetMap[Waveform] | Waveform | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -507,6 +508,13 @@ class BenchmarkingMixin(
                 n_cliffords_range = np.arange(0, 1001, 100)
 
         n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
+        if isinstance(interleaved_clifford, str):
+            clifford = self.clifford.get(interleaved_clifford)
+            if clifford is None:
+                raise ValueError(f"Invalid Clifford: {interleaved_clifford}")
+            else:
+                interleaved_clifford = clifford
 
         rb_results = []
         irb_results = []
@@ -579,7 +587,6 @@ class BenchmarkingMixin(
                     irb_signal = (irb_result.data[target].normalized + 1) / 2
                     irb_results.append(irb_signal)
 
-        print("Randomized benchmarking:")
         rb_mean = np.mean(rb_results, axis=0)
         rb_std = np.std(rb_results, axis=0)
         rb_fit_result = fitting.fit_rb(
@@ -588,13 +595,13 @@ class BenchmarkingMixin(
             y=rb_mean,
             error_y=rb_std,
             dimension=4 if is_2q else 2,
-            plot=plot,
+            plot=False,
         )
         A_rb = rb_fit_result["A"]
         p_rb = rb_fit_result["p"]
         C_rb = rb_fit_result["C"]
+        avg_gate_fidelity_rb = rb_fit_result["avg_gate_fidelity"]
 
-        print("Interleaved randomized benchmarking:")
         irb_mean = np.mean(irb_results, axis=0)
         irb_std = np.std(irb_results, axis=0)
         irb_fit_result = fitting.fit_rb(
@@ -603,12 +610,13 @@ class BenchmarkingMixin(
             y=irb_mean,
             error_y=irb_std,
             dimension=4 if is_2q else 2,
-            plot=plot,
+            plot=False,
             title="Interleaved randomized benchmarking",
         )
         A_irb = irb_fit_result["A"]
         p_irb = irb_fit_result["p"]
         C_irb = irb_fit_result["C"]
+        avg_gate_fidelity_irb = irb_fit_result["avg_gate_fidelity"]
 
         dimension = 4 if is_2q else 2
         gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
@@ -628,20 +636,24 @@ class BenchmarkingMixin(
             C_rb=C_rb,
             C_irb=C_irb,
             gate_fidelity=gate_fidelity,
+            plot=plot,
             title="Interleaved randomized benchmarking",
-            xaxis_title="Number of Cliffords",
-            yaxis_title="Normalized signal",
+            xlabel="Number of Cliffords",
+            ylabel="Normalized signal",
         )
         if save_image:
-            vis.save_figure_image(
+            viz.save_figure_image(
                 fig,
                 name=f"interleaved_randomized_benchmarking_{target}",
             )
 
-        print("")
-        print(f"Gate error: {gate_error * 100:.3f}%")
-        print(f"Gate fidelity: {gate_fidelity * 100:.3f}%")
-        print("")
+        print()
+        print(f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.3f}%")
+        print(f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.3f}%")
+        print()
+        print(f"Gate error    : {gate_error * 100:.3f}%")
+        print(f"Gate fidelity : {gate_fidelity * 100:.3f}%")
+        print()
 
         return {
             "gate_error": gate_error,

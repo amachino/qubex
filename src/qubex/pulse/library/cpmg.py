@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from ..pulse import Blank
-from ..pulse_sequence import PulseSequence
+from typing import Final
+
+from ..blank import Blank
+from ..pulse_array import PulseArray
 from ..waveform import Waveform
 
 
-class CPMG(PulseSequence):
+class CPMG(PulseArray):
     """
     A class representing the CPMG pulse sequence used in quantum experiments.
 
@@ -18,7 +20,7 @@ class CPMG(PulseSequence):
     n : int, optional
         The number of pi pulses in the sequence.
     **kwargs
-        Additional keyword arguments passed to the PulseSequence constructor.
+        Additional keyword arguments passed to the PulseArray constructor.
 
     Attributes
     ----------
@@ -37,11 +39,18 @@ class CPMG(PulseSequence):
 
     def __init__(
         self,
+        *,
         tau: float,
         pi: Waveform,
         n: int = 2,
+        alternating: bool = False,
         **kwargs,
     ):
+        self.tau: Final = tau
+        self.pi: Final = pi
+        self.n: Final = n
+        self.alternating: Final = alternating
+
         if tau % self.SAMPLING_PERIOD != 0:
             raise ValueError(
                 f"Tau must be a multiple of the sampling period ({self.SAMPLING_PERIOD} ns)."
@@ -50,11 +59,10 @@ class CPMG(PulseSequence):
             raise ValueError("The number of pi pulses must be greater than 0.")
         waveforms: list[Waveform] = []
         if tau > 0:
-            self.tau = tau
-            self.pi = pi
-            self.n = n
-            waveforms = [Blank(tau)]
-            for _ in range(n - 1):
-                waveforms += [pi, Blank(2 * tau)]
-            waveforms += [pi, Blank(tau)]
+            waveforms = []
+            for i in range(n):
+                if alternating and i % 2 == 1:
+                    waveforms += [Blank(tau), pi.scaled(-1), Blank(tau)]
+                else:
+                    waveforms += [Blank(tau), pi, Blank(tau)]
         super().__init__(waveforms, **kwargs)

@@ -6,10 +6,9 @@ from datetime import datetime
 from typing import Literal
 
 import numpy as np
-import numpy.typing as npt
 import plotly.graph_objects as go
+from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
-from scipy.fft import fft, fftfreq
 from scipy.optimize import curve_fit, least_squares, minimize
 from sklearn.decomposition import PCA
 
@@ -30,7 +29,7 @@ def _plotly_config(filename: str) -> dict:
     prefix = datetime.now().strftime("%Y%m%d_%H%M%S")
     return {
         "toImageButtonOptions": {
-            "format": "svg",
+            "format": "png",
             "filename": f"{prefix}_{filename}",
             "scale": 3,
         },
@@ -62,6 +61,8 @@ class RabiParam:
         Fluctuation of the Rabi oscillation.
     angle : float
         Angle of the Rabi oscillation.
+    r2 : float
+        Coefficient of determination.
     """
 
     target: str
@@ -71,60 +72,48 @@ class RabiParam:
     offset: float
     noise: float
     angle: float
+    r2: float
 
 
 def normalize(
-    values: npt.NDArray,
+    values: NDArray,
     param: RabiParam,
-    centers: dict[int, complex] | None = None,
-) -> npt.NDArray:
+) -> NDArray:
     """
-    Normalizes the measured I/Q value.
+    Normalizes the measured I/Q values.
 
     Parameters
     ----------
-    values : npt.NDArray
-        Measured I/Q value.
+    values : NDArray
+        Measured I/Q values.
     param : RabiParam
         Parameters of the Rabi oscillation.
-    centers : dict[int, complex], optional
-        Centers of the |g> and |e> states.
 
     Returns
     -------
-    npt.NDArray
-        Normalized I/Q value.
+    NDArray
+        Normalized I/Q values.
     """
-    # if centers is not None:
-    #     p = np.array(values, dtype=np.complex128)
-    #     g, e = centers[0], centers[1]
-    #     v_ge = e - g
-    #     v_gp = p - g
-    #     v_gp_proj = np.real(v_gp * np.conj(v_ge)) / np.abs(v_ge)
-    #     normalized = 1 - 2 * np.abs(v_gp_proj) / np.abs(v_ge)
-    # else:
-    #     rotated = values * np.exp(-1j * param.angle)
-    #     normalized = (np.imag(rotated) - param.offset) / param.amplitude
     rotated = values * np.exp(-1j * param.angle)
     normalized = (np.imag(rotated) - param.offset) / param.amplitude
     return normalized
 
 
 def func_cos(
-    t: npt.NDArray[np.float64],
-    A: float,
+    t: NDArray,
+    A: complex,
     omega: float,
     phi: float,
     C: float,
-) -> npt.NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate a cosine function with given parameters.
 
     Parameters
     ----------
-    t : npt.NDArray[np.float64]
+    t : NDArray[np.float64]
         Time points for the function evaluation.
-    A : float
+    A : complex
         Amplitude of the cosine function.
     omega : float
         Angular frequency of the cosine function.
@@ -137,21 +126,21 @@ def func_cos(
 
 
 def func_damped_cos(
-    t: npt.NDArray[np.float64],
-    A: float,
+    t: NDArray,
+    A: complex,
     omega: float,
     phi: float,
     C: float,
     tau: float,
-) -> npt.NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate a damped cosine function with given parameters.
 
     Parameters
     ----------
-    t : npt.NDArray[np.float64]
+    t : NDArray[np.float64]
         Time points for the function evaluation.
-    A : float
+    A : complex
         Amplitude of the cosine function.
     omega : float
         Angular frequency of the cosine function.
@@ -166,17 +155,17 @@ def func_damped_cos(
 
 
 def func_exp_decay(
-    t: npt.NDArray[np.float64],
+    t: NDArray,
     A: float,
     tau: float,
     C: float,
-) -> npt.NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate an exponential decay function with given parameters.
 
     Parameters
     ----------
-    t : npt.NDArray[np.float64]
+    t : NDArray[np.float64]
         Time points for the function evaluation.
     A : float
         Amplitude of the exponential decay.
@@ -189,18 +178,18 @@ def func_exp_decay(
 
 
 def func_lorentzian(
-    f: npt.NDArray[np.float64],
+    f: NDArray,
     A: float,
     f0: float,
     gamma: float,
     C: float,
-) -> npt.NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate a Lorentzian function with given parameters.
 
     Parameters
     ----------
-    f : npt.NDArray[np.float64]
+    f : NDArray[np.float64]
         Frequency points for the function evaluation.
     A : float
         Amplitude of the Lorentzian function.
@@ -215,18 +204,18 @@ def func_lorentzian(
 
 
 def func_sqrt_lorentzian(
-    f: npt.NDArray[np.float64],
+    f: NDArray,
     A: float,
     f0: float,
     Omega: float,
     C: float,
-) -> npt.NDArray[np.float64]:
+) -> NDArray:
     """
     Calculate a square root Lorentzian function with given parameters.
 
     Parameters
     ----------
-    f : npt.NDArray[np.float64]
+    f : NDArray[np.float64]
         Frequency points for the function evaluation.
     A : float
         Amplitude of the square root Lorentzian function.
@@ -240,13 +229,20 @@ def func_sqrt_lorentzian(
     return A / np.sqrt(1 + ((f - f0) / Omega) ** 2) + C
 
 
-def func_resonance(f, f_r, kappa_ex, kappa_in, A, phi):
+def func_resonance(
+    f: NDArray,
+    f_r: float,
+    kappa_ex: float,
+    kappa_in: float,
+    A: float,
+    phi: float,
+) -> NDArray:
     """
     Calculate a resonance function with given parameters.
 
     Parameters
     ----------
-    f : npt.NDArray[np.float64]
+    f : NDArray[np.float64]
         Frequency points for the function evaluation.
     f_r : float
         Resonance frequency.
@@ -261,15 +257,15 @@ def func_resonance(f, f_r, kappa_ex, kappa_in, A, phi):
 
 
 def fit_polynomial(
+    x: ArrayLike,
+    y: ArrayLike,
     *,
-    target: str,
-    x: npt.NDArray[np.float64],
-    y: npt.NDArray[np.float64],
     degree: int,
     plot: bool = True,
+    target: str | None = None,
     title: str = "Polynomial fit",
-    xaxis_title: str = "x",
-    yaxis_title: str = "y",
+    xlabel: str = "x",
+    ylabel: str = "y",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -278,21 +274,21 @@ def fit_polynomial(
 
     Parameters
     ----------
-    target : str
-        Identifier of the target.
-    x : npt.NDArray[np.float64]
+    x : ArrayLike
         x values for the data.
-    y : npt.NDArray[np.float64]
+    y : ArrayLike
         y values for the data.
     degree : int
         Degree of the polynomial.
     plot : bool, optional
         Whether to plot the data and the fit.
+    target : str, optional
+        Identifier of the target.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -304,6 +300,9 @@ def fit_polynomial(
     dict
         Fitted parameters and the figure.
     """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
     popt = np.polyfit(x, y, degree)
     fun = np.poly1d(popt)
     y_fit = fun(x)
@@ -343,15 +342,16 @@ def fit_polynomial(
             arrowhead=1,
         )
     fig.update_layout(
-        title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
 
     if plot:
-        fig.show(config=_plotly_config(f"polynomial_{target}"))
+        filename = f"fit_polynomial_{target}" if target else "fit_polynomial"
+        fig.show(config=_plotly_config(filename))
 
     return {
         "popt": popt,
@@ -362,47 +362,97 @@ def fit_polynomial(
 
 
 def fit_cosine(
-    x: npt.ArrayLike,
-    y: npt.ArrayLike,
+    x: ArrayLike,
+    y: ArrayLike,
     *,
-    phase_est: float = 0.0,
     tau_est: float = 10_000,
     is_damped: bool = False,
+    target: str | None = None,
     title: str = "Cosine fit",
-    xaxis_title: str = "x",
-    yaxis_title: str = "y",
+    xlabel: str = "x",
+    ylabel: str = "y",
     plot: bool = True,
 ) -> dict:
+    """
+    Fit data to a cosine function and plot the results.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        x values for the data.
+    y : ArrayLike
+        y values for the data.
+    tau_est : float, optional
+        Initial guess for the damping time constant.
+    is_damped : bool, optional
+        Whether to fit the data to a damped cosine function.
+    target : str, optional
+        Identifier of the target.
+    title : str, optional
+        Title of the plot.
+    xlabel : str, optional
+        Label for the x-axis.
+    ylabel : str, optional
+        Label for the y-axis.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
-    wave_count_est = estimate_wave_count(x, y)
-    amplitude_est = (np.max(y) - np.min(y)) / 2
-    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
+    dt = x[1] - x[0]
+    N = len(x)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(y)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+
+    # Estimate the initial parameters
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    phase_est = np.angle(F[i])
     offset_est = (np.max(y) + np.min(y)) / 2
+
+    logger.debug(
+        f"Initial guess: A = {amplitude_est:.3g}, f = {omega_est:.3g}, φ = {phase_est:.3g}, C = {offset_est:.3g}"
+    )
 
     if is_damped:
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
         bounds = (
-            (0, 0, 0, -np.inf, 0),
+            (0, 0, -np.pi, -np.inf, 0),
             (np.inf, np.inf, np.pi, np.inf, np.inf),
         )
-        popt, _ = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+        popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
     else:
         p0 = (amplitude_est, omega_est, phase_est, offset_est)
         bounds = (
-            (0, 0, 0, -np.inf),
+            (0, 0, -np.pi, -np.inf),
             (np.inf, np.inf, np.pi, np.inf),
         )
-        popt, _ = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+        popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
 
-    amplitude = popt[0]
-    omega = popt[1]
-    phase = popt[2]
-    offset = popt[3]
-    frequency = omega / (2 * np.pi)
+    if is_damped:
+        A, omega, phi, C, tau = popt
+        A_err, omega_err, phi_err, C_err, tau_err = np.sqrt(np.diag(pcov))
+    else:
+        A, omega, phi, C = popt
+        A_err, omega_err, phi_err, C_err = np.sqrt(np.diag(pcov))[:4]
+        tau, tau_err = None, None
 
-    tau = popt[4] if is_damped else None
+    f = omega / (2 * np.pi)
+    f_err = omega_err / (2 * np.pi)
+
+    if is_damped:
+        r2 = 1 - np.sum((y - func_damped_cos(x, *popt)) ** 2) / np.sum(
+            (y - np.mean(y)) ** 2
+        )
+    else:
+        r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
@@ -431,26 +481,489 @@ def fit_cosine(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"f = {frequency * 1e3:.2f} MHz"
-        + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
         showarrow=False,
     )
     fig.update_layout(
-        title=title,
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
     )
 
     if plot:
-        fig.show(config=_plotly_config("cosine_fit"))
+        filename = f"fit_cosine_{target}" if target else "fit_cosine"
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            print(f"Target: {target}")
+        print("Fit: A * cos(2πft + φ) + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f = {f:.3g} ± {f_err:.1g}")
+        print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        if is_damped:
+            print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
+        print(f"  R² = {r2:.3f}")
+        print("")
 
     return {
-        "amplitude": amplitude,
-        "frequency": frequency,
-        "phase": phase,
-        "offset": offset,
+        "A": A,
+        "f": f,
+        "phi": phi,
+        "C": C,
         "tau": tau,
+        "A_err": A_err,
+        "f_err": f_err,
+        "phi_err": phi_err,
+        "C_err": C_err,
+        "tau_err": tau_err,
+        "r2": r2,
         "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
+
+
+def fit_exp_decay(
+    x: ArrayLike,
+    y: ArrayLike,
+    *,
+    p0=None,
+    bounds=None,
+    plot: bool = True,
+    target: str | None = None,
+    title: str = "Decay time",
+    xlabel: str = "Time (μs)",
+    ylabel: str = "Signal (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "log",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> dict:
+    """
+    Fit decay data to an exponential decay function and plot the results.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Time points for the decay data.
+    y : ArrayLike
+        Amplitude data for the decay.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+    target : str, optional
+        Identifier of the target.
+    title : str, optional
+        Title of the plot.
+    xlabel : str, optional
+        Label for the x-axis.
+    ylabel : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    if p0 is None:
+        tau_guess = 20_000
+        p0 = (
+            np.abs(np.max(y) - np.min(y)),
+            tau_guess,
+            np.min(y),
+        )
+
+    if bounds is None:
+        bounds = (
+            (0, 0, -np.inf),
+            (np.inf, np.inf, np.inf),
+        )
+
+    try:
+        popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return {
+            "status": "error",
+            "message": "Failed to fit the data.",
+        }
+
+    A, tau, C = popt
+    A_err, tau_err, C_err = np.sqrt(np.diag(pcov))
+
+    r2 = 1 - np.sum((y - func_exp_decay(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_exp_decay(x_fine, *popt)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine * 1e-3,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x * 1e-3,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"τ = {tau * 1e-3:.1f} ± {tau_err * 1e-3:.1f} μs, R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        filename = f"fit_exp_decay_{target}" if target else "fit_exp_decay"
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            print(f"Target: {target}")
+        print("Fit: A * exp(-t/τ) + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  τ = {tau * 1e-3:.3g} ± {tau_err * 1e-3:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.3f}")
+        print("")
+
+    result = {
+        "A": A,
+        "tau": tau,
+        "C": C,
+        "A_err": A_err,
+        "tau_err": tau_err,
+        "C_err": C_err,
+        "r2": r2,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
+
+    return {
+        "status": "success",
+        "message": "Fitting successful.",
+        **result,
+    }
+
+
+def fit_lorentzian(
+    x: ArrayLike,
+    y: ArrayLike,
+    *,
+    p0=None,
+    plot: bool = True,
+    target: str | None = None,
+    title: str = "Lorentzian fit",
+    xlabel: str = "Frequency (GHz)",
+    ylabel: str = "Signal (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> dict:
+    """
+    Fit Lorentzian data to a Lorentzian function and plot the results.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Frequency range for the Lorentzian data.
+    y : ArrayLike
+        Amplitude data for the Lorentzian data.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+    target : str, optional
+        Identifier of the target.
+    title : str, optional
+        Title of the plot.
+    xlabel : str, optional
+        Label for the x-axis.
+    ylabel : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    if p0 is None:
+        p0 = (
+            np.abs(np.max(y) - np.min(y)),
+            np.mean(x),
+            (np.max(x) - np.min(x)) / 4,
+            np.min(y),
+        )
+
+    try:
+        popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0)
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return {}
+
+    A, f0, gamma, C = popt
+    A_err, f0_err, gamma_err, C_err = np.sqrt(np.diag(pcov))
+
+    r2 = 1 - np.sum((y - func_lorentzian(x, *popt)) ** 2) / np.sum(
+        (y - np.mean(y)) ** 2
+    )
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_lorentzian(x_fine, *popt)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        x=f0,
+        y=func_lorentzian(f0, *popt),
+        text=f"max: {f0:.6g}",
+        showarrow=True,
+        arrowhead=1,
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        filename = f"fit_lorentzian_{target}" if target else "fit_lorentzian"
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            print(f"Target: {target}")
+        print("Fit : A / [1 + {(f - f0) / γ}^2] + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f0 = {f0:.3g} ± {f0_err:.1g}")
+        print(f"  γ = {gamma:.3g} ± {gamma_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.2f}")
+
+    return {
+        "A": A,
+        "f0": f0,
+        "gamma": gamma,
+        "C": C,
+        "A_err": A_err,
+        "f0_err": f0_err,
+        "gamma_err": gamma_err,
+        "C_err": C_err,
+        "r2": r2,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
+
+
+def fit_sqrt_lorentzian(
+    x: ArrayLike,
+    y: ArrayLike,
+    *,
+    p0=None,
+    bounds=None,
+    plot: bool = True,
+    target: str | None = None,
+    title: str = "Square root Lorentzian fit",
+    xlabel: str = "Frequency (GHz)",
+    ylabel: str = "Signal (arb. units)",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> dict:
+    """
+    Fit square root Lorentzian data to a square root Lorentzian function and plot the results.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Frequency range for the square root Lorentzian data.
+    y : ArrayLike
+        Amplitude data for the square root Lorentzian data.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+    target : str, optional
+        Identifier of the target.
+    title : str, optional
+        Title of the plot.
+    xlabel : str, optional
+        Label for the x-axis.
+    ylabel : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    if p0 is None:
+        p0 = (
+            np.min(y) - np.max(y),
+            np.mean(x),
+            (np.max(x) - np.min(x)) / 4,
+            np.max(y),
+        )
+
+    if bounds is None:
+        bounds = (
+            (-np.inf, np.min(x), 0, -np.inf),
+            (0, np.max(x), np.inf, np.inf),
+        )
+
+    try:
+        popt, pcov = curve_fit(
+            func_sqrt_lorentzian,
+            x,
+            y,
+            p0=p0,
+            bounds=bounds,
+        )
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return {}
+
+    A, f0, Omega, C = popt
+    A_err, f0_err, Omega_err, C_err = np.sqrt(np.diag(pcov))
+
+    r2 = 1 - np.sum((y - func_sqrt_lorentzian(x, *popt)) ** 2) / np.sum(
+        (y - np.mean(y)) ** 2
+    )
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_sqrt_lorentzian(x_fine, *popt)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        x=f0,
+        y=func_sqrt_lorentzian(f0, *popt),
+        text=f"max: {f0:.6g}",
+        showarrow=True,
+        arrowhead=1,
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        filename = f"fit_sqrt_lorentzian_{target}" if target else "fit_sqrt_lorentzian"
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            print(f"Target: {target}")
+        print("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f0 = {f0:.3g} ± {f0_err:.1g}")
+        print(f"  Ω = {Omega:.3g} ± {Omega_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+
+    return {
+        "A": A,
+        "f0": f0,
+        "Omega": Omega,
+        "C": C,
+        "A_err": A_err,
+        "f0_err": f0_err,
+        "Omega_err": Omega_err,
+        "C_err": C_err,
+        "r2": r2,
+        "popt": popt,
+        "pcov": pcov,
         "fig": fig,
     }
 
@@ -458,13 +971,12 @@ def fit_cosine(
 def fit_rabi(
     *,
     target: str,
-    times: npt.NDArray[np.float64],
-    data: npt.NDArray[np.complex64],
-    phase_est: float = 0.0,
+    times: NDArray,
+    data: NDArray,
     tau_est: float = 10_000,
     plot: bool = True,
     is_damped: bool = False,
-    yaxis_title: str | None = None,
+    ylabel: str | None = None,
     yaxis_range: tuple[float, float] | None = None,
 ) -> dict:
     """
@@ -474,26 +986,28 @@ def fit_rabi(
     ----------
     target : str
         Identifier of the target.
-    times : npt.NDArray[np.float64]
+    times : NDArray[np.float64]
         Array of time points for the Rabi oscillations.
-    data : npt.NDArray[np.complex128]
+    data : NDArray[np.complex64]
         Complex signal data corresponding to the Rabi oscillations.
-    phase_est : float, optional
-        Initial phase of the Rabi oscillation.
     tau_est : float, optional
         Initial guess for the damping time constant.
     plot : bool, optional
         Whether to plot the data and the fit.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
+    ylabel : str, optional
+        Label for the y-axis.
+    yaxis_range : tuple[float, float], optional
+        Range for the y-axis.
 
     Returns
     -------
     dict
         Fitted parameters and the figure.
     """
-    print(f"Target: {target}")
-    data = np.array(data, dtype=np.complex64)
+    times = np.asarray(times, dtype=np.float64)
+    data = np.asarray(data, dtype=np.complex64)
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
     if len(data) < 2:
@@ -516,10 +1030,16 @@ def fit_rabi(
     x = times
     y = rotated.imag
 
+    dt = times[1] - times[0]
+    N = len(times)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(y)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+
     # Estimate the initial parameters
-    wave_count_est = estimate_wave_count(x, y)
-    amplitude_est = (np.max(y) - np.min(y)) / 2
-    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    phase_est = np.angle(F[i])
     offset_est = (np.max(y) + np.min(y)) / 2
 
     try:
@@ -528,34 +1048,53 @@ def fit_rabi(
         if is_damped:
             p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
             bounds = (
-                (0, 0, 0, -np.inf, 0),
+                (0, 0, -np.inf, -np.inf, 0),
                 (np.inf, np.inf, np.pi, np.inf, np.inf),
             )
             popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
-                (0, 0, 0, -np.inf),
+                (0, 0, -np.inf, -np.inf),
                 (np.inf, np.inf, np.pi, np.inf),
             )
             popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return {
+            "status": "error",
+            "message": "Failed to fit the data.",
             "rabi_param": RabiParam(
-                target, np.nan, np.nan, np.nan, np.nan, noise, angle
-            )
+                target=target,
+                amplitude=np.nan,
+                frequency=np.nan,
+                phase=np.nan,
+                offset=np.nan,
+                noise=noise,
+                angle=angle,
+                r2=np.nan,
+            ),
         }
 
-    amplitude = popt[0]
-    omega = popt[1]
-    phase = popt[2]
-    offset = popt[3]
+    if is_damped:
+        amplitude, omega, phase, offset, tau = popt
+        amplitude_err, omega_err, phase_err, offset_err, tau_err = np.sqrt(
+            np.diag(pcov)
+        )
+    else:
+        amplitude, omega, phase, offset = popt
+        amplitude_err, omega_err, phase_err, offset_err = np.sqrt(np.diag(pcov))[:4]
+        tau, tau_err = None, None
+
     frequency = omega / (2 * np.pi)
+    frequency_err = omega_err / (2 * np.pi)
 
-    tau = popt[4] if is_damped else None
-
-    print(f"Rabi frequency: {frequency * 1e3:.6g} MHz")
+    if is_damped:
+        r2 = 1 - np.sum((y - func_damped_cos(x, *popt)) ** 2) / np.sum(
+            (y - np.mean(y)) ** 2
+        )
+    else:
+        r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
@@ -585,21 +1124,24 @@ def fit_rabi(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"f = {frequency * 1e3:.2f} MHz"
-        + (f", τ = {tau * 1e-3:.2f} μs" if tau else ""),
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
         showarrow=False,
     )
     fig.update_layout(
-        title=(f"Rabi oscillation : {target}"),
+        title=(f"Rabi oscillation of {target} : {frequency * 1e3:.2f} MHz"),
         xaxis_title="Drive duration (ns)",
-        yaxis_title=yaxis_title or "Signal (arb. unit)",
+        yaxis_title=ylabel or "Signal (arb. units)",
         yaxis_range=yaxis_range,
     )
 
     if plot:
         fig.show(config=_plotly_config(f"rabi_{target}"))
 
-    return {
+        print(f"Target: {target}")
+        print(f"Rabi frequency: {frequency * 1e3:.3g} ± {frequency_err * 1e3:.1g} MHz")
+
+    result = {
         "rabi_param": RabiParam(
             target=target,
             amplitude=amplitude,
@@ -608,18 +1150,53 @@ def fit_rabi(
             offset=offset,
             noise=noise,
             angle=angle,
+            r2=r2,
         ),
+        "amplitude": amplitude,
+        "frequency": frequency,
+        "phase": phase,
+        "offset": offset,
+        "tau": tau,
+        "amplitude_err": amplitude_err,
+        "frequency_err": frequency_err,
+        "phase_err": phase_err,
+        "offset_err": offset_err,
+        "tau_err": tau_err,
+        "angle": angle,
+        "noise": noise,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
     }
 
+    if r2 < 0.5:
+        print("Error: R² < 0.5")
+        return {
+            "status": "error",
+            "message": "R² < 0.5",
+            **result,
+        }
+    if r2 < 0.9:
+        print("Warning: R² < 0.9")
+        return {
+            "status": "warning",
+            "message": "R² < 0.9",
+            **result,
+        }
+    else:
+        return {
+            "status": "success",
+            "message": "Fitting successful",
+            **result,
+        }
+
 
 def fit_detuned_rabi(
     *,
     target: str,
-    control_frequencies: npt.NDArray[np.float64],
-    rabi_frequencies: npt.NDArray[np.float64],
+    control_frequencies: NDArray,
+    rabi_frequencies: NDArray,
     plot: bool = True,
 ) -> dict:
     """
@@ -629,9 +1206,9 @@ def fit_detuned_rabi(
     ----------
     target : str
         Identifier of the target.
-    control_frequencies : npt.NDArray[np.float64]
+    control_frequencies : NDArray[np.float64]
         Array of control frequencies for the Rabi oscillations in GHz.
-    rabi_frequencies : npt.NDArray[np.float64]
+    rabi_frequencies : NDArray[np.float64]
         Rabi frequencies corresponding to the control frequencies in GHz.
     plot : bool, optional
         Whether to plot the data and the fit.
@@ -641,6 +1218,8 @@ def fit_detuned_rabi(
     dict
         Fitted parameters and the figure.
     """
+    control_frequencies = np.asarray(control_frequencies, dtype=np.float64)
+    rabi_frequencies = np.asarray(rabi_frequencies, dtype=np.float64)
 
     def func(f_control, f_resonance, f_rabi):
         return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
@@ -660,47 +1239,61 @@ def fit_detuned_rabi(
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func(x_fine, *popt) * 1e3
 
-    if plot:
-        fig = go.Figure()
+    r2 = 1 - np.sum((y - func(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
-        fig.add_trace(
-            go.Scatter(
-                x=x,
-                y=y,
-                mode="markers",
-                name="Data",
-            )
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
         )
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=y_fine,
-                mode="lines",
-                name="fit",
-            )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="fit",
         )
-        fig.add_annotation(
-            x=f_resonance,
-            y=np.abs(f_rabi * 1e3),
-            text=f"min: {f_resonance:.6f} ± {f_resonance_err:.6f} GHz",
-            showarrow=True,
-            arrowhead=1,
-        )
-        fig.update_layout(
-            title=f"Detuned Rabi oscillation : {target}",
-            xaxis_title="Drive frequency (GHz)",
-            yaxis_title="Rabi frequency (MHz)",
-        )
+    )
+    fig.add_annotation(
+        x=f_resonance,
+        y=np.abs(f_rabi * 1e3),
+        text=f"min: {f_resonance:.6f} GHz",
+        showarrow=True,
+        arrowhead=1,
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=f"Detuned Rabi oscillation : {target}",
+        xaxis_title="Drive frequency (GHz)",
+        yaxis_title="Rabi frequency (MHz)",
+    )
+
+    if plot:
         fig.show(config=_plotly_config(f"detuned_rabi_{target}"))
 
-    print("Resonance frequency")
-    print(f"  {target}: {f_resonance:.6f}")
+        print("Resonance frequency")
+        print(f"  {target}: {f_resonance:.6f}")
 
     return {
         "f_resonance": f_resonance,
         "f_resonance_err": f_resonance_err,
         "f_rabi": f_rabi,
         "f_rabi_err": f_rabi_err,
+        "r2": r2,
+        "popt": popt,
+        "pcov": pcov,
         "fig": fig,
     }
 
@@ -708,14 +1301,15 @@ def fit_detuned_rabi(
 def fit_ramsey(
     *,
     target: str,
-    x: npt.NDArray[np.float64],
-    y: npt.NDArray[np.float64],
+    times: NDArray,
+    data: NDArray,
+    tau_est: float = 10_000,
     p0=None,
     bounds=None,
     plot: bool = True,
     title: str = "Ramsey fringe",
-    xaxis_title: str = "Time (μs)",
-    yaxis_title: str = "Signal (arb. unit)",
+    xlabel: str = "Time (μs)",
+    ylabel: str = "Signal (arb. units)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -726,10 +1320,12 @@ def fit_ramsey(
     ----------
     target : str
         Identifier of the target.
-    x : npt.NDArray[np.float64]
+    times : NDArray[np.float64]
         Array of time points for the Ramsey fringe.
-    y : npt.NDArray[np.float64]
+    data : NDArray[np.float64]
         Amplitude data for the Ramsey fringe.
+    tau_est : float, optional
+        Initial guess for the damping time constant.
     p0 : optional
         Initial guess for the fitting parameters.
     bounds : optional
@@ -738,9 +1334,9 @@ def fit_ramsey(
         Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -752,233 +1348,136 @@ def fit_ramsey(
     dict
         Fitted parameters and the figure.
     """
-    wave_count_est = estimate_wave_count(x, y)
-    amplitude_est = (np.max(y) - np.min(y)) / 2
-    omega_est = 2 * np.pi * wave_count_est / (x[-1] - x[0])
-    phase_est = 0.0
-    offset_est = 0.0
-    tau_est = 10_000
+    times = np.asarray(times, dtype=np.float64)
+    data = np.asarray(data, dtype=np.float64)
+
+    dt = times[1] - times[0]
+    N = len(times)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(data)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    phase_est = np.angle(F[i])
+    offset_est = (np.max(data) + np.min(data)) / 2
 
     if p0 is None:
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
 
     if bounds is None:
         bounds = (
-            (0, omega_est * 0.9, 0, -np.inf, 0),
-            (np.inf, omega_est * 1.1, np.pi, np.inf, np.inf),
+            (0, 0, -np.pi, -np.inf, 0),
+            (np.inf, np.inf, np.pi, np.inf, np.inf),
         )
 
     try:
-        popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+        popt, pcov = curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
-        return {}
+        return {
+            "status": "error",
+            "message": "Failed to fit the data.",
+        }
 
     A, omega, phi, C, tau = popt
     A_err, omega_err, phi_err, C_err, tau_err = np.sqrt(np.diag(pcov))
     f = omega / (2 * np.pi)
     f_err = omega_err / (2 * np.pi)
 
-    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    r2 = 1 - np.sum((data - func_damped_cos(times, *popt)) ** 2) / np.sum(
+        (data - np.mean(data)) ** 2
+    )
+
+    x_fine = np.linspace(np.min(times), np.max(times), 1000)
     y_fine = func_damped_cos(x_fine, *popt)
 
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine * 1e-3,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=times * 1e-3,
+            y=data,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}",
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
     if plot:
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine * 1e-3,
-                y=y_fine,
-                mode="lines",
-                name="Fit",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=x * 1e-3,
-                y=y,
-                mode="markers",
-                name="Data",
-            )
-        )
-        fig.add_annotation(
-            xref="paper",
-            yref="paper",
-            x=0.95,
-            y=0.95,
-            text=f"τ = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs, f = {f * 1e3:.3f} ± {f_err * 1e3:.3f} MHz",
-            showarrow=False,
-        )
-        fig.update_layout(
-            title=f"{title} : {target}",
-            xaxis_title=xaxis_title,
-            yaxis_title=yaxis_title,
-            xaxis_type=xaxis_type,
-            yaxis_type=yaxis_type,
-        )
         fig.show(config=_plotly_config(f"ramsey_{target}"))
-    else:
-        fig = None
 
-    print(f"Target: {target}")
-    print("Fit: A * exp(-t / tau) * cos(omega * t + phi) + C")
-    print(f"  A = {A:.2f} ± {A_err:.2f}")
-    print(f"  omega = {omega * 1e3:.2f} ± {omega_err * 1e3:.2f} rad/μs")
-    print(f"  phi = {phi:.2f} ± {phi_err:.2f} rad")
-    print(f"  tau = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs")
-    print(f"  C = {C:.2f} ± {C_err:.2f}")
-    print(f"f = {f * 1e3:.3f} ± {f_err * 1e3:.3f} MHz")
-    print("")
+        print(f"Target: {target}")
+        print("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f = {f:.3g} ± {f_err:.1g}")
+        print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
+        print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.3f}")
+        print("")
 
-    return {
+    result = {
+        "A": A,
+        "omega": omega,
+        "phi": phi,
+        "C": C,
         "tau": tau,
+        "A_err": A_err,
+        "omega_err": omega_err,
+        "phi_err": phi_err,
+        "C_err": C_err,
         "tau_err": tau_err,
         "f": f,
         "f_err": f_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
     }
 
-
-def fit_exp_decay(
-    *,
-    target: str,
-    x: npt.NDArray[np.float64],
-    y: npt.NDArray[np.float64],
-    p0=None,
-    bounds=None,
-    plot: bool = True,
-    title: str = "Decay time",
-    xaxis_title: str = "Time (μs)",
-    yaxis_title: str = "Signal (arb. unit)",
-    xaxis_type: Literal["linear", "log"] = "log",
-    yaxis_type: Literal["linear", "log"] = "linear",
-) -> dict:
-    """
-    Fit decay data to an exponential decay function and plot the results.
-
-    Parameters
-    ----------
-    target : str
-        Identifier of the target.
-    x : npt.NDArray[np.float64]
-        Time points for the decay data.
-    y : npt.NDArray[np.float64]
-        Amplitude data for the decay.
-    p0 : optional
-        Initial guess for the fitting parameters.
-    bounds : optional
-        Bounds for the fitting parameters.
-    plot : bool, optional
-        Whether to plot the data and the fit.
-    title : str, optional
-        Title of the plot.
-    xaxis_title : str, optional
-        Label for the x-axis.
-    yaxis_title : str, optional
-        Label for the y-axis.
-    xaxis_type : Literal["linear", "log"], optional
-        Type of the x-axis.
-    yaxis_type : Literal["linear", "log"], optional
-        Type of the y-axis.
-
-    Returns
-    -------
-    dict
-        Fitted parameters and the figure.
-    """
-    if p0 is None:
-        tau_guess = 20_000
-        p0 = (
-            np.abs(np.max(y) - np.min(y)),
-            tau_guess,
-            np.min(y),
-        )
-
-    if bounds is None:
-        bounds = (
-            (0, 0, -np.inf),
-            (np.inf, np.inf, np.inf),
-        )
-
-    try:
-        popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
-    except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
-        return {}
-
-    A, tau, C = popt
-    A_err, tau_err, C_err = np.sqrt(np.diag(pcov))
-
-    x_fine = np.linspace(np.min(x), np.max(x), 1000)
-    y_fine = func_exp_decay(x_fine, *popt)
-
-    if plot:
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine * 1e-3,
-                y=y_fine,
-                mode="lines",
-                name="Fit",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=x * 1e-3,
-                y=y,
-                mode="markers",
-                name="Data",
-            )
-        )
-        fig.add_annotation(
-            xref="paper",
-            yref="paper",
-            x=0.95,
-            y=0.95,
-            text=f"τ = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs",
-            showarrow=False,
-        )
-        fig.update_layout(
-            title=f"{title} : {target}",
-            xaxis_title=xaxis_title,
-            yaxis_title=yaxis_title,
-            xaxis_type=xaxis_type,
-            yaxis_type=yaxis_type,
-        )
-        fig.show(config=_plotly_config(f"exp_decay_{target}"))
-    else:
-        fig = None
-
-    print(f"Target: {target}")
-    print("Fit: A * exp(-t / tau) + C")
-    print(f"  A = {A:.2f} ± {A_err:.2f}")
-    print(f"  tau = {tau * 1e-3:.2f} ± {tau_err * 1e-3:.2f} μs")
-    print(f"  C = {C:.2f} ± {C_err:.2f}")
-    print("")
-
     return {
-        "tau": tau,
-        "tau_err": tau_err,
-        "popt": popt,
-        "pcov": pcov,
-        "fig": fig,
+        "status": "success",
+        "message": "Fitting successful.",
+        **result,
     }
 
 
 def fit_rb(
     *,
     target: str,
-    x: npt.NDArray[np.int64],
-    y: npt.NDArray[np.float64],
-    error_y: npt.NDArray[np.float64] | None = None,
+    x: NDArray[np.int64],
+    y: NDArray[np.float64],
+    error_y: NDArray[np.float64] | None = None,
     dimension: int = 2,
     p0=None,
     bounds=None,
     plot: bool = True,
     title: str = "Randomized benchmarking",
-    xaxis_title: str = "Number of Cliffords",
-    yaxis_title: str = "Normalized signal",
+    xlabel: str = "Number of Cliffords",
+    ylabel: str = "Normalized signal",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -989,11 +1488,11 @@ def fit_rb(
     ----------
     target : str
         Identifier of the target.
-    x : npt.NDArray[np.float64]
-        Time points for the decay data.
-    y : npt.NDArray[np.float64]
-        Amplitude data for the decay.
-    error_y : npt.NDArray[np.float64], optional
+    x : NDArray[np.float64]
+        Number of Cliffords for the randomized benchmarking.
+    y : NDArray[np.float64]
+        Amplitude data for the randomized benchmarking.
+    error_y : NDArray[np.float64], optional
         Error data for the decay.
     dimension : int, optional
         Dimension of the Hilbert space.
@@ -1005,9 +1504,9 @@ def fit_rb(
         Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -1028,7 +1527,7 @@ def fit_rb(
             (1.0, 1.0, 1.0),
         )
 
-    def func_rb(n: npt.NDArray[np.float64], A: float, p: float, C: float):
+    def func_rb(n: NDArray, A: float, p: float, C: float):
         return A * p**n + C
 
     try:
@@ -1047,6 +1546,8 @@ def fit_rb(
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = func_rb(x_fine, *popt)
+
+    r2 = 1 - np.sum((y - func_rb(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
     fig = go.Figure()
     fig.add_trace(
@@ -1076,8 +1577,8 @@ def fit_rb(
     )
     fig.update_layout(
         title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
@@ -1085,15 +1586,16 @@ def fit_rb(
     if plot:
         fig.show(config=_plotly_config(f"rb_{target}"))
 
-    print(f"Target: {target}")
-    print("Fit: A * p^n + C")
-    print(f"  A = {A:.6f} ± {A_err:.6f}")
-    print(f"  p = {p:.6f} ± {p_err:.6f}")
-    print(f"  C = {C:.6f} ± {C_err:.6f}")
-    print(f"Depolarizing rate: {depolarizing_rate:.6f}")
-    print(f"Average gate error: {avg_gate_error:.6f}")
-    print(f"Average gate fidelity: {avg_gate_fidelity:.6f}")
-    print("")
+        print(f"Target: {target}")
+        print("Fit: A * p^n + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  p = {p:.3g} ± {p_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.3f}")
+        print(f"Depolarizing rate: {depolarizing_rate:.6f}")
+        print(f"Average gate error: {avg_gate_error:.6f}")
+        print(f"Average gate fidelity: {avg_gate_fidelity:.6f}")
+        print("")
 
     return {
         "A": A,
@@ -1105,6 +1607,8 @@ def fit_rb(
         "depolarizing_rate": depolarizing_rate,
         "avg_gate_error": avg_gate_error,
         "avg_gate_fidelity": avg_gate_fidelity,
+        "avg_gate_fidelity_err": avg_gate_fidelity_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -1114,11 +1618,11 @@ def fit_rb(
 def plot_irb(
     *,
     target: str,
-    x: npt.NDArray[np.int64],
-    y_rb: npt.NDArray[np.float64],
-    y_irb: npt.NDArray[np.float64],
-    error_y_rb: npt.NDArray[np.float64],
-    error_y_irb: npt.NDArray[np.float64],
+    x: NDArray[np.int64],
+    y_rb: NDArray[np.float64],
+    y_irb: NDArray[np.float64],
+    error_y_rb: NDArray[np.float64],
+    error_y_irb: NDArray[np.float64],
     A_rb: float,
     A_irb: float,
     p_rb: float,
@@ -1126,9 +1630,10 @@ def plot_irb(
     C_rb: float,
     C_irb: float,
     gate_fidelity: float,
+    plot: bool = True,
     title: str = "Interleaved randomized benchmarking",
-    xaxis_title: str = "Number of Cliffords",
-    yaxis_title: str = "Normalized signal",
+    xlabel: str = "Number of Cliffords",
+    ylabel: str = "Normalized signal",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> go.Figure:
@@ -1139,25 +1644,27 @@ def plot_irb(
     ----------
     target : str
         Identifier of the target.
-    x : npt.NDArray[np.float64]
+    x : NDArray[np.float64]
         Time points for the decay data.
-    y_rb : npt.NDArray[np.float64]
+    y_rb : NDArray[np.float64]
         Amplitude data for the decay.
-    y_irb : npt.NDArray[np.float64]
+    y_irb : NDArray[np.float64]
         Amplitude data for the interleaved decay.
-    error_y_rb : npt.NDArray[np.float64]
+    error_y_rb : NDArray[np.float64]
         Error data for the decay.
-    error_y_irb : npt.NDArray[np.float64]
+    error_y_irb : NDArray[np.float64]
         Error data for the interleaved decay.
     p_rb : float
         Depolarizing parameter of the randomized benchmarking.
     p_irb : float
         Depolarizing parameter of the interleaved randomized benchmarking.
+    plot : bool, optional
+        Whether to plot the data and the fit.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Label for the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Label for the y-axis.
     xaxis_type : Literal["linear", "log"], optional
         Type of the x-axis.
@@ -1165,7 +1672,7 @@ def plot_irb(
         Type of the y-axis.
     """
 
-    def func_rb(n: npt.NDArray[np.float64], A: float, p: float, C: float):
+    def func_rb(n: NDArray[np.float64], A: float, p: float, C: float):
         return A * p**n + C
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
@@ -1221,26 +1728,27 @@ def plot_irb(
     )
     fig.update_layout(
         title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
-    fig.show(config=_plotly_config(f"irb_{target}"))
+    if plot:
+        fig.show(config=_plotly_config(f"irb_{target}"))
     return fig
 
 
 def fit_ampl_calib_data(
     *,
     target: str,
-    amplitude_range: npt.NDArray[np.float64],
-    data: npt.NDArray[np.float64],
+    amplitude_range: NDArray,
+    data: NDArray,
     p0=None,
     maximize: bool = True,
     plot: bool = True,
     title: str = "Amplitude calibration",
-    xaxis_title: str = "Amplitude (arb. unit)",
-    yaxis_title: str = "Signal (arb. unit)",
+    xlabel: str = "Amplitude (arb. units)",
+    ylabel: str = "Signal (arb. units)",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
 ) -> dict:
@@ -1251,9 +1759,9 @@ def fit_ampl_calib_data(
     ----------
     target : str
         Identifier of the target.
-    amplitude_range : npt.NDArray[np.float64]
+    amplitude_range : NDArray[np.float64]
         Amplitude range for the calibration data.
-    data : npt.NDArray[np.float64]
+    data : NDArray[np.float64]
         Measured values for the calibration data.
     p0 : optional
         Initial guess for the fitting parameters.
@@ -1267,6 +1775,8 @@ def fit_ampl_calib_data(
     dict
         Fitted parameters and the figure.
     """
+    amplitude_range = np.asarray(amplitude_range, dtype=np.float64)
+    data = np.asarray(data, dtype=np.float64)
 
     if maximize:
         data = -data
@@ -1274,32 +1784,43 @@ def fit_ampl_calib_data(
     def cos_func(t, ampl, omega, phi, offset):
         return ampl * np.cos(omega * t + phi) + offset
 
+    x = amplitude_range
+    y = data
+    dt = x[1] - x[0]
+    N = len(x)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(y)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    phase_est = np.angle(F[i])
+    offset_est = (np.max(y) + np.min(y)) / 2
+
     if p0 is None:
-        p0 = (
-            np.abs(np.max(data) - np.min(data)) / 2,
-            2 * np.pi / (amplitude_range[-1] - amplitude_range[0]),
-            np.pi,
-            (np.max(data) + np.min(data)) / 2,
-        )
+        p0 = (amplitude_est, omega_est, phase_est, offset_est)
 
     try:
-        popt, pcov = curve_fit(cos_func, amplitude_range, data, p0=p0)
+        popt, pcov = curve_fit(cos_func, x, y, p0=p0)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return {
             "amplitude": np.nan,
+            "r2": np.nan,
         }
 
     result = minimize(
         cos_func,
-        x0=np.mean(amplitude_range),
+        x0=np.mean(x),
         args=tuple(popt),
-        bounds=[(np.min(amplitude_range), np.max(amplitude_range))],
+        bounds=[(np.min(x), np.max(x))],
     )
     min_x = result.x[0]
     min_y = cos_func(min_x, *popt)
 
-    x_fine = np.linspace(np.min(amplitude_range), np.max(amplitude_range), 1000)
+    r2 = 1 - np.sum((y - cos_func(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = cos_func(x_fine, *popt)
 
     fig = go.Figure()
@@ -1313,8 +1834,8 @@ def fit_ampl_calib_data(
     )
     fig.add_trace(
         go.Scatter(
-            x=amplitude_range,
-            y=-data if maximize else data,
+            x=x,
+            y=-y if maximize else y,
             mode="markers",
             name="Data",
         )
@@ -1326,245 +1847,28 @@ def fit_ampl_calib_data(
         showarrow=True,
         arrowhead=1,
     )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
     fig.update_layout(
         title=f"{title} : {target}",
-        xaxis_title=xaxis_title,
-        yaxis_title=yaxis_title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
     )
     if plot:
         fig.show(config=_plotly_config(f"ampl_calib_{target}"))
 
-    print(f"Calibrated amplitude: {min_x:.6g}")
-
     return {
         "amplitude": min_x,
-        "popt": popt,
-        "pcov": pcov,
-        "fig": fig,
-    }
-
-
-def fit_lorentzian(
-    target: str,
-    freq_range: npt.NDArray[np.float64],
-    data: npt.NDArray[np.float64],
-    p0=None,
-    plot: bool = True,
-    title: str = "Lorentzian fit",
-    xaxis_title: str = "Frequency (GHz)",
-    yaxis_title: str = "Signal (arb. unit)",
-    xaxis_type: Literal["linear", "log"] = "linear",
-    yaxis_type: Literal["linear", "log"] = "linear",
-) -> dict:
-    """
-    Fit Lorentzian data to a Lorentzian function and plot the results.
-
-    Parameters
-    ----------
-    target : str
-        Identifier of the target.
-    freq_range : npt.NDArray[np.float64]
-        Frequency range for the Lorentzian data.
-    data : npt.NDArray[np.float64]
-        Amplitude data for the Lorentzian data.
-    p0 : optional
-        Initial guess for the fitting parameters.
-    plot : bool, optional
-        Whether to plot the data and the fit.
-
-    Returns
-    -------
-    dict
-        Fitted parameters and the figure.
-    """
-    if p0 is None:
-        p0 = (
-            np.abs(np.max(data) - np.min(data)),
-            np.mean(freq_range),
-            (np.max(freq_range) - np.min(freq_range)) / 4,
-            np.min(data),
-        )
-
-    try:
-        popt, pcov = curve_fit(func_lorentzian, freq_range, data, p0=p0)
-    except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
-        return {}
-
-    A, f0, gamma, C = popt
-    A_err, f0_err, gamma_err, C_err = np.sqrt(np.diag(pcov))
-
-    x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
-    y_fine = func_lorentzian(x_fine, *popt)
-
-    if plot:
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=y_fine,
-                mode="lines",
-                name="Fit",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=freq_range,
-                y=data,
-                mode="markers",
-                name="Data",
-            )
-        )
-        fig.add_annotation(
-            x=f0,
-            y=A,
-            text=f"max: {f0:.6g}",
-            showarrow=True,
-            arrowhead=1,
-        )
-        fig.update_layout(
-            title=f"{title} : {target}",
-            xaxis_title=xaxis_title,
-            yaxis_title=yaxis_title,
-            xaxis_type=xaxis_type,
-            yaxis_type=yaxis_type,
-        )
-        fig.show(config=_plotly_config(f"lorentzian_{target}"))
-
-    print("Fit : A / ( 1 + ( (f - f0) / gamma )^2 ) + C")
-    print(f"  A = {A:.2f} ± {A_err:.2f}")
-    print(f"  f0 = {f0:.6f} ± {f0_err:.6f} GHz")
-    print(f"  gamma = {gamma * 1e3:.2f} ± {gamma_err * 1e3:.2f} MHz")
-    print(f"  C = {C:.2f} ± {C_err:.2f}")
-
-    return {
-        "A": A,
-        "f0": f0,
-        "gamma": gamma,
-        "C": C,
-        "A_err": A_err,
-        "f0_err": f0_err,
-        "gamma_err": gamma_err,
-        "C_err": C_err,
-        "popt": popt,
-        "pcov": pcov,
-        "fig": fig,
-    }
-
-
-def fit_sqrt_lorentzian(
-    *,
-    target: str,
-    freq_range: npt.NDArray[np.float64],
-    data: npt.NDArray[np.float64],
-    p0=None,
-    bounds=None,
-    plot: bool = True,
-    title: str = "Square root Lorentzian fit",
-    xaxis_title: str = "Frequency (GHz)",
-    yaxis_title: str = "Signal (arb. unit)",
-    xaxis_type: Literal["linear", "log"] = "linear",
-    yaxis_type: Literal["linear", "log"] = "linear",
-) -> dict:
-    """
-    Fit square root Lorentzian data to a square root Lorentzian function and plot the results.
-
-    Parameters
-    ----------
-    target : str
-        Identifier of the target.
-    freq_range : npt.NDArray[np.float64]
-        Frequency range for the square root Lorentzian data.
-    data : npt.NDArray[np.float64]
-        Amplitude data for the square root Lorentzian data.
-    p0 : optional
-        Initial guess for the fitting parameters.
-    bounds : optional
-        Bounds for the fitting parameters.
-    plot : bool, optional
-        Whether to plot the data and the fit.
-
-    Returns
-    -------
-    dict
-        Fitted parameters and the figure.
-    """
-    if p0 is None:
-        p0 = (
-            np.min(data) - np.max(data),
-            np.mean(freq_range),
-            (np.max(freq_range) - np.min(freq_range)) / 4,
-            np.max(data),
-        )
-
-    if bounds is None:
-        bounds = (
-            (-np.inf, np.min(freq_range), 0, -np.inf),
-            (0, np.max(freq_range), np.inf, np.inf),
-        )
-
-    try:
-        popt, pcov = curve_fit(
-            func_sqrt_lorentzian,
-            freq_range,
-            data,
-            p0=p0,
-            bounds=bounds,
-        )
-    except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
-        return {}
-
-    A, f0, Omega, C = popt
-    A_err, f0_err, Omega_err, C_err = np.sqrt(np.diag(pcov))
-
-    x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
-    y_fine = func_sqrt_lorentzian(x_fine, *popt)
-
-    if plot:
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=y_fine,
-                mode="lines",
-                name="Fit",
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=freq_range,
-                y=data,
-                mode="markers",
-                name="Data",
-            )
-        )
-        fig.update_layout(
-            title=f"{title} : {target}",
-            xaxis_title=xaxis_title,
-            yaxis_title=yaxis_title,
-            xaxis_type=xaxis_type,
-            yaxis_type=yaxis_type,
-        )
-        fig.show(config=_plotly_config(f"sqrt_lorentzian_{target}"))
-
-    print("Fit : A / sqrt{ 1 + ( (f - f0) / Omega )^2 } + C")
-    print(f"  A = {A:.2f} ± {A_err:.2f}")
-    print(f"  f0 = {f0:.6f} ± {f0_err:.6f} GHz")
-    print(f"  Omega = {Omega * 1e3:.2f} ± {Omega_err * 1e3:.2f} MHz")
-    print(f"  C = {C:.2f} ± {C_err:.2f}")
-
-    return {
-        "A": A,
-        "f0": f0,
-        "Omega": Omega,
-        "C": C,
-        "A_err": A_err,
-        "f0_err": f0_err,
-        "Omega_err": Omega_err,
-        "C_err": C_err,
+        "r2": r2,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -1574,8 +1878,8 @@ def fit_sqrt_lorentzian(
 def fit_reflection_coefficient(
     *,
     target: str,
-    freq_range: npt.NDArray[np.float64],
-    data: npt.NDArray[np.complex128],
+    freq_range: NDArray,
+    data: NDArray,
     p0=None,
     bounds=None,
     plot: bool = True,
@@ -1588,9 +1892,9 @@ def fit_reflection_coefficient(
     ----------
     target : str
         Identifier of the target.
-    freq_range : npt.NDArray[np.float64]
+    freq_range : NDArray[np.float64]
         Frequency range for the reflection coefficient data.
-    data : npt.NDArray[np.complex128]
+    data : NDArray[np.complex64]
         Complex reflection coefficient data.
     p0 : optional
         Initial guess for the fitting parameters.
@@ -1604,6 +1908,8 @@ def fit_reflection_coefficient(
     dict
         Fitted parameters and the figure.
     """
+    freq_range = np.asarray(freq_range, dtype=np.float64)
+    data = np.asarray(data, dtype=np.complex64)
 
     if p0 is None:
         p0 = (
@@ -1636,144 +1942,149 @@ def fit_reflection_coefficient(
 
     f_r, kappa_ex, kappa_in, A, phi = fitted_params
 
+    r2 = 1 - np.sum(residuals(fitted_params, freq_range, data) ** 2) / np.sum(
+        np.abs(data - np.mean(data)) ** 2
+    )
+
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
     y_fine = func_resonance(x_fine, *fitted_params)
 
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        column_widths=[0.5, 0.5],
+        row_heights=[1.0, 1.0],
+        specs=[
+            [{"rowspan": 2}, {}],
+            [None, {}],
+        ],
+        shared_xaxes=False,
+        vertical_spacing=0.05,
+        horizontal_spacing=0.125,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=np.real(data),
+            y=np.imag(data),
+            mode="markers",
+            name="I/Q (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=np.real(y_fine),
+            y=np.imag(y_fine),
+            mode="lines",
+            name="I/Q (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=freq_range,
+            y=np.real(data),
+            mode="markers",
+            name="Re (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=1,
+        col=2,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=np.real(y_fine),
+            mode="lines",
+            name="Re (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=1,
+        col=2,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=freq_range,
+            y=np.imag(data),
+            mode="markers",
+            name="Im (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=2,
+        col=2,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=np.imag(y_fine),
+            mode="lines",
+            name="Im (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=2,
+        col=2,
+    )
+
+    fig.update_layout(
+        title=f"{title} : {target}",
+        width=800,
+        height=450,
+        showlegend=False,
+    )
+
+    fig.update_xaxes(
+        title_text="Re",
+        row=1,
+        col=1,
+        tickformat=".2g",
+        showticklabels=True,
+        zeroline=True,
+        zerolinecolor="black",
+        showgrid=True,
+    )
+    fig.update_yaxes(
+        title_text="Im",
+        row=1,
+        col=1,
+        scaleanchor="x",
+        scaleratio=1,
+        tickformat=".2g",
+        showticklabels=True,
+        zeroline=True,
+        zerolinecolor="black",
+        showgrid=True,
+    )
+    fig.update_xaxes(
+        row=1,
+        col=2,
+        showticklabels=False,
+        matches="x2",
+    )
+    fig.update_yaxes(
+        title_text="Re",
+        row=1,
+        col=2,
+    )
+    fig.update_xaxes(
+        title_text="Frequency (GHz)",
+        row=2,
+        col=2,
+        matches="x2",
+    )
+    fig.update_yaxes(
+        title_text="Im",
+        row=2,
+        col=2,
+    )
+
     if plot:
-        fig = make_subplots(
-            rows=2,
-            cols=2,
-            column_widths=[0.5, 0.5],
-            row_heights=[1.0, 1.0],
-            specs=[
-                [{"rowspan": 2}, {}],
-                [None, {}],
-            ],
-            shared_xaxes=False,
-            vertical_spacing=0.05,
-            horizontal_spacing=0.125,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=np.real(data),
-                y=np.imag(data),
-                mode="markers",
-                name="I/Q (Data)",
-                marker=dict(color=COLORS[0]),
-            ),
-            row=1,
-            col=1,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=np.real(y_fine),
-                y=np.imag(y_fine),
-                mode="lines",
-                name="I/Q (Fit)",
-                marker=dict(color=COLORS[1]),
-            ),
-            row=1,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=freq_range,
-                y=np.real(data),
-                mode="markers",
-                name="Re (Data)",
-                marker=dict(color=COLORS[0]),
-            ),
-            row=1,
-            col=2,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=np.real(y_fine),
-                mode="lines",
-                name="Re (Fit)",
-                marker=dict(color=COLORS[1]),
-            ),
-            row=1,
-            col=2,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=freq_range,
-                y=np.imag(data),
-                mode="markers",
-                name="Im (Data)",
-                marker=dict(color=COLORS[0]),
-            ),
-            row=2,
-            col=2,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=x_fine,
-                y=np.imag(y_fine),
-                mode="lines",
-                name="Im (Fit)",
-                marker=dict(color=COLORS[1]),
-            ),
-            row=2,
-            col=2,
-        )
-
-        fig.update_layout(
-            title=f"{title} : {target}",
-            width=800,
-            height=450,
-            showlegend=False,
-        )
-
-        fig.update_xaxes(
-            title_text="Re",
-            row=1,
-            col=1,
-            tickformat=".2g",
-            showticklabels=True,
-            zeroline=True,
-            zerolinecolor="black",
-            showgrid=True,
-        )
-        fig.update_yaxes(
-            title_text="Im",
-            row=1,
-            col=1,
-            scaleanchor="x",
-            scaleratio=1,
-            tickformat=".2g",
-            showticklabels=True,
-            zeroline=True,
-            zerolinecolor="black",
-            showgrid=True,
-        )
-        fig.update_xaxes(
-            row=1,
-            col=2,
-            showticklabels=False,
-            matches="x2",
-        )
-        fig.update_yaxes(
-            title_text="Re",
-            row=1,
-            col=2,
-        )
-        fig.update_xaxes(
-            title_text="Frequency (GHz)",
-            row=2,
-            col=2,
-            matches="x2",
-        )
-        fig.update_yaxes(
-            title_text="Im",
-            row=2,
-            col=2,
-        )
         fig.show()
 
     print(f"{target}\n--------------------")
@@ -1788,17 +2099,19 @@ def fit_reflection_coefficient(
         "kappa_in": kappa_in,
         "A": A,
         "phi": phi,
+        "r2": r2,
         "fig": fig,
     }
 
 
 def fit_rotation(
-    times: npt.NDArray[np.float64],
-    data: npt.NDArray[np.float64],
-    r0: npt.NDArray[np.float64] = np.array([0, 0, 1]),
+    times: NDArray[np.float64],
+    data: NDArray[np.float64],
+    r0: NDArray[np.float64] = np.array([0, 0, 1]),
     p0=None,
     bounds=None,
     plot: bool = True,
+    plot3d: bool = False,
     title: str = "State evolution",
     xlabel: str = "Time (ns)",
     ylabel: str = "Expectation value",
@@ -1808,9 +2121,9 @@ def fit_rotation(
 
     Parameters
     ----------
-    times : npt.NDArray[np.float64]
+    times : NDArray[np.float64]
         Time points for the rotation data.
-    data : npt.NDArray[np.float64]
+    data : NDArray[np.float64]
         Expectation value data for the rotation.
     p0 : optional
         Initial guess for the fitting parameters.
@@ -1818,6 +2131,14 @@ def fit_rotation(
         Bounds for the fitting parameters.
     plot : bool, optional
         Whether to plot the data and the fit.
+    plot3d : bool, optional
+        Whether to plot the data and the fit in 3D.
+    title : str, optional
+        Title of the plot.
+    xlabel : str, optional
+        Label for the x-axis.
+    ylabel : str, optional
+        Label for the y-axis.
 
     Returns
     -------
@@ -1838,23 +2159,23 @@ def fit_rotation(
         t: float,
         omega: float,
         n: tuple[float, float, float],
-    ) -> npt.NDArray[np.float64]:
+    ) -> NDArray[np.float64]:
         G = n[0] * G_x + n[1] * G_y + n[2] * G_z
         return np.eye(3) + np.sin(omega * t) * G + (1 - np.cos(omega * t)) * G @ G
 
     def rotate(
-        times: npt.NDArray[np.float64],
+        times: NDArray[np.float64],
         omega: float,
         theta: float,
         phi: float,
         alpha: float,
-    ) -> npt.NDArray[np.float64]:
+    ) -> NDArray[np.float64]:
         """
         Simulate the rotation of a state vector.
 
         Parameters
         ----------
-        times : npt.NDArray[np.float64]
+        times : NDArray[np.float64]
             Time points for the rotation.
         omega : float
             Rotation frequency.
@@ -1918,7 +2239,10 @@ def fit_rotation(
     Omega_x = F * np.sin(theta) * np.cos(phi)
     Omega_y = F * np.sin(theta) * np.sin(phi)
     Omega_z = F * np.cos(theta)
-    # print(f"Omega: ({Omega_x:.6f}, {Omega_y:.6f}, {Omega_z:.6f})")
+
+    r2 = 1 - np.sum(residuals(fitted_params, times, data) ** 2) / np.sum(
+        np.abs(data - np.mean(data))
+    )
 
     times_fine = np.linspace(np.min(times), np.max(times), 1000)
     fit = rotate(times_fine, *fitted_params)
@@ -1983,7 +2307,7 @@ def fit_rotation(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"τ = {tau:.3f} μs",
+        text=f"τ = {tau:.3f} μs, R² = {r2:.3f}",
         showarrow=False,
     )
     fig.update_layout(
@@ -2054,45 +2378,37 @@ def fit_rotation(
 
     if plot:
         fig.show()
-        # fig3d.show()
+
+    if plot3d:
+        fig3d.show()
 
     return {
         "Omega": np.array([Omega_x, Omega_y, Omega_z]),
+        "r2": r2,
         "fig": fig,
         "fig3d": fig3d,
     }
 
 
 def rotate(
-    data: npt.ArrayLike,
+    data: ArrayLike,
     angle: float,
-) -> npt.NDArray[np.complex128]:
+) -> NDArray[np.complex128]:
     """
     Rotate complex data points by a specified angle.
 
     Parameters
     ----------
-    data : npt.ArrayLike
+    data : ArrayLike
         Array of complex data points to be rotated.
     angle : float
         Angle in radians by which to rotate the data points.
 
     Returns
     -------
-    npt.NDArray[np.complex128]
+    NDArray[np.complex128]
         Rotated complex data points.
     """
     points = np.array(data)
     rotated_points = points * np.exp(1j * angle)
     return rotated_points
-
-
-def estimate_wave_count(times, data) -> float:
-    N = len(times)
-    dt = times[1] - times[0]
-    F = np.array(fft(data))
-    f = np.array(fftfreq(N, dt)[1 : N // 2])
-    i = np.argmax(np.abs(F[1 : N // 2]))
-    dominant_freq = np.abs(f[i])
-    wave_count_est = dominant_freq * (times[-1] - times[0])
-    return wave_count_est

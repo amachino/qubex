@@ -1,9 +1,10 @@
 import numpy as np
 import pytest
 
+import qubex as qx
 from qubex.pulse import Blank, Pulse
 
-dt = Blank.SAMPLING_PERIOD
+dt = qx.pulse.get_sampling_period()
 
 
 def test_inheritance():
@@ -20,6 +21,8 @@ def test_empty_init():
 def test_init():
     """Blank should be initialized with a duration."""
     pulse = Blank(duration=5 * dt)
+    assert pulse.name == "Blank"
+    assert pulse.length == 5
     assert pulse.duration == 5 * dt
     assert (pulse.values == [0, 0, 0, 0, 0]).all()
 

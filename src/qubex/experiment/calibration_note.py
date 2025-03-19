@@ -32,6 +32,7 @@ class RabiParam(Parameter):
     offset: float
     noise: float
     angle: float
+    r2: float
 
 
 class StateParam(Parameter):
@@ -61,20 +62,26 @@ class CrossResonanceParam(Parameter):
     cr_phase: float
     cancel_amplitude: float
     cancel_phase: float
-    cr_cancel_ratio: float
+    decoupling_amplitude: float
 
 
 class CalibrationNote(ExperimentNote):
     def __init__(
         self,
         chip_id: str,
+        calibration_dir: Path | str = CALIBRATION_DIR,
         file_path: Path | str | None = None,
     ):
+        self._chip_id = chip_id
         if file_path is None:
-            file_path = Path(CALIBRATION_DIR) / f"{chip_id}.json"
+            file_path = Path(calibration_dir) / f"{chip_id}.json"
         else:
             file_path = Path(file_path)
         super().__init__(file_path)
+
+    @property
+    def chip_id(self) -> str:
+        return self._chip_id
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
@@ -135,94 +142,213 @@ class CalibrationNote(ExperimentNote):
     def get_rabi_param(
         self,
         target: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> RabiParam | None:
-        return self.get_property(RABI_PARAMS, target, cutoff)
+        return self.get_property(RABI_PARAMS, target, cutoff_days)
+
+    def update_rabi_param(
+        self,
+        target: str,
+        value: RabiParam,
+    ):
+        self.put_property(RABI_PARAMS, target, value)
+
+    def remove_rabi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(RABI_PARAMS, target)
 
     def get_hpi_param(
         self,
         target: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> FlatTopParam | None:
-        return self.get_property(HPI_PARAMS, target, cutoff)
+        return self.get_property(HPI_PARAMS, target, cutoff_days)
+
+    def update_hpi_param(
+        self,
+        target: str,
+        value: FlatTopParam,
+    ):
+        self.put_property(HPI_PARAMS, target, value)
+
+    def remove_hpi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(HPI_PARAMS, target)
 
     def get_pi_param(
         self,
         target: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> FlatTopParam | None:
-        return self.get_property(PI_PARAMS, target, cutoff)
+        return self.get_property(PI_PARAMS, target, cutoff_days)
+
+    def update_pi_param(
+        self,
+        target: str,
+        value: FlatTopParam,
+    ):
+        self.put_property(PI_PARAMS, target, value)
+
+    def remove_pi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(PI_PARAMS, target)
 
     def get_drag_hpi_param(
         self,
         target: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> DragParam | None:
-        return self.get_property(DRAG_HPI_PARAMS, target, cutoff)
+        return self.get_property(DRAG_HPI_PARAMS, target, cutoff_days)
+
+    def update_drag_hpi_param(
+        self,
+        target: str,
+        value: DragParam,
+    ):
+        self.put_property(DRAG_HPI_PARAMS, target, value)
+
+    def remove_drag_hpi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(DRAG_HPI_PARAMS, target)
 
     def get_drag_pi_param(
         self,
         target: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> DragParam | None:
-        return self.get_property(DRAG_PI_PARAMS, target, cutoff)
+        return self.get_property(DRAG_PI_PARAMS, target, cutoff_days)
+
+    def update_drag_pi_param(
+        self,
+        target: str,
+        value: DragParam,
+    ):
+        self.put_property(DRAG_PI_PARAMS, target, value)
+
+    def remove_drag_pi_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(DRAG_PI_PARAMS, target)
 
     def get_state_param(
         self,
         target: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> StateParam | None:
-        return self.get_property(STATE_PARAMS, target, cutoff)
+        return self.get_property(STATE_PARAMS, target, cutoff_days)
+
+    def update_state_param(
+        self,
+        target: str,
+        value: StateParam,
+    ):
+        self.put_property(STATE_PARAMS, target, value)
+
+    def remove_state_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(STATE_PARAMS, target)
 
     def get_cr_param(
         self,
         target: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> CrossResonanceParam | None:
-        return self.get_property(CR_PARAMS, target, cutoff)
+        return self.get_property(CR_PARAMS, target, cutoff_days)
+
+    def update_cr_param(
+        self,
+        target: str,
+        value: CrossResonanceParam,
+    ):
+        self.put_property(CR_PARAMS, target, value)
+
+    def remove_cr_param(
+        self,
+        target: str,
+    ):
+        self.remove_property(CR_PARAMS, target)
 
     def get_property(
         self,
         key: str,
         target: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> Any:
         property = self.get(key)
         value = property.get(target)
         if value is None:
             return None
-        if cutoff is None:
+        if cutoff_days is None:
             return value
         timestamp = value["timestamp"]
         time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
         days_passed = (datetime.now() - time).days
-        if days_passed >= cutoff:
+        if days_passed >= cutoff_days:
             logger.warning(
                 f"{key}['{target}'] is outdated and ignored ({days_passed} days passed)."
             )
             return None
         return value
 
+    def put_property(
+        self,
+        key: str,
+        target: str,
+        value: Any,
+    ):
+        self.put(key, {target: value})
+
+    def remove_property(
+        self,
+        key: str,
+        target: str,
+    ):
+        property = self.get(key)
+        if property is None:
+            print(f"Key '{key}' not found.")
+            return
+        if target not in property:
+            print(f"Key '{target}' not found.")
+            return
+        del property[target]
+        print(f"Key '{target}' removed.")
+
     def get(
         self,
         key: str,
-        cutoff: int | None = None,
+        cutoff_days: int | None = None,
     ) -> dict[str, Any]:
         property = super().get(key)
         if property is None:
             return {}
-        if cutoff is None:
+        if cutoff_days is None:
             return property
         value = {}
         for k, v in property.items():
             timestamp = v["timestamp"]
             time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
-            if (datetime.now() - time).days < cutoff:
+            if (datetime.now() - time).days < cutoff_days:
                 value[k] = v
         return value
 
-    def put(self, key: str, value: dict[str, Any]):
+    def put(
+        self,
+        key: str,
+        value: dict[str, Any],
+    ):
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for v in value.values():
-            v["timestamp"] = timestamp
+            if v.get("timestamp") is None:
+                v["timestamp"] = timestamp
         super().put(key, value)

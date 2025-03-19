@@ -5,7 +5,7 @@ from typing import Collection, Literal, Protocol
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ...analysis import RabiParam
+from ...analysis.fitting import RabiParam
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import Waveform
 from ...typing import TargetMap
@@ -404,9 +404,9 @@ class CharacterizationProtocol(Protocol):
 
     def ramsey_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 20001, 100),
+        time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
@@ -419,10 +419,10 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the Ramsey oscillation.
         time_range : ArrayLike, optional
-            Time range of the experiment in ns. Defaults to np.arange(0, 20001, 100).
+            Time range of the experiment in ns. Defaults to np.arange(0, 10001, 100).
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.001 GHz.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional

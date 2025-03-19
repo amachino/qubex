@@ -148,16 +148,17 @@ def get_colors(
 def get_config(
     format: Literal["png", "svg", "jpeg", "webp"] = "png",
     filename: str = "image",
-    height: int | None = None,
+    scale: int = 3,
     width: int | None = None,
+    height: int | None = None,
 ) -> dict:
     options: dict[str, Any] = {
         "format": format,
         "filename": filename,
-        "scale": 3,
+        "scale": scale,
     }
-    if height is not None:
-        options["height"] = height
     if width is not None:
         options["width"] = width
+    if height is not None:
+        options["height"] = height
     return {"toImageButtonOptions": options}

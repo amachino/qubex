@@ -19,8 +19,8 @@ class Waveform(ABC):
         Scaling factor of the waveform.
     detuning : float, optional
         Detuning of the waveform in GHz.
-    phase_shift : float, optional
-        Phase shift of the waveform in rad.
+    phase : float, optional
+        Phase of the waveform in rad.
     """
 
     SAMPLING_PERIOD: float = 2.0  # ns
@@ -28,13 +28,33 @@ class Waveform(ABC):
     def __init__(
         self,
         *,
-        scale: float = 1.0,
-        detuning: float = 0.0,
-        phase_shift: float = 0.0,
+        scale: float | None = None,
+        detuning: float | None = None,
+        phase: float | None = None,
     ):
-        self._scale = scale
-        self._detuning = detuning
-        self._phase_shift = phase_shift
+        self._scale = scale or 1.0
+        self._detuning = detuning or 0.0
+        self._phase = phase or 0.0
+
+    @property
+    def name(self) -> str:
+        """Returns the label of the waveform."""
+        return self.__class__.__name__
+
+    @property
+    def scale(self) -> float:
+        """Returns the scaling factor of the waveform."""
+        return self._scale
+
+    @property
+    def detuning(self) -> float:
+        """Returns the detuning of the waveform in GHz."""
+        return self._detuning
+
+    @property
+    def phase(self) -> float:
+        """Returns the phase of the waveform in rad."""
+        return self._phase
 
     @property
     @abstractmethod
@@ -102,6 +122,10 @@ class Waveform(ABC):
     def repeated(self, n: int) -> Waveform:
         """Returns a copy of the waveform repeated n times."""
 
+    @abstractmethod
+    def reversed(self) -> Waveform:
+        """Returns a copy of the waveform with the time reversed."""
+
     def _number_of_samples(
         self,
         duration: float,
@@ -165,7 +189,7 @@ class Waveform(ABC):
             Title of the plot.
         """
         if title is None:
-            title = f"Waveform ({self.duration} ns)"
+            title = f"{self.name} ({self.duration} ns)"
         if polar:
             self.plot_polar(
                 title=title,
@@ -185,7 +209,7 @@ class Waveform(ABC):
         divide_by_two_pi: bool = False,
         title: str | None = None,
         xlabel: str = "Time (ns)",
-        ylabel: str = "Amplitude (arb. unit)",
+        ylabel: str = "Amplitude (arb. units)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
@@ -224,7 +248,7 @@ class Waveform(ABC):
                 x=times,
                 y=real,
                 mode="lines",
-                name="I",
+                name="X",
                 line_shape=line_shape,
             )
         )
@@ -233,7 +257,7 @@ class Waveform(ABC):
                 x=times,
                 y=imag,
                 mode="lines",
-                name="Q",
+                name="Y",
                 line_shape=line_shape,
             )
         )
@@ -245,7 +269,7 @@ class Waveform(ABC):
         fig.show(
             config={
                 "toImageButtonOptions": {
-                    "format": "svg",
+                    "format": "png",
                     "scale": 3,
                 },
             }
@@ -256,7 +280,7 @@ class Waveform(ABC):
         *,
         title: str = "",
         xlabel: str = "Time (ns)",
-        ylabel_1: str = "Amplitude (arb. unit)",
+        ylabel_1: str = "Amplitude (arb. units)",
         ylabel_2: str = "Phase (rad)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
@@ -315,7 +339,7 @@ class Waveform(ABC):
         fig.show(
             config={
                 "toImageButtonOptions": {
-                    "format": "svg",
+                    "format": "png",
                     "scale": 3,
                 },
             }

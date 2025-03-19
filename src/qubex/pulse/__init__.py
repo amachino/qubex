@@ -1,3 +1,4 @@
+from .blank import Blank
 from .library import (
     CPMG,
     CrossResonance,
@@ -7,9 +8,10 @@ from .library import (
     RaisedCosine,
     Rect,
 )
-from .pulse import Blank, Pulse
-from .pulse_schedule import PulseSchedule
-from .pulse_sequence import PhaseShift, PulseSequence, VirtualZ
+from .phase_shift import PhaseShift, VirtualZ
+from .pulse import Pulse
+from .pulse_array import PulseArray, PulseSequence
+from .pulse_schedule import PulseChannel, PulseSchedule
 from .waveform import Waveform
 
 __all__ = [
@@ -21,6 +23,8 @@ __all__ = [
     "Gaussian",
     "PhaseShift",
     "Pulse",
+    "PulseArray",
+    "PulseChannel",
     "PulseSchedule",
     "PulseSequence",
     "RaisedCosine",

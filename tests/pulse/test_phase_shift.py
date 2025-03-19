@@ -1,9 +1,10 @@
 import numpy as np
 import pytest
 
-from qubex.pulse import PhaseShift, Pulse, PulseSequence
+import qubex as qx
+from qubex.pulse import PhaseShift, Pulse, PulseArray
 
-dt = PulseSequence.SAMPLING_PERIOD
+dt = qx.pulse.get_sampling_period()
 
 
 def test_empty_init():
@@ -20,7 +21,7 @@ def test_init():
 
 def test_phase_shift():
     """PhaseShift should be repeated a given number of times."""
-    seq = PulseSequence(
+    seq = PulseArray(
         [
             Pulse([1]),
             PhaseShift(np.pi / 2),
@@ -33,4 +34,28 @@ def test_phase_shift():
         ],
     )
     assert seq.values == pytest.approx([1, 1j, -1, 1, 1])
-    assert seq.reversed().values == pytest.approx([1, 1, -1, 1j, 1])
+
+
+def test_nested():
+    """PhaseShift should be used in a nested PulseArray."""
+    seq = PulseArray(
+        [
+            PulseArray(
+                [
+                    Pulse([1]),
+                    PhaseShift(np.pi / 2),
+                    Pulse([1]),
+                ],
+            ),
+            PhaseShift(np.pi / 2),
+            PulseArray(
+                [
+                    Pulse([1]),
+                    PhaseShift(np.pi / 2),
+                    Pulse([1]),
+                ],
+            ),
+            Pulse([1]),
+        ],
+    )
+    assert seq.values == pytest.approx([1, 1j, -1, -1j, -1j])

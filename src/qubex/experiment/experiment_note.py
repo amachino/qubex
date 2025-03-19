@@ -25,10 +25,21 @@ class ExperimentNote:
         else:
             file_path = Path(file_path)
 
-        file_path.parent.mkdir(parents=True, exist_ok=True)
         self._dict: dict[str, Any] = {}
         self._file_path = file_path
         self.load()
+
+    @property
+    def file_path(self) -> Path:
+        """
+        Returns the file path of the ExperimentNote.
+
+        Returns
+        -------
+        Path
+            The file path of the ExperimentNote.
+        """
+        return self._file_path
 
     def put(self, key: str, value: Any):
         """
@@ -59,11 +70,9 @@ class ExperimentNote:
             self._dict[key] = value
 
         if old_value is not None:
-            print(
-                f"Key '{key}' updated: changed from '{old_value}' to '{self._dict[key]}'."
-            )
+            print(f"'{key}' updated: {value}")
         else:
-            print(f"Key '{key}' added with value '{value}'.")
+            print(f"'{key}' added: {value}")
 
     def get(self, key: str) -> Any:
         """
@@ -137,12 +146,11 @@ class ExperimentNote:
         file_path = file_path or self._file_path
         file_path = Path(file_path)
 
-        if not file_path.exists():
-            with open(file_path, "w") as file:
-                json.dump({}, file)
         try:
             with open(file_path, "r") as file:
                 self._dict = json.load(file)
+        except FileNotFoundError:
+            pass
         except json.JSONDecodeError:
             print(
                 f"Error decoding JSON from '{file_path}'. Starting with an empty ExperimentNote."

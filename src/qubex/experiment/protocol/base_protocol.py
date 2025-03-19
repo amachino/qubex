@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Collection, ContextManager, Literal, Protocol
 
 from numpy.typing import NDArray
 
-from ...analysis import RabiParam
+from ...analysis.fitting import RabiParam
 from ...backend import (
     Box,
     ControlParams,
@@ -29,36 +30,6 @@ from ..experiment_util import ExperimentUtil
 
 
 class BaseProtocol(Protocol):
-    @property
-    def drag_hpi_duration(self) -> int:
-        """Get the DRAG π/2 duration."""
-        ...
-
-    @property
-    def drag_pi_duration(self) -> int:
-        """Get the DRAG π duration."""
-        ...
-
-    @property
-    def control_window(self) -> int | None:
-        """Get the control window."""
-        ...
-
-    @property
-    def capture_window(self) -> int:
-        """Get the capture window."""
-        ...
-
-    @property
-    def capture_margin(self) -> int:
-        """Get the capture margin."""
-        ...
-
-    @property
-    def readout_duration(self) -> int:
-        """Get the readout duration."""
-        ...
-
     @property
     def util(self) -> type[ExperimentUtil]:
         """Get the experiment util."""
@@ -185,6 +156,36 @@ class BaseProtocol(Protocol):
         ...
 
     @property
+    def control_window(self) -> int | None:
+        """Get the control window."""
+        ...
+
+    @property
+    def capture_window(self) -> int:
+        """Get the capture window."""
+        ...
+
+    @property
+    def capture_margin(self) -> int:
+        """Get the capture margin."""
+        ...
+
+    @property
+    def readout_duration(self) -> int:
+        """Get the readout duration."""
+        ...
+
+    @property
+    def drag_hpi_duration(self) -> int:
+        """Get the DRAG π/2 duration."""
+        ...
+
+    @property
+    def drag_pi_duration(self) -> int:
+        """Get the DRAG π duration."""
+        ...
+
+    @property
     def hpi_pulse(self) -> dict[str, Waveform]:
         """
         Get the default π/2 pulse.
@@ -269,6 +270,11 @@ class BaseProtocol(Protocol):
     @property
     def ef_rabi_params(self) -> dict[str, RabiParam]:
         """Get the ef Rabi parameters."""
+        ...
+
+    @property
+    def classifier_dir(self) -> Path:
+        """Get the classifier directory."""
         ...
 
     @property
@@ -492,6 +498,13 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def save_calib_note(
+        self,
+        file_path: Path | str | None = None,
+    ):
+        """Save the calibration note."""
+        ...
+
     def save_defaults(self):
         """Save the default params."""
         ...
@@ -531,6 +544,32 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def calc_control_amplitude(
+        self,
+        target: str,
+        rabi_rate: float,
+        *,
+        rabi_amplitude_ratio: float | None = None,
+    ) -> float:
+        """
+        Calculates the control amplitude for the Rabi rate.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        rabi_rate : float
+            Target Rabi rate in GHz.
+        rabi_amplitude_ratio : float, optional
+            Ratio of the Rabi amplitude. Defaults to None.
+
+        Returns
+        -------
+        float
+            Control amplitude for the Rabi rate.
+        """
+        ...
+
     def calc_control_amplitudes(
         self,
         *,
@@ -557,6 +596,51 @@ class BaseProtocol(Protocol):
         -------
         dict[str, float]
             Control amplitudes for the Rabi rate.
+        """
+        ...
+
+    def calc_rabi_rate(
+        self,
+        target: str,
+        control_amplitude: float,
+    ) -> float:
+        """
+        Calculates the Rabi rate for the control amplitude.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        control_amplitude : float
+            Control amplitude.
+
+        Returns
+        -------
+        float
+            Calibrated Rabi rate.
+        """
+        ...
+
+    def calc_rabi_rates(
+        self,
+        control_amplitude: float = 1.0,
+        *,
+        print_result: bool = True,
+    ) -> dict[str, float]:
+        """
+        Calculates the Rabi rates for the control amplitude.
+
+        Parameters
+        ----------
+        control_amplitude : float, optional
+            Control amplitude. Defaults to 1.0.
+        print_result : bool, optional
+            Whether to print the result. Defaults to True.
+
+        Returns
+        -------
+        dict[str, float]
+            Rabi rates for the control amplitude.
         """
         ...
 

@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
+from functools import reduce
 from pathlib import Path
-from typing import Final, Literal, Sequence
+from typing import Collection, Final, Literal
 
 import numpy as np
 import numpy.typing as npt
-
-try:
-    from qubecalib import Sequencer
-    from qubecalib import neopulse as pls
-except ImportError:
-    pass
+from qubecalib import Sequencer
+from qubecalib import neopulse as pls
+from typing_extensions import deprecated
 
 from ..backend import (
     DEFAULT_CONFIG_DIR,
@@ -24,7 +23,7 @@ from ..backend import (
     StateManager,
     Target,
 )
-from ..pulse import Blank, FlatTop, PulseSchedule, PulseSequence
+from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule
 from ..typing import IQArray, TargetMap
 from .measurement_result import MeasureData, MeasureMode, MeasureResult
 from .state_classifier import StateClassifier
@@ -39,20 +38,21 @@ DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 INTERVAL_STEP: Final = 10240  # ns
 MIN_DURATION: Final = 128  # ns
 
+logger = logging.getLogger(__name__)
+
 
 class Measurement:
     def __init__(
         self,
         *,
         chip_id: str,
-        qubits: Sequence[str] | None = None,
+        qubits: Collection[str] | None = None,
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
-        fetch_device_state: bool = True,
-        connect_devices: bool = False,
-        use_neopulse: bool = False,
+        connect_devices: bool = True,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
+        use_neopulse: bool = False,
     ):
         """
         Initialize the Measurement.
@@ -67,8 +67,8 @@ class Measurement:
             The configuration directory, by default DEFAULT_CONFIG_DIR.
         params_dir : str, optional
             The parameters directory, by default DEFAULT_PARAMS_DIR.
-        fetch_device_state : bool, optional
-            Whether to fetch the device state, by default True.
+        connect_devices : bool, optional
+            Whether to connect the devices, by default True.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
         skew_file_path : Path | str | None, optional
@@ -89,7 +89,6 @@ class Measurement:
         self._use_neopulse = use_neopulse
         self._classifiers: TargetMap[StateClassifier] = {}
         self._initialize(
-            fetch_device_state=fetch_device_state,
             connect_devices=connect_devices,
             configuration_mode=configuration_mode,
             skew_file_path=skew_file_path,
@@ -97,7 +96,6 @@ class Measurement:
 
     def _initialize(
         self,
-        fetch_device_state: bool,
         connect_devices: bool,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
@@ -118,22 +116,21 @@ class Measurement:
 
         if skew_file_path is None:
             skew_file_path = f"{self._config_dir}/skew.yaml"
-        self.device_controller.load_skew_file(box_ids, skew_file_path)
+        try:
+            self.device_controller.load_skew_file(box_ids, skew_file_path)
+        except Exception:
+            print("Failed to load the skew file.")
 
-        if fetch_device_state:
-            try:
-                self.state_manager.pull(box_ids)
-            except Exception:
-                print("Failed to fetch the device state.")
         if connect_devices:
             try:
                 self.device_controller.connect(box_ids)
+                self.state_manager.pull(box_ids)
             except Exception:
                 print("Failed to connect the devices.")
 
     def reload(self):
         """Reload the measuremnt settings."""
-        self._initialize(fetch_device_state=True, connect_devices=True)
+        self._initialize(connect_devices=True)
 
     @property
     def state_manager(self) -> StateManager:
@@ -190,6 +187,26 @@ class Measurement:
         """Update the state classifiers."""
         for target, classifier in classifiers.items():
             self._classifiers[target] = classifier  # type: ignore
+
+    def get_confusion_matrix(
+        self,
+        targets: Collection[str],
+    ) -> npt.NDArray:
+        targets = list(targets)
+        confusion_matrices = []
+        for target in targets:
+            cm = self.classifiers[target].confusion_matrix
+            n_shots = cm[0].sum()
+            confusion_matrices.append(cm / n_shots)
+        return reduce(np.kron, confusion_matrices)
+
+    def get_inverse_confusion_matrix(
+        self,
+        targets: Collection[str],
+    ) -> npt.NDArray:
+        targets = list(targets)
+        confusion_matrix = self.get_confusion_matrix(targets)
+        return np.linalg.inv(confusion_matrix)
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """
@@ -302,17 +319,17 @@ class Measurement:
 
     def measure_noise(
         self,
-        targets: list[str],
-        duration: int,
+        targets: Collection[str],
+        duration: float,
     ) -> MeasureResult:
         """
         Measure the readout noise.
 
         Parameters
         ----------
-        targets : list[str]
+        targets : Collection[str]
             The list of target names.
-        duration : int, optional
+        duration : float, optional
             The duration in ns.
 
         Returns
@@ -335,11 +352,11 @@ class Measurement:
             sequence=sequence,
             repeats=shots,
             interval=DEFAULT_INTERVAL,
-            integral_mode="single",
+            integral_mode="integral",
         )
         return self._create_measure_result(
             backend_result=backend_result,
-            measure_mode=MeasureMode.SINGLE,
+            measure_mode=MeasureMode.AVG,
             shots=shots,
         )
 
@@ -425,6 +442,7 @@ class Measurement:
         )
         measure_mode = MeasureMode(mode)
         if self._use_neopulse:
+            # deprecated
             sequence = self._create_sequence(
                 waveforms=waveforms,
                 control_window=control_window,
@@ -461,7 +479,7 @@ class Measurement:
 
     def measure_batch(
         self,
-        waveforms_list: Sequence[TargetMap[IQArray]],
+        waveforms_list: Collection[TargetMap[IQArray]],
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
@@ -477,7 +495,7 @@ class Measurement:
 
         Parameters
         ----------
-        waveforms_list : Sequence[TargetMap[IQArray]]
+        waveforms_list : Collection[TargetMap[IQArray]]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays with the sampling period of 2 ns.
         mode : Literal["single", "avg"], optional
@@ -521,6 +539,7 @@ class Measurement:
                 capture_window=capture_window,
             )
             if self._use_neopulse:
+                # deprecated
                 sequence = self._create_sequence(
                     waveforms=waveforms,
                     control_window=control_window,
@@ -561,7 +580,11 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: int | None = None,
-        capture_margin: int | None = None,
+        add_last_measurement: bool = False,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -578,8 +601,16 @@ class Measurement:
             The number of shots, by default DEFAULT_SHOTS.
         interval : int, optional
             The interval in ns, by default DEFAULT_INTERVAL.
+        add_last_measurement : bool, optional
+            Whether to add the last measurement, by default False.
+        capture_window : int, optional
+            The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
         capture_margin : int, optional
             The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
+        readout_duration : int, optional
+            The readout duration in ns, by default DEFAULT_READOUT_DURATION.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit, by default None.
 
         Returns
         -------
@@ -595,8 +626,11 @@ class Measurement:
         sequencer = self._create_sequencer_from_schedule(
             schedule=schedule,
             interval=interval,
-            add_last_measurement=False,
+            add_last_measurement=add_last_measurement,
+            capture_window=capture_window,
             capture_margin=capture_margin,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -609,6 +643,7 @@ class Measurement:
             shots=shots,
         )
 
+    @deprecated("Use `create_sequencer` instead.")
     def _create_sequence(
         self,
         *,
@@ -650,13 +685,15 @@ class Measurement:
                         capture.target(readout_target)
         return sequence
 
-    def _readout_pulse(
+    def readout_pulse(
         self,
         target: str,
-        duration: int = DEFAULT_READOUT_DURATION,
+        duration: float | None = None,
         amplitude: float | None = None,
     ) -> FlatTop:
         qubit = Target.qubit_label(target)
+        if duration is None:
+            duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
             amplitude = self.control_params.readout_amplitude[qubit]
         return FlatTop(
@@ -717,7 +754,7 @@ class Measurement:
         # |<- control_length -><- margin_length -><- capture_length ->|
         readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for qubit in qubits:
-            readout_pulse = self._readout_pulse(
+            readout_pulse = self.readout_pulse(
                 target=qubit,
                 duration=readout_duration,
                 amplitude=readout_amplitudes.get(qubit),
@@ -815,10 +852,19 @@ class Measurement:
         schedule: PulseSchedule,
         interval: int,
         add_last_measurement: bool = False,
-        capture_margin: int | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
     ) -> Sequencer:
+        if capture_window is None:
+            capture_window = DEFAULT_CAPTURE_WINDOW
         if capture_margin is None:
             capture_margin = DEFAULT_CAPTURE_MARGIN
+        if readout_duration is None:
+            readout_duration = DEFAULT_READOUT_DURATION
+        if readout_amplitudes is None:
+            readout_amplitudes = self.control_params.readout_amplitude
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -827,31 +873,48 @@ class Measurement:
             (int(schedule.duration) + interval) // INTERVAL_STEP + 1
         ) * INTERVAL_STEP
 
-        # readout targets in the provided schedule
-        readout_targets = [
-            target for target in schedule.targets if self.targets[target].is_read
-        ]
-
         # add last readout pulse if necessary
         if add_last_measurement:
             # register all readout targets for the last measurement
             readout_targets = list(
-                {Target.read_label(target) for target in schedule.labels}
+                {
+                    Target.read_label(label)
+                    for label in schedule.labels
+                    if not self.targets[label].is_pump
+                }
             )
             # create a new schedule with the last readout pulse
             with PulseSchedule(schedule.labels + readout_targets) as ps:
                 ps.call(schedule)
                 ps.barrier()
                 for target in readout_targets:
-                    readout_pulse = PulseSequence(
-                        [
-                            Blank(duration=capture_margin),
-                            self._readout_pulse(target),
-                        ]
+                    ps.add(
+                        target,
+                        PulseArray(
+                            [
+                                Blank(capture_margin),
+                                self.readout_pulse(
+                                    target=target,
+                                    duration=readout_duration,
+                                    amplitude=readout_amplitudes.get(target),
+                                ).padded(
+                                    total_duration=capture_window,
+                                    pad_side="right",
+                                ),
+                            ]
+                        ),
                     )
-                    ps.add(target, readout_pulse)
             # update the schedule
             schedule = ps
+        else:
+            # readout targets in the provided schedule
+            readout_targets = [
+                label for label in schedule.labels if self.targets[label].is_read
+            ]
+
+        # check the readout targets
+        if not readout_targets:
+            raise ValueError("No readout targets in the pulse schedule.")
 
         # get sampled sequences
         sampled_sequences = schedule.get_sampled_sequences()
@@ -969,7 +1032,7 @@ class Measurement:
 
             if measure_mode == MeasureMode.SINGLE:
                 # iqs[capture_index]: ndarray[duration, shots]
-                raw = iqs[capture_index].T.squeeze()
+                raw = iqs[capture_index].T.squeeze() * 2 ** (-32)
                 kerneled = np.mean(iqs[capture_index], axis=0) * 2 ** (-32)
                 classifier = self.classifiers.get(qubit)
                 if classifier is not None:
@@ -977,7 +1040,7 @@ class Measurement:
                     n_states = classifier.n_states
             elif measure_mode == MeasureMode.AVG:
                 # iqs[capture_index]: ndarray[duration, 1]
-                raw = iqs[capture_index].squeeze()
+                raw = iqs[capture_index].squeeze() * 2 ** (-32) / shots
                 kerneled = np.mean(iqs) * 2 ** (-32) / shots
             else:
                 raise ValueError(f"Invalid measure mode: {measure_mode}")

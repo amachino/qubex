@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Generic, TypeVar
 
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 
-from ..analysis import RabiParam, fitting
+from ..analysis import fitting
+from ..analysis import visualization as viz
+from ..analysis.fitting import RabiParam
 from ..typing import TargetMap
 from .experiment_record import ExperimentRecord
 
@@ -56,6 +59,7 @@ class ExperimentResult(Generic[T]):
 
     data: TargetMap[T]
     rabi_params: TargetMap[RabiParam] | None = None
+    status: str = "success"
     created_at: str = field(
         default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     )
@@ -118,7 +122,7 @@ class RabiData(TargetData):
     @property
     def normalized(self) -> NDArray[np.float64]:
         param = self.rabi_param
-        return fitting.normalize(self.data, param, self.state_centers)
+        return fitting.normalize(self.data, param)
 
     @property
     def zvalues(self) -> NDArray[np.float64]:
@@ -136,9 +140,26 @@ class RabiData(TargetData):
         *,
         normalize: bool = False,
         use_zvalue: bool = False,
+        title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        return_figure: bool = False,
+        images_dir: Path | str | None = None,
     ):
+        fig = go.Figure()
+
+        fig.update_layout(
+            title=title or f"Rabi oscillation : {self.target}",
+            xaxis_title=xlabel or "Drive duration (ns)",
+            yaxis_title=ylabel or "Signal (arb. units)",
+            width=width,
+            height=height,
+            template="qubex",
+        )
+
         if use_zvalue:
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -146,24 +167,12 @@ class RabiData(TargetData):
                     y=self.zvalues,
                 )
             )
-            fig.add_annotation(
-                xref="paper",
-                yref="paper",
-                x=0.95,
-                y=0.95,
-                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
-                showarrow=False,
-            )
             fig.update_layout(
-                title=f"Rabi oscillation : {self.target}",
-                xaxis_title="Drive duration (ns)",
                 yaxis_title="Z value",
                 yaxis_range=[-1.2, 1.2],
             )
-            fig.show()
         elif normalize:
             values = self.normalized
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -175,22 +184,11 @@ class RabiData(TargetData):
                     ),
                 )
             )
-            fig.add_annotation(
-                xref="paper",
-                yref="paper",
-                x=0.95,
-                y=0.95,
-                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
-                showarrow=False,
-            )
             fig.update_layout(
-                title=f"Rabi oscillation : {self.target}",
-                xaxis_title="Drive duration (ns)",
                 yaxis_title="Normalized signal",
+                yaxis_range=[-1.2, 1.2],
             )
-            fig.show()
         else:
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -207,20 +205,24 @@ class RabiData(TargetData):
                     name="Q",
                 )
             )
-            fig.add_annotation(
-                xref="paper",
-                yref="paper",
-                x=0.95,
-                y=0.95,
-                text=f"f = {self.rabi_param.frequency * 1e3:.2f} MHz",
-                showarrow=False,
+
+        fig.show(
+            config=viz.get_config(
+                filename=f"rabi_data_{self.target}",
+                width=width,
+                height=height,
             )
-            fig.update_layout(
-                title=f"Rabi oscillation : {self.target}",
-                xaxis_title="Drive duration (ns)",
-                yaxis_title="Signal (arb. unit)",
+        )
+        if images_dir is not None:
+            viz.save_figure_image(
+                fig,
+                name=f"rabi_data_{self.target}",
+                images_dir=images_dir,
+                width=width,
+                height=height,
             )
-            fig.show()
+        if return_figure:
+            return fig
 
     def fit(
         self,
@@ -254,9 +256,9 @@ class SweepData(TargetData):
         Centers of the states.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -268,8 +270,8 @@ class SweepData(TargetData):
     rabi_param: RabiParam | None = None
     state_centers: dict[int, complex] | None = None
     title: str = "Sweep result"
-    xaxis_title: str = "Sweep value"
-    yaxis_title: str = "Measured value"
+    xlabel: str = "Sweep value"
+    ylabel: str = "Measured signal"
     xaxis_type: str = "linear"
     yaxis_type: str = "linear"
 
@@ -285,7 +287,7 @@ class SweepData(TargetData):
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
-        return fitting.normalize(self.data, param, self.state_centers)
+        return fitting.normalize(self.data, param)
 
     @property
     def zvalues(self) -> NDArray[np.float64]:
@@ -303,13 +305,30 @@ class SweepData(TargetData):
         *,
         normalize: bool = False,
         use_zvalue: bool = False,
+        title: str | None = None,
         xaxis_type: str | None = None,
         yaxis_type: str | None = None,
-        xaxis_title: str | None = None,
-        yaxis_title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        return_figure: bool = False,
+        images_dir: Path | str | None = None,
     ):
+        fig = go.Figure()
+
+        fig.update_layout(
+            title=title or f"{self.title} : {self.target}",
+            xaxis_title=xlabel or self.xlabel,
+            xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
+            yaxis_title=ylabel or self.ylabel,
+            yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+            width=width,
+            height=height,
+            template="qubex",
+        )
+
         if use_zvalue:
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -318,21 +337,15 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                title=f"{self.title} : {self.target}",
-                xaxis_title=xaxis_title or self.xaxis_title,
-                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=yaxis_title or "Z value",
-                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+                yaxis_title=ylabel or "Z value",
                 yaxis_range=[-1.2, 1.2],
             )
-            fig.show()
         elif normalize:
             param = self.rabi_param
             if param is None:
                 print("rabi_param must be provided for normalization.")
                 return  # type: ignore
             values = self.normalized
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -345,15 +358,10 @@ class SweepData(TargetData):
                 )
             )
             fig.update_layout(
-                title=f"{self.title} : {self.target}",
-                xaxis_title=xaxis_title or self.xaxis_title,
-                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=yaxis_title or self.yaxis_title,
-                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+                yaxis_title=ylabel or "Normalized signal",
+                yaxis_range=[-1.2, 1.2],
             )
-            fig.show()
         else:
-            fig = go.Figure()
             fig.add_trace(
                 go.Scatter(
                     mode="markers+lines",
@@ -370,14 +378,24 @@ class SweepData(TargetData):
                     name="Q",
                 )
             )
-            fig.update_layout(
-                title=f"{self.title} : {self.target}",
-                xaxis_title=xaxis_title or self.xaxis_title,
-                xaxis_type=xaxis_type if xaxis_type is not None else self.xaxis_type,
-                yaxis_title=yaxis_title or self.yaxis_title,
-                yaxis_type=yaxis_type if yaxis_type is not None else self.yaxis_type,
+
+        fig.show(
+            config=viz.get_config(
+                filename=f"sweep_data_{self.target}",
+                width=width,
+                height=height,
             )
-            fig.show()
+        )
+        if images_dir is not None:
+            viz.save_figure_image(
+                fig,
+                name=f"sweep_data_{self.target}",
+                images_dir=images_dir,
+                width=width,
+                height=height,
+            )
+        if return_figure:
+            return fig
 
 
 @dataclass
@@ -397,9 +415,9 @@ class AmplCalibData(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -407,24 +425,33 @@ class AmplCalibData(SweepData):
         Type of the y-axis.
     calib_value : float, optional
         Calibrated value.
+    r2 : float, optional
+        Coefficient of determination.
     """
 
     sweep_range: NDArray
     calib_value: float = np.nan
+    r2: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, calib_value: float) -> AmplCalibData:
+    def new(
+        cls,
+        sweep_data: SweepData,
+        calib_value: float,
+        r2: float,
+    ) -> AmplCalibData:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             calib_value=calib_value,
+            r2=r2,
         )
 
     def fit(self) -> dict:
@@ -452,9 +479,9 @@ class T1Data(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -462,23 +489,37 @@ class T1Data(SweepData):
         Type of the y-axis.
     t1 : float, optional
         T1 time.
+    t1_err : float, optional
+        Error of the T1 time.
+    r2 : float, optional
+        Coefficient of determination
     """
 
     t1: float = np.nan
+    t1_err: float = np.nan
+    r2: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, t1: float) -> T1Data:
+    def new(
+        cls,
+        sweep_data: SweepData,
+        t1: float,
+        t1_err: float,
+        r2: float,
+    ) -> T1Data:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t1=t1,
+            t1_err=t1_err,
+            r2=r2,
         )
 
     def fit(self) -> dict:
@@ -487,8 +528,8 @@ class T1Data(SweepData):
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
             title="T1",
-            xaxis_title="Time (μs)",
-            yaxis_title="Population",
+            xlabel="Time (μs)",
+            ylabel="Population",
             xaxis_type="log",
             yaxis_type="linear",
         )
@@ -511,9 +552,9 @@ class T2Data(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -521,23 +562,37 @@ class T2Data(SweepData):
         Type of the y-axis.
     t2 : float, optional
         T2 echo time.
+    t2_err : float, optional
+        Error of the T2 echo time.
+    r2 : float, optional
+        Coefficient of determination.
     """
 
     t2: float = np.nan
+    t2_err: float = np.nan
+    r2: float = np.nan
 
     @classmethod
-    def new(cls, sweep_data: SweepData, t2: float) -> T2Data:
+    def new(
+        cls,
+        sweep_data: SweepData,
+        t2: float,
+        t2_err: float,
+        r2: float,
+    ) -> T2Data:
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t2=t2,
+            t2_err=t2_err,
+            r2=r2,
         )
 
     def fit(self) -> dict:
@@ -546,8 +601,8 @@ class T2Data(SweepData):
             x=self.sweep_range,
             y=0.5 * (1 - self.normalized),
             title="T2",
-            xaxis_title="Time (μs)",
-            yaxis_title="Population",
+            xlabel="Time (μs)",
+            ylabel="Population",
         )
 
 
@@ -568,9 +623,9 @@ class RamseyData(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -582,11 +637,14 @@ class RamseyData(SweepData):
         Frequency of the Ramsey fringes.
     bare_freq : float, optional
         Bare frequency of the qubit.
+    r2 : float, optional
+        Coefficient of determination.
     """
 
     t2: float = np.nan
     ramsey_freq: float = np.nan
     bare_freq: float = np.nan
+    r2: float = np.nan
 
     @classmethod
     def new(
@@ -595,6 +653,7 @@ class RamseyData(SweepData):
         t2: float,
         ramsey_freq: float,
         bare_freq: float,
+        r2: float,
     ) -> RamseyData:
         return cls(
             target=sweep_data.target,
@@ -602,20 +661,21 @@ class RamseyData(SweepData):
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             t2=t2,
             ramsey_freq=ramsey_freq,
             bare_freq=bare_freq,
+            r2=r2,
         )
 
     def fit(self) -> dict:
         return fitting.fit_ramsey(
             target=self.target,
-            x=self.sweep_range,
-            y=self.normalized,
+            times=self.sweep_range,
+            data=self.normalized,
         )
 
 
@@ -636,9 +696,9 @@ class RBData(SweepData):
         Parameters of the Rabi oscillation.
     title : str, optional
         Title of the plot.
-    xaxis_title : str, optional
+    xlabel : str, optional
         Title of the x-axis.
-    yaxis_title : str, optional
+    ylabel : str, optional
         Title of the y-axis.
     xaxis_type : str, optional
         Type of the x-axis.
@@ -670,8 +730,8 @@ class RBData(SweepData):
             sweep_range=sweep_data.sweep_range,
             rabi_param=sweep_data.rabi_param,
             title=sweep_data.title,
-            xaxis_title=sweep_data.xaxis_title,
-            yaxis_title=sweep_data.yaxis_title,
+            xlabel=sweep_data.xlabel,
+            ylabel=sweep_data.ylabel,
             xaxis_type=sweep_data.xaxis_type,
             yaxis_type=sweep_data.yaxis_type,
             depolarizing_rate=depolarizing_rate,
@@ -714,8 +774,8 @@ class AmplRabiData(TargetData):
         )
         fig.update_layout(
             title=f"Drive amplitude and Rabi rate : {self.target}",
-            xaxis_title="Drive amplitude (arb. unit)",
-            yaxis_title="Rabi rate (MHz)",
+            xaxis_title="Drive amplitude (arb. units)",
+            ylabel="Rabi rate (MHz)",
         )
         fig.show()
 
@@ -751,7 +811,7 @@ class FreqRabiData(TargetData):
         fig.update_layout(
             title=f"Drive frequency and Rabi rate : {self.target}",
             xaxis_title="Drive frequency (GHz)",
-            yaxis_title="Rabi rate (MHz)",
+            ylabel="Rabi rate (MHz)",
         )
         fig.show()
 

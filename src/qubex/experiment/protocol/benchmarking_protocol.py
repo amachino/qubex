@@ -7,7 +7,7 @@ from numpy.typing import ArrayLike
 
 from ...clifford import Clifford
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from ...pulse import PulseSchedule, PulseSequence, Waveform
+from ...pulse import PulseArray, PulseSchedule, Waveform
 from ...typing import TargetMap
 from ..experiment_result import ExperimentResult, RBData
 
@@ -21,7 +21,7 @@ class BenchmarkingProtocol(Protocol):
         x90: dict[str, Waveform] | None = None,
         zx90: PulseSchedule | dict[str, Waveform] | None = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | None = None,
         seed: int | None = None,
@@ -34,11 +34,11 @@ class BenchmarkingProtocol(Protocol):
         n: int,
         x90: Waveform | dict[str, Waveform] | None = None,
         interleaved_waveform: (
-            Waveform | dict[str, PulseSequence] | dict[str, Waveform] | None
+            Waveform | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
-    ) -> PulseSequence:
+    ) -> PulseArray:
         """
         Generates a randomized benchmarking sequence.
 
@@ -50,7 +50,7 @@ class BenchmarkingProtocol(Protocol):
             Number of Clifford gates.
         x90 : Waveform | dict[str, Waveform], optional
             π/2 pulse used for the experiment. Defaults to None.
-        interleaved_waveform : Waveform | dict[str, PulseSequence] | dict[str, Waveform], optional
+        interleaved_waveform : Waveform | dict[str, PulseArray] | dict[str, Waveform], optional
             Waveform of the interleaved gate. Defaults to None.
         interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
@@ -59,7 +59,7 @@ class BenchmarkingProtocol(Protocol):
 
         Returns
         -------
-        PulseSequence
+        PulseArray
             Randomized benchmarking sequence.
 
         Examples
@@ -92,10 +92,10 @@ class BenchmarkingProtocol(Protocol):
         n: int,
         x90: TargetMap[Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
@@ -113,7 +113,7 @@ class BenchmarkingProtocol(Protocol):
             π/2 pulse used for 1Q gates. Defaults to None.
         zx90 : PulseSchedule | dict[str, Waveform], optional
             ZX90 pulses used for 2Q gates. Defaults to None.
-        interleaved_waveform : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+        interleaved_waveform : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
             Waveform of the interleaved gate. Defaults to None.
         interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
             Clifford map of the interleaved gate. Defaults to None.
@@ -227,10 +227,10 @@ class BenchmarkingProtocol(Protocol):
         n_cliffords_range: ArrayLike = np.arange(0, 21, 2),
         x90: TargetMap[Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_waveform: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -249,7 +249,7 @@ class BenchmarkingProtocol(Protocol):
         n_trials: int = 30,
         x90: Waveform | dict[str, Waveform] | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seeds: ArrayLike | None = None,
@@ -271,7 +271,7 @@ class BenchmarkingProtocol(Protocol):
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform | dict[str, Waveform], optional
             π/2 pulse used for the experiment. Defaults to None.
-        zx90 : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+        zx90 : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
             ZX90 pulses used for 2Q gates. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
@@ -303,7 +303,7 @@ class BenchmarkingProtocol(Protocol):
         n_trials: int = 30,
         x90: TargetMap[Waveform] | Waveform | None = None,
         zx90: (
-            PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform] | None
+            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
         ) = None,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seeds: ArrayLike | None = None,
@@ -321,7 +321,7 @@ class BenchmarkingProtocol(Protocol):
             Target qubit.
         interleaved_waveform : Waveform
             Waveform of the interleaved gate.
-        interleaved_clifford : Clifford | dict[str, tuple[complex, str]]
+        interleaved_clifford : str | Clifford | dict[str, tuple[complex, str]]
             Clifford map of the interleaved gate.
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 100).
@@ -329,7 +329,7 @@ class BenchmarkingProtocol(Protocol):
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
             π/2 pulse. Defaults to None.
-        zx90 : PulseSchedule | dict[str, PulseSequence] | dict[str, Waveform], optional
+        zx90 : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
             ZX90 pulses used for 2Q gates. Defaults to None.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".

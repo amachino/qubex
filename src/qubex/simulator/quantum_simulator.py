@@ -11,7 +11,7 @@ import qctrlvisualizer as qv
 import qutip as qt
 from scipy.interpolate import interp1d
 
-from ..analysis import plot_bloch_vectors
+from ..analysis.visualization import plot_bloch_vectors
 from ..pulse import PulseSchedule, Waveform
 from .quantum_system import QuantumSystem
 
@@ -598,24 +598,24 @@ class QuantumSimulator:
     def _convert_pulse_schedule_to_controls(
         pulse_schedule: PulseSchedule,
     ) -> list[Control]:
-        rabi_rates = pulse_schedule.sampled_sequences
+        rabi_rates = pulse_schedule.values
         durations = [Waveform.SAMPLING_PERIOD] * pulse_schedule.length
         frequencies = {}
-        objects = {}
+        targets = {}
         for label in rabi_rates:
-            if frequency := pulse_schedule.frequencies.get(label):
+            if frequency := pulse_schedule.get_frequency(label):
                 frequencies[label] = frequency
             else:
                 raise ValueError(f"Frequency for {label} is not provided.")
-            if object := pulse_schedule.objects.get(label):
-                objects[label] = object
+            if object := pulse_schedule.get_target(label):
+                targets[label] = object
             else:
                 raise ValueError(f"Object for {label} is not provided.")
         controls = []
         for label, waveform in rabi_rates.items():
             controls.append(
                 Control(
-                    target=objects[label],
+                    target=targets[label],
                     frequency=frequencies[label],
                     waveform=waveform,
                     durations=durations,

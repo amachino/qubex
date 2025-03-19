@@ -2,24 +2,21 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from dataclasses import asdict
 from datetime import datetime
-from functools import reduce
 from pathlib import Path
 from typing import Collection, Final, Literal
 
 import numpy as np
-from IPython.display import display
 from numpy.typing import ArrayLike, NDArray
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
-from ..analysis import RabiParam
-from ..analysis import visualization as vis
+from ..analysis.fitting import RabiParam
 from ..backend import (
     Box,
+    Chip,
     ControlParams,
     ControlSystem,
     DeviceController,
@@ -48,8 +45,8 @@ from ..pulse import (
     CrossResonance,
     Drag,
     FlatTop,
+    PulseArray,
     PulseSchedule,
-    PulseSequence,
     VirtualZ,
     Waveform,
 )
@@ -58,12 +55,12 @@ from ..version import get_package_version
 from . import experiment_tool
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
+    CLASSIFIER_DIR,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     HPI_DURATION,
     HPI_RAMPTIME,
     RABI_FREQUENCY,
-    RABI_PARAMS,
     RABI_TIME_RANGE,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
@@ -105,9 +102,9 @@ class Experiment(
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
     params_dir : str, optional
         Directory of the parameter files. Defaults to DEFAULT_PARAMS_DIR.
-    fetch_device_state : bool, optional
-        Whether to fetch the device state. Defaults to True.
-    linkup : bool, optional
+    connect_devices : bool, optional
+        Whether to connect the devices. Defaults to True.
+    linkup_devices : bool, optional
         Whether to link up the devices. Defaults to True.
     drag_hpi_duration : int, optional
         Duration of the DRAG HPI pulse. Defaults to DRAG_HPI_DURATION.
@@ -117,6 +114,8 @@ class Experiment(
         Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
     readout_duration : int, optional
         Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+    classifier_dir : Path | str, optional
+        Directory of the state classifiers. Defaults to CLASSIFIER_DIR.
     classifier_type : Literal["kmeans", "gmm"], optional
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
@@ -125,7 +124,7 @@ class Experiment(
     Examples
     --------
     >>> from qubex import Experiment
-    >>> experiment = Experiment(
+    >>> ex = Experiment(
     ...     chip_id="64Q",
     ...     qubits=["Q00", "Q01"],
     ... )
@@ -141,18 +140,18 @@ class Experiment(
         config_dir: str = DEFAULT_CONFIG_DIR,
         params_dir: str = DEFAULT_PARAMS_DIR,
         calib_note_path: Path | str | None = None,
-        fetch_device_state: bool = True,
-        linkup: bool = True,
+        connect_devices: bool = True,
+        linkup_devices: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
         drag_pi_duration: int = DRAG_PI_DURATION,
-        connect_devices: bool = True,
         control_window: int | None = None,
         capture_window: int = DEFAULT_CAPTURE_WINDOW,
         capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
-        use_neopulse: bool = False,
+        classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        use_neopulse: bool = False,
     ):
         self._load_config(
             chip_id=chip_id,
@@ -175,15 +174,14 @@ class Experiment(
         self._capture_window: Final = capture_window
         self._capture_margin: Final = capture_margin
         self._readout_duration: Final = readout_duration
+        self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
-        self._rabi_params: Final[dict[str, RabiParam]] = {}
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
             config_dir=self._config_dir,
             params_dir=self._params_dir,
-            fetch_device_state=fetch_device_state,
             use_neopulse=use_neopulse,
             connect_devices=connect_devices,
             configuration_mode=configuration_mode,
@@ -197,11 +195,21 @@ class Experiment(
         )
         self._validate()
         self.print_environment()
-        if linkup:
+        if linkup_devices:
             try:
                 self.linkup()
             except Exception as e:
                 print(e)
+
+        self._load_classifiers()
+
+    def _load_classifiers(self):
+        for qubit in self.qubit_labels:
+            classifier_path = self.classifier_dir / self.chip_id / f"{qubit}.pkl"
+            if classifier_path.exists():
+                self._measurement.classifiers[qubit] = StateClassifier.load(  # type: ignore
+                    classifier_path
+                )
 
     def _load_config(
         self,
@@ -227,7 +235,7 @@ class Experiment(
         """Create the list of qubit labels."""
         if muxes is None and qubits is None:
             return []
-        quantum_system = self.state_manager.experiment_system.quantum_system
+        quantum_system = self.quantum_system
         qubit_labels = []
         if muxes is not None:
             for mux in muxes:
@@ -273,7 +281,7 @@ class Experiment(
         print("env:", sys.prefix)
         print("config:", self.config_path)
         print("params:", self.params_path)
-        print("chip:", self.chip_id)
+        print("chip:", self.chip_id, f"({self.chip.name})")
         print("qubits:", self.qubit_labels)
         print("muxes:", self.mux_labels)
         print("boxes:", self.box_ids)
@@ -289,30 +297,6 @@ class Experiment(
         for box in self.boxes.values():
             table.add_row(box.id, box.name, box.address, box.adapter)
         console.print(table)
-
-    @property
-    def drag_hpi_duration(self) -> int:
-        return self._drag_hpi_duration
-
-    @property
-    def drag_pi_duration(self) -> int:
-        return self._drag_pi_duration
-
-    @property
-    def control_window(self) -> int | None:
-        return self._control_window
-
-    @property
-    def capture_window(self) -> int:
-        return self._capture_window
-
-    @property
-    def capture_margin(self) -> int:
-        return self._capture_margin
-
-    @property
-    def readout_duration(self) -> int:
-        return self._readout_duration
 
     @property
     def tool(self):
@@ -351,6 +335,10 @@ class Experiment(
         return self.experiment_system.control_params
 
     @property
+    def chip(self) -> Chip:
+        return self.experiment_system.chip
+
+    @property
     def chip_id(self) -> str:
         return self._chip_id
 
@@ -387,15 +375,15 @@ class Experiment(
         return {
             target.label: target
             for target in self.experiment_system.targets
-            if target.qubit in self.qubit_labels
+            if target.is_related_to_qubits(self.qubit_labels)
         }
 
     @property
     def available_targets(self) -> dict[str, Target]:
         return {
-            target.label: target
-            for target in self.experiment_system.targets
-            if target.qubit in self.qubit_labels and target.is_available
+            label: target
+            for label, target in self.targets.items()
+            if target.is_available
         }
 
     @property
@@ -449,8 +437,32 @@ class Experiment(
         return self._system_note
 
     @property
+    def control_window(self) -> int | None:
+        return self._control_window
+
+    @property
+    def capture_window(self) -> int:
+        return self._capture_window
+
+    @property
+    def capture_margin(self) -> int:
+        return self._capture_margin
+
+    @property
+    def readout_duration(self) -> int:
+        return self._readout_duration
+
+    @property
     def note(self) -> ExperimentNote:
         return self._user_note
+
+    @property
+    def drag_hpi_duration(self) -> int:
+        return self._drag_hpi_duration
+
+    @property
+    def drag_pi_duration(self) -> int:
+        return self._drag_pi_duration
 
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
@@ -543,13 +555,14 @@ class Experiment(
             param = self.calib_note.get_rabi_param(target)
             if param is not None and None not in param.values():
                 result[target] = RabiParam(
-                    target=param["target"],
-                    frequency=param["frequency"],
-                    amplitude=param["amplitude"],
-                    phase=param["phase"],
-                    offset=param["offset"],
-                    noise=param["noise"],
-                    angle=param["angle"],
+                    target=param.get("target"),
+                    frequency=param.get("frequency"),
+                    amplitude=param.get("amplitude"),
+                    phase=param.get("phase"),
+                    offset=param.get("offset"),
+                    noise=param.get("noise"),
+                    angle=param.get("angle"),
+                    r2=param.get("r2"),
                 )
         return result
 
@@ -568,6 +581,10 @@ class Experiment(
             for target, param in self.rabi_params.items()
             if self.targets[target].is_ef
         }
+
+    @property
+    def classifier_dir(self) -> Path:
+        return Path(self._classifier_dir)
 
     @property
     def classifier_type(self) -> Literal["kmeans", "gmm"]:
@@ -621,32 +638,34 @@ class Experiment(
     def store_rabi_params(
         self,
         rabi_params: dict[str, RabiParam],
+        r2_threshold: float = 0.5,
     ):
-        if self._rabi_params.keys().isdisjoint(rabi_params.keys()):
-            self._rabi_params.update(rabi_params)
+        not_stored = []
+        for label, rabi_param in rabi_params.items():
+            if rabi_param.r2 < r2_threshold:
+                not_stored.append(label)
+            else:
+                self.calib_note.update_rabi_param(
+                    label,
+                    {
+                        "target": rabi_param.target,
+                        "frequency": rabi_param.frequency,
+                        "amplitude": rabi_param.amplitude,
+                        "phase": rabi_param.phase,
+                        "offset": rabi_param.offset,
+                        "noise": rabi_param.noise,
+                        "angle": rabi_param.angle,
+                        "r2": rabi_param.r2,
+                    },
+                )
 
-        self._system_note.put(  # deprecated
-            RABI_PARAMS,
-            {label: asdict(rabi_param) for label, rabi_param in rabi_params.items()},
-        )
-        self.calib_note.rabi_params = {
-            label: {
-                "target": rabi_param.target,
-                "frequency": rabi_param.frequency,
-                "amplitude": rabi_param.amplitude,
-                "phase": rabi_param.phase,
-                "offset": rabi_param.offset,
-                "noise": rabi_param.noise,
-                "angle": rabi_param.angle,
-            }
-            for label, rabi_param in rabi_params.items()
-        }
-        console.print("Rabi parameters are stored.")
+        if len(not_stored) > 0:
+            print(f"Rabi parameters are not stored for qubits: {not_stored}")
 
     def get_pulse_for_state(
         self,
         target: str,
-        state: str,  # Literal["0", "1", "+", "-", "+i", "-i"],
+        state: str,  # ["0", "1", "+", "-", "+i", "-i"],
     ) -> Waveform:
         if state == "0":
             return Blank(0)
@@ -676,21 +695,13 @@ class Experiment(
         self,
         targets: Collection[str],
     ) -> NDArray:
-        targets = list(targets)
-        confusion_matrices = []
-        for target in targets:
-            cm = self.classifiers[target].confusion_matrix
-            n_shots = cm[0].sum()
-            confusion_matrices.append(cm / n_shots)
-        return reduce(np.kron, confusion_matrices)
+        return self.measurement.get_confusion_matrix(targets)
 
     def get_inverse_confusion_matrix(
         self,
         targets: Collection[str],
     ) -> NDArray:
-        targets = list(targets)
-        confusion_matrix = self.get_confusion_matrix(targets)
-        return np.linalg.inv(confusion_matrix)
+        return self.measurement.get_inverse_confusion_matrix(targets)
 
     def check_status(self):
         # link status
@@ -810,9 +821,11 @@ class Experiment(
             with self.state_manager.modified_frequencies(frequencies):
                 yield
 
-    @deprecated("Use `calib_note` instead.")
-    def print_defaults(self):
-        display(self._system_note)
+    def save_calib_note(
+        self,
+        file_path: Path | str | None = None,
+    ):
+        self.calib_note.save(file_path=file_path)
 
     @deprecated("Use `calib_note.save()` instead.")
     def save_defaults(self):
@@ -872,14 +885,9 @@ class Experiment(
             targets = list(targets)
 
         result = self.measurement.measure_noise(targets, duration)
-        for target, data in result.data.items():
+        for data in result.data.values():
             if plot:
-                vis.plot_waveform(
-                    np.array(data.raw, dtype=np.complex64) * 2 ** (-32),
-                    title=f"Readout noise : {target}",
-                    xlabel="Capture time (μs)",
-                    sampling_period=8e-3,
-                )
+                data.plot()
         return result
 
     def check_waveform(
@@ -971,6 +979,26 @@ class Experiment(
         )
         return result
 
+    def calc_control_amplitude(
+        self,
+        target: str,
+        rabi_rate: float,
+        *,
+        rabi_amplitude_ratio: float | None = None,
+    ) -> float:
+        if rabi_amplitude_ratio is None:
+            rabi_param = self.rabi_params.get(target)
+            default_amplitude = self.params.control_amplitude.get(target)
+
+            if rabi_param is None:
+                raise ValueError(f"Rabi parameters for {target} are not stored.")
+            if default_amplitude is None:
+                raise ValueError(f"Control amplitude for {target} is not defined.")
+
+            rabi_amplitude_ratio = rabi_param.frequency / default_amplitude
+
+        return rabi_rate / rabi_amplitude_ratio
+
     def calc_control_amplitudes(
         self,
         rabi_rate: float = RABI_FREQUENCY,
@@ -979,25 +1007,6 @@ class Experiment(
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
     ) -> dict[str, float]:
-        """
-        Calculates the control amplitudes for the Rabi rate.
-
-        Parameters
-        ----------
-        rabi_rate : float, optional
-            Target Rabi rate in GHz. Defaults to RABI_FREQUENCY.
-        current_amplitudes : dict[str, float], optional
-            Current control amplitudes. Defaults to None.
-        current_rabi_params : dict[str, RabiParam], optional
-            Current Rabi parameters. Defaults to None.
-        print_result : bool, optional
-            Whether to print the result. Defaults to True.
-
-        Returns
-        -------
-        dict[str, float]
-            Control amplitudes for the Rabi rate.
-        """
         current_rabi_params = current_rabi_params or self.rabi_params
 
         if current_rabi_params is None:
@@ -1029,27 +1038,28 @@ class Experiment(
 
         return amplitudes
 
+    def calc_rabi_rate(
+        self,
+        target: str,
+        control_amplitude,
+    ) -> float:
+        # TODO: Support ef targets
+        default_amplitude = self.params.control_amplitude.get(target)
+        if default_amplitude is None:
+            raise ValueError(f"Control amplitude for {target} is not defined.")
+
+        rabi_param = self.rabi_params.get(target)
+        if rabi_param is None:
+            raise ValueError(f"Rabi parameters for {target} are not stored.")
+
+        return control_amplitude * rabi_param.frequency / default_amplitude
+
     def calc_rabi_rates(
         self,
         control_amplitude: float = 1.0,
         *,
         print_result: bool = True,
     ) -> dict[str, float]:
-        """
-        Calculates the Rabi rates for the control amplitude.
-
-        Parameters
-        ----------
-        control_amplitude : float, optional
-            Control amplitude. Defaults to 1.0.
-        print_result : bool, optional
-            Whether to print the result. Defaults to True.
-
-        Returns
-        -------
-        dict[str, float]
-            Rabi rates for the control amplitude.
-        """
         default_ampl = self.params.control_amplitude
 
         rabi_rates = {
@@ -1064,6 +1074,30 @@ class Experiment(
 
         return rabi_rates
 
+    def readout(
+        self,
+        target: str,
+        /,
+        *,
+        amplitude: float | None = None,
+        duration: float = DEFAULT_READOUT_DURATION,
+        capture_window: float = DEFAULT_CAPTURE_WINDOW,
+        capture_margin: float = DEFAULT_CAPTURE_MARGIN,
+    ) -> Waveform:
+        return PulseArray(
+            [
+                Blank(capture_margin),
+                self.measurement.readout_pulse(
+                    target=target,
+                    duration=duration,
+                    amplitude=amplitude,
+                ).padded(
+                    total_duration=capture_window,
+                    pad_side="right",
+                ),
+            ]
+        )
+
     def x90(
         self,
         target: str,
@@ -1072,12 +1106,26 @@ class Experiment(
         type: Literal["flattop", "drag"] | None = None,
     ) -> Waveform:
         if type is None:
-            type = "drag" if target in self.drag_pi_pulse else "flattop"
+            type = "drag" if target in self.calib_note.drag_hpi_params else "flattop"
         try:
             if type == "flattop":
-                return self.hpi_pulse[target]
+                param = self.calib_note.get_hpi_param(target)
+                if param is None:
+                    raise ValueError(f"hpi_param for {target} are not stored.")
+                return FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
             elif type == "drag":
-                return self.drag_hpi_pulse[target]
+                param = self.calib_note.get_drag_hpi_param(target)
+                if param is None:
+                    raise ValueError(f"drag_hpi_param for {target} are not stored.")
+                return Drag(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    beta=param["beta"],
+                )
         except KeyError:
             raise ValueError(f"Invalid target: {target}")
 
@@ -1090,14 +1138,29 @@ class Experiment(
         use_hpi: bool = False,
     ) -> Waveform:
         if type is None:
-            type = "drag" if target in self.drag_pi_pulse else "flattop"
+            type = "drag" if target in self.calib_note.drag_pi_params else "flattop"
         if use_hpi:
             return self.x90(target, type=type).repeated(2)
         try:
             if type == "flattop":
-                return self.pi_pulse[target]
+                param = self.calib_note.get_pi_param(target)
+                if param is None:
+                    return self.x90(target, type=type).repeated(2)
+                else:
+                    return FlatTop(
+                        duration=param["duration"],
+                        amplitude=param["amplitude"],
+                        tau=param["tau"],
+                    )
             elif type == "drag":
-                return self.drag_pi_pulse[target]
+                param = self.calib_note.get_drag_pi_param(target)
+                if param is None:
+                    raise ValueError(f"darg_pi_param for {target} are not stored.")
+                return Drag(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    beta=param["beta"],
+                )
         except KeyError:
             raise ValueError(f"Invalid target: {target}")
 
@@ -1133,14 +1196,26 @@ class Experiment(
     def hadamard(
         self,
         target: str,
-    ) -> PulseSequence:
-        return PulseSequence(
-            [
-                self.z90(),
-                self.x90(target),
-                self.z90(),
-            ]
-        )
+        *,
+        decomposition: Literal["Z180-Y90", "Y90-X180"] = "Z180-Y90",
+    ) -> PulseArray:
+        if decomposition == "Z180-Y90":
+            return PulseArray(
+                [
+                    # TODO: Need phase correction for CR targets
+                    self.z180(),
+                    self.y90(target),
+                ]
+            )
+        elif decomposition == "Y90-X180":
+            return PulseArray(
+                [
+                    self.y90(target),
+                    self.x180(target),
+                ]
+            )
+        else:
+            raise ValueError(f"Invalid decomposition: {decomposition}. ")
 
     def zx90(
         self,
@@ -1153,6 +1228,7 @@ class Experiment(
         cr_phase: float | None = None,
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
+        decoupling_amplitude: float | None = None,
         echo: bool = True,
         x180: TargetMap[Waveform] | Waveform | None = None,
     ) -> PulseSchedule:
@@ -1162,10 +1238,7 @@ class Experiment(
             raise ValueError(f"CR parameters for {cr_label} are not stored.")
 
         if x180 is None:
-            if control_qubit in self.drag_pi_pulse:
-                pi_pulse = self.drag_pi_pulse[control_qubit]
-            else:
-                pi_pulse = self.pi_pulse[control_qubit]
+            pi_pulse = self.x180(control_qubit)
         elif isinstance(x180, Waveform):
             pi_pulse = x180
         else:
@@ -1183,6 +1256,12 @@ class Experiment(
             cancel_amplitude = cr_param["cancel_amplitude"]
         if cancel_phase is None:
             cancel_phase = cr_param["cancel_phase"]
+        if decoupling_amplitude is None:
+            decoupling_amplitude = cr_param["decoupling_amplitude"]
+
+        cancel_pulse = (
+            cancel_amplitude * np.exp(1j * cancel_phase) + decoupling_amplitude
+        )
 
         return CrossResonance(
             control_qubit=control_qubit,
@@ -1191,8 +1270,8 @@ class Experiment(
             cr_duration=cr_duration,
             cr_ramptime=cr_ramptime,
             cr_phase=cr_phase,
-            cancel_amplitude=cancel_amplitude,
-            cancel_phase=cancel_phase,
+            cancel_amplitude=np.abs(cancel_pulse),
+            cancel_phase=np.angle(cancel_pulse),
             echo=echo,
             pi_pulse=pi_pulse,
         )
@@ -1209,13 +1288,11 @@ class Experiment(
         zx90 = zx90 or self.zx90(control_qubit, target_qubit)
 
         if x90 is None:
-            if target_qubit in self.drag_hpi_pulse:
-                x90 = self.drag_hpi_pulse[target_qubit]
-            else:
-                x90 = self.hpi_pulse[target_qubit]
+            x90 = self.x90(target_qubit)
 
         with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
             ps.call(zx90)
+            # TODO: Need VZ(-π/2) for CR targets which has control_qubit as target
             ps.add(control_qubit, VirtualZ(-np.pi / 2))
             ps.add(target_qubit, x90.scaled(-1))
 
@@ -1231,19 +1308,29 @@ class Experiment(
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if cr_label in self.available_targets:
+        if cr_label in self.calib_note.cr_params:
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
             cnot = self.cx(control_qubit, target_qubit, zx90=zx90, x90=x90)
             return cnot
         else:
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
             cnot = self.cx(target_qubit, control_qubit, zx90=zx90, x90=x90)
-            hadamard_c = self.hadamard(control_qubit)
-            hadamard_t = self.hadamard(target_qubit)
-            with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
+            z180 = self.z180()
+            hadamard_c = PulseArray([z180, self.y90(control_qubit)])
+            hadamard_t = PulseArray([z180, self.y90(target_qubit)])
+            cr_label = f"{target_qubit}-{control_qubit}"
+            with PulseSchedule(
+                [
+                    control_qubit,
+                    cr_label,
+                    target_qubit,
+                ]
+            ) as ps:
                 ps.add(control_qubit, hadamard_c)
                 ps.add(target_qubit, hadamard_t)
+                ps.add(cr_label, z180)
                 ps.call(cnot)
+                ps.add(cr_label, z180)
                 ps.add(control_qubit, hadamard_c)
                 ps.add(target_qubit, hadamard_t)
             return ps

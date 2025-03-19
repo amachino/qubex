@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Union
+from typing import Collection, Union
 
 from pydantic.dataclasses import dataclass
 
 from .control_system import CapChannel, GenChannel
 from .model import Model
-from .quantum_system import Qubit, Resonator
+from .quantum_system import Mux, Qubit, Resonator
 
 
 class TargetType(Enum):
@@ -16,17 +16,18 @@ class TargetType(Enum):
     CTRL_EF = "CTRL_EF"
     CTRL_CR = "CTRL_CR"
     READ = "READ"
+    PUMP = "PUMP"
     UNKNOWN = "UNKNOWN"
 
 
-QuantumObject = Union[Qubit, Resonator]
+PhysicalObject = Union[Qubit, Resonator, Mux]
 
 
 @dataclass
 class CapTarget(Model):
     label: str
     frequency: float
-    object: QuantumObject
+    object: PhysicalObject
     channel: CapChannel
     type: TargetType
 
@@ -50,7 +51,7 @@ class CapTarget(Model):
 class Target(Model):
     label: str
     frequency: float
-    object: QuantumObject
+    object: PhysicalObject
     channel: GenChannel
     type: TargetType
 
@@ -63,6 +64,8 @@ class Target(Model):
             return self.object.label
         elif isinstance(self.object, Resonator):
             return self.object.qubit
+        elif isinstance(self.object, Mux):
+            return ""
         else:
             raise ValueError("Invalid quantum object.")
 
@@ -100,13 +103,30 @@ class Target(Model):
     def is_read(self) -> bool:
         return self.type == TargetType.READ
 
+    @property
+    def is_pump(self) -> bool:
+        return self.type == TargetType.PUMP
+
+    def is_related_to_qubits(self, qubits: Collection[str]) -> bool:
+        if isinstance(self.object, Qubit):
+            return self.object.label in qubits
+        elif isinstance(self.object, Resonator):
+            return self.object.qubit in qubits
+        elif isinstance(self.object, Mux):
+            return any(
+                qubit in qubits
+                for qubit in [resonator.qubit for resonator in self.object.resonators]
+            )
+        else:
+            raise ValueError("Invalid quantum object.")
+
     @classmethod
     def new_target(
         cls,
         *,
         label: str,
         frequency: float,
-        object: QuantumObject,
+        object: PhysicalObject,
         channel: GenChannel,
         type: TargetType = TargetType.UNKNOWN,
     ) -> Target:
@@ -186,6 +206,22 @@ class Target(Model):
             frequency=resonator.frequency,
             channel=channel,
             type=TargetType.READ,
+        )
+
+    @classmethod
+    def new_pump_target(
+        cls,
+        *,
+        mux: Mux,
+        frequency: float,
+        channel: GenChannel,
+    ) -> Target:
+        return cls(
+            label=mux.label,
+            object=mux,
+            frequency=frequency,
+            channel=channel,
+            type=TargetType.PUMP,
         )
 
     @classmethod

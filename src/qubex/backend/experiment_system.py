@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Final, Literal, Sequence
+from typing import Collection, Final, Literal
 
 import numpy as np
 from pydantic.dataclasses import dataclass
@@ -21,9 +21,12 @@ DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
 DEFAULT_READOUT_AMPLITUDE: Final = 0.01
 DEFAULT_CONTROL_VATT: Final = 3072
 DEFAULT_READOUT_VATT: Final = 2048
+DEFAULT_PUMP_VATT: Final = 3072
 DEFAULT_CONTROL_FSC: Final = 40527
 DEFAULT_READOUT_FSC: Final = 40527
+DEFAULT_PUMP_FSC: Final = 40527
 DEFAULT_CAPTURE_DELAY: Final = 7
+DEFAULT_PUMP_FREQUENCY: Final = 10.0
 
 
 LO_STEP = 500_000_000
@@ -39,6 +42,7 @@ class WiringInfo(Model):
     ctrl: list[tuple[Qubit, GenPort]]
     read_out: list[tuple[Mux, GenPort]]
     read_in: list[tuple[Mux, CapPort]]
+    pump: list[tuple[Mux, GenPort]]
 
 
 @dataclass
@@ -54,9 +58,12 @@ class ControlParams(Model):
     readout_amplitude: dict[str, float]
     control_vatt: dict[str, int]
     readout_vatt: dict[int, int]
+    pump_vatt: dict[int, int]
     control_fsc: dict[str, int]
     readout_fsc: dict[int, int]
+    pump_fsc: dict[int, int]
     capture_delay: dict[int, int]
+    pump_frequency: dict[int, float]
 
     def get_control_amplitude(self, qubit: str) -> float:
         return self.control_amplitude.get(qubit, DEFAULT_CONTROL_AMPLITUDE)
@@ -70,14 +77,23 @@ class ControlParams(Model):
     def get_readout_vatt(self, mux: int) -> int:
         return self.readout_vatt.get(mux, DEFAULT_READOUT_VATT)
 
+    def get_pump_vatt(self, mux: int) -> int:
+        return self.pump_vatt.get(mux, DEFAULT_PUMP_VATT)
+
     def get_control_fsc(self, qubit: str) -> int:
         return self.control_fsc.get(qubit, DEFAULT_CONTROL_FSC)
 
     def get_readout_fsc(self, mux: int) -> int:
         return self.readout_fsc.get(mux, DEFAULT_READOUT_FSC)
 
+    def get_pump_fsc(self, mux: int) -> int:
+        return self.pump_fsc.get(mux, DEFAULT_PUMP_FSC)
+
     def get_capture_delay(self, mux: int) -> int:
         return self.capture_delay.get(mux, DEFAULT_CAPTURE_DELAY)
+
+    def get_pump_frequency(self, mux: int) -> float:
+        return self.pump_frequency.get(mux, DEFAULT_PUMP_FREQUENCY)
 
 
 class ExperimentSystem:
@@ -199,7 +215,7 @@ class ExperimentSystem:
     def get_box(self, box_id: str) -> Box:
         return self.control_system.get_box(box_id)
 
-    def get_boxes_for_qubits(self, qubits: Sequence[str]) -> list[Box]:
+    def get_boxes_for_qubits(self, qubits: Collection[str]) -> list[Box]:
         box_ids = set()
         for qubit in qubits:
             ports = self.get_qubit_port_set(qubit)
@@ -269,6 +285,12 @@ class ExperimentSystem:
             for mux, gen_port in self.wiring_info.read_out:
                 if gen_port == port:
                     return mux
+        return None
+
+    def get_mux_by_pump_port(self, port: GenPort) -> Mux | None:
+        for mux, gen_port in self.wiring_info.pump:
+            if gen_port == port:
+                return mux
         return None
 
     def get_qubit_by_control_port(self, port: GenPort) -> Qubit | None:
@@ -380,6 +402,8 @@ class ExperimentSystem:
                         self._configure_readout_port(port, params)
                     elif port.type == PortType.CTRL:
                         self._configure_control_port(port, params, mode)
+                    elif port.type == PortType.PUMP:
+                        self._configure_pump_port(port, params)
                 elif isinstance(port, CapPort):
                     port.rfswitch = "open"
                     if port.type == PortType.READ_IN:
@@ -479,6 +503,42 @@ class ExperimentSystem:
                         else:
                             raise ValueError(f"Invalid target label `{label}`.")
                         self._gen_target_dict[target.label] = target
+
+    def _configure_pump_port(
+        self,
+        port: GenPort,
+        params: ControlParams,
+    ) -> None:
+        mux = self.get_mux_by_pump_port(port)
+        if mux is None:
+            return
+
+        frequency = params.get_pump_frequency(mux.index)
+        ssb = "U"
+        lo, cnco, _ = MixingUtil.calc_lo_cnco(
+            f=frequency * 1e9,
+            ssb=ssb,
+            cnco_center=CNCO_CETNER_READ,
+        )
+        fnco, _ = MixingUtil.calc_fnco(
+            f=frequency * 1e9,
+            ssb=ssb,
+            lo=lo,
+            cnco=cnco,
+        )
+        port.lo_freq = lo
+        port.cnco_freq = cnco
+        port.sideband = ssb
+        port.vatt = params.get_pump_vatt(mux.index)
+        port.fullscale_current = params.get_pump_fsc(mux.index)
+        port.channels[0].fnco_freq = fnco
+
+        pump_target = Target.new_pump_target(
+            mux=mux,
+            frequency=frequency,
+            channel=port.channels[0],
+        )
+        self._gen_target_dict[pump_target.label] = pump_target
 
     def _configure_readout_port(
         self,

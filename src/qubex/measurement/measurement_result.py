@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
+from typing import Collection
 
 import numpy as np
 from numpy.typing import NDArray
 
-from ..analysis import plot_fft, plot_waveform, scatter_iq_data
+from ..analysis import visualization as viz
 from ..backend import SAMPLING_PERIOD
 
 SAMPLING_PERIOD_SINGLE = SAMPLING_PERIOD
@@ -20,10 +21,12 @@ class MeasureMode(Enum):
 
     @property
     def integral_mode(self) -> str:
-        return {
-            MeasureMode.SINGLE: "single",
-            MeasureMode.AVG: "integral",
-        }[self]
+        if self == MeasureMode.SINGLE:
+            return "single"
+        elif self == MeasureMode.AVG:
+            return "integral"
+        else:
+            raise ValueError(f"Invalid mode: {self}")
 
 
 @dataclass(frozen=True)
@@ -72,29 +75,44 @@ class MeasureData:
             self.probabilities * (1 - self.probabilities) / sum(self.counts.values())
         )
 
-    def plot(self, save_image: bool = False):
+    def plot(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
         if self.mode == MeasureMode.SINGLE:
-            scatter_iq_data(
+            return viz.scatter_iq_data(
                 data={self.target: self.kerneled},
                 title=f"Readout IQ data : {self.target}",
+                return_figure=return_figure,
                 save_image=save_image,
             )
         elif self.mode == MeasureMode.AVG:
-            plot_waveform(
+            return viz.plot_waveform(
                 data=self.raw,
                 sampling_period=SAMPLING_PERIOD_AVG,
                 title=f"Readout waveform : {self.target}",
                 xlabel="Capture time (ns)",
-                ylabel="Signal (arb. unit)",
+                ylabel="Signal (arb. units)",
+                return_figure=return_figure,
+                save_image=save_image,
             )
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
-    def plot_fft(self):
-        plot_fft(
-            times=self.times,
-            data=self.raw,
+    def plot_fft(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
+        return viz.plot_fft(
+            x=self.times,
+            y=self.raw,
             title=f"Fourier transform : {self.target}",
             xlabel="Frequency (GHz)",
-            ylabel="Signal (arb. unit)",
+            ylabel="Signal (arb. units)",
+            return_figure=return_figure,
+            save_image=save_image,
         )
 
 
@@ -106,44 +124,94 @@ class MeasureResult:
 
     @property
     def counts(self) -> dict[str, int]:
+        return self.get_counts()
+
+    @property
+    def probabilities(self) -> dict[str, float]:
+        return self.get_probabilities()
+
+    @property
+    def standard_deviations(self) -> dict[str, float]:
+        return self.get_standard_deviations()
+
+    def get_counts(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, int]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
+        if targets is None:
+            targets = self.data.keys()
         classified_data = np.column_stack(
-            [data.classified for data in self.data.values()]
+            [self.data[target].classified for target in targets]
         )
         classified_labels = np.array(
             ["".join(map(str, row)) for row in classified_data]
         )
         counts = dict(Counter(classified_labels))
-        counts = {key: counts[key] for key in sorted(counts.keys())}
+        counts = dict(sorted(counts.items()))
         return counts
 
-    @property
-    def probabilities(self) -> dict[str, float]:
+    def get_probabilities(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, float]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
-        total = sum(self.counts.values())
-        return {key: count / total for key, count in self.counts.items()}
+        total = sum(self.get_counts(targets).values())
+        return {key: count / total for key, count in self.get_counts(targets).items()}
 
-    @property
-    def standard_deviations(self) -> dict[str, float]:
+    def get_standard_deviations(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, float]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         return {
             key: np.sqrt(prob * (1 - prob) / total)
             for key, prob, total in zip(
-                self.counts.keys(), self.probabilities.values(), self.counts.values()
+                self.get_counts(targets).keys(),
+                self.get_probabilities(targets).values(),
+                self.get_counts(targets).values(),
             )
         }
 
-    def plot(self, save_image: bool = False):
+    def plot(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
         if self.mode == MeasureMode.SINGLE:
             data = {qubit: data.kerneled for qubit, data in self.data.items()}
-            scatter_iq_data(data=data, save_image=save_image)
+            return viz.scatter_iq_data(
+                data=data,
+                return_figure=return_figure,
+                save_image=save_image,
+            )
         elif self.mode == MeasureMode.AVG:
-            for measure_data in self.data.values():
-                measure_data.plot(save_image=save_image)
+            figures = []
+            for data in self.data.values():
+                fig = data.plot(
+                    return_figure=return_figure,
+                    save_image=save_image,
+                )
+                figures.append(fig)
+            if return_figure:
+                return figures
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
-    def plot_fft(self):
-        for measure_data in self.data.values():
-            measure_data.plot_fft()
+    def plot_fft(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
+        figures = []
+        for data in self.data.values():
+            fig = data.plot_fft(
+                return_figure=return_figure,
+                save_image=save_image,
+            )
+            figures.append(fig)
+        if return_figure:
+            return figures

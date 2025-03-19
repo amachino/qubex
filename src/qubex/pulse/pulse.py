@@ -21,7 +21,7 @@ class Pulse(Waveform):
         Scaling factor of the pulse.
     detuning : float, optional
         Detuning of the pulse in GHz.
-    phase_shift : float, optional
+    phase : float, optional
         Phase shift of the pulse in rad.
     """
 
@@ -29,16 +29,19 @@ class Pulse(Waveform):
         self,
         values: npt.ArrayLike,
         *,
-        scale: float = 1.0,
-        detuning: float = 0.0,
-        phase_shift: float = 0.0,
+        scale: float | None = None,
+        detuning: float | None = None,
+        phase: float | None = None,
     ):
         super().__init__(
             scale=scale,
             detuning=detuning,
-            phase_shift=phase_shift,
+            phase=phase,
         )
         self._values = np.array(values, dtype=np.complex128)
+
+    def __repr__(self) -> str:
+        return f"{self.name}({self.length})"
 
     @property
     def length(self) -> int:
@@ -51,7 +54,7 @@ class Pulse(Waveform):
         return (
             self._values
             * self._scale
-            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase_shift))
+            * np.exp(1j * (2 * np.pi * self._detuning * self.times + self._phase))
         )
 
     def copy(self) -> Pulse:
@@ -99,7 +102,7 @@ class Pulse(Waveform):
     def shifted(self, phase: float) -> Pulse:
         """Returns a copy of the pulse shifted by the given phase."""
         new_pulse = deepcopy(self)
-        new_pulse._phase_shift += phase
+        new_pulse._phase += phase
         return new_pulse
 
     def repeated(self, n: int) -> Pulse:
@@ -108,28 +111,8 @@ class Pulse(Waveform):
         new_pulse._values = np.tile(self._values, n)
         return new_pulse
 
-
-class Blank(Pulse):
-    """
-    A class to represent a blank pulse.
-
-    Parameters
-    ----------
-    duration : float
-        Duration of the blank pulse in ns.
-
-    Examples
-    --------
-    >>> pulse = Blank(duration=100)
-    """
-
-    def __init__(
-        self,
-        duration: float,
-    ):
-        N = self._number_of_samples(duration)
-        real = np.zeros(N, dtype=np.float64)
-        imag = 0
-        values = real + 1j * imag
-
-        super().__init__(values)
+    def reversed(self) -> Pulse:
+        """Returns a copy of the pulse with the time reversed."""
+        new_pulse = deepcopy(self)
+        new_pulse._values = np.flip(-1 * self._values)
+        return new_pulse

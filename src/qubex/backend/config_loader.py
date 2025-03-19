@@ -188,7 +188,9 @@ class ConfigLoader:
             quantum_system = self._quantum_system_dict[chip_id]
             control_system = self._control_system_dict[chip_id]
 
-            def get_port(specifier: str):
+            def get_port(specifier: str | None):
+                if specifier is None:
+                    return None
                 box_id = specifier.split("-")[0]
                 port_num = int(specifier.split("-")[1])
                 port = control_system.get_port(box_id, port_num)
@@ -197,6 +199,7 @@ class ConfigLoader:
             ctrl = []
             read_out = []
             read_in = []
+            pump = []
             for wiring in self._wiring_dict[chip_id]:
                 mux_num = int(wiring["mux"])
                 mux = quantum_system.get_mux(mux_num)
@@ -208,11 +211,15 @@ class ConfigLoader:
                 read_out.append((mux, read_out_port))
                 read_in_port: CapPort = get_port(wiring["read_in"])  # type: ignore
                 read_in.append((mux, read_in_port))
+                pump_port: GenPort = get_port(wiring.get("pump"))  # type: ignore
+                if pump_port is not None:
+                    pump.append((mux, pump_port))
 
             wiring_info = WiringInfo(
                 ctrl=ctrl,
                 read_out=read_out,
                 read_in=read_in,
+                pump=pump,
             )
             wiring_info_dict[chip_id] = wiring_info
         return wiring_info_dict
@@ -225,9 +232,12 @@ class ConfigLoader:
                 readout_amplitude=params.get("readout_amplitude", {}),
                 control_vatt=params.get("control_vatt", {}),
                 readout_vatt=params.get("readout_vatt", {}),
+                pump_vatt=params.get("pump_vatt", {}),
                 control_fsc=params.get("control_fsc", {}),
                 readout_fsc=params.get("readout_fsc", {}),
+                pump_fsc=params.get("pump_fsc", {}),
                 capture_delay=params.get("capture_delay", {}),
+                pump_frequency=params.get("pump_frequency", {}),
             )
             control_params_dict[chip_id] = control_params
         return control_params_dict
