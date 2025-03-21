@@ -215,3 +215,10 @@ class MeasureResult:
             figures.append(fig)
         if return_figure:
             return figures
+
+
+@dataclass(frozen=True)
+class MultipleMeasureResult:
+    mode: MeasureMode
+    data: dict[str, list[MeasureData]]
+    config: dict
