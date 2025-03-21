@@ -77,13 +77,14 @@ class MeasureData:
 
     def plot(
         self,
+        title: str | None = None,
         return_figure: bool = False,
         save_image: bool = False,
     ):
         if self.mode == MeasureMode.SINGLE:
             return viz.scatter_iq_data(
                 data={self.target: self.kerneled},
-                title=f"Readout IQ data : {self.target}",
+                title=title or f"Readout IQ data : {self.target}",
                 return_figure=return_figure,
                 save_image=save_image,
             )
@@ -91,7 +92,7 @@ class MeasureData:
             return viz.plot_waveform(
                 data=self.raw,
                 sampling_period=SAMPLING_PERIOD_AVG,
-                title=f"Readout waveform : {self.target}",
+                title=title or f"Readout waveform : {self.target}",
                 xlabel="Capture time (ns)",
                 ylabel="Signal (arb. units)",
                 return_figure=return_figure,
@@ -222,3 +223,21 @@ class MultipleMeasureResult:
     mode: MeasureMode
     data: dict[str, list[MeasureData]]
     config: dict
+
+    def plot(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
+        for qubit, data_list in self.data.items():
+            figures = []
+            for capture_index, data in enumerate(data_list):
+                fig = data.plot(
+                    title=f"{qubit} : data[{capture_index}]",
+                    return_figure=return_figure,
+                    save_image=save_image,
+                )
+                figures.append(fig)
+            if return_figure:
+                return figures
+        return None
