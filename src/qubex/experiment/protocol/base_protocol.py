@@ -668,6 +668,30 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def x90m(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        """
+        Generate a -π/2 pulse along the x-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            -π/2 pulse along the x-axis.
+        """
+        ...
+
     def x180(
         self,
         target: str,
@@ -716,6 +740,30 @@ class BaseProtocol(Protocol):
         -------
         Waveform
             π/2 pulse along the y-axis.
+        """
+        ...
+
+    def y90m(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        """
+        Generate a -π/2 pulse along the y-axis.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        type : Literal["flattop", "drag"], optional
+            Type of the pulse. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            -π/2 pulse along the y-axis.
         """
         ...
 

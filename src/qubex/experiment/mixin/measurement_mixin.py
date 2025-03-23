@@ -1116,6 +1116,8 @@ class MeasurementMixin(
         control_qubit: str,
         target_qubit: str,
         *,
+        control_basis: Literal["X", "Y", "Z"] = "Z",
+        target_basis: Literal["X", "Y", "Z"] = "Z",
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1125,14 +1127,33 @@ class MeasurementMixin(
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
-        cnot = self.cnot(
-            control_qubit,
-            target_qubit,
-            zx90=zx90,
-        )
+        with PulseSchedule([control_qubit, target_qubit]) as ps:
+            # prepare |+⟩|0⟩
+            ps.add(control_qubit, self.y90(control_qubit))
+
+            # create |0⟩|0⟩ + |1⟩|1⟩
+            ps.call(
+                self.cnot(
+                    control_qubit,
+                    target_qubit,
+                    zx90=zx90,
+                )
+            )
+
+            # apply the control basis transformation
+            if control_basis == "X":
+                ps.add(control_qubit, self.y90m(control_qubit))
+            elif control_basis == "Y":
+                ps.add(control_qubit, self.x90(control_qubit))
+
+            # apply the target basis transformation
+            if target_basis == "X":
+                ps.add(target_qubit, self.y90m(target_qubit))
+            elif target_basis == "Y":
+                ps.add(target_qubit, self.x90(target_qubit))
+
         result = self.measure(
-            cnot,
-            initial_states={control_qubit: "+"},
+            ps,
             mode="single",
             shots=shots,
             interval=interval,
@@ -1162,7 +1183,7 @@ class MeasurementMixin(
         )
         fig.update_layout(
             title=f"Bell state measurement: {control_qubit}-{target_qubit}",
-            xaxis_title="State label",
+            xaxis_title=f"State label : {control_basis}{target_basis} basis",
             yaxis_title="Probability",
             barmode="group",
             yaxis_range=[0, 1],
@@ -1180,6 +1201,7 @@ class MeasurementMixin(
             print(f"{label} : {p:.2%} -> {mp:.2%}")
 
         return {
+            "result": result,
             "raw": prob,
             "mitigated": mitigated_prob,
             "figure": fig,

@@ -575,6 +575,8 @@ class MeasurementProtocol(Protocol):
         control_qubit: str,
         target_qubit: str,
         *,
+        control_basis: Literal["X", "Y", "Z"] = "Z",
+        target_basis: Literal["X", "Y", "Z"] = "Z",
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
