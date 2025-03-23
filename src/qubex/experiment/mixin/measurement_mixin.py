@@ -16,6 +16,7 @@ from ...analysis import visualization as viz
 from ...backend import Target
 from ...measurement import (
     MeasureResult,
+    MultipleMeasureResult,
     StateClassifier,
     StateClassifierGMM,
     StateClassifierKMeans,
@@ -65,7 +66,7 @@ class MeasurementMixin(
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-    ) -> MeasureResult:
+    ) -> MultipleMeasureResult:
         return self.measurement.execute(
             schedule=schedule,
             mode=mode,
