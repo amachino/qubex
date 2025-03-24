@@ -34,9 +34,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backend = [
-    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@fix/mid_circ_meas",
-]
+backend = ["qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.7"]
 
 [tool.setuptools.dynamic]
 version = { attr = "qubex.version.get_version" }
@@ -51,4 +49,4 @@ addopts = "--import-mode=importlib"
 ignore_missing_imports = true
 
 [tool.ruff.lint]
-ignore = ["E731"]
+ignore = ["E731", "E741"]

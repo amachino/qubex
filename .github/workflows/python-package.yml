@@ -33,7 +33,7 @@ jobs:
 
       - name: Lint with ruff
         run: |
-          ruff check --output-format=github -n auto .
+          ruff check --output-format=github .
 
       - name: Test with pytest
         run: |

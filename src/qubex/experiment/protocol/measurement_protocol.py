@@ -575,8 +575,20 @@ class MeasurementProtocol(Protocol):
         control_qubit: str,
         target_qubit: str,
         *,
-        control_basis: Literal["X", "Y", "Z"] = "Z",
-        target_basis: Literal["X", "Y", "Z"] = "Z",
+        control_basis: str = "Z",
+        target_basis: str = "Z",
+        zx90: PulseSchedule | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict: ...
+
+    def bell_state_tomography(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
