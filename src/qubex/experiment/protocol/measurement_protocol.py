@@ -6,7 +6,7 @@ from typing import Collection, Literal, Optional, Protocol, Sequence
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ...measurement import MeasureResult
+from ...measurement import MeasureResult, MultipleMeasureResult
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import PulseSchedule, Waveform
 from ...typing import (
@@ -32,7 +32,7 @@ class MeasurementProtocol(Protocol):
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-    ) -> MeasureResult:
+    ) -> MultipleMeasureResult:
         """
         Execute the given schedule.
 
@@ -59,7 +59,7 @@ class MeasurementProtocol(Protocol):
 
         Returns
         -------
-        MeasureResult
+        MultipleMeasureResult
             Result of the experiment.
 
         Examples
@@ -571,6 +571,20 @@ class MeasurementProtocol(Protocol):
         ...
 
     def measure_bell_state(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        control_basis: str = "Z",
+        target_basis: str = "Z",
+        zx90: PulseSchedule | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict: ...
+
+    def bell_state_tomography(
         self,
         control_qubit: str,
         target_qubit: str,

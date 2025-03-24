@@ -1129,6 +1129,15 @@ class Experiment(
         except KeyError:
             raise ValueError(f"Invalid target: {target}")
 
+    def x90m(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        return self.x90(target, type=type).scaled(-1)
+
     def x180(
         self,
         target: str,
@@ -1172,6 +1181,15 @@ class Experiment(
         type: Literal["flattop", "drag"] | None = None,
     ) -> Waveform:
         return self.x90(target, type=type).shifted(np.pi / 2)
+
+    def y90m(
+        self,
+        target: str,
+        /,
+        *,
+        type: Literal["flattop", "drag"] | None = None,
+    ) -> Waveform:
+        return self.x90(target, type=type).shifted(-np.pi / 2)
 
     def y180(
         self,
