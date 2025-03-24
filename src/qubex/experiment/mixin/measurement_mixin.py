@@ -1345,6 +1345,8 @@ class MeasurementMixin(
             viz.save_figure_image(
                 fig,
                 f"bell_state_tomography_{control_qubit}-{target_qubit}",
+                width=600,
+                height=356,
             )
 
         return {
