@@ -1273,7 +1273,18 @@ class MeasurementMixin(
 
         rho = rho / 4
 
-        fidelity = np.trace(np.sqrt(np.sqrt(rho) @ rho @ np.sqrt(rho))) ** 2
+        fidelity = np.sqrt(
+            np.array([[1 / np.sqrt(2), 0, 0, 1 / np.sqrt(2)]])
+            @ rho
+            @ np.array(
+                [
+                    [1 / np.sqrt(2)],
+                    [0],
+                    [0],
+                    [1 / np.sqrt(2)],
+                ]
+            )
+        )
 
         fig = make_subplots(
             rows=1,
