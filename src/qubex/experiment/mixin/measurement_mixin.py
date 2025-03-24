@@ -1272,19 +1272,8 @@ class MeasurementMixin(
                 expected_values[basis] = e
 
         rho = rho / 4
-
-        fidelity = np.sqrt(
-            np.array([[1 / np.sqrt(2), 0, 0, 1 / np.sqrt(2)]])
-            @ rho
-            @ np.array(
-                [
-                    [1 / np.sqrt(2)],
-                    [0],
-                    [0],
-                    [1 / np.sqrt(2)],
-                ]
-            )
-        )
+        phi = np.array([1, 0, 0, 1]) / np.sqrt(2)
+        fidelity = np.real(phi @ rho @ phi.T.conj())
 
         fig = make_subplots(
             rows=1,
@@ -1352,6 +1341,7 @@ class MeasurementMixin(
         )
         if plot:
             fig.show()
+            print(f"State fidelity: {fidelity * 100:.3f}%")
         if save_image:
             viz.save_figure_image(
                 fig,
