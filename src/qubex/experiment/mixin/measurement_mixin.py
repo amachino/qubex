@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from itertools import product
 from pathlib import Path
 from typing import Collection, Literal, Optional, Sequence
 
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
+from plotly.subplots import make_subplots
 from rich.console import Console
 from tqdm import tqdm
 
@@ -1183,7 +1185,7 @@ class MeasurementMixin(
         )
         fig.update_layout(
             title=f"Bell state measurement: {control_qubit}-{target_qubit}",
-            xaxis_title=f"State label : {control_basis}{target_basis} basis",
+            xaxis_title=f"State ({control_basis}{target_basis} basis)",
             yaxis_title="Probability",
             barmode="group",
             yaxis_range=[0, 1],
@@ -1191,14 +1193,14 @@ class MeasurementMixin(
         if plot:
             fig.show()
 
+            for label, p, mp in zip(labels, prob, mitigated_prob):
+                print(f"{label} : {p:.2%} -> {mp:.2%}")
+
         if save_image:
             viz.save_figure_image(
                 fig,
                 f"bell_state_measurement_{control_qubit}-{target_qubit}",
             )
-
-        for label, p, mp in zip(labels, prob, mitigated_prob):
-            print(f"{label} : {p:.2%} -> {mp:.2%}")
 
         return {
             "raw": prob,
@@ -1212,138 +1214,140 @@ class MeasurementMixin(
         control_qubit: str,
         target_qubit: str,
         *,
+        readout_mitigation: bool = True,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
-        results = {}
-        for control_basis in ["X", "Y", "Z"]:
-            for target_basis in ["X", "Y", "Z"]:
-                result = self.measure_bell_state(
-                    control_qubit,
-                    target_qubit,
-                    control_basis=control_basis,
-                    target_basis=target_basis,
-                    zx90=zx90,
-                    shots=shots,
-                    interval=interval,
-                )
-                basis = f"{control_basis}{target_basis}"
-                results[basis] = result
+        probabilities = {}
+        for control_basis, target_basis in tqdm(
+            product(["X", "Y", "Z"], repeat=2),
+            desc="Measuring Bell state",
+        ):
+            result = self.measure_bell_state(
+                control_qubit,
+                target_qubit,
+                control_basis=control_basis,
+                target_basis=target_basis,
+                zx90=zx90,
+                shots=shots,
+                interval=interval,
+                plot=False,
+                save_image=False,
+            )
+            basis = f"{control_basis}{target_basis}"
+            if readout_mitigation:
+                probabilities[basis] = result["mitigated"]
+            else:
+                probabilities[basis] = result["raw"]
 
-        e_raw = {}
-        e_mtg = {}
-        for basis, result in results.items():
-            p_raw = result["raw"]
-            p_mtg = result["mitigated"]
-            e_raw[basis] = p_raw[0] - p_raw[1] - p_raw[2] + p_raw[3]
-            e_mtg[basis] = p_mtg[0] - p_mtg[1] - p_mtg[2] + p_mtg[3]
-
+        expected_values = {}
         paulis = {
             "I": np.array([[1, 0], [0, 1]]),
             "X": np.array([[0, 1], [1, 0]]),
             "Y": np.array([[0, -1j], [1j, 0]]),
             "Z": np.array([[1, 0], [0, -1]]),
         }
-        rho_raw = np.zeros((4, 4), dtype=np.complex128)
-        rho_mtg = np.zeros((4, 4), dtype=np.complex128)
+        rho = np.zeros((4, 4), dtype=np.complex128)
         for control_basis, control_pauli in paulis.items():
             for target_basis, target_pauli in paulis.items():
                 basis = f"{control_basis}{target_basis}"
+                # calculate the expectation values
                 if basis in ["IX", "IY", "IZ"]:
-                    result = results[f"Z{target_basis}"]
-                    p_raw = result["raw"]
-                    p_mtg = result["mitigated"]
-                    e_raw[basis] = p_raw[0] - p_raw[1] + p_raw[2] - p_raw[3]
-                    e_mtg[basis] = p_mtg[0] - p_mtg[1] + p_mtg[2] - p_mtg[3]
+                    p = probabilities[f"Z{target_basis}"]
+                    e = p[0] - p[1] + p[2] - p[3]
                 elif basis in ["XI", "YI", "ZI"]:
-                    result = results[f"{control_basis}Z"]
-                    p_raw = result["raw"]
-                    p_mtg = result["mitigated"]
-                    e_raw[basis] = p_raw[0] + p_raw[1] - p_raw[2] - p_raw[3]
-                    e_mtg[basis] = p_mtg[0] + p_mtg[1] - p_mtg[2] - p_mtg[3]
+                    p = probabilities[f"{control_basis}Z"]
+                    e = p[0] + p[1] - p[2] - p[3]
+                elif basis == "II":
+                    p = probabilities["ZZ"]
+                    e = p[0] - p[1] - p[2] + p[3]
                 else:
-                    pauli = np.kron(control_pauli, target_pauli)
-                    rho_raw += e_raw[basis] * pauli
-                    rho_mtg += e_mtg[basis] * pauli
-        rho_raw = rho_raw / 4
-        rho_mtg = rho_mtg / 4
+                    p = probabilities[basis]
+                    e = p[0] - p[1] - p[2] + p[3]
+                pauli = np.kron(control_pauli, target_pauli)
+                rho += e * pauli
+                expected_values[basis] = e
 
-        fidelity_raw = np.trace(np.sqrt(np.sqrt(rho_raw) @ rho_raw @ np.sqrt(rho_raw)))
-        fidelity_mtg = np.trace(np.sqrt(np.sqrt(rho_mtg) @ rho_mtg @ np.sqrt(rho_mtg)))
+        rho = rho / 4
 
-        fig = go.Figure()
+        fidelity = np.trace(np.sqrt(np.sqrt(rho) @ rho @ np.sqrt(rho))) ** 2
+
+        fig = make_subplots(
+            rows=1,
+            cols=2,
+            subplot_titles=("Re", "Im"),
+        )
+
+        # Real part
         fig.add_trace(
             go.Heatmap(
-                z=rho_raw.real,
-                colorscale="YlGnBu",
-                colorbar=dict(title="Real part"),
+                z=rho.real,
                 zmin=-1,
                 zmax=1,
-            )
+                colorscale="RdBu",
+            ),
+            row=1,
+            col=1,
         )
+
+        # Imaginary part
         fig.add_trace(
             go.Heatmap(
-                z=rho_raw.imag,
-                colorscale="YlOrRd",
-                colorbar=dict(title="Imaginary part"),
+                z=rho.imag,
                 zmin=-1,
                 zmax=1,
-            )
+                colorscale="RdBu",
+            ),
+            row=1,
+            col=2,
         )
+
         fig.update_layout(
-            title=f"Bell state tomography (raw) : {control_qubit}-{target_qubit}",
-            xaxis=dict(tickvals=[0, 1, 2, 3], ticktext=["00", "01", "10", "11"]),
-            yaxis=dict(tickvals=[0, 1, 2, 3], ticktext=["00", "01", "10", "11"]),
+            title=f"Bell state tomography: {control_qubit}-{target_qubit}",
+            xaxis1=dict(
+                tickmode="array",
+                tickvals=[0, 1, 2, 3],
+                ticktext=["00", "01", "10", "11"],
+                scaleanchor="y1",
+                tickangle=0,
+            ),
+            yaxis1=dict(
+                tickmode="array",
+                tickvals=[0, 1, 2, 3],
+                ticktext=["00", "01", "10", "11"],
+                scaleanchor="x1",
+            ),
+            xaxis2=dict(
+                tickmode="array",
+                tickvals=[0, 1, 2, 3],
+                ticktext=["00", "01", "10", "11"],
+                scaleanchor="y2",
+                tickangle=0,
+            ),
+            yaxis2=dict(
+                tickmode="array",
+                tickvals=[0, 1, 2, 3],
+                ticktext=["00", "01", "10", "11"],
+                scaleanchor="x2",
+            ),
+            width=600,
+            height=356,
+            margin=dict(l=70, r=70, t=90, b=70),
         )
-
         if plot:
             fig.show()
         if save_image:
             viz.save_figure_image(
                 fig,
-                f"bell_state_tomography_raw_{control_qubit}-{target_qubit}",
-            )
-
-        fig = go.Figure()
-        fig.add_trace(
-            go.Heatmap(
-                z=rho_mtg.real,
-                colorscale="YlGnBu",
-                colorbar=dict(title="Real part"),
-                zmin=-1,
-                zmax=1,
-            )
-        )
-        fig.add_trace(
-            go.Heatmap(
-                z=rho_mtg.imag,
-                colorscale="YlOrRd",
-                colorbar=dict(title="Imaginary part"),
-                zmin=-1,
-                zmax=1,
-            )
-        )
-        fig.update_layout(
-            title=f"Bell state tomography (mitigated) : {control_qubit}-{target_qubit}",
-            xaxis=dict(tickvals=[0, 1, 2, 3], ticktext=["00", "01", "10", "11"]),
-            yaxis=dict(tickvals=[0, 1, 2, 3], ticktext=["00", "01", "10", "11"]),
-        )
-        if plot:
-            fig.show()
-        if save_image:
-            viz.save_figure_image(
-                fig,
-                f"bell_state_tomography_mitigated_{control_qubit}-{target_qubit}",
+                f"bell_state_tomography_{control_qubit}-{target_qubit}",
             )
 
         return {
-            "rho_raw": rho_raw,
-            "rho_mitigated": rho_mtg,
-            "fidelity_raw": fidelity_raw,
-            "fidelity_mitigated": fidelity_mtg,
-            "result": results,
-            "figure": fig,
+            "probabilities": probabilities,
+            "expected_values": expected_values,
+            "density_matrix": rho,
+            "fidelity": fidelity,
         }
