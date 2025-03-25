@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Final, Literal, Optional
 
 import numpy as np
@@ -164,9 +165,14 @@ class SimulationResult:
     states: npt.NDArray
     unitaries: npt.NDArray
 
+    @cached_property
+    def control_frequencies(self) -> dict[str, float]:
+        return {control.target: control.frequency for control in self.controls}
+
     def get_substates(
         self,
         label: str,
+        frame: Literal["qubit", "drive"] = "drive",
     ) -> npt.NDArray:
         """
         Extract the substates of a qubit from the states.
@@ -180,9 +186,26 @@ class SimulationResult:
         -------
         list[qt.Qobj]
             The substates of the qubit.
+        frame : Literal["qubit", "drive"], optional
+            The frame of the substates, by default "drive".
         """
         index = self.system.get_index(label)
         substates = np.array([state.ptrace(index) for state in self.states])
+
+        if frame == "drive":
+            # rotate the states to the drive frame
+            times = self.get_times()
+            qubit = self.system.get_object(label)
+            f_drive = self.control_frequencies[label]
+            f_qubit = qubit.frequency
+            delta = 2 * np.pi * (f_drive - f_qubit)
+            dim = qubit.dimension
+            N = qt.num(dim)
+            U = lambda t: (-1j * delta * N * t).expm()
+            substates = np.array(
+                [U(t).dag() * rho * U(t) for t, rho in zip(times, substates)]
+            )
+
         return substates
 
     def get_times(
@@ -206,6 +229,7 @@ class SimulationResult:
         label: str,
         *,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] = "drive",
     ) -> npt.NDArray:
         """
         Extract the block vectors of a qubit from the states.
@@ -214,6 +238,10 @@ class SimulationResult:
         ----------
         label : str
             The label of the qubit.
+        n_samples : int | None, optional
+            The number of samples to return, by default None
+        frame : Literal["qubit", "drive"], optional
+            The frame of the substates, by default "drive"
 
         Returns
         -------
@@ -223,7 +251,7 @@ class SimulationResult:
         X = qt.sigmax()
         Y = qt.sigmay()
         Z = qt.sigmaz()
-        substates = self.get_substates(label)
+        substates = self.get_substates(label, frame=frame)
         buffer = []
         for substate in substates:
             rho = qt.Qobj(substate.full()[:2, :2])
@@ -241,6 +269,7 @@ class SimulationResult:
         *,
         dim: int = 2,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] = "drive",
     ) -> npt.NDArray:
         """
         Extract the density matrices of a qubit from the states.
@@ -251,13 +280,17 @@ class SimulationResult:
             The label of the qubit.
         dim : int, optional
             The dimension of the qubit, by default 2
+        n_samples : int | None, optional
+            The number of samples to return, by default None
+        frame : Literal["qubit", "drive"], optional
+            The frame of the substates, by default "drive"
 
         Returns
         -------
         list[qt.Qobj]
             The density matrices of the qubit.
         """
-        substates = self.get_substates(label)
+        substates = self.get_substates(label, frame=frame)
         rho = np.array([substate.full() for substate in substates])[:, :dim, :dim]
         rho = downsample(rho, n_samples)
         return rho
@@ -267,10 +300,12 @@ class SimulationResult:
         label: str,
         *,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] = "drive",
     ) -> None:
         vectors = self.get_bloch_vectors(
             label,
             n_samples=n_samples,
+            frame=frame,
         )
         times = self.get_times(
             n_samples=n_samples,
@@ -287,6 +322,7 @@ class SimulationResult:
         label: str,
         *,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] = "drive",
     ) -> None:
         """
         Display the Bloch sphere of a qubit.
@@ -295,10 +331,15 @@ class SimulationResult:
         ----------
         label : str
             The label of the qubit.
+        n_samples : int | None, optional
+            The number of samples to return, by default None
+        frame : Literal["qubit", "drive"], optional
+            The frame of the substates, by default "drive"
         """
         rho = self.get_density_matrices(
             label,
             n_samples=n_samples,
+            frame=frame,
         )
         qv.display_bloch_sphere_from_density_matrices(rho)
 
