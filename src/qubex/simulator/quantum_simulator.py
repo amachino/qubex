@@ -14,16 +14,16 @@ from scipy.interpolate import interp1d
 
 from ..analysis.visualization import plot_bloch_vectors
 from ..pulse import PulseSchedule, Waveform
-from .quantum_system import QuantumSystem
+from .quantum_system import Object, QuantumSystem
 
 
 class Control:
     def __init__(
         self,
-        target: str,
-        frequency: float,
-        waveform: list | npt.NDArray | Waveform,
+        target: Object | str,
+        waveform: Waveform | list | npt.NDArray,
         durations: list | npt.NDArray | None = None,
+        frequency: float | None = None,
         interpolation: str = "previous",
     ):
         """
@@ -31,15 +31,24 @@ class Control:
 
         Parameters
         ----------
-        target : str
+        target : Object | str
             The target object.
-        frequency : float
-            The control frequency in GHz.
-        waveform : list | npt.NDArray | Waveform
+        waveform : Waveform | list | npt.NDArray
             The I/Q values of each segment in rad/ns.
         durations : list | npt.NDArray | None, optional
             The durations of each segment in ns, by default None
+        frequency : float | None, optional
+            The control frequency in GHz.
         """
+        if frequency is None:
+            if isinstance(target, Object):
+                frequency = target.frequency
+            else:
+                raise ValueError("Frequency is required for a string target.")
+
+        if isinstance(target, Object):
+            target = target.label
+
         self.target = target
         self.frequency = frequency
         self.waveform = (
@@ -359,10 +368,10 @@ class SimulationResult:
             The label of the qubit, by default
         """
         states = self.states if label is None else self.get_substates(label)
-        population = states[-1].diag()
+        population = np.real(states[-1].diag())
         for idx, prob in enumerate(population):
             basis = self.system.basis_labels[idx] if label is None else str(idx)
-            print(f"|{basis}⟩: {prob:.6f}")
+            print(f"|{basis}⟩: {prob * 100:6.3f}%")
 
     def plot_population_dynamics(
         self,
@@ -440,7 +449,7 @@ class QuantumSimulator:
     def simulate(
         self,
         controls: list[Control] | PulseSchedule,
-        initial_state: qt.Qobj,
+        initial_state: qt.Qobj | dict | None = None,
         dt: float = 0.1,
         n_samples: int | None = None,
     ) -> SimulationResult:
@@ -451,8 +460,8 @@ class QuantumSimulator:
         ----------
         controls : list[Control] | PulseSchedule
             The control signals.
-        initial_state : qt.Qobj
-            The initial state of the quantum system.
+        initial_state : qt.Qobj | dict | None, optional
+            The initial state of the quantum system, by default None
         dt : float, optional
             The time step of the simulation, by default 0.1
         n_samples : int | None, optional
@@ -472,6 +481,9 @@ class QuantumSimulator:
             controls = self._convert_pulse_schedule_to_controls(controls)
 
         self._validate_controls(controls)
+
+        if initial_state is None:
+            initial_state = self.system.ground_state
 
         control = controls[0]
         N = int(control.duration / dt)
@@ -525,7 +537,7 @@ class QuantumSimulator:
     def mesolve(
         self,
         controls: list[Control] | PulseSchedule,
-        initial_state: qt.Qobj,
+        initial_state: qt.Qobj | dict | None = None,
         dt: float = 0.1,
         n_samples: int | None = None,
     ) -> SimulationResult:
@@ -536,8 +548,8 @@ class QuantumSimulator:
         ----------
         controls : list[Control] | PulseSchedule
             The control signals.
-        initial_state : qt.Qobj
-            The initial state of the quantum system.
+        initial_state : qt.Qobj | dict | None, optional
+            The initial state of the quantum system, by default None
         dt : float, optional
             The time step of the simulation, by default 0.1
         n_samples : int | None, optional
@@ -557,6 +569,9 @@ class QuantumSimulator:
             controls = self._convert_pulse_schedule_to_controls(controls)
 
         self._validate_controls(controls)
+
+        if initial_state is None:
+            initial_state = self.system.ground_state
 
         control = controls[0]
         N = int(control.duration / dt)

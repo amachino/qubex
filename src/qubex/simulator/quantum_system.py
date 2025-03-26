@@ -82,10 +82,24 @@ class Transmon(Object):
         )
 
 
-@dataclass(frozen=True)
+@dataclass(init=False)
 class Coupling:
     pair: tuple[str, str]
     strength: float
+
+    def __init__(
+        self,
+        *,
+        pair: tuple[str, str] | tuple[Object, Object],
+        strength: float,
+    ):
+        if len(pair) != 2:
+            raise ValueError("Coupling pair must have exactly two elements.")
+        self.pair: Final[tuple[str, str]] = (
+            pair[0].label if isinstance(pair[0], Object) else pair[0],
+            pair[1].label if isinstance(pair[1], Object) else pair[1],
+        )
+        self.strength: Final[float] = strength
 
     @property
     def label(self) -> str:
