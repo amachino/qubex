@@ -414,15 +414,29 @@ def print_chip_info(
             image_name="t2_echo",
         )
 
-    def create_undirected_data(data: dict[str, float]) -> dict[str, float]:
+    def create_undirected_data(
+        data: dict[str, float],
+        method: Literal["avg", "max", "min"],
+    ) -> dict[str, float]:
         result = {}
         for key, value in data.items():
-            if value is None:
+            if value is None or math.isnan(value):
                 continue
             pair = key.split("-")
             inv_key = f"{pair[1]}-{pair[0]}"
-            if inv_key in result:
-                result[inv_key] = (result[inv_key] + value) / 2
+            if (
+                inv_key in result
+                and result[inv_key] is not None
+                and not math.isnan(result[inv_key])
+            ):
+                if method == "avg":
+                    result[inv_key] = (result[inv_key] + value) / 2
+                elif method == "max":
+                    result[inv_key] = max(result[inv_key], value)
+                elif method == "min":
+                    result[inv_key] = min(result[inv_key], value)
+                else:
+                    raise ValueError(f"Unknown method: {method}")
             else:
                 result[key] = float(value)
         return result
@@ -431,7 +445,10 @@ def print_chip_info(
         values = (
             props["static_zz_interaction"]
             if directed
-            else create_undirected_data(props["static_zz_interaction"])
+            else create_undirected_data(
+                data=props["static_zz_interaction"],
+                method="avg",
+            )
         )
         graph.plot_graph_data(
             directed=directed,
@@ -453,7 +470,10 @@ def print_chip_info(
         values = (
             props["qubit_qubit_coupling_strength"]
             if directed
-            else create_undirected_data(props["qubit_qubit_coupling_strength"])
+            else create_undirected_data(
+                data=props["qubit_qubit_coupling_strength"],
+                method="avg",
+            )
         )
         graph.plot_graph_data(
             directed=directed,
@@ -547,6 +567,26 @@ def print_chip_info(
             edge_values={key: value for key, value in values.items()},
             edge_texts={
                 key: f"{value:.2%}" if not math.isnan(value) else None
+                for key, value in values.items()
+            },
+            edge_hovertexts={
+                key: f"{key}: {value:.2%}" if not math.isnan(value) else "N/A"
+                for key, value in values.items()
+            },
+            save_image=save_image,
+            image_name="zx90_gate_fidelity",
+        )
+
+        values = create_undirected_data(
+            data=props["zx90_gate_fidelity"],
+            method="max",
+        )
+        graph.plot_graph_data(
+            directed=False,
+            title="ZX90 gate fidelity (%)",
+            edge_values={key: value for key, value in values.items()},
+            edge_texts={
+                key: f"{value * 1e2:.1f}" if not math.isnan(value) else None
                 for key, value in values.items()
             },
             edge_hovertexts={
