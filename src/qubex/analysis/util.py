@@ -57,20 +57,18 @@ def calc_2q_gate_coherence_limit(
     dict[str, float]
         A dictionary containing the error and fidelity of the gate.
     """
-    if isinstance(t1, float):
-        T1 = (t1, t1)
-    if isinstance(t2, float):
-        T2 = (t2, t2)
+    t1 = t1 if isinstance(t1, tuple) else (t1, t1)
+    t2 = t2 if isinstance(t2, tuple) else (t2, t2)
 
     N = 2
     term1 = 15
     term2 = sum(
-        2 * np.exp(-gate_time / T2[i]) + np.exp(-gate_time / T1[i]) for i in range(N)
+        2 * np.exp(-gate_time / t2[i]) + np.exp(-gate_time / t1[i]) for i in range(N)
     )
-    term3 = np.exp(-gate_time * (1 / T1[0] + 1 / T1[1]))
-    term4 = 4 * np.exp(-gate_time * (1 / T2[0] + 1 / T2[1]))
-    term5 = 2 * np.exp(-gate_time * (1 / T1[0] + 1 / T2[1]))
-    term6 = 2 * np.exp(-gate_time * (1 / T2[0] + 1 / T1[1]))
+    term3 = np.exp(-gate_time * (1 / t1[0] + 1 / t1[1]))
+    term4 = 4 * np.exp(-gate_time * (1 / t2[0] + 1 / t2[1]))
+    term5 = 2 * np.exp(-gate_time * (1 / t1[0] + 1 / t2[1]))
+    term6 = 2 * np.exp(-gate_time * (1 / t2[0] + 1 / t1[1]))
 
     error = 1 / 20 * (term1 - term2 - term3 - term4 - term5 - term6)
     fidelity = 1 - error
