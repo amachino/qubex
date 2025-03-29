@@ -1316,6 +1316,7 @@ class Experiment(
             return cnot
         else:
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
+            cr_label = f"{target_qubit}-{control_qubit}"
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
                 cnot_tc.call(zx90)
                 cnot_tc.add(target_qubit, VirtualZ(-np.pi / 2))
@@ -1323,7 +1324,6 @@ class Experiment(
             z180 = self.z180()
             hadamard_c = PulseArray([z180, self.y90(control_qubit)])
             hadamard_t = PulseArray([z180, self.y90(target_qubit)])
-            cr_label = f"{target_qubit}-{control_qubit}"
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_ct:
                 cnot_ct.add(control_qubit, hadamard_c)
                 cnot_ct.add(target_qubit, hadamard_t)
