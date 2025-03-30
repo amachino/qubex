@@ -6,7 +6,7 @@ from typing import Collection, Literal
 import cma
 import numpy as np
 import plotly.graph_objects as go
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 from ...analysis import fitting
 from ...analysis import visualization as viz
@@ -1187,7 +1187,7 @@ class CalibrationMixin(
     ) -> dict:
         def _create_time_range(
             zx90_duration: float,
-        ) -> np.ndarray:
+        ) -> NDArray:
             period = 4 * zx90_duration
             dt = (period / n_points_per_cycle) // SAMPLING_PERIOD * SAMPLING_PERIOD
             duration = period * n_cycles
@@ -1314,10 +1314,12 @@ class CalibrationMixin(
         *,
         duration: float | None = None,
         ramptime: float | None = None,
-        amplitude_range: ArrayLike | None = None,
-        decoupling_amplitude: float | None = None,
+        min_amplitude: float | None = None,
+        max_amplitude: float | None = None,
+        n_points: int = 40,
         initial_state: str = "0",
         degree: int = 3,
+        decoupling_amplitude: float | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
         store_params: bool = True,
@@ -1345,11 +1347,6 @@ class CalibrationMixin(
 
         if decoupling_amplitude is None:
             decoupling_amplitude = cr_param["decoupling_amplitude"]
-
-        min_amplitude = np.clip(cr_amplitude * 0.6, 0.0, 1.0)
-        max_amplitude = np.clip(cr_amplitude * 1.2, 0.0, 1.0)
-        amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
-        amplitude_range = np.array(amplitude_range)
 
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
@@ -1385,58 +1382,87 @@ class CalibrationMixin(
                 ps.call(ecr)
             return ps
 
-        print(f"Sweeping {cr_label} amplitude with a single ECR sequence...")
-        sweep_result_1 = self.sweep_parameter(
-            lambda x: ecr_sequence(x, 1),
-            sweep_range=amplitude_range,
-            shots=shots,
-            interval=interval,
-            plot=False,
+        def calibrate(
+            n_repetitions: int,
+            min_amplitude: float,
+            max_amplitude: float,
+            n_points: int,
+        ) -> dict:
+            min_amplitude = np.clip(min_amplitude, 0.0, 1.0)
+            max_amplitude = np.clip(max_amplitude, 0.0, 1.0)
+            amplitude_range = np.linspace(min_amplitude, max_amplitude, n_points)
+
+            sweep_result = self.sweep_parameter(
+                lambda x: ecr_sequence(x, n_repetitions),
+                sweep_range=amplitude_range,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+
+            if use_zvalues:
+                signal = sweep_result.data[target_qubit].zvalues
+            else:
+                signal = sweep_result.data[target_qubit].normalized
+
+            fit_result = fitting.fit_polynomial(
+                target=cr_label,
+                x=amplitude_range,
+                y=signal,
+                degree=degree,
+                title=f"ZX90 calibration (n = {n_repetitions})",
+                xlabel="Amplitude (arb. units)",
+                ylabel="Signal",
+            )
+
+            root = fit_result["root"]
+
+            if np.isnan(root):
+                root = None
+
+            return {
+                "amplitude_range": amplitude_range,
+                "signal": signal,
+                "root": root,
+                "fit_result": fit_result,
+            }
+
+        if min_amplitude is None or max_amplitude is None:
+            print(f"Estimating CR amplitude of {cr_label} (n_repetitions = 1)")
+            rough_result = calibrate(
+                n_repetitions=1,
+                min_amplitude=0.0,
+                max_amplitude=cr_amplitude * 2,
+                n_points=20,
+            )
+            rough_amplitude: float = rough_result["root"]
+            if rough_amplitude is None:
+                raise ValueError("Could not find a root for the rough calibration.")
+            min_amplitude = rough_amplitude * 0.8
+            max_amplitude = rough_amplitude * 1.2
+
+        print(f"Calibrating CR amplitude of {cr_label} (n_repetitions = 1)")
+        result_n1 = calibrate(
+            n_repetitions=1,
+            min_amplitude=min_amplitude,
+            max_amplitude=max_amplitude,
+            n_points=n_points,
         )
+        amplitude_range = result_n1["amplitude_range"]
+        signal_n1 = result_n1["signal"]
+        fit_result_n1 = result_n1["fit_result"]
 
-        if use_zvalues:
-            signal_n1 = sweep_result_1.data[target_qubit].zvalues
-        else:
-            signal_n1 = sweep_result_1.data[target_qubit].normalized
-
-        fit_result_n1 = fitting.fit_polynomial(
-            target=cr_label,
-            x=amplitude_range,
-            y=signal_n1,
-            degree=degree,
-            title="ZX90 calibration (n = 1)",
-            xlabel="Amplitude (arb. units)",
-            ylabel="Signal",
+        print(f"Calibrating CR amplitude of {cr_label} (n_repetitions = 3)")
+        result_n3 = calibrate(
+            n_repetitions=3,
+            min_amplitude=min_amplitude,
+            max_amplitude=max_amplitude,
+            n_points=n_points,
         )
-
-        print(f"Sweeping {cr_label} amplitude with a 3-repetition ECR sequence...")
-        sweep_result_3 = self.sweep_parameter(
-            lambda x: ecr_sequence(x, 3),
-            sweep_range=amplitude_range,
-            shots=shots,
-            interval=interval,
-            plot=False,
-        )
-
-        if use_zvalues:
-            signal_n3 = sweep_result_3.data[target_qubit].zvalues
-        else:
-            signal_n3 = sweep_result_3.data[target_qubit].normalized
-
-        fit_result_n3 = fitting.fit_polynomial(
-            target=cr_label,
-            x=amplitude_range,
-            y=signal_n3,
-            degree=degree,
-            title="ZX90 calibration (n = 3)",
-            xlabel="Amplitude (arb. units)",
-            ylabel="Signal",
-        )
-
-        print("Find the root of the difference between n = 1 and n = 3")
+        signal_n3 = result_n3["signal"]
+        fit_result_n3 = result_n3["fit_result"]
 
         signal = signal_n1 - signal_n3
-
         fit_result = fitting.fit_polynomial(
             target=cr_label,
             x=amplitude_range,
@@ -1450,6 +1476,7 @@ class CalibrationMixin(
         calibrated_cr_amplitude = fit_result["root"]
 
         if np.isnan(calibrated_cr_amplitude):
+            print("Could not find a root for the CR amplitude calibration.")
             calibrated_cr_amplitude = 1.0
 
         calibrated_cancel_amplitude = calibrated_cr_amplitude * cancel_cr_ratio
