@@ -1082,7 +1082,6 @@ class CalibrationMixin(
         cancel_phase: float = 0.0,
         update_cr_phase: bool = True,
         update_cancel_pulse: bool = True,
-        safe_factor: float = 1.1,
         duration_unit: float = 16.0,
         decoupling_multiple: float = 10.0,
         x90: TargetMap[Waveform] | None = None,
@@ -1140,7 +1139,9 @@ class CalibrationMixin(
 
         cr_label = f"{control_qubit}-{target_qubit}"
         half_duration = 0.5 * result["zx90_duration"] + cr_ramptime
-        cr_duration = (safe_factor * half_duration // duration_unit + 1) * duration_unit
+        if cr_amplitude > 0.9:
+            half_duration *= 1.1
+        cr_duration = (half_duration // duration_unit + 1) * duration_unit
 
         decouple_amplitude = self.calc_control_amplitude(
             target=target_qubit,
@@ -1176,9 +1177,8 @@ class CalibrationMixin(
         n_cycles: int = 2,
         n_points_per_cycle: int = 10,
         time_range: ArrayLike | None = None,
-        use_stored_params: bool = True,
+        use_stored_params: bool = False,
         tolerance: float = 10e-6,
-        safe_factor: float = 1.1,
         decoupling_multiple: float = 10.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
@@ -1242,7 +1242,6 @@ class CalibrationMixin(
                 cr_phase=params["cr_phase"],
                 cancel_amplitude=params["cancel_amplitude"],
                 cancel_phase=params["cancel_phase"],
-                safe_factor=safe_factor,
                 decoupling_multiple=decoupling_multiple,
                 x90=x90,
                 shots=shots,
