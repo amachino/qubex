@@ -1699,7 +1699,7 @@ class CharacterizationMixin(
                             shots=shots,
                             interval=interval,
                         )
-                        signal = result.data[qubit].kerneled
+                        signal = result.data[qubit][0].kerneled
                         phases.append(np.angle(signal))
                         amplitudes.append(np.abs(signal))
 
