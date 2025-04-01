@@ -41,7 +41,7 @@ class CharacterizationMixin(
 ):
     def measure_readout_snr(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         capture_window: int | None = None,
@@ -55,6 +55,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -96,7 +98,7 @@ class CharacterizationMixin(
 
     def sweep_readout_amplitude(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -109,6 +111,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -198,7 +202,7 @@ class CharacterizationMixin(
 
     def sweep_readout_duration(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = np.arange(128, 2048, 128),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -210,6 +214,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -299,7 +305,7 @@ class CharacterizationMixin(
 
     def chevron_pattern(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
         time_range: ArrayLike = RABI_TIME_RANGE,
@@ -313,6 +319,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -441,7 +449,7 @@ class CharacterizationMixin(
 
     def obtain_freq_rabi_relation(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
@@ -452,6 +460,8 @@ class CharacterizationMixin(
     ) -> ExperimentResult[FreqRabiData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -514,7 +524,7 @@ class CharacterizationMixin(
 
     def obtain_ampl_rabi_relation(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
@@ -524,6 +534,8 @@ class CharacterizationMixin(
     ) -> ExperimentResult[AmplRabiData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -560,7 +572,7 @@ class CharacterizationMixin(
 
     def calibrate_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = range(0, 101, 4),
@@ -590,7 +602,7 @@ class CharacterizationMixin(
 
     def calibrate_ef_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
@@ -600,6 +612,8 @@ class CharacterizationMixin(
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -633,7 +647,7 @@ class CharacterizationMixin(
 
     def calibrate_readout_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = range(0, 101, 4),
@@ -644,6 +658,8 @@ class CharacterizationMixin(
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -704,7 +720,7 @@ class CharacterizationMixin(
 
     def t1_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -715,6 +731,8 @@ class CharacterizationMixin(
     ) -> ExperimentResult[T1Data]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -797,7 +815,7 @@ class CharacterizationMixin(
 
     def t2_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
         n_cpmg: int = 1,
@@ -809,6 +827,8 @@ class CharacterizationMixin(
     ) -> ExperimentResult[T2Data]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -1011,7 +1031,7 @@ class CharacterizationMixin(
 
     def obtain_effective_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = np.arange(0, 10001, 100),
         detuning: float = 0.001,
@@ -1021,6 +1041,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 

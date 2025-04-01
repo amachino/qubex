@@ -43,7 +43,7 @@ class CalibrationMixin(
 ):
     def calibrate_default_pulse(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | str | None = None,
         *,
         pulse_type: Literal["pi", "hpi"],
         n_points: int = 20,
@@ -53,7 +53,13 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
-        targets = list(targets)
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
         rabi_params = self.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
@@ -160,7 +166,7 @@ class CalibrationMixin(
 
     def calibrate_hpi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_points: int = 20,
         n_rotations: int = 1,
@@ -169,11 +175,6 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
         return self.calibrate_default_pulse(
             targets=targets,
             pulse_type="hpi",
@@ -187,7 +188,7 @@ class CalibrationMixin(
 
     def calibrate_pi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -195,11 +196,6 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
         return self.calibrate_default_pulse(
             targets=targets,
             pulse_type="pi",
@@ -213,7 +209,7 @@ class CalibrationMixin(
 
     def calibrate_ef_pulse(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | str | None = None,
         *,
         pulse_type: Literal["pi", "hpi"],
         n_points: int = 20,
@@ -223,7 +219,13 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
-        targets = list(targets)
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
         rabi_params = self.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
@@ -341,7 +343,7 @@ class CalibrationMixin(
 
     def calibrate_ef_hpi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_points: int = 20,
         n_rotations: int = 1,
@@ -350,11 +352,6 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
         return self.calibrate_ef_pulse(
             targets=targets,
             pulse_type="hpi",
@@ -368,7 +365,7 @@ class CalibrationMixin(
 
     def calibrate_ef_pi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -376,11 +373,6 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
-        if targets is None:
-            targets = self.qubit_labels
-        else:
-            targets = list(targets)
-
         return self.calibrate_ef_pulse(
             targets=targets,
             pulse_type="pi",
@@ -394,7 +386,7 @@ class CalibrationMixin(
 
     def calibrate_drag_amplitude(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | str | None = None,
         *,
         spectator_state: str = "0",
         pulse_type: Literal["pi", "hpi"],
@@ -409,7 +401,13 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict[str, dict]:
-        targets = list(targets)
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
         rabi_params = self.rabi_params
         self.validate_rabi_params(rabi_params)
 
@@ -540,7 +538,7 @@ class CalibrationMixin(
 
     def calibrate_drag_beta(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         spectator_state: str = "0",
         pulse_type: Literal["pi", "hpi"] = "hpi",
@@ -554,8 +552,11 @@ class CalibrationMixin(
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
+
         rabi_params = self.rabi_params
         self.validate_rabi_params(rabi_params)
 
@@ -679,7 +680,7 @@ class CalibrationMixin(
 
     def calibrate_drag_hpi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         spectator_state: str = "0",
         n_points: int = 20,
@@ -698,6 +699,8 @@ class CalibrationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -761,7 +764,7 @@ class CalibrationMixin(
 
     def calibrate_drag_pi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         spectator_state: str = "0",
         n_points: int = 20,
@@ -780,6 +783,8 @@ class CalibrationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -957,6 +962,7 @@ class CalibrationMixin(
             shots=shots,
             interval=interval,
         )
+
         result_1 = self.measure_cr_dynamics(
             time_range=time_range,
             ramptime=ramptime,

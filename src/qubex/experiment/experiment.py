@@ -853,7 +853,7 @@ class Experiment(
 
     def check_noise(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         duration: int = 10240,
         plot: bool = True,
@@ -863,7 +863,7 @@ class Experiment(
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the noise. Defaults to None.
         duration : int, optional
             Duration of the noise measurement. Defaults to 2048.
@@ -881,6 +881,8 @@ class Experiment(
         """
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -892,7 +894,7 @@ class Experiment(
 
     def check_waveform(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         plot: bool = True,
     ) -> MeasureResult:
@@ -901,7 +903,7 @@ class Experiment(
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the waveforms.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -917,6 +919,8 @@ class Experiment(
         """
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -927,7 +931,7 @@ class Experiment(
 
     def check_rabi(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         shots: int = DEFAULT_SHOTS,
@@ -940,7 +944,7 @@ class Experiment(
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the Rabi oscillation.
         time_range : ArrayLike, optional
             Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
@@ -964,6 +968,8 @@ class Experiment(
         """
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
         time_range = np.asarray(time_range)

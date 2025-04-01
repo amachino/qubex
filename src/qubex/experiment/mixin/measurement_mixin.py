@@ -340,7 +340,7 @@ class MeasurementMixin(
 
     def obtain_rabi_params(
         self,
-        targets: str | Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
@@ -358,10 +358,13 @@ class MeasurementMixin(
             targets = [targets]
         else:
             targets = list(targets)
+
         time_range = np.asarray(time_range)
+
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
+
         if simultaneous:
             result = self.rabi_experiment(
                 amplitudes=amplitudes,
@@ -397,7 +400,7 @@ class MeasurementMixin(
 
     def obtain_ef_rabi_params(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         is_damped: bool = True,
@@ -407,6 +410,8 @@ class MeasurementMixin(
     ) -> ExperimentResult[RabiData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -625,7 +630,7 @@ class MeasurementMixin(
 
     def measure_state_distribution(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
@@ -634,6 +639,8 @@ class MeasurementMixin(
     ) -> list[MeasureResult]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -659,7 +666,7 @@ class MeasurementMixin(
 
     def build_classifier(
         self,
-        targets: str | Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         save_classifier: bool = True,

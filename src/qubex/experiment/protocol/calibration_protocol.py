@@ -15,7 +15,7 @@ from ..experiment_result import AmplCalibData, ExperimentResult
 class CalibrationProtocol(Protocol):
     def calibrate_default_pulse(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | str | None = None,
         *,
         pulse_type: Literal["pi", "hpi"],
         n_points: int = 20,
@@ -30,7 +30,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str]
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
@@ -56,7 +56,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_hpi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_points: int = 20,
         n_rotations: int = 1,
@@ -70,7 +70,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
@@ -94,7 +94,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_pi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_points: int = 20,
         n_rotations: int = 1,
@@ -108,7 +108,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targes : Collection[str], optional
+        targes : Collection[str] | str, optional
             Target qubits to calibrate.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
@@ -132,7 +132,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_ef_pulse(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | str | None = None,
         *,
         pulse_type: Literal["pi", "hpi"],
         n_points: int = 20,
@@ -147,7 +147,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str]
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
@@ -173,7 +173,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_ef_hpi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_points: int = 20,
         n_rotations: int = 1,
@@ -187,7 +187,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
@@ -211,7 +211,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_ef_pi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_points: int = 20,
         n_rotations: int = 1,
@@ -225,7 +225,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
@@ -249,7 +249,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_drag_amplitude(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | str | None = None,
         *,
         spectator_state: str = "0",
         pulse_type: Literal["pi", "hpi"],
@@ -269,7 +269,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str]
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
             Spectator state. Defaults to "0".
@@ -305,7 +305,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_drag_beta(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         spectator_state: str = "0",
         pulse_type: Literal["pi", "hpi"] = "hpi",
@@ -322,7 +322,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str]
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
             Spectator state. Defaults to "0".
@@ -352,7 +352,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_drag_hpi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         spectator_state: str = "0",
         n_points: int = 20,
@@ -374,7 +374,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
             Spectator state. Defaults to "0".
@@ -414,7 +414,7 @@ class CalibrationProtocol(Protocol):
 
     def calibrate_drag_pi_pulse(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         spectator_state: str = "0",
         n_points: int = 20,
@@ -436,7 +436,7 @@ class CalibrationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
             Spectator state. Defaults to "0".
