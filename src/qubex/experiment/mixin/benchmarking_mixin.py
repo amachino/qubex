@@ -599,8 +599,10 @@ class BenchmarkingMixin(
         )
         A_rb = rb_fit_result["A"]
         p_rb = rb_fit_result["p"]
+        p_rb_err = rb_fit_result["p_err"]
         C_rb = rb_fit_result["C"]
         avg_gate_fidelity_rb = rb_fit_result["avg_gate_fidelity"]
+        avg_gate_fidelity_err_rb = rb_fit_result["avg_gate_fidelity_err"]
 
         irb_mean = np.mean(irb_results, axis=0)
         irb_std = np.std(irb_results, axis=0)
@@ -615,12 +617,20 @@ class BenchmarkingMixin(
         )
         A_irb = irb_fit_result["A"]
         p_irb = irb_fit_result["p"]
+        p_irb_err = irb_fit_result["p_err"]
         C_irb = irb_fit_result["C"]
         avg_gate_fidelity_irb = irb_fit_result["avg_gate_fidelity"]
+        avg_gate_fidelity_err_irb = irb_fit_result["avg_gate_fidelity_err"]
 
         dimension = 4 if is_2q else 2
         gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
         gate_fidelity = 1 - gate_error
+
+        gate_fidelity_err = (
+            (dimension - 1)
+            / dimension
+            * np.sqrt((p_irb_err / p_rb) ** 2 + (p_rb_err * p_irb / p_rb**2) ** 2)
+        )
 
         fig = fitting.plot_irb(
             target=target,
@@ -636,6 +646,7 @@ class BenchmarkingMixin(
             C_rb=C_rb,
             C_irb=C_irb,
             gate_fidelity=gate_fidelity,
+            gate_fidelity_err=gate_fidelity_err,
             plot=plot,
             title="Interleaved randomized benchmarking",
             xlabel="Number of Cliffords",
@@ -648,8 +659,12 @@ class BenchmarkingMixin(
             )
 
         print()
-        print(f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.3f}%")
-        print(f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.3f}%")
+        print(
+            f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.3f} ± {avg_gate_fidelity_err_rb * 100:.3f}%"
+        )
+        print(
+            f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.3f} ± {avg_gate_fidelity_err_irb * 100:.3f}%"
+        )
         print()
         print(f"Gate error    : {gate_error * 100:.3f}%")
         print(f"Gate fidelity : {gate_fidelity * 100:.3f}%")
@@ -658,6 +673,7 @@ class BenchmarkingMixin(
         return {
             "gate_error": gate_error,
             "gate_fidelity": gate_fidelity,
+            "gate_fidelity_err": gate_fidelity_err,
             "rb_fit_result": rb_fit_result,
             "irb_fit_result": irb_fit_result,
             "fig": fig,

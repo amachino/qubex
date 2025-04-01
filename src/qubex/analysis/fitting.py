@@ -1829,6 +1829,7 @@ def plot_irb(
     C_rb: float,
     C_irb: float,
     gate_fidelity: float,
+    gate_fidelity_err: float,
     plot: bool = True,
     title: str = "Interleaved randomized benchmarking",
     xlabel: str = "Number of Cliffords",
@@ -1853,10 +1854,22 @@ def plot_irb(
         Error data for the decay.
     error_y_irb : NDArray[np.float64]
         Error data for the interleaved decay.
+    A_rb : float
+        Amplitude of the randomized benchmarking.
+    A_irb : float
+        Amplitude of the interleaved randomized benchmarking.
     p_rb : float
         Depolarizing parameter of the randomized benchmarking.
     p_irb : float
         Depolarizing parameter of the interleaved randomized benchmarking.
+    C_rb : float
+        Offset of the randomized benchmarking.
+    C_irb : float
+        Offset of the interleaved randomized benchmarking.
+    gate_fidelity : float
+        Gate fidelity of the randomized benchmarking.
+    gate_fidelity_err : float
+        Error in the gate fidelity of the randomized benchmarking.
     plot : bool, optional
         Whether to plot the data and the fit.
     title : str, optional
@@ -1922,7 +1935,7 @@ def plot_irb(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"F = {gate_fidelity * 100:.3f}%",
+        text=f"F = {gate_fidelity * 100:.3f} ± {gate_fidelity_err * 100:.3f}%",
         showarrow=False,
     )
     fig.update_layout(
