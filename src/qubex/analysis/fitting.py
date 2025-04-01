@@ -1771,7 +1771,7 @@ def fit_rb(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"F = {avg_gate_fidelity * 100:.3f} ± {avg_gate_fidelity_err * 100:.3f}%",
+        text=f"F = {avg_gate_fidelity * 100:.2f} ± {avg_gate_fidelity_err * 100:.2f}%",
         showarrow=False,
     )
     fig.update_layout(
@@ -1935,7 +1935,7 @@ def plot_irb(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"F = {gate_fidelity * 100:.3f} ± {gate_fidelity_err * 100:.3f}%",
+        text=f"F = {gate_fidelity * 100:.2f} ± {gate_fidelity_err * 100:.2f}%",
         showarrow=False,
     )
     fig.update_layout(
