@@ -46,6 +46,8 @@ class CalibrationMixin(
         targets: Collection[str] | str | None = None,
         *,
         pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
+        ramptime: float | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -67,17 +69,17 @@ class CalibrationMixin(
         def calibrate(target: str) -> AmplCalibData:
             if pulse_type == "hpi":
                 pulse = FlatTop(
-                    duration=HPI_DURATION,
+                    duration=duration if duration is not None else HPI_DURATION,
                     amplitude=1,
-                    tau=HPI_RAMPTIME,
+                    tau=ramptime if ramptime is not None else HPI_RAMPTIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
             elif pulse_type == "pi":
                 pulse = FlatTop(
-                    duration=PI_DURATION,
+                    duration=duration if duration is not None else PI_DURATION,
                     amplitude=1,
-                    tau=PI_RAMPTIME,
+                    tau=ramptime if ramptime is not None else PI_RAMPTIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -168,6 +170,8 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        duration: float | None = None,
+        ramptime: float | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -178,6 +182,8 @@ class CalibrationMixin(
         return self.calibrate_default_pulse(
             targets=targets,
             pulse_type="hpi",
+            duration=duration,
+            ramptime=ramptime,
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
@@ -189,6 +195,9 @@ class CalibrationMixin(
     def calibrate_pi_pulse(
         self,
         targets: Collection[str] | str | None = None,
+        *,
+        duration: float | None = None,
+        ramptime: float | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -199,6 +208,8 @@ class CalibrationMixin(
         return self.calibrate_default_pulse(
             targets=targets,
             pulse_type="pi",
+            duration=duration,
+            ramptime=ramptime,
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
@@ -212,6 +223,8 @@ class CalibrationMixin(
         targets: Collection[str] | str | None = None,
         *,
         pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
+        ramptime: float | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -240,17 +253,17 @@ class CalibrationMixin(
 
             if pulse_type == "hpi":
                 pulse = FlatTop(
-                    duration=HPI_DURATION,
+                    duration=duration if duration is not None else HPI_DURATION,
                     amplitude=1,
-                    tau=HPI_RAMPTIME,
+                    tau=ramptime if ramptime is not None else HPI_RAMPTIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.25 / area
             elif pulse_type == "pi":
                 pulse = FlatTop(
-                    duration=PI_DURATION,
+                    duration=duration if duration is not None else PI_DURATION,
                     amplitude=1,
-                    tau=PI_RAMPTIME,
+                    tau=ramptime if ramptime is not None else PI_RAMPTIME,
                 )
                 area = pulse.real.sum() * pulse.SAMPLING_PERIOD
                 rabi_rate = 0.5 / area
@@ -345,6 +358,8 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        duration: float | None = None,
+        ramptime: float | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -355,6 +370,8 @@ class CalibrationMixin(
         return self.calibrate_ef_pulse(
             targets=targets,
             pulse_type="hpi",
+            duration=duration,
+            ramptime=ramptime,
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
@@ -366,6 +383,8 @@ class CalibrationMixin(
     def calibrate_ef_pi_pulse(
         self,
         targets: Collection[str] | str | None = None,
+        duration: float | None = None,
+        ramptime: float | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -376,6 +395,8 @@ class CalibrationMixin(
         return self.calibrate_ef_pulse(
             targets=targets,
             pulse_type="pi",
+            duration=duration,
+            ramptime=ramptime,
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
@@ -421,7 +442,7 @@ class CalibrationMixin(
                     beta = -drag_coeff / self.qubits[target].alpha
 
                 pulse = Drag(
-                    duration=duration or DRAG_HPI_DURATION,
+                    duration=duration if duration is not None else DRAG_HPI_DURATION,
                     amplitude=1,
                     beta=beta,
                 )
@@ -441,7 +462,7 @@ class CalibrationMixin(
                     beta = -drag_coeff / self.qubits[target].alpha
 
                 pulse = Drag(
-                    duration=duration or DRAG_PI_DURATION,
+                    duration=duration if duration is not None else DRAG_PI_DURATION,
                     amplitude=1,
                     beta=beta,
                 )
@@ -1543,7 +1564,7 @@ class CalibrationMixin(
         print(f"  DD amplitude     : {decoupling_amplitude:.6f}")
         print()
         if plot:
-            zx90 = self.zx90(control_qubit, target_qubit)
+            zx90 = self.zx90(control_qubit, target_qubit, x180=x180)
             zx90.plot(
                 title=f"ZX90 sequence : {cr_label}",
                 show_physical_pulse=True,
