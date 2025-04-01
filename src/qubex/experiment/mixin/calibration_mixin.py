@@ -1193,7 +1193,7 @@ class CalibrationMixin(
         print()
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        duration = 0.5 * result["zx90_duration"]
+        duration = (0.5 * result["zx90_duration"]) // SAMPLING_PERIOD * SAMPLING_PERIOD
 
         decouple_amplitude = self.calc_control_amplitude(
             target=target_qubit,
