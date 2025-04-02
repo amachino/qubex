@@ -26,6 +26,7 @@ from ...measurement import (
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
 from ...pulse import (
     Blank,
+    FlatTop,
     PhaseShift,
     Pulse,
     PulseArray,
@@ -343,6 +344,7 @@ class MeasurementMixin(
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
+        ramptime: float | None = None,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
         is_damped: bool = True,
@@ -369,6 +371,7 @@ class MeasurementMixin(
             result = self.rabi_experiment(
                 amplitudes=amplitudes,
                 time_range=time_range,
+                ramptime=ramptime,
                 frequencies=frequencies,
                 is_damped=is_damped,
                 shots=shots,
@@ -383,6 +386,7 @@ class MeasurementMixin(
                 data = self.rabi_experiment(
                     amplitudes={target: amplitudes[target]},
                     time_range=time_range,
+                    ramptime=ramptime,
                     frequencies=frequencies,
                     is_damped=is_damped,
                     shots=shots,
@@ -449,6 +453,7 @@ class MeasurementMixin(
         *,
         amplitudes: dict[str, float],
         time_range: ArrayLike = RABI_TIME_RANGE,
+        ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
         is_damped: bool = True,
@@ -463,6 +468,12 @@ class MeasurementMixin(
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
+        if ramptime is None:
+            # TODO: Fix fit_rabi to support ramptime
+            ramptime = 0.0
+
+        effective_time_range = time_range + ramptime
+
         # target frequencies
         if frequencies is None:
             frequencies = {
@@ -473,7 +484,14 @@ class MeasurementMixin(
         def rabi_sequence(T: int) -> PulseSchedule:
             with PulseSchedule(targets) as ps:
                 for target in targets:
-                    ps.add(target, Rect(duration=T, amplitude=amplitudes[target]))
+                    ps.add(
+                        target,
+                        FlatTop(
+                            duration=T + 2 * ramptime,
+                            amplitude=amplitudes[target],
+                            tau=ramptime,
+                        ),
+                    )
             return ps
 
         # detune target frequencies if necessary
@@ -500,7 +518,7 @@ class MeasurementMixin(
         for target, data in sweep_data.items():
             fit_result = fitting.fit_rabi(
                 target=data.target,
-                times=data.sweep_range,
+                times=effective_time_range,
                 data=data.data,
                 plot=plot,
                 is_damped=is_damped,
@@ -516,7 +534,7 @@ class MeasurementMixin(
             target: RabiData(
                 target=target,
                 data=data.data,
-                time_range=time_range,
+                time_range=effective_time_range,
                 rabi_param=rabi_params[target],
                 state_centers=self.state_centers.get(target),
             )
