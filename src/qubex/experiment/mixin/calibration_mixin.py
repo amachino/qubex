@@ -1367,9 +1367,7 @@ class CalibrationMixin(
         *,
         ramptime: float = 16.0,
         duration: float | None = None,
-        min_amplitude: float | None = None,
-        max_amplitude: float | None = None,
-        n_points: int = 40,
+        amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
         degree: int = 3,
         decoupling_amplitude: float | None = None,
@@ -1436,15 +1434,14 @@ class CalibrationMixin(
                 ps.call(ecr)
             return ps
 
-        def calibrate(
-            n_repetitions: int,
-            min_amplitude: float,
-            max_amplitude: float,
-            n_points: int,
-        ) -> dict:
-            min_amplitude = np.clip(min_amplitude, 0.0, 1.0)
-            max_amplitude = np.clip(max_amplitude, 0.0, 1.0)
-            amplitude_range = np.linspace(min_amplitude, max_amplitude, n_points)
+        def calibrate(n_repetitions, amplitude_range) -> dict:
+            min_amplitude = np.clip(amplitude_range[0], 0.0, 1.0)
+            max_amplitude = np.clip(amplitude_range[-1], 0.0, 1.0)
+            amplitude_range = np.linspace(
+                min_amplitude,
+                max_amplitude,
+                len(amplitude_range),
+            )
 
             sweep_result = self.sweep_parameter(
                 lambda x: ecr_sequence(x, n_repetitions),
@@ -1481,37 +1478,34 @@ class CalibrationMixin(
                 "fit_result": fit_result,
             }
 
-        if min_amplitude is None or max_amplitude is None:
+        if amplitude_range is None:
             print(f"Estimating CR amplitude of {cr_label} (n_repetitions = 1)")
             rough_result = calibrate(
                 n_repetitions=1,
-                min_amplitude=0.0,
-                max_amplitude=cr_amplitude * 2,
-                n_points=20,
+                amplitude_range=np.linspace(0.0, cr_amplitude * 2, 20),
             )
-            rough_amplitude: float = rough_result["root"]
+            rough_amplitude = rough_result["root"]
             if rough_amplitude is None:
                 raise ValueError("Could not find a root for the rough calibration.")
-            min_amplitude = rough_amplitude * 0.8
-            max_amplitude = rough_amplitude * 1.2
+            else:
+                min_amplitude = float(rough_amplitude * 0.8)
+                max_amplitude = float(rough_amplitude * 1.2)
+                amplitude_range = np.linspace(min_amplitude, max_amplitude, 40)
+        else:
+            amplitude_range = np.asarray(amplitude_range)
 
         print(f"Calibrating CR amplitude of {cr_label} (n_repetitions = 1)")
         result_n1 = calibrate(
             n_repetitions=1,
-            min_amplitude=min_amplitude,
-            max_amplitude=max_amplitude,
-            n_points=n_points,
+            amplitude_range=amplitude_range,
         )
-        amplitude_range = result_n1["amplitude_range"]
         signal_n1 = result_n1["signal"]
         fit_result_n1 = result_n1["fit_result"]
 
         print(f"Calibrating CR amplitude of {cr_label} (n_repetitions = 3)")
         result_n3 = calibrate(
             n_repetitions=3,
-            min_amplitude=min_amplitude,
-            max_amplitude=max_amplitude,
-            n_points=n_points,
+            amplitude_range=amplitude_range,
         )
         signal_n3 = result_n3["signal"]
         fit_result_n3 = result_n3["fit_result"]
