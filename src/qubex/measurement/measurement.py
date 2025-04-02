@@ -922,6 +922,12 @@ class Measurement:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
+        sequence_duration = (schedule.duration // MIN_DURATION + 1) * MIN_DURATION
+        schedule = schedule.padded(
+            total_duration=sequence_duration,
+            pad_side="left",
+        )
+
         # get sampled sequences
         sampled_sequences = schedule.get_sampled_sequences()
 

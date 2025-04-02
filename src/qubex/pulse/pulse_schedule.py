@@ -228,6 +228,31 @@ class PulseSchedule:
         """
         return deepcopy(self)
 
+    def padded(
+        self,
+        total_duration: float,
+        pad_side: Literal["right", "left"] = "right",
+    ) -> PulseSchedule:
+        """
+        Returns a copy of the pulse schedule with zero padding.
+
+        Parameters
+        ----------
+        total_duration : float
+            Total duration of the pulse schedule in ns.
+        pad_side : {"right", "left"}, optional
+            Side of the zero padding.
+        """
+        duration = total_duration - self.duration
+        if duration < 0:
+            raise ValueError(
+                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
+            )
+        with PulseSchedule() as new_sched:
+            for label, channel in self._channels.items():
+                new_sched.add(label, channel.sequence.padded(total_duration, pad_side))
+        return new_sched
+
     def scaled(self, scale: float) -> PulseSchedule:
         """
         Returns a scaled pulse schedule.
