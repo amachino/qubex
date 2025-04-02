@@ -968,6 +968,8 @@ class CalibrationMixin(
         if cancel_phase is None:
             cancel_phase = 0.0
 
+        effective_drive_range = time_range + ramptime
+
         result_0 = self.measure_cr_dynamics(
             time_range=time_range,
             ramptime=ramptime,
@@ -983,6 +985,35 @@ class CalibrationMixin(
             shots=shots,
             interval=interval,
         )
+
+        control_states_0 = result_0["control_states"]
+        target_states_0 = result_0["target_states"]
+
+        fit_0 = fitting.fit_rotation(
+            effective_drive_range,
+            target_states_0,
+            plot=False,
+            title=f"Target qubit dynamics of {cr_label} : |0〉",
+            xlabel="Drive time (ns)",
+            ylabel=f"Expectation value : {target_qubit}",
+        )
+
+        if plot:
+            print("Control = |0〉")
+            print(f"Control qubit : {control_qubit}")
+            viz.plot_bloch_vectors(
+                effective_drive_range,
+                control_states_0,
+                title=f"Control qubit dynamics of {cr_label} : |0〉",
+                xlabel="Drive time (ns)",
+                ylabel=f"Expectation value : {control_qubit}",
+            )
+            viz.display_bloch_sphere(control_states_0)
+
+            print(f"Target qubit : {target_qubit}")
+            fit_0["fig"].show()
+            fit_0["fig3d"].show()
+            viz.display_bloch_sphere(target_states_0)
 
         result_1 = self.measure_cr_dynamics(
             time_range=time_range,
@@ -1000,30 +1031,35 @@ class CalibrationMixin(
             interval=interval,
         )
 
-        target_states_0 = result_0["target_states"]
+        control_states_1 = result_1["control_states"]
         target_states_1 = result_1["target_states"]
 
-        effective_drive_range = time_range + ramptime
-
-        fit_0 = fitting.fit_rotation(
-            effective_drive_range,
-            target_states_0,
-            plot=plot,
-            title=f"Cross resonance dynamics of {cr_label} : control = |0〉",
-            xlabel="Drive time (ns)",
-            ylabel="Bloch vector",
-        )
         fit_1 = fitting.fit_rotation(
             effective_drive_range,
             target_states_1,
-            plot=plot,
-            title=f"Cross resonance dynamics of {cr_label} : control = |1〉",
+            plot=False,
+            title=f"Target qubit dynamics of {cr_label} : |1〉",
             xlabel="Drive time (ns)",
-            ylabel="Bloch vector",
+            ylabel=f"Expectation value : {target_qubit}",
         )
+
         if plot:
-            viz.display_bloch_sphere(target_states_0)
+            print("Control = |1〉")
+            print(f"Target qubit : {control_qubit}")
+            viz.plot_bloch_vectors(
+                effective_drive_range,
+                control_states_1,
+                title=f"Control qubit dynamics of {cr_label} : |1〉",
+                xlabel="Drive time (ns)",
+                ylabel=f"Expectation value : {control_qubit}",
+            )
+            viz.display_bloch_sphere(control_states_1)
+
+            print(f"Target qubit : {target_qubit}")
+            fit_1["fig"].show()
+            fit_1["fig3d"].show()
             viz.display_bloch_sphere(target_states_1)
+
         Omega_0 = fit_0["Omega"]
         Omega_1 = fit_1["Omega"]
         Omega = np.concatenate(
