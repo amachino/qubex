@@ -286,6 +286,117 @@ def func_resonance(
     return A * np.exp(1j * phi) * (numerator / denominator)
 
 
+def fit_linear(
+    x: ArrayLike,
+    y: ArrayLike,
+    *,
+    intercept: bool = False,
+    plot: bool = True,
+    target: str | None = None,
+    title: str = "Linear fit",
+    xlabel: str = "x",
+    ylabel: str = "y",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> dict:
+    """
+    Fit data to a linear function y = a * x.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        x values for the data.
+    y : ArrayLike
+        y values for the data.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    def func_linear(x, a):
+        return a * x
+
+    def func_linear_with_intercept(x, a, b):
+        return a * x + b
+
+    if not intercept:
+        popt, pcov = curve_fit(func_linear, x, y)
+        a = popt[0]
+        a_err = np.sqrt(np.diag(pcov))[0]
+        r2 = 1 - np.sum((y - func_linear(x, *popt)) ** 2) / np.sum(
+            (y - np.mean(y)) ** 2
+        )
+    else:
+        popt, pcov = curve_fit(func_linear_with_intercept, x, y)
+        a, b = popt
+        a_err, b_err = np.sqrt(np.diag(pcov))
+        r2 = 1 - np.sum((y - func_linear_with_intercept(x, *popt)) ** 2) / np.sum(
+            (y - np.mean(y)) ** 2
+        )
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    if not intercept:
+        y_fine = func_linear(x_fine, *popt)
+    else:
+        y_fine = func_linear_with_intercept(x_fine, *popt)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.update_layout(
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        filename = f"fit_linear_{target}" if target else "fit_linear"
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            print(f"Target: {target}")
+        if not intercept:
+            print("Fit: a * x")
+            print(f"  a = {a:.3g} ± {a_err:.1g}")
+        else:
+            print("Fit: a * x + b")
+            print(f"  a = {a:.3g} ± {a_err:.1g}")
+            print(f"  b = {b:.3g} ± {b_err:.1g}")
+        print(f"  R² = {r2:.3f}")
+        print("")
+
+    return {
+        "a": a,
+        "a_err": a_err,
+        "b": b if intercept else None,
+        "b_err": b_err if intercept else None,
+        "r2": r2,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
+
+
 def fit_polynomial(
     x: ArrayLike,
     y: ArrayLike,

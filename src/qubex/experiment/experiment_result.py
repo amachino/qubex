@@ -781,10 +781,9 @@ class AmplRabiData(TargetData):
         fig.show()
 
     def fit(self) -> dict:
-        return fitting.fit_polynomial(
+        return fitting.fit_linear(
             self.sweep_range,
             self.data,
-            degree=1,
             title=f"Rabi rate vs drive amplitude : {self.target}",
             xlabel="Drive amplitude (arb. units)",
             ylabel="Rabi rate (MHz)",

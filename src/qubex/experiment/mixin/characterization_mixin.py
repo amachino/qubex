@@ -577,10 +577,7 @@ class CharacterizationMixin(
         }
         result = ExperimentResult(data=data)
         if plot:
-            fit_result = result.fit()
-            for target, data in fit_result.items():
-                popt = data["popt"]
-                print(f"{target} : {popt}")
+            result.fit()
         return result
 
     def calibrate_control_frequency(
