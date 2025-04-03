@@ -335,16 +335,10 @@ class BenchmarkingMixin(
                 plot=False,
             )
             if mitigate_readout:
-                probabilities = result.get_probabilities([control_qubit, target_qubit])
-                prob = np.array(list(probabilities.values()))
-                cm_inv = self.get_inverse_confusion_matrix(
-                    [control_qubit, target_qubit]
-                )
-                prob_mitigated = prob @ cm_inv
-                p00 = prob_mitigated[0]
+                prob = result.get_mitigated_probabilities([control_qubit, target_qubit])
             else:
-                p00 = probabilities["00"]
-            fidelities.append(p00)
+                prob = result.get_probabilities([control_qubit, target_qubit])
+            fidelities.append(prob["00"])
 
         fit_result = fitting.fit_rb(
             target=target,

@@ -1154,7 +1154,9 @@ class MeasurementMixin(
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
-        with PulseSchedule([control_qubit, target_qubit]) as ps:
+        pair = [control_qubit, target_qubit]
+
+        with PulseSchedule(pair) as ps:
             # prepare |+⟩|0⟩
             ps.add(control_qubit, self.y90(control_qubit))
 
@@ -1186,25 +1188,25 @@ class MeasurementMixin(
             interval=interval,
         )
 
-        probabilities = result.get_probabilities([control_qubit, target_qubit])
-        labels = [f"|{i}⟩" for i in probabilities.keys()]
-        prob = np.array(list(probabilities.values()))
-        cm_inv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
+        prob_dict_raw = result.get_probabilities(pair)
+        prob_dict_mitigated = result.get_mitigated_probabilities(pair)
 
-        mitigated_prob = prob @ cm_inv
+        labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
+        prob_arr_raw = np.array(list(prob_dict_raw.values()))
+        prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
 
         fig = go.Figure()
         fig.add_trace(
             go.Bar(
                 x=labels,
-                y=prob,
+                y=prob_arr_raw,
                 name="Raw",
             )
         )
         fig.add_trace(
             go.Bar(
                 x=labels,
-                y=mitigated_prob,
+                y=prob_arr_mitigated,
                 name="Mitigated",
             )
         )
@@ -1218,7 +1220,7 @@ class MeasurementMixin(
         if plot:
             fig.show()
 
-            for label, p, mp in zip(labels, prob, mitigated_prob):
+            for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
                 print(f"{label} : {p:.2%} -> {mp:.2%}")
 
         if save_image:
@@ -1228,8 +1230,8 @@ class MeasurementMixin(
             )
 
         return {
-            "raw": prob,
-            "mitigated": mitigated_prob,
+            "raw": prob_arr_raw,
+            "mitigated": prob_arr_mitigated,
             "result": result,
             "figure": fig,
         }
