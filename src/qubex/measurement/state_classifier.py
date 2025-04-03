@@ -16,7 +16,7 @@ class StateClassifier(ABC):
     A protocol for state classifiers.
     """
 
-    dataset: dict[int, NDArray[np.float32]]
+    dataset: dict[int, NDArray[np.floating[Any]]]
     model: Any
     label_map: dict[int, int]
     confusion_matrix: NDArray
@@ -93,7 +93,7 @@ class StateClassifier(ABC):
     @abstractmethod
     def fit(
         cls,
-        data: dict[int, NDArray[np.complex64]],
+        data: dict[int, NDArray[np.complexfloating[Any, Any]]],
         n_init: int = 10,
         random_state: int = 42,
     ) -> StateClassifier:
@@ -102,7 +102,7 @@ class StateClassifier(ABC):
 
         Parameters
         ----------
-        data : dict[int, NDArray[np.complex64]]
+        data : dict[int, NDArray[np.complexfloating[Any, Any]]]
             A dictionary of state labels and complex data.
         n_init : int, optional
             Number of time the k-means algorithm will be run with different center seeds, by default 10.
@@ -119,19 +119,19 @@ class StateClassifier(ABC):
     @abstractmethod
     def predict(
         self,
-        data: NDArray[np.complex128],
-    ) -> NDArray:
+        data: NDArray[np.complexfloating[Any, Any]] | np.complexfloating[Any, Any],
+    ) -> NDArray[np.integer[Any]]:
         """
         Predict the state labels for the provided data.
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray[np.complexfloating[Any, Any]]
             An array of complex numbers representing the data to classify.
 
         Returns
         -------
-        NDArray
+        NDArray[np.integer[Any]]
             An array of predicted state labels based on the fitted model.
         """
         raise NotImplementedError
@@ -140,7 +140,7 @@ class StateClassifier(ABC):
     def classify(
         self,
         target: str,
-        data: NDArray[np.complex128],
+        data: NDArray[np.complexfloating[Any, Any]],
         plot: bool = True,
     ) -> dict[int, int]:
         """
@@ -148,7 +148,7 @@ class StateClassifier(ABC):
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray[np.complexfloating[Any, Any]]
             An array of complex numbers representing the data to classify.
         plot : bool, optional
             A flag to plot the data and predicted labels, by default True.
@@ -164,7 +164,7 @@ class StateClassifier(ABC):
     def plot(
         self,
         target: str,
-        data: NDArray[np.complex128],
+        data: NDArray[np.complexfloating[Any, Any]],
         labels: NDArray,
         n_samples: int = 1000,
     ):
@@ -173,7 +173,7 @@ class StateClassifier(ABC):
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray[np.complexfloating[Any, Any]]
             An array of complex numbers representing the data.
         labels : NDArray
             An array of predicted state labels.

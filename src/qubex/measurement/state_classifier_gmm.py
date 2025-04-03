@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
@@ -235,19 +236,19 @@ class StateClassifierGMM(StateClassifier):
 
     def predict(
         self,
-        data: NDArray[np.complex128],
-    ) -> NDArray:
+        data: NDArray[np.complexfloating[Any, Any]] | np.complexfloating[Any, Any],
+    ) -> NDArray[np.integer[Any]]:
         """
         Predict the state labels for the provided data.
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray[np.complexfloating[Any, Any]] | np.complexfloating[Any, Any]
             An array of complex numbers representing the data to classify.
 
         Returns
         -------
-        NDArray
+        NDArray[np.integer[Any]]
             An array of predicted state labels based on the fitted model.
         """
         # Scale data
@@ -264,7 +265,7 @@ class StateClassifierGMM(StateClassifier):
     def classify(
         self,
         target: str,
-        data: NDArray[np.complex128],
+        data: NDArray[np.complexfloating[Any, Any]],
         plot: bool = True,
     ) -> dict[int, int]:
         """
@@ -272,7 +273,7 @@ class StateClassifierGMM(StateClassifier):
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray[np.complexfloating[Any, Any]]
             An array of complex numbers representing the data to classify.
         plot : bool, optional
             A flag to plot the data and predicted labels, by default True.
@@ -292,7 +293,7 @@ class StateClassifierGMM(StateClassifier):
     def plot(
         self,
         target: str,
-        data: NDArray[np.complex128],
+        data: NDArray[np.complexfloating[Any, Any]],
         labels: NDArray,
         n_samples: int = 1000,
     ):
@@ -301,7 +302,7 @@ class StateClassifierGMM(StateClassifier):
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray[np.complexfloating[Any, Any]],
             An array of complex numbers representing the data.
         labels : NDArray
             An array of predicted state labels.

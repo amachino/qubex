@@ -4,13 +4,14 @@ from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property
-from typing import Collection
+from typing import Any, Collection
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ..analysis import visualization as viz
 from ..backend import SAMPLING_PERIOD
+from .state_classifier import StateClassifier
 
 SAMPLING_PERIOD_SINGLE = SAMPLING_PERIOD
 SAMPLING_PERIOD_AVG = SAMPLING_PERIOD * 4
@@ -34,10 +35,36 @@ class MeasureMode(Enum):
 class MeasureData:
     target: str
     mode: MeasureMode
-    raw: NDArray
-    kerneled: NDArray
-    classified: NDArray
-    n_states: int | None = None
+    raw: NDArray[np.complexfloating[Any, Any]]
+    classifier: StateClassifier | None = None
+
+    @cached_property
+    def n_states(self) -> int | None:
+        if self.classifier is not None:
+            return self.classifier.n_states
+        else:
+            return None
+
+    @cached_property
+    def kerneled(
+        self,
+    ) -> NDArray[np.complexfloating[Any, Any]] | np.complexfloating[Any, Any]:
+        if self.mode == MeasureMode.SINGLE:
+            return np.mean(self.raw, axis=1)
+        elif self.mode == MeasureMode.AVG:
+            return np.mean(self.raw)
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+    @cached_property
+    def classified(self) -> NDArray[np.integer[Any]]:
+        if self.mode == MeasureMode.SINGLE:
+            if self.classifier is not None:
+                return self.classifier.predict(self.kerneled)
+            else:
+                raise ValueError("Classifier is not set")
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
     @cached_property
     def length(self) -> int:
@@ -84,7 +111,7 @@ class MeasureData:
     ):
         if self.mode == MeasureMode.SINGLE:
             return viz.scatter_iq_data(
-                data={self.target: self.kerneled},
+                data={self.target: np.asarray(self.kerneled)},
                 title=title or f"Readout IQ data : {self.target}",
                 return_figure=return_figure,
                 save_image=save_image,
@@ -184,7 +211,9 @@ class MeasureResult:
         save_image: bool = False,
     ):
         if self.mode == MeasureMode.SINGLE:
-            data = {qubit: data.kerneled for qubit, data in self.data.items()}
+            data = {
+                qubit: np.asarray(data.kerneled) for qubit, data in self.data.items()
+            }
             return viz.scatter_iq_data(
                 data=data,
                 return_figure=return_figure,
