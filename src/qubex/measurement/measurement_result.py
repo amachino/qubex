@@ -163,6 +163,14 @@ class MeasureResult:
     def standard_deviations(self) -> dict[str, float]:
         return self.get_standard_deviations()
 
+    @cached_property
+    def mitigated_counts(self) -> dict[str, int]:
+        return self.get_mitigated_counts()
+
+    @cached_property
+    def mitigated_probabilities(self) -> dict[str, float]:
+        return self.get_mitigated_probabilities()
+
     def get_basis_indices(
         self,
         targets: Collection[str] | None = None,
@@ -258,15 +266,35 @@ class MeasureResult:
         confusion_matrix = self.get_confusion_matrix(targets)
         return np.linalg.inv(confusion_matrix)
 
-    def get_mitigated_counts(self, targets: Collection[str]) -> NDArray:
-        counts = self.get_counts(targets)
+    def get_mitigated_counts(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, int]:
+        if targets is None:
+            targets = self.data.keys()
+        raw = self.get_counts(targets)
         cm_inv = self.get_inverse_confusion_matrix(targets)
-        return np.array(list(counts.values())) @ cm_inv
+        mitigated = np.array(list(raw.values())) @ cm_inv
+        basis_labels = self.get_basis_labels(targets)
+        mitigated_counts = {
+            basis_label: int(mitigated[i]) for i, basis_label in enumerate(basis_labels)
+        }
+        return mitigated_counts
 
-    def get_mitigated_probabilities(self, targets: Collection[str]) -> NDArray:
-        probabilities = self.get_probabilities(targets)
+    def get_mitigated_probabilities(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, float]:
+        if targets is None:
+            targets = self.data.keys()
+        raw = self.get_probabilities(targets)
         cm_inv = self.get_inverse_confusion_matrix(targets)
-        return np.array(list(probabilities.values())) @ cm_inv
+        mitigated = np.array(list(raw.values())) @ cm_inv
+        basis_labels = self.get_basis_labels(targets)
+        mitigated_probabilities = {
+            basis_label: mitigated[i] for i, basis_label in enumerate(basis_labels)
+        }
+        return mitigated_probabilities
 
     def plot(
         self,
