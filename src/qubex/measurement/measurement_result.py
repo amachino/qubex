@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
+from functools import cached_property
 from typing import Collection
 
 import numpy as np
@@ -19,7 +20,7 @@ class MeasureMode(Enum):
     SINGLE = "single"
     AVG = "avg"
 
-    @property
+    @cached_property
     def integral_mode(self) -> str:
         if self == MeasureMode.SINGLE:
             return "single"
@@ -38,11 +39,11 @@ class MeasureData:
     classified: NDArray
     n_states: int | None = None
 
-    @property
+    @cached_property
     def length(self) -> int:
         return len(self.raw)
 
-    @property
+    @cached_property
     def times(self) -> NDArray[np.float64]:
         if self.mode == MeasureMode.SINGLE:
             return np.arange(self.length) * SAMPLING_PERIOD_SINGLE
@@ -51,7 +52,7 @@ class MeasureData:
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
-    @property
+    @cached_property
     def counts(self) -> dict[str, int]:
         if len(self.classified) == 0 or self.n_states is None:
             raise ValueError("No classification data available")
@@ -60,14 +61,14 @@ class MeasureData:
         state = {str(label): count[label] for label in range(len(count))}
         return state
 
-    @property
+    @cached_property
     def probabilities(self) -> NDArray[np.float64]:
         if len(self.classified) == 0:
             raise ValueError("No classification data available")
         total = sum(self.counts.values())
         return np.array([count / total for count in self.counts.values()])
 
-    @property
+    @cached_property
     def standard_deviations(self) -> NDArray[np.float64]:
         if len(self.classified) == 0:
             raise ValueError("No classification data available")
@@ -123,15 +124,15 @@ class MeasureResult:
     data: dict[str, MeasureData]
     config: dict
 
-    @property
+    @cached_property
     def counts(self) -> dict[str, int]:
         return self.get_counts()
 
-    @property
+    @cached_property
     def probabilities(self) -> dict[str, float]:
         return self.get_probabilities()
 
-    @property
+    @cached_property
     def standard_deviations(self) -> dict[str, float]:
         return self.get_standard_deviations()
 

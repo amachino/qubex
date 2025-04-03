@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
@@ -16,7 +17,7 @@ from ..typing import TargetMap
 from .experiment_record import ExperimentRecord
 
 
-@dataclass
+@dataclass(frozen=True)
 class TargetData:
     """
     Data class representing some data of a target.
@@ -42,7 +43,7 @@ class TargetData:
 T = TypeVar("T", bound=TargetData)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExperimentResult(Generic[T]):
     """
     Data class representing the result of an experiment.
@@ -91,7 +92,7 @@ class ExperimentResult(Generic[T]):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class RabiData(TargetData):
     """
     Data class representing the result of a Rabi oscillation experiment.
@@ -114,17 +115,17 @@ class RabiData(TargetData):
     rabi_param: RabiParam
     state_centers: dict[int, complex] | None = None
 
-    @property
+    @cached_property
     def rotated(self) -> NDArray[np.complex128]:
         angle = self.rabi_param.angle
         return fitting.rotate(self.data, -angle)
 
-    @property
+    @cached_property
     def normalized(self) -> NDArray[np.float64]:
         param = self.rabi_param
         return fitting.normalize(self.data, param)
 
-    @property
+    @cached_property
     def zvalues(self) -> NDArray[np.float64]:
         if self.state_centers is None:
             raise ValueError("state_centers must be provided for zvalues.")
@@ -237,7 +238,7 @@ class RabiData(TargetData):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class SweepData(TargetData):
     """
     Data class representing the result of a sweep experiment.
@@ -275,21 +276,21 @@ class SweepData(TargetData):
     xaxis_type: str = "linear"
     yaxis_type: str = "linear"
 
-    @property
+    @cached_property
     def rotated(self) -> NDArray[np.complex128]:
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
         return self.data * np.exp(-1j * param.angle)
 
-    @property
+    @cached_property
     def normalized(self) -> NDArray[np.float64]:
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
         return fitting.normalize(self.data, param)
 
-    @property
+    @cached_property
     def zvalues(self) -> NDArray[np.float64]:
         if self.state_centers is None:
             raise ValueError("state_centers must be provided for zvalues.")
@@ -398,7 +399,7 @@ class SweepData(TargetData):
             return fig
 
 
-@dataclass
+@dataclass(frozen=True)
 class AmplCalibData(SweepData):
     """
     The relation between the control amplitude and the measured value.
@@ -462,7 +463,7 @@ class AmplCalibData(SweepData):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class T1Data(SweepData):
     """
     Data class representing the result of a T1 experiment.
@@ -535,7 +536,7 @@ class T1Data(SweepData):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class T2Data(SweepData):
     """
     Data class representing the result of a T2 experiment.
@@ -606,7 +607,7 @@ class T2Data(SweepData):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class RamseyData(SweepData):
     """
     Data class representing the result of a Ramsey experiment.
@@ -679,7 +680,7 @@ class RamseyData(SweepData):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class RBData(SweepData):
     """
     Data class representing the result of a randomized benchmarking
@@ -747,7 +748,7 @@ class RBData(SweepData):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class AmplRabiData(TargetData):
     """
     The relation between the drive amplitude and the Rabi rate.
@@ -790,7 +791,7 @@ class AmplRabiData(TargetData):
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class FreqRabiData(TargetData):
     """
     The relation between the drive frequency and the Rabi rate.
