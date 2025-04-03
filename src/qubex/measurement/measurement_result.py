@@ -39,11 +39,11 @@ class MeasureData:
     classifier: StateClassifier | None = None
 
     @cached_property
-    def n_states(self) -> int | None:
-        if self.classifier is not None:
-            return self.classifier.n_states
+    def n_states(self) -> int:
+        if self.classifier is None:
+            raise ValueError("Classifier is not set")
         else:
-            return None
+            return self.classifier.n_states
 
     @cached_property
     def kerneled(
@@ -81,7 +81,7 @@ class MeasureData:
 
     @cached_property
     def counts(self) -> dict[str, int]:
-        if len(self.classified) == 0 or self.n_states is None:
+        if len(self.classified) == 0:
             raise ValueError("No classification data available")
         classified_labels = self.classified
         count = np.bincount(classified_labels, minlength=self.n_states)
@@ -163,6 +163,24 @@ class MeasureResult:
     def standard_deviations(self) -> dict[str, float]:
         return self.get_standard_deviations()
 
+    def get_basis_indices(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> list[tuple[int, ...]]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        if targets is None:
+            targets = self.data.keys()
+        dimensions = [self.data[target].n_states for target in targets]
+        return list(np.ndindex(*[dim for dim in dimensions]))
+
+    def get_basis_labels(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> list[str]:
+        basis_indices = self.get_basis_indices(targets)
+        return ["".join(str(i) for i in basis) for basis in basis_indices]
+
     def get_classified_data(
         self,
         targets: Collection[str] | None = None,
@@ -182,7 +200,10 @@ class MeasureResult:
             ["".join(map(str, row)) for row in classified_data]
         )
         counts = dict(Counter(classified_labels))
-        counts = dict(sorted(counts.items()))
+        basis_labels = self.get_basis_labels(targets)
+        counts = {
+            basis_label: counts.get(basis_label, 0) for basis_label in basis_labels
+        }
         return counts
 
     def get_probabilities(
