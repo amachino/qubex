@@ -406,6 +406,7 @@ class StateClassifierGMM(StateClassifier):
         self,
         data: NDArray,
         max_iter: int = 100,
+        tol: float = 1e-4,
     ) -> NDArray:
         """
         Parameters
@@ -422,7 +423,7 @@ class StateClassifierGMM(StateClassifier):
         """
         N = self.n_states
         scaled_data = np.column_stack([np.real(data), np.imag(data)]) * self.scale
-        weights = np.ones(len(self.means)) / N
+        weights = np.ones(N) / N
 
         # Expectation-Maximization (EM) algorithm
         for _ in range(max_iter):
@@ -433,7 +434,13 @@ class StateClassifierGMM(StateClassifier):
                     mean=self.means[k],
                     cov=self.covariances[k],
                 )
-            responsibilities /= responsibilities.sum(axis=1, keepdims=True)
-            weights = responsibilities.mean(axis=0)
+            resp_sum = responsibilities.sum(axis=1, keepdims=True)
+            resp_sum[resp_sum == 0] = 1e-12  # Avoid division by zero
+            responsibilities /= resp_sum
+
+            new_weights = responsibilities.mean(axis=0)
+            if np.allclose(weights, new_weights, atol=tol):
+                break
+            weights = new_weights
 
         return weights
