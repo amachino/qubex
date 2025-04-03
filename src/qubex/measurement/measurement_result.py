@@ -163,17 +163,21 @@ class MeasureResult:
     def standard_deviations(self) -> dict[str, float]:
         return self.get_standard_deviations()
 
-    def get_counts(
+    def get_classified_data(
         self,
         targets: Collection[str] | None = None,
-    ) -> dict[str, int]:
+    ) -> NDArray:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         if targets is None:
             targets = self.data.keys()
-        classified_data = np.column_stack(
-            [self.data[target].classified for target in targets]
-        )
+        return np.column_stack([self.data[target].classified for target in targets])
+
+    def get_counts(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> dict[str, int]:
+        classified_data = self.get_classified_data(targets)
         classified_labels = np.array(
             ["".join(map(str, row)) for row in classified_data]
         )
