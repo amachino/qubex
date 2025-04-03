@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
@@ -34,7 +33,7 @@ class StateClassifierGMM(StateClassifier):
         The center of each state.
     """
 
-    dataset: dict[int, NDArray[np.float32]]
+    dataset: dict[int, NDArray]
     model: GaussianMixture
     label_map: dict[int, int]
     confusion_matrix: NDArray
@@ -91,7 +90,7 @@ class StateClassifierGMM(StateClassifier):
     @classmethod
     def fit(
         cls,
-        data: dict[int, NDArray[np.complex64]],
+        data: dict[int, NDArray],
         n_init: int = 10,
         random_state: int = 42,
     ) -> StateClassifierGMM:
@@ -100,7 +99,7 @@ class StateClassifierGMM(StateClassifier):
 
         Parameters
         ----------
-        data : dict[int, NDArray[np.complex64]]
+        data : dict[int, NDArray]
             A dictionary of state labels and complex data.
         n_init : int, optional
             Number of initializations to perform, by default 10.
@@ -175,7 +174,7 @@ class StateClassifierGMM(StateClassifier):
     @staticmethod
     def _create_label_map(
         model: GaussianMixture,
-        dataset: dict[int, NDArray[np.float32]],
+        dataset: dict[int, NDArray],
     ) -> dict[int, int]:
         """
         Create a mapping from GMM component labels to state labels.
@@ -184,7 +183,7 @@ class StateClassifierGMM(StateClassifier):
         ----------
         model : GaussianMixture
             The fitted GMM model.
-        dataset : dict[int, NDArray[np.float32]]
+        dataset : dict[int, NDArray]
             The preprocessed dataset.
 
         Returns
@@ -206,7 +205,7 @@ class StateClassifierGMM(StateClassifier):
     @staticmethod
     def _create_confusion_matrix(
         model: GaussianMixture,
-        dataset: dict[int, NDArray[np.float32]],
+        dataset: dict[int, NDArray],
         label_map: dict[int, int],
     ) -> NDArray:
         """
@@ -216,7 +215,7 @@ class StateClassifierGMM(StateClassifier):
         ----------
         model : GaussianMixture
             The fitted GMM model.
-        dataset : dict[int, NDArray[np.float32]]
+        dataset : dict[int, NDArray]
             The preprocessed dataset.
         label_map : dict[int, int]
             A mapping from GMM component labels to state labels.
@@ -236,19 +235,19 @@ class StateClassifierGMM(StateClassifier):
 
     def predict(
         self,
-        data: NDArray[np.complexfloating[Any, Any]] | np.complexfloating[Any, Any],
-    ) -> NDArray[np.integer[Any]]:
+        data: NDArray,
+    ) -> NDArray:
         """
         Predict the state labels for the provided data.
 
         Parameters
         ----------
-        data : NDArray[np.complexfloating[Any, Any]] | np.complexfloating[Any, Any]
+        data : NDArray
             An array of complex numbers representing the data to classify.
 
         Returns
         -------
-        NDArray[np.integer[Any]]
+        NDArray
             An array of predicted state labels based on the fitted model.
         """
         # Scale data
@@ -265,7 +264,7 @@ class StateClassifierGMM(StateClassifier):
     def classify(
         self,
         target: str,
-        data: NDArray[np.complexfloating[Any, Any]],
+        data: NDArray,
         plot: bool = True,
     ) -> dict[int, int]:
         """
@@ -273,7 +272,7 @@ class StateClassifierGMM(StateClassifier):
 
         Parameters
         ----------
-        data : NDArray[np.complexfloating[Any, Any]]
+        data : NDArray
             An array of complex numbers representing the data to classify.
         plot : bool, optional
             A flag to plot the data and predicted labels, by default True.
@@ -293,7 +292,7 @@ class StateClassifierGMM(StateClassifier):
     def plot(
         self,
         target: str,
-        data: NDArray[np.complexfloating[Any, Any]],
+        data: NDArray,
         labels: NDArray,
         n_samples: int = 1000,
     ):

@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
-from functools import cached_property
-from typing import Any, Collection
+from functools import cached_property, reduce
+from typing import Collection
 
 import numpy as np
 from numpy.typing import NDArray
@@ -35,7 +35,7 @@ class MeasureMode(Enum):
 class MeasureData:
     target: str
     mode: MeasureMode
-    raw: NDArray[np.complexfloating[Any, Any]]
+    raw: NDArray
     classifier: StateClassifier | None = None
 
     @cached_property
@@ -48,16 +48,16 @@ class MeasureData:
     @cached_property
     def kerneled(
         self,
-    ) -> NDArray[np.complexfloating[Any, Any]] | np.complexfloating[Any, Any]:
+    ) -> NDArray:
         if self.mode == MeasureMode.SINGLE:
             return np.mean(self.raw, axis=1)
         elif self.mode == MeasureMode.AVG:
-            return np.mean(self.raw)
+            return np.asarray(np.mean(self.raw))
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
     @cached_property
-    def classified(self) -> NDArray[np.integer[Any]]:
+    def classified(self) -> NDArray:
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 return self.classifier.predict(self.kerneled)
@@ -204,6 +204,44 @@ class MeasureResult:
                 self.get_counts(targets).values(),
             )
         }
+
+    def get_classifier(self, target: str) -> StateClassifier:
+        if target not in self.data:
+            raise ValueError(f"Target {target} not found in data")
+        classifier = self.data[target].classifier
+        if classifier is None:
+            raise ValueError(f"Classifier for target {target} is not set")
+        return classifier
+
+    def get_confusion_matrix(
+        self,
+        targets: Collection[str],
+    ) -> NDArray:
+        targets = tuple(targets)
+        confusion_matrices = []
+        for target in targets:
+            cm = self.get_classifier(target).confusion_matrix
+            n_shots = cm[0].sum()
+            confusion_matrices.append(cm / n_shots)
+        return reduce(np.kron, confusion_matrices)
+
+    def get_inverse_confusion_matrix(
+        self,
+        targets: Collection[str],
+    ) -> NDArray:
+        targets = tuple(targets)
+        confusion_matrix = self.get_confusion_matrix(targets)
+        return np.linalg.inv(confusion_matrix)
+
+    def get_mitigated_counts(self, targets: Collection[str]) -> NDArray:
+        counts = self.get_counts(targets)
+        cm_inv = self.get_inverse_confusion_matrix(targets)
+        return np.array(list(counts.values())) @ cm_inv
+
+    def get_mitigated_probabilities(self, targets: Collection[str]) -> NDArray:
+        probabilities = self.get_probabilities(targets)
+        cm_inv = self.get_inverse_confusion_matrix(targets)
+        return np.array(list(probabilities.values())) @ cm_inv
 
     def plot(
         self,
