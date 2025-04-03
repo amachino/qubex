@@ -763,6 +763,7 @@ class AmplRabiData(TargetData):
     """
 
     sweep_range: NDArray
+    rabi_data: list[RabiData]
 
     def plot(self):
         fig = go.Figure()
@@ -773,11 +774,21 @@ class AmplRabiData(TargetData):
             )
         )
         fig.update_layout(
-            title=f"Drive amplitude and Rabi rate : {self.target}",
+            title=f"Rabi rate vs drive amplitude : {self.target}",
             xaxis_title="Drive amplitude (arb. units)",
-            ylabel="Rabi rate (MHz)",
+            yaxis_title="Rabi rate (MHz)",
         )
         fig.show()
+
+    def fit(self) -> dict:
+        return fitting.fit_polynomial(
+            self.sweep_range,
+            self.data,
+            degree=1,
+            title=f"Rabi rate vs drive amplitude : {self.target}",
+            xlabel="Drive amplitude (arb. units)",
+            ylabel="Rabi rate (MHz)",
+        )
 
 
 @dataclass
@@ -799,6 +810,7 @@ class FreqRabiData(TargetData):
 
     sweep_range: NDArray
     frequency_range: NDArray
+    rabi_data: list[RabiData]
 
     def plot(self):
         fig = go.Figure()
@@ -809,9 +821,9 @@ class FreqRabiData(TargetData):
             )
         )
         fig.update_layout(
-            title=f"Drive frequency and Rabi rate : {self.target}",
+            title=f"Rabi rate vs drive frequency : {self.target}",
             xaxis_title="Drive frequency (GHz)",
-            ylabel="Rabi rate (MHz)",
+            yaxis_title="Rabi rate (MHz)",
         )
         fig.show()
 
@@ -821,52 +833,3 @@ class FreqRabiData(TargetData):
             control_frequencies=self.frequency_range,
             rabi_frequencies=self.data,
         )
-
-
-@dataclass
-class ResonatorFreqData(TargetData):
-    """
-
-    Attributes
-    ----------
-    target : str
-        Target of the experiment.
-    data : NDArray
-        Measured data.
-    """
-
-    frequency_range: NDArray
-    phase_shift: float
-
-    @property
-    def phases(self) -> NDArray[np.float64]:
-        return np.angle(self.data)
-
-    @property
-    def phase_diffs(self) -> NDArray[np.float64]:
-        delta_phases = np.diff(self.phases)
-        delta_phases[delta_phases < 0] += 2 * np.pi
-        return delta_phases
-
-    def plot(self):
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=self.frequency_range,
-                y=self.phases,
-            )
-        )
-        fig.add_annotation(
-            xref="paper",
-            yref="paper",
-            x=0.95,
-            y=0.95,
-            text=f"Phase shift = {self.phase_shift:.5g} rad/128ns",
-            showarrow=False,
-        )
-        fig.update_layout(
-            title=f"Phase shift : {self.target}",
-            xaxis_title="Control window (ns)",
-            yaxis_title="Phase (rad)",
-        )
-        fig.show()

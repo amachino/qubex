@@ -7,7 +7,6 @@ from typing import Collection, Literal
 
 import numpy as np
 import plotly.graph_objects as go
-from IPython.display import clear_output
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from tqdm import tqdm
@@ -24,6 +23,7 @@ from ..experiment_result import (
     AmplRabiData,
     ExperimentResult,
     FreqRabiData,
+    RabiData,
     RamseyData,
     T1Data,
     T2Data,
@@ -467,10 +467,11 @@ class CharacterizationMixin(
 
         detuning_range = np.array(detuning_range, dtype=np.float64)
         time_range = np.array(time_range, dtype=np.float64)
-
         ampl = self.params.control_amplitude
         rabi_rates: dict[str, list[float]] = defaultdict(list)
-        for detuning in detuning_range:
+        rabi_data: dict[str, list[RabiData]] = defaultdict(list)
+
+        for detuning in tqdm(detuning_range):
             if rabi_level == "ge":
                 rabi_result = self.rabi_experiment(
                     time_range=time_range,
@@ -493,16 +494,16 @@ class CharacterizationMixin(
                 )
             else:
                 raise ValueError("Invalid rabi_level.")
-            clear_output()
             if plot:
                 rabi_result.fit()
-            clear_output(wait=True)
             rabi_params = rabi_result.rabi_params
             if rabi_params is None:
                 raise ValueError("Rabi parameters are not stored.")
             for target, param in rabi_params.items():
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
+            for target, data in rabi_result.data.items():
+                rabi_data[target].append(data)
 
         frequencies = {
             target: detuning_range + self.targets[target].frequency
@@ -515,11 +516,13 @@ class CharacterizationMixin(
                 data=np.array(values, dtype=np.float64),
                 sweep_range=detuning_range,
                 frequency_range=frequencies[target],
+                rabi_data=rabi_data[target],
             )
             for target, values in rabi_rates.items()
         }
-
         result = ExperimentResult(data=data)
+        if plot:
+            result.fit()
         return result
 
     def obtain_ampl_rabi_relation(
@@ -541,34 +544,44 @@ class CharacterizationMixin(
 
         time_range = np.array(time_range, dtype=np.float64)
         amplitude_range = np.array(amplitude_range, dtype=np.float64)
-
         rabi_rates: dict[str, list[float]] = defaultdict(list)
-        for amplitude in amplitude_range:
-            if amplitude <= 0:
-                continue
-            result = self.rabi_experiment(
+        rabi_data: dict[str, list[RabiData]] = defaultdict(list)
+
+        for amplitude in tqdm(amplitude_range):
+            rabi_result = self.rabi_experiment(
                 amplitudes={target: amplitude for target in targets},
                 time_range=time_range,
                 shots=shots,
                 interval=interval,
-                plot=plot,
+                plot=False,
             )
-            clear_output(wait=True)
-            rabi_params = result.rabi_params
+            rabi_params = rabi_result.rabi_params
             if rabi_params is None:
                 raise ValueError("Rabi parameters are not stored.")
             for target, param in rabi_params.items():
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
+            for target, data in rabi_result.data.items():
+                rabi_data[target].append(data)
+            if plot:
+                rabi_result.fit()
+
         data = {
             target: AmplRabiData(
                 target=target,
-                data=np.array(values, dtype=np.float64),
+                data=np.array(rabi_rate),
                 sweep_range=amplitude_range,
+                rabi_data=rabi_data[target],
             )
-            for target, values in rabi_rates.items()
+            for target, rabi_rate in rabi_rates.items()
         }
-        return ExperimentResult(data=data)
+        result = ExperimentResult(data=data)
+        if plot:
+            fit_result = result.fit()
+            for target, data in fit_result.items():
+                popt = data["popt"]
+                print(f"{target} : {popt}")
+        return result
 
     def calibrate_control_frequency(
         self,
