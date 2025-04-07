@@ -43,6 +43,7 @@ class Sintegral(Pulse):
         **kwargs,
     ):
         self.amplitude: Final = amplitude
+        self.power: Final = power
         self.beta: Final = beta
 
         if duration == 0:
@@ -91,13 +92,11 @@ class Sintegral(Pulse):
             2 * np.pi * t / duration,
             n=power,
         )
-        offset = Omega[0]
-        scale = amplitude / Omega[len(Omega) // 2]
-        Omega -= offset
+        Omega -= sin_pow_integral(0, n=power)
+        scale = amplitude / sin_pow_integral(np.pi, n=power)
         Omega *= scale
         if beta is None:
-            real = Omega
-            imag = np.zeros_like(Omega)
+            values = Omega
         else:
             dOmega = sin_pow_derivative(
                 2 * np.pi * t / duration,
@@ -105,14 +104,15 @@ class Sintegral(Pulse):
                 m=0,
             )
             dOmega *= scale * 2 * np.pi / duration
-            real = Omega
-            imag = 1j * beta * dOmega
+            values = Omega + 1j * beta * dOmega
+
+        is_odd = power % 2 == 1
         return np.where(
             (t >= 0) & (t <= duration),
             np.where(
                 (t <= duration // 2),
-                real + imag,
-                real[::-1] - imag[::-1],
+                values,
+                values if is_odd else 2 - values,
             ),
             0,
         ).astype(np.complex128)

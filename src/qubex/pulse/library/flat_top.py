@@ -44,7 +44,7 @@ class FlatTop(Pulse):
         amplitude: float,
         tau: float,
         beta: float | None = None,
-        type: Literal["gaussian", "raised_cosine"] = "raised_cosine",
+        type: Literal["gaussian", "raised_cosine", "sintegral"] = "raised_cosine",
         **kwargs,
     ):
         self.amplitude: Final = amplitude
@@ -72,7 +72,7 @@ class FlatTop(Pulse):
         amplitude: float,
         tau: float,
         beta: float | None = None,
-        type: Literal["gaussian", "raised_cosine"] = "raised_cosine",
+        type: Literal["gaussian", "raised_cosine", "sintegral"] = "raised_cosine",
     ) -> NDArray:
         """
         Flat-top pulse function.

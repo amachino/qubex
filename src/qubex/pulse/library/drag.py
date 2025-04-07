@@ -8,6 +8,7 @@ from numpy.typing import ArrayLike, NDArray
 from ..pulse import Pulse
 from .gaussian import Gaussian
 from .raised_cosine import RaisedCosine
+from .sintegral import Sintegral
 
 
 class Drag(Pulse):
@@ -40,7 +41,7 @@ class Drag(Pulse):
         duration: float,
         amplitude: float,
         beta: float,
-        type: Literal["gaussian", "raised_cosine"] = "gaussian",
+        type: Literal["gaussian", "raised_cosine", "sintegral"] = "gaussian",
         **kwargs,
     ):
         self.amplitude: Final = amplitude
@@ -67,7 +68,7 @@ class Drag(Pulse):
         duration: float,
         amplitude: float,
         beta: float,
-        type: Literal["gaussian", "raised_cosine"] = "gaussian",
+        type: Literal["gaussian", "raised_cosine", "sintegral"] = "gaussian",
     ) -> NDArray:
         """
         DRAG pulse function.
@@ -99,6 +100,14 @@ class Drag(Pulse):
                 t=t,
                 duration=duration,
                 amplitude=amplitude,
+                beta=beta,
+            )
+        elif type == "sintegral":
+            return Sintegral.func(
+                t=t,
+                duration=duration,
+                amplitude=amplitude,
+                power=2,
                 beta=beta,
             )
         else:
