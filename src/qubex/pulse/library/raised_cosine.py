@@ -19,7 +19,7 @@ class RaisedCosine(Pulse):
     amplitude : float
         Amplitude of the pulse.
     beta : float, optional
-        DRAG correction coefficient. Default is 0.0.
+        DRAG correction coefficient. Default is None.
 
     Examples
     --------
@@ -34,7 +34,7 @@ class RaisedCosine(Pulse):
         *,
         duration: float,
         amplitude: float,
-        beta: float = 0.0,
+        beta: float | None = None,
         **kwargs,
     ):
         self.amplitude: Final = amplitude
@@ -58,7 +58,7 @@ class RaisedCosine(Pulse):
         *,
         duration: float,
         amplitude: float,
-        beta: float = 0.0,
+        beta: float | None = None,
     ) -> NDArray:
         """
         Raised cosine pulse function.
@@ -72,16 +72,17 @@ class RaisedCosine(Pulse):
         amplitude : float
             Amplitude of the pulse.
         beta : float, optional
-            DRAG correction coefficient. Default is 0.0.
+            DRAG correction coefficient. Default is None.
         """
         if duration == 0:
             raise ValueError("Duration cannot be zero.")
         t = np.asarray(t)
         Omega = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
-        dOmega = (
-            2 * np.pi / duration * amplitude * np.sin(2 * np.pi * t / duration) * 0.5
-        )
-        values = Omega + beta * 1j * dOmega
+        if beta is None:
+            values = Omega
+        else:
+            dOmega = np.pi / duration * amplitude * np.sin(2 * np.pi * t / duration)
+            values = Omega + beta * 1j * dOmega
         return np.where(
             (t >= 0) & (t <= duration),
             values,

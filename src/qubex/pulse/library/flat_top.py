@@ -22,7 +22,7 @@ class FlatTop(Pulse):
     tau : float
         Rise and fall time of the pulse in ns.
     beta : float, optional
-        DRAG correction coefficient. Default is 0.0.
+        DRAG correction coefficient. Default is None.
 
     Examples
     --------
@@ -43,8 +43,8 @@ class FlatTop(Pulse):
         duration: float,
         amplitude: float,
         tau: float,
-        beta: float = 0.0,
-        type: Literal["gaussian", "raised_cosine"] = "gaussian",
+        beta: float | None = None,
+        type: Literal["gaussian", "raised_cosine"] = "raised_cosine",
         **kwargs,
     ):
         self.amplitude: Final = amplitude
@@ -71,8 +71,8 @@ class FlatTop(Pulse):
         duration: float,
         amplitude: float,
         tau: float,
-        beta: float = 0.0,
-        type: Literal["gaussian", "raised_cosine"] = "gaussian",
+        beta: float | None = None,
+        type: Literal["gaussian", "raised_cosine"] = "raised_cosine",
     ) -> NDArray:
         """
         Flat-top pulse function.
@@ -88,7 +88,7 @@ class FlatTop(Pulse):
         tau : float
             Rise and fall time of the pulse in ns.
         beta : float, optional
-            DRAG correction coefficient. Default is 0.0.
+            DRAG correction coefficient. Default is None.
         type : Literal["gaussian", "raised_cosine"], optional
             Type of the pulse. Default is "gaussian".
 
@@ -98,14 +98,17 @@ class FlatTop(Pulse):
             Flat-top pulse values.
         """
         t = np.asarray(t)
-        flattime = duration - 2 * tau
+        T = 2 * tau
+        flattime = duration - T
 
         if flattime < 0:
             raise ValueError("duration must be greater than `2 * tau`.")
 
+        beta = beta or 0.0
+
         v_rise = Drag.func(
             t=t,
-            duration=2 * tau,
+            duration=T,
             amplitude=amplitude,
             beta=beta,
             type=type,
@@ -113,7 +116,7 @@ class FlatTop(Pulse):
         v_flat = amplitude * np.ones_like(t)
         v_fall = Drag.func(
             t=t - flattime,
-            duration=2 * tau,
+            duration=T,
             amplitude=amplitude,
             beta=beta,
             type=type,

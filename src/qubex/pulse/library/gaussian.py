@@ -23,7 +23,7 @@ class Gaussian(Pulse):
     zero_bounds : bool, optional
         If True, the pulse is truncated to have zero bounds.
     beta : float, optional
-        DRAG correction coefficient. Default is 0.0.
+        DRAG correction coefficient. Default is None.
 
     Examples
     --------
@@ -41,7 +41,7 @@ class Gaussian(Pulse):
         amplitude: float,
         sigma: float | None = None,
         zero_bounds: bool = True,
-        beta: float = 0.0,
+        beta: float | None = None,
         **kwargs,
     ):
         self.amplitude: Final = amplitude
@@ -71,7 +71,7 @@ class Gaussian(Pulse):
         amplitude: float,
         sigma: float | None = None,
         zero_bounds: bool = True,
-        beta: float = 0.0,
+        beta: float | None = None,
     ) -> NDArray:
         """
         Gaussian pulse function.
@@ -89,7 +89,7 @@ class Gaussian(Pulse):
         zero_bounds : bool, optional
             If True, the pulse is truncated to have zero bounds.
         beta : float, optional
-            DRAG correction coefficient. Default is 0.0.
+            DRAG correction coefficient. Default is None.
 
         Returns
         -------
@@ -105,12 +105,15 @@ class Gaussian(Pulse):
         offset = -np.exp(-0.5 * (mu / sigma) ** 2) if zero_bounds else 0.0
         factor = amplitude / (1 + offset)
         Omega = factor * (np.exp(-((t - mu) ** 2) / (2 * sigma**2)) + offset)
-        dOmega = (
-            (mu - t)
-            / (sigma**2)
-            * (factor * (np.exp(-((t - mu) ** 2) / (2 * sigma**2))))
-        )
-        values = Omega + beta * 1j * dOmega
+        if beta is None:
+            values = Omega
+        else:
+            dOmega = (
+                (mu - t)
+                / (sigma**2)
+                * (factor * (np.exp(-((t - mu) ** 2) / (2 * sigma**2))))
+            )
+            values = Omega + beta * 1j * dOmega
         return np.where(
             (t >= 0) & (t <= duration),
             values,
