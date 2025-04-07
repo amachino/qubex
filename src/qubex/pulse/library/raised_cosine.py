@@ -18,7 +18,7 @@ class RaisedCosine(Pulse):
     amplitude : float
         Amplitude of the pulse.
     beta : float, optional
-        DRAG correction amplitude.
+        DRAG correction coefficient. Default is 0.0.
 
     Examples
     --------
@@ -44,8 +44,8 @@ class RaisedCosine(Pulse):
         if duration == 0:
             values = np.array([], dtype=np.complex128)
         else:
-            real = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
-            imag = (
+            Omega = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
+            dOmega = (
                 2
                 * np.pi
                 / duration
@@ -53,6 +53,6 @@ class RaisedCosine(Pulse):
                 * np.sin(2 * np.pi * t / duration)
                 * 0.5
             )
-            values = real + beta * 1j * imag
+            values = Omega + beta * 1j * dOmega
 
         super().__init__(values, **kwargs)
