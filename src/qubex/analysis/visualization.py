@@ -77,11 +77,38 @@ def plot(
     **kwargs,
 ):
     fig = go.Figure()
-    if x is None:
-        fig.add_trace(go.Scatter(y=y, mode=mode, **kwargs))
-        xlabel = xlabel or "Index"
+    y = np.asarray(y)
+
+    if y.ndim == 1:
+        if x is None:
+            x = np.arange(len(y))
+        fig.add_trace(go.Scatter(x=x, y=np.real(y), mode=mode, name="Real", **kwargs))
+        if np.iscomplexobj(y):
+            fig.add_trace(
+                go.Scatter(x=x, y=np.imag(y), mode=mode, name="Imag", **kwargs)
+            )
+    elif y.ndim == 2:
+        if x is None:
+            x = np.arange(y.shape[0])
+        for i in range(y.shape[1]):
+            fig.add_trace(
+                go.Scatter(
+                    x=x, y=np.real(y[:, i]), mode=mode, name=f"Real {i}", **kwargs
+                )
+            )
+            if np.iscomplexobj(y):
+                fig.add_trace(
+                    go.Scatter(
+                        x=x,
+                        y=np.imag(y[:, i]),
+                        mode=mode,
+                        name=f"Imag {i}",
+                        **kwargs,
+                    )
+                )
     else:
-        fig.add_trace(go.Scatter(x=x, y=y, mode=mode, **kwargs))
+        raise ValueError("y must be 1D or 2D")
+
     fig.update_layout(
         title=title,
         xaxis_title=xlabel,
@@ -92,6 +119,7 @@ def plot(
         height=height,
         template=template,
     )
+
     if return_figure:
         return fig
     else:

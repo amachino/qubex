@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Literal
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from ..pulse import Pulse
+from .drag import Drag
 
 
 class FlatTop(Pulse):
@@ -19,6 +21,8 @@ class FlatTop(Pulse):
         Amplitude of the pulse.
     tau : float
         Rise and fall time of the pulse in ns.
+    beta : float, optional
+        DRAG correction coefficient. Default is 0.0.
 
     Examples
     --------
@@ -39,27 +43,92 @@ class FlatTop(Pulse):
         duration: float,
         amplitude: float,
         tau: float,
+        beta: float = 0.0,
+        type: Literal["gaussian", "raised_cosine"] = "gaussian",
         **kwargs,
     ):
         self.amplitude: Final = amplitude
         self.tau: Final = tau
 
         if duration == 0:
-            super().__init__([], **kwargs)
-            return
+            values = np.array([], dtype=np.complex128)
+        else:
+            values = self.func(
+                t=self._sampling_points(duration),
+                duration=duration,
+                amplitude=amplitude,
+                tau=tau,
+                beta=beta,
+                type=type,
+            )
 
+        super().__init__(values, **kwargs)
+
+    @staticmethod
+    def func(
+        t: ArrayLike,
+        *,
+        duration: float,
+        amplitude: float,
+        tau: float,
+        beta: float = 0.0,
+        type: Literal["gaussian", "raised_cosine"] = "gaussian",
+    ) -> NDArray:
+        """
+        Flat-top pulse function.
+
+        Parameters
+        ----------
+        t : ArrayLike
+            Time points at which to evaluate the pulse.
+        duration : float
+            Duration of the pulse in ns.
+        amplitude : float
+            Amplitude of the pulse.
+        tau : float
+            Rise and fall time of the pulse in ns.
+        beta : float, optional
+            DRAG correction coefficient. Default is 0.0.
+        type : Literal["gaussian", "raised_cosine"], optional
+            Type of the pulse. Default is "gaussian".
+
+        Returns
+        -------
+        NDArray
+            Flat-top pulse values.
+        """
+        t = np.asarray(t)
         flattime = duration - 2 * tau
 
         if flattime < 0:
             raise ValueError("duration must be greater than `2 * tau`.")
 
-        t_rise = self._sampling_points(tau)
-        t_flat = self._sampling_points(flattime)
+        v_rise = Drag.func(
+            t=t,
+            duration=2 * tau,
+            amplitude=amplitude,
+            beta=beta,
+            type=type,
+        )
+        v_flat = amplitude * np.ones_like(t)
+        v_fall = Drag.func(
+            t=t - flattime,
+            duration=2 * tau,
+            amplitude=amplitude,
+            beta=beta,
+            type=type,
+        )
 
-        v_rise = 0.5 * amplitude * (1 - np.cos(np.pi * t_rise / tau))
-        v_flat = amplitude * np.ones_like(t_flat)
-        v_fall = 0.5 * amplitude * (1 + np.cos(np.pi * t_rise / tau))
-
-        values = np.concatenate((v_rise, v_flat, v_fall)).astype(np.complex128)
-
-        super().__init__(values, **kwargs)
+        return np.where(
+            (t >= 0) & (t <= duration),
+            np.where(
+                (t >= tau) & (t <= duration - tau),
+                v_flat,
+                np.where(
+                    (t < tau),
+                    v_rise,
+                    v_fall,
+                ),
+            ),
+            0,
+        ).astype(np.complex128)
