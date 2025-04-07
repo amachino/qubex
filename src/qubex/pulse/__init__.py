@@ -7,6 +7,7 @@ from .library import (
     Gaussian,
     RaisedCosine,
     Rect,
+    Sintegral,
 )
 from .phase_shift import PhaseShift, VirtualZ
 from .pulse import Pulse
@@ -29,6 +30,7 @@ __all__ = [
     "PulseSequence",
     "RaisedCosine",
     "Rect",
+    "Sintegral",
     "VirtualZ",
     "Waveform",
 ]
