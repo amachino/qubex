@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import subprocess
+from pathlib import Path
 from typing import Collection, Literal
 
 import yaml
@@ -12,7 +13,7 @@ from rich.table import Table
 try:
     import quel_clock_master as qcm
     from qubecalib import QubeCalib
-    from qubecalib.instrument.quel.quel1.tool import Skew
+    from qubecalib.instrument.quel.quel1.tool.skew import Skew, SkewSetting
     from quel_ic_config import Quel1Box
 except ImportError:
     pass
@@ -27,12 +28,18 @@ state_manager = StateManager.shared()
 
 def check_skew(
     box_ids: Collection[str],
-    skew_file: str = "/home/shared/config/skew.yaml",
-) -> None:
+    estimate: bool = True,
+    config_dir: str = "/home/shared/config/",
+    skew_file: str = "skew.yaml",
+    box_file: str = "box.yaml",
+) -> dict:
     """Check the skew of the boxes."""
     box_ids = list(box_ids)
 
-    with open(skew_file, "r") as file:
+    box_file_path = Path(config_dir) / box_file
+    skew_file_path = Path(config_dir) / skew_file
+
+    with open(skew_file_path, "r") as file:
         config = yaml.safe_load(file)
     ref_port = config["reference_port"].split("-")[0]
 
@@ -47,55 +54,28 @@ Do you want to continue?
     )
     if not confirmed:
         print("Operation cancelled.")
-        return
+        return {}
 
-    box_ids = list(set(list(box_ids) + [ref_port]))
+    all_box_ids = list(set(list(box_ids) + [ref_port]))
     qc = get_qubecalib()
-    system = qc.create_quel1system(box_ids)
-    skew = Skew(system, qubecalib=qc)
-    skew.load(skew_file)
-    qc.resync(*box_ids)
+    qc.sysdb.load_box_yaml(str(box_file_path))
+    setting = SkewSetting.from_yaml(str(skew_file_path))
+    system = qc.sysdb.create_quel1system(*all_box_ids)
+    system.resync(*all_box_ids)
+    skew = Skew.create(setting=setting, system=system, sysdb=qc.sysdb)
     skew.measure()
-    skew.plot()
-
-
-def adjust_skew(
-    box_ids: Collection[str],
-    skew_file: str = "/home/shared/config/skew.yaml",
-    output_path: str = "./skew.yaml",
-) -> None:
-    """Adjust the skew of the boxes."""
-    box_ids = list(box_ids)
-
-    with open(skew_file, "r") as file:
-        config = yaml.safe_load(file)
-    ref_port = config["reference_port"].split("-")[0]
-
-    confirmed = Confirm.ask(
-        f"""
-You are going to check the skew of the following boxes using [bold bright_green]'{ref_port}'[/bold bright_green] as the reference.
-
-[bold bright_green]{box_ids}[/bold bright_green]
-
-Do you want to continue?
-"""
+    if estimate:
+        skew.estimate()
+    fig = skew.plot()
+    fig.update_layout(
+        title=f"Skew : {str(', '.join(box_ids))} (Ref. {ref_port})",
+        width=800,
     )
-    if not confirmed:
-        print("Operation cancelled.")
-        return
-
-    box_ids = list(set(list(box_ids) + [ref_port]))
-    qc = get_qubecalib()
-    system = qc.create_quel1system(box_ids)
-    skew = Skew(system, qubecalib=qc)
-    skew.load(skew_file)
-    qc.resync(*box_ids)
-    skew_results = skew.adjust()
-    skew.plot()
-    print(skew_results)
-    skew.measure()
-    skew.plot()
-    skew.save(output_path)
+    fig.show()
+    return {
+        "skew": skew,
+        "fig": fig,
+    }
 
 
 def get_qubecalib() -> QubeCalib:
