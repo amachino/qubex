@@ -74,9 +74,11 @@ class RaisedCosine(Pulse):
         beta : float, optional
             DRAG correction coefficient. Default is None.
         """
-        if duration == 0:
-            raise ValueError("Duration cannot be zero.")
         t = np.asarray(t)
+
+        if duration == 0:
+            return np.zeros_like(t, dtype=np.complex128)
+
         Omega = amplitude * (1.0 - np.cos(2 * np.pi * t / duration)) * 0.5
         if beta is None:
             values = Omega
