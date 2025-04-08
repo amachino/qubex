@@ -1,6 +1,7 @@
 from .blank import Blank
 from .library import (
     CPMG,
+    Bump,
     CrossResonance,
     Drag,
     FlatTop,
@@ -17,6 +18,7 @@ from .waveform import Waveform
 
 __all__ = [
     "Blank",
+    "Bump",
     "CPMG",
     "CrossResonance",
     "Drag",

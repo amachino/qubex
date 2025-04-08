@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from ..pulse import Pulse
+from .bump import Bump
 from .gaussian import Gaussian
 from .raised_cosine import RaisedCosine
 from .sintegral import Sintegral
@@ -23,7 +24,7 @@ class Drag(Pulse):
         Amplitude of the DRAG pulse.
     beta : float
         DRAG correction coefficient.
-    type : Literal["gaussian", "raised_cosine"], optional
+    type : Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"], optional
         Type of the pulse. Default is "gaussian".
 
     Examples
@@ -41,7 +42,7 @@ class Drag(Pulse):
         duration: float,
         amplitude: float,
         beta: float,
-        type: Literal["gaussian", "raised_cosine", "sintegral"] = "gaussian",
+        type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "Gaussian",
         **kwargs,
     ):
         self.amplitude: Final = amplitude
@@ -68,7 +69,7 @@ class Drag(Pulse):
         duration: float,
         amplitude: float,
         beta: float,
-        type: Literal["gaussian", "raised_cosine", "sintegral"] = "gaussian",
+        type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "Gaussian",
     ) -> NDArray:
         """
         DRAG pulse function.
@@ -83,10 +84,10 @@ class Drag(Pulse):
             Amplitude of the DRAG pulse.
         beta : float
             DRAG correction coefficient.
-        type : Literal["gaussian", "raised_cosine"], optional
+        type : Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"]
             Type of the pulse. Default is "gaussian".
         """
-        if type == "gaussian":
+        if type == "Gaussian":
             return Gaussian.func(
                 t=t,
                 duration=duration,
@@ -95,19 +96,26 @@ class Drag(Pulse):
                 zero_bounds=True,
                 beta=beta,
             )
-        elif type == "raised_cosine":
+        elif type == "RaisedCosine":
             return RaisedCosine.func(
                 t=t,
                 duration=duration,
                 amplitude=amplitude,
                 beta=beta,
             )
-        elif type == "sintegral":
+        elif type == "Sintegral":
             return Sintegral.func(
                 t=t,
                 duration=duration,
                 amplitude=amplitude,
                 power=2,
+                beta=beta,
+            )
+        elif type == "Bump":
+            return Bump.func(
+                t=t,
+                duration=duration,
+                amplitude=amplitude,
                 beta=beta,
             )
         else:

@@ -1,3 +1,4 @@
+from .bump import Bump
 from .cpmg import CPMG
 from .cross_resonance import CrossResonance
 from .drag import Drag
@@ -8,6 +9,7 @@ from .rect import Rect
 from .sintegral import Sintegral
 
 __all__ = [
+    "Bump",
     "CPMG",
     "CrossResonance",
     "Drag",
