@@ -335,16 +335,10 @@ class BenchmarkingMixin(
                 plot=False,
             )
             if mitigate_readout:
-                probabilities = result.get_probabilities([control_qubit, target_qubit])
-                prob = np.array(list(probabilities.values()))
-                cm_inv = self.get_inverse_confusion_matrix(
-                    [control_qubit, target_qubit]
-                )
-                prob_mitigated = prob @ cm_inv
-                p00 = prob_mitigated[0]
+                prob = result.get_mitigated_probabilities([control_qubit, target_qubit])
             else:
-                p00 = probabilities["00"]
-            fidelities.append(p00)
+                prob = result.get_probabilities([control_qubit, target_qubit])
+            fidelities.append(prob["00"])
 
         fit_result = fitting.fit_rb(
             target=target,
@@ -501,7 +495,7 @@ class BenchmarkingMixin(
 
         if is_2q:
             if n_cliffords_range is None:
-                n_cliffords_range = np.arange(0, 21, 2)
+                n_cliffords_range = np.arange(0, 41, 4)
         else:
             self.validate_rabi_params([target])
             if n_cliffords_range is None:
@@ -599,8 +593,10 @@ class BenchmarkingMixin(
         )
         A_rb = rb_fit_result["A"]
         p_rb = rb_fit_result["p"]
+        p_rb_err = rb_fit_result["p_err"]
         C_rb = rb_fit_result["C"]
         avg_gate_fidelity_rb = rb_fit_result["avg_gate_fidelity"]
+        avg_gate_fidelity_err_rb = rb_fit_result["avg_gate_fidelity_err"]
 
         irb_mean = np.mean(irb_results, axis=0)
         irb_std = np.std(irb_results, axis=0)
@@ -615,12 +611,20 @@ class BenchmarkingMixin(
         )
         A_irb = irb_fit_result["A"]
         p_irb = irb_fit_result["p"]
+        p_irb_err = irb_fit_result["p_err"]
         C_irb = irb_fit_result["C"]
         avg_gate_fidelity_irb = irb_fit_result["avg_gate_fidelity"]
+        avg_gate_fidelity_err_irb = irb_fit_result["avg_gate_fidelity_err"]
 
         dimension = 4 if is_2q else 2
         gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
         gate_fidelity = 1 - gate_error
+
+        gate_fidelity_err = (
+            (dimension - 1)
+            / dimension
+            * np.sqrt((p_irb_err / p_rb) ** 2 + (p_rb_err * p_irb / p_rb**2) ** 2)
+        )
 
         fig = fitting.plot_irb(
             target=target,
@@ -636,6 +640,7 @@ class BenchmarkingMixin(
             C_rb=C_rb,
             C_irb=C_irb,
             gate_fidelity=gate_fidelity,
+            gate_fidelity_err=gate_fidelity_err,
             plot=plot,
             title="Interleaved randomized benchmarking",
             xlabel="Number of Cliffords",
@@ -648,16 +653,25 @@ class BenchmarkingMixin(
             )
 
         print()
-        print(f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.3f}%")
-        print(f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.3f}%")
+        print(
+            f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.2f} ± {avg_gate_fidelity_err_rb * 100:.2f}%"
+        )
+        print(
+            f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.2f} ± {avg_gate_fidelity_err_irb * 100:.2f}%"
+        )
         print()
-        print(f"Gate error    : {gate_error * 100:.3f}%")
-        print(f"Gate fidelity : {gate_fidelity * 100:.3f}%")
+        print(
+            f"Gate error    : {gate_error * 100:.2f} ± {gate_fidelity_err * 100:.2f}%"
+        )
+        print(
+            f"Gate fidelity : {gate_fidelity * 100:.2f} ± {gate_fidelity_err * 100:.2f}%"
+        )
         print()
 
         return {
             "gate_error": gate_error,
             "gate_fidelity": gate_fidelity,
+            "gate_fidelity_err": gate_fidelity_err,
             "rb_fit_result": rb_fit_result,
             "irb_fit_result": irb_fit_result,
             "fig": fig,

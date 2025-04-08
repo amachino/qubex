@@ -154,6 +154,36 @@ def func_damped_cos(
     return A * np.exp(-t / tau) * np.cos(omega * t + phi) + C
 
 
+def func_delayed_cos(
+    t: NDArray,
+    t0: float,
+    A: float,
+    omega: float,
+    C: float,
+):
+    """
+    Calculate a delayed cosine function with given parameters.
+
+    Parameters
+    ----------
+    t : NDArray[np.float64]
+        Time points for the function evaluation.
+    t0 : float
+        Delay time for the cosine function.
+    A : float
+        Amplitude of the cosine function.
+    omega : float
+        Angular frequency of the cosine function.
+    C : float
+        Vertical offset of the cosine function.
+    """
+    return np.where(
+        t < t0,
+        A + C,
+        A * np.cos(omega * (t - t0)) + C,
+    )
+
+
 def func_exp_decay(
     t: NDArray,
     A: float,
@@ -254,6 +284,117 @@ def func_resonance(
     numerator = (f - f_r) * 1j + (-kappa_ex + kappa_in) / 2
     denominator = (f - f_r) * 1j + (kappa_ex + kappa_in) / 2
     return A * np.exp(1j * phi) * (numerator / denominator)
+
+
+def fit_linear(
+    x: ArrayLike,
+    y: ArrayLike,
+    *,
+    intercept: bool = False,
+    plot: bool = True,
+    target: str | None = None,
+    title: str = "Linear fit",
+    xlabel: str = "x",
+    ylabel: str = "y",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> dict:
+    """
+    Fit data to a linear function y = a * x.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        x values for the data.
+    y : ArrayLike
+        y values for the data.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    def func_linear(x, a):
+        return a * x
+
+    def func_linear_with_intercept(x, a, b):
+        return a * x + b
+
+    if not intercept:
+        popt, pcov = curve_fit(func_linear, x, y)
+        a = popt[0]
+        a_err = np.sqrt(np.diag(pcov))[0]
+        r2 = 1 - np.sum((y - func_linear(x, *popt)) ** 2) / np.sum(
+            (y - np.mean(y)) ** 2
+        )
+    else:
+        popt, pcov = curve_fit(func_linear_with_intercept, x, y)
+        a, b = popt
+        a_err, b_err = np.sqrt(np.diag(pcov))
+        r2 = 1 - np.sum((y - func_linear_with_intercept(x, *popt)) ** 2) / np.sum(
+            (y - np.mean(y)) ** 2
+        )
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    if not intercept:
+        y_fine = func_linear(x_fine, *popt)
+    else:
+        y_fine = func_linear_with_intercept(x_fine, *popt)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.update_layout(
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        filename = f"fit_linear_{target}" if target else "fit_linear"
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            print(f"Target: {target}")
+        if not intercept:
+            print("Fit: a * x")
+            print(f"  a = {a:.3g} ± {a_err:.1g}")
+        else:
+            print("Fit: a * x + b")
+            print(f"  a = {a:.3g} ± {a_err:.1g}")
+            print(f"  b = {b:.3g} ± {b_err:.1g}")
+        print(f"  R² = {r2:.3f}")
+        print("")
+
+    return {
+        "a": a,
+        "a_err": a_err,
+        "b": b if intercept else None,
+        "b_err": b_err if intercept else None,
+        "r2": r2,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
 
 
 def fit_polynomial(
@@ -418,7 +559,7 @@ def fit_cosine(
     offset_est = (np.max(y) + np.min(y)) / 2
 
     logger.debug(
-        f"Initial guess: A = {amplitude_est:.3g}, f = {omega_est:.3g}, φ = {phase_est:.3g}, C = {offset_est:.3g}"
+        f"Initial guess: A = {amplitude_est:.3g}, ω = {omega_est:.3g}, φ = {phase_est:.3g}, C = {offset_est:.3g}"
     )
 
     if is_damped:
@@ -518,6 +659,175 @@ def fit_cosine(
         "phi_err": phi_err,
         "C_err": C_err,
         "tau_err": tau_err,
+        "r2": r2,
+        "popt": popt,
+        "pcov": pcov,
+        "fig": fig,
+    }
+
+
+def fit_delayed_cosine(
+    x: ArrayLike,
+    y: ArrayLike,
+    *,
+    threshold: float = 0.5,
+    p0=None,
+    bounds=None,
+    plot: bool = True,
+    target: str | None = None,
+    title: str = "Delayed cosine fit",
+    xlabel: str = "x",
+    ylabel: str = "y",
+    xaxis_type: Literal["linear", "log"] = "linear",
+    yaxis_type: Literal["linear", "log"] = "linear",
+) -> dict:
+    """
+    Fit data to a delayed cosine function and plot the results.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        x values for the data.
+    y : ArrayLike
+        y values for the data.
+    threshold : float, optional
+        Threshold for the initial guess of t0.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+    target : str, optional
+        Identifier of the target.
+    title : str, optional
+        Title of the plot.
+    xlabel : str, optional
+        Label for the x-axis.
+    ylabel : str, optional
+        Label for the y-axis.
+    xaxis_type : Literal["linear", "log"], optional
+        Type of the x-axis.
+    yaxis_type : Literal["linear", "log"], optional
+        Type of the y-axis.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
+    x = np.array(x, dtype=np.float64)
+    y = np.array(y, dtype=np.float64)
+
+    dt = x[1] - x[0]
+    N = len(x)
+    f = np.fft.fftfreq(N, dt)[1 : N // 2]
+    F = np.fft.fft(y)[1 : N // 2]
+    i = np.argmax(np.abs(F))
+    amplitude_est = 2 * np.abs(F[i]) / N
+    omega_est = 2 * np.pi * f[i]
+    offset_est = (np.max(y) + np.min(y)) / 2
+
+    dy = np.abs((y - y[0]))
+    dy = dy / np.max(dy)
+    idx = np.argmax(dy > threshold)
+    t0_est = x[idx]
+
+    logger.error(
+        f"Initial guess: A = {amplitude_est:.3g}, ω = {omega_est:.3g}, t0 = {t0_est:.3g}, C = {offset_est:.3g}"
+    )
+
+    if p0 is None:
+        p0 = (t0_est, amplitude_est, omega_est, offset_est)
+
+    if bounds is None:
+        bounds = (
+            (0, 0, 0, -np.inf),
+            (np.inf, np.inf, np.inf, np.inf),
+        )
+
+    try:
+        popt, pcov = curve_fit(func_delayed_cos, x, y, p0=p0, bounds=bounds)
+    except RuntimeError:
+        print(f"Failed to fit the data for {target}.")
+        return {}
+
+    t0, A, omega, C = popt
+    t0_err, A_err, omega_err, C_err = np.sqrt(np.diag(pcov))
+    f = omega / (2 * np.pi)
+    f_err = omega_err / (2 * np.pi)
+
+    r2 = 1 - np.sum((y - func_delayed_cos(x, *popt)) ** 2) / np.sum(
+        (y - np.mean(y)) ** 2
+    )
+
+    x_fine = np.linspace(np.min(x), np.max(x), 1000)
+    y_fine = func_delayed_cos(x_fine, *popt)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=y_fine,
+            mode="lines",
+            name="Fit",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="markers",
+            name="Data",
+        )
+    )
+    fig.add_annotation(
+        xref="paper",
+        yref="paper",
+        x=0.95,
+        y=0.95,
+        text=f"R² = {r2:.3f}",
+        bgcolor="rgba(255, 255, 255, 0.8)",
+        showarrow=False,
+    )
+    fig.add_annotation(
+        x=t0,
+        y=func_delayed_cos(t0, *popt),
+        text=f"t0: {t0:.3g}",
+        showarrow=True,
+        arrowhead=1,
+    )
+    fig.update_layout(
+        title=f"{title} : {target}" if target else title,
+        xaxis_title=xlabel,
+        yaxis_title=ylabel,
+        xaxis_type=xaxis_type,
+        yaxis_type=yaxis_type,
+    )
+
+    if plot:
+        filename = f"fit_delayed_cos_{target}" if target else "fit_delayed_cos"
+        fig.show(config=_plotly_config(filename))
+
+        if target:
+            print(f"Target: {target}")
+        print("Fit: A * cos(2πft + φ) + C")
+        print(f"  A = {A:.3g} ± {A_err:.1g}")
+        print(f"  f = {f:.3g} ± {f_err:.1g}")
+        print(f"  t0 = {t0:.3g} ± {t0_err:.1g}")
+        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.3f}")
+        print("")
+
+    return {
+        "t0": t0,
+        "f": f,
+        "C": C,
+        "A": A,
+        "t0_err": t0_err,
+        "f_err": f_err,
+        "C_err": C_err,
+        "A_err": A_err,
         "r2": r2,
         "popt": popt,
         "pcov": pcov,
@@ -1572,7 +1882,7 @@ def fit_rb(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"F = {avg_gate_fidelity * 100:.3f} ± {avg_gate_fidelity_err * 100:.3f}%",
+        text=f"F = {avg_gate_fidelity * 100:.2f} ± {avg_gate_fidelity_err * 100:.2f}%",
         showarrow=False,
     )
     fig.update_layout(
@@ -1630,6 +1940,7 @@ def plot_irb(
     C_rb: float,
     C_irb: float,
     gate_fidelity: float,
+    gate_fidelity_err: float,
     plot: bool = True,
     title: str = "Interleaved randomized benchmarking",
     xlabel: str = "Number of Cliffords",
@@ -1654,10 +1965,22 @@ def plot_irb(
         Error data for the decay.
     error_y_irb : NDArray[np.float64]
         Error data for the interleaved decay.
+    A_rb : float
+        Amplitude of the randomized benchmarking.
+    A_irb : float
+        Amplitude of the interleaved randomized benchmarking.
     p_rb : float
         Depolarizing parameter of the randomized benchmarking.
     p_irb : float
         Depolarizing parameter of the interleaved randomized benchmarking.
+    C_rb : float
+        Offset of the randomized benchmarking.
+    C_irb : float
+        Offset of the interleaved randomized benchmarking.
+    gate_fidelity : float
+        Gate fidelity of the randomized benchmarking.
+    gate_fidelity_err : float
+        Error in the gate fidelity of the randomized benchmarking.
     plot : bool, optional
         Whether to plot the data and the fit.
     title : str, optional
@@ -1723,7 +2046,7 @@ def plot_irb(
         yref="paper",
         x=0.95,
         y=0.95,
-        text=f"F = {gate_fidelity * 100:.3f}%",
+        text=f"F = {gate_fidelity * 100:.2f} ± {gate_fidelity_err * 100:.2f}%",
         showarrow=False,
     )
     fig.update_layout(

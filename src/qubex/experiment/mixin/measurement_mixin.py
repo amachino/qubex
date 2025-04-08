@@ -26,6 +26,7 @@ from ...measurement import (
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
 from ...pulse import (
     Blank,
+    FlatTop,
     PhaseShift,
     Pulse,
     PulseArray,
@@ -340,9 +341,10 @@ class MeasurementMixin(
 
     def obtain_rabi_params(
         self,
-        targets: str | Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
+        ramptime: float | None = None,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
         is_damped: bool = True,
@@ -358,14 +360,18 @@ class MeasurementMixin(
             targets = [targets]
         else:
             targets = list(targets)
+
         time_range = np.asarray(time_range)
+
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
+
         if simultaneous:
             result = self.rabi_experiment(
                 amplitudes=amplitudes,
                 time_range=time_range,
+                ramptime=ramptime,
                 frequencies=frequencies,
                 is_damped=is_damped,
                 shots=shots,
@@ -380,6 +386,7 @@ class MeasurementMixin(
                 data = self.rabi_experiment(
                     amplitudes={target: amplitudes[target]},
                     time_range=time_range,
+                    ramptime=ramptime,
                     frequencies=frequencies,
                     is_damped=is_damped,
                     shots=shots,
@@ -397,7 +404,7 @@ class MeasurementMixin(
 
     def obtain_ef_rabi_params(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         is_damped: bool = True,
@@ -407,6 +414,8 @@ class MeasurementMixin(
     ) -> ExperimentResult[RabiData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -444,6 +453,7 @@ class MeasurementMixin(
         *,
         amplitudes: dict[str, float],
         time_range: ArrayLike = RABI_TIME_RANGE,
+        ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
         is_damped: bool = True,
@@ -458,6 +468,12 @@ class MeasurementMixin(
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
+        if ramptime is None:
+            # TODO: Fix fit_rabi to support ramptime
+            ramptime = 0.0
+
+        effective_time_range = time_range + ramptime
+
         # target frequencies
         if frequencies is None:
             frequencies = {
@@ -468,7 +484,14 @@ class MeasurementMixin(
         def rabi_sequence(T: int) -> PulseSchedule:
             with PulseSchedule(targets) as ps:
                 for target in targets:
-                    ps.add(target, Rect(duration=T, amplitude=amplitudes[target]))
+                    ps.add(
+                        target,
+                        FlatTop(
+                            duration=T + 2 * ramptime,
+                            amplitude=amplitudes[target],
+                            tau=ramptime,
+                        ),
+                    )
             return ps
 
         # detune target frequencies if necessary
@@ -495,7 +518,7 @@ class MeasurementMixin(
         for target, data in sweep_data.items():
             fit_result = fitting.fit_rabi(
                 target=data.target,
-                times=data.sweep_range,
+                times=effective_time_range,
                 data=data.data,
                 plot=plot,
                 is_damped=is_damped,
@@ -511,7 +534,7 @@ class MeasurementMixin(
             target: RabiData(
                 target=target,
                 data=data.data,
-                time_range=time_range,
+                time_range=effective_time_range,
                 rabi_param=rabi_params[target],
                 state_centers=self.state_centers.get(target),
             )
@@ -625,7 +648,7 @@ class MeasurementMixin(
 
     def measure_state_distribution(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
@@ -634,6 +657,8 @@ class MeasurementMixin(
     ) -> list[MeasureResult]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -659,7 +684,7 @@ class MeasurementMixin(
 
     def build_classifier(
         self,
-        targets: str | Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         save_classifier: bool = True,
@@ -1129,7 +1154,9 @@ class MeasurementMixin(
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
-        with PulseSchedule([control_qubit, target_qubit]) as ps:
+        pair = [control_qubit, target_qubit]
+
+        with PulseSchedule(pair) as ps:
             # prepare |+⟩|0⟩
             ps.add(control_qubit, self.y90(control_qubit))
 
@@ -1161,25 +1188,25 @@ class MeasurementMixin(
             interval=interval,
         )
 
-        probabilities = result.get_probabilities([control_qubit, target_qubit])
-        labels = [f"|{i}⟩" for i in probabilities.keys()]
-        prob = np.array(list(probabilities.values()))
-        cm_inv = self.get_inverse_confusion_matrix([control_qubit, target_qubit])
+        prob_dict_raw = result.get_probabilities(pair)
+        prob_dict_mitigated = result.get_mitigated_probabilities(pair)
 
-        mitigated_prob = prob @ cm_inv
+        labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
+        prob_arr_raw = np.array(list(prob_dict_raw.values()))
+        prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
 
         fig = go.Figure()
         fig.add_trace(
             go.Bar(
                 x=labels,
-                y=prob,
+                y=prob_arr_raw,
                 name="Raw",
             )
         )
         fig.add_trace(
             go.Bar(
                 x=labels,
-                y=mitigated_prob,
+                y=prob_arr_mitigated,
                 name="Mitigated",
             )
         )
@@ -1193,7 +1220,7 @@ class MeasurementMixin(
         if plot:
             fig.show()
 
-            for label, p, mp in zip(labels, prob, mitigated_prob):
+            for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
                 print(f"{label} : {p:.2%} -> {mp:.2%}")
 
         if save_image:
@@ -1203,8 +1230,8 @@ class MeasurementMixin(
             )
 
         return {
-            "raw": prob,
-            "mitigated": mitigated_prob,
+            "raw": prob_arr_raw,
+            "mitigated": prob_arr_mitigated,
             "result": result,
             "figure": fig,
         }

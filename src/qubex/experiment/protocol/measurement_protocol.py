@@ -309,7 +309,7 @@ class MeasurementProtocol(Protocol):
 
     def obtain_rabi_params(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
@@ -324,7 +324,7 @@ class MeasurementProtocol(Protocol):
 
     def obtain_ef_rabi_params(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         is_damped: bool = False,
@@ -363,7 +363,7 @@ class MeasurementProtocol(Protocol):
 
     def measure_state_distribution(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
@@ -373,7 +373,7 @@ class MeasurementProtocol(Protocol):
 
     def build_classifier(
         self,
-        targets: str | Collection[str] | None = None,
+        targets: str | Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] = 2,
         save_classifier: bool = True,

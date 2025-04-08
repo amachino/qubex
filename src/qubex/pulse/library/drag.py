@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, Literal
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from ..pulse import Pulse
+from .bump import Bump
+from .gaussian import Gaussian
+from .raised_cosine import RaisedCosine
+from .sintegral import Sintegral
 
 
 class Drag(Pulse):
@@ -18,7 +23,9 @@ class Drag(Pulse):
     amplitude : float
         Amplitude of the DRAG pulse.
     beta : float
-        DRAG correction amplitude.
+        DRAG correction coefficient.
+    type : Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"], optional
+        Type of the pulse. Default is "gaussian".
 
     Examples
     --------
@@ -35,21 +42,81 @@ class Drag(Pulse):
         duration: float,
         amplitude: float,
         beta: float,
+        type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "Gaussian",
         **kwargs,
     ):
         self.amplitude: Final = amplitude
         self.beta: Final = beta
+        self.type: Final = type
 
-        t = self._sampling_points(duration)
-        sigma = duration * 0.5
-        offset = -np.exp(-0.5)
-        factor = amplitude / (1 + offset)
-        real = factor * (np.exp(-((t - sigma) ** 2) / (2 * sigma**2)) + offset)
-        imag = (
-            (sigma - t)
-            / (sigma**2)
-            * (factor * (np.exp(-((t - sigma) ** 2) / (2 * sigma**2))))
-        )
-        values = real + beta * 1j * imag
+        if duration == 0:
+            values = np.array([], dtype=np.complex128)
+        else:
+            values = self.func(
+                t=self._sampling_points(duration),
+                duration=duration,
+                amplitude=amplitude,
+                beta=beta,
+                type=type,
+            )
 
         super().__init__(values, **kwargs)
+
+    @staticmethod
+    def func(
+        t: ArrayLike,
+        *,
+        duration: float,
+        amplitude: float,
+        beta: float,
+        type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "Gaussian",
+    ) -> NDArray:
+        """
+        DRAG pulse function.
+
+        Parameters
+        ----------
+        t : ArrayLike
+            Time points at which to evaluate the pulse.
+        duration : float
+            Duration of the DRAG pulse in ns.
+        amplitude : float
+            Amplitude of the DRAG pulse.
+        beta : float
+            DRAG correction coefficient.
+        type : Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"]
+            Type of the pulse. Default is "gaussian".
+        """
+        if type == "Gaussian":
+            return Gaussian.func(
+                t=t,
+                duration=duration,
+                amplitude=amplitude,
+                sigma=duration / 4,
+                zero_bounds=True,
+                beta=beta,
+            )
+        elif type == "RaisedCosine":
+            return RaisedCosine.func(
+                t=t,
+                duration=duration,
+                amplitude=amplitude,
+                beta=beta,
+            )
+        elif type == "Sintegral":
+            return Sintegral.func(
+                t=t,
+                duration=duration,
+                amplitude=amplitude,
+                power=2,
+                beta=beta,
+            )
+        elif type == "Bump":
+            return Bump.func(
+                t=t,
+                duration=duration,
+                amplitude=amplitude,
+                beta=beta,
+            )
+        else:
+            raise ValueError(f"Unknown pulse type: {type}")

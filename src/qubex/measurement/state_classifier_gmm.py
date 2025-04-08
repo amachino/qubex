@@ -33,7 +33,7 @@ class StateClassifierGMM(StateClassifier):
         The center of each state.
     """
 
-    dataset: dict[int, NDArray[np.float32]]
+    dataset: dict[int, NDArray]
     model: GaussianMixture
     label_map: dict[int, int]
     confusion_matrix: NDArray
@@ -90,7 +90,7 @@ class StateClassifierGMM(StateClassifier):
     @classmethod
     def fit(
         cls,
-        data: dict[int, NDArray[np.complex64]],
+        data: dict[int, NDArray],
         n_init: int = 10,
         random_state: int = 42,
     ) -> StateClassifierGMM:
@@ -99,7 +99,7 @@ class StateClassifierGMM(StateClassifier):
 
         Parameters
         ----------
-        data : dict[int, NDArray[np.complex64]]
+        data : dict[int, NDArray]
             A dictionary of state labels and complex data.
         n_init : int, optional
             Number of initializations to perform, by default 10.
@@ -174,7 +174,7 @@ class StateClassifierGMM(StateClassifier):
     @staticmethod
     def _create_label_map(
         model: GaussianMixture,
-        dataset: dict[int, NDArray[np.float32]],
+        dataset: dict[int, NDArray],
     ) -> dict[int, int]:
         """
         Create a mapping from GMM component labels to state labels.
@@ -183,7 +183,7 @@ class StateClassifierGMM(StateClassifier):
         ----------
         model : GaussianMixture
             The fitted GMM model.
-        dataset : dict[int, NDArray[np.float32]]
+        dataset : dict[int, NDArray]
             The preprocessed dataset.
 
         Returns
@@ -205,7 +205,7 @@ class StateClassifierGMM(StateClassifier):
     @staticmethod
     def _create_confusion_matrix(
         model: GaussianMixture,
-        dataset: dict[int, NDArray[np.float32]],
+        dataset: dict[int, NDArray],
         label_map: dict[int, int],
     ) -> NDArray:
         """
@@ -215,7 +215,7 @@ class StateClassifierGMM(StateClassifier):
         ----------
         model : GaussianMixture
             The fitted GMM model.
-        dataset : dict[int, NDArray[np.float32]]
+        dataset : dict[int, NDArray]
             The preprocessed dataset.
         label_map : dict[int, int]
             A mapping from GMM component labels to state labels.
@@ -235,14 +235,14 @@ class StateClassifierGMM(StateClassifier):
 
     def predict(
         self,
-        data: NDArray[np.complex128],
+        data: NDArray,
     ) -> NDArray:
         """
         Predict the state labels for the provided data.
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray
             An array of complex numbers representing the data to classify.
 
         Returns
@@ -264,7 +264,7 @@ class StateClassifierGMM(StateClassifier):
     def classify(
         self,
         target: str,
-        data: NDArray[np.complex128],
+        data: NDArray,
         plot: bool = True,
     ) -> dict[int, int]:
         """
@@ -272,7 +272,7 @@ class StateClassifierGMM(StateClassifier):
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray
             An array of complex numbers representing the data to classify.
         plot : bool, optional
             A flag to plot the data and predicted labels, by default True.
@@ -292,7 +292,7 @@ class StateClassifierGMM(StateClassifier):
     def plot(
         self,
         target: str,
-        data: NDArray[np.complex128],
+        data: NDArray,
         labels: NDArray,
         n_samples: int = 1000,
     ):
@@ -301,7 +301,7 @@ class StateClassifierGMM(StateClassifier):
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray[np.complexfloating[Any, Any]],
             An array of complex numbers representing the data.
         labels : NDArray
             An array of predicted state labels.
@@ -406,6 +406,7 @@ class StateClassifierGMM(StateClassifier):
         self,
         data: NDArray,
         max_iter: int = 100,
+        tol: float = 1e-4,
     ) -> NDArray:
         """
         Parameters
@@ -422,7 +423,7 @@ class StateClassifierGMM(StateClassifier):
         """
         N = self.n_states
         scaled_data = np.column_stack([np.real(data), np.imag(data)]) * self.scale
-        weights = np.ones(len(self.means)) / N
+        weights = np.ones(N) / N
 
         # Expectation-Maximization (EM) algorithm
         for _ in range(max_iter):
@@ -433,7 +434,13 @@ class StateClassifierGMM(StateClassifier):
                     mean=self.means[k],
                     cov=self.covariances[k],
                 )
-            responsibilities /= responsibilities.sum(axis=1, keepdims=True)
-            weights = responsibilities.mean(axis=0)
+            resp_sum = responsibilities.sum(axis=1, keepdims=True)
+            resp_sum[resp_sum == 0] = 1e-12  # Avoid division by zero
+            responsibilities /= resp_sum
+
+            new_weights = responsibilities.mean(axis=0)
+            if np.allclose(weights, new_weights, atol=tol):
+                break
+            weights = new_weights
 
         return weights

@@ -853,7 +853,7 @@ class Experiment(
 
     def check_noise(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         duration: int = 10240,
         plot: bool = True,
@@ -863,7 +863,7 @@ class Experiment(
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the noise. Defaults to None.
         duration : int, optional
             Duration of the noise measurement. Defaults to 2048.
@@ -881,6 +881,8 @@ class Experiment(
         """
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -892,7 +894,7 @@ class Experiment(
 
     def check_waveform(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         plot: bool = True,
     ) -> MeasureResult:
@@ -901,7 +903,7 @@ class Experiment(
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the waveforms.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -917,6 +919,8 @@ class Experiment(
         """
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -927,7 +931,7 @@ class Experiment(
 
     def check_rabi(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         shots: int = DEFAULT_SHOTS,
@@ -940,7 +944,7 @@ class Experiment(
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the Rabi oscillation.
         time_range : ArrayLike, optional
             Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
@@ -964,6 +968,8 @@ class Experiment(
         """
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
         time_range = np.asarray(time_range)
@@ -1294,28 +1300,6 @@ class Experiment(
             pi_pulse=pi_pulse,
         )
 
-    def cx(
-        self,
-        control_qubit: str,
-        target_qubit: str,
-        *,
-        zx90: PulseSchedule | None = None,
-        x90: Waveform | None = None,
-    ) -> PulseSchedule:
-        cr_label = f"{control_qubit}-{target_qubit}"
-        zx90 = zx90 or self.zx90(control_qubit, target_qubit)
-
-        if x90 is None:
-            x90 = self.x90(target_qubit)
-
-        with PulseSchedule([control_qubit, cr_label, target_qubit]) as ps:
-            ps.call(zx90)
-            # TODO: Need VZ(-π/2) for CR targets which has control_qubit as target
-            ps.add(control_qubit, VirtualZ(-np.pi / 2))
-            ps.add(target_qubit, x90.scaled(-1))
-
-        return ps
-
     def cnot(
         self,
         control_qubit: str,
@@ -1326,29 +1310,93 @@ class Experiment(
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
+        if x90 is None:
+            x90 = self.x90(target_qubit)
+
         if cr_label in self.calib_note.cr_params:
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
-            cnot = self.cx(control_qubit, target_qubit, zx90=zx90, x90=x90)
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot:
+                cnot.call(zx90)
+                cnot.add(control_qubit, VirtualZ(-np.pi / 2))
+                cnot.add(target_qubit, x90.scaled(-1))
             return cnot
         else:
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
-            cnot = self.cx(target_qubit, control_qubit, zx90=zx90, x90=x90)
+            cr_label = f"{target_qubit}-{control_qubit}"
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
+                cnot_tc.call(zx90)
+                cnot_tc.add(target_qubit, VirtualZ(-np.pi / 2))
+                cnot_tc.add(control_qubit, x90.scaled(-1))
+            z180 = self.z180()
+            hadamard_c = PulseArray([z180, self.y90(control_qubit)])
+            hadamard_t = PulseArray([z180, self.y90(target_qubit)])
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_ct:
+                cnot_ct.add(control_qubit, hadamard_c)
+                cnot_ct.add(target_qubit, hadamard_t)
+                cnot_ct.add(cr_label, z180)
+                cnot_ct.call(cnot_tc)
+                cnot_ct.add(cr_label, z180)
+                cnot_ct.add(control_qubit, hadamard_c)
+                cnot_ct.add(target_qubit, hadamard_t)
+            return cnot_ct
+
+    def cx(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        zx90: PulseSchedule | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule:
+        return self.cnot(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            zx90=zx90,
+            x90=x90,
+        )
+
+    def cz(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        zx90: PulseSchedule | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule:
+        cr_label = f"{control_qubit}-{target_qubit}"
+
+        if x90 is None:
+            x90 = self.x90(target_qubit)
+
+        if cr_label in self.calib_note.cr_params:
+            zx90 = zx90 or self.zx90(control_qubit, target_qubit)
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot:
+                cnot.call(zx90)
+                cnot.add(control_qubit, VirtualZ(-np.pi / 2))
+                cnot.add(target_qubit, x90.scaled(-1))
+            z180 = self.z180()
+            hadamard_t = PulseArray([z180, self.y90(target_qubit)])
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as cz:
+                cz.add(target_qubit, hadamard_t)
+                cz.add(cr_label, z180)
+                cz.call(cnot)
+                cz.add(cr_label, z180)
+                cz.add(target_qubit, hadamard_t)
+            return cz
+        else:
+            zx90 = zx90 or self.zx90(target_qubit, control_qubit)
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
+                cnot_tc.call(zx90)
+                cnot_tc.add(target_qubit, VirtualZ(-np.pi / 2))
+                cnot_tc.add(control_qubit, x90.scaled(-1))
             z180 = self.z180()
             hadamard_c = PulseArray([z180, self.y90(control_qubit)])
             hadamard_t = PulseArray([z180, self.y90(target_qubit)])
             cr_label = f"{target_qubit}-{control_qubit}"
-            with PulseSchedule(
-                [
-                    control_qubit,
-                    cr_label,
-                    target_qubit,
-                ]
-            ) as ps:
-                ps.add(control_qubit, hadamard_c)
-                ps.add(target_qubit, hadamard_t)
-                ps.add(cr_label, z180)
-                ps.call(cnot)
-                ps.add(cr_label, z180)
-                ps.add(control_qubit, hadamard_c)
-                ps.add(target_qubit, hadamard_t)
-            return ps
+            with PulseSchedule([control_qubit, cr_label, target_qubit]) as cz:
+                cz.add(control_qubit, hadamard_c)
+                cz.add(cr_label, z180)
+                cz.call(cnot_tc)
+                cz.add(cr_label, z180)
+                cz.add(control_qubit, hadamard_c)
+            return cz

@@ -23,7 +23,7 @@ from ..experiment_result import (
 class CharacterizationProtocol(Protocol):
     def measure_readout_snr(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         capture_window: int | None = None,
@@ -40,7 +40,7 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to measure the readout SNR.
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Initial state of the qubits. Defaults to None.
@@ -72,7 +72,7 @@ class CharacterizationProtocol(Protocol):
 
     def sweep_readout_amplitude(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -88,7 +88,7 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to sweep the readout amplitude. Defaults to None.
         amplitude_range : ArrayLike, optional
             Range of the readout amplitude to sweep. Defaults to np.linspace(0.0, 1.0, 21).
@@ -116,7 +116,7 @@ class CharacterizationProtocol(Protocol):
 
     def sweep_readout_duration(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = np.arange(128, 2048, 128),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -131,7 +131,7 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to sweep the readout duration. Defaults to None.
         time_range : ArrayLike, optional
             Time range of the readout duration to sweep. Defaults to np.arange(0, 2048, 128).
@@ -157,7 +157,7 @@ class CharacterizationProtocol(Protocol):
 
     def chevron_pattern(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
         time_range: ArrayLike = RABI_TIME_RANGE,
@@ -172,7 +172,7 @@ class CharacterizationProtocol(Protocol):
 
     def obtain_freq_rabi_relation(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
@@ -186,7 +186,7 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the Rabi oscillation.
         detuning_range : ArrayLike, optional
             Range of the detuning to sweep in GHz.
@@ -223,7 +223,7 @@ class CharacterizationProtocol(Protocol):
 
     def obtain_ampl_rabi_relation(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
@@ -236,7 +236,7 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target labels to check the Rabi oscillation.
         time_range : ArrayLike, optional
             Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
@@ -271,7 +271,7 @@ class CharacterizationProtocol(Protocol):
 
     def calibrate_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = range(0, 101, 4),
@@ -284,7 +284,7 @@ class CharacterizationProtocol(Protocol):
 
     def calibrate_ef_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
@@ -295,7 +295,7 @@ class CharacterizationProtocol(Protocol):
 
     def calibrate_readout_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = range(0, 101, 4),
@@ -307,7 +307,7 @@ class CharacterizationProtocol(Protocol):
 
     def t1_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -321,9 +321,7 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
-            Collection of qubits to check the T1 decay.
-        targets : Collection[str]
+        targets : Collection[str] | str, optional
             Collection of qubits to check the T1 decay.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
@@ -353,7 +351,7 @@ class CharacterizationProtocol(Protocol):
 
     def t2_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
         n_cpmg: int = 1,
@@ -368,9 +366,7 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
-            Target labels to check the T2 decay.
-        targets : Collection[str]
+        targets : Collection[str] | str, optional
             Target labels to check the T2 decay.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.
@@ -453,7 +449,7 @@ class CharacterizationProtocol(Protocol):
 
     def obtain_effective_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = np.arange(0, 10001, 100),
         detuning: float = 0.001,
@@ -466,7 +462,7 @@ class CharacterizationProtocol(Protocol):
 
         Parameters
         ----------
-        targets : Collection[str], optional
+        targets : Collection[str] | str, optional
             Target qubits to check the Ramsey oscillation.
         time_range : ArrayLike, optional
             Time range of the experiment in ns.

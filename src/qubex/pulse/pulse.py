@@ -43,6 +43,30 @@ class Pulse(Waveform):
     def __repr__(self) -> str:
         return f"{self.name}({self.length})"
 
+    @staticmethod
+    def func(
+        t: npt.ArrayLike,
+        **kwargs,
+    ) -> npt.NDArray[np.complex128]:
+        """
+        Envelope function of the pulse.
+
+        Parameters
+        ----------
+        t : ArrayLike
+            Time points at which to evaluate the pulse.
+        kwargs : dict
+            Additional parameters for the pulse function.
+
+        Returns
+        -------
+        NDArray
+            I/Q values of the pulse.
+        """
+        raise NotImplementedError(
+            "The func method must be implemented in the subclass."
+        )
+
     @property
     def length(self) -> int:
         """Returns the length of the pulse in samples."""

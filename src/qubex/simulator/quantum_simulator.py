@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import cached_property
 from typing import Final, Literal, Optional
 
 import numpy as np
@@ -13,16 +14,16 @@ from scipy.interpolate import interp1d
 
 from ..analysis.visualization import plot_bloch_vectors
 from ..pulse import PulseSchedule, Waveform
-from .quantum_system import QuantumSystem
+from .quantum_system import Object, QuantumSystem
 
 
 class Control:
     def __init__(
         self,
-        target: str,
-        frequency: float,
-        waveform: list | npt.NDArray | Waveform,
+        target: Object | str,
+        waveform: Waveform | list | npt.NDArray,
         durations: list | npt.NDArray | None = None,
+        frequency: float | None = None,
         interpolation: str = "previous",
     ):
         """
@@ -30,15 +31,24 @@ class Control:
 
         Parameters
         ----------
-        target : str
+        target : Object | str
             The target object.
-        frequency : float
-            The control frequency in GHz.
-        waveform : list | npt.NDArray | Waveform
+        waveform : Waveform | list | npt.NDArray
             The I/Q values of each segment in rad/ns.
         durations : list | npt.NDArray | None, optional
             The durations of each segment in ns, by default None
+        frequency : float | None, optional
+            The control frequency in GHz.
         """
+        if frequency is None:
+            if isinstance(target, Object):
+                frequency = target.frequency
+            else:
+                raise ValueError("Frequency is required for a string target.")
+
+        if isinstance(target, Object):
+            target = target.label
+
         self.target = target
         self.frequency = frequency
         self.waveform = (
@@ -164,9 +174,14 @@ class SimulationResult:
     states: npt.NDArray
     unitaries: npt.NDArray
 
+    @cached_property
+    def control_frequencies(self) -> dict[str, float]:
+        return {control.target: control.frequency for control in self.controls}
+
     def get_substates(
         self,
         label: str,
+        frame: Literal["qubit", "drive"] | None = None,
     ) -> npt.NDArray:
         """
         Extract the substates of a qubit from the states.
@@ -180,9 +195,29 @@ class SimulationResult:
         -------
         list[qt.Qobj]
             The substates of the qubit.
+        frame : Literal["qubit", "drive"] | None, optional
+            The frame of the substates, by default "qubit"
         """
+        if frame is None:
+            frame = "qubit"
+
         index = self.system.get_index(label)
         substates = np.array([state.ptrace(index) for state in self.states])
+
+        if frame == "drive":
+            # rotate the states to the drive frame
+            times = self.get_times()
+            qubit = self.system.get_object(label)
+            f_drive = self.control_frequencies[label]
+            f_qubit = qubit.frequency
+            delta = 2 * np.pi * (f_drive - f_qubit)
+            dim = qubit.dimension
+            N = qt.num(dim)
+            U = lambda t: (-1j * delta * N * t).expm()
+            substates = np.array(
+                [U(t).dag() * rho * U(t) for t, rho in zip(times, substates)]
+            )
+
         return substates
 
     def get_times(
@@ -206,6 +241,7 @@ class SimulationResult:
         label: str,
         *,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] | None = None,
     ) -> npt.NDArray:
         """
         Extract the block vectors of a qubit from the states.
@@ -214,6 +250,10 @@ class SimulationResult:
         ----------
         label : str
             The label of the qubit.
+        n_samples : int | None, optional
+            The number of samples to return, by default None
+        frame : Literal["qubit", "drive"] | None, optional
+            The frame of the substates, by default None
 
         Returns
         -------
@@ -223,7 +263,7 @@ class SimulationResult:
         X = qt.sigmax()
         Y = qt.sigmay()
         Z = qt.sigmaz()
-        substates = self.get_substates(label)
+        substates = self.get_substates(label, frame=frame)
         buffer = []
         for substate in substates:
             rho = qt.Qobj(substate.full()[:2, :2])
@@ -241,6 +281,7 @@ class SimulationResult:
         *,
         dim: int = 2,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] | None = None,
     ) -> npt.NDArray:
         """
         Extract the density matrices of a qubit from the states.
@@ -251,13 +292,17 @@ class SimulationResult:
             The label of the qubit.
         dim : int, optional
             The dimension of the qubit, by default 2
+        n_samples : int | None, optional
+            The number of samples to return, by default None
+        frame : Literal["qubit", "drive"] | None, optional
+            The frame of the substates, by default None
 
         Returns
         -------
         list[qt.Qobj]
             The density matrices of the qubit.
         """
-        substates = self.get_substates(label)
+        substates = self.get_substates(label, frame=frame)
         rho = np.array([substate.full() for substate in substates])[:, :dim, :dim]
         rho = downsample(rho, n_samples)
         return rho
@@ -267,10 +312,12 @@ class SimulationResult:
         label: str,
         *,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] | None = None,
     ) -> None:
         vectors = self.get_bloch_vectors(
             label,
             n_samples=n_samples,
+            frame=frame,
         )
         times = self.get_times(
             n_samples=n_samples,
@@ -287,6 +334,7 @@ class SimulationResult:
         label: str,
         *,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] | None = None,
     ) -> None:
         """
         Display the Bloch sphere of a qubit.
@@ -295,10 +343,15 @@ class SimulationResult:
         ----------
         label : str
             The label of the qubit.
+        n_samples : int | None, optional
+            The number of samples to return, by default None
+        frame : Literal["qubit", "drive"] | None, optional
+            The frame of the substates, by default None
         """
         rho = self.get_density_matrices(
             label,
             n_samples=n_samples,
+            frame=frame,
         )
         qv.display_bloch_sphere_from_density_matrices(rho)
 
@@ -315,10 +368,10 @@ class SimulationResult:
             The label of the qubit, by default
         """
         states = self.states if label is None else self.get_substates(label)
-        population = states[-1].diag()
+        population = np.real(states[-1].diag())
         for idx, prob in enumerate(population):
             basis = self.system.basis_labels[idx] if label is None else str(idx)
-            print(f"|{basis}⟩: {prob:.6f}")
+            print(f"|{basis}⟩: {prob * 100:6.3f}%")
 
     def plot_population_dynamics(
         self,
@@ -396,7 +449,7 @@ class QuantumSimulator:
     def simulate(
         self,
         controls: list[Control] | PulseSchedule,
-        initial_state: qt.Qobj,
+        initial_state: qt.Qobj | dict | None = None,
         dt: float = 0.1,
         n_samples: int | None = None,
     ) -> SimulationResult:
@@ -407,8 +460,8 @@ class QuantumSimulator:
         ----------
         controls : list[Control] | PulseSchedule
             The control signals.
-        initial_state : qt.Qobj
-            The initial state of the quantum system.
+        initial_state : qt.Qobj | dict | None, optional
+            The initial state of the quantum system, by default None
         dt : float, optional
             The time step of the simulation, by default 0.1
         n_samples : int | None, optional
@@ -428,6 +481,9 @@ class QuantumSimulator:
             controls = self._convert_pulse_schedule_to_controls(controls)
 
         self._validate_controls(controls)
+
+        if initial_state is None:
+            initial_state = self.system.ground_state
 
         control = controls[0]
         N = int(control.duration / dt)
@@ -481,7 +537,7 @@ class QuantumSimulator:
     def mesolve(
         self,
         controls: list[Control] | PulseSchedule,
-        initial_state: qt.Qobj,
+        initial_state: qt.Qobj | dict | None = None,
         dt: float = 0.1,
         n_samples: int | None = None,
     ) -> SimulationResult:
@@ -492,8 +548,8 @@ class QuantumSimulator:
         ----------
         controls : list[Control] | PulseSchedule
             The control signals.
-        initial_state : qt.Qobj
-            The initial state of the quantum system.
+        initial_state : qt.Qobj | dict | None, optional
+            The initial state of the quantum system, by default None
         dt : float, optional
             The time step of the simulation, by default 0.1
         n_samples : int | None, optional
@@ -513,6 +569,9 @@ class QuantumSimulator:
             controls = self._convert_pulse_schedule_to_controls(controls)
 
         self._validate_controls(controls)
+
+        if initial_state is None:
+            initial_state = self.system.ground_state
 
         control = controls[0]
         N = int(control.duration / dt)

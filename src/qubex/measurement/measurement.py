@@ -922,6 +922,12 @@ class Measurement:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
+        sequence_duration = (schedule.duration // MIN_DURATION + 1) * MIN_DURATION
+        schedule = schedule.padded(
+            total_duration=sequence_duration,
+            pad_side="left",
+        )
+
         # get sampled sequences
         sampled_sequences = schedule.get_sampled_sequences()
 
@@ -1031,48 +1037,35 @@ class Measurement:
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
         capture_index = 0  # the first capture index
 
-        measure_data = {}
         if measure_mode == MeasureMode.SINGLE:
             backend_data = {
                 # iqs[capture_index]: ndarray[duration, shots]
                 target[label_slice]: iqs[capture_index].T.squeeze() * norm_factor
                 for target, iqs in sorted(backend_result.data.items())
             }
-            for qubit, iq in backend_data.items():
-                raw = iq
-                kerneled = np.mean(iq, axis=1)
-                classifier = self.classifiers.get(qubit)
-                if classifier is not None:
-                    classified_data = classifier.predict(kerneled)
-                    n_states = classifier.n_states
-                else:
-                    classified_data = np.array([])
-                    n_states = None
-                measure_data[qubit] = MeasureData(
+            measure_data = {
+                qubit: MeasureData(
                     target=qubit,
                     mode=measure_mode,
-                    raw=raw,
-                    kerneled=kerneled,
-                    classified=classified_data,
-                    n_states=n_states,
+                    raw=iq,
+                    classifier=self.classifiers.get(qubit),
                 )
+                for qubit, iq in backend_data.items()
+            }
         elif measure_mode == MeasureMode.AVG:
             backend_data = {
                 # iqs[capture_index]: ndarray[duration, 1]
                 target[label_slice]: iqs[capture_index].squeeze() * norm_factor / shots
                 for target, iqs in sorted(backend_result.data.items())
             }
-            for qubit, iq in backend_data.items():
-                raw = iq
-                kerneled = np.mean(iq)
-                measure_data[qubit] = MeasureData(
+            measure_data = {
+                qubit: MeasureData(
                     target=qubit,
                     mode=measure_mode,
-                    raw=raw,
-                    kerneled=kerneled,
-                    classified=np.array([]),
-                    n_states=None,
+                    raw=iq,
                 )
+                for qubit, iq in backend_data.items()
+            }
         else:
             raise ValueError(f"Invalid measure mode: {measure_mode}")
 
@@ -1096,39 +1089,23 @@ class Measurement:
             for target, iqs in sorted(backend_result.data.items()):
                 qubit = target[label_slice]
                 for iq in iqs:
-                    raw = iq.T.squeeze() * norm_factor
-                    kerneled = np.mean(raw, axis=1)
-                    classifier = self.classifiers.get(qubit)
-                    if classifier is not None:
-                        classified_data = classifier.predict(kerneled)
-                        n_states = classifier.n_states
-                    else:
-                        classified_data = np.array([])
-                        n_states = None
                     measure_data[qubit].append(
                         MeasureData(
                             target=qubit,
                             mode=measure_mode,
-                            raw=raw,
-                            kerneled=kerneled,
-                            classified=classified_data,
-                            n_states=n_states,
+                            raw=iq.T.squeeze() * norm_factor,
+                            classifier=self.classifiers.get(qubit),
                         )
                     )
         elif measure_mode == MeasureMode.AVG:
             for target, iqs in sorted(backend_result.data.items()):
                 qubit = target[label_slice]
                 for iq in iqs:
-                    raw = iq.squeeze() * norm_factor / shots
-                    kerneled = np.mean(raw)
                     measure_data[qubit].append(
                         MeasureData(
                             target=qubit,
                             mode=measure_mode,
-                            raw=raw,
-                            kerneled=kerneled,
-                            classified=np.array([]),
-                            n_states=None,
+                            raw=iq.squeeze() * norm_factor / shots,
                         )
                     )
         else:

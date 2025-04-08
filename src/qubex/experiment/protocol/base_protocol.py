@@ -835,6 +835,15 @@ class BaseProtocol(Protocol):
         x180: TargetMap[Waveform] | Waveform | None = None,
     ) -> PulseSchedule: ...
 
+    def cnot(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        zx90: PulseSchedule | None = None,
+        x90: Waveform | None = None,
+    ) -> PulseSchedule: ...
+
     def cx(
         self,
         control_qubit: str,
@@ -844,7 +853,7 @@ class BaseProtocol(Protocol):
         x90: Waveform | None = None,
     ) -> PulseSchedule: ...
 
-    def cnot(
+    def cz(
         self,
         control_qubit: str,
         target_qubit: str,

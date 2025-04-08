@@ -7,7 +7,6 @@ from typing import Collection, Literal
 
 import numpy as np
 import plotly.graph_objects as go
-from IPython.display import clear_output
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from tqdm import tqdm
@@ -24,6 +23,7 @@ from ..experiment_result import (
     AmplRabiData,
     ExperimentResult,
     FreqRabiData,
+    RabiData,
     RamseyData,
     T1Data,
     T2Data,
@@ -41,7 +41,7 @@ class CharacterizationMixin(
 ):
     def measure_readout_snr(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         capture_window: int | None = None,
@@ -55,6 +55,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -96,7 +98,7 @@ class CharacterizationMixin(
 
     def sweep_readout_amplitude(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -109,6 +111,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -198,7 +202,7 @@ class CharacterizationMixin(
 
     def sweep_readout_duration(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = np.arange(128, 2048, 128),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
@@ -210,6 +214,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -299,7 +305,7 @@ class CharacterizationMixin(
 
     def chevron_pattern(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
         time_range: ArrayLike = RABI_TIME_RANGE,
@@ -313,6 +319,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -441,7 +449,7 @@ class CharacterizationMixin(
 
     def obtain_freq_rabi_relation(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
@@ -452,15 +460,18 @@ class CharacterizationMixin(
     ) -> ExperimentResult[FreqRabiData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
         detuning_range = np.array(detuning_range, dtype=np.float64)
         time_range = np.array(time_range, dtype=np.float64)
-
         ampl = self.params.control_amplitude
         rabi_rates: dict[str, list[float]] = defaultdict(list)
-        for detuning in detuning_range:
+        rabi_data: dict[str, list[RabiData]] = defaultdict(list)
+
+        for detuning in tqdm(detuning_range):
             if rabi_level == "ge":
                 rabi_result = self.rabi_experiment(
                     time_range=time_range,
@@ -483,16 +494,16 @@ class CharacterizationMixin(
                 )
             else:
                 raise ValueError("Invalid rabi_level.")
-            clear_output()
             if plot:
                 rabi_result.fit()
-            clear_output(wait=True)
             rabi_params = rabi_result.rabi_params
             if rabi_params is None:
                 raise ValueError("Rabi parameters are not stored.")
             for target, param in rabi_params.items():
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
+            for target, data in rabi_result.data.items():
+                rabi_data[target].append(data)
 
         frequencies = {
             target: detuning_range + self.targets[target].frequency
@@ -505,16 +516,18 @@ class CharacterizationMixin(
                 data=np.array(values, dtype=np.float64),
                 sweep_range=detuning_range,
                 frequency_range=frequencies[target],
+                rabi_data=rabi_data[target],
             )
             for target, values in rabi_rates.items()
         }
-
         result = ExperimentResult(data=data)
+        if plot:
+            result.fit()
         return result
 
     def obtain_ampl_rabi_relation(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
@@ -524,43 +537,52 @@ class CharacterizationMixin(
     ) -> ExperimentResult[AmplRabiData]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
         time_range = np.array(time_range, dtype=np.float64)
         amplitude_range = np.array(amplitude_range, dtype=np.float64)
-
         rabi_rates: dict[str, list[float]] = defaultdict(list)
-        for amplitude in amplitude_range:
-            if amplitude <= 0:
-                continue
-            result = self.rabi_experiment(
+        rabi_data: dict[str, list[RabiData]] = defaultdict(list)
+
+        for amplitude in tqdm(amplitude_range):
+            rabi_result = self.rabi_experiment(
                 amplitudes={target: amplitude for target in targets},
                 time_range=time_range,
                 shots=shots,
                 interval=interval,
-                plot=plot,
+                plot=False,
             )
-            clear_output(wait=True)
-            rabi_params = result.rabi_params
+            rabi_params = rabi_result.rabi_params
             if rabi_params is None:
                 raise ValueError("Rabi parameters are not stored.")
             for target, param in rabi_params.items():
                 rabi_rate = param.frequency
                 rabi_rates[target].append(rabi_rate)
+            for target, data in rabi_result.data.items():
+                rabi_data[target].append(data)
+            if plot:
+                rabi_result.fit()
+
         data = {
             target: AmplRabiData(
                 target=target,
-                data=np.array(values, dtype=np.float64),
+                data=np.array(rabi_rate),
                 sweep_range=amplitude_range,
+                rabi_data=rabi_data[target],
             )
-            for target, values in rabi_rates.items()
+            for target, rabi_rate in rabi_rates.items()
         }
-        return ExperimentResult(data=data)
+        result = ExperimentResult(data=data)
+        if plot:
+            result.fit()
+        return result
 
     def calibrate_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = range(0, 101, 4),
@@ -590,7 +612,7 @@ class CharacterizationMixin(
 
     def calibrate_ef_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
@@ -600,6 +622,8 @@ class CharacterizationMixin(
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -633,7 +657,7 @@ class CharacterizationMixin(
 
     def calibrate_readout_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = range(0, 101, 4),
@@ -644,6 +668,8 @@ class CharacterizationMixin(
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -704,7 +730,7 @@ class CharacterizationMixin(
 
     def t1_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -715,6 +741,8 @@ class CharacterizationMixin(
     ) -> ExperimentResult[T1Data]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -797,7 +825,7 @@ class CharacterizationMixin(
 
     def t2_experiment(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
         n_cpmg: int = 1,
@@ -809,6 +837,8 @@ class CharacterizationMixin(
     ) -> ExperimentResult[T2Data]:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -1011,7 +1041,7 @@ class CharacterizationMixin(
 
     def obtain_effective_control_frequency(
         self,
-        targets: Collection[str] | None = None,
+        targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = np.arange(0, 10001, 100),
         detuning: float = 0.001,
@@ -1021,6 +1051,8 @@ class CharacterizationMixin(
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
         else:
             targets = list(targets)
 
@@ -1699,7 +1731,7 @@ class CharacterizationMixin(
                             shots=shots,
                             interval=interval,
                         )
-                        signal = result.data[qubit].kerneled
+                        signal = result.data[qubit][0].kerneled
                         phases.append(np.angle(signal))
                         amplitudes.append(np.abs(signal))
 

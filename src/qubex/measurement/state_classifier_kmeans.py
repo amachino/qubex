@@ -20,7 +20,7 @@ class StateClassifierKMeans(StateClassifier):
 
     Attributes
     ----------
-    dataset : dict[int, NDArray[np.float32]]
+    dataset : dict[int, NDArray]
         A dictionary of state labels and preprocessed data.
     model : KMeans
         The fitted k-means model.
@@ -32,7 +32,7 @@ class StateClassifierKMeans(StateClassifier):
         The center of each state.
     """
 
-    dataset: dict[int, NDArray[np.float32]]
+    dataset: dict[int, NDArray]
     model: KMeans
     label_map: dict[int, int]
     confusion_matrix: NDArray
@@ -77,7 +77,7 @@ class StateClassifierKMeans(StateClassifier):
     @classmethod
     def fit(
         cls,
-        data: dict[int, NDArray[np.complex64]],
+        data: dict[int, NDArray],
         n_init: int = 10,
         random_state: int = 42,
     ) -> StateClassifierKMeans:
@@ -86,7 +86,7 @@ class StateClassifierKMeans(StateClassifier):
 
         Parameters
         ----------
-        data : dict[int, NDArray[np.complex64]]
+        data : dict[int, NDArray[np.complexfloating[Any, Any]]]
             A dictionary of state labels and complex data.
         n_init : int, optional
             Number of time the k-means algorithm will be run with different center seeds, by default 10.
@@ -141,7 +141,7 @@ class StateClassifierKMeans(StateClassifier):
     @staticmethod
     def _create_label_map(
         model: KMeans,
-        dataset: dict[int, NDArray[np.float32]],
+        dataset: dict[int, NDArray],
     ) -> dict[int, int]:
         """
         Create a mapping from k-means cluster labels to state labels.
@@ -150,7 +150,7 @@ class StateClassifierKMeans(StateClassifier):
         ----------
         model : KMeans
             The fitted k-means model.
-        dataset : dict[int, NDArray[np.float32]]
+        dataset : dict[int, NDArray]
             The preprocessed dataset.
 
         Returns
@@ -172,7 +172,7 @@ class StateClassifierKMeans(StateClassifier):
     @staticmethod
     def _create_confusion_matrix(
         model: KMeans,
-        dataset: dict[int, NDArray[np.float32]],
+        dataset: dict[int, NDArray],
         label_map: dict[int, int],
     ) -> NDArray:
         """
@@ -182,7 +182,7 @@ class StateClassifierKMeans(StateClassifier):
         ----------
         model : KMeans
             The fitted k-means model.
-        dataset : dict[int, NDArray[np.float32]]
+        dataset : dict[int, NDArray]
             The preprocessed dataset.
         label_map : dict[int, int]
             A mapping from k-means cluster labels to state labels.
@@ -202,14 +202,14 @@ class StateClassifierKMeans(StateClassifier):
 
     def predict(
         self,
-        data: NDArray[np.complex128],
+        data: NDArray,
     ) -> NDArray:
         """
         Predict the state labels for the provided data.
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray
             An array of complex numbers representing the data to classify.
 
         Returns
@@ -229,7 +229,7 @@ class StateClassifierKMeans(StateClassifier):
     def classify(
         self,
         target: str,
-        data: NDArray[np.complex128],
+        data: NDArray,
         plot: bool = True,
     ) -> dict[int, int]:
         """
@@ -237,7 +237,7 @@ class StateClassifierKMeans(StateClassifier):
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray
             An array of complex numbers representing the data to classify.
         plot : bool, optional
             A flag to plot the data and predicted labels, by default True.
@@ -257,7 +257,7 @@ class StateClassifierKMeans(StateClassifier):
     def plot(
         self,
         target: str,
-        data: NDArray[np.complex128],
+        data: NDArray,
         labels: NDArray,
         n_samples: int = 1000,
     ):
@@ -266,7 +266,7 @@ class StateClassifierKMeans(StateClassifier):
 
         Parameters
         ----------
-        data : NDArray[np.complex128]
+        data : NDArray
             An array of complex numbers representing the data.
         labels : NDArray
             An array of predicted state labels.

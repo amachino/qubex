@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from qubecalib import QubeCalib, Sequencer
 from qubecalib.instrument.quel.quel1.tool import Skew
@@ -35,7 +35,7 @@ class DeviceController:
         self._boxpool = None
 
     @property
-    def system_config(self) -> dict[str, dict]:
+    def system_config(self) -> dict[str, Any]:
         """Get the system configuration."""
         config = self.qubecalib.system_config_database.asdict()
         return config
@@ -47,17 +47,17 @@ class DeviceController:
         return config
 
     @property
-    def box_settings(self) -> dict[str, dict]:
+    def box_settings(self) -> dict[str, Any]:
         """Get the box settings."""
         return self.system_config["box_settings"]
 
     @property
-    def port_settings(self) -> dict[str, dict]:
+    def port_settings(self) -> dict[str, Any]:
         """Get the port settings."""
         return self.system_config["port_settings"]
 
     @property
-    def target_settings(self) -> dict[str, dict]:
+    def target_settings(self) -> dict[str, Any]:
         """Get the target settings."""
         return self.system_config["target_settings"]
 

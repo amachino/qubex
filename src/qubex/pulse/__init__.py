@@ -1,12 +1,14 @@
 from .blank import Blank
 from .library import (
     CPMG,
+    Bump,
     CrossResonance,
     Drag,
     FlatTop,
     Gaussian,
     RaisedCosine,
     Rect,
+    Sintegral,
 )
 from .phase_shift import PhaseShift, VirtualZ
 from .pulse import Pulse
@@ -16,6 +18,7 @@ from .waveform import Waveform
 
 __all__ = [
     "Blank",
+    "Bump",
     "CPMG",
     "CrossResonance",
     "Drag",
@@ -29,6 +32,7 @@ __all__ = [
     "PulseSequence",
     "RaisedCosine",
     "Rect",
+    "Sintegral",
     "VirtualZ",
     "Waveform",
 ]
