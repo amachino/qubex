@@ -1409,7 +1409,7 @@ class CalibrationMixin(
         initial_state: str = "0",
         degree: int = 3,
         decoupling_amplitude: float | None = None,
-        add_drag: bool = False,
+        use_drag: bool = False,
         duration_unit: float = 16.0,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -1573,7 +1573,7 @@ class CalibrationMixin(
         ) * decoupling_amplitude
 
         if calibrated_cr_amplitude is not None and store_params:
-            if add_drag:
+            if use_drag:
                 f_control = self.qubits[control_qubit].frequency
                 f_target = self.qubits[target_qubit].frequency
                 Delta_ct = 2 * np.pi * (f_control - f_target)
@@ -1749,6 +1749,9 @@ class CalibrationMixin(
         control_qubit: str,
         target_qubit: str,
         *,
+        seed: int = 42,
+        ftarget: float = 1e-3,
+        timeout: int = 300,
         duration: float | None = None,
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
@@ -1765,13 +1768,13 @@ class CalibrationMixin(
         if ramptime is None:
             ramptime = cr_param["ramptime"]
 
-        cr_ramptime = ramptime
         cr_amplitude = cr_param["cr_amplitude"]
         cr_phase = cr_param["cr_phase"]
         cr_beta = cr_param["cr_beta"]
         cancel_amplitude = cr_param["cancel_amplitude"]
         cancel_phase = cr_param["cancel_phase"]
         cancel_beta = cr_param["cancel_beta"]
+        decoupling_amplitude = cr_param["decoupling_amplitude"]
 
         if x180 is None:
             x180 = self.x180(control_qubit)
@@ -1779,24 +1782,37 @@ class CalibrationMixin(
             x180 = x180[control_qubit]
 
         def objective_func(params):
+            cr_amplitude = params[0]
+            cr_phase = params[1]
+            cr_beta = params[2]
+            cancel_amplitude = params[3]
+            cancel_phase = params[4]
+            cancel_beta = params[5]
+            decoupling_amplitude = params[6]
+
+            cancel_pulse = (
+                cancel_amplitude * np.exp(1j * cancel_phase) + decoupling_amplitude
+            )
+
             ecr_0 = CrossResonance(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
-                cr_amplitude=params[0],
+                cr_amplitude=cr_amplitude,
                 cr_duration=duration,
-                cr_ramptime=cr_ramptime,
-                cr_phase=params[1],
-                cr_beta=params[2],
-                cancel_amplitude=params[3],
-                cancel_phase=params[4],
-                cancel_beta=params[5],
+                cr_ramptime=ramptime,
+                cr_phase=cr_phase,
+                cr_beta=cr_beta,
+                cancel_amplitude=np.abs(cancel_pulse),
+                cancel_phase=np.angle(cancel_pulse),
+                cancel_beta=cancel_beta,
                 echo=True,
                 pi_pulse=x180,
             )
+
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr_1:
                 ecr_1.add(
                     control_qubit,
-                    self.get_pulse_for_state(control_qubit, "1"),
+                    self.x180(control_qubit),
                 )
                 ecr_1.barrier()
                 ecr_1.call(ecr_0)
@@ -1827,16 +1843,37 @@ class CalibrationMixin(
             cancel_amplitude,
             cancel_phase,
             cancel_beta,
+            decoupling_amplitude,
         ]
         es = cma.CMAEvolutionStrategy(
             initial_params,
             1.0,
             {
-                "seed": 42,
-                "ftarget": 1e-3,
-                "timeout": 300,
-                "bounds": [[0, -np.pi, -1, 0, -np.pi, -1], [1, np.pi, 1, 1, np.pi, 1]],
+                "seed": seed,
+                "ftarget": ftarget,
+                "timeout": timeout,
+                "bounds": [
+                    [
+                        0,
+                        -np.pi,
+                        -1,
+                        0,
+                        -np.pi,
+                        -1,
+                        0,
+                    ],
+                    [
+                        1,
+                        np.pi,
+                        1,
+                        1,
+                        np.pi,
+                        1,
+                        1,
+                    ],
+                ],
                 "CMA_stds": [
+                    0.01,
                     0.01,
                     0.01,
                     0.01,
@@ -1853,14 +1890,14 @@ class CalibrationMixin(
             cr_label: {
                 "target": cr_label,
                 "duration": duration,
-                "ramptime": cr_ramptime,
+                "ramptime": ramptime,
                 "cr_amplitude": x[0],
                 "cr_phase": x[1],
                 "cr_beta": x[2],
                 "cancel_amplitude": x[3],
                 "cancel_phase": x[4],
                 "cancel_beta": x[5],
-                "decoupling_amplitude": 0.0,
+                "decoupling_amplitude": x[6],
             },
         }
 
@@ -1871,4 +1908,5 @@ class CalibrationMixin(
             "cancel_amplitude": x[3],
             "cancel_phase": x[4],
             "cancel_beta": x[5],
+            "decoupling_amplitude": x[6],
         }
