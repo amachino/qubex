@@ -1243,8 +1243,10 @@ class CalibrationMixin(
                 "ramptime": ramptime,
                 "cr_amplitude": new_cr_amplitude,
                 "cr_phase": new_cr_phase,
+                "cr_beta": 0.0,
                 "cancel_amplitude": new_cancel_amplitude,
                 "cancel_phase": new_cancel_phase,
+                "cancel_beta": 0.0,
                 "decoupling_amplitude": decouple_amplitude,
             }
         }
@@ -1407,6 +1409,7 @@ class CalibrationMixin(
         initial_state: str = "0",
         degree: int = 3,
         decoupling_amplitude: float | None = None,
+        add_drag: bool = False,
         duration_unit: float = 16.0,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -1570,6 +1573,15 @@ class CalibrationMixin(
         ) * decoupling_amplitude
 
         if calibrated_cr_amplitude is not None and store_params:
+            if add_drag:
+                f_control = self.qubits[control_qubit].frequency
+                f_target = self.qubits[target_qubit].frequency
+                Delta_ct = 2 * np.pi * (f_control - f_target)
+                cr_beta = -1 / Delta_ct
+                cancel_beta = -1 / self.qubits[target_qubit].alpha
+            else:
+                cr_beta = 0.0
+                cancel_beta = 0.0
             self.calib_note.cr_params = {
                 cr_label: {
                     "target": cr_label,
@@ -1577,8 +1589,10 @@ class CalibrationMixin(
                     "ramptime": ramptime,
                     "cr_amplitude": calibrated_cr_amplitude,
                     "cr_phase": cr_phase,
+                    "cr_beta": cr_beta,
                     "cancel_amplitude": calibrated_cancel_amplitude,
                     "cancel_phase": cancel_phase,
+                    "cancel_beta": cancel_beta,
                     "decoupling_amplitude": calibrated_decoupling_amplitude,
                 },
             }
@@ -1735,8 +1749,8 @@ class CalibrationMixin(
         control_qubit: str,
         target_qubit: str,
         *,
-        duration: float = 100,
-        ramptime: float = 20,
+        duration: float | None = None,
+        ramptime: float | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1745,19 +1759,24 @@ class CalibrationMixin(
         cr_param = self.calib_note.get_cr_param(cr_label)
         if cr_param is None:
             raise ValueError("CR parameters are not stored.")
+
+        if duration is None:
+            duration = cr_param["duration"]
+        if ramptime is None:
+            ramptime = cr_param["ramptime"]
+
         cr_ramptime = ramptime
         cr_amplitude = cr_param["cr_amplitude"]
         cr_phase = cr_param["cr_phase"]
+        cr_beta = cr_param["cr_beta"]
         cancel_amplitude = cr_param["cancel_amplitude"]
         cancel_phase = cr_param["cancel_phase"]
+        cancel_beta = cr_param["cancel_beta"]
 
         if x180 is None:
-            if control_qubit in self.drag_pi_pulse:
-                x180 = self.drag_pi_pulse
-            else:
-                x180 = self.pi_pulse
-        elif isinstance(x180, Waveform):
-            x180 = {control_qubit: x180}
+            x180 = self.x180(control_qubit)
+        elif not isinstance(x180, Waveform):
+            x180 = x180[control_qubit]
 
         def objective_func(params):
             ecr_0 = CrossResonance(
@@ -1767,10 +1786,12 @@ class CalibrationMixin(
                 cr_duration=duration,
                 cr_ramptime=cr_ramptime,
                 cr_phase=params[1],
-                cancel_amplitude=params[2],
-                cancel_phase=params[3],
+                cr_beta=params[2],
+                cancel_amplitude=params[3],
+                cancel_phase=params[4],
+                cancel_beta=params[5],
                 echo=True,
-                pi_pulse=x180[control_qubit],
+                pi_pulse=x180,
             )
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr_1:
                 ecr_1.add(
@@ -1799,7 +1820,14 @@ class CalibrationMixin(
             loss = loss_c0 + loss_t0 + loss_c1 + loss_t1
             return loss
 
-        initial_params = [cr_amplitude, cr_phase, cancel_amplitude, cancel_phase]
+        initial_params = [
+            cr_amplitude,
+            cr_phase,
+            cr_beta,
+            cancel_amplitude,
+            cancel_phase,
+            cancel_beta,
+        ]
         es = cma.CMAEvolutionStrategy(
             initial_params,
             1.0,
@@ -1807,8 +1835,10 @@ class CalibrationMixin(
                 "seed": 42,
                 "ftarget": 1e-3,
                 "timeout": 300,
-                "bounds": [[0, -np.pi, 0, -np.pi], [1, np.pi, 1, np.pi]],
+                "bounds": [[0, -np.pi, -1, 0, -np.pi, -1], [1, np.pi, 1, 1, np.pi, 1]],
                 "CMA_stds": [
+                    0.01,
+                    0.01,
                     0.01,
                     0.01,
                     0.01,
@@ -1826,8 +1856,10 @@ class CalibrationMixin(
                 "ramptime": cr_ramptime,
                 "cr_amplitude": x[0],
                 "cr_phase": x[1],
-                "cancel_amplitude": x[2],
-                "cancel_phase": x[3],
+                "cr_beta": x[2],
+                "cancel_amplitude": x[3],
+                "cancel_phase": x[4],
+                "cancel_beta": x[5],
                 "decoupling_amplitude": 0.0,
             },
         }
@@ -1835,6 +1867,8 @@ class CalibrationMixin(
         return {
             "cr_amplitude": x[0],
             "cr_phase": x[1],
-            "cancel_amplitude": x[2],
-            "cancel_phase": x[3],
+            "cr_beta": x[2],
+            "cancel_amplitude": x[3],
+            "cancel_phase": x[4],
+            "cancel_beta": x[5],
         }

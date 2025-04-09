@@ -1250,8 +1250,10 @@ class Experiment(
         cr_ramptime: float | None = None,
         cr_amplitude: float | None = None,
         cr_phase: float | None = None,
+        cr_beta: float | None = None,
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
+        cancel_beta: float | None = None,
         decoupling_amplitude: float | None = None,
         echo: bool = True,
         x180: TargetMap[Waveform] | Waveform | None = None,
@@ -1276,10 +1278,14 @@ class Experiment(
             cr_ramptime = cr_param["ramptime"]
         if cr_phase is None:
             cr_phase = cr_param["cr_phase"]
+        if cr_beta is None:
+            cr_beta = cr_param["cr_beta"]
         if cancel_amplitude is None:
             cancel_amplitude = cr_param["cancel_amplitude"]
         if cancel_phase is None:
             cancel_phase = cr_param["cancel_phase"]
+        if cancel_beta is None:
+            cancel_beta = cr_param["cancel_beta"]
         if decoupling_amplitude is None:
             decoupling_amplitude = cr_param["decoupling_amplitude"]
 
@@ -1294,8 +1300,10 @@ class Experiment(
             cr_duration=cr_duration,
             cr_ramptime=cr_ramptime,
             cr_phase=cr_phase,
+            cr_beta=cr_beta,
             cancel_amplitude=np.abs(cancel_pulse),
             cancel_phase=np.angle(cancel_pulse),
+            cancel_beta=cancel_beta,
             echo=echo,
             pi_pulse=pi_pulse,
         )

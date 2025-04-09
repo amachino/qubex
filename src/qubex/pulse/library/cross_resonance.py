@@ -23,10 +23,14 @@ class CrossResonance(PulseSchedule):
         The ramp duration of the cross-resonance pulse in nanoseconds.
     cr_phase: float
         The phase of the cross-resonance pulse in radians.
+    cr_beta: float
+        The DRAG correction coefficient for the cross-resonance pulse.
     cancel_amplitude: float = 0.0
         The amplitude of the cancel pulse.
     cancel_phase: float = 0.0
         The phase of the cancel pulse in radians.
+    cancel_beta: float = 0.0
+        The DRAG correction coefficient for the cancel pulse.
     echo: bool = False
         If True, the echo pulse is added to the schedule.
     """
@@ -39,15 +43,19 @@ class CrossResonance(PulseSchedule):
         cr_duration: float,
         cr_ramptime: float | None = None,
         cr_phase: float | None = None,
+        cr_beta: float | None = None,
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
+        cancel_beta: float | None = None,
         echo: bool = False,
         pi_pulse: Waveform | None = None,
     ):
         cr_ramptime = cr_ramptime or 0.0
         cr_phase = cr_phase or 0.0
+        cr_beta = cr_beta or 0.0
         cancel_amplitude = cancel_amplitude or 0.0
         cancel_phase = cancel_phase or 0.0
+        cancel_beta = cancel_beta or 0.0
 
         cr_label = f"{control_qubit}-{target_qubit}"
 
@@ -56,6 +64,7 @@ class CrossResonance(PulseSchedule):
             amplitude=cr_amplitude,
             tau=cr_ramptime,
             phase=cr_phase,
+            beta=cr_beta,
         )
 
         cancel_waveform = FlatTop(
@@ -63,6 +72,7 @@ class CrossResonance(PulseSchedule):
             amplitude=cancel_amplitude,
             tau=cr_ramptime,
             phase=cancel_phase,
+            beta=cancel_beta,
         )
 
         self.control_qubit = control_qubit
@@ -71,8 +81,10 @@ class CrossResonance(PulseSchedule):
         self.cr_duration = cr_duration
         self.cr_ramptime = cr_ramptime
         self.cr_phase = cr_phase
+        self.cr_beta = cr_beta
         self.cancel_amplitude = cancel_amplitude
         self.cancel_phase = cancel_phase
+        self.cancel_beta = cancel_beta
         self.echo = echo
         self.pi_pulse = pi_pulse
         self.cr_label = cr_label
