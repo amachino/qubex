@@ -670,17 +670,16 @@ class Experiment(
         if state == "0":
             return Blank(0)
         elif state == "1":
-            return self.hpi_pulse[target].repeated(2)
+            return self.x90(target).repeated(2)
         else:
-            hpi = self.hpi_pulse[target]
             if state == "+":
-                return hpi.shifted(np.pi / 2)
+                return self.y90(target)
             elif state == "-":
-                return hpi.shifted(-np.pi / 2)
+                return self.y90m(target)
             elif state == "+i":
-                return hpi.shifted(np.pi)
+                return self.x90m(target)
             elif state == "-i":
-                return hpi
+                return self.x90(target)
             else:
                 raise ValueError("Invalid state.")
 

@@ -1229,12 +1229,18 @@ class CalibrationMixin(
         print()
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        duration = (0.5 * result["zx90_duration"]) // SAMPLING_PERIOD * SAMPLING_PERIOD
+        duration = (
+            (0.5 * result["zx90_duration"]) // SAMPLING_PERIOD + 1
+        ) * SAMPLING_PERIOD
+
+        cr_rotation_amplitude = result["cr_rotation_amplitude"]
 
         decouple_amplitude = self.calc_control_amplitude(
             target=target_qubit,
-            rabi_rate=result["cr_rotation_amplitude"] * decoupling_multiple,
+            rabi_rate=cr_rotation_amplitude * decoupling_multiple,
         )
+
+        cr_rotation_rate = cr_rotation_amplitude / cr_amplitude
 
         self.calib_note.cr_params = {
             cr_label: {
@@ -1248,6 +1254,7 @@ class CalibrationMixin(
                 "cancel_phase": new_cancel_phase,
                 "cancel_beta": 0.0,
                 "decoupling_amplitude": decouple_amplitude,
+                "cr_rotation_rate": cr_rotation_rate,
             }
         }
 
@@ -1431,12 +1438,12 @@ class CalibrationMixin(
         cancel_amplitude = cr_param["cancel_amplitude"]
         cancel_phase = cr_param["cancel_phase"]
         cancel_cr_ratio = cancel_amplitude / cr_amplitude
+        cr_rotation_rate = cr_param["cr_rotation_rate"]
+        cr_frequency = cr_rotation_rate * cr_amplitude
 
         if duration is None:
-            duration = cr_param["duration"]
-            if int(duration % duration_unit) != 0:
-                if cr_param["ramptime"] == 0:
-                    duration += ramptime
+            duration = 1 / (8 * cr_frequency) + ramptime
+            if duration % duration_unit != 0:
                 duration = (duration // duration_unit + 1) * duration_unit
 
         if decoupling_amplitude is None:
@@ -1598,6 +1605,7 @@ class CalibrationMixin(
                     "cancel_phase": cancel_phase,
                     "cancel_beta": cancel_beta,
                     "decoupling_amplitude": calibrated_decoupling_amplitude,
+                    "cr_rotation_rate": cr_rotation_rate,
                 },
             }
 
