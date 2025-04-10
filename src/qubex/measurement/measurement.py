@@ -623,6 +623,9 @@ class Measurement:
         MultipleMeasureResult
             The measurement results.
         """
+        if not schedule.is_valid():
+            raise ValueError("Invalid pulse schedule.")
+
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
