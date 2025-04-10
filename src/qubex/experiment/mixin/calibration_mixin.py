@@ -1308,7 +1308,7 @@ class CalibrationMixin(
             cancel_amplitude = 0.0
             cancel_phase = 0.0
             time_range = (
-                time_range if time_range is not None else np.arange(0, 1001, 40)
+                time_range if time_range is not None else np.arange(0, 1001, 20)
             )
 
         params_history = [
@@ -1435,6 +1435,8 @@ class CalibrationMixin(
         if duration is None:
             duration = cr_param["duration"]
             if int(duration % duration_unit) != 0:
+                if cr_param["ramptime"] == 0:
+                    duration += ramptime
                 duration = (duration // duration_unit + 1) * duration_unit
 
         if decoupling_amplitude is None:
