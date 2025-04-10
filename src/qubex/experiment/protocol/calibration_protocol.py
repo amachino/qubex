@@ -598,6 +598,8 @@ class CalibrationProtocol(Protocol):
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
         degree: int = 3,
+        adiabatic_safe_factor: float = 0.75,
+        max_amplitude: float = 0.9,
         decoupling_amplitude: float | None = None,
         use_drag: bool = False,
         duration_unit: float = 16.0,

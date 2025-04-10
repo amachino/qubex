@@ -1417,6 +1417,8 @@ class CalibrationMixin(
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
         degree: int = 3,
+        adiabatic_safe_factor: float = 0.75,
+        max_amplitude: float = 0.9,
         decoupling_amplitude: float | None = None,
         use_drag: bool = False,
         duration_unit: float = 16.0,
@@ -1439,7 +1441,14 @@ class CalibrationMixin(
         cancel_phase = cr_param["cancel_phase"]
         cancel_cr_ratio = cancel_amplitude / cr_amplitude
         cr_rotation_rate = cr_param["cr_rotation_rate"]
-        cr_frequency = cr_rotation_rate * cr_amplitude
+
+        f_control = self.qubits[control_qubit].frequency
+        f_target = self.qubits[target_qubit].frequency
+        f_delta = np.abs(f_target - f_control)
+        max_cr_rabi = adiabatic_safe_factor * f_delta
+        max_cr_amplitude = self.calc_control_amplitude(control_qubit, max_cr_rabi)
+        max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
+        cr_frequency = cr_rotation_rate * max_cr_amplitude
 
         if duration is None:
             duration = 1 / (8 * cr_frequency) + ramptime
