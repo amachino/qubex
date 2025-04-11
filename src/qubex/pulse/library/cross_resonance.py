@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from ..pulse_schedule import PulseSchedule
 from ..waveform import Waveform
 from .flat_top import FlatTop
@@ -33,6 +35,8 @@ class CrossResonance(PulseSchedule):
         The DRAG correction coefficient for the cancel pulse.
     echo: bool = False
         If True, the echo pulse is added to the schedule.
+    ramp_type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "RaisedCosine",
+        The type of the ramp function used in the pulse.
     """
 
     def __init__(
@@ -49,6 +53,12 @@ class CrossResonance(PulseSchedule):
         cancel_beta: float | None = None,
         echo: bool = False,
         pi_pulse: Waveform | None = None,
+        ramp_type: Literal[
+            "Gaussian",
+            "RaisedCosine",
+            "Sintegral",
+            "Bump",
+        ] = "RaisedCosine",
     ):
         cr_ramptime = cr_ramptime or 0.0
         cr_phase = cr_phase or 0.0
@@ -65,6 +75,7 @@ class CrossResonance(PulseSchedule):
             tau=cr_ramptime,
             phase=cr_phase,
             beta=cr_beta,
+            type=ramp_type,
         )
 
         cancel_waveform = FlatTop(
@@ -73,6 +84,7 @@ class CrossResonance(PulseSchedule):
             tau=cr_ramptime,
             phase=cancel_phase,
             beta=cancel_beta,
+            type=ramp_type,
         )
 
         self.control_qubit = control_qubit

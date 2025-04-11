@@ -452,7 +452,8 @@ def fit_polynomial(
     real_roots = roots[np.isreal(roots)].real
     roots_in_range = real_roots[(real_roots >= np.min(x)) & (real_roots <= np.max(x))]
     try:
-        root = roots_in_range[np.argmin(np.abs(roots_in_range))]
+        # select root nearest to the center of the range
+        root = roots_in_range[np.argmin(np.abs(roots_in_range - np.mean(x)))]
     except ValueError:
         print(f"No root found in the range ({np.min(x)}, {np.max(x)}).")
         root = np.nan
@@ -498,6 +499,7 @@ def fit_polynomial(
         "popt": popt,
         "fun": fun,
         "root": root,
+        "roots": roots_in_range,
         "fig": fig,
     }
 

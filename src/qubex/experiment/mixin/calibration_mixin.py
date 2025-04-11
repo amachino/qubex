@@ -882,6 +882,12 @@ class CalibrationMixin(
         control_state: str = "0",
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
+        ramp_type: Literal[
+            "Gaussian",
+            "RaisedCosine",
+            "Sintegral",
+            "Bump",
+        ] = "RaisedCosine",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -918,6 +924,7 @@ class CalibrationMixin(
                     cancel_phase=cancel_phase,
                     echo=echo,
                     pi_pulse=x180[control_qubit],
+                    ramp_type=ramp_type,
                 ),
                 x90=x90,
                 initial_state={control_qubit: control_state},
@@ -1027,6 +1034,7 @@ class CalibrationMixin(
             echo=False,
             control_state="1",
             x90=x90,
+            ramp_type="RaisedCosine",
             shots=shots,
             interval=interval,
         )
@@ -1235,7 +1243,7 @@ class CalibrationMixin(
 
         cr_rotation_amplitude = result["cr_rotation_amplitude"]
 
-        decouple_amplitude = self.calc_control_amplitude(
+        decoupling_amplitude = self.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=cr_rotation_amplitude * decoupling_multiple,
         )
@@ -1253,7 +1261,7 @@ class CalibrationMixin(
                 "cancel_amplitude": new_cancel_amplitude,
                 "cancel_phase": new_cancel_phase,
                 "cancel_beta": 0.0,
-                "decoupling_amplitude": decouple_amplitude,
+                "decoupling_amplitude": decoupling_amplitude,
                 "cr_rotation_rate": cr_rotation_rate,
             }
         }
@@ -1269,7 +1277,7 @@ class CalibrationMixin(
         target_qubit: str,
         *,
         time_range: ArrayLike | None = None,
-        ramptime: float | None = None,
+        ramptime: float = 16,
         cr_amplitude: float | None = None,
         n_iterations: int = 4,
         n_cycles: int = 2,
@@ -1277,7 +1285,7 @@ class CalibrationMixin(
         use_stored_params: bool = False,
         tolerance: float = 10e-6,
         adiabatic_safe_factor: float = 0.75,
-        max_amplitude: float = 0.9,
+        max_amplitude: float = 1.0,
         decoupling_multiple: float = 10.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
@@ -1416,11 +1424,11 @@ class CalibrationMixin(
         duration: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
-        degree: int = 3,
+        degree: int = 5,
         adiabatic_safe_factor: float = 0.75,
-        max_amplitude: float = 0.9,
-        decoupling_amplitude: float | None = None,
-        use_drag: bool = False,
+        max_amplitude: float = 1.0,
+        decoupling_multiple: float = 10.0,
+        use_drag: bool = True,
         duration_unit: float = 16.0,
         x180: TargetMap[Waveform] | Waveform | None = None,
         use_zvalues: bool = False,
@@ -1455,9 +1463,6 @@ class CalibrationMixin(
             if duration % duration_unit != 0:
                 duration = (duration // duration_unit + 1) * duration_unit
 
-        if decoupling_amplitude is None:
-            decoupling_amplitude = cr_param["decoupling_amplitude"]
-
         if x180 is None:
             if control_qubit in self.drag_pi_pulse:
                 x180 = self.drag_pi_pulse
@@ -1465,6 +1470,11 @@ class CalibrationMixin(
                 x180 = self.pi_pulse
         elif isinstance(x180, Waveform):
             x180 = {control_qubit: x180}
+
+        decoupling_amplitude = self.calc_control_amplitude(
+            target=target_qubit,
+            rabi_rate=cr_frequency * decoupling_multiple,
+        )
 
         def ecr_sequence(amplitude: float, n_repetitions: int) -> PulseSchedule:
             cancel_pulse = amplitude * cancel_cr_ratio * np.exp(1j * cancel_phase)
@@ -1546,9 +1556,9 @@ class CalibrationMixin(
             if rough_amplitude is None:
                 raise ValueError("Could not find a root for the rough calibration.")
             else:
-                min_amplitude = float(rough_amplitude * 0.8)
-                max_amplitude = float(rough_amplitude * 1.2)
-                amplitude_range = np.linspace(min_amplitude, max_amplitude, 40)
+                min_amplitude = float(rough_amplitude * 2 / 3)
+                max_amplitude = float(rough_amplitude * 4 / 3)
+                amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
         else:
             amplitude_range = np.asarray(amplitude_range)
 
