@@ -495,7 +495,7 @@ class BenchmarkingMixin(
 
         if is_2q:
             if n_cliffords_range is None:
-                n_cliffords_range = np.arange(0, 41, 4)
+                n_cliffords_range = np.arange(0, 61, 6)
         else:
             self.validate_rabi_params([target])
             if n_cliffords_range is None:
