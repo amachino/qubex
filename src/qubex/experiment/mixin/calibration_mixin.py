@@ -1424,19 +1424,21 @@ class CalibrationMixin(
         duration: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
-        degree: int = 5,
+        degree: int = 3,
         adiabatic_safe_factor: float = 0.75,
         max_amplitude: float = 1.0,
         decoupling_multiple: float = 10.0,
         use_drag: bool = True,
         duration_unit: float = 16.0,
+        duration_buffer: float = 1.05,
         x180: TargetMap[Waveform] | Waveform | None = None,
+        x180_margin: float = 0.0,
         use_zvalues: bool = False,
         store_params: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ):
+    ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self.calib_note.get_cr_param(cr_label)
 
@@ -1459,7 +1461,7 @@ class CalibrationMixin(
         cr_frequency = cr_rotation_rate * max_cr_amplitude
 
         if duration is None:
-            duration = 1 / (8 * cr_frequency) + ramptime
+            duration = duration_buffer / (8 * cr_frequency) + ramptime
             if duration % duration_unit != 0:
                 duration = (duration // duration_unit + 1) * duration_unit
 
@@ -1491,6 +1493,7 @@ class CalibrationMixin(
                 cancel_phase=np.angle(cancel_pulse),
                 echo=True,
                 pi_pulse=x180[control_qubit],
+                pi_margin=x180_margin,
             ).repeated(n_repetitions)
             with PulseSchedule() as ps:
                 if initial_state != "0":
@@ -1556,8 +1559,8 @@ class CalibrationMixin(
             if rough_amplitude is None:
                 raise ValueError("Could not find a root for the rough calibration.")
             else:
-                min_amplitude = float(rough_amplitude * 2 / 3)
-                max_amplitude = float(rough_amplitude * 4 / 3)
+                min_amplitude = float(rough_amplitude * 0.9)
+                max_amplitude = float(rough_amplitude * 1.1)
                 amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
         else:
             amplitude_range = np.asarray(amplitude_range)
@@ -1567,6 +1570,7 @@ class CalibrationMixin(
             n_repetitions=1,
             amplitude_range=amplitude_range,
         )
+        amplitude_range = np.asarray(result_n1["amplitude_range"])
         signal_n1 = result_n1["signal"]
         fit_result_n1 = result_n1["fit_result"]
 

@@ -597,19 +597,21 @@ class CalibrationProtocol(Protocol):
         duration: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
-        degree: int = 5,
+        degree: int = 3,
         adiabatic_safe_factor: float = 0.75,
         max_amplitude: float = 1.0,
         decoupling_multiple: float = 10.0,
         use_drag: bool = True,
         duration_unit: float = 16.0,
+        duration_buffer: float = 1.05,
         x180: TargetMap[Waveform] | Waveform | None = None,
+        x180_margin: float = 0.0,
         use_zvalues: bool = False,
         store_params: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ): ...
+    ) -> dict: ...
 
     def optimize_x90(
         self,

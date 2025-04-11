@@ -53,6 +53,7 @@ class CrossResonance(PulseSchedule):
         cancel_beta: float | None = None,
         echo: bool = False,
         pi_pulse: Waveform | None = None,
+        pi_margin: float | None = None,
         ramp_type: Literal[
             "Gaussian",
             "RaisedCosine",
@@ -66,6 +67,7 @@ class CrossResonance(PulseSchedule):
         cancel_amplitude = cancel_amplitude or 0.0
         cancel_phase = cancel_phase or 0.0
         cancel_beta = cancel_beta or 0.0
+        pi_margin = pi_margin or 0.0
 
         cr_label = f"{control_qubit}-{target_qubit}"
 
@@ -113,6 +115,9 @@ class CrossResonance(PulseSchedule):
         else:
             if pi_pulse is None:
                 raise ValueError("The pi pulse waveform must be provided.")
+            if pi_margin > 0:
+                pi_pulse = pi_pulse.padded(pi_pulse.duration + pi_margin, "left")
+                pi_pulse = pi_pulse.padded(pi_pulse.duration + pi_margin, "right")
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr:
                 ecr.call(cr)
                 ecr.barrier()

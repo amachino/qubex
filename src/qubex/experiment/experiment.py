@@ -1256,6 +1256,7 @@ class Experiment(
         decoupling_amplitude: float | None = None,
         echo: bool = True,
         x180: TargetMap[Waveform] | Waveform | None = None,
+        x180_margin: float = 0.0,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self.calib_note.get_cr_param(cr_label)
@@ -1305,6 +1306,7 @@ class Experiment(
             cancel_beta=cancel_beta,
             echo=echo,
             pi_pulse=pi_pulse,
+            pi_margin=x180_margin,
         )
 
     def cnot(
