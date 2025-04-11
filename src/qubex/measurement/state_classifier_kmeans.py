@@ -226,6 +226,25 @@ class StateClassifierKMeans(StateClassifier):
 
         return state_labels
 
+    def predict_proba(
+        self,
+        data: NDArray,
+    ) -> NDArray:
+        """
+        Predict the state probabilities for the provided data.
+
+        Parameters
+        ----------
+        data : NDArray
+            An array of complex numbers representing the data to classify.
+
+        Returns
+        -------
+        NDArray
+            An array of predicted state probabilities based on the fitted model.
+        """
+        raise NotImplementedError
+
     def classify(
         self,
         target: str,
