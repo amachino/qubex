@@ -1559,8 +1559,8 @@ class CalibrationMixin(
             if rough_amplitude is None:
                 raise ValueError("Could not find a root for the rough calibration.")
             else:
-                min_amplitude = float(rough_amplitude * 0.9)
-                max_amplitude = float(rough_amplitude * 1.1)
+                min_amplitude = float(rough_amplitude * 0.8)
+                max_amplitude = float(rough_amplitude * 1.2)
                 amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
         else:
             amplitude_range = np.asarray(amplitude_range)
