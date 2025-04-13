@@ -1506,8 +1506,8 @@ class CalibrationMixin(
             return ps
 
         def calibrate(n_repetitions, amplitude_range) -> dict:
-            min_amplitude = np.clip(amplitude_range[0], 0.0, 1.0)
-            max_amplitude = np.clip(amplitude_range[-1], 0.0, 1.0)
+            min_amplitude = np.clip(amplitude_range[0], 0.0, max_cr_amplitude)
+            max_amplitude = np.clip(amplitude_range[-1], 0.0, max_cr_amplitude)
             amplitude_range = np.linspace(
                 min_amplitude,
                 max_amplitude,
