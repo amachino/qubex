@@ -1317,10 +1317,9 @@ class Experiment(
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if x90 is None:
-            x90 = self.x90(target_qubit)
-
         if cr_label in self.calib_note.cr_params:
+            if x90 is None:
+                x90 = self.x90(target_qubit)
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot:
                 cnot.call(zx90)
@@ -1328,6 +1327,8 @@ class Experiment(
                 cnot.add(target_qubit, x90.scaled(-1))
             return cnot
         else:
+            if x90 is None:
+                x90 = self.x90(control_qubit)
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
             cr_label = f"{target_qubit}-{control_qubit}"
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
@@ -1372,10 +1373,9 @@ class Experiment(
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if x90 is None:
-            x90 = self.x90(target_qubit)
-
         if cr_label in self.calib_note.cr_params:
+            if x90 is None:
+                x90 = self.x90(target_qubit)
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot:
                 cnot.call(zx90)
@@ -1391,6 +1391,8 @@ class Experiment(
                 cz.add(target_qubit, hadamard_t)
             return cz
         else:
+            if x90 is None:
+                x90 = self.x90(control_qubit)
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
                 cnot_tc.call(zx90)
