@@ -1253,7 +1253,7 @@ class Experiment(
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
         cancel_beta: float | None = None,
-        decoupling_amplitude: float | None = None,
+        rotary_amplitude: float | None = None,
         echo: bool = True,
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float = 0.0,
@@ -1286,12 +1286,10 @@ class Experiment(
             cancel_phase = cr_param["cancel_phase"]
         if cancel_beta is None:
             cancel_beta = cr_param["cancel_beta"]
-        if decoupling_amplitude is None:
-            decoupling_amplitude = cr_param["decoupling_amplitude"]
+        if rotary_amplitude is None:
+            rotary_amplitude = cr_param["rotary_amplitude"]
 
-        cancel_pulse = (
-            cancel_amplitude * np.exp(1j * cancel_phase) + decoupling_amplitude
-        )
+        cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
 
         return CrossResonance(
             control_qubit=control_qubit,
