@@ -194,7 +194,7 @@ class Experiment(
             file_path=calib_note_path,
         )
         self._validate()
-        self.print_environment()
+        self.print_environment(verbose=False)
         if linkup_devices:
             try:
                 self.linkup()
@@ -267,7 +267,7 @@ class Experiment(
             print(err_msg)
             raise ValueError(err_msg)
 
-    def print_environment(self, verbose: bool = False):
+    def print_environment(self, verbose: bool = True):
         """Print the environment information."""
         print("========================================")
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
