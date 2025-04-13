@@ -602,6 +602,7 @@ class CalibrationProtocol(Protocol):
         use_drag: bool = True,
         duration_unit: float = 16.0,
         duration_buffer: float = 1.05,
+        n_repetitions: int = 1,
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float = 0.0,
         use_zvalues: bool = False,

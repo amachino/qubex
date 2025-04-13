@@ -1421,6 +1421,7 @@ class CalibrationMixin(
         use_drag: bool = True,
         duration_unit: float = 16.0,
         duration_buffer: float = 1.05,
+        n_repetitions: int = 1,
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float = 0.0,
         use_zvalues: bool = False,
@@ -1536,7 +1537,7 @@ class CalibrationMixin(
         if amplitude_range is None:
             print(f"Estimating CR amplitude of {cr_label} (n_repetitions = 1)")
             rough_result = calibrate(
-                n_repetitions=1,
+                n_repetitions=n_repetitions,
                 amplitude_range=np.linspace(0.0, cr_amplitude * 2, 20),
             )
             rough_amplitude = rough_result["root"]
@@ -1549,18 +1550,22 @@ class CalibrationMixin(
         else:
             amplitude_range = np.asarray(amplitude_range)
 
-        print(f"Calibrating CR amplitude of {cr_label} (n_repetitions = 1)")
+        print(
+            f"Calibrating CR amplitude of {cr_label} (n_repetitions = {n_repetitions})"
+        )
         result_n1 = calibrate(
-            n_repetitions=1,
+            n_repetitions=n_repetitions,
             amplitude_range=amplitude_range,
         )
         amplitude_range = np.asarray(result_n1["amplitude_range"])
         signal_n1 = result_n1["signal"]
         fit_result_n1 = result_n1["fit_result"]
 
-        print(f"Calibrating CR amplitude of {cr_label} (n_repetitions = 3)")
+        print(
+            f"Calibrating CR amplitude of {cr_label} (n_repetitions = {n_repetitions + 2})"
+        )
         result_n3 = calibrate(
-            n_repetitions=3,
+            n_repetitions=n_repetitions + 2,
             amplitude_range=amplitude_range,
         )
         signal_n3 = result_n3["signal"]
