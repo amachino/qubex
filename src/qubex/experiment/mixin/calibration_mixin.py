@@ -882,6 +882,12 @@ class CalibrationMixin(
         control_state: str = "0",
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
+        ramp_type: Literal[
+            "Gaussian",
+            "RaisedCosine",
+            "Sintegral",
+            "Bump",
+        ] = "RaisedCosine",
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ) -> dict:
@@ -918,6 +924,7 @@ class CalibrationMixin(
                     cancel_phase=cancel_phase,
                     echo=echo,
                     pi_pulse=x180[control_qubit],
+                    ramp_type=ramp_type,
                 ),
                 x90=x90,
                 initial_state={control_qubit: control_state},
@@ -1027,6 +1034,7 @@ class CalibrationMixin(
             echo=False,
             control_state="1",
             x90=x90,
+            ramp_type="RaisedCosine",
             shots=shots,
             interval=interval,
         )
@@ -1162,7 +1170,6 @@ class CalibrationMixin(
         cancel_phase: float | None = None,
         update_cr_phase: bool = True,
         update_cancel_pulse: bool = True,
-        decoupling_multiple: float = 10.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1229,12 +1236,11 @@ class CalibrationMixin(
         print()
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        duration = (0.5 * result["zx90_duration"]) // SAMPLING_PERIOD * SAMPLING_PERIOD
+        duration = (
+            (0.5 * result["zx90_duration"]) // SAMPLING_PERIOD + 1
+        ) * SAMPLING_PERIOD
 
-        decouple_amplitude = self.calc_control_amplitude(
-            target=target_qubit,
-            rabi_rate=result["cr_rotation_amplitude"] * decoupling_multiple,
-        )
+        zx_rotation_rate = result["coeffs"]["ZX"] / cr_amplitude
 
         self.calib_note.cr_params = {
             cr_label: {
@@ -1243,9 +1249,12 @@ class CalibrationMixin(
                 "ramptime": ramptime,
                 "cr_amplitude": new_cr_amplitude,
                 "cr_phase": new_cr_phase,
+                "cr_beta": 0.0,
                 "cancel_amplitude": new_cancel_amplitude,
                 "cancel_phase": new_cancel_phase,
-                "decoupling_amplitude": decouple_amplitude,
+                "cancel_beta": 0.0,
+                "rotary_amplitude": 0.0,
+                "zx_rotation_rate": zx_rotation_rate,
             }
         }
 
@@ -1260,14 +1269,15 @@ class CalibrationMixin(
         target_qubit: str,
         *,
         time_range: ArrayLike | None = None,
-        ramptime: float | None = None,
+        ramptime: float = 16,
         cr_amplitude: float | None = None,
         n_iterations: int = 4,
         n_cycles: int = 2,
         n_points_per_cycle: int = 10,
         use_stored_params: bool = False,
         tolerance: float = 10e-6,
-        decoupling_multiple: float = 10.0,
+        adiabatic_safe_factor: float = 0.75,
+        max_amplitude: float = 1.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
@@ -1286,9 +1296,9 @@ class CalibrationMixin(
         f_control = self.qubits[control_qubit].frequency
         f_target = self.qubits[target_qubit].frequency
         f_delta = np.abs(f_target - f_control)
-        max_cr_rabi = 0.75 * f_delta
+        max_cr_rabi = adiabatic_safe_factor * f_delta
         max_cr_amplitude = self.calc_control_amplitude(control_qubit, max_cr_rabi)
-        max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, 1.0)
+        max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
 
         current_cr_param = self.calib_note.cr_params.get(cr_label)
 
@@ -1332,7 +1342,6 @@ class CalibrationMixin(
                 cr_phase=params["cr_phase"],
                 cancel_amplitude=params["cancel_amplitude"],
                 cancel_phase=params["cancel_phase"],
-                decoupling_multiple=decoupling_multiple,
                 x90=x90,
                 shots=shots,
                 interval=interval,
@@ -1406,15 +1415,26 @@ class CalibrationMixin(
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
         degree: int = 3,
-        decoupling_amplitude: float | None = None,
+        adiabatic_safe_factor: float = 0.75,
+        max_amplitude: float = 1.0,
+        rotary_multiple: float = 9.0,
+        use_drag: bool = True,
         duration_unit: float = 16.0,
+        duration_buffer: float = 1.05,
+        n_repetitions: int = 1,
         x180: TargetMap[Waveform] | Waveform | None = None,
+        x180_margin: float = 0.0,
         use_zvalues: bool = False,
         store_params: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ):
+    ) -> dict:
+        if x180 is None:
+            x180 = self.x180(control_qubit)
+        elif not isinstance(x180, Waveform):
+            x180 = x180[control_qubit]
+
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self.calib_note.get_cr_param(cr_label)
 
@@ -1425,29 +1445,28 @@ class CalibrationMixin(
         cr_phase = cr_param["cr_phase"]
         cancel_amplitude = cr_param["cancel_amplitude"]
         cancel_phase = cr_param["cancel_phase"]
-        cancel_cr_ratio = cancel_amplitude / cr_amplitude
+        zx_rotation_rate = cr_param["zx_rotation_rate"]
+        zx_frequency = zx_rotation_rate * cr_amplitude
+        rotary_amplitude = self.calc_control_amplitude(
+            target=target_qubit,
+            rabi_rate=zx_frequency * rotary_multiple,
+        )
+        cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
+
+        f_control = self.qubits[control_qubit].frequency
+        f_target = self.qubits[target_qubit].frequency
+        f_delta = np.abs(f_target - f_control)
+        max_cr_rabi = adiabatic_safe_factor * f_delta
+        max_cr_amplitude = self.calc_control_amplitude(control_qubit, max_cr_rabi)
+        max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
 
         if duration is None:
-            duration = cr_param["duration"] + ramptime
-            if cr_amplitude > 0.9:
-                duration *= 1.1
-            duration = (duration // duration_unit + 1) * duration_unit
-
-        if decoupling_amplitude is None:
-            decoupling_amplitude = cr_param["decoupling_amplitude"]
-
-        if x180 is None:
-            if control_qubit in self.drag_pi_pulse:
-                x180 = self.drag_pi_pulse
-            else:
-                x180 = self.pi_pulse
-        elif isinstance(x180, Waveform):
-            x180 = {control_qubit: x180}
+            duration = duration_buffer / (8 * zx_frequency) + ramptime
+            if duration % duration_unit != 0:
+                duration = (duration // duration_unit + 1) * duration_unit
 
         def ecr_sequence(amplitude: float, n_repetitions: int) -> PulseSchedule:
-            cancel_pulse = amplitude * cancel_cr_ratio * np.exp(1j * cancel_phase)
-            decoupling_pulse = amplitude / cr_amplitude * decoupling_amplitude
-            cancel_pulse = cancel_pulse + decoupling_pulse
+            scaled_cancel_pulse = amplitude / cr_amplitude * cancel_pulse
             ecr = CrossResonance(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
@@ -1455,10 +1474,11 @@ class CalibrationMixin(
                 cr_duration=duration,
                 cr_ramptime=ramptime,
                 cr_phase=cr_phase,
-                cancel_amplitude=np.abs(cancel_pulse),
-                cancel_phase=np.angle(cancel_pulse),
+                cancel_amplitude=np.abs(scaled_cancel_pulse),
+                cancel_phase=np.angle(scaled_cancel_pulse),
                 echo=True,
-                pi_pulse=x180[control_qubit],
+                pi_pulse=x180,
+                pi_margin=x180_margin,
             ).repeated(n_repetitions)
             with PulseSchedule() as ps:
                 if initial_state != "0":
@@ -1471,8 +1491,8 @@ class CalibrationMixin(
             return ps
 
         def calibrate(n_repetitions, amplitude_range) -> dict:
-            min_amplitude = np.clip(amplitude_range[0], 0.0, 1.0)
-            max_amplitude = np.clip(amplitude_range[-1], 0.0, 1.0)
+            min_amplitude = np.clip(amplitude_range[0], 0.0, max_cr_amplitude)
+            max_amplitude = np.clip(amplitude_range[-1], 0.0, max_cr_amplitude)
             amplitude_range = np.linspace(
                 min_amplitude,
                 max_amplitude,
@@ -1517,7 +1537,7 @@ class CalibrationMixin(
         if amplitude_range is None:
             print(f"Estimating CR amplitude of {cr_label} (n_repetitions = 1)")
             rough_result = calibrate(
-                n_repetitions=1,
+                n_repetitions=n_repetitions,
                 amplitude_range=np.linspace(0.0, cr_amplitude * 2, 20),
             )
             rough_amplitude = rough_result["root"]
@@ -1526,21 +1546,26 @@ class CalibrationMixin(
             else:
                 min_amplitude = float(rough_amplitude * 0.8)
                 max_amplitude = float(rough_amplitude * 1.2)
-                amplitude_range = np.linspace(min_amplitude, max_amplitude, 40)
+                amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
         else:
             amplitude_range = np.asarray(amplitude_range)
 
-        print(f"Calibrating CR amplitude of {cr_label} (n_repetitions = 1)")
+        print(
+            f"Calibrating CR amplitude of {cr_label} (n_repetitions = {n_repetitions})"
+        )
         result_n1 = calibrate(
-            n_repetitions=1,
+            n_repetitions=n_repetitions,
             amplitude_range=amplitude_range,
         )
+        amplitude_range = np.asarray(result_n1["amplitude_range"])
         signal_n1 = result_n1["signal"]
         fit_result_n1 = result_n1["fit_result"]
 
-        print(f"Calibrating CR amplitude of {cr_label} (n_repetitions = 3)")
+        print(
+            f"Calibrating CR amplitude of {cr_label} (n_repetitions = {n_repetitions + 2})"
+        )
         result_n3 = calibrate(
-            n_repetitions=3,
+            n_repetitions=n_repetitions + 2,
             amplitude_range=amplitude_range,
         )
         signal_n3 = result_n3["signal"]
@@ -1563,13 +1588,25 @@ class CalibrationMixin(
             print("Could not find a root for the CR amplitude calibration.")
             calibrated_cr_amplitude = 1.0
 
-        calibrated_cancel_amplitude = calibrated_cr_amplitude * cancel_cr_ratio
+        calibrated_cancel_amplitude = (
+            calibrated_cr_amplitude / cr_amplitude * cancel_amplitude
+        )
 
-        calibrated_decoupling_amplitude = (
-            calibrated_cr_amplitude / cr_amplitude
-        ) * decoupling_amplitude
+        calibrated_rotary_amplitude = (
+            calibrated_cr_amplitude / cr_amplitude * rotary_amplitude
+        )
 
         if calibrated_cr_amplitude is not None and store_params:
+            if use_drag:
+                f_control = self.qubits[control_qubit].frequency
+                f_target = self.qubits[target_qubit].frequency
+                Delta_ct = 2 * np.pi * (f_control - f_target)
+                cr_beta = -1 / Delta_ct
+                # cancel_beta = -1 / self.qubits[target_qubit].alpha
+                cancel_beta = 0.0
+            else:
+                cr_beta = 0.0
+                cancel_beta = 0.0
             self.calib_note.cr_params = {
                 cr_label: {
                     "target": cr_label,
@@ -1577,9 +1614,12 @@ class CalibrationMixin(
                     "ramptime": ramptime,
                     "cr_amplitude": calibrated_cr_amplitude,
                     "cr_phase": cr_phase,
+                    "cr_beta": cr_beta,
                     "cancel_amplitude": calibrated_cancel_amplitude,
                     "cancel_phase": cancel_phase,
-                    "decoupling_amplitude": calibrated_decoupling_amplitude,
+                    "cancel_beta": cancel_beta,
+                    "rotary_amplitude": calibrated_rotary_amplitude,
+                    "zx_rotation_rate": zx_rotation_rate,
                 },
             }
 
@@ -1589,9 +1629,11 @@ class CalibrationMixin(
         print(f"  CR ramptime      : {ramptime:.1f} ns")
         print(f"  CR amplitude     : {calibrated_cr_amplitude:.6f}")
         print(f"  CR phase         : {cr_phase:.6f}")
+        print(f"  CR beta          : {cr_beta:.6f}")
         print(f"  Cancel amplitude : {calibrated_cancel_amplitude:.6f}")
         print(f"  Cancel phase     : {cancel_phase:.6f}")
-        print(f"  DD amplitude     : {decoupling_amplitude:.6f}")
+        print(f"  Cancel beta      : {cancel_beta:.6f}")
+        print(f"  Rotary amplitude : {rotary_amplitude:.6f}")
         print()
         if plot:
             zx90 = self.zx90(control_qubit, target_qubit, x180=x180)
@@ -1735,48 +1777,124 @@ class CalibrationMixin(
         control_qubit: str,
         target_qubit: str,
         *,
-        duration: float = 100,
-        ramptime: float = 20,
+        opt_params: Collection[str] | None = None,
+        seed: int = 42,
+        ftarget: float = 1e-3,
+        timeout: int = 300,
+        duration: float | None = None,
+        ramptime: float | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
     ):
+        if opt_params is None:
+            opt_params = [
+                "cr_amplitude",
+                "cr_phase",
+                "cr_beta",
+                "cancel_phase",
+                "cancel_beta",
+            ]
+
+        if x180 is None:
+            x180 = self.x180(control_qubit)
+        elif not isinstance(x180, Waveform):
+            x180 = x180[control_qubit]
+
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self.calib_note.get_cr_param(cr_label)
         if cr_param is None:
             raise ValueError("CR parameters are not stored.")
-        cr_ramptime = ramptime
-        cr_amplitude = cr_param["cr_amplitude"]
-        cr_phase = cr_param["cr_phase"]
-        cancel_amplitude = cr_param["cancel_amplitude"]
-        cancel_phase = cr_param["cancel_phase"]
 
-        if x180 is None:
-            if control_qubit in self.drag_pi_pulse:
-                x180 = self.drag_pi_pulse
-            else:
-                x180 = self.pi_pulse
-        elif isinstance(x180, Waveform):
-            x180 = {control_qubit: x180}
+        if duration is None:
+            duration = cr_param["duration"]
+        if ramptime is None:
+            ramptime = cr_param["ramptime"]
 
-        def objective_func(params):
+        defaults = {
+            "cr_amplitude": {
+                "initial": cr_param["cr_amplitude"],
+                "bounds": [0.0, 1.0],
+                "std": 0.01,
+            },
+            "cr_phase": {
+                "initial": cr_param["cr_phase"],
+                "bounds": [-np.pi, np.pi],
+                "std": 0.01,
+            },
+            "cr_beta": {
+                "initial": cr_param["cr_beta"],
+                "bounds": [-10.0, 10.0],
+                "std": 0.1,
+            },
+            "cancel_amplitude": {
+                "initial": cr_param["cancel_amplitude"],
+                "bounds": [0.0, 1.0],
+                "std": 0.01,
+            },
+            "cancel_phase": {
+                "initial": cr_param["cancel_phase"],
+                "bounds": [-np.pi, np.pi],
+                "std": 0.01,
+            },
+            "cancel_beta": {
+                "initial": cr_param["cancel_beta"],
+                "bounds": [-10.0, 10.0],
+                "std": 0.1,
+            },
+            "rotary_amplitude": {
+                "initial": cr_param["rotary_amplitude"],
+                "bounds": [0.0, 1.0],
+                "std": 0.1,
+            },
+        }
+
+        for opt_param in opt_params:
+            if opt_param not in defaults:
+                raise ValueError(f"Invalid optimization parameter: {opt_param}")
+
+        if isinstance(opt_params, list):
+            opt_params_dict = {p: defaults[p] for p in opt_params}
+        elif isinstance(opt_params, dict):
+            opt_params_dict = opt_params
+        else:
+            raise ValueError("opt_params must be a list or dictionary.")
+        opt_params = list(opt_params_dict.keys())
+
+        def objective_func(params_vec):
+            params = {k: v["initial"] for k, v in defaults.items()}
+            for k, v in zip(opt_params, params_vec):
+                params[k] = v
+
+            cr_amplitude = params["cr_amplitude"]
+            cr_phase = params["cr_phase"]
+            cr_beta = params["cr_beta"]
+            cancel_amplitude = params["cancel_amplitude"]
+            cancel_phase = params["cancel_phase"]
+            cancel_beta = params["cancel_beta"]
+            rotary_amplitude = params["rotary_amplitude"]
+
+            cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase) + (
+                rotary_amplitude + 0j
+            )
+
             ecr_0 = CrossResonance(
                 control_qubit=control_qubit,
                 target_qubit=target_qubit,
-                cr_amplitude=params[0],
+                cr_amplitude=cr_amplitude,
                 cr_duration=duration,
-                cr_ramptime=cr_ramptime,
-                cr_phase=params[1],
-                cancel_amplitude=params[2],
-                cancel_phase=params[3],
+                cr_ramptime=ramptime,
+                cr_phase=cr_phase,
+                cr_beta=cr_beta,
+                cancel_amplitude=np.abs(cancel_pulse),
+                cancel_phase=np.angle(cancel_pulse),
+                cancel_beta=cancel_beta,
                 echo=True,
-                pi_pulse=x180[control_qubit],
+                pi_pulse=x180,
             )
+
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr_1:
-                ecr_1.add(
-                    control_qubit,
-                    self.get_pulse_for_state(control_qubit, "1"),
-                )
+                ecr_1.add(control_qubit, x180)
                 ecr_1.barrier()
                 ecr_1.call(ecr_0)
 
@@ -1799,42 +1917,36 @@ class CalibrationMixin(
             loss = loss_c0 + loss_t0 + loss_c1 + loss_t1
             return loss
 
-        initial_params = [cr_amplitude, cr_phase, cancel_amplitude, cancel_phase]
+        initial_params = [opt_params_dict[k]["initial"] for k in opt_params]
+        bounds0 = [opt_params_dict[k]["bounds"][0] for k in opt_params]
+        bounds1 = [opt_params_dict[k]["bounds"][1] for k in opt_params]
+        bounds = [bounds0, bounds1]
+        stds = [opt_params_dict[k]["std"] for k in opt_params]
+
         es = cma.CMAEvolutionStrategy(
             initial_params,
             1.0,
             {
-                "seed": 42,
-                "ftarget": 1e-3,
-                "timeout": 300,
-                "bounds": [[0, -np.pi, 0, -np.pi], [1, np.pi, 1, np.pi]],
-                "CMA_stds": [
-                    0.01,
-                    0.01,
-                    0.01,
-                    0.01,
-                ],
+                "seed": seed,
+                "ftarget": ftarget,
+                "timeout": timeout,
+                "bounds": bounds,
+                "CMA_stds": stds,
             },
         )
         es.optimize(objective_func)
-        x = es.result.xbest
 
-        self.calib_note.cr_params = {
-            cr_label: {
-                "target": cr_label,
-                "duration": duration,
-                "ramptime": cr_ramptime,
-                "cr_amplitude": x[0],
-                "cr_phase": x[1],
-                "cancel_amplitude": x[2],
-                "cancel_phase": x[3],
-                "decoupling_amplitude": 0.0,
-            },
-        }
+        print("Optimized parameters:")
+        opt_result = {}
+        for key, value in zip(opt_params, es.result.xbest):
+            opt_result[key] = value
+            print(f"  {key} : {value:.6f}")
+
+        cr_param.update(opt_result)
+
+        self.calib_note.update_cr_param(cr_label, cr_param)
 
         return {
-            "cr_amplitude": x[0],
-            "cr_phase": x[1],
-            "cancel_amplitude": x[2],
-            "cancel_phase": x[3],
+            "cr_param": cr_param,
+            "result": es.result,
         }

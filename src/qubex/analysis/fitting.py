@@ -452,7 +452,8 @@ def fit_polynomial(
     real_roots = roots[np.isreal(roots)].real
     roots_in_range = real_roots[(real_roots >= np.min(x)) & (real_roots <= np.max(x))]
     try:
-        root = roots_in_range[np.argmin(np.abs(roots_in_range))]
+        # select root nearest to the center of the range
+        root = roots_in_range[np.argmin(np.abs(roots_in_range - np.mean(x)))]
     except ValueError:
         print(f"No root found in the range ({np.min(x)}, {np.max(x)}).")
         root = np.nan
@@ -498,6 +499,7 @@ def fit_polynomial(
         "popt": popt,
         "fun": fun,
         "root": root,
+        "roots": roots_in_range,
         "fig": fig,
     }
 
@@ -2430,7 +2432,6 @@ def fit_reflection_coefficient(
 def fit_rotation(
     times: NDArray[np.float64],
     data: NDArray[np.float64],
-    r0: NDArray[np.float64] = np.array([0, 0, 1]),
     p0=None,
     bounds=None,
     plot: bool = True,
@@ -2492,6 +2493,9 @@ def fit_rotation(
         theta: float,
         phi: float,
         alpha: float,
+        x0: float,
+        y0: float,
+        z0: float,
     ) -> NDArray[np.float64]:
         """
         Simulate the rotation of a state vector.
@@ -2509,10 +2513,12 @@ def fit_rotation(
         alpha : float
             Decay rate.
         """
+        r0 = np.array([x0, y0, z0])
         n_x = np.sin(theta) * np.cos(phi)
         n_y = np.sin(theta) * np.sin(phi)
         n_z = np.cos(theta)
-        r_t = np.array([rotation_matrix(t, omega, (n_x, n_y, n_z)) @ r0 for t in times])
+        n = (n_x, n_y, n_z)
+        r_t = np.array([rotation_matrix(t, omega, n) @ r0 for t in times])
         decay_factor = np.exp(-alpha * times)
         return decay_factor[:, np.newaxis] * r_t
 
@@ -2531,16 +2537,43 @@ def fit_rotation(
         F = np.array([X[idx], Y[idx], Z[idx]])
         n = np.cross(np.imag(F), np.real(F))
         n /= np.linalg.norm(n)
+        x0_est = data[0, 0]
+        y0_est = data[0, 1]
+        z0_est = data[0, 2]
         omega_est = 2 * np.pi * dominant_freq
         theta_est = np.arccos(n[2])
         phi_est = np.arctan2(n[1], n[0])
         alpha_est = 0.0
-        p0 = (omega_est, theta_est, phi_est, alpha_est)
+        p0 = (
+            omega_est,
+            theta_est,
+            phi_est,
+            alpha_est,
+            x0_est,
+            y0_est,
+            z0_est,
+        )
 
     if bounds is None:
         bounds = (
-            (0, 0, -np.pi, 0),
-            (np.inf, np.pi, np.pi, 1e-3),
+            (
+                0,
+                0,
+                -np.pi,
+                0,
+                -np.inf,
+                -np.inf,
+                -np.inf,
+            ),
+            (
+                np.inf,
+                np.pi,
+                np.pi,
+                1e-3,
+                np.inf,
+                np.inf,
+                np.inf,
+            ),
         )
 
     logger.info("Fitting rotation data.")
@@ -2554,14 +2587,18 @@ def fit_rotation(
     )
 
     fitted_params = result.x
-    F = fitted_params[0]
+    Omega = fitted_params[0]
     theta = fitted_params[1]
     phi = fitted_params[2]
     alpha = fitted_params[3]
+    x0 = fitted_params[4]
+    y0 = fitted_params[5]
+    z0 = fitted_params[6]
+    r0 = np.array([x0, y0, z0])
     tau = 1 / alpha * 1e-3  # μs
-    Omega_x = F * np.sin(theta) * np.cos(phi)
-    Omega_y = F * np.sin(theta) * np.sin(phi)
-    Omega_z = F * np.cos(theta)
+    Omega_x = Omega * np.sin(theta) * np.cos(phi)
+    Omega_y = Omega * np.sin(theta) * np.sin(phi)
+    Omega_z = Omega * np.cos(theta)
 
     r2 = 1 - np.sum(residuals(fitted_params, times, data) ** 2) / np.sum(
         np.abs(data - np.mean(data))
@@ -2707,6 +2744,8 @@ def fit_rotation(
 
     return {
         "Omega": np.array([Omega_x, Omega_y, Omega_z]),
+        "tau": tau,
+        "r0": r0,
         "r2": r2,
         "fig": fig,
         "fig3d": fig3d,

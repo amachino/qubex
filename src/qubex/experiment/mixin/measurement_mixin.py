@@ -105,6 +105,9 @@ class MeasurementMixin(
         waveforms: dict[str, NDArray[np.complex128]] = {}
 
         if isinstance(sequence, PulseSchedule):
+            if not sequence.is_valid():
+                raise ValueError("Invalid pulse schedule.")
+
             if initial_states is not None:
                 labels = list(set(sequence.labels) | set(initial_states.keys()))
                 with PulseSchedule(labels) as ps:

@@ -194,7 +194,7 @@ class Experiment(
             file_path=calib_note_path,
         )
         self._validate()
-        self.print_environment()
+        self.print_environment(verbose=False)
         if linkup_devices:
             try:
                 self.linkup()
@@ -267,7 +267,7 @@ class Experiment(
             print(err_msg)
             raise ValueError(err_msg)
 
-    def print_environment(self, verbose: bool = False):
+    def print_environment(self, verbose: bool = True):
         """Print the environment information."""
         print("========================================")
         print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -670,17 +670,16 @@ class Experiment(
         if state == "0":
             return Blank(0)
         elif state == "1":
-            return self.hpi_pulse[target].repeated(2)
+            return self.x90(target).repeated(2)
         else:
-            hpi = self.hpi_pulse[target]
             if state == "+":
-                return hpi.shifted(np.pi / 2)
+                return self.y90(target)
             elif state == "-":
-                return hpi.shifted(-np.pi / 2)
+                return self.y90m(target)
             elif state == "+i":
-                return hpi.shifted(np.pi)
+                return self.x90m(target)
             elif state == "-i":
-                return hpi
+                return self.x90(target)
             else:
                 raise ValueError("Invalid state.")
 
@@ -1250,11 +1249,14 @@ class Experiment(
         cr_ramptime: float | None = None,
         cr_amplitude: float | None = None,
         cr_phase: float | None = None,
+        cr_beta: float | None = None,
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
-        decoupling_amplitude: float | None = None,
+        cancel_beta: float | None = None,
+        rotary_amplitude: float | None = None,
         echo: bool = True,
         x180: TargetMap[Waveform] | Waveform | None = None,
+        x180_margin: float = 0.0,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self.calib_note.get_cr_param(cr_label)
@@ -1276,16 +1278,18 @@ class Experiment(
             cr_ramptime = cr_param["ramptime"]
         if cr_phase is None:
             cr_phase = cr_param["cr_phase"]
+        if cr_beta is None:
+            cr_beta = cr_param["cr_beta"]
         if cancel_amplitude is None:
             cancel_amplitude = cr_param["cancel_amplitude"]
         if cancel_phase is None:
             cancel_phase = cr_param["cancel_phase"]
-        if decoupling_amplitude is None:
-            decoupling_amplitude = cr_param["decoupling_amplitude"]
+        if cancel_beta is None:
+            cancel_beta = cr_param["cancel_beta"]
+        if rotary_amplitude is None:
+            rotary_amplitude = cr_param["rotary_amplitude"]
 
-        cancel_pulse = (
-            cancel_amplitude * np.exp(1j * cancel_phase) + decoupling_amplitude
-        )
+        cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
 
         return CrossResonance(
             control_qubit=control_qubit,
@@ -1294,10 +1298,13 @@ class Experiment(
             cr_duration=cr_duration,
             cr_ramptime=cr_ramptime,
             cr_phase=cr_phase,
+            cr_beta=cr_beta,
             cancel_amplitude=np.abs(cancel_pulse),
             cancel_phase=np.angle(cancel_pulse),
+            cancel_beta=cancel_beta,
             echo=echo,
             pi_pulse=pi_pulse,
+            pi_margin=x180_margin,
         )
 
     def cnot(
@@ -1310,10 +1317,9 @@ class Experiment(
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if x90 is None:
-            x90 = self.x90(target_qubit)
-
         if cr_label in self.calib_note.cr_params:
+            if x90 is None:
+                x90 = self.x90(target_qubit)
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot:
                 cnot.call(zx90)
@@ -1321,6 +1327,8 @@ class Experiment(
                 cnot.add(target_qubit, x90.scaled(-1))
             return cnot
         else:
+            if x90 is None:
+                x90 = self.x90(control_qubit)
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
             cr_label = f"{target_qubit}-{control_qubit}"
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
@@ -1365,10 +1373,9 @@ class Experiment(
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if x90 is None:
-            x90 = self.x90(target_qubit)
-
         if cr_label in self.calib_note.cr_params:
+            if x90 is None:
+                x90 = self.x90(target_qubit)
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot:
                 cnot.call(zx90)
@@ -1384,6 +1391,8 @@ class Experiment(
                 cz.add(target_qubit, hadamard_t)
             return cz
         else:
+            if x90 is None:
+                x90 = self.x90(control_qubit)
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
                 cnot_tc.call(zx90)

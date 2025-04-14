@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from ..pulse_schedule import PulseSchedule
 from ..waveform import Waveform
 from .flat_top import FlatTop
@@ -23,12 +25,18 @@ class CrossResonance(PulseSchedule):
         The ramp duration of the cross-resonance pulse in nanoseconds.
     cr_phase: float
         The phase of the cross-resonance pulse in radians.
+    cr_beta: float
+        The DRAG correction coefficient for the cross-resonance pulse.
     cancel_amplitude: float = 0.0
         The amplitude of the cancel pulse.
     cancel_phase: float = 0.0
         The phase of the cancel pulse in radians.
+    cancel_beta: float = 0.0
+        The DRAG correction coefficient for the cancel pulse.
     echo: bool = False
         If True, the echo pulse is added to the schedule.
+    ramp_type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "RaisedCosine",
+        The type of the ramp function used in the pulse.
     """
 
     def __init__(
@@ -39,15 +47,27 @@ class CrossResonance(PulseSchedule):
         cr_duration: float,
         cr_ramptime: float | None = None,
         cr_phase: float | None = None,
+        cr_beta: float | None = None,
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
+        cancel_beta: float | None = None,
         echo: bool = False,
         pi_pulse: Waveform | None = None,
+        pi_margin: float | None = None,
+        ramp_type: Literal[
+            "Gaussian",
+            "RaisedCosine",
+            "Sintegral",
+            "Bump",
+        ] = "RaisedCosine",
     ):
         cr_ramptime = cr_ramptime or 0.0
         cr_phase = cr_phase or 0.0
+        cr_beta = cr_beta or 0.0
         cancel_amplitude = cancel_amplitude or 0.0
         cancel_phase = cancel_phase or 0.0
+        cancel_beta = cancel_beta or 0.0
+        pi_margin = pi_margin or 0.0
 
         cr_label = f"{control_qubit}-{target_qubit}"
 
@@ -56,6 +76,8 @@ class CrossResonance(PulseSchedule):
             amplitude=cr_amplitude,
             tau=cr_ramptime,
             phase=cr_phase,
+            beta=cr_beta,
+            type=ramp_type,
         )
 
         cancel_waveform = FlatTop(
@@ -63,6 +85,8 @@ class CrossResonance(PulseSchedule):
             amplitude=cancel_amplitude,
             tau=cr_ramptime,
             phase=cancel_phase,
+            beta=cancel_beta,
+            type=ramp_type,
         )
 
         self.control_qubit = control_qubit
@@ -71,8 +95,10 @@ class CrossResonance(PulseSchedule):
         self.cr_duration = cr_duration
         self.cr_ramptime = cr_ramptime
         self.cr_phase = cr_phase
+        self.cr_beta = cr_beta
         self.cancel_amplitude = cancel_amplitude
         self.cancel_phase = cancel_phase
+        self.cancel_beta = cancel_beta
         self.echo = echo
         self.pi_pulse = pi_pulse
         self.cr_label = cr_label
@@ -89,6 +115,9 @@ class CrossResonance(PulseSchedule):
         else:
             if pi_pulse is None:
                 raise ValueError("The pi pulse waveform must be provided.")
+            if pi_margin > 0:
+                pi_pulse = pi_pulse.padded(pi_pulse.duration + pi_margin, "left")
+                pi_pulse = pi_pulse.padded(pi_pulse.duration + pi_margin, "right")
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr:
                 ecr.call(cr)
                 ecr.barrier()

@@ -60,9 +60,12 @@ class CrossResonanceParam(Parameter):
     ramptime: float
     cr_amplitude: float
     cr_phase: float
+    cr_beta: float
     cancel_amplitude: float
     cancel_phase: float
-    decoupling_amplitude: float
+    cancel_beta: float
+    rotary_amplitude: float
+    zx_rotation_rate: float
 
 
 class CalibrationNote(ExperimentNote):

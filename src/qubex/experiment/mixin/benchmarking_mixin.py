@@ -495,7 +495,7 @@ class BenchmarkingMixin(
 
         if is_2q:
             if n_cliffords_range is None:
-                n_cliffords_range = np.arange(0, 41, 4)
+                n_cliffords_range = np.arange(0, 61, 6)
         else:
             self.validate_rabi_params([target])
             if n_cliffords_range is None:
@@ -654,17 +654,17 @@ class BenchmarkingMixin(
 
         print()
         print(
-            f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.2f} ± {avg_gate_fidelity_err_rb * 100:.2f}%"
+            f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.3f} ± {avg_gate_fidelity_err_rb * 100:.3f}%"
         )
         print(
-            f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.2f} ± {avg_gate_fidelity_err_irb * 100:.2f}%"
+            f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.3f} ± {avg_gate_fidelity_err_irb * 100:.3f}%"
         )
         print()
         print(
-            f"Gate error    : {gate_error * 100:.2f} ± {gate_fidelity_err * 100:.2f}%"
+            f"Gate error    : {gate_error * 100:.3f} ± {gate_fidelity_err * 100:.3f}%"
         )
         print(
-            f"Gate fidelity : {gate_fidelity * 100:.2f} ± {gate_fidelity_err * 100:.2f}%"
+            f"Gate fidelity : {gate_fidelity * 100:.3f} ± {gate_fidelity_err * 100:.3f}%"
         )
         print()
 
