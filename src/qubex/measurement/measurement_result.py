@@ -103,32 +103,6 @@ class MeasureData:
             self.probabilities * (1 - self.probabilities) / sum(self.counts.values())
         )
 
-    def get_soft_classified_data(
-        self,
-    ) -> NDArray:
-        if self.mode == MeasureMode.SINGLE:
-            if self.classifier is not None:
-                return self.classifier.predict_proba(self.kerneled)
-            else:
-                raise ValueError("Classifier is not set")
-        else:
-            raise ValueError(f"Invalid mode: {self.mode}")
-
-    def get_classified_data(
-        self,
-        threshold: float | None = None,
-    ) -> NDArray:
-        if threshold is None:
-            return self.classified
-        else:
-            data = self.get_soft_classified_data()
-            if len(data) == 0:
-                raise ValueError("No classification data available")
-            max_probs = np.max(data, axis=1)
-            labels = np.argmax(data, axis=1)
-            result = np.where(max_probs > threshold, labels, -1)
-            return result
-
     def plot(
         self,
         title: str | None = None,
@@ -218,27 +192,18 @@ class MeasureResult:
     def get_classified_data(
         self,
         targets: Collection[str] | None = None,
-        *,
-        threshold: float | None = None,
     ) -> NDArray:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         if targets is None:
             targets = self.data.keys()
-        return np.column_stack(
-            [
-                self.data[target].get_classified_data(threshold=threshold)
-                for target in targets
-            ]
-        )
+        return np.column_stack([self.data[target].classified for target in targets])
 
     def get_counts(
         self,
         targets: Collection[str] | None = None,
-        *,
-        threshold: float | None = None,
     ) -> dict[str, int]:
-        classified_data = self.get_classified_data(targets, threshold=threshold)
+        classified_data = self.get_classified_data(targets)
         classified_labels = np.array(
             ["".join(map(str, row)) for row in classified_data]
         )
@@ -252,33 +217,24 @@ class MeasureResult:
     def get_probabilities(
         self,
         targets: Collection[str] | None = None,
-        *,
-        threshold: float | None = None,
     ) -> dict[str, float]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
-        counts = self.get_counts(targets, threshold=threshold)
-        total = sum(counts.values())
-        if total == 0:
-            return {}
-        return {key: count / total for key, count in counts.items()}
+        total = sum(self.get_counts(targets).values())
+        return {key: count / total for key, count in self.get_counts(targets).items()}
 
     def get_standard_deviations(
         self,
         targets: Collection[str] | None = None,
-        *,
-        threshold: float | None = None,
     ) -> dict[str, float]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
-        counts = self.get_counts(targets, threshold=threshold)
-        probs = self.get_probabilities(targets, threshold=threshold)
         return {
             key: np.sqrt(prob * (1 - prob) / total)
             for key, prob, total in zip(
-                counts.keys(),
-                probs.values(),
-                counts.values(),
+                self.get_counts(targets).keys(),
+                self.get_probabilities(targets).values(),
+                self.get_counts(targets).values(),
             )
         }
 
