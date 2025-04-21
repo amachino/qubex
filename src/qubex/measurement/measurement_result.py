@@ -259,6 +259,8 @@ class MeasureResult:
             raise ValueError("No classification data available")
         counts = self.get_counts(targets, threshold=threshold)
         total = sum(counts.values())
+        if total == 0:
+            return {}
         return {key: count / total for key, count in counts.items()}
 
     def get_standard_deviations(
