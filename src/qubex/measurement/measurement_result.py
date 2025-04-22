@@ -103,6 +103,58 @@ class MeasureData:
             self.probabilities * (1 - self.probabilities) / sum(self.counts.values())
         )
 
+    @cached_property
+    def confusion_matrix(self) -> NDArray:
+        if self.mode == MeasureMode.SINGLE:
+            if self.classifier is not None:
+                cm = self.classifier.confusion_matrix
+                n_shots = cm[0].sum()
+                return cm / n_shots
+            else:
+                raise ValueError("Classifier is not set")
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+    @cached_property
+    def inverse_confusion_matrix(self) -> NDArray:
+        if self.mode == MeasureMode.SINGLE:
+            if self.classifier is not None:
+                cm = self.confusion_matrix
+                # if np.linalg.det(cm) == 0:
+                #     raise ValueError("Confusion matrix is singular")
+                return np.linalg.inv(cm)
+            else:
+                raise ValueError("Classifier is not set")
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+    @cached_property
+    def mitigated_counts(self) -> dict[str, int]:
+        if self.mode == MeasureMode.SINGLE:
+            if self.classifier is not None:
+                cm_inv = self.inverse_confusion_matrix
+                raw = np.array(list(self.counts.values()))
+                mitigated_counts = raw @ cm_inv
+                return {str(i): int(count) for i, count in enumerate(mitigated_counts)}
+            else:
+                raise ValueError("Classifier is not set")
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
+    @cached_property
+    def mitigated_probabilities(self) -> NDArray:
+        if self.mode == MeasureMode.SINGLE:
+            if self.classifier is not None:
+                cm_inv = self.inverse_confusion_matrix
+                raw = np.array(list(self.counts.values()))
+                mitigated = raw @ cm_inv
+                total = sum(mitigated)
+                return mitigated / total
+            else:
+                raise ValueError("Classifier is not set")
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
+
     def get_soft_classified_data(
         self,
     ) -> NDArray:
@@ -292,21 +344,19 @@ class MeasureResult:
 
     def get_confusion_matrix(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | None = None,
     ) -> NDArray:
-        targets = tuple(targets)
-        confusion_matrices = []
-        for target in targets:
-            cm = self.get_classifier(target).confusion_matrix
-            n_shots = cm[0].sum()
-            confusion_matrices.append(cm / n_shots)
+        if targets is None:
+            targets = self.data.keys()
+        confusion_matrices = [self.data[target].confusion_matrix for target in targets]
         return reduce(np.kron, confusion_matrices)
 
     def get_inverse_confusion_matrix(
         self,
-        targets: Collection[str],
+        targets: Collection[str] | None = None,
     ) -> NDArray:
-        targets = tuple(targets)
+        if targets is None:
+            targets = self.data.keys()
         confusion_matrix = self.get_confusion_matrix(targets)
         return np.linalg.inv(confusion_matrix)
 
@@ -388,6 +438,149 @@ class MultipleMeasureResult:
     mode: MeasureMode
     data: dict[str, list[MeasureData]]
     config: dict
+
+    def get_basis_indices(
+        self,
+        targets: dict[str, int] | None = None,
+    ) -> list[tuple[int, ...]]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        if targets is None:
+            targets = {target: 0 for target in self.data.keys()}
+        dimensions = [self.data[label][idx].n_states for label, idx in targets.items()]
+        return list(np.ndindex(*[dim for dim in dimensions]))
+
+    def get_basis_labels(
+        self,
+        targets: dict[str, int] | None = None,
+    ) -> list[str]:
+        basis_indices = self.get_basis_indices(targets)
+        return ["".join(str(i) for i in basis) for basis in basis_indices]
+
+    def get_classified_data(
+        self,
+        targets: dict[str, int] | None = None,
+        *,
+        threshold: float | None = None,
+    ) -> NDArray:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        if targets is None:
+            targets = {target: -1 for target in self.data.keys()}
+        return np.column_stack(
+            [
+                self.data[label][idx].get_classified_data(threshold=threshold)
+                for label, idx in targets.items()
+            ]
+        )
+
+    def get_counts(
+        self,
+        targets: dict[str, int] | None = None,
+        *,
+        threshold: float | None = None,
+    ) -> dict[str, int]:
+        classified_data = self.get_classified_data(targets, threshold=threshold)
+        classified_labels = np.array(
+            ["".join(map(str, row)) for row in classified_data]
+        )
+        counts = dict(Counter(classified_labels))
+        basis_labels = self.get_basis_labels(targets)
+        counts = {
+            basis_label: counts.get(basis_label, 0) for basis_label in basis_labels
+        }
+        return counts
+
+    def get_probabilities(
+        self,
+        targets: dict[str, int] | None = None,
+        *,
+        threshold: float | None = None,
+    ) -> dict[str, float]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        counts = self.get_counts(targets, threshold=threshold)
+        total = sum(counts.values())
+        if total == 0:
+            return {}
+        return {key: count / total for key, count in counts.items()}
+
+    def get_standard_deviations(
+        self,
+        targets: dict[str, int] | None = None,
+        *,
+        threshold: float | None = None,
+    ) -> dict[str, float]:
+        if len(self.data) == 0:
+            raise ValueError("No classification data available")
+        counts = self.get_counts(targets, threshold=threshold)
+        probs = self.get_probabilities(targets, threshold=threshold)
+        return {
+            key: np.sqrt(prob * (1 - prob) / total)
+            for key, prob, total in zip(
+                counts.keys(),
+                probs.values(),
+                counts.values(),
+            )
+        }
+
+    def get_classifier(self, target: str) -> StateClassifier:
+        if target not in self.data:
+            raise ValueError(f"Target {target} not found in data")
+        classifier = self.data[target][0].classifier
+        if classifier is None:
+            raise ValueError(f"Classifier for target {target} is not set")
+        return classifier
+
+    def get_confusion_matrix(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> NDArray:
+        if targets is None:
+            targets = self.data.keys()
+        confusion_matrices = [
+            self.data[target][0].confusion_matrix for target in targets
+        ]
+        return reduce(np.kron, confusion_matrices)
+
+    def get_inverse_confusion_matrix(
+        self,
+        targets: Collection[str] | None = None,
+    ) -> NDArray:
+        if targets is None:
+            targets = self.data.keys()
+        confusion_matrix = self.get_confusion_matrix(targets)
+        return np.linalg.inv(confusion_matrix)
+
+    def get_mitigated_counts(
+        self,
+        targets: dict[str, int] | None = None,
+    ) -> dict[str, int]:
+        if targets is None:
+            targets = {target: -1 for target in self.data.keys()}
+        raw = self.get_counts(targets)
+        cm_inv = self.get_inverse_confusion_matrix(targets)
+        mitigated = np.array(list(raw.values())) @ cm_inv
+        basis_labels = self.get_basis_labels(targets)
+        mitigated_counts = {
+            basis_label: int(mitigated[i]) for i, basis_label in enumerate(basis_labels)
+        }
+        return mitigated_counts
+
+    def get_mitigated_probabilities(
+        self,
+        targets: dict[str, int] | None = None,
+    ) -> dict[str, float]:
+        if targets is None:
+            targets = {target: -1 for target in self.data.keys()}
+        raw = self.get_probabilities(targets)
+        cm_inv = self.get_inverse_confusion_matrix(targets)
+        mitigated = np.array(list(raw.values())) @ cm_inv
+        basis_labels = self.get_basis_labels(targets)
+        mitigated_probabilities = {
+            basis_label: mitigated[i] for i, basis_label in enumerate(basis_labels)
+        }
+        return mitigated_probabilities
 
     def plot(
         self,
