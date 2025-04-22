@@ -350,7 +350,7 @@ class DeviceController:
             box_config = {}
         return box_config
 
-    def dump_port(self, box_name: str, port_number: int) -> dict:
+    def dump_port(self, box_name: str, port_number: int | tuple[int, int]) -> dict:
         """
         Dump the port configuration.
 
@@ -358,7 +358,7 @@ class DeviceController:
         ----------
         box_name : str
             Name of the box.
-        port_number : int
+        port_number : int | tuple[int, int]
             Port number.
 
         Returns

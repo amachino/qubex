@@ -393,10 +393,10 @@ This operation will overwrite the existing device settings. Do you want to conti
                 vatt = ""
                 fsc = ""
             elif isinstance(port, GenPort):
-                ssb = port.sideband
-                lo = f"{port.lo_freq:_}"
+                ssb = port.sideband if port.sideband is not None else ""
+                lo = f"{port.lo_freq:_}" if port.lo_freq is not None else ""
                 cnco = f"{port.cnco_freq:_}"
-                vatt = str(port.vatt)
+                vatt = str(port.vatt) if port.vatt is not None else ""
                 fsc = str(port.fullscale_current)
 
             table1.add_row(
@@ -483,7 +483,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                 qc.define_port(
                     port_name=port.id,
                     box_name=box.id,
-                    port_number=port.number,
+                    port_number=port.number,  # type: ignore
                 )
 
                 for channel in port.channels:
@@ -532,10 +532,11 @@ This operation will overwrite the existing device settings. Do you want to conti
         for box_id, box in device_settings.items():
             for port_number, port in box["ports"].items():
                 direction = port["direction"]
-                lo_freq = int(port["lo_freq"])
+                lo_freq = port.get("lo_freq")
+                lo_freq = int(lo_freq) if lo_freq is not None else None
                 cnco_freq = int(port["cnco_freq"])
                 if direction == "out":
-                    sideband = port["sideband"]
+                    sideband = port.get("sideband")
                     fullscale_current = int(port["fullscale_current"])
                     fnco_freqs = [
                         int(channel["fnco_freq"])

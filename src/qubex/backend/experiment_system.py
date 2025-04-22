@@ -329,7 +329,7 @@ class ExperimentSystem:
         self,
         label: str,
         *,
-        lo_freq: int,
+        lo_freq: int | None,
         cnco_freq: int,
         fnco_freq: int,
     ):
@@ -346,7 +346,7 @@ class ExperimentSystem:
             gen_channel.fnco_freq = fnco_freq
             if target.is_read:
                 cap_channel = self.get_read_in_target(label).channel
-                cap_channel.port.lo_freq = lo_freq
+                cap_channel.port.lo_freq = lo_freq  # type: ignore
                 cap_channel.port.cnco_freq = cnco_freq
                 cap_channel.fnco_freq = fnco_freq
         except Exception as e:
@@ -358,7 +358,7 @@ class ExperimentSystem:
             ) = original_values
             if target.is_read:
                 (
-                    cap_channel.port.lo_freq,
+                    cap_channel.port.lo_freq,  # type: ignore
                     cap_channel.port.cnco_freq,
                     cap_channel.fnco_freq,
                 ) = original_values
