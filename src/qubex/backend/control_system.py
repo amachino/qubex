@@ -25,6 +25,8 @@ class BoxType(Enum):
     QUBE_RIKEN_B = "qube-riken-b"
     QUBE_OU_A = "qube-ou-a"
     QUBE_OU_B = "qube-ou-b"
+    QUEL1SE_A = "quel1se-fujitsu11-a"
+    QUEL1SE_B = "quel1se-fujitsu11-b"
 
 
 class PortType(Enum):
@@ -48,6 +50,38 @@ PORT_DIRECTION: Final = {
 
 
 PORT_MAPPING: Final = {
+    BoxType.QUEL1SE_A: {
+        0: PortType.READ_IN,
+        1: PortType.READ_OUT,
+        2: PortType.CTRL,
+        3: PortType.PUMP,
+        4: PortType.CTRL,
+        5: PortType.MNTR_IN,
+        6: PortType.MNTR_OUT,
+        7: PortType.READ_IN,
+        8: PortType.READ_OUT,
+        9: PortType.CTRL,
+        10: PortType.PUMP,
+        11: PortType.CTRL,
+        12: PortType.MNTR_IN,
+        13: PortType.MNTR_OUT,
+    },
+    BoxType.QUEL1SE_B: {
+        0: PortType.NOT_AVAILABLE,
+        1: PortType.CTRL,
+        2: PortType.CTRL,
+        3: PortType.CTRL,
+        4: PortType.CTRL,
+        5: PortType.MNTR_IN,
+        6: PortType.MNTR_OUT,
+        7: PortType.NOT_AVAILABLE,
+        8: PortType.CTRL,
+        9: PortType.CTRL,
+        10: PortType.CTRL,
+        11: PortType.CTRL,
+        12: PortType.MNTR_IN,
+        13: PortType.MNTR_OUT,
+    },
     BoxType.QUEL1_A: {
         0: PortType.READ_IN,
         1: PortType.READ_OUT,
@@ -147,6 +181,38 @@ PORT_MAPPING: Final = {
 }
 
 NUMBER_OF_CHANNELS: Final = {
+    BoxType.QUEL1SE_A: {
+        0: 4,
+        1: 1,
+        2: 3,
+        3: 1,
+        4: 3,
+        5: 1,
+        6: 1,
+        7: 4,
+        8: 1,
+        9: 3,
+        10: 1,
+        11: 3,
+        12: 1,
+        13: 1,
+    },
+    BoxType.QUEL1SE_B: {
+        0: 0,
+        1: 1,
+        2: 3,
+        3: 1,
+        4: 3,
+        5: 1,
+        6: 1,
+        7: 0,
+        8: 1,
+        9: 3,
+        10: 1,
+        11: 3,
+        12: 1,
+        13: 1,
+    },
     BoxType.QUEL1_A: {
         0: 4,
         1: 1,
