@@ -441,51 +441,53 @@ class MultipleMeasureResult:
 
     def get_basis_indices(
         self,
-        targets: dict[str, int] | None = None,
+        targets: Collection[str] | None = None,
     ) -> list[tuple[int, ...]]:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         if targets is None:
-            targets = {target: 0 for target in self.data.keys()}
-        dimensions = [self.data[label][idx].n_states for label, idx in targets.items()]
+            targets = self.data.keys()
+        dimensions = [self.data[target][0].n_states for target in targets]
         return list(np.ndindex(*[dim for dim in dimensions]))
 
     def get_basis_labels(
         self,
-        targets: dict[str, int] | None = None,
+        targets: Collection[str] | None = None,
     ) -> list[str]:
         basis_indices = self.get_basis_indices(targets)
         return ["".join(str(i) for i in basis) for basis in basis_indices]
 
     def get_classified_data(
         self,
-        targets: dict[str, int] | None = None,
+        targets: Collection[tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
     ) -> NDArray:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         if targets is None:
-            targets = {target: -1 for target in self.data.keys()}
+            targets = [(target, -1) for target in self.data.keys()]
         return np.column_stack(
             [
-                self.data[label][idx].get_classified_data(threshold=threshold)
-                for label, idx in targets.items()
+                self.data[target][idx].get_classified_data(threshold=threshold)
+                for (target, idx) in targets
             ]
         )
 
     def get_counts(
         self,
-        targets: dict[str, int] | None = None,
+        targets: Collection[tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
     ) -> dict[str, int]:
+        if targets is None:
+            targets = [(target, -1) for target in self.data.keys()]
         classified_data = self.get_classified_data(targets, threshold=threshold)
         classified_labels = np.array(
             ["".join(map(str, row)) for row in classified_data]
         )
         counts = dict(Counter(classified_labels))
-        basis_labels = self.get_basis_labels(targets)
+        basis_labels = self.get_basis_labels([target for target, _ in targets])
         counts = {
             basis_label: counts.get(basis_label, 0) for basis_label in basis_labels
         }
@@ -493,7 +495,7 @@ class MultipleMeasureResult:
 
     def get_probabilities(
         self,
-        targets: dict[str, int] | None = None,
+        targets: Collection[tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
     ) -> dict[str, float]:
@@ -507,7 +509,7 @@ class MultipleMeasureResult:
 
     def get_standard_deviations(
         self,
-        targets: dict[str, int] | None = None,
+        targets: Collection[tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
     ) -> dict[str, float]:
@@ -554,14 +556,15 @@ class MultipleMeasureResult:
 
     def get_mitigated_counts(
         self,
-        targets: dict[str, int] | None = None,
+        targets: Collection[tuple[str, int]] | None = None,
     ) -> dict[str, int]:
         if targets is None:
-            targets = {target: -1 for target in self.data.keys()}
+            targets = [(target, -1) for target in self.data.keys()]
+        labels = [target for target, _ in targets]
         raw = self.get_counts(targets)
-        cm_inv = self.get_inverse_confusion_matrix(targets)
+        cm_inv = self.get_inverse_confusion_matrix(labels)
         mitigated = np.array(list(raw.values())) @ cm_inv
-        basis_labels = self.get_basis_labels(targets)
+        basis_labels = self.get_basis_labels(labels)
         mitigated_counts = {
             basis_label: int(mitigated[i]) for i, basis_label in enumerate(basis_labels)
         }
@@ -569,14 +572,15 @@ class MultipleMeasureResult:
 
     def get_mitigated_probabilities(
         self,
-        targets: dict[str, int] | None = None,
+        targets: Collection[tuple[str, int]] | None = None,
     ) -> dict[str, float]:
         if targets is None:
-            targets = {target: -1 for target in self.data.keys()}
+            targets = [(target, -1) for target in self.data.keys()]
+        labels = [target for target, _ in targets]
         raw = self.get_probabilities(targets)
-        cm_inv = self.get_inverse_confusion_matrix(targets)
+        cm_inv = self.get_inverse_confusion_matrix(labels)
         mitigated = np.array(list(raw.values())) @ cm_inv
-        basis_labels = self.get_basis_labels(targets)
+        basis_labels = self.get_basis_labels(labels)
         mitigated_probabilities = {
             basis_label: mitigated[i] for i, basis_label in enumerate(basis_labels)
         }
