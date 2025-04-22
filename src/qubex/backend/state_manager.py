@@ -386,6 +386,8 @@ This operation will overwrite the existing device settings. Do you want to conti
         for port in box.ports:
             number = str(port.number)
             type = port.type.value
+            if port.type == PortType.MNTR_OUT:
+                continue
             if isinstance(port, CapPort):
                 ssb = ""
                 lo = f"{port.lo_freq:_}"
