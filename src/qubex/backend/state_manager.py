@@ -221,6 +221,7 @@ class StateManager:
             Parameters directory, by default DEFAULT_PARAMS_DIR.
         """
         self._config_loader = ConfigLoader(
+            chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
             targets_to_exclude=targets_to_exclude,

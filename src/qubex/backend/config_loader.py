@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from logging import getLogger
 from pathlib import Path
 from typing import Final, Literal
 
@@ -9,6 +10,8 @@ import yaml
 from .control_system import Box, CapPort, ControlSystem, GenPort
 from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
 from .quantum_system import Chip, QuantumSystem
+
+logger = getLogger(__name__)
 
 DEFAULT_CONFIG_DIR: Final = "/home/shared/config"
 DEFAULT_PARAMS_DIR: Final = "/home/shared/config"
@@ -24,8 +27,9 @@ class ConfigLoader:
     def __init__(
         self,
         *,
-        config_dir: str = DEFAULT_CONFIG_DIR,
-        params_dir: str = DEFAULT_PARAMS_DIR,
+        chip_id: str | None = None,
+        config_dir: str | None = None,
+        params_dir: str | None = None,
         chip_file: str = CHIP_FILE,
         box_file: str = BOX_FILE,
         wiring_file: str = WIRING_FILE,
@@ -39,6 +43,8 @@ class ConfigLoader:
 
         Parameters
         ----------
+        chip_id : str, optional
+            The quantum chip ID (e.g., "64Q"). If provided, the configuration will be loaded for this specific chip.
         config_dir : str, optional
             The directory where the configuration files are stored, by default DEFAULT_CONFIG_DIR.
         params_dir : str, optional
@@ -60,6 +66,11 @@ class ConfigLoader:
         --------
         >>> config = ConfigLoader()
         """
+        if config_dir is None:
+            config_dir = DEFAULT_CONFIG_DIR
+        if params_dir is None:
+            params_dir = DEFAULT_PARAMS_DIR
+        self._chip_id = chip_id
         self._config_dir = config_dir
         self._params_dir = params_dir
         self._chip_dict = self._load_config_file(chip_file)
@@ -131,24 +142,32 @@ class ConfigLoader:
     def _load_quantum_system(self) -> dict[str, QuantumSystem]:
         quantum_system_dict = {}
         for chip_id, chip_info in self._chip_dict.items():
+            if self._chip_id is not None and chip_id != self._chip_id:
+                continue
             chip = Chip.new(
                 id=chip_id,
                 name=chip_info["name"],
                 n_qubits=chip_info["n_qubits"],
             )
-            props = self._props_dict[chip_id]
+            props = self._props_dict.get(chip_id)
+            if props is None:
+                logger.warning(f"Chip `{chip_id}` is missing in `{PROPS_FILE}`. ")
+                continue
+            qubit_frequency_dict = props.get("qubit_frequency", {})
+            qubit_anharmonicity_dict = props.get("anharmonicity", {})
+            resonator_frequency_dict = props.get("resonator_frequency", {})
             for qubit in chip.qubits:
-                qubit.frequency = props["qubit_frequency"].get(
+                qubit.frequency = qubit_frequency_dict.get(
                     qubit.label, float("nan")
                 ) or float("nan")
-                anharmonicity = props["anharmonicity"].get(qubit.label)
+                anharmonicity = qubit_anharmonicity_dict.get(qubit.label)
                 if anharmonicity is None:
                     factor = -1 / 19  # E_J / E_C = 50
                     qubit.anharmonicity = qubit.frequency * factor
                 else:
                     qubit.anharmonicity = anharmonicity
             for resonator in chip.resonators:
-                resonator.frequency = props["resonator_frequency"].get(
+                resonator.frequency = resonator_frequency_dict.get(
                     resonator.qubit, float("nan")
                 ) or float("nan")
             quantum_system = QuantumSystem(chip=chip)
@@ -158,8 +177,14 @@ class ConfigLoader:
     def _load_control_system(self) -> dict[str, ControlSystem]:
         control_system_dict = {}
         for chip_id in self._chip_dict:
+            if self._chip_id is not None and chip_id != self._chip_id:
+                continue
             box_ports = defaultdict(list)
-            for wiring in self._wiring_dict[chip_id]:
+            wirings = self._wiring_dict.get(chip_id)
+            if wirings is None:
+                logger.warning(f"Chip `{chip_id}` is missing in `{WIRING_FILE}`. ")
+                continue
+            for wiring in wirings:
                 box, port = wiring["read_out"].split("-")
                 box_ports[box].append(int(port))
                 box, port = wiring["read_in"].split("-")
@@ -185,8 +210,14 @@ class ConfigLoader:
     def _load_wiring_info(self) -> dict[str, WiringInfo]:
         wiring_info_dict = {}
         for chip_id in self._chip_dict:
-            quantum_system = self._quantum_system_dict[chip_id]
-            control_system = self._control_system_dict[chip_id]
+            if self._chip_id is not None and chip_id != self._chip_id:
+                continue
+            try:
+                wirings = self._wiring_dict[chip_id]
+                quantum_system = self._quantum_system_dict[chip_id]
+                control_system = self._control_system_dict[chip_id]
+            except KeyError:
+                continue
 
             def get_port(specifier: str | None):
                 if specifier is None:
@@ -200,7 +231,7 @@ class ConfigLoader:
             read_out = []
             read_in = []
             pump = []
-            for wiring in self._wiring_dict[chip_id]:
+            for wiring in wirings:
                 mux_num = int(wiring["mux"])
                 mux = quantum_system.get_mux(mux_num)
                 qubits = quantum_system.get_qubits_in_mux(mux_num)
@@ -226,7 +257,13 @@ class ConfigLoader:
 
     def _load_control_params(self) -> dict[str, ControlParams]:
         control_params_dict = {}
-        for chip_id, params in self._params_dict.items():
+        for chip_id in self._chip_dict:
+            if self._chip_id is not None and chip_id != self._chip_id:
+                continue
+            params = self._params_dict.get(chip_id)
+            if params is None:
+                logger.warning(f"Chip `{chip_id}` is missing in `{PARAMS_FILE}`. ")
+                continue
             control_params = ControlParams(
                 control_amplitude=params.get("control_amplitude", {}),
                 readout_amplitude=params.get("readout_amplitude", {}),
@@ -249,6 +286,8 @@ class ConfigLoader:
     ) -> dict[str, ExperimentSystem]:
         experiment_system_dict = {}
         for chip_id in self._chip_dict:
+            if self._chip_id is not None and chip_id != self._chip_id:
+                continue
             quantum_system = self._quantum_system_dict[chip_id]
             control_system = self._control_system_dict[chip_id]
             wiring_info = self._wiring_info_dict[chip_id]

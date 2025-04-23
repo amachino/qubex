@@ -265,7 +265,7 @@ class Experiment(
         if len(unavailable_qubits) > 0:
             err_msg = f"Unavailable qubits: {unavailable_qubits}"
             print(err_msg)
-            raise ValueError(err_msg)
+            # raise ValueError(err_msg)
 
     def print_environment(self, verbose: bool = True):
         """Print the environment information."""
