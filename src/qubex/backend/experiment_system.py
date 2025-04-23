@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import re
-from typing import Collection, Final, Literal
+from typing import Collection, Final, Literal, Optional
 
 import numpy as np
 from pydantic.dataclasses import dataclass
 
 from .control_system import (
     Box,
+    BoxType,
     CapPort,
     ControlSystem,
     GenPort,
@@ -56,7 +57,7 @@ class QubitPortSet(Model):
 class ControlParams(Model):
     control_amplitude: dict[str, float]
     readout_amplitude: dict[str, float]
-    control_vatt: dict[str, int]
+    control_vatt: dict[str, Optional[int]]
     readout_vatt: dict[int, int]
     pump_vatt: dict[int, int]
     control_fsc: dict[str, int]
@@ -71,7 +72,7 @@ class ControlParams(Model):
     def get_readout_amplitude(self, qubit: str) -> float:
         return self.readout_amplitude.get(qubit, DEFAULT_READOUT_AMPLITUDE)
 
-    def get_control_vatt(self, qubit: str) -> int:
+    def get_control_vatt(self, qubit: str) -> int | None:
         return self.control_vatt.get(qubit, DEFAULT_CONTROL_VATT)
 
     def get_readout_vatt(self, mux: int) -> int:
@@ -399,21 +400,36 @@ class ExperimentSystem:
                 if isinstance(port, GenPort):
                     port.rfswitch = "pass"
                     if port.type == PortType.READ_OUT:
-                        self._configure_readout_port(port, params)
+                        self._configure_readout_port(
+                            port=port,
+                            params=params,
+                        )
                     elif port.type == PortType.CTRL:
-                        self._configure_control_port(port, params, mode)
+                        self._configure_control_port(
+                            box=box,
+                            port=port,
+                            params=params,
+                            mode=mode,
+                        )
                     elif port.type == PortType.PUMP:
-                        self._configure_pump_port(port, params)
+                        self._configure_pump_port(
+                            port=port,
+                            params=params,
+                        )
                 elif isinstance(port, CapPort):
                     port.rfswitch = "open"
                     if port.type == PortType.READ_IN:
-                        self._configure_capture_port(port, params)
+                        self._configure_capture_port(
+                            port=port,
+                            params=params,
+                        )
 
         self._gen_target_dict = dict(sorted(self._gen_target_dict.items()))
         self._cap_target_dict = dict(sorted(self._cap_target_dict.items()))
 
     def _configure_control_port(
         self,
+        box: Box,
         port: GenPort,
         params: ControlParams,
         mode: Literal["ge-ef-cr", "ge-cr-cr"],
@@ -421,15 +437,27 @@ class ExperimentSystem:
         qubit = self.get_qubit_by_control_port(port)
         if qubit is None or not qubit.is_valid:
             return
+
+        if box.type == BoxType.QUEL1SE_R8:
+            ssb = None
+            min_frequency = 0.0
+            vatt = None
+        else:
+            ssb = "L"
+            min_frequency = 6.5e9
+            vatt = params.get_control_vatt(qubit.label)
+
         config = self._create_control_configuration(
             mode=mode,
             qubit=qubit,
             n_channels=port.n_channels,
+            ssb=ssb,
+            min_frequency=min_frequency,
         )
         port.lo_freq = config["lo"]
         port.cnco_freq = config["cnco"]
-        port.sideband = "L"
-        port.vatt = params.get_control_vatt(qubit.label)
+        port.sideband = ssb
+        port.vatt = vatt
         port.fullscale_current = params.get_control_fsc(qubit.label)
         for idx, gen_channel in enumerate(port.channels):
             gen_channel.fnco_freq = config["channels"][idx]["fnco"]
@@ -633,7 +661,7 @@ class ExperimentSystem:
         n_channels: int,
         *,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        ssb: Literal["U", "L"] = "L",
+        ssb: Literal["U", "L"] | None = "L",
         cnco_center: int = CNCO_CENTER_CTRL,
         min_frequency: float = 6.5e9,
     ) -> dict:
@@ -899,35 +927,48 @@ class MixingUtil:
     @staticmethod
     def calc_lo_cnco(
         f: float,
-        ssb: Literal["U", "L"],
         cnco_center: int,
+        ssb: Literal["U", "L"] | None,
         lo_step: int = LO_STEP,
         nco_step: int = NCO_STEP,
-    ) -> tuple[int, int, int]:
-        if ssb == "U":
-            lo = round((f - cnco_center) / lo_step) * lo_step
-            cnco = round((f - lo) / nco_step) * nco_step
-        elif ssb == "L":
-            lo = round((f + cnco_center) / lo_step) * lo_step
-            cnco = round((lo - f) / nco_step) * nco_step
+    ) -> tuple[int | None, int, int]:
+        if ssb is None:
+            lo = None
+            cnco = round(f / nco_step) * nco_step
+            f_mix = cnco
         else:
-            raise ValueError("Invalid SSB")
-        f_mix = lo + cnco if ssb == "U" else lo - cnco
+            if ssb == "U":
+                lo = round((f - cnco_center) / lo_step) * lo_step
+                cnco = round((f - lo) / nco_step) * nco_step
+            elif ssb == "L":
+                lo = round((f + cnco_center) / lo_step) * lo_step
+                cnco = round((lo - f) / nco_step) * nco_step
+            else:
+                raise ValueError("Invalid SSB")
+            f_mix = lo + cnco if ssb == "U" else lo - cnco
         return lo, cnco, f_mix
 
     @staticmethod
     def calc_fnco(
         f: float,
-        ssb: Literal["U", "L"],
-        lo: int,
+        ssb: Literal["U", "L"] | None,
+        lo: int | None,
         cnco: int,
         nco_step: int = NCO_STEP,
     ) -> tuple[int, int]:
-        if ssb == "U":
-            fnco = round((f - (lo + cnco)) / nco_step) * nco_step
-        elif ssb == "L":
-            fnco = round(((lo - cnco) - f) / nco_step) * nco_step
+        if ssb is None and lo is None:
+            fnco = round((f - cnco) / nco_step) * nco_step
+            f_mix = cnco + fnco
+        elif lo is None:
+            raise ValueError("LO frequency is required when SSB is not None.")
+        elif ssb is None:
+            raise ValueError("SSB is required when LO frequency is not None.")
         else:
-            raise ValueError("Invalid SSB")
-        f_mix = lo + cnco + fnco if ssb == "U" else lo - cnco - fnco
+            if ssb == "U":
+                fnco = round((f - (lo + cnco)) / nco_step) * nco_step
+            elif ssb == "L":
+                fnco = round(((lo - cnco) - f) / nco_step) * nco_step
+            else:
+                raise ValueError("Invalid SSB")
+            f_mix = lo + cnco + fnco if ssb == "U" else lo - cnco - fnco
         return fnco, f_mix

@@ -803,7 +803,7 @@ class Experiment(
             fnco, _ = MixingUtil.calc_fnco(
                 f=frequency * 1e9,
                 ssb="L",
-                lo=port.lo_freq,
+                lo=port.lo_freq,  # type: ignore
                 cnco=port.cnco_freq,
             )
             port.channels[channel_number].fnco_freq = fnco
