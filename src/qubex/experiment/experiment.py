@@ -895,6 +895,11 @@ class Experiment(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        readout_duration: int = DEFAULT_READOUT_DURATION,
+        readout_amplitude: float | None = None,
         plot: bool = True,
     ) -> MeasureResult:
         """
@@ -904,6 +909,16 @@ class Experiment(
         ----------
         targets : Collection[str] | str, optional
             Target labels to check the waveforms.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        capture_window : int, optional
+            Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
+        readout_duration : int, optional
+            Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+        readout_amplitude : float, optional
+            Readout amplitude. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -923,7 +938,16 @@ class Experiment(
         else:
             targets = list(targets)
 
-        result = self.measure(sequence={target: np.zeros(0) for target in targets})
+        result = self.measure(
+            sequence={target: np.zeros(0) for target in targets},
+            shots=shots,
+            interval=interval,
+            capture_window=capture_window,
+            readout_duration=readout_duration,
+            readout_amplitudes={target: readout_amplitude for target in targets}
+            if readout_amplitude is not None
+            else None,
+        )
         if plot:
             result.plot()
         return result
