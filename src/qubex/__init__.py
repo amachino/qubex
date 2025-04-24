@@ -1,5 +1,7 @@
 import logging
 
+import qubex.patches.quel_ic_config.abstract_nco_ftw_patch  # noqa: F401
+
 from .style import apply_template
 
 logger = logging.getLogger(__name__)
