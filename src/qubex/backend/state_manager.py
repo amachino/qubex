@@ -620,9 +620,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         original_cnco_freq = port.cnco_freq
         original_fnco_freq = channel.fnco_freq
 
-        qc = self.device_controller.qubecalib
-        quel1_box = qc.create_box(port.box_id, reconnect=False)
-        quel1_box.reconnect()
+        quel1_box = self.device_controller.get_box(port.box_id, reconnect=False)
 
         quel1_box.config_port(
             port=port.number,
