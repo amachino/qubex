@@ -448,13 +448,15 @@ This operation will overwrite the existing device settings. Do you want to conti
             boxes = [box for box in boxes if box.id in box_ids]
         result: dict = {}
         for box in boxes:
+            box_config = self.device_controller.dump_box(box.id)
+            self.device_controller.boxpool._box_config_cache = box_config
             result[box.id] = {"ports": {}}
             for port in box.ports:
                 if port.type not in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
                     try:
-                        result[box.id]["ports"][port.number] = (
-                            self.device_controller.dump_port(box.id, port.number)
-                        )
+                        result[box.id]["ports"][port.number] = box_config["ports"][
+                            port.number
+                        ]
                     except Exception as e:
                         print(e)
         return result
