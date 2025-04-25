@@ -590,7 +590,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         self,
         label: str,
         *,
-        lo_freq: int,
+        lo_freq: int | None,
         cnco_freq: int,
         fnco_freq: int,
     ):

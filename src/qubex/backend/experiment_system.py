@@ -34,6 +34,7 @@ LO_STEP = 500_000_000
 NCO_STEP = 23_437_500
 CNCO_CENTER_CTRL = 2_250_000_000
 CNCO_CETNER_READ = 1_500_000_000
+CNCO_CETNER_READ_R8 = 2_250_000_000
 FNCO_MAX = 750_000_000
 AWG_MAX = 250_000_000
 
@@ -227,6 +228,22 @@ class ExperimentSystem:
             box_ids.add(ports.read_in_port.box_id)
         return [self.get_box(box_id) for box_id in box_ids]
 
+    def get_control_box_for_qubit(self, qubit: int | str) -> Box:
+        if isinstance(qubit, int):
+            qubit = self.qubits[qubit].label
+        ports = self.get_qubit_port_set(qubit)
+        if ports is None:
+            raise ValueError(f"QubitPortSet for `{qubit}` not found.")
+        return self.get_box(ports.ctrl_port.box_id)
+
+    def get_readout_box_for_qubit(self, qubit: int | str) -> Box:
+        if isinstance(qubit, int):
+            qubit = self.qubits[qubit].label
+        ports = self.get_qubit_port_set(qubit)
+        if ports is None:
+            raise ValueError(f"QubitPortSet for `{qubit}` not found.")
+        return self.get_box(ports.read_out_port.box_id)
+
     def get_target(self, label: str) -> Target:
         try:
             return self._gen_target_dict[label]
@@ -401,6 +418,7 @@ class ExperimentSystem:
                     port.rfswitch = "pass"
                     if port.type == PortType.READ_OUT:
                         self._configure_readout_port(
+                            box=box,
                             port=port,
                             params=params,
                         )
@@ -420,6 +438,7 @@ class ExperimentSystem:
                     port.rfswitch = "open"
                     if port.type == PortType.READ_IN:
                         self._configure_capture_port(
+                            box=box,
                             port=port,
                             params=params,
                         )
@@ -570,16 +589,29 @@ class ExperimentSystem:
 
     def _configure_readout_port(
         self,
+        box: Box,
         port: GenPort,
         params: ControlParams,
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
         if mux is None or not mux.is_valid:
             return
-        config = self._create_readout_configuration(mux)
+
+        if box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
+
+        config = self._create_readout_configuration(
+            mux,
+            ssb=ssb,
+            cnco_center=cnco_center,
+        )
         port.lo_freq = config["lo"]
         port.cnco_freq = config["cnco"]
-        port.sideband = "U"
+        port.sideband = ssb
         port.vatt = params.get_readout_vatt(mux.index)
         port.fullscale_current = params.get_readout_fsc(mux.index)
         port.channels[0].fnco_freq = config["fnco"]
@@ -593,13 +625,26 @@ class ExperimentSystem:
 
     def _configure_capture_port(
         self,
+        box: Box,
         port: CapPort,
         params: ControlParams,
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
         if mux is None or not mux.is_valid:
             return
-        config = self._create_readout_configuration(mux)
+
+        if box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
+
+        config = self._create_readout_configuration(
+            mux,
+            ssb=ssb,
+            cnco_center=cnco_center,
+        )
         port.lo_freq = config["lo"]
         port.cnco_freq = config["cnco"]
         for cap_channel in port.channels:

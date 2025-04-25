@@ -14,7 +14,12 @@ from tqdm import tqdm
 from ...analysis import fitting
 from ...analysis import visualization as viz
 from ...analysis.fitting import RabiParam
-from ...backend import MixingUtil, Target
+from ...backend import BoxType, MixingUtil, Target
+from ...backend.experiment_system import (
+    CNCO_CENTER_CTRL,
+    CNCO_CETNER_READ,
+    CNCO_CETNER_READ_R8,
+)
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
 from ...pulse import CPMG, Blank, FlatTop, Gaussian, PulseSchedule, Rect, Waveform
 from ...typing import TargetMap
@@ -1244,6 +1249,7 @@ class CharacterizationMixin(
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
 
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
@@ -1260,13 +1266,20 @@ class CharacterizationMixin(
         # phase offset to avoid the phase jump after changing the LO/NCO frequency
         phase_offset = 0.0
 
+        if read_box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
+
         for subrange in subranges:
             # change LO/NCO frequency to the center of the subrange
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
-                ssb="U",
-                cnco_center=1_500_000_000,
+                ssb=ssb,
+                cnco_center=cnco_center,
             )
             with self.state_manager.modified_device_settings(
                 label=read_label,
@@ -1368,6 +1381,7 @@ class CharacterizationMixin(
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
 
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
@@ -1382,12 +1396,19 @@ class CharacterizationMixin(
         idx = 0
         phase_offset = 0.0
 
+        if read_box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
+
         for subrange in subranges:
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
-                ssb="U",
-                cnco_center=1_500_000_000,
+                ssb=ssb,
+                cnco_center=cnco_center,
             )
             with self.state_manager.modified_device_settings(
                 label=read_label,
@@ -1605,11 +1626,19 @@ class CharacterizationMixin(
 
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+
+        if read_box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
 
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
             center_frequency * 1e9,
-            ssb="U",
-            cnco_center=1_500_000_000,
+            ssb=ssb,
+            cnco_center=cnco_center,
         )
 
         signals = []
@@ -1675,6 +1704,8 @@ class CharacterizationMixin(
         # control and readout pulses
         qubit = Target.qubit_label(target)
         resonator = Target.read_label(target)
+        ctrl_box = self.experiment_system.get_control_box_for_qubit(qubit)
+
         control_pulse = Gaussian(
             duration=1024,
             amplitude=control_amplitude,
@@ -1700,14 +1731,21 @@ class CharacterizationMixin(
         phases = []
         amplitudes = []
 
+        if ctrl_box.type == BoxType.QUEL1SE_R8:
+            ssb = None
+            cnco_center = CNCO_CENTER_CTRL
+        else:
+            ssb = "L"
+            cnco_center = CNCO_CENTER_CTRL
+
         # measure the phase and amplitude
         idx = 0
         for subrange in subranges:
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
-                ssb="L",
-                cnco_center=2_250_000_000,
+                ssb=ssb,
+                cnco_center=cnco_center,
             )
             with self.state_manager.modified_device_settings(
                 label=qubit,
