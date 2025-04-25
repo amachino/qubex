@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import reduce
@@ -347,39 +348,28 @@ class Measurement:
         --------
         >>> result = meas.measure_noise()
         """
-        capture = pls.Capture(duration=duration)
-        readout_targets = {Target.read_label(target) for target in targets}
-        shots = 1
-        with pls.Sequence() as sequence:
-            with pls.Flushleft():
-                for target in readout_targets:
-                    capture.target(target)
-        backend_result = self.device_controller.execute_sequence(
-            sequence=sequence,
-            repeats=shots,
-            interval=DEFAULT_INTERVAL,
-            integral_mode="integral",
-        )
-        return self._create_measure_result(
-            backend_result=backend_result,
-            measure_mode=MeasureMode.AVG,
-            shots=shots,
+        return self.measure(
+            waveforms={target: np.zeros(0) for target in targets},
+            mode="avg",
+            shots=1,
+            capture_window=duration,
         )
 
     def _calc_backend_interval(
         self,
         waveforms: TargetMap[IQArray],
-        interval: int,
-        control_window: int | None,
-        capture_window: int,
+        interval: float,
+        control_window: float | None,
+        capture_window: float,
     ) -> int:
         control_length = max(len(waveform) for waveform in waveforms.values())
         control_duration = int(control_length * SAMPLING_PERIOD)
         if control_window is not None:
             control_duration = max(control_duration, control_window)
         return (
-            (control_duration + capture_window + interval) // INTERVAL_STEP + 1
-        ) * INTERVAL_STEP
+            math.ceil((control_duration + capture_window + interval) / INTERVAL_STEP)
+            * INTERVAL_STEP
+        )
 
     def measure(
         self,
@@ -387,11 +377,11 @@ class Measurement:
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
-        interval: int | None = None,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        interval: float | None = None,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
     ) -> MeasureResult:
         """
@@ -408,15 +398,15 @@ class Measurement:
             - "avg": Measure multiple times and average the results.
         shots : int, optional
             The number of shots, by default DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             The interval in ns, by default DEFAULT_INTERVAL.
-        control_window : int, optional
+        control_window : float, optional
             The control window in ns, by default None.
-        capture_window : int, optional
+        capture_window : float, optional
             The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
-        capture_margin : int, optional
+        capture_margin : float, optional
             The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
-        readout_duration : int, optional
+        readout_duration : float, optional
             The readout duration in ns, by default DEFAULT_READOUT_DURATION.
         readout_amplitudes : dict[str, float], optional
             The readout amplitude for each qubit, by default None.
@@ -489,11 +479,11 @@ class Measurement:
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
-        interval: int | None = None,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        interval: float | None = None,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
     ):
         """
@@ -510,15 +500,15 @@ class Measurement:
             - "avg": Measure multiple times and average the results.
         shots : int, optional
             The number of shots, by default DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             The interval in ns, by default DEFAULT_INTERVAL.
-        control_window : int, optional
+        control_window : float, optional
             The control window in ns, by default None.
-        capture_window : int, optional
+        capture_window : float, optional
             The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
-        capture_margin : int, optional
+        capture_margin : float, optional
             The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
-        readout_duration : int, optional
+        readout_duration : float, optional
             The readout duration in ns, by default DEFAULT_READOUT_DURATION.
         readout_amplitudes : dict[str, float], optional
             The readout amplitude for each qubit, by default None.
@@ -585,7 +575,7 @@ class Measurement:
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
-        interval: int | None = None,
+        interval: float | None = None,
         add_last_measurement: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -605,15 +595,15 @@ class Measurement:
             - "avg": Measure multiple times and average the results.
         shots : int, optional
             The number of shots, by default DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             The interval in ns, by default DEFAULT_INTERVAL.
         add_last_measurement : bool, optional
             Whether to add the last measurement, by default False.
-        capture_window : int, optional
+        capture_window : float, optional
             The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
-        capture_margin : int, optional
+        capture_margin : float, optional
             The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
-        readout_duration : int, optional
+        readout_duration : float, optional
             The readout duration in ns, by default DEFAULT_READOUT_DURATION.
         readout_amplitudes : dict[str, float], optional
             The readout amplitude for each qubit, by default None.
@@ -657,10 +647,10 @@ class Measurement:
         self,
         *,
         waveforms: TargetMap[IQArray],
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
     ) -> pls.Sequence:
         if control_window is None:
@@ -715,11 +705,11 @@ class Measurement:
         self,
         *,
         waveforms: TargetMap[IQArray],
-        interval: int,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        interval: float,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
     ) -> Sequencer:
         if capture_window is None:
@@ -733,7 +723,7 @@ class Measurement:
 
         qubits = {Target.qubit_label(target) for target in waveforms}
         control_length = max(len(waveform) for waveform in waveforms.values())
-        control_length = (control_length // MIN_DURATION + 1) * MIN_DURATION
+        control_length = math.ceil(control_length / MIN_DURATION) * MIN_DURATION
         if control_window is not None:
             control_length = max(
                 control_length,
@@ -859,7 +849,7 @@ class Measurement:
     def _create_sequencer_from_schedule(
         self,
         schedule: PulseSchedule,
-        interval: int,
+        interval: float,
         add_last_measurement: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -879,8 +869,8 @@ class Measurement:
             raise ValueError("Invalid pulse schedule.")
 
         backend_interval = (
-            (int(schedule.duration) + interval) // INTERVAL_STEP + 1
-        ) * INTERVAL_STEP
+            math.ceil((schedule.duration + interval) / INTERVAL_STEP) * INTERVAL_STEP
+        )
 
         # add last readout pulse if necessary
         if add_last_measurement:
@@ -925,7 +915,7 @@ class Measurement:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
-        sequence_duration = (schedule.duration // MIN_DURATION + 1) * MIN_DURATION
+        sequence_duration = math.ceil(schedule.duration / MIN_DURATION) * MIN_DURATION
         schedule = schedule.padded(
             total_duration=sequence_duration,
             pad_side="left",

@@ -26,12 +26,12 @@ class CharacterizationProtocol(Protocol):
         targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -44,17 +44,17 @@ class CharacterizationProtocol(Protocol):
             Target labels to measure the readout SNR.
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Initial state of the qubits. Defaults to None.
-        capture_window : int, optional
+        capture_window : float, optional
             Capture window. Defaults to None.
-        capture_margin : int, optional
+        capture_margin : float, optional
             Capture margin. Defaults to None.
-        readout_duration : int, optional
+        readout_duration : float, optional
             Readout duration. Defaults to None.
         readout_amplitudes : dict[str, float], optional
             Readout amplitudes for each target.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -76,11 +76,11 @@ class CharacterizationProtocol(Protocol):
         *,
         amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         """
@@ -94,15 +94,15 @@ class CharacterizationProtocol(Protocol):
             Range of the readout amplitude to sweep. Defaults to np.linspace(0.0, 1.0, 21).
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Initial state of the qubits. Defaults to None.
-        capture_window : int, optional
+        capture_window : float, optional
             Capture window. Defaults to None.
-        capture_margin : int, optional
+        capture_margin : float, optional
             Capture margin. Defaults to None.
-        readout_duration : int, optional
+        readout_duration : float, optional
             Readout duration. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -120,10 +120,10 @@ class CharacterizationProtocol(Protocol):
         *,
         time_range: ArrayLike = np.arange(128, 2048, 128),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_margin: int | None = None,
+        capture_margin: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         """
@@ -137,13 +137,13 @@ class CharacterizationProtocol(Protocol):
             Time range of the readout duration to sweep. Defaults to np.arange(0, 2048, 128).
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Initial state of the qubits. Defaults to None.
-        capture_margin : int, optional
+        capture_margin : float, optional
             Capture margin. Defaults to None.
         readout_amplitudes : dict[str, float], optional
             Readout amplitudes for each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -165,7 +165,7 @@ class CharacterizationProtocol(Protocol):
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict: ...
@@ -178,7 +178,7 @@ class CharacterizationProtocol(Protocol):
         time_range: ArrayLike = np.arange(0, 101, 4),
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[FreqRabiData]:
         """
@@ -196,7 +196,7 @@ class CharacterizationProtocol(Protocol):
             Rabi level to use. Defaults to "ge".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -228,7 +228,7 @@ class CharacterizationProtocol(Protocol):
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[AmplRabiData]:
         """
@@ -244,7 +244,7 @@ class CharacterizationProtocol(Protocol):
             Range of the control amplitude to sweep.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -278,7 +278,7 @@ class CharacterizationProtocol(Protocol):
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]: ...
 
@@ -289,7 +289,7 @@ class CharacterizationProtocol(Protocol):
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]: ...
 
@@ -301,7 +301,7 @@ class CharacterizationProtocol(Protocol):
         time_range: ArrayLike = range(0, 101, 4),
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]: ...
 
@@ -311,7 +311,7 @@ class CharacterizationProtocol(Protocol):
         *,
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
         xaxis_type: Literal["linear", "log"] = "log",
@@ -327,7 +327,7 @@ class CharacterizationProtocol(Protocol):
             Time range of the experiment in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -357,7 +357,7 @@ class CharacterizationProtocol(Protocol):
         n_cpmg: int = 1,
         pi_cpmg: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[T2Data]:
@@ -376,7 +376,7 @@ class CharacterizationProtocol(Protocol):
             π pulse for the CPMG sequence. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -406,7 +406,7 @@ class CharacterizationProtocol(Protocol):
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[RamseyData]:
@@ -425,7 +425,7 @@ class CharacterizationProtocol(Protocol):
             Spectator state. Defaults to "0".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -454,7 +454,7 @@ class CharacterizationProtocol(Protocol):
         time_range: ArrayLike = np.arange(0, 10001, 100),
         detuning: float = 0.001,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         """
@@ -470,7 +470,7 @@ class CharacterizationProtocol(Protocol):
             Detuning of the control frequency. Defaults to 0.001 GHz.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -499,7 +499,7 @@ class CharacterizationProtocol(Protocol):
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
         """
@@ -519,7 +519,7 @@ class CharacterizationProtocol(Protocol):
             X180 pulse for each qubit.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -543,7 +543,7 @@ class CharacterizationProtocol(Protocol):
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         """
@@ -563,7 +563,7 @@ class CharacterizationProtocol(Protocol):
             X180 pulse for each qubit.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -588,7 +588,7 @@ class CharacterizationProtocol(Protocol):
         amplitude: float = 0.01,
         subrange_width: float = 0.3,
         shots: int = 128,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
     ) -> float:
         """
@@ -604,7 +604,7 @@ class CharacterizationProtocol(Protocol):
             Amplitude of the readout pulse. Defaults to 0.01.
         shots : int, optional
             Number of shots. Defaults to 128.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -625,7 +625,7 @@ class CharacterizationProtocol(Protocol):
         phase_shift: float | None = None,
         subrange_width: float = 0.3,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -646,7 +646,7 @@ class CharacterizationProtocol(Protocol):
             Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -668,7 +668,7 @@ class CharacterizationProtocol(Protocol):
         power_range: ArrayLike = np.arange(-60, 5, 5),
         phase_shift: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -687,7 +687,7 @@ class CharacterizationProtocol(Protocol):
             Phase shift in rad/GHz.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -709,7 +709,7 @@ class CharacterizationProtocol(Protocol):
         amplitude: float = 0.01,
         phase_shift: float,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -728,7 +728,7 @@ class CharacterizationProtocol(Protocol):
             Phase shift in rad/GHz.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -751,7 +751,7 @@ class CharacterizationProtocol(Protocol):
         readout_frequency: float | None = None,
         subrange_width: float = 0.3,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
         """
@@ -771,7 +771,7 @@ class CharacterizationProtocol(Protocol):
             Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
             Number of shots.
-        interval : int, optional
+        interval : float, optional
             Interval between shots.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -791,7 +791,7 @@ class CharacterizationProtocol(Protocol):
         control_amplitude: float = 0.01,
         target_rabi_rate: float = RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ): ...
 
     def qubit_spectroscopy(
@@ -802,7 +802,7 @@ class CharacterizationProtocol(Protocol):
         readout_amplitude: float = 0.01,
         readout_frequency: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
     ) -> NDArray[np.float64]:
@@ -823,7 +823,7 @@ class CharacterizationProtocol(Protocol):
             Readout frequency. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.

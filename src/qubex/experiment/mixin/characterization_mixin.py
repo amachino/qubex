@@ -49,12 +49,12 @@ class CharacterizationMixin(
         targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -107,11 +107,11 @@ class CharacterizationMixin(
         *,
         amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -211,10 +211,10 @@ class CharacterizationMixin(
         *,
         time_range: ArrayLike = np.arange(128, 2048, 128),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_margin: int | None = None,
+        capture_margin: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -318,7 +318,7 @@ class CharacterizationMixin(
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -460,7 +460,7 @@ class CharacterizationMixin(
         time_range: ArrayLike = np.arange(0, 101, 4),
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[FreqRabiData]:
         if targets is None:
@@ -537,7 +537,7 @@ class CharacterizationMixin(
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[AmplRabiData]:
         if targets is None:
@@ -594,7 +594,7 @@ class CharacterizationMixin(
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
         result = self.chevron_pattern(
@@ -622,7 +622,7 @@ class CharacterizationMixin(
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
         if targets is None:
@@ -668,7 +668,7 @@ class CharacterizationMixin(
         time_range: ArrayLike = range(0, 101, 4),
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
         if targets is None:
@@ -739,7 +739,7 @@ class CharacterizationMixin(
         *,
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
         xaxis_type: Literal["linear", "log"] = "log",
@@ -836,7 +836,7 @@ class CharacterizationMixin(
         n_cpmg: int = 1,
         pi_cpmg: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[T2Data]:
@@ -941,7 +941,7 @@ class CharacterizationMixin(
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[RamseyData]:
@@ -1051,7 +1051,7 @@ class CharacterizationMixin(
         time_range: ArrayLike = np.arange(0, 10001, 100),
         detuning: float = 0.001,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -1113,7 +1113,7 @@ class CharacterizationMixin(
         x90: Waveform | TargetMap[Waveform] | None = None,
         x180: Waveform | TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
         if x90 is None:
@@ -1192,7 +1192,7 @@ class CharacterizationMixin(
         x90: Waveform | TargetMap[Waveform] | None = None,
         x180: Waveform | TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         qubit_1 = target_qubit
@@ -1243,7 +1243,7 @@ class CharacterizationMixin(
         amplitude: float = 0.01,
         subrange_width: float = 0.3,
         shots: int = 128,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
     ) -> float:
         read_label = Target.read_label(target)
@@ -1367,7 +1367,7 @@ class CharacterizationMixin(
         phase_shift: float | None = None,
         subrange_width: float = 0.3,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -1542,7 +1542,7 @@ class CharacterizationMixin(
         power_range: ArrayLike = np.arange(-60, 5, 5),
         phase_shift: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -1633,7 +1633,7 @@ class CharacterizationMixin(
         amplitude: float = 0.01,
         phase_shift: float,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -1718,7 +1718,7 @@ class CharacterizationMixin(
         readout_frequency: float | None = None,
         subrange_width: float = 0.3,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
     ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
         # control and readout pulses
@@ -1850,7 +1850,7 @@ class CharacterizationMixin(
         control_amplitude: float = 0.01,
         target_rabi_rate: float = RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ):
         frequency_range = np.asarray(frequency_range)
         _, data, _ = self.scan_qubit_frequencies(
@@ -1883,7 +1883,7 @@ class CharacterizationMixin(
         readout_amplitude: float = 0.01,
         readout_frequency: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
     ) -> NDArray[np.float64]:
