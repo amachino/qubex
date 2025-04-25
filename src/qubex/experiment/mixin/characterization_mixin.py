@@ -1239,7 +1239,7 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike = np.arange(10.05, 10.1, 0.002),
+        frequency_range: ArrayLike | None = None,
         amplitude: float = 0.01,
         subrange_width: float = 0.3,
         shots: int = 128,
@@ -1251,8 +1251,14 @@ class CharacterizationMixin(
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
         read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
 
+        if frequency_range is None:
+            if read_box.type == BoxType.QUEL1SE_R8:
+                frequency_range = np.arange(5.90, 5.95, 0.002)
+            else:
+                frequency_range = np.arange(9.90, 9.95, 0.002)
+        else:
+            frequency_range = np.array(frequency_range)
         # split frequency range to avoid the frequency sweep range limit
-        frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
             frequency_range=frequency_range,
             subrange_width=subrange_width,
@@ -1356,7 +1362,7 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike = np.arange(9.75, 10.75, 0.002),
+        frequency_range: ArrayLike | None = None,
         amplitude: float = 0.01,
         phase_shift: float | None = None,
         subrange_width: float = 0.3,
@@ -1365,7 +1371,18 @@ class CharacterizationMixin(
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
-        frequency_range = np.array(frequency_range)
+        read_label = Target.read_label(target)
+        qubit_label = Target.qubit_label(target)
+        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+
+        if frequency_range is None:
+            if read_box.type == BoxType.QUEL1SE_R8:
+                frequency_range = np.arange(5.75, 6.75, 0.002)
+            else:
+                frequency_range = np.arange(9.75, 10.75, 0.002)
+        else:
+            frequency_range = np.array(frequency_range)
 
         # measure phase shift if not provided
         if phase_shift is None:
@@ -1377,11 +1394,6 @@ class CharacterizationMixin(
                 interval=interval,
                 plot=plot,
             )
-
-        read_label = Target.read_label(target)
-        qubit_label = Target.qubit_label(target)
-        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
-        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
 
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
@@ -1526,7 +1538,7 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike = np.arange(9.75, 10.75, 0.002),
+        frequency_range: ArrayLike | None = None,
         power_range: ArrayLike = np.arange(-60, 5, 5),
         phase_shift: float | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -1534,10 +1546,18 @@ class CharacterizationMixin(
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
-        frequency_range = np.array(frequency_range)
         power_range = np.array(power_range)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+
+        if frequency_range is None:
+            if read_box.type == BoxType.QUEL1SE_R8:
+                frequency_range = np.arange(5.75, 6.75, 0.002)
+            else:
+                frequency_range = np.arange(9.75, 10.75, 0.002)
+        else:
+            frequency_range = np.array(frequency_range)
 
         # measure phase shift if not provided
         if phase_shift is None:
@@ -1692,7 +1712,7 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike = np.arange(6.5, 9.5, 0.002),
+        frequency_range: ArrayLike | None = None,
         control_amplitude: float = 0.1,
         readout_amplitude: float = 0.01,
         readout_frequency: float | None = None,
@@ -1718,7 +1738,13 @@ class CharacterizationMixin(
         )
 
         # split frequency range to avoid the frequency sweep range limit
-        frequency_range = np.array(frequency_range)
+        if frequency_range is None:
+            if ctrl_box.type == BoxType.QUEL1SE_R8:
+                frequency_range = np.arange(3.0, 5.0, 0.002)
+            else:
+                frequency_range = np.arange(6.5, 9.5, 0.002)
+        else:
+            frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
             frequency_range=frequency_range,
             subrange_width=subrange_width,
@@ -1852,7 +1878,7 @@ class CharacterizationMixin(
     def qubit_spectroscopy(
         self,
         target: str,
-        frequency_range: ArrayLike = np.arange(6.5, 9.5, 0.002),
+        frequency_range: ArrayLike | None = None,
         power_range: ArrayLike = np.arange(-60, 5, 5),
         readout_amplitude: float = 0.01,
         readout_frequency: float | None = None,
