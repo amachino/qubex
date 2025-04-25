@@ -270,18 +270,17 @@ class MeasurementMixin(
         signals = defaultdict(list)
         plotter = IQPlotter(self.state_centers)
 
-        generator = self.measurement.measure_batch(
-            waveforms_list=sequences,
-            mode="avg",
-            shots=shots,
-            interval=interval,
-            control_window=control_window or self.control_window,
-            capture_window=capture_window or self.capture_window,
-            capture_margin=capture_margin or self.capture_margin,
-        )
-
         with self.modified_frequencies(frequencies):
-            for result in generator:
+            for seq in sequences:
+                result = self.measure(
+                    seq,
+                    mode="avg",
+                    shots=shots,
+                    interval=interval,
+                    control_window=control_window or self.control_window,
+                    capture_window=capture_window or self.capture_window,
+                    capture_margin=capture_margin or self.capture_margin,
+                )
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
                 if plot:

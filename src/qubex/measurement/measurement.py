@@ -25,6 +25,7 @@ from ..backend import (
     StateManager,
     Target,
 )
+from ..backend.sequencer_mod import SequencerMod
 from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule
 from ..typing import IQArray, TargetMap
 from .measurement_result import (
@@ -838,7 +839,7 @@ class Measurement:
         resource_map = self.device_controller.get_resource_map(all_targets)
 
         # return Sequencer
-        return Sequencer(
+        return SequencerMod(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore
@@ -1012,7 +1013,7 @@ class Measurement:
         resource_map = self.device_controller.get_resource_map(schedule.labels)
 
         # return Sequencer
-        return Sequencer(
+        return SequencerMod(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore

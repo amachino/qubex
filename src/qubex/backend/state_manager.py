@@ -449,7 +449,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         result: dict = {}
         for box in boxes:
             box_config = self.device_controller.dump_box(box.id)
-            self.device_controller.boxpool._box_config_cache = box_config
+            self.device_controller.boxpool._box_config_cache[box.id] = box_config
             result[box.id] = {"ports": {}}
             for port in box.ports:
                 if port.type not in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
@@ -617,10 +617,12 @@ This operation will overwrite the existing device settings. Do you want to conti
         target = self.experiment_system.get_target(label)
         channel = target.channel
         port = channel.port
+        box_cache = self.device_controller.boxpool._box_config_cache
 
         original_lo_freq = port.lo_freq
         original_cnco_freq = port.cnco_freq
         original_fnco_freq = channel.fnco_freq
+        original_box_cache = deepcopy(box_cache)
 
         quel1_box = self.device_controller.get_box(port.box_id, reconnect=False)
 
@@ -634,6 +636,10 @@ This operation will overwrite the existing device settings. Do you want to conti
             channel=channel.number,
             fnco_freq=fnco_freq,
         )
+        port_cache = box_cache[port.box_id]["ports"][port.number]
+        port_cache["lo_freq"] = lo_freq
+        port_cache["cnco_freq"] = cnco_freq
+        port_cache["channels"][channel.number]["fnco_freq"] = fnco_freq
         if target.is_read:
             cap_channel = self.experiment_system.get_cap_target(label).channel
             cap_port = cap_channel.port
@@ -647,6 +653,10 @@ This operation will overwrite the existing device settings. Do you want to conti
                 runit=cap_channel.number,
                 fnco_freq=fnco_freq,
             )
+            cap_port_cache = box_cache[cap_port.box_id]["ports"][cap_port.number]
+            cap_port_cache["lo_freq"] = lo_freq
+            cap_port_cache["cnco_freq"] = cnco_freq
+            cap_port_cache["runits"][cap_channel.number]["fnco_freq"] = fnco_freq
 
         self.experiment_system.update_port_params(
             label,
@@ -686,5 +696,5 @@ This operation will overwrite the existing device settings. Do you want to conti
                     fnco_freq=original_fnco_freq,
                 )
 
-            # clear the cache
-            self.device_controller.clear_cache()
+            # restore the original box config
+            self.device_controller.boxpool._box_config_cache = original_box_cache
