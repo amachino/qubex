@@ -204,7 +204,10 @@ class ConfigLoader:
                 for id, box in self._box_dict.items()
                 if id in box_ports
             ]
-            control_system_dict[chip_id] = ControlSystem(boxes=boxes)
+            control_system_dict[chip_id] = ControlSystem(
+                boxes=boxes,
+                clock_master_address=self._chip_dict[chip_id].get("clock_master"),
+            )
         return control_system_dict
 
     def _load_wiring_info(self) -> dict[str, WiringInfo]:

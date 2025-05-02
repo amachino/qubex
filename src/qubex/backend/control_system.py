@@ -723,8 +723,10 @@ class ControlSystem:
     def __init__(
         self,
         boxes: Sequence[Box],
-        clock_master_address: str = DEFAULT_CLOCK_MASTER_ADDRESS,
+        clock_master_address: str | None = None,
     ):
+        if clock_master_address is None:
+            clock_master_address = DEFAULT_CLOCK_MASTER_ADDRESS
         self._box_pool: Final = BoxPool(
             boxes=tuple(boxes),
             clock_master_address=clock_master_address,
