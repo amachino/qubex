@@ -1402,6 +1402,10 @@ class CharacterizationMixin(
             subrange_width=subrange_width,
         )
 
+        bounds = [
+            subranges[0][0],
+        ] + [subrange[-1] for subrange in subranges]
+
         phases: list[float] = []
         signals: list[complex] = []
 
@@ -1488,6 +1492,14 @@ class CharacterizationMixin(
             x=frequency_range,
             y=np.abs(signals),
         )
+        for bound in bounds:
+            fig1.add_vline(
+                x=bound,
+                line_width=1,
+                line_color="black",
+                line_dash="dot",
+                opacity=0.1,
+            )
         fig1.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
         fig1.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
         fig1.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
@@ -1504,6 +1516,14 @@ class CharacterizationMixin(
             x=frequency_range,
             y=phases_diff,
         )
+        for bound in bounds:
+            fig2.add_vline(
+                x=bound,
+                line_width=1,
+                line_color="black",
+                line_dash="dot",
+                opacity=0.1,
+            )
         fig2.update_layout(
             title=f"Resonator frequency scan : {mux.label}",
             xaxis_title="Readout frequency (GHz)",
