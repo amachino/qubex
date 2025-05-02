@@ -44,7 +44,8 @@ DEFAULT_CAPTURE_MARGIN: Final = 128  # ns
 DEFAULT_READOUT_DURATION: Final = 512  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 INTERVAL_STEP: Final = 10240  # ns
-MIN_DURATION: Final = 128  # ns
+MIN_LENGTH: Final = 64  # samples
+MIN_DURATION: Final = MIN_LENGTH * SAMPLING_PERIOD  # ns
 
 logger = logging.getLogger(__name__)
 
@@ -171,18 +172,18 @@ class Measurement:
         return {target.label: target for target in self.experiment_system.targets}
 
     @property
-    def base_frequencies(self) -> dict[str, float]:
-        """Get the base frequencies."""
+    def nco_frequencies(self) -> dict[str, float]:
+        """Get the NCO frequencies."""
         return {
-            target.label: self.experiment_system.get_base_frequency(target.label)
+            target.label: self.experiment_system.get_nco_frequency(target.label)
             for target in self.experiment_system.targets
         }
 
     @property
-    def diff_frequencies(self) -> dict[str, float]:
-        """Get the base frequencies."""
+    def awg_frequencies(self) -> dict[str, float]:
+        """Get the AWG frequencies."""
         return {
-            target.label: self.experiment_system.get_diff_frequency(target.label)
+            target.label: self.experiment_system.get_awg_frequency(target.label)
             for target in self.experiment_system.targets
         }
 
@@ -724,7 +725,7 @@ class Measurement:
 
         qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
-        control_length = math.ceil(control_length / MIN_DURATION) * MIN_DURATION
+        control_length = math.ceil(control_length / MIN_LENGTH) * MIN_LENGTH
         if control_window is not None:
             control_length = max(
                 control_length,
@@ -763,7 +764,7 @@ class Measurement:
             readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
             readout_target = Target.read_label(qubit)
-            omega = 2 * np.pi * self.diff_frequencies[readout_target]
+            omega = 2 * np.pi * self.awg_frequencies[readout_target]
             offset = readout_start * SAMPLING_PERIOD
             padded_waveform *= np.exp(-1j * omega * offset)
             readout_waveforms[readout_target] = padded_waveform
@@ -933,7 +934,7 @@ class Measurement:
             if not ranges:
                 continue
             seq = sampled_sequences[target]
-            omega = 2 * np.pi * self.diff_frequencies[target]
+            omega = 2 * np.pi * self.awg_frequencies[target]
             for rng in ranges:
                 offset = rng.start * SAMPLING_PERIOD
                 seq[rng] *= np.exp(-1j * omega * offset)

@@ -289,13 +289,23 @@ class ExperimentSystem:
             raise ValueError(f"Qubit `{qubit}` not found.")
         return ports.ctrl_port
 
-    def get_base_frequency(self, label: str) -> float:
+    def get_nco_frequency(self, label: str) -> float:
         target = self.get_target(label)
-        return target.coarse_frequency
+        return target.fine_frequency
 
-    def get_diff_frequency(self, label: str) -> float:
+    def get_awg_frequency(self, label: str) -> float:
         target = self.get_target(label)
-        return round(target.frequency - self.get_base_frequency(label), 10)
+        if target.channel.port.sideband == "U":
+            f_awg = target.frequency - self.get_nco_frequency(label)
+        elif target.channel.port.sideband == "L":
+            f_awg = self.get_nco_frequency(label) - target.frequency
+        elif target.channel.port.sideband is None:
+            f_awg = self.get_nco_frequency(label)
+        else:
+            raise ValueError(
+                f"Invalid sideband `{target.channel.port.sideband}` for target `{label}`.",
+            )
+        return round(f_awg, 10)
 
     def get_mux_by_readout_port(self, port: GenPort | CapPort) -> Mux | None:
         if isinstance(port, CapPort):
