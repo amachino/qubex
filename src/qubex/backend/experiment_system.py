@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from typing import Collection, Final, Literal, Optional
 
@@ -17,6 +18,8 @@ from .control_system import (
 from .model import Model
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
 from .target import CapTarget, Target
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
 DEFAULT_READOUT_AMPLITUDE: Final = 0.01
@@ -594,7 +597,10 @@ class ExperimentSystem:
         params: ControlParams,
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
-        if mux is None or not mux.is_valid:
+        if mux is None:
+            logger.warning(
+                f"Readout port `{port.id}` not connected to a mux. Skipping configuration.",
+            )
             return
 
         if box.type == BoxType.QUEL1SE_R8:
@@ -617,6 +623,11 @@ class ExperimentSystem:
         port.channels[0].fnco_freq = config["fnco"]
 
         for resonator in mux.resonators:
+            if not resonator.is_valid:
+                logger.debug(
+                    f"Resonator `{resonator.label}` not valid. Skipping configuration.",
+                )
+                continue
             read_out_target = Target.new_read_target(
                 resonator=resonator,
                 channel=port.channels[0],
@@ -630,7 +641,10 @@ class ExperimentSystem:
         params: ControlParams,
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
-        if mux is None or not mux.is_valid:
+        if mux is None:
+            logger.warning(
+                f"Capture port `{port.id}` not connected to a mux. Skipping configuration.",
+            )
             return
 
         if box.type == BoxType.QUEL1SE_R8:
@@ -652,6 +666,11 @@ class ExperimentSystem:
             cap_channel.ndelay = params.get_capture_delay(mux.index)
 
         for idx, resonator in enumerate(mux.resonators):
+            if not resonator.is_valid:
+                logger.debug(
+                    f"Resonator `{resonator.label}` not valid. Skipping configuration.",
+                )
+                continue
             read_in_target = CapTarget.new_read_target(
                 resonator=resonator,
                 channel=port.channels[idx],
@@ -681,7 +700,8 @@ class ExperimentSystem:
         dict[str, int]
             The dictionary containing the lo, cnco, and fnco values.
         """
-        freqs = [resonator.frequency * 1e9 for resonator in mux.resonators]
+        resonators = [resonator for resonator in mux.resonators if resonator.is_valid]
+        freqs = [resonator.frequency * 1e9 for resonator in resonators]
         f_target = (max(freqs) + min(freqs)) / 2
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
             f=f_target,

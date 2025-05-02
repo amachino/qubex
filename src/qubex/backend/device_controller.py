@@ -411,6 +411,113 @@ class DeviceController:
             port_config = {}
         return port_config
 
+    def config_port(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        lo_freq: float | None = None,
+        cnco_freq: float | None = None,
+        vatt: int | None = None,
+        sideband: str | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+    ):
+        """
+        Configure the port of a box.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+        port : int | tuple[int, int]
+            Port number.
+        lo_freq : float | None, optional
+            Local oscillator frequency in GHz.
+        cnco_freq : float | None, optional
+            CNCO frequency in GHz.
+        vatt : int | None, optional
+            VATT value.
+        sideband : str | None, optional
+            Sideband value.
+        fullscale_current : int | None, optional
+            Fullscale current value.
+        rfswitch : str | None, optional
+            RF switch value.
+        """
+        box = self.get_box(box_name)
+        if box.boxtype == "quel1se-riken8":
+            lo_freq = None
+            vatt = None
+            sideband = None
+        box.config_port(
+            port=port,
+            lo_freq=lo_freq,
+            cnco_freq=cnco_freq,
+            vatt=vatt,
+            sideband=sideband,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+        )
+
+    def config_channel(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        channel: int,
+        fnco_freq: float | None = None,
+    ):
+        """
+        Configure the channel of a box.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+        port : int | tuple[int, int]
+            Port number.
+        channel : int
+            Channel number.
+        fnco_freq : float | None, optional
+            FNCO frequency in GHz.
+        """
+        box = self.get_box(box_name)
+        box.config_channel(
+            port=port,
+            channel=channel,
+            fnco_freq=fnco_freq,
+        )
+
+    def config_runit(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        runit: int,
+        fnco_freq: float | None = None,
+    ):
+        """
+        Configure the runit of a box.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+        port : int | tuple[int, int]
+            Port number.
+        runit : int
+            Runit number.
+        fnco_freq : float | None, optional
+            FNCO frequency in GHz.
+        """
+        box = self.get_box(box_name)
+        box.config_runit(
+            port=port,
+            runit=runit,
+            fnco_freq=fnco_freq,
+        )
+
     def add_sequence(
         self,
         sequence: Sequence,

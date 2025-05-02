@@ -285,16 +285,13 @@ This operation will overwrite the existing device settings. Do you want to conti
                 print("Operation cancelled.")
                 return
 
-        qc = self.device_controller.qubecalib
-
         for box in boxes:
-            quel1_box = qc.create_box(box.id, reconnect=False)
-            quel1_box.reconnect()
             for port in box.ports:
                 if isinstance(port, GenPort):
                     if port.type in (PortType.CTRL, PortType.READ_OUT, PortType.PUMP):
                         try:
-                            quel1_box.config_port(
+                            self.device_controller.config_port(
+                                box_name=box.id,
                                 port=port.number,
                                 lo_freq=port.lo_freq,
                                 cnco_freq=port.cnco_freq,
@@ -304,7 +301,8 @@ This operation will overwrite the existing device settings. Do you want to conti
                                 rfswitch=port.rfswitch,
                             )
                             for gen_channel in port.channels:
-                                quel1_box.config_channel(
+                                self.device_controller.config_channel(
+                                    box_name=box.id,
                                     port=port.number,
                                     channel=gen_channel.number,
                                     fnco_freq=gen_channel.fnco_freq,
@@ -314,14 +312,16 @@ This operation will overwrite the existing device settings. Do you want to conti
                 elif isinstance(port, CapPort):
                     if port.type in (PortType.READ_IN,):
                         try:
-                            quel1_box.config_port(
+                            self.device_controller.config_port(
+                                box_name=box.id,
                                 port=port.number,
                                 lo_freq=port.lo_freq,
                                 cnco_freq=port.cnco_freq,
                                 rfswitch=port.rfswitch,
                             )
                             for cap_channel in port.channels:
-                                quel1_box.config_runit(
+                                self.device_controller.config_runit(
+                                    box_name=box.id,
                                     port=port.number,
                                     runit=cap_channel.number,
                                     fnco_freq=cap_channel.fnco_freq,
@@ -624,14 +624,14 @@ This operation will overwrite the existing device settings. Do you want to conti
         original_fnco_freq = channel.fnco_freq
         original_box_cache = deepcopy(box_cache)
 
-        quel1_box = self.device_controller.get_box(port.box_id, reconnect=False)
-
-        quel1_box.config_port(
+        self.device_controller.config_port(
+            box_name=port.box_id,
             port=port.number,
             lo_freq=lo_freq,
             cnco_freq=cnco_freq,
         )
-        quel1_box.config_channel(
+        self.device_controller.config_channel(
+            box_name=port.box_id,
             port=port.number,
             channel=channel.number,
             fnco_freq=fnco_freq,
@@ -643,12 +643,14 @@ This operation will overwrite the existing device settings. Do you want to conti
         if target.is_read:
             cap_channel = self.experiment_system.get_cap_target(label).channel
             cap_port = cap_channel.port
-            quel1_box.config_port(
+            self.device_controller.config_port(
+                box_name=cap_port.box_id,
                 port=cap_port.number,
                 lo_freq=lo_freq,
                 cnco_freq=cnco_freq,
             )
-            quel1_box.config_runit(
+            self.device_controller.config_runit(
+                box_name=cap_port.box_id,
                 port=cap_port.number,
                 runit=cap_channel.number,
                 fnco_freq=fnco_freq,
@@ -674,23 +676,27 @@ This operation will overwrite the existing device settings. Do you want to conti
                 cnco_freq=original_cnco_freq,
                 fnco_freq=original_fnco_freq,
             )
-            quel1_box.config_port(
+            self.device_controller.config_port(
+                box_name=port.box_id,
                 port=port.number,
                 lo_freq=original_lo_freq,
                 cnco_freq=original_cnco_freq,
             )
-            quel1_box.config_channel(
+            self.device_controller.config_channel(
+                box_name=port.box_id,
                 port=port.number,
                 channel=channel.number,
                 fnco_freq=original_fnco_freq,
             )
             if target.is_read:
-                quel1_box.config_port(
+                self.device_controller.config_port(
+                    box_name=cap_port.box_id,
                     port=cap_port.number,
                     lo_freq=original_lo_freq,
                     cnco_freq=original_cnco_freq,
                 )
-                quel1_box.config_runit(
+                self.device_controller.config_runit(
+                    box_name=cap_port.box_id,
                     port=cap_port.number,
                     runit=cap_channel.number,
                     fnco_freq=original_fnco_freq,

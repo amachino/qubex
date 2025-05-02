@@ -722,7 +722,7 @@ class Measurement:
         if readout_amplitudes is None:
             readout_amplitudes = self.control_params.readout_amplitude
 
-        qubits = {Target.qubit_label(target) for target in waveforms}
+        qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
         control_length = math.ceil(control_length / MIN_DURATION) * MIN_DURATION
         if control_window is not None:
