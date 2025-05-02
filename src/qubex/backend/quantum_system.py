@@ -129,6 +129,10 @@ class Mux(Model):
     def is_valid(self) -> bool:
         return all(resonator.is_valid for resonator in self.resonators)
 
+    @property
+    def is_not_available(self) -> bool:
+        return all(not resonator.is_valid for resonator in self.resonators)
+
 
 class QuantumSystem:
     def __init__(

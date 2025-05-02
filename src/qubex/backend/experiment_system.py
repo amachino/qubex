@@ -612,6 +612,8 @@ class ExperimentSystem:
                 f"Readout port `{port.id}` not connected to a mux. Skipping configuration.",
             )
             return
+        if mux.is_not_available:
+            return
 
         if box.type == BoxType.QUEL1SE_R8:
             ssb = "L"
@@ -655,6 +657,9 @@ class ExperimentSystem:
             logger.warning(
                 f"Capture port `{port.id}` not connected to a mux. Skipping configuration.",
             )
+            return
+
+        if mux.is_not_available:
             return
 
         if box.type == BoxType.QUEL1SE_R8:
