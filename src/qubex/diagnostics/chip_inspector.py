@@ -28,37 +28,49 @@ class ChipInspector:
     def __init__(
         self,
         chip_id: str,
+        config_dir: str | None = None,
         props_dir: str | None = None,
     ):
-        self._init_graph(chip_id, props_dir)
+        self._init_graph(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            props_dir=props_dir,
+        )
 
     def _init_graph(
         self,
         chip_id: str,
+        config_dir: str | None = None,
         props_dir: str | None = None,
     ):
-        if props_dir is None:
-            config_loader = ConfigLoader()
-        else:
-            config_loader = ConfigLoader(params_dir=props_dir)
-
+        config_loader = ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=props_dir,
+        )
         experiment_system = config_loader.get_experiment_system(chip_id)
         self.graph = experiment_system.quantum_system._graph
         props = config_loader._props_dict[chip_id]
 
+        frequency_dict = props.get("qubit_frequency", {})
+        anharmonicity_dict = props.get("anharmonicity", {})
+        t1_dict = props.get("t1", {})
+        t2_echo_dict = props.get("t2_echo", {})
+        coupling_dict = props.get("qubit_qubit_coupling_strength", {})
+
         for node in self.graph.qubit_nodes.values():
             label = node["label"]
             node["properties"] = {
-                "frequency": props["qubit_frequency"].get(label),
-                "anharmonicity": props["anharmonicity"].get(label),
-                "t1": props["t1"].get(label),
-                "t2_echo": props["t2_echo"].get(label),
+                "frequency": frequency_dict.get(label),
+                "anharmonicity": anharmonicity_dict.get(label),
+                "t1": t1_dict.get(label),
+                "t2_echo": t2_echo_dict.get(label),
             }
 
         for edge in self.graph.qubit_edges.values():
             label = edge["label"]
             edge["properties"] = {
-                "coupling": props["qubit_qubit_coupling_strength"].get(label),
+                "coupling": coupling_dict.get(label),
             }
 
     def execute(

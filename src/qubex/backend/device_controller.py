@@ -5,8 +5,11 @@ from pathlib import Path
 from typing import Any, Final
 
 from qubecalib import QubeCalib, Sequencer
+from qubecalib.instrument.quel.quel1 import Quel1System
 from qubecalib.instrument.quel.quel1.tool import Skew
 from qubecalib.neopulse import Sequence
+from qubecalib.qubecalib import BoxPool
+from quel_clock_master import QuBEMasterClient
 from quel_ic_config import Quel1Box
 
 SAMPLING_PERIOD: Final[float] = 2.0  # ns
@@ -32,7 +35,7 @@ class DeviceController:
             except FileNotFoundError:
                 print(f"Configuration file {config_path} not found.")
                 raise
-        self._boxpool = None
+        self._boxpool: BoxPool | None = None
 
     @property
     def system_config(self) -> dict[str, Any]:
@@ -74,7 +77,7 @@ class DeviceController:
         return list(self.box_settings.keys())
 
     @property
-    def boxpool(self):
+    def boxpool(self) -> BoxPool:
         """
         Get the boxpool.
 
@@ -130,9 +133,14 @@ class DeviceController:
             self._boxpool._box_config_cache.clear()
 
     def load_skew_file(self, box_list: list[str], file_path: str | Path):
-        qc = self.qubecalib
-        system = qc.create_quel1system(box_list)
-        skew = Skew(system, qubecalib=qc)
+        clockmaster_setting = self.qubecalib.sysdb._clockmaster_setting
+        if clockmaster_setting is None:
+            raise ValueError("Clockmaster setting not found in system configuration.")
+        system = Quel1System.create(
+            clockmaster=QuBEMasterClient(str(clockmaster_setting.ipaddr)),
+            boxes=[self.get_box(box_name, reconnect=False) for box_name in box_list],  # type: ignore
+        )
+        skew = Skew(system, qubecalib=self.qubecalib)
         skew.load(str(file_path))
 
     def link_status(self, box_name: str) -> dict[int, bool]:
@@ -170,6 +178,32 @@ class DeviceController:
         if box_names is None:
             box_names = self.available_boxes
         self._boxpool = self.qubecalib.create_boxpool(*box_names)
+
+    def get_box(self, box_name: str, reconnect: bool = True) -> Quel1Box:
+        """
+        Get the box object.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+
+        Returns
+        -------
+        Quel1Box
+            The box object.
+
+        Raises
+        ------
+        ValueError
+            If the box is not in the available boxes.
+        """
+        self._check_box_availabilty(box_name)
+        if self._boxpool is None or box_name not in self._boxpool._boxes:
+            box = self.qubecalib.create_box(box_name, reconnect=reconnect)
+        else:
+            box = self._boxpool._boxes[box_name][0]
+        return box
 
     def linkup(
         self,
@@ -340,17 +374,15 @@ class DeviceController:
         ValueError
             If the box is not in the available boxes.
         """
-        self._check_box_availabilty(box_name)
         try:
-            box = self.qubecalib.create_box(box_name, reconnect=False)
-            box.reconnect()
+            box = self.get_box(box_name)
             box_config = box.dump_box()
         except Exception as e:
             print(f"Failed to dump box {box_name}. Error: {e}")
             box_config = {}
         return box_config
 
-    def dump_port(self, box_name: str, port_number: int) -> dict:
+    def dump_port(self, box_name: str, port_number: int | tuple[int, int]) -> dict:
         """
         Dump the port configuration.
 
@@ -358,7 +390,7 @@ class DeviceController:
         ----------
         box_name : str
             Name of the box.
-        port_number : int
+        port_number : int | tuple[int, int]
             Port number.
 
         Returns
@@ -371,15 +403,120 @@ class DeviceController:
         ValueError
             If the box is not in the available boxes.
         """
-        self._check_box_availabilty(box_name)
         try:
-            box = self.qubecalib.create_box(box_name, reconnect=False)
-            box.reconnect()
+            box = self.get_box(box_name)
             port_config = box.dump_port(port_number)
         except Exception as e:
             print(f"Failed to dump port {port_number} of box {box_name}. Error: {e}")
             port_config = {}
         return port_config
+
+    def config_port(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        lo_freq: float | None = None,
+        cnco_freq: float | None = None,
+        vatt: int | None = None,
+        sideband: str | None = None,
+        fullscale_current: int | None = None,
+        rfswitch: str | None = None,
+    ):
+        """
+        Configure the port of a box.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+        port : int | tuple[int, int]
+            Port number.
+        lo_freq : float | None, optional
+            Local oscillator frequency in GHz.
+        cnco_freq : float | None, optional
+            CNCO frequency in GHz.
+        vatt : int | None, optional
+            VATT value.
+        sideband : str | None, optional
+            Sideband value.
+        fullscale_current : int | None, optional
+            Fullscale current value.
+        rfswitch : str | None, optional
+            RF switch value.
+        """
+        box = self.get_box(box_name)
+        if box.boxtype == "quel1se-riken8":
+            lo_freq = None
+            vatt = None
+            sideband = None
+        box.config_port(
+            port=port,
+            lo_freq=lo_freq,
+            cnco_freq=cnco_freq,
+            vatt=vatt,
+            sideband=sideband,
+            fullscale_current=fullscale_current,
+            rfswitch=rfswitch,
+        )
+
+    def config_channel(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        channel: int,
+        fnco_freq: float | None = None,
+    ):
+        """
+        Configure the channel of a box.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+        port : int | tuple[int, int]
+            Port number.
+        channel : int
+            Channel number.
+        fnco_freq : float | None, optional
+            FNCO frequency in GHz.
+        """
+        box = self.get_box(box_name)
+        box.config_channel(
+            port=port,
+            channel=channel,
+            fnco_freq=fnco_freq,
+        )
+
+    def config_runit(
+        self,
+        box_name: str,
+        *,
+        port: int | tuple[int, int],
+        runit: int,
+        fnco_freq: float | None = None,
+    ):
+        """
+        Configure the runit of a box.
+
+        Parameters
+        ----------
+        box_name : str
+            Name of the box.
+        port : int | tuple[int, int]
+            Port number.
+        runit : int
+            Runit number.
+        fnco_freq : float | None, optional
+            FNCO frequency in GHz.
+        """
+        box = self.get_box(box_name)
+        box.config_runit(
+            port=port,
+            runit=runit,
+            fnco_freq=fnco_freq,
+        )
 
     def add_sequence(
         self,

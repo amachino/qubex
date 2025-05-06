@@ -104,8 +104,6 @@ class Experiment(
         Directory of the parameter files. Defaults to DEFAULT_PARAMS_DIR.
     connect_devices : bool, optional
         Whether to connect the devices. Defaults to True.
-    linkup_devices : bool, optional
-        Whether to link up the devices. Defaults to True.
     drag_hpi_duration : int, optional
         Duration of the DRAG HPI pulse. Defaults to DRAG_HPI_DURATION.
     drag_pi_duration : int, optional
@@ -141,7 +139,6 @@ class Experiment(
         params_dir: str = DEFAULT_PARAMS_DIR,
         calib_note_path: Path | str | None = None,
         connect_devices: bool = True,
-        linkup_devices: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
         drag_pi_duration: int = DRAG_PI_DURATION,
         control_window: int | None = None,
@@ -193,14 +190,7 @@ class Experiment(
             chip_id=chip_id,
             file_path=calib_note_path,
         )
-        self._validate()
         self.print_environment(verbose=False)
-        if linkup_devices:
-            try:
-                self.linkup()
-            except Exception as e:
-                print(e)
-
         self._load_classifiers()
 
     def _load_classifiers(self):
@@ -252,20 +242,18 @@ class Experiment(
                 if label in qubit_labels:
                     qubit_labels.remove(label)
         qubit_labels = sorted(list(set(qubit_labels)))
-        return qubit_labels
 
-    def _validate(self):
-        """Check if the experiment is valid."""
         available_qubits = [
             target.qubit for target in self.experiment_system.ge_targets
         ]
         unavailable_qubits = [
-            qubit for qubit in self._qubits if qubit not in available_qubits
+            qubit for qubit in qubit_labels if qubit not in available_qubits
         ]
         if len(unavailable_qubits) > 0:
-            err_msg = f"Unavailable qubits: {unavailable_qubits}"
-            print(err_msg)
-            raise ValueError(err_msg)
+            print(f"Unavailable qubits: {unavailable_qubits}")
+
+        qubit_labels = [qubit for qubit in qubit_labels if qubit in available_qubits]
+        return qubit_labels
 
     def print_environment(self, verbose: bool = True):
         """Print the environment information."""
@@ -803,7 +791,7 @@ class Experiment(
             fnco, _ = MixingUtil.calc_fnco(
                 f=frequency * 1e9,
                 ssb="L",
-                lo=port.lo_freq,
+                lo=port.lo_freq,  # type: ignore
                 cnco=port.cnco_freq,
             )
             port.channels[channel_number].fnco_freq = fnco
@@ -895,6 +883,11 @@ class Experiment(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        readout_duration: int = DEFAULT_READOUT_DURATION,
+        readout_amplitude: float | None = None,
         plot: bool = True,
     ) -> MeasureResult:
         """
@@ -904,6 +897,16 @@ class Experiment(
         ----------
         targets : Collection[str] | str, optional
             Target labels to check the waveforms.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        capture_window : int, optional
+            Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
+        readout_duration : int, optional
+            Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+        readout_amplitude : float, optional
+            Readout amplitude. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -923,7 +926,16 @@ class Experiment(
         else:
             targets = list(targets)
 
-        result = self.measure(sequence={target: np.zeros(0) for target in targets})
+        result = self.measure(
+            sequence={target: np.zeros(0) for target in targets},
+            shots=shots,
+            interval=interval,
+            capture_window=capture_window,
+            readout_duration=readout_duration,
+            readout_amplitudes={target: readout_amplitude for target in targets}
+            if readout_amplitude is not None
+            else None,
+        )
         if plot:
             result.plot()
         return result
