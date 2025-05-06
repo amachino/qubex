@@ -1770,6 +1770,10 @@ class CharacterizationMixin(
             subrange_width=subrange_width,
         )
 
+        bounds = [
+            subranges[0][0],
+        ] + [subrange[-1] for subrange in subranges]
+
         # readout frequency
         readout_frequency = readout_frequency or self.targets[resonator].frequency
 
@@ -1850,6 +1854,14 @@ class CharacterizationMixin(
                 x=frequency_range,
                 y=amplitudes,
             )
+            for bound in bounds:
+                fig.add_vline(
+                    x=bound,
+                    line_width=1,
+                    line_color="black",
+                    line_dash="dot",
+                    opacity=0.1,
+                )
             fig.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
             fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
             fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
@@ -1912,7 +1924,7 @@ class CharacterizationMixin(
         for power in tqdm(power_range):
             power_linear = 10 ** (power / 10)
             amplitude = np.sqrt(power_linear)
-            _, phase, _ = self.scan_qubit_frequencies(
+            frequency_range, phase, _ = self.scan_qubit_frequencies(
                 target,
                 frequency_range=frequency_range,
                 control_amplitude=amplitude,
