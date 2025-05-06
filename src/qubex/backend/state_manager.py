@@ -152,7 +152,7 @@ class StateManager:
         """
         self._device_settings = device_settings
         # update experiment system to reflect the new device settings
-        self._experiment_system = self._create_experiment_system(device_settings)
+        self.experiment_system = self._create_experiment_system(device_settings)
         self.update_cache()
 
     @property
