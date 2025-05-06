@@ -123,19 +123,19 @@ class Measurement:
         if len(box_ids) == 0:
             return
 
-        if connect_devices:
-            try:
-                self.device_controller.connect(box_ids)
-                self.state_manager.pull(box_ids)
-            except Exception as e:
-                print(f"Failed to connect to devices: {e}")
-
         if skew_file_path is None:
             skew_file_path = f"{self._config_dir}/skew.yaml"
         try:
             self.device_controller.load_skew_file(box_ids, skew_file_path)
         except Exception as e:
             print(f"Failed to load the skew file: {e}")
+
+        if connect_devices:
+            try:
+                self.device_controller.connect(box_ids)
+                self.state_manager.pull(box_ids)
+            except Exception as e:
+                print(f"Failed to connect to devices: {e}")
 
     def reload(self):
         """Reload the measuremnt settings."""

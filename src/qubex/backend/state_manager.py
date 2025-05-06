@@ -152,7 +152,7 @@ class StateManager:
         """
         self._device_settings = device_settings
         # update experiment system to reflect the new device settings
-        self.experiment_system = self._create_experiment_system(device_settings)
+        self._experiment_system = self._create_experiment_system(device_settings)
         self.update_cache()
 
     @property
@@ -513,9 +513,9 @@ This operation will overwrite the existing device settings. Do you want to conti
                     PortType.MNTR_OUT,
                     PortType.MNTR_IN,
                 ):
-                    qc.sysdb._relation_channel_target.append(
-                        (port.channels[0].id, port.id),
-                    )
+                    rel = (port.channels[0].id, port.id)
+                    if rel not in qc.sysdb._relation_channel_target:
+                        qc.sysdb._relation_channel_target.append(rel)
 
         for target in experiment_system.all_targets:
             qc.define_target(
