@@ -1317,7 +1317,7 @@ def fit_sqrt_lorentzian(
     fig.add_annotation(
         x=f0,
         y=func_sqrt_lorentzian(f0, *popt),
-        text=f"max: {f0:.6g}",
+        text=f"max: {f0:.6f}",
         showarrow=True,
         arrowhead=1,
     )
@@ -1345,10 +1345,10 @@ def fit_sqrt_lorentzian(
         if target:
             print(f"Target: {target}")
         print("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f0 = {f0:.3g} ± {f0_err:.1g}")
-        print(f"  Ω = {Omega:.3g} ± {Omega_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  A = {A:.3f} ± {A_err:.1g}")
+        print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
+        print(f"  Ω = {Omega:.3f} ± {Omega_err:.1g}")
+        print(f"  C = {C:.3f} ± {C_err:.1g}")
 
     return {
         "A": A,

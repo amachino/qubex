@@ -1880,6 +1880,7 @@ class CharacterizationMixin(
         *,
         frequency_range: ArrayLike,
         control_amplitude: float = 0.01,
+        readout_amplitude: float = 0.01,
         target_rabi_rate: float = RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -1889,6 +1890,7 @@ class CharacterizationMixin(
             target,
             frequency_range=frequency_range,
             control_amplitude=control_amplitude,
+            readout_amplitude=readout_amplitude,
             shots=shots,
             interval=interval,
         )
