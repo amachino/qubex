@@ -1862,10 +1862,7 @@ class CharacterizationMixin(
                         idx += 1
 
         phases_unwrap = np.unwrap(phases)
-        if np.min(phases_unwrap) < 0:
-            phases_unwrap += 2 * np.pi
-        elif np.max(phases_unwrap) > 2 * np.pi:
-            phases_unwrap -= 2 * np.pi
+        phases_unwrap -= phases_unwrap[0]
 
         if plot:
             fig = make_subplots(
