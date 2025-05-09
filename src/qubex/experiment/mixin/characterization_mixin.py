@@ -1329,7 +1329,13 @@ class CharacterizationMixin(
                         idx += 1
 
         # fit the phase shift
-        x, y = frequency_range, np.unwrap(phases)
+        unwrapped = np.unwrap(phases)
+        diff = np.diff(unwrapped)
+        shift_steps = np.where(diff < 0, 2 * np.pi, 0)
+        cum_shift = np.cumsum(np.insert(shift_steps, 0, 0))
+        unwrapped += cum_shift
+
+        x, y = frequency_range, unwrapped
         coefficients = np.polyfit(x, y, 1)
         y_fit = np.polyval(coefficients, x)
 
