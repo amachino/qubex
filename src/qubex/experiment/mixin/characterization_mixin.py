@@ -9,6 +9,7 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
+from scipy.signal import find_peaks
 from tqdm import tqdm
 
 from ...analysis import fitting
@@ -1473,14 +1474,19 @@ class CharacterizationMixin(
                         idx += 1
 
         phases_unwrap = np.unwrap(phases)
-        phases_diff = np.abs(np.diff(phases_unwrap))
+        phases_unwrap -= phases_unwrap[0]
+        phases_diff = np.gradient(phases_unwrap)
+        peaks, _ = find_peaks(
+            np.abs(phases_diff),
+            height=np.pi / 4,
+            distance=10,
+        )
 
         fig1 = make_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,
             vertical_spacing=0.05,
-            # subplot_titles=["Phase", "Amplitude"],
         )
         fig1.add_scatter(
             name=target,
@@ -1530,6 +1536,25 @@ class CharacterizationMixin(
                 line_dash="dot",
                 opacity=0.1,
             )
+        for peak in peaks:
+            fig2.add_vline(
+                x=frequency_range[peak],
+                line_width=2,
+                line_color="red",
+                line_dash="dot",
+                opacity=0.5,
+            )
+            fig2.add_annotation(
+                x=frequency_range[peak],
+                y=phases_diff[peak],
+                text=f"{frequency_range[peak]:.3f} GHz",
+                bgcolor="rgba(255, 255, 255, 0.8)",
+                showarrow=True,
+                arrowhead=2,
+                ax=0,
+                ay=-40,
+            )
+
         fig2.update_layout(
             title=f"Resonator frequency scan : {mux.label}",
             xaxis_title="Readout frequency (GHz)",
@@ -1539,6 +1564,9 @@ class CharacterizationMixin(
         if plot:
             fig1.show()
             fig2.show()
+            print("Found peaks:")
+            for peak in peaks:
+                print(f"  {frequency_range[peak]:.3f} GHz")
 
         if save_image:
             viz.save_figure_image(
@@ -1558,6 +1586,7 @@ class CharacterizationMixin(
             "phases_diff": phases_diff,
             "fig_phase": fig1,
             "fig_phase_diff": fig2,
+            "peaks": frequency_range[peaks],
         }
 
     def resonator_spectroscopy(
@@ -1609,6 +1638,7 @@ class CharacterizationMixin(
                 plot=False,
                 save_image=False,
             )["phases_diff"]
+            phase_diff = np.abs(phase_diff)
             phase_diff = np.append(phase_diff, phase_diff[-1])
             result.append(phase_diff)
 
