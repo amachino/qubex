@@ -848,16 +848,15 @@ class Measurement:
             sysdb=self.device_controller.qubecalib.sysdb,
         )
 
-    def _create_sequencer_from_schedule(
+    def _create_sampled_sequences_from_schedule(
         self,
         schedule: PulseSchedule,
-        interval: float,
         add_last_measurement: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-    ) -> Sequencer:
+    ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
         if capture_margin is None:
@@ -869,10 +868,6 @@ class Measurement:
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
-
-        backend_interval = (
-            math.ceil((schedule.duration + interval) / INTERVAL_STEP) * INTERVAL_STEP
-        )
 
         # add last readout pulse if necessary
         if add_last_measurement:
@@ -1010,10 +1005,33 @@ class Measurement:
             )
             cap_sequences[target] = cap_sequence
 
-        # create resource map
+        return gen_sequences, cap_sequences
+
+    def _create_sequencer_from_schedule(
+        self,
+        schedule: PulseSchedule,
+        interval: float,
+        add_last_measurement: bool = False,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+    ) -> Sequencer:
+        gen_sequences, cap_sequences = self._create_sampled_sequences_from_schedule(
+            schedule=schedule,
+            add_last_measurement=add_last_measurement,
+            capture_window=capture_window,
+            capture_margin=capture_margin,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
+        )
+
+        backend_interval = (
+            math.ceil((schedule.duration + interval) / INTERVAL_STEP) * INTERVAL_STEP
+        )
+
         resource_map = self.device_controller.get_resource_map(schedule.labels)
 
-        # return Sequencer
         return SequencerMod(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,

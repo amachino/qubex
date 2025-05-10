@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Collection, Final, Literal
 
 from qubecalib import QubeCalib, Sequencer
 from qubecalib.instrument.quel.quel1 import Quel1System
+from qubecalib.instrument.quel.quel1.driver import (
+    Action,
+    AwgId,
+    AwgSetting,
+    RunitId,
+    RunitSetting,
+    TriggerSetting,
+)
 from qubecalib.instrument.quel.quel1.tool import Skew
-from qubecalib.neopulse import Sequence
-from qubecalib.qubecalib import BoxPool
+from qubecalib.neopulse import DEFAULT_SAMPLING_PERIOD, Sequence
+from qubecalib.qubecalib import BoxPool, CaptureParamTools, Converter, WaveSequenceTools
 from quel_clock_master import QuBEMasterClient
 from quel_ic_config import Quel1Box
 
@@ -35,7 +44,10 @@ class DeviceController:
             except FileNotFoundError:
                 print(f"Configuration file {config_path} not found.")
                 raise
+        self._cap_resource_map: dict | None = None
+        self._gen_resource_map: dict | None = None
         self._boxpool: BoxPool | None = None
+        self._quel1system: Quel1System | None = None
 
     @property
     def system_config(self) -> dict[str, Any]:
@@ -91,6 +103,48 @@ class DeviceController:
         return self._boxpool
 
     @property
+    def quel1system(self) -> Quel1System:
+        """
+        Get the Quel1 system.
+
+        Returns
+        -------
+        Quel1System
+            The Quel1 system.
+        """
+        if self._quel1system is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
+        return self._quel1system
+
+    @property
+    def cap_resource_map(self) -> dict[str, dict]:
+        """
+        Get the cap resource map.
+
+        Returns
+        -------
+        dict[str, dict]
+            The cap resource map.
+        """
+        if self._cap_resource_map is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
+        return self._cap_resource_map
+
+    @property
+    def gen_resource_map(self) -> dict[str, dict]:
+        """
+        Get the gen resource map.
+
+        Returns
+        -------
+        dict[str, dict]
+            The gen resource map.
+        """
+        if self._gen_resource_map is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
+        return self._gen_resource_map
+
+    @property
     def hash(self) -> int:
         """
         Get the hash of the system configuration.
@@ -126,6 +180,62 @@ class DeviceController:
                 }
                 for box_name, port_name, channel_number in bpc_list
             ]
+        return result
+
+    def get_cap_resource_map(self, targets: Collection[str]) -> dict[str, dict]:
+        """
+        Get the resource map for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            List of target names.
+        """
+        return {
+            target: self.cap_resource_map[target]
+            for target in targets
+            if target in self.cap_resource_map
+        }
+
+    def get_gen_resource_map(self, targets: Collection[str]) -> dict[str, dict]:
+        """
+        Get the resource map for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            List of target names.
+        """
+        return {
+            target: self.gen_resource_map[target]
+            for target in targets
+            if target in self.gen_resource_map
+        }
+
+    def create_resource_map(
+        self,
+        type: Literal["cap", "gen"],
+    ) -> dict[str, dict]:
+        db = self.qubecalib.system_config_database
+        result = {}
+        for target in db._target_settings:
+            channels = db.get_channels_by_target(target)
+            bpc_list = [db.get_channel(channel) for channel in channels]
+            for box_name, port_name, channel_number in bpc_list:
+                box = self.get_box(box_name, reconnect=False)
+                port_setting = db._port_settings[port_name]
+                if (
+                    type == "cap"
+                    and port_setting.port in box.get_input_ports()
+                    or type == "gen"
+                    and port_setting.port in box.get_output_ports()
+                ):
+                    result[target] = {
+                        "box": db._box_settings[box_name],
+                        "port": db._port_settings[port_name],
+                        "channel_number": channel_number,
+                        "target": db._target_settings[target],
+                    }
         return result
 
     def clear_cache(self):
@@ -178,6 +288,9 @@ class DeviceController:
         if box_names is None:
             box_names = self.available_boxes
         self._boxpool = self.qubecalib.create_boxpool(*box_names)
+        self._quel1system = self.qubecalib.sysdb.create_quel1system(*box_names)
+        self._cap_resource_map = self.create_resource_map("cap")
+        self._gen_resource_map = self.create_resource_map("gen")
 
     def get_box(self, box_name: str, reconnect: bool = True) -> Quel1Box:
         """
@@ -707,6 +820,130 @@ class DeviceController:
                 data=data,
                 config=config,
             )
+
+    def _execute_sequencer(
+        self,
+        sequencer: Sequencer,
+        *,
+        repeats: int | None = None,
+        interval_samples: int | None = None,
+        integral_mode: str = "integral",
+        dsp_demodulation: bool = True,
+        capture_delay_words: int = 7 * 16,
+        wait_words: int = 0,
+    ) -> RawResult:
+        if repeats is None:
+            repeats = 1024
+        if interval_samples is None:
+            if sequencer.interval is None:
+                raise ValueError("Interval is not set.")
+            else:
+                if sequencer.interval % DEFAULT_SAMPLING_PERIOD != 0:
+                    raise ValueError(
+                        f"Interval {sequencer.interval} is not a multiple of {DEFAULT_SAMPLING_PERIOD}"
+                    )
+                interval_samples = int(sequencer.interval / DEFAULT_SAMPLING_PERIOD)
+
+        settings: list[RunitSetting | AwgSetting | TriggerSetting] = []
+
+        cap_sequences_map = defaultdict(dict)
+        for cap_label, cap_sequence in sequencer.cap_sampled_sequence.items():
+            cap_resource = self.cap_resource_map[cap_label]
+            cap_id = (
+                cap_resource["box"].box_name,
+                cap_resource["port"].port,
+                cap_resource["channel_number"],
+            )
+            cap_sequences_map[cap_id][cap_label] = cap_sequence
+
+        for cap_id, cap_sequences in cap_sequences_map.items():
+            if len(cap_sequences) > 1:
+                raise ValueError(
+                    f"Duplicate capture ID found: {cap_id}\n{cap_sequences}"
+                )
+            cap_sequence = next(iter(cap_sequences.values()))
+            cap_param = CaptureParamTools.create(
+                sequence=cap_sequence,
+                capture_delay_words=capture_delay_words,
+                repeats=repeats,
+                interval_samples=interval_samples,
+            )
+            if integral_mode == "integral":
+                CaptureParamTools.enable_integration(
+                    capprm=cap_param,
+                )
+            if dsp_demodulation:
+                CaptureParamTools.enable_demodulation(
+                    capprm=cap_param,
+                    f_GHz=self.target_settings[cap_label]["frequency"],
+                )
+            settings.append(
+                RunitSetting(
+                    runit=RunitId(
+                        box=cap_id[0],
+                        port=cap_id[1],
+                        runit=cap_id[2],
+                    ),
+                    cprm=cap_param,
+                )
+            )
+
+        gen_sequences_map = defaultdict(dict)
+        for gen_label, gen_sequence in sequencer.gen_sampled_sequence.items():
+            gen_resource = self.gen_resource_map[gen_label]
+            gen_id = (
+                gen_resource["box"].box_name,
+                gen_resource["port"].port,
+                gen_resource["channel_number"],
+            )
+            gen_sequences_map[gen_id][gen_label] = gen_sequence
+
+        for gen_id, gen_sequences in gen_sequences_map.items():
+            muxed_sequence = Converter.multiplex(
+                sequences=gen_sequences,
+                modfreqs={
+                    label: self.target_settings[label]["frequency"]
+                    for label in gen_sequences
+                },
+            )
+            wave_seq = WaveSequenceTools.create(
+                sequence=muxed_sequence,
+                wait_words=wait_words,
+                repeats=repeats,
+                interval_samples=interval_samples,
+            )
+            settings.append(
+                AwgSetting(
+                    awg=AwgId(
+                        box=gen_id[0],
+                        port=gen_id[1],
+                        channel=gen_id[2],
+                    ),
+                    wseq=wave_seq,
+                )
+            )
+        settings += sequencer.select_trigger(self.quel1system, settings)
+        if len(settings) == 0:
+            raise ValueError("no settings")
+
+        action = Action.build(system=self.quel1system, settings=settings)
+        status, results = action.action()
+
+        cap_resource_map = self.get_cap_resource_map(
+            sequencer.cap_sampled_sequence.keys()
+        )
+
+        status, data, config = sequencer.parse_capture_results(
+            status,
+            results,
+            action,
+            cap_resource_map,
+        )
+        return RawResult(
+            status=status,
+            data=data,
+            config=config,
+        )
 
     def modify_target_frequency(self, target: str, frequency: float):
         """
