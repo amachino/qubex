@@ -25,7 +25,7 @@ class CalibrationProtocol(Protocol):
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the default pulse.
@@ -50,7 +50,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -71,7 +71,7 @@ class CalibrationProtocol(Protocol):
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π/2 pulse.
@@ -94,7 +94,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -115,7 +115,7 @@ class CalibrationProtocol(Protocol):
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π pulse.
@@ -138,7 +138,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -160,7 +160,7 @@ class CalibrationProtocol(Protocol):
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the default pulse.
@@ -185,7 +185,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -206,7 +206,7 @@ class CalibrationProtocol(Protocol):
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the ef π/2 pulse.
@@ -229,7 +229,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -250,7 +250,7 @@ class CalibrationProtocol(Protocol):
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the ef π pulse.
@@ -273,7 +273,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -298,7 +298,7 @@ class CalibrationProtocol(Protocol):
         use_stored_beta: bool = False,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict[str, dict]:
         """
         Calibrates the DRAG amplitude.
@@ -329,7 +329,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -351,7 +351,7 @@ class CalibrationProtocol(Protocol):
         degree: int = 3,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
         """
         Calibrates the DRAG beta.
@@ -376,7 +376,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -403,7 +403,7 @@ class CalibrationProtocol(Protocol):
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict:
         """
         Calibrates the DRAG π/2 pulse.
@@ -438,7 +438,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -465,7 +465,7 @@ class CalibrationProtocol(Protocol):
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict:
         """
         Calibrates the DRAG π pulse.
@@ -500,7 +500,7 @@ class CalibrationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         shots : int, optional
             Number of shots. Defaults to CALIBRATION_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -526,7 +526,7 @@ class CalibrationProtocol(Protocol):
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict: ...
 
     def cr_hamiltonian_tomography(
@@ -542,7 +542,7 @@ class CalibrationProtocol(Protocol):
         cancel_phase: float | None = None,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict: ...
 
@@ -561,7 +561,7 @@ class CalibrationProtocol(Protocol):
         update_cancel_pulse: bool = True,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict: ...
 
@@ -582,7 +582,7 @@ class CalibrationProtocol(Protocol):
         max_amplitude: float = 1.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict: ...
 
@@ -608,7 +608,7 @@ class CalibrationProtocol(Protocol):
         use_zvalues: bool = False,
         store_params: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict: ...
 
@@ -659,5 +659,5 @@ class CalibrationProtocol(Protocol):
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ): ...

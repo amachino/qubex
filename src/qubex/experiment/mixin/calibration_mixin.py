@@ -53,7 +53,7 @@ class CalibrationMixin(
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         if targets is None:
             targets = self.qubit_labels
@@ -177,7 +177,7 @@ class CalibrationMixin(
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         return self.calibrate_default_pulse(
             targets=targets,
@@ -203,7 +203,7 @@ class CalibrationMixin(
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         return self.calibrate_default_pulse(
             targets=targets,
@@ -230,7 +230,7 @@ class CalibrationMixin(
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         if targets is None:
             targets = self.qubit_labels
@@ -365,7 +365,7 @@ class CalibrationMixin(
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         return self.calibrate_ef_pulse(
             targets=targets,
@@ -390,7 +390,7 @@ class CalibrationMixin(
         r2_threshold: float = 0.5,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         return self.calibrate_ef_pulse(
             targets=targets,
@@ -420,7 +420,7 @@ class CalibrationMixin(
         use_stored_beta: bool = False,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict[str, dict]:
         if targets is None:
             targets = self.qubit_labels
@@ -569,7 +569,7 @@ class CalibrationMixin(
         degree: int = 3,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
@@ -716,7 +716,7 @@ class CalibrationMixin(
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
@@ -800,7 +800,7 @@ class CalibrationMixin(
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
@@ -889,7 +889,7 @@ class CalibrationMixin(
             "Bump",
         ] = "RaisedCosine",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> dict:
         if time_range is None:
             time_range = np.arange(0, 1001, 20)
@@ -954,7 +954,7 @@ class CalibrationMixin(
         cancel_phase: float | None = None,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
@@ -1172,7 +1172,7 @@ class CalibrationMixin(
         update_cancel_pulse: bool = True,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict:
         if ramptime is None:
@@ -1280,7 +1280,7 @@ class CalibrationMixin(
         max_amplitude: float = 1.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         def _create_time_range(
@@ -1427,7 +1427,7 @@ class CalibrationMixin(
         use_zvalues: bool = False,
         store_params: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         if x180 is None:
@@ -1785,7 +1785,7 @@ class CalibrationMixin(
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ):
         if opt_params is None:
             opt_params = [

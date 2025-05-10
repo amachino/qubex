@@ -11,6 +11,7 @@ from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit, least_squares, minimize
 from sklearn.decomposition import PCA
+from typing_extensions import deprecated
 
 COLORS = [
     "#0C5DA5",
@@ -259,6 +260,7 @@ def func_sqrt_lorentzian(
     return A / np.sqrt(1 + ((f - f0) / Omega) ** 2) + C
 
 
+@deprecated("Use func_resonator_reflection instead.")
 def func_resonance(
     f: NDArray,
     f_r: float,
@@ -281,9 +283,93 @@ def func_resonance(
     kappa_in : float
         Internal loss rate.
     """
-    numerator = (f - f_r) * 1j + (-kappa_ex + kappa_in) / 2
-    denominator = (f - f_r) * 1j + (kappa_ex + kappa_in) / 2
-    return A * np.exp(1j * phi) * (numerator / denominator)
+    return func_resonator_reflection(
+        f=f,
+        f_r=f_r,
+        kappa_ex=kappa_ex,
+        kappa_in=kappa_in,
+        A=A,
+        phi=phi,
+    )
+
+
+def func_resonator_reflection(
+    f: NDArray,
+    f_r: float,
+    kappa_ex: float,
+    kappa_in: float,
+    A: float,
+    phi: float,
+) -> NDArray:
+    """
+    Calculate a resonator reflection function with given parameters.
+
+    Parameters
+    ----------
+    f : NDArray[np.float64]
+        Frequency points for the function evaluation.
+    f_r : float
+        Resonance frequency.
+    kappa_ex : float
+        External loss rate.
+    kappa_in : float
+        Internal loss rate.
+    A : float
+        Amplitude of the resonator reflection function.
+    phi : float
+        Phase offset of the resonator reflection function.
+    """
+    return (
+        A
+        * np.exp(1j * phi)
+        * (1 - 2 * kappa_ex / (kappa_ex + kappa_in + 1j * (f - f_r)))
+    )
+
+
+def func_double_resonator_reflection(
+    f: NDArray,
+    f_r0: float,
+    f_r1: float,
+    kappa_ex0: float,
+    kappa_ex1: float,
+    kappa_in0: float,
+    kappa_in1: float,
+    A: float,
+    phi: float,
+) -> NDArray:
+    """
+    Calculate a resonator reflection function with given parameters.
+
+    Parameters
+    ----------
+    f : NDArray[np.float64]
+        Frequency points for the function evaluation.
+    f_r0 : float
+        Resonance frequency of the first resonator.
+    f_r1 : float
+        Resonance frequency of the second resonator.
+    kappa_ex0 : float
+        External loss rate of the first resonator.
+    kappa_ex1 : float
+        External loss rate of the second resonator.
+    kappa_in0 : float
+        Internal loss rate of the first resonator.
+    kappa_in1 : float
+        Internal loss rate of the second resonator.
+    A : float
+        Amplitude of the resonator reflection function.
+    phi : float
+        Phase offset of the resonator reflection function.
+    """
+    return (
+        A
+        * np.exp(1j * phi)
+        * (
+            1
+            - (2 * kappa_ex0 / (kappa_ex0 + kappa_in0 + 1j * (f - f_r0)))
+            - (2 * kappa_ex1 / (kappa_ex1 + kappa_in1 + 1j * (f - f_r1)))
+        )
+    )
 
 
 def fit_linear(
@@ -1231,7 +1317,7 @@ def fit_sqrt_lorentzian(
     fig.add_annotation(
         x=f0,
         y=func_sqrt_lorentzian(f0, *popt),
-        text=f"max: {f0:.6g}",
+        text=f"max: {f0:.6f}",
         showarrow=True,
         arrowhead=1,
     )
@@ -1259,10 +1345,10 @@ def fit_sqrt_lorentzian(
         if target:
             print(f"Target: {target}")
         print("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f0 = {f0:.3g} ± {f0_err:.1g}")
-        print(f"  Ω = {Omega:.3g} ± {Omega_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  A = {A:.3f} ± {A_err:.1g}")
+        print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
+        print(f"  Ω = {Omega:.3f} ± {Omega_err:.1g}")
+        print(f"  C = {C:.3f} ± {C_err:.1g}")
 
     return {
         "A": A,
@@ -2248,12 +2334,12 @@ def fit_reflection_coefficient(
     if bounds is None:
         bounds = (
             (np.min(freq_range), 0, 0, 0, -np.pi),
-            (np.max(freq_range), 1.0, 1.0, 1.0, np.pi),
+            (np.max(freq_range), 1.0, 1.0, np.inf, np.pi),
         )
 
     def residuals(params, f, y):
         f_r, kappa_ex, kappa_in, A, phi = params
-        y_model = func_resonance(f, f_r, kappa_ex, kappa_in, A, phi)
+        y_model = func_resonator_reflection(f, f_r, kappa_ex, kappa_in, A, phi)
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
     result = least_squares(
@@ -2272,7 +2358,7 @@ def fit_reflection_coefficient(
     )
 
     x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
-    y_fine = func_resonance(x_fine, *fitted_params)
+    y_fine = func_resonator_reflection(x_fine, *fitted_params)
 
     fig = make_subplots(
         rows=2,
@@ -2422,6 +2508,243 @@ def fit_reflection_coefficient(
         "f_r": f_r,
         "kappa_ex": kappa_ex,
         "kappa_in": kappa_in,
+        "A": A,
+        "phi": phi,
+        "r2": r2,
+        "fig": fig,
+    }
+
+
+def fit_reflection_coefficient_double(
+    *,
+    target: str,
+    freq_range: NDArray,
+    data: NDArray,
+    p0=None,
+    bounds=None,
+    plot: bool = True,
+    title: str = "Reflection coefficient",
+) -> dict:
+    """
+    Fit reflection coefficient data and obtain the resonance frequency and loss rates.
+
+    Parameters
+    ----------
+    target : str
+        Identifier of the target.
+    freq_range : NDArray[np.float64]
+        Frequency range for the reflection coefficient data.
+    data : NDArray[np.complex64]
+        Complex reflection coefficient data.
+    p0 : optional
+        Initial guess for the fitting parameters.
+    bounds : optional
+        Bounds for the fitting parameters.
+    plot : bool, optional
+        Whether to plot the data and the fit.
+
+    Returns
+    -------
+    dict
+        Fitted parameters and the figure.
+    """
+    freq_range = np.asarray(freq_range, dtype=np.float64)
+    data = np.asarray(data, dtype=np.complex64)
+
+    if p0 is None:
+        p0 = (
+            (np.max(freq_range) + np.min(freq_range)) / 2,
+            (np.max(freq_range) + np.min(freq_range)) / 2,
+            0.005,
+            0.005,
+            0.0,
+            0.0,
+            np.mean(np.abs(data)),
+            0.0,
+        )
+
+    if bounds is None:
+        bounds = (
+            (np.min(freq_range), np.min(freq_range), 0, 0, 0, 0, 0, -np.pi),
+            (np.max(freq_range), np.max(freq_range), 1.0, 1.0, 1.0, 1.0, np.inf, np.pi),
+        )
+
+    def residuals(params, f, y):
+        y_model = func_double_resonator_reflection(f, *params)
+        return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
+
+    result = least_squares(
+        residuals,
+        p0,
+        bounds=bounds,
+        args=(freq_range, data),
+    )
+
+    fitted_params = result.x
+
+    f_r0, f_r1, kappa_ex0, kappa_in0, kappa_ex1, kappa_in1, A, phi = fitted_params
+
+    r2 = 1 - np.sum(residuals(fitted_params, freq_range, data) ** 2) / np.sum(
+        np.abs(data - np.mean(data)) ** 2
+    )
+
+    x_fine = np.linspace(np.min(freq_range), np.max(freq_range), 1000)
+    y_fine = func_double_resonator_reflection(x_fine, *fitted_params)
+
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        column_widths=[0.5, 0.5],
+        row_heights=[1.0, 1.0],
+        specs=[
+            [{"rowspan": 2}, {}],
+            [None, {}],
+        ],
+        shared_xaxes=False,
+        vertical_spacing=0.05,
+        horizontal_spacing=0.125,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=np.real(data),
+            y=np.imag(data),
+            mode="markers",
+            name="I/Q (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=1,
+        col=1,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=np.real(y_fine),
+            y=np.imag(y_fine),
+            mode="lines",
+            name="I/Q (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=1,
+        col=1,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=freq_range,
+            y=np.real(data),
+            mode="markers",
+            name="Re (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=1,
+        col=2,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=np.real(y_fine),
+            mode="lines",
+            name="Re (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=1,
+        col=2,
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=freq_range,
+            y=np.imag(data),
+            mode="markers",
+            name="Im (Data)",
+            marker=dict(color=COLORS[0]),
+        ),
+        row=2,
+        col=2,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x_fine,
+            y=np.imag(y_fine),
+            mode="lines",
+            name="Im (Fit)",
+            marker=dict(color=COLORS[1]),
+        ),
+        row=2,
+        col=2,
+    )
+
+    fig.update_layout(
+        title=f"{title} : {target}",
+        width=800,
+        height=450,
+        showlegend=False,
+    )
+
+    fig.update_xaxes(
+        title_text="Re",
+        row=1,
+        col=1,
+        tickformat=".2g",
+        showticklabels=True,
+        zeroline=True,
+        zerolinecolor="black",
+        showgrid=True,
+    )
+    fig.update_yaxes(
+        title_text="Im",
+        row=1,
+        col=1,
+        scaleanchor="x",
+        scaleratio=1,
+        tickformat=".2g",
+        showticklabels=True,
+        zeroline=True,
+        zerolinecolor="black",
+        showgrid=True,
+    )
+    fig.update_xaxes(
+        row=1,
+        col=2,
+        showticklabels=False,
+        matches="x2",
+    )
+    fig.update_yaxes(
+        title_text="Re",
+        row=1,
+        col=2,
+    )
+    fig.update_xaxes(
+        title_text="Frequency (GHz)",
+        row=2,
+        col=2,
+        matches="x2",
+    )
+    fig.update_yaxes(
+        title_text="Im",
+        row=2,
+        col=2,
+    )
+
+    if plot:
+        fig.show()
+
+    print(f"{target}\n--------------------")
+    print(f"Resonance frequency #0:\n  {f_r0:.6f} GHz")
+    print(f"Resonance frequency #1:\n  {f_r1:.6f} GHz")
+    print(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6f} MHz")
+    print(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6f} MHz")
+    print(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6f} MHz")
+    print(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6f} MHz")
+    print("--------------------\n")
+
+    return {
+        "f_r0": f_r0,
+        "f_r1": f_r1,
+        "kappa_ex0": kappa_ex0,
+        "kappa_ex1": kappa_ex1,
+        "kappa_in0": kappa_in0,
+        "kappa_in1": kappa_in1,
         "A": A,
         "phi": phi,
         "r2": r2,

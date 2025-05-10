@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Final, Literal, Sequence, Union
+from typing import Final, Literal, Optional, Sequence, Union
 
 from pydantic import Field
 from pydantic.dataclasses import dataclass
@@ -25,6 +25,9 @@ class BoxType(Enum):
     QUBE_RIKEN_B = "qube-riken-b"
     QUBE_OU_A = "qube-ou-a"
     QUBE_OU_B = "qube-ou-b"
+    QUEL1SE_A = "quel1se-fujitsu11-a"
+    QUEL1SE_B = "quel1se-fujitsu11-b"
+    QUEL1SE_R8 = "quel1se-riken8"
 
 
 class PortType(Enum):
@@ -35,6 +38,7 @@ class PortType(Enum):
     PUMP = "PUMP"
     MNTR_IN = "MNTR_IN"
     MNTR_OUT = "MNTR_OUT"
+    FOGI = "FOGI"
 
 
 PORT_DIRECTION: Final = {
@@ -44,10 +48,58 @@ PORT_DIRECTION: Final = {
     PortType.PUMP: "out",
     PortType.MNTR_IN: "in",
     PortType.MNTR_OUT: "out",
+    PortType.FOGI: "out",
 }
 
 
 PORT_MAPPING: Final = {
+    BoxType.QUEL1SE_R8: {
+        0: PortType.READ_IN,
+        1: PortType.READ_OUT,
+        (1, 1): PortType.FOGI,
+        2: PortType.PUMP,
+        3: PortType.CTRL,
+        4: PortType.MNTR_IN,
+        5: PortType.MNTR_OUT,
+        6: PortType.CTRL,
+        7: PortType.CTRL,
+        8: PortType.CTRL,
+        9: PortType.CTRL,
+        10: PortType.MNTR_IN,
+        11: PortType.MNTR_OUT,
+    },
+    BoxType.QUEL1SE_A: {
+        0: PortType.READ_IN,
+        1: PortType.READ_OUT,
+        2: PortType.CTRL,
+        3: PortType.PUMP,
+        4: PortType.CTRL,
+        5: PortType.MNTR_IN,
+        6: PortType.MNTR_OUT,
+        7: PortType.READ_IN,
+        8: PortType.READ_OUT,
+        9: PortType.CTRL,
+        10: PortType.PUMP,
+        11: PortType.CTRL,
+        12: PortType.MNTR_IN,
+        13: PortType.MNTR_OUT,
+    },
+    BoxType.QUEL1SE_B: {
+        0: PortType.NOT_AVAILABLE,
+        1: PortType.CTRL,
+        2: PortType.CTRL,
+        3: PortType.CTRL,
+        4: PortType.CTRL,
+        5: PortType.MNTR_IN,
+        6: PortType.MNTR_OUT,
+        7: PortType.NOT_AVAILABLE,
+        8: PortType.CTRL,
+        9: PortType.CTRL,
+        10: PortType.CTRL,
+        11: PortType.CTRL,
+        12: PortType.MNTR_IN,
+        13: PortType.MNTR_OUT,
+    },
     BoxType.QUEL1_A: {
         0: PortType.READ_IN,
         1: PortType.READ_OUT,
@@ -147,6 +199,53 @@ PORT_MAPPING: Final = {
 }
 
 NUMBER_OF_CHANNELS: Final = {
+    BoxType.QUEL1SE_R8: {
+        0: 4,
+        1: 1,
+        (1, 1): 1,
+        2: 3,
+        3: 3,
+        4: 1,
+        5: 1,
+        6: 1,
+        7: 3,
+        8: 3,
+        9: 1,
+        10: 1,
+        11: 1,
+    },
+    BoxType.QUEL1SE_A: {
+        0: 4,
+        1: 1,
+        2: 3,
+        3: 1,
+        4: 3,
+        5: 1,
+        6: 1,
+        7: 4,
+        8: 1,
+        9: 3,
+        10: 1,
+        11: 3,
+        12: 1,
+        13: 1,
+    },
+    BoxType.QUEL1SE_B: {
+        0: 0,
+        1: 1,
+        2: 3,
+        3: 1,
+        4: 3,
+        5: 1,
+        6: 1,
+        7: 0,
+        8: 1,
+        9: 3,
+        10: 1,
+        11: 3,
+        12: 1,
+        13: 1,
+    },
     BoxType.QUEL1_A: {
         0: 4,
         1: 1,
@@ -260,6 +359,7 @@ def create_ports(
         PortType.PUMP: 0,
         PortType.MNTR_IN: 0,
         PortType.MNTR_OUT: 0,
+        PortType.FOGI: 0,
     }
     for port_num, port_type in PORT_MAPPING[box_type].items():
         if port_type in (PortType.READ_IN, PortType.READ_OUT, PortType.CTRL):
@@ -281,6 +381,8 @@ def create_ports(
             port_id = f"{box_id}.MNTR{index}.IN"
         elif port_type == PortType.MNTR_OUT:
             port_id = f"{box_id}.MNTR{index}.OUT"
+        elif port_type == PortType.FOGI:
+            port_id = f"{box_id}.FOGI{index}"
         else:
             raise ValueError(f"Invalid port type: {port_type}")
         n_channels = NUMBER_OF_CHANNELS[box_type].get(port_num, 0)
@@ -303,7 +405,6 @@ def create_ports(
                 )
                 for channel_num in range(n_channels)
             )
-
         elif port_type == PortType.READ_OUT:
             port = GenPort(
                 id=port_id,
@@ -311,7 +412,6 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="U",
-                channels=(),
             )
             port.channels = tuple(
                 GenChannel(
@@ -321,7 +421,6 @@ def create_ports(
                 )
                 for channel_num in range(n_channels)
             )
-
         elif port_type == PortType.MNTR_OUT:
             port = GenPort(
                 id=port_id,
@@ -329,7 +428,6 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="L",
-                channels=(),
             )
             port.channels = tuple(
                 GenChannel(
@@ -339,7 +437,6 @@ def create_ports(
                 )
                 for channel_num in range(n_channels)
             )
-
         elif port_type == PortType.CTRL:
             port = GenPort(
                 id=port_id,
@@ -347,7 +444,6 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="L",
-                channels=(),
             )
             port.channels = tuple(
                 GenChannel(
@@ -364,7 +460,23 @@ def create_ports(
                 number=port_num,
                 type=port_type,
                 sideband="L",
-                channels=(),
+            )
+            port.channels = tuple(
+                GenChannel(
+                    id=f"{port_id}.CH{channel_num}",
+                    _port=port,
+                    number=channel_num,
+                )
+                for channel_num in range(n_channels)
+            )
+        elif port_type == PortType.FOGI:
+            port = GenPort(
+                id=port_id,
+                box_id=box_id,
+                number=port_num,
+                type=port_type,
+                sideband=None,
+                vatt=None,
             )
             port.channels = tuple(
                 GenChannel(
@@ -454,7 +566,7 @@ class Box(Model):
 class Port(Model):
     id: str
     box_id: str
-    number: int
+    number: Union[int, tuple[int, int]]
     type: PortType
     channels: Union[tuple[GenChannel, ...], tuple[CapChannel, ...]]
 
@@ -490,14 +602,18 @@ class Port(Model):
     def is_pump_port(self) -> bool:
         return self.type == PortType.PUMP
 
+    @property
+    def is_fogi_port(self) -> bool:
+        return self.type == PortType.FOGI
+
 
 @dataclass
 class GenPort(Port):
-    channels: tuple[GenChannel, ...]
-    sideband: Literal["U", "L"]
-    lo_freq: int = DEFAULT_LO_FREQ
+    channels: tuple[GenChannel, ...] = ()
+    sideband: Optional[Literal["U", "L"]] = None
+    lo_freq: Optional[int] = DEFAULT_LO_FREQ
     cnco_freq: int = DEFAULT_CNCO_FREQ
-    vatt: int = DEFAULT_VATT
+    vatt: Optional[int] = DEFAULT_VATT
     fullscale_current: int = DEFAULT_FULLSCALE_CURRENT
     rfswitch: Literal["pass", "block"] = "pass"
 
@@ -508,7 +624,7 @@ class GenPort(Port):
 
 @dataclass
 class CapPort(Port):
-    channels: tuple[CapChannel, ...]
+    channels: tuple[CapChannel, ...] = ()
     lo_freq: int = DEFAULT_LO_FREQ
     cnco_freq: int = DEFAULT_CNCO_FREQ
     rfswitch: Literal["open", "loop"] = "open"
@@ -532,6 +648,8 @@ class GenChannel(Channel):
 
     @property
     def lo_freq(self) -> int:
+        if self.port.lo_freq is None:
+            raise ValueError("LO frequency is not set.")
         return self.port.lo_freq
 
     @property
@@ -547,12 +665,20 @@ class GenChannel(Channel):
         sideband = self.port.sideband
         lo = self.port.lo_freq
         cnco = self.port.cnco_freq
-        if sideband == "U":
-            return lo + cnco
-        elif sideband == "L":
-            return lo - cnco
+
+        if lo is None and sideband is None:
+            return cnco
+        elif lo is None:
+            raise ValueError("LO frequency is not set.")
+        elif sideband is None:
+            raise ValueError("Sideband is not set.")
         else:
-            raise ValueError(f"Invalid sideband: {sideband}")
+            if sideband == "U":
+                return lo + cnco
+            elif sideband == "L":
+                return lo - cnco
+            else:
+                raise ValueError(f"Invalid sideband: {sideband}")
 
     @property
     def fine_frequency(self) -> int:
@@ -560,12 +686,21 @@ class GenChannel(Channel):
         lo = self.port.lo_freq
         cnco = self.port.cnco_freq
         fnco = self.fnco_freq
-        if sideband == "U":
-            return lo + cnco + fnco
-        elif sideband == "L":
-            return lo - cnco - fnco
+        nco = cnco + fnco
+
+        if lo is None and sideband is None:
+            return nco
+        elif lo is None:
+            raise ValueError("LO frequency is not set.")
+        elif sideband is None:
+            raise ValueError("Sideband is not set.")
         else:
-            raise ValueError(f"Invalid sideband: {sideband}")
+            if sideband == "U":
+                return lo + nco
+            elif sideband == "L":
+                return lo - nco
+            else:
+                raise ValueError(f"Invalid sideband: {sideband}")
 
 
 @dataclass
@@ -580,11 +715,18 @@ class CapChannel(Channel):
 
 
 class ControlSystem:
+    class NotGivenType:
+        pass
+
+    NotGiven = NotGivenType()
+
     def __init__(
         self,
         boxes: Sequence[Box],
-        clock_master_address: str = DEFAULT_CLOCK_MASTER_ADDRESS,
+        clock_master_address: str | None = None,
     ):
+        if clock_master_address is None:
+            clock_master_address = DEFAULT_CLOCK_MASTER_ADDRESS
         self._box_pool: Final = BoxPool(
             boxes=tuple(boxes),
             clock_master_address=clock_master_address,
@@ -635,11 +777,11 @@ class ControlSystem:
         port_number: int,
         *,
         rfswitch: Literal["pass", "block", "open", "loop"] | None = None,
-        sideband: Literal["U", "L"] | None = None,
-        lo_freq: int | None = None,
+        sideband: Literal["U", "L"] | None | NotGivenType = NotGiven,
+        lo_freq: int | None | NotGivenType = NotGiven,
         cnco_freq: int | None = None,
         fnco_freqs: Sequence[int] | None = None,
-        vatt: int | None = None,
+        vatt: int | None | NotGivenType = NotGiven,
         fullscale_current: int | None = None,
         nwait: int | None = None,
         ndelay: int | None = None,
@@ -649,9 +791,9 @@ class ControlSystem:
         if isinstance(port, GenPort):
             if rfswitch is not None:
                 port.rfswitch = rfswitch  # type: ignore
-            if sideband is not None:
+            if not isinstance(sideband, self.NotGivenType):
                 port.sideband = sideband
-            if lo_freq is not None:
+            if not isinstance(lo_freq, self.NotGivenType):
                 port.lo_freq = lo_freq
             if cnco_freq is not None:
                 port.cnco_freq = cnco_freq
@@ -663,7 +805,7 @@ class ControlSystem:
                     )
                 for gen_channel, fnco_freq in zip(port.channels, fnco_freqs):
                     gen_channel.fnco_freq = fnco_freq
-            if vatt is not None:
+            if not isinstance(vatt, self.NotGivenType):
                 port.vatt = vatt
             if fullscale_current is not None:
                 port.fullscale_current = fullscale_current
@@ -675,7 +817,7 @@ class ControlSystem:
             if rfswitch is not None:
                 port.rfswitch = rfswitch  # type: ignore
             if lo_freq is not None:
-                port.lo_freq = lo_freq
+                port.lo_freq = lo_freq  # type: ignore
             if cnco_freq is not None:
                 port.cnco_freq = cnco_freq
             if fnco_freqs is not None:

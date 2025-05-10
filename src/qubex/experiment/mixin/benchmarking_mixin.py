@@ -212,7 +212,7 @@ class BenchmarkingMixin(
         interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> ExperimentResult[RBData]:
@@ -296,7 +296,7 @@ class BenchmarkingMixin(
         seed: int | None = None,
         mitigate_readout: bool = True,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
         if self.state_centers is None:
@@ -373,7 +373,7 @@ class BenchmarkingMixin(
         ) = None,
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -477,7 +477,7 @@ class BenchmarkingMixin(
         ) = None,
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:

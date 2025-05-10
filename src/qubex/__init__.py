@@ -1,21 +1,13 @@
 import logging
 
+import qubex.patches.quel_ic_config.abstract_nco_ftw_patch  # noqa: F401
+
 from .style import apply_template
 
 logger = logging.getLogger(__name__)
 
 try:
-    from . import (
-        analysis,
-        api,
-        backend,
-        clifford,
-        diagnostics,
-        experiment,
-        measurement,
-        pulse,
-        simulator,
-    )
+    from . import pulse
     from .analysis import fitting as fit
     from .analysis import visualization as viz
     from .experiment import Experiment
@@ -29,15 +21,7 @@ apply_template("qubex")
 __all__ = [
     "fit",
     "viz",
-    "analysis",
-    "api",
-    "backend",
-    "clifford",
-    "diagnostics",
-    "experiment",
-    "measurement",
     "pulse",
-    "simulator",
     "Experiment",
     "Blank",
     "Pulse",

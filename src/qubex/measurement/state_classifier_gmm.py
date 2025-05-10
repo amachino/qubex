@@ -261,6 +261,36 @@ class StateClassifierGMM(StateClassifier):
 
         return state_labels
 
+    def predict_proba(
+        self,
+        data: NDArray,
+    ) -> NDArray:
+        """
+        Predict the state probabilities for the provided data.
+
+        Parameters
+        ----------
+        data : NDArray
+            An array of complex numbers representing the data to classify.
+
+        Returns
+        -------
+        NDArray
+            An array of predicted state probabilities based on the fitted model.
+        """
+        # Scale data
+        scaled_data = data * self.scale
+        # Convert complex data to real-valued features
+        real_imag_data = np.column_stack([np.real(scaled_data), np.imag(scaled_data)])
+        # Predict GMM component probabilities
+        component_label_proba = self.model.predict_proba(real_imag_data)
+        # Convert GMM component probabilities to state probabilities
+        state_proba = np.zeros((len(data), self.n_states))
+        for label in range(self.n_states):
+            state_proba[:, label] = component_label_proba[:, self.label_map[label]]
+
+        return state_proba
+
     def classify(
         self,
         target: str,

@@ -160,7 +160,7 @@ class BenchmarkingProtocol(Protocol):
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seed: int | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> ExperimentResult[RBData]:
@@ -185,7 +185,7 @@ class BenchmarkingProtocol(Protocol):
             Random seed.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -237,7 +237,7 @@ class BenchmarkingProtocol(Protocol):
         seed: int | None = None,
         mitigate_readout: bool = True,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ): ...
 
@@ -254,7 +254,7 @@ class BenchmarkingProtocol(Protocol):
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -279,7 +279,7 @@ class BenchmarkingProtocol(Protocol):
             Random seeds. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -308,7 +308,7 @@ class BenchmarkingProtocol(Protocol):
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         seeds: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -337,7 +337,7 @@ class BenchmarkingProtocol(Protocol):
             Random seeds. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
