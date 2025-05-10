@@ -41,6 +41,7 @@ DEFAULT_INTERVAL: Final = 150 * 1024  # ns
 DEFAULT_CONTROL_WINDOW: Final = 1024  # ns
 DEFAULT_CAPTURE_WINDOW: Final = 1024  # ns
 DEFAULT_CAPTURE_MARGIN: Final = 128  # ns
+DEFAULT_CAPTURE_DELAY: Final = 896  # ns
 DEFAULT_READOUT_DURATION: Final = 512  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 INTERVAL_STEP: Final = 10240  # ns
@@ -387,7 +388,7 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        capture_delay_words: dict[str, int] | None = None,
+        capture_delay_words: int | None = None,
         _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
         """

@@ -889,7 +889,7 @@ class Experiment(
         readout_duration: int = DEFAULT_READOUT_DURATION,
         readout_amplitude: float | None = None,
         plot: bool = True,
-        capture_delay_words: dict[str, int] | None = None,
+        capture_delay_words: int | None = None,
         _use_sequencer_execute=False,
     ) -> MeasureResult:
         """

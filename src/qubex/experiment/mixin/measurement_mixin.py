@@ -17,6 +17,7 @@ from ...analysis import IQPlotter, fitting
 from ...analysis import visualization as viz
 from ...backend import Target
 from ...measurement import (
+    MeasureData,
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
@@ -24,7 +25,10 @@ from ...measurement import (
     StateClassifierKMeans,
 )
 from ...measurement.measurement import (
+    DEFAULT_CAPTURE_DELAY,
+    DEFAULT_CAPTURE_WINDOW,
     DEFAULT_INTERVAL,
+    DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
     SAMPLING_PERIOD,
 )
@@ -101,7 +105,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
-        capture_delay_words: dict[str, int] | None = None,
+        capture_delay_words: int | None = None,
         _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
         control_window = control_window or self.control_window
@@ -179,6 +183,45 @@ class MeasurementMixin(
                     capture_delay_words=capture_delay_words,
                     _use_sequencer_execute=_use_sequencer_execute,
                 )
+        if plot:
+            result.plot()
+        return result
+
+    def measure_readout_waveform(
+        self,
+        *,
+        target: str | None = None,
+        frequency: float | None = None,
+        amplitude: float | None = None,
+        duration: float = DEFAULT_READOUT_DURATION,
+        capture_window: float = DEFAULT_CAPTURE_WINDOW,
+        capture_delay: float = DEFAULT_CAPTURE_DELAY,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = False,
+    ) -> MeasureData:
+        if target is None:
+            target = self.qubit_labels[0]
+        qubit = Target.qubit_label(target)
+        resonator = Target.read_label(target)
+        if frequency is None:
+            frequency = self.resonators[qubit].frequency
+        if amplitude is None:
+            amplitude = self.params.readout_amplitude[qubit]
+        capture_delay_words = int(capture_delay // 8)
+        with self.modified_frequencies({resonator: frequency}):
+            result = self.measure(
+                sequence={qubit: np.zeros(0)},
+                mode=mode,
+                shots=shots,
+                interval=interval,
+                readout_duration=duration,
+                readout_amplitudes={qubit: amplitude},
+                capture_window=capture_window,
+                capture_delay_words=capture_delay_words,
+                _use_sequencer_execute=False,
+            ).data[qubit]
         if plot:
             result.plot()
         return result
