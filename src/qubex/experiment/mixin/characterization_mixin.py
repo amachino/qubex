@@ -1476,9 +1476,10 @@ class CharacterizationMixin(
         phases_unwrap = np.unwrap(phases)
         phases_unwrap -= phases_unwrap[0]
         phases_diff = np.gradient(phases_unwrap)
+        phases_diff -= np.mean(phases_diff)
         peaks, _ = find_peaks(
             np.abs(phases_diff),
-            height=np.pi / 4,
+            height=0.5,
             distance=10,
         )
 
@@ -1516,8 +1517,15 @@ class CharacterizationMixin(
         fig1.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
         fig1.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
         fig1.update_layout(
-            title=f"Resonator frequency scan : {mux.label}",
+            title=dict(
+                text=f"Resonator frequency scan : {mux.label}",
+                subtitle=dict(
+                    text=f"(readout_amplitude: {amplitude})",
+                    font=dict(color="gray", size=13),
+                ),
+            ),
             height=450,
+            margin=dict(t=80),
             showlegend=False,
         )
 
@@ -1549,16 +1557,20 @@ class CharacterizationMixin(
                 y=phases_diff[peak],
                 text=f"{frequency_range[peak]:.3f} GHz",
                 bgcolor="rgba(255, 255, 255, 0.8)",
-                showarrow=True,
-                arrowhead=2,
-                ax=0,
-                ay=-40,
+                showarrow=False,
             )
 
         fig2.update_layout(
-            title=f"Resonator frequency scan : {mux.label}",
+            title=dict(
+                text=f"Resonator frequency scan : {mux.label}",
+                subtitle=dict(
+                    text=f"(readout_amplitude: {amplitude})",
+                    font=dict(color="gray", size=13),
+                ),
+            ),
             xaxis_title="Readout frequency (GHz)",
             yaxis_title="Phase diff (rad)",
+            margin=dict(t=80),
         )
 
         if plot:
@@ -1862,7 +1874,13 @@ class CharacterizationMixin(
                         idx += 1
 
         phases_unwrap = np.unwrap(phases)
-        phases_unwrap -= phases_unwrap[0]
+        phases_unwrap -= np.mean(phases_unwrap)
+
+        peaks, _ = find_peaks(
+            np.abs(phases_unwrap),
+            height=0.5,
+            distance=10,
+        )
 
         if plot:
             fig = make_subplots(
@@ -1895,15 +1913,41 @@ class CharacterizationMixin(
                     line_dash="dot",
                     opacity=0.1,
                 )
+            for peak in peaks:
+                fig.add_vline(
+                    x=frequency_range[peak],
+                    line_width=2,
+                    line_color="red",
+                    line_dash="dot",
+                    opacity=0.5,
+                )
+                fig.add_annotation(
+                    x=frequency_range[peak],
+                    y=phases_unwrap[peak],
+                    text=f"{frequency_range[peak]:.3f} GHz",
+                    bgcolor="rgba(255, 255, 255, 0.8)",
+                    showarrow=False,
+                )
             fig.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
             fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
             fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
             fig.update_layout(
-                title=f"Control frequency scan : {qubit}",
+                title=dict(
+                    text=f"Control frequency scan : {qubit}",
+                    subtitle=dict(
+                        text=f"(control_amplitude: {control_amplitude}, readout_amplitude: {readout_amplitude})",
+                        font=dict(color="gray", size=13),
+                    ),
+                ),
                 height=450,
+                margin=dict(t=80),
                 showlegend=False,
             )
             fig.show()
+
+            print("Found peaks:")
+            for peak in peaks:
+                print(f"  {frequency_range[peak]:.3f} GHz")
 
         return frequency_range, phases_unwrap, np.asarray(amplitudes)
 
