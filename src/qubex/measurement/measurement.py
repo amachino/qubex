@@ -62,6 +62,7 @@ class Measurement:
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
         use_neopulse: bool = False,
+        use_sequencer_execute: bool = True,
     ):
         """
         Initialize the Measurement.
@@ -96,6 +97,7 @@ class Measurement:
         self._config_dir = config_dir
         self._params_dir = params_dir
         self._use_neopulse = use_neopulse
+        self._use_sequencer_execute = use_sequencer_execute
         self._classifiers: TargetMap[StateClassifier] = {}
         self._initialize(
             connect_devices=connect_devices,
@@ -385,6 +387,8 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        capture_delay_words: dict[str, int] | None = None,
+        _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -464,17 +468,26 @@ class Measurement:
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
             )
-            backend_result = self.device_controller.execute_sequencer(
-                sequencer=sequencer,
-                repeats=shots,
-                integral_mode=measure_mode.integral_mode,
-            )
+            if self._use_sequencer_execute and _use_sequencer_execute:
+                backend_result = self.device_controller.execute_sequencer(
+                    sequencer=sequencer,
+                    repeats=shots,
+                    integral_mode=measure_mode.integral_mode,
+                )
+            else:
+                backend_result = self.device_controller._execute_sequencer(
+                    sequencer=sequencer,
+                    repeats=shots,
+                    integral_mode=measure_mode.integral_mode,
+                    capture_delay_words=capture_delay_words,
+                )
         return self._create_measure_result(
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=shots,
         )
 
+    @deprecated("Use `measure` instead.")
     def measure_batch(
         self,
         waveforms_list: Collection[TargetMap[IQArray]],
@@ -780,6 +793,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
+                modulation_frequency=self.awg_frequencies[target],
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
@@ -798,6 +812,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
+                modulation_frequency=self.awg_frequencies[target],
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
@@ -816,6 +831,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
+                modulation_frequency=self.awg_frequencies[target],
                 sub_sequences=[
                     pls.CapSampledSubSequence(
                         capture_slots=[

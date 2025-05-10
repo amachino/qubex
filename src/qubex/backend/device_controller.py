@@ -837,9 +837,11 @@ class DeviceController:
         interval_samples: int | None = None,
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
-        capture_delay_words: int = 7 * 16,
+        capture_delay_words: dict[str, int] | None = None,
         wait_words: int = 0,
     ) -> RawResult:
+        # TODO: support skew adjustment
+
         if repeats is None:
             repeats = 1024
         if interval_samples is None:
@@ -851,6 +853,16 @@ class DeviceController:
                         f"Interval {sequencer.interval} is not a multiple of {DEFAULT_SAMPLING_PERIOD}"
                     )
                 interval_samples = int(sequencer.interval / DEFAULT_SAMPLING_PERIOD)
+
+        cap_targets = sequencer.cap_sampled_sequence.keys()
+
+        default_delay_words = 7 * 16
+        if capture_delay_words is None:
+            capture_delay_words = {label: default_delay_words for label in cap_targets}
+        else:
+            for label in cap_targets:
+                if label not in capture_delay_words:
+                    capture_delay_words[label] = default_delay_words
 
         settings: list[RunitSetting | AwgSetting | TriggerSetting] = []
 
@@ -873,7 +885,7 @@ class DeviceController:
             cap_sequence = next(iter(cap_sequences.values()))
             cap_param = CaptureParamTools.create(
                 sequence=cap_sequence,
-                capture_delay_words=capture_delay_words,
+                capture_delay_words=capture_delay_words[cap_sequence.target_name],
                 repeats=repeats,
                 interval_samples=interval_samples,
             )

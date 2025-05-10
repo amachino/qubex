@@ -889,6 +889,7 @@ class Experiment(
         readout_duration: int = DEFAULT_READOUT_DURATION,
         readout_amplitude: float | None = None,
         plot: bool = True,
+        _use_sequencer_execute=False,
     ) -> MeasureResult:
         """
         Checks the readout waveforms of the given targets.
@@ -935,6 +936,7 @@ class Experiment(
             readout_amplitudes={target: readout_amplitude for target in targets}
             if readout_amplitude is not None
             else None,
+            _use_sequencer_execute=_use_sequencer_execute,
         )
         if plot:
             result.plot()

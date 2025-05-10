@@ -23,7 +23,11 @@ from ...measurement import (
     StateClassifierGMM,
     StateClassifierKMeans,
 )
-from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
+from ...measurement.measurement import (
+    DEFAULT_INTERVAL,
+    DEFAULT_SHOTS,
+    SAMPLING_PERIOD,
+)
 from ...pulse import (
     Blank,
     FlatTop,
@@ -97,6 +101,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
+        _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
         control_window = control_window or self.control_window
         capture_window = capture_window or self.capture_window
@@ -155,6 +160,7 @@ class MeasurementMixin(
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
+                _use_sequencer_execute=_use_sequencer_execute,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -168,6 +174,7 @@ class MeasurementMixin(
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
                     readout_amplitudes=readout_amplitudes,
+                    _use_sequencer_execute=_use_sequencer_execute,
                 )
         if plot:
             result.plot()
