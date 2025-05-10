@@ -101,6 +101,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
+        capture_delay_words: dict[str, int] | None = None,
         _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
         control_window = control_window or self.control_window
@@ -160,6 +161,7 @@ class MeasurementMixin(
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
+                capture_delay_words=capture_delay_words,
                 _use_sequencer_execute=_use_sequencer_execute,
             )
         else:
@@ -174,6 +176,7 @@ class MeasurementMixin(
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
                     readout_amplitudes=readout_amplitudes,
+                    capture_delay_words=capture_delay_words,
                     _use_sequencer_execute=_use_sequencer_execute,
                 )
         if plot:
