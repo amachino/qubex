@@ -16,10 +16,16 @@ from qubecalib.instrument.quel.quel1.driver import (
     TriggerSetting,
 )
 from qubecalib.instrument.quel.quel1.tool import Skew
-from qubecalib.neopulse import DEFAULT_SAMPLING_PERIOD, Sequence
+from qubecalib.neopulse import (
+    DEFAULT_SAMPLING_PERIOD,
+    CapSampledSequence,
+    GenSampledSequence,
+    Sequence,
+)
 from qubecalib.qubecalib import BoxPool, CaptureParamTools, Converter, WaveSequenceTools
 from quel_clock_master import QuBEMasterClient
 from quel_ic_config import Quel1Box
+from typing_extensions import deprecated
 
 SAMPLING_PERIOD: Final[float] = 2.0  # ns
 
@@ -631,6 +637,7 @@ class DeviceController:
             fnco_freq=fnco_freq,
         )
 
+    @deprecated("Use add_sequencer instead.")
     def add_sequence(
         self,
         sequence: Sequence,
@@ -713,6 +720,7 @@ class DeviceController:
             )
             yield result
 
+    @deprecated("Use execute_sequencer instead.")
     def execute_sequence(
         self,
         sequence: Sequence,
@@ -846,7 +854,8 @@ class DeviceController:
 
         settings: list[RunitSetting | AwgSetting | TriggerSetting] = []
 
-        cap_sequences_map = defaultdict(dict)
+        # capture settings
+        cap_sequences_map = defaultdict(dict[str, CapSampledSequence])
         for cap_label, cap_sequence in sequencer.cap_sampled_sequence.items():
             cap_resource = self.cap_resource_map[cap_label]
             cap_id = (
@@ -875,7 +884,7 @@ class DeviceController:
             if dsp_demodulation:
                 CaptureParamTools.enable_demodulation(
                     capprm=cap_param,
-                    f_GHz=self.target_settings[cap_label]["frequency"],
+                    f_GHz=cap_sequence.modulation_frequency or 0,
                 )
             settings.append(
                 RunitSetting(
@@ -888,7 +897,8 @@ class DeviceController:
                 )
             )
 
-        gen_sequences_map = defaultdict(dict)
+        # awg settings
+        gen_sequences_map = defaultdict(dict[str, GenSampledSequence])
         for gen_label, gen_sequence in sequencer.gen_sampled_sequence.items():
             gen_resource = self.gen_resource_map[gen_label]
             gen_id = (
@@ -902,8 +912,8 @@ class DeviceController:
             muxed_sequence = Converter.multiplex(
                 sequences=gen_sequences,
                 modfreqs={
-                    label: self.target_settings[label]["frequency"]
-                    for label in gen_sequences
+                    label: gen_sequence.modulation_frequency or 0
+                    for label, gen_sequence in gen_sequences.items()
                 },
             )
             wave_seq = WaveSequenceTools.create(
@@ -922,23 +932,23 @@ class DeviceController:
                     wseq=wave_seq,
                 )
             )
+
+        # trigger settings
         settings += sequencer.select_trigger(self.quel1system, settings)
+
         if len(settings) == 0:
             raise ValueError("no settings")
 
+        # execute
         action = Action.build(system=self.quel1system, settings=settings)
         status, results = action.action()
-
-        cap_resource_map = self.get_cap_resource_map(
-            sequencer.cap_sampled_sequence.keys()
-        )
-
         status, data, config = sequencer.parse_capture_results(
-            status,
-            results,
-            action,
-            cap_resource_map,
+            status=status,
+            results=results,
+            action=action,
+            crmap=self.get_cap_resource_map(sequencer.cap_sampled_sequence.keys()),
         )
+
         return RawResult(
             status=status,
             data=data,

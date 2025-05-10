@@ -943,6 +943,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
+                modulation_frequency=self.awg_frequencies[target],
                 sub_sequences=[
                     # has only one GenSampledSubSequence
                     pls.GenSampledSubSequence(
@@ -998,6 +999,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
+                modulation_frequency=self.awg_frequencies[target],
                 sub_sequences=[
                     # has only one CapSampledSubSequence
                     cap_sub_sequence,
