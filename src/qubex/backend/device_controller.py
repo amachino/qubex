@@ -566,9 +566,10 @@ class DeviceController:
         """
         box = self.get_box(box_name)
         if box.boxtype == "quel1se-riken8":
-            lo_freq = None
             vatt = None
             sideband = None
+        if box.boxtype == "quel1se-riken8" and port not in box.get_input_ports():
+            lo_freq = None
         box.config_port(
             port=port,
             lo_freq=lo_freq,
