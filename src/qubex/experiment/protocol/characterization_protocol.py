@@ -753,6 +753,7 @@ class CharacterizationProtocol(Protocol):
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
+        save_image: bool = False,
     ) -> dict:
         """
         Scans the control frequencies to find the qubit frequencies.
@@ -775,6 +776,8 @@ class CharacterizationProtocol(Protocol):
             Interval between shots.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the plot as an image. Defaults to False.
 
         Returns
         -------
@@ -793,6 +796,8 @@ class CharacterizationProtocol(Protocol):
         target_rabi_rate: float = RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
     ): ...
 
     def qubit_spectroscopy(

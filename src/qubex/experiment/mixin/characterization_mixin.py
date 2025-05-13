@@ -1486,7 +1486,7 @@ class CharacterizationMixin(
         phases_diff_std = np.std(phases_diff)
         peaks, _ = find_peaks(
             np.abs(phases_diff),
-            height=min(0.5, phases_diff_std * 3),
+            height=phases_diff_std * 2,
             distance=10,
         )
         peak_freqs = frequency_range[peaks]
@@ -1816,6 +1816,7 @@ class CharacterizationMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
+        save_image: bool = False,
     ) -> dict:
         # control and readout pulses
         qubit = Target.qubit_label(target)
@@ -1914,7 +1915,7 @@ class CharacterizationMixin(
         phases_unwrap_std = np.std(phases_unwrap)
         peaks, _ = find_peaks(
             np.abs(phases_unwrap),
-            height=min(0.5, phases_unwrap_std * 2),
+            height=phases_unwrap_std * 3,
             distance=10,
         )
         peak_freqs = frequency_range[peaks]
@@ -2017,6 +2018,14 @@ class CharacterizationMixin(
             if anharmonicity is not None:
                 print(f"  anharmonicity: {anharmonicity:.4f} GHz")
 
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"qubit_frequency_scan_{qubit}",
+                width=600,
+                height=450,
+            )
+
         return {
             "peaks": peak_freqs,
             "frequency_guess": {
@@ -2044,6 +2053,8 @@ class CharacterizationMixin(
         target_rabi_rate: float = RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
     ):
         frequency_range = np.asarray(frequency_range)
         qubit_label = Target.qubit_label(target)
@@ -2059,20 +2070,48 @@ class CharacterizationMixin(
             readout_amplitude=readout_amplitude,
             shots=shots,
             interval=interval,
+            plot=plot,
+            save_image=save_image,
         )["phases"]
         result = fitting.fit_sqrt_lorentzian(
             target=target,
             x=frequency_range,
             y=data,
+            plot=plot,
             title="Qubit resonance fit",
         )
         rabi_rate = result["Omega"]
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
-        print("")
-        print(f"Control amplitude estimation : {target}")
-        print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
-        print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
+        if plot:
+            fig = result["fig"]
+            fig.update_layout(
+                title=dict(
+                    text=f"Control amplitude estimation : {target}",
+                    subtitle=dict(
+                        text=f"readout_amplitude={readout_amplitude}",
+                        font=dict(size=13, family="monospace"),
+                    ),
+                ),
+                xaxis_title="Control frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
+                width=600,
+                height=300,
+            )
+            fig.show()
+
+            print("")
+            print(f"Control amplitude estimation : {target}")
+            print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
+            print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
+
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"control_amplitude_estimation_{target}",
+                width=600,
+                height=300,
+            )
         return estimated_amplitude
 
     def qubit_spectroscopy(
