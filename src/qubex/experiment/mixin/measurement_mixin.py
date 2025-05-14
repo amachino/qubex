@@ -17,13 +17,21 @@ from ...analysis import IQPlotter, fitting
 from ...analysis import visualization as viz
 from ...backend import Target
 from ...measurement import (
+    MeasureData,
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
     StateClassifierGMM,
     StateClassifierKMeans,
 )
-from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
+from ...measurement.measurement import (
+    DEFAULT_CAPTURE_DELAY,
+    DEFAULT_CAPTURE_WINDOW,
+    DEFAULT_INTERVAL,
+    DEFAULT_READOUT_DURATION,
+    DEFAULT_SHOTS,
+    SAMPLING_PERIOD,
+)
 from ...pulse import (
     Blank,
     FlatTop,
@@ -63,7 +71,7 @@ class MeasurementMixin(
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         add_last_measurement: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -90,13 +98,15 @@ class MeasurementMixin(
         initial_states: dict[str, str] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
+        capture_delay_words: int | None = None,
+        _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
         control_window = control_window or self.control_window
         capture_window = capture_window or self.capture_window
@@ -155,6 +165,8 @@ class MeasurementMixin(
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
+                capture_delay_words=capture_delay_words,
+                _use_sequencer_execute=_use_sequencer_execute,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -168,7 +180,48 @@ class MeasurementMixin(
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
                     readout_amplitudes=readout_amplitudes,
+                    capture_delay_words=capture_delay_words,
+                    _use_sequencer_execute=_use_sequencer_execute,
                 )
+        if plot:
+            result.plot()
+        return result
+
+    def measure_readout_waveform(
+        self,
+        *,
+        target: str | None = None,
+        frequency: float | None = None,
+        amplitude: float | None = None,
+        duration: float = DEFAULT_READOUT_DURATION,
+        capture_window: float = DEFAULT_CAPTURE_WINDOW,
+        capture_delay: float = DEFAULT_CAPTURE_DELAY,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = False,
+    ) -> MeasureData:
+        if target is None:
+            target = self.qubit_labels[0]
+        qubit = Target.qubit_label(target)
+        resonator = Target.read_label(target)
+        if frequency is None:
+            frequency = self.resonators[qubit].frequency
+        if amplitude is None:
+            amplitude = self.params.readout_amplitude[qubit]
+        capture_delay_words = int(capture_delay // 8)
+        with self.modified_frequencies({resonator: frequency}):
+            result = self.measure(
+                sequence={qubit: np.zeros(0)},
+                mode=mode,
+                shots=shots,
+                interval=interval,
+                readout_duration=duration,
+                readout_amplitudes={qubit: amplitude},
+                capture_window=capture_window,
+                capture_delay_words=capture_delay_words,
+                _use_sequencer_execute=False,
+            ).data[qubit]
         if plot:
             result.plot()
         return result
@@ -181,11 +234,11 @@ class MeasurementMixin(
         *,
         mode: Literal["single", "avg"] = "single",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         targets = []
@@ -230,10 +283,10 @@ class MeasurementMixin(
         frequencies: dict[str, float] | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
+        interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
         plot: bool = True,
         title: str = "Sweep result",
         xlabel: str = "Sweep value",
@@ -270,18 +323,17 @@ class MeasurementMixin(
         signals = defaultdict(list)
         plotter = IQPlotter(self.state_centers)
 
-        generator = self.measurement.measure_batch(
-            waveforms_list=sequences,
-            mode="avg",
-            shots=shots,
-            interval=interval,
-            control_window=control_window or self.control_window,
-            capture_window=capture_window or self.capture_window,
-            capture_margin=capture_margin or self.capture_margin,
-        )
-
         with self.modified_frequencies(frequencies):
-            for result in generator:
+            for seq in sequences:
+                result = self.measure(
+                    seq,
+                    mode="avg",
+                    shots=shots,
+                    interval=interval,
+                    control_window=control_window or self.control_window,
+                    capture_window=capture_window or self.capture_window,
+                    capture_margin=capture_margin or self.capture_margin,
+                )
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
                 if plot:
@@ -314,7 +366,7 @@ class MeasurementMixin(
         *,
         repetitions: int = 20,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[SweepData]:
         def repeated_sequence(N: int) -> PulseSchedule:
@@ -352,7 +404,7 @@ class MeasurementMixin(
         frequencies: dict[str, float] | None = None,
         is_damped: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = True,
         simultaneous: bool = False,
@@ -412,7 +464,7 @@ class MeasurementMixin(
         time_range: ArrayLike = RABI_TIME_RANGE,
         is_damped: bool = True,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         if targets is None:
@@ -461,7 +513,7 @@ class MeasurementMixin(
         detuning: float | None = None,
         is_damped: bool = True,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]:
@@ -562,7 +614,7 @@ class MeasurementMixin(
         detuning: float | None = None,
         is_damped: bool = True,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]:
@@ -655,7 +707,7 @@ class MeasurementMixin(
         *,
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> list[MeasureResult]:
         if targets is None:
@@ -693,7 +745,7 @@ class MeasurementMixin(
         save_classifier: bool = True,
         save_dir: Path | str | None = None,
         shots: int = 8192,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -799,7 +851,7 @@ class MeasurementMixin(
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict[str, tuple[float, float, float]]:
         if isinstance(sequence, PulseSchedule):
@@ -884,7 +936,7 @@ class MeasurementMixin(
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, NDArray[np.float64]]:
         buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
@@ -917,7 +969,7 @@ class MeasurementMixin(
         initial_state: TargetMap[str] | None = None,
         n_samples: int | None = 100,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> TargetMap[NDArray[np.float64]]:
         self.validate_rabi_params()
@@ -1037,7 +1089,7 @@ class MeasurementMixin(
         *,
         fit_gmm: bool = False,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         if self.classifiers is None:
             raise ValueError("Classifiers are not built. Run `build_classifier` first.")
@@ -1077,7 +1129,7 @@ class MeasurementMixin(
         scatter_mode: str = "lines+markers",
         show_error: bool = True,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         if isinstance(params_list[0], int):
             x = params_list
@@ -1150,7 +1202,7 @@ class MeasurementMixin(
         target_basis: str = "Z",
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -1247,7 +1299,7 @@ class MeasurementMixin(
         readout_mitigation: bool = True,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:

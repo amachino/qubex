@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import logging
 import re
-from typing import Collection, Final, Literal
+from typing import Collection, Final, Literal, Optional
 
 import numpy as np
 from pydantic.dataclasses import dataclass
 
 from .control_system import (
     Box,
+    BoxType,
     CapPort,
     ControlSystem,
     GenPort,
@@ -16,6 +18,8 @@ from .control_system import (
 from .model import Model
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
 from .target import CapTarget, Target
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONTROL_AMPLITUDE: Final = 0.03
 DEFAULT_READOUT_AMPLITUDE: Final = 0.01
@@ -33,6 +37,7 @@ LO_STEP = 500_000_000
 NCO_STEP = 23_437_500
 CNCO_CENTER_CTRL = 2_250_000_000
 CNCO_CETNER_READ = 1_500_000_000
+CNCO_CETNER_READ_R8 = 2_250_000_000
 FNCO_MAX = 750_000_000
 AWG_MAX = 250_000_000
 
@@ -56,7 +61,7 @@ class QubitPortSet(Model):
 class ControlParams(Model):
     control_amplitude: dict[str, float]
     readout_amplitude: dict[str, float]
-    control_vatt: dict[str, int]
+    control_vatt: dict[str, Optional[int]]
     readout_vatt: dict[int, int]
     pump_vatt: dict[int, int]
     control_fsc: dict[str, int]
@@ -71,7 +76,7 @@ class ControlParams(Model):
     def get_readout_amplitude(self, qubit: str) -> float:
         return self.readout_amplitude.get(qubit, DEFAULT_READOUT_AMPLITUDE)
 
-    def get_control_vatt(self, qubit: str) -> int:
+    def get_control_vatt(self, qubit: str) -> int | None:
         return self.control_vatt.get(qubit, DEFAULT_CONTROL_VATT)
 
     def get_readout_vatt(self, mux: int) -> int:
@@ -226,6 +231,22 @@ class ExperimentSystem:
             box_ids.add(ports.read_in_port.box_id)
         return [self.get_box(box_id) for box_id in box_ids]
 
+    def get_control_box_for_qubit(self, qubit: int | str) -> Box:
+        if isinstance(qubit, int):
+            qubit = self.qubits[qubit].label
+        ports = self.get_qubit_port_set(qubit)
+        if ports is None:
+            raise ValueError(f"QubitPortSet for `{qubit}` not found.")
+        return self.get_box(ports.ctrl_port.box_id)
+
+    def get_readout_box_for_qubit(self, qubit: int | str) -> Box:
+        if isinstance(qubit, int):
+            qubit = self.qubits[qubit].label
+        ports = self.get_qubit_port_set(qubit)
+        if ports is None:
+            raise ValueError(f"QubitPortSet for `{qubit}` not found.")
+        return self.get_box(ports.read_out_port.box_id)
+
     def get_target(self, label: str) -> Target:
         try:
             return self._gen_target_dict[label]
@@ -268,13 +289,23 @@ class ExperimentSystem:
             raise ValueError(f"Qubit `{qubit}` not found.")
         return ports.ctrl_port
 
-    def get_base_frequency(self, label: str) -> float:
+    def get_nco_frequency(self, label: str) -> float:
         target = self.get_target(label)
-        return target.coarse_frequency
+        return target.fine_frequency
 
-    def get_diff_frequency(self, label: str) -> float:
+    def get_awg_frequency(self, label: str) -> float:
         target = self.get_target(label)
-        return round(target.frequency - self.get_base_frequency(label), 10)
+        if target.channel.port.sideband == "U":
+            f_awg = target.frequency - self.get_nco_frequency(label)
+        elif target.channel.port.sideband == "L":
+            f_awg = self.get_nco_frequency(label) - target.frequency
+        elif target.channel.port.sideband is None:
+            f_awg = self.get_nco_frequency(label)
+        else:
+            raise ValueError(
+                f"Invalid sideband `{target.channel.port.sideband}` for target `{label}`.",
+            )
+        return round(f_awg, 10)
 
     def get_mux_by_readout_port(self, port: GenPort | CapPort) -> Mux | None:
         if isinstance(port, CapPort):
@@ -329,7 +360,7 @@ class ExperimentSystem:
         self,
         label: str,
         *,
-        lo_freq: int,
+        lo_freq: int | None,
         cnco_freq: int,
         fnco_freq: int,
     ):
@@ -346,7 +377,7 @@ class ExperimentSystem:
             gen_channel.fnco_freq = fnco_freq
             if target.is_read:
                 cap_channel = self.get_read_in_target(label).channel
-                cap_channel.port.lo_freq = lo_freq
+                cap_channel.port.lo_freq = lo_freq  # type: ignore
                 cap_channel.port.cnco_freq = cnco_freq
                 cap_channel.fnco_freq = fnco_freq
         except Exception as e:
@@ -358,7 +389,7 @@ class ExperimentSystem:
             ) = original_values
             if target.is_read:
                 (
-                    cap_channel.port.lo_freq,
+                    cap_channel.port.lo_freq,  # type: ignore
                     cap_channel.port.cnco_freq,
                     cap_channel.fnco_freq,
                 ) = original_values
@@ -399,21 +430,38 @@ class ExperimentSystem:
                 if isinstance(port, GenPort):
                     port.rfswitch = "pass"
                     if port.type == PortType.READ_OUT:
-                        self._configure_readout_port(port, params)
+                        self._configure_readout_port(
+                            box=box,
+                            port=port,
+                            params=params,
+                        )
                     elif port.type == PortType.CTRL:
-                        self._configure_control_port(port, params, mode)
+                        self._configure_control_port(
+                            box=box,
+                            port=port,
+                            params=params,
+                            mode=mode,
+                        )
                     elif port.type == PortType.PUMP:
-                        self._configure_pump_port(port, params)
+                        self._configure_pump_port(
+                            port=port,
+                            params=params,
+                        )
                 elif isinstance(port, CapPort):
                     port.rfswitch = "open"
                     if port.type == PortType.READ_IN:
-                        self._configure_capture_port(port, params)
+                        self._configure_capture_port(
+                            box=box,
+                            port=port,
+                            params=params,
+                        )
 
         self._gen_target_dict = dict(sorted(self._gen_target_dict.items()))
         self._cap_target_dict = dict(sorted(self._cap_target_dict.items()))
 
     def _configure_control_port(
         self,
+        box: Box,
         port: GenPort,
         params: ControlParams,
         mode: Literal["ge-ef-cr", "ge-cr-cr"],
@@ -421,15 +469,27 @@ class ExperimentSystem:
         qubit = self.get_qubit_by_control_port(port)
         if qubit is None or not qubit.is_valid:
             return
+
+        if box.type == BoxType.QUEL1SE_R8:
+            ssb = None
+            min_frequency = 0.0
+            vatt = None
+        else:
+            ssb = "L"
+            min_frequency = 6.5e9
+            vatt = params.get_control_vatt(qubit.label)
+
         config = self._create_control_configuration(
             mode=mode,
             qubit=qubit,
             n_channels=port.n_channels,
+            ssb=ssb,
+            min_frequency=min_frequency,
         )
         port.lo_freq = config["lo"]
         port.cnco_freq = config["cnco"]
-        port.sideband = "L"
-        port.vatt = params.get_control_vatt(qubit.label)
+        port.sideband = ssb
+        port.vatt = vatt
         port.fullscale_current = params.get_control_fsc(qubit.label)
         for idx, gen_channel in enumerate(port.channels):
             gen_channel.fnco_freq = config["channels"][idx]["fnco"]
@@ -542,21 +602,44 @@ class ExperimentSystem:
 
     def _configure_readout_port(
         self,
+        box: Box,
         port: GenPort,
         params: ControlParams,
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
-        if mux is None or not mux.is_valid:
+        if mux is None:
+            logger.warning(
+                f"Readout port `{port.id}` not connected to a mux. Skipping configuration.",
+            )
             return
-        config = self._create_readout_configuration(mux)
+        if mux.is_not_available:
+            return
+
+        if box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
+
+        config = self._create_readout_configuration(
+            mux,
+            ssb=ssb,
+            cnco_center=cnco_center,
+        )
         port.lo_freq = config["lo"]
         port.cnco_freq = config["cnco"]
-        port.sideband = "U"
+        port.sideband = ssb
         port.vatt = params.get_readout_vatt(mux.index)
         port.fullscale_current = params.get_readout_fsc(mux.index)
         port.channels[0].fnco_freq = config["fnco"]
 
         for resonator in mux.resonators:
+            if not resonator.is_valid:
+                logger.debug(
+                    f"Resonator `{resonator.label}` not valid. Skipping configuration.",
+                )
+                continue
             read_out_target = Target.new_read_target(
                 resonator=resonator,
                 channel=port.channels[0],
@@ -565,13 +648,32 @@ class ExperimentSystem:
 
     def _configure_capture_port(
         self,
+        box: Box,
         port: CapPort,
         params: ControlParams,
     ) -> None:
         mux = self.get_mux_by_readout_port(port)
-        if mux is None or not mux.is_valid:
+        if mux is None:
+            logger.warning(
+                f"Capture port `{port.id}` not connected to a mux. Skipping configuration.",
+            )
             return
-        config = self._create_readout_configuration(mux)
+
+        if mux.is_not_available:
+            return
+
+        if box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
+
+        config = self._create_readout_configuration(
+            mux,
+            ssb=ssb,
+            cnco_center=cnco_center,
+        )
         port.lo_freq = config["lo"]
         port.cnco_freq = config["cnco"]
         for cap_channel in port.channels:
@@ -579,6 +681,11 @@ class ExperimentSystem:
             cap_channel.ndelay = params.get_capture_delay(mux.index)
 
         for idx, resonator in enumerate(mux.resonators):
+            if not resonator.is_valid:
+                logger.debug(
+                    f"Resonator `{resonator.label}` not valid. Skipping configuration.",
+                )
+                continue
             read_in_target = CapTarget.new_read_target(
                 resonator=resonator,
                 channel=port.channels[idx],
@@ -608,7 +715,8 @@ class ExperimentSystem:
         dict[str, int]
             The dictionary containing the lo, cnco, and fnco values.
         """
-        freqs = [resonator.frequency * 1e9 for resonator in mux.resonators]
+        resonators = [resonator for resonator in mux.resonators if resonator.is_valid]
+        freqs = [resonator.frequency * 1e9 for resonator in resonators]
         f_target = (max(freqs) + min(freqs)) / 2
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
             f=f_target,
@@ -633,7 +741,7 @@ class ExperimentSystem:
         n_channels: int,
         *,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        ssb: Literal["U", "L"] = "L",
+        ssb: Literal["U", "L"] | None = "L",
         cnco_center: int = CNCO_CENTER_CTRL,
         min_frequency: float = 6.5e9,
     ) -> dict:
@@ -899,35 +1007,48 @@ class MixingUtil:
     @staticmethod
     def calc_lo_cnco(
         f: float,
-        ssb: Literal["U", "L"],
         cnco_center: int,
+        ssb: Literal["U", "L"] | None,
         lo_step: int = LO_STEP,
         nco_step: int = NCO_STEP,
-    ) -> tuple[int, int, int]:
-        if ssb == "U":
-            lo = round((f - cnco_center) / lo_step) * lo_step
-            cnco = round((f - lo) / nco_step) * nco_step
-        elif ssb == "L":
-            lo = round((f + cnco_center) / lo_step) * lo_step
-            cnco = round((lo - f) / nco_step) * nco_step
+    ) -> tuple[int | None, int, int]:
+        if ssb is None:
+            lo = None
+            cnco = round(f / nco_step) * nco_step
+            f_mix = cnco
         else:
-            raise ValueError("Invalid SSB")
-        f_mix = lo + cnco if ssb == "U" else lo - cnco
+            if ssb == "U":
+                lo = round((f - cnco_center) / lo_step) * lo_step
+                cnco = round((f - lo) / nco_step) * nco_step
+            elif ssb == "L":
+                lo = round((f + cnco_center) / lo_step) * lo_step
+                cnco = round((lo - f) / nco_step) * nco_step
+            else:
+                raise ValueError("Invalid SSB")
+            f_mix = lo + cnco if ssb == "U" else lo - cnco
         return lo, cnco, f_mix
 
     @staticmethod
     def calc_fnco(
         f: float,
-        ssb: Literal["U", "L"],
-        lo: int,
+        ssb: Literal["U", "L"] | None,
+        lo: int | None,
         cnco: int,
         nco_step: int = NCO_STEP,
     ) -> tuple[int, int]:
-        if ssb == "U":
-            fnco = round((f - (lo + cnco)) / nco_step) * nco_step
-        elif ssb == "L":
-            fnco = round(((lo - cnco) - f) / nco_step) * nco_step
+        if ssb is None and lo is None:
+            fnco = round((f - cnco) / nco_step) * nco_step
+            f_mix = cnco + fnco
+        elif lo is None:
+            raise ValueError("LO frequency is required when SSB is not None.")
+        elif ssb is None:
+            raise ValueError("SSB is required when LO frequency is not None.")
         else:
-            raise ValueError("Invalid SSB")
-        f_mix = lo + cnco + fnco if ssb == "U" else lo - cnco - fnco
+            if ssb == "U":
+                fnco = round((f - (lo + cnco)) / nco_step) * nco_step
+            elif ssb == "L":
+                fnco = round(((lo - cnco) - f) / nco_step) * nco_step
+            else:
+                raise ValueError("Invalid SSB")
+            f_mix = lo + cnco + fnco if ssb == "U" else lo - cnco - fnco
         return fnco, f_mix

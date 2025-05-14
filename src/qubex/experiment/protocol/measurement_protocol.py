@@ -26,7 +26,7 @@ class MeasurementProtocol(Protocol):
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         add_last_measurement: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -44,7 +44,7 @@ class MeasurementProtocol(Protocol):
             Measurement mode. Defaults to "avg".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         add_last_measurement : bool, optional
             Whether to add the last measurement. Defaults to False.
@@ -84,11 +84,11 @@ class MeasurementProtocol(Protocol):
         initial_states: dict[str, str] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
     ) -> MeasureResult:
@@ -107,15 +107,15 @@ class MeasurementProtocol(Protocol):
             Measurement mode. Defaults to "avg".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
+        control_window : float, optional
             Control window. Defaults to None.
-        capture_window : int, optional
+        capture_window : float, optional
             Capture window. Defaults to None.
-        capture_margin : int, optional
+        capture_margin : float, optional
             Capture margin. Defaults to None.
-        readout_duration : int, optional
+        readout_duration : float, optional
             Readout duration. Defaults to None.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target. Defaults to None.
@@ -147,11 +147,11 @@ class MeasurementProtocol(Protocol):
         *,
         mode: Literal["single", "avg"] = "single",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -165,15 +165,15 @@ class MeasurementProtocol(Protocol):
             Measurement mode. Defaults to "single".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
+        control_window : float, optional
             Control window. Defaults to None.
-        capture_window : int, optional
+        capture_window : float, optional
             Capture window. Defaults to None.
-        capture_margin : int, optional
+        capture_margin : float, optional
             Capture margin. Defaults to None.
-        readout_duration : int, optional
+        readout_duration : float, optional
             Readout duration. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
@@ -204,10 +204,10 @@ class MeasurementProtocol(Protocol):
         frequencies: dict[str, float] | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
+        interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
         plot: bool = True,
         title: str = "Sweep result",
         xlabel: str = "Sweep value",
@@ -230,13 +230,13 @@ class MeasurementProtocol(Protocol):
             Frequencies of the qubits. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : int, optional
+        control_window : float, optional
             Control window. Defaults to None.
-        capture_window : int, optional
+        capture_window : float, optional
             Capture window. Defaults to None.
-        capture_margin : int, optional
+        capture_margin : float, optional
             Capture margin. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -274,7 +274,7 @@ class MeasurementProtocol(Protocol):
         *,
         repetitions: int = 20,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[SweepData]:
         """
@@ -288,7 +288,7 @@ class MeasurementProtocol(Protocol):
             Number of repetitions. Defaults to 20.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -316,7 +316,7 @@ class MeasurementProtocol(Protocol):
         frequencies: dict[str, float] | None = None,
         is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = True,
         simultaneous: bool = False,
@@ -329,7 +329,7 @@ class MeasurementProtocol(Protocol):
         time_range: ArrayLike = RABI_TIME_RANGE,
         is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]: ...
 
@@ -342,7 +342,7 @@ class MeasurementProtocol(Protocol):
         detuning: float | None = None,
         is_damped: bool = False,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]: ...
@@ -356,7 +356,7 @@ class MeasurementProtocol(Protocol):
         detuning: float | None = None,
         is_damped: bool = False,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]: ...
@@ -367,7 +367,7 @@ class MeasurementProtocol(Protocol):
         *,
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> list[MeasureResult]: ...
 
@@ -379,7 +379,7 @@ class MeasurementProtocol(Protocol):
         save_classifier: bool = True,
         save_dir: Path | str | None = None,
         shots: int = 8192,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict: ...
 
@@ -390,7 +390,7 @@ class MeasurementProtocol(Protocol):
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = False,
     ) -> dict[str, tuple[float, float, float]]:
         """
@@ -406,7 +406,7 @@ class MeasurementProtocol(Protocol):
             Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
@@ -429,7 +429,7 @@ class MeasurementProtocol(Protocol):
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, NDArray[np.float64]]:
         """
@@ -445,7 +445,7 @@ class MeasurementProtocol(Protocol):
             Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
@@ -465,7 +465,7 @@ class MeasurementProtocol(Protocol):
         initial_state: TargetMap[str] | None = None,
         n_samples: int = 100,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> TargetMap[NDArray[np.float64]]:
         """
@@ -481,7 +481,7 @@ class MeasurementProtocol(Protocol):
             Initial state of each target. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
@@ -494,7 +494,7 @@ class MeasurementProtocol(Protocol):
         *,
         fit_gmm: bool = False,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measures the state populations of the target qubits.
@@ -507,7 +507,7 @@ class MeasurementProtocol(Protocol):
             Whether to fit the data with a Gaussian mixture model. Defaults to False
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -535,7 +535,7 @@ class MeasurementProtocol(Protocol):
         scatter_mode: str = "lines+markers",
         show_error: bool = True,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measures the population dynamics of the target qubits.
@@ -552,7 +552,7 @@ class MeasurementProtocol(Protocol):
             Label of the x-axis. Defaults to "Index".
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
 
         Returns
@@ -579,7 +579,7 @@ class MeasurementProtocol(Protocol):
         target_basis: str = "Z",
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict: ...
@@ -591,7 +591,7 @@ class MeasurementProtocol(Protocol):
         *,
         zx90: PulseSchedule | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict: ...

@@ -9,12 +9,18 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
+from scipy.signal import find_peaks
 from tqdm import tqdm
 
 from ...analysis import fitting
 from ...analysis import visualization as viz
 from ...analysis.fitting import RabiParam
-from ...backend import MixingUtil, Target
+from ...backend import BoxType, MixingUtil, Target
+from ...backend.experiment_system import (
+    CNCO_CENTER_CTRL,
+    CNCO_CETNER_READ,
+    CNCO_CETNER_READ_R8,
+)
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
 from ...pulse import CPMG, Blank, FlatTop, Gaussian, PulseSchedule, Rect, Waveform
 from ...typing import TargetMap
@@ -44,12 +50,12 @@ class CharacterizationMixin(
         targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -102,11 +108,11 @@ class CharacterizationMixin(
         *,
         amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
-        readout_duration: int | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -206,10 +212,10 @@ class CharacterizationMixin(
         *,
         time_range: ArrayLike = np.arange(128, 2048, 128),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_margin: int | None = None,
+        capture_margin: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -313,7 +319,7 @@ class CharacterizationMixin(
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -409,22 +415,24 @@ class CharacterizationMixin(
                     )
                 )
                 fig.update_layout(
-                    title=f"Chevron pattern : {target}",
+                    title=dict(
+                        text=f"Chevron pattern : {target}",
+                        subtitle=dict(
+                            text=f"control_amplitude={amplitudes[target]}",
+                            font=dict(
+                                size=13,
+                                family="monospace",
+                            ),
+                        ),
+                    ),
                     xaxis_title="Drive frequency (GHz)",
                     yaxis_title="Time (ns)",
                     width=600,
                     height=400,
+                    margin=dict(t=80),
                 )
                 if plot:
                     fig.show()
-
-                if save_image:
-                    viz.save_figure_image(
-                        fig,
-                        name=f"chevron_pattern_{target}",
-                        width=600,
-                        height=400,
-                    )
 
                 fit_result = fitting.fit_detuned_rabi(
                     target=target,
@@ -433,6 +441,22 @@ class CharacterizationMixin(
                     plot=plot,
                 )
                 resonant_frequencies[target] = fit_result["f_resonance"]
+
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"chevron_pattern_{target}",
+                        width=600,
+                        height=400,
+                    )
+                    fig_fit = fit_result["fig"]
+                    if fig_fit is not None:
+                        viz.save_figure_image(
+                            fig_fit,
+                            name=f"chevron_pattern_fit_{target}",
+                            width=600,
+                            height=300,
+                        )
 
         rabi_rates = dict(sorted(rabi_rates.items()))
         chevron_data = dict(sorted(chevron_data.items()))
@@ -455,7 +479,7 @@ class CharacterizationMixin(
         time_range: ArrayLike = np.arange(0, 101, 4),
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[FreqRabiData]:
         if targets is None:
@@ -532,7 +556,7 @@ class CharacterizationMixin(
         time_range: ArrayLike = RABI_TIME_RANGE,
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[AmplRabiData]:
         if targets is None:
@@ -589,7 +613,7 @@ class CharacterizationMixin(
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
         result = self.chevron_pattern(
@@ -617,7 +641,7 @@ class CharacterizationMixin(
         detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
         time_range: ArrayLike = np.arange(0, 101, 4),
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict[str, float]:
         if targets is None:
@@ -663,8 +687,9 @@ class CharacterizationMixin(
         time_range: ArrayLike = range(0, 101, 4),
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = False,
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
@@ -722,6 +747,16 @@ class CharacterizationMixin(
             if "f0" in fit_result:
                 fit_data[target] = fit_result["f0"]
 
+            if save_image:
+                fig = fit_result["fig"]
+                if fig is not None:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"readout_frequency_{target}",
+                        width=600,
+                        height=300,
+                    )
+
         print("\nResults\n-------")
         for target, freq in fit_data.items():
             print(f"{target}: {freq:.6f}")
@@ -734,7 +769,7 @@ class CharacterizationMixin(
         *,
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
         xaxis_type: Literal["linear", "log"] = "log",
@@ -831,7 +866,7 @@ class CharacterizationMixin(
         n_cpmg: int = 1,
         pi_cpmg: Waveform | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[T2Data]:
@@ -936,7 +971,7 @@ class CharacterizationMixin(
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[RamseyData]:
@@ -1046,7 +1081,7 @@ class CharacterizationMixin(
         time_range: ArrayLike = np.arange(0, 10001, 100),
         detuning: float = 0.001,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -1108,7 +1143,7 @@ class CharacterizationMixin(
         x90: Waveform | TargetMap[Waveform] | None = None,
         x180: Waveform | TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
         if x90 is None:
@@ -1187,7 +1222,7 @@ class CharacterizationMixin(
         x90: Waveform | TargetMap[Waveform] | None = None,
         x180: Waveform | TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
         qubit_1 = target_qubit
@@ -1234,19 +1269,29 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike = np.arange(10.05, 10.1, 0.002),
-        amplitude: float = 0.01,
+        frequency_range: ArrayLike | None = None,
+        amplitude: float | None = None,
         subrange_width: float = 0.3,
         shots: int = 128,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
     ) -> float:
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
 
+        if amplitude is None:
+            amplitude = self.params.readout_amplitude[qubit_label]
+
+        if frequency_range is None:
+            if read_box.type == BoxType.QUEL1SE_R8:
+                frequency_range = np.arange(5.90, 5.95, 0.002)
+            else:
+                frequency_range = np.arange(9.90, 9.95, 0.002)
+        else:
+            frequency_range = np.array(frequency_range)
         # split frequency range to avoid the frequency sweep range limit
-        frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
             frequency_range=frequency_range,
             subrange_width=subrange_width,
@@ -1260,13 +1305,20 @@ class CharacterizationMixin(
         # phase offset to avoid the phase jump after changing the LO/NCO frequency
         phase_offset = 0.0
 
+        if read_box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
+
         for subrange in subranges:
             # change LO/NCO frequency to the center of the subrange
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
-                ssb="U",
-                cnco_center=1_500_000_000,
+                ssb=ssb,
+                cnco_center=cnco_center,
             )
             with self.state_manager.modified_device_settings(
                 label=read_label,
@@ -1310,7 +1362,13 @@ class CharacterizationMixin(
                         idx += 1
 
         # fit the phase shift
-        x, y = frequency_range, np.unwrap(phases)
+        unwrapped = np.unwrap(phases)
+        diff = np.diff(unwrapped)
+        shift_steps = np.where(diff < 0, 2 * np.pi, 0)
+        cum_shift = np.cumsum(np.insert(shift_steps, 0, 0))
+        unwrapped += cum_shift
+
+        x, y = frequency_range, unwrapped
         coefficients = np.polyfit(x, y, 1)
         y_fit = np.polyval(coefficients, x)
 
@@ -1343,16 +1401,30 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike = np.arange(9.75, 10.75, 0.002),
-        amplitude: float = 0.01,
+        frequency_range: ArrayLike | None = None,
+        amplitude: float | None = None,
         phase_shift: float | None = None,
         subrange_width: float = 0.3,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
-        frequency_range = np.array(frequency_range)
+        read_label = Target.read_label(target)
+        qubit_label = Target.qubit_label(target)
+        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+
+        if frequency_range is None:
+            if read_box.type == BoxType.QUEL1SE_R8:
+                frequency_range = np.arange(5.75, 6.75, 0.002)
+            else:
+                frequency_range = np.arange(9.75, 10.75, 0.002)
+        else:
+            frequency_range = np.array(frequency_range)
+
+        if amplitude is None:
+            amplitude = self.params.readout_amplitude[qubit_label]
 
         # measure phase shift if not provided
         if phase_shift is None:
@@ -1365,10 +1437,6 @@ class CharacterizationMixin(
                 plot=plot,
             )
 
-        read_label = Target.read_label(target)
-        qubit_label = Target.qubit_label(target)
-        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
-
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
@@ -1376,18 +1444,29 @@ class CharacterizationMixin(
             subrange_width=subrange_width,
         )
 
+        bounds = [
+            subranges[0][0],
+        ] + [subrange[-1] for subrange in subranges]
+
         phases: list[float] = []
         signals: list[complex] = []
 
         idx = 0
         phase_offset = 0.0
 
+        if read_box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
+
         for subrange in subranges:
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
-                ssb="U",
-                cnco_center=1_500_000_000,
+                ssb=ssb,
+                cnco_center=cnco_center,
             )
             with self.state_manager.modified_device_settings(
                 label=read_label,
@@ -1430,14 +1509,22 @@ class CharacterizationMixin(
                         idx += 1
 
         phases_unwrap = np.unwrap(phases)
-        phases_diff = np.abs(np.diff(phases_unwrap))
+        phases_unwrap -= phases_unwrap[0]
+        phases_diff = np.gradient(phases_unwrap)
+        phases_diff -= np.median(phases_diff)
+        phases_diff_std = np.std(phases_diff)
+        peaks, _ = find_peaks(
+            np.abs(phases_diff),
+            height=phases_diff_std * 2,
+            distance=10,
+        )
+        peak_freqs = frequency_range[peaks]
 
         fig1 = make_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,
             vertical_spacing=0.05,
-            # subplot_titles=["Phase", "Amplitude"],
         )
         fig1.add_scatter(
             name=target,
@@ -1455,12 +1542,30 @@ class CharacterizationMixin(
             x=frequency_range,
             y=np.abs(signals),
         )
+        for bound in bounds:
+            fig1.add_vline(
+                x=bound,
+                line_width=1,
+                line_color="black",
+                line_dash="dot",
+                opacity=0.1,
+            )
         fig1.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
         fig1.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
         fig1.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
         fig1.update_layout(
-            title=f"Resonator frequency scan : {mux.label}",
+            title=dict(
+                text=f"Resonator frequency scan : {mux.label}",
+                subtitle=dict(
+                    text=f"readout_amplitude={amplitude}",
+                    font=dict(
+                        size=13,
+                        family="monospace",
+                    ),
+                ),
+            ),
             height=450,
+            margin=dict(t=80),
             showlegend=False,
         )
 
@@ -1471,15 +1576,62 @@ class CharacterizationMixin(
             x=frequency_range,
             y=phases_diff,
         )
+        for bound in bounds:
+            fig2.add_vline(
+                x=bound,
+                line_width=1,
+                line_color="black",
+                line_dash="dot",
+                opacity=0.1,
+            )
+        for freq in peak_freqs:
+            fig2.add_vline(
+                x=freq,
+                line_width=2,
+                line_color="red",
+                opacity=0.6,
+            )
+            fig2.add_annotation(
+                x=freq,
+                y=0.03,
+                xref="x",
+                yref="paper",
+                xanchor="left",
+                xshift=3,
+                yanchor="bottom",
+                text=f"<b>{freq:.3f}</b>",
+                showarrow=False,
+                font=dict(
+                    size=9,
+                    color="red",
+                    family="sans-serif",
+                ),
+                opacity=0.6,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+            )
+
         fig2.update_layout(
-            title=f"Resonator frequency scan : {mux.label}",
+            title=dict(
+                text=f"Resonator frequency scan : {mux.label}",
+                subtitle=dict(
+                    text=f"readout_amplitude={amplitude}",
+                    font=dict(
+                        size=13,
+                        family="monospace",
+                    ),
+                ),
+            ),
             xaxis_title="Readout frequency (GHz)",
             yaxis_title="Phase diff (rad)",
+            margin=dict(t=80),
         )
 
         if plot:
             fig1.show()
             fig2.show()
+            print("Found peaks:")
+            for peak in peak_freqs:
+                print(f"  {peak:.4f}")
 
         if save_image:
             viz.save_figure_image(
@@ -1494,7 +1646,9 @@ class CharacterizationMixin(
             )
 
         return {
+            "peaks": peak_freqs,
             "frequency_range": frequency_range,
+            "subranges": subranges,
             "signals": np.array(signals),
             "phases_diff": phases_diff,
             "fig_phase": fig1,
@@ -1505,18 +1659,26 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike = np.arange(9.75, 10.75, 0.002),
+        frequency_range: ArrayLike | None = None,
         power_range: ArrayLike = np.arange(-60, 5, 5),
         phase_shift: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
-        frequency_range = np.array(frequency_range)
         power_range = np.array(power_range)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+
+        if frequency_range is None:
+            if read_box.type == BoxType.QUEL1SE_R8:
+                frequency_range = np.arange(5.75, 6.75, 0.002)
+            else:
+                frequency_range = np.arange(9.75, 10.75, 0.002)
+        else:
+            frequency_range = np.array(frequency_range)
 
         # measure phase shift if not provided
         if phase_shift is None:
@@ -1542,6 +1704,7 @@ class CharacterizationMixin(
                 plot=False,
                 save_image=False,
             )["phases_diff"]
+            phase_diff = np.abs(phase_diff)
             phase_diff = np.append(phase_diff, phase_diff[-1])
             result.append(phase_diff)
 
@@ -1589,10 +1752,10 @@ class CharacterizationMixin(
         target: str,
         *,
         frequency_range: ArrayLike,
-        amplitude: float = 0.01,
+        amplitude: float | None = None,
         phase_shift: float,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -1605,11 +1768,22 @@ class CharacterizationMixin(
 
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+
+        if amplitude is None:
+            amplitude = self.params.readout_amplitude[qubit_label]
+
+        if read_box.type == BoxType.QUEL1SE_R8:
+            ssb = "L"
+            cnco_center = CNCO_CETNER_READ_R8
+        else:
+            ssb = "U"
+            cnco_center = CNCO_CETNER_READ
 
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
             center_frequency * 1e9,
-            ssb="U",
-            cnco_center=1_500_000_000,
+            ssb=ssb,
+            cnco_center=cnco_center,
         )
 
         signals = []
@@ -1663,18 +1837,27 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike = np.arange(6.5, 9.5, 0.002),
-        control_amplitude: float = 0.1,
-        readout_amplitude: float = 0.01,
+        frequency_range: ArrayLike | None = None,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
         subrange_width: float = 0.3,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+        save_image: bool = False,
+    ) -> dict:
         # control and readout pulses
         qubit = Target.qubit_label(target)
         resonator = Target.read_label(target)
+        ctrl_box = self.experiment_system.get_control_box_for_qubit(qubit)
+
+        if control_amplitude is None:
+            control_amplitude = self.params.control_amplitude[qubit]
+
+        if readout_amplitude is None:
+            readout_amplitude = self.params.readout_amplitude[qubit]
+
         control_pulse = Gaussian(
             duration=1024,
             amplitude=control_amplitude,
@@ -1687,18 +1870,36 @@ class CharacterizationMixin(
         )
 
         # split frequency range to avoid the frequency sweep range limit
-        frequency_range = np.array(frequency_range)
+        if frequency_range is None:
+            if ctrl_box.type == BoxType.QUEL1SE_R8:
+                frequency_range = np.arange(3.0, 5.0, 0.002)
+            else:
+                frequency_range = np.arange(6.5, 9.5, 0.002)
+        else:
+            frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
             frequency_range=frequency_range,
             subrange_width=subrange_width,
         )
 
+        bounds = [
+            subranges[0][0],
+        ] + [subrange[-1] for subrange in subranges]
+
         # readout frequency
         readout_frequency = readout_frequency or self.targets[resonator].frequency
 
         # result buffer
+        signals = []
         phases = []
         amplitudes = []
+
+        if ctrl_box.type == BoxType.QUEL1SE_R8:
+            ssb = None
+            cnco_center = CNCO_CENTER_CTRL
+        else:
+            ssb = "L"
+            cnco_center = CNCO_CENTER_CTRL
 
         # measure the phase and amplitude
         idx = 0
@@ -1706,8 +1907,8 @@ class CharacterizationMixin(
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
-                ssb="L",
-                cnco_center=2_250_000_000,
+                ssb=ssb,
+                cnco_center=cnco_center,
             )
             with self.state_manager.modified_device_settings(
                 label=qubit,
@@ -1732,103 +1933,235 @@ class CharacterizationMixin(
                             interval=interval,
                         )
                         signal = result.data[qubit][0].kerneled
+                        signals.append(signal)
                         phases.append(np.angle(signal))
                         amplitudes.append(np.abs(signal))
 
                         idx += 1
 
         phases_unwrap = np.unwrap(phases)
-        if np.min(phases_unwrap) < 0:
-            phases_unwrap += 2 * np.pi
-        elif np.max(phases_unwrap) > 2 * np.pi:
-            phases_unwrap -= 2 * np.pi
+        phases_unwrap -= np.median(phases_unwrap)
+        phases_unwrap_std = np.std(phases_unwrap)
+        peaks, _ = find_peaks(
+            np.abs(phases_unwrap),
+            height=phases_unwrap_std * 3,
+            distance=10,
+        )
+        peak_freqs = frequency_range[peaks]
+
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+        )
+        fig.add_scatter(
+            name=target,
+            mode="markers+lines",
+            row=1,
+            col=1,
+            x=frequency_range,
+            y=phases_unwrap,
+        )
+        fig.add_scatter(
+            name=target,
+            mode="markers+lines",
+            row=2,
+            col=1,
+            x=frequency_range,
+            y=amplitudes,
+        )
+        for bound in bounds:
+            fig.add_vline(
+                x=bound,
+                line_width=1,
+                line_color="black",
+                line_dash="dot",
+                opacity=0.1,
+            )
+        for freq in peak_freqs:
+            fig.add_vline(
+                x=freq,
+                line_width=2,
+                line_color="red",
+                opacity=0.6,
+            )
+            fig.add_annotation(
+                x=freq,
+                y=0.01,
+                xref="x",
+                yref="paper",
+                xanchor="left",
+                xshift=3,
+                yanchor="bottom",
+                text=f"<b>{freq:.3f}</b>",
+                showarrow=False,
+                font=dict(
+                    size=9,
+                    color="red",
+                    family="sans-serif",
+                ),
+                opacity=0.6,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+            )
+
+        fig.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
+        fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
+        fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+        fig.update_layout(
+            title=dict(
+                text=f"Control frequency scan : {qubit}",
+                subtitle=dict(
+                    text=f"control_amplitude={control_amplitude}, readout_amplitude={readout_amplitude}",
+                    font=dict(size=11, family="monospace"),
+                ),
+            ),
+            height=450,
+            margin=dict(t=80),
+            showlegend=False,
+        )
+
+        f_ge = None
+        f_gf = None
+        f_ef = None
+        anharmonicity = None
 
         if plot:
-            fig = make_subplots(
-                rows=2,
-                cols=1,
-                shared_xaxes=True,
-                vertical_spacing=0.05,
-            )
-            fig.add_scatter(
-                name=target,
-                mode="markers+lines",
-                row=1,
-                col=1,
-                x=frequency_range,
-                y=phases_unwrap,
-            )
-            fig.add_scatter(
-                name=target,
-                mode="markers+lines",
-                row=2,
-                col=1,
-                x=frequency_range,
-                y=amplitudes,
-            )
-            fig.update_xaxes(title_text="Control frequency (GHz)", row=2, col=1)
-            fig.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
-            fig.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
-            fig.update_layout(
-                title=f"Control frequency scan : {qubit}",
-                height=450,
-                showlegend=False,
-            )
             fig.show()
+            n_peaks = len(peak_freqs)
+            if n_peaks > 0:
+                print("Found peaks:")
+                for peak in peak_freqs:
+                    print(f"  {peak:.4f}")
+                print("Frequency guess:")
+                f_ge = peak_freqs[-1]
+                print(f"  f_ge: {f_ge:.4f} GHz")
+            if n_peaks > 1:
+                f_gf = peak_freqs[-2]
+                print(f"  f_gf: {f_gf:.4f} GHz")
+                anharmonicity = (f_gf - f_ge) * 2
+            if n_peaks > 2:
+                f_ef = peak_freqs[-3]
+                print(f"  f_ef: {f_ef:.4f} GHz")
+                anharmonicity = f_ef - f_ge
+            if anharmonicity is not None:
+                print(f"  anharmonicity: {anharmonicity:.4f} GHz")
 
-        return frequency_range, phases_unwrap, np.asarray(amplitudes)
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"qubit_frequency_scan_{qubit}",
+                width=600,
+                height=450,
+            )
+
+        return {
+            "peaks": peak_freqs,
+            "frequency_guess": {
+                "f_ge": f_ge,
+                "f_gf": f_gf,
+                "f_ef": f_ef,
+                "anharmonicity": anharmonicity,
+            },
+            "frequency_range": frequency_range,
+            "subranges": subranges,
+            "readout_amplitude": readout_amplitude,
+            "signals": np.array(signals),
+            "phases": phases_unwrap,
+            "amplitudes": np.asarray(amplitudes),
+            "fig": fig,
+        }
 
     def estimate_control_amplitude(
         self,
         target: str,
         *,
         frequency_range: ArrayLike,
-        control_amplitude: float = 0.01,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
         target_rabi_rate: float = RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
     ):
         frequency_range = np.asarray(frequency_range)
-        _, data, _ = self.scan_qubit_frequencies(
+        qubit_label = Target.qubit_label(target)
+        if control_amplitude is None:
+            control_amplitude = self.params.control_amplitude[qubit_label]
+        if readout_amplitude is None:
+            readout_amplitude = self.params.readout_amplitude[qubit_label]
+
+        data = self.scan_qubit_frequencies(
             target,
             frequency_range=frequency_range,
             control_amplitude=control_amplitude,
+            readout_amplitude=readout_amplitude,
             shots=shots,
             interval=interval,
-        )
+            plot=plot,
+            save_image=save_image,
+        )["phases"]
         result = fitting.fit_sqrt_lorentzian(
             target=target,
             x=frequency_range,
             y=data,
+            plot=plot,
             title="Qubit resonance fit",
         )
         rabi_rate = result["Omega"]
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
-        print("")
-        print(f"Control amplitude estimation : {target}")
-        print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
-        print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
+        if plot:
+            fig = result["fig"]
+            fig.update_layout(
+                title=dict(
+                    text=f"Control amplitude estimation : {target}",
+                    subtitle=dict(
+                        text=f"readout_amplitude={readout_amplitude}",
+                        font=dict(size=13, family="monospace"),
+                    ),
+                ),
+                xaxis_title="Control frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
+                width=600,
+                height=300,
+                margin=dict(t=80),
+            )
+            fig.show()
+
+            print("")
+            print(f"Control amplitude estimation : {target}")
+            print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
+            print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
+
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"control_amplitude_estimation_{target}",
+                width=600,
+                height=300,
+            )
         return estimated_amplitude
 
     def qubit_spectroscopy(
         self,
         target: str,
-        frequency_range: ArrayLike = np.arange(6.5, 9.5, 0.002),
+        frequency_range: ArrayLike | None = None,
         power_range: ArrayLike = np.arange(-60, 5, 5),
-        readout_amplitude: float = 0.01,
+        readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: int = 0,
+        interval: float = 0,
         plot: bool = True,
         save_image: bool = True,
-    ) -> NDArray[np.float64]:
+    ) -> dict:
         power_range = np.array(power_range)
-        result = []
+        result2d = []
         for power in tqdm(power_range):
             power_linear = 10 ** (power / 10)
             amplitude = np.sqrt(power_linear)
-            _, phase, _ = self.scan_qubit_frequencies(
+            result1d = self.scan_qubit_frequencies(
                 target,
                 frequency_range=frequency_range,
                 control_amplitude=amplitude,
@@ -1838,30 +2171,42 @@ class CharacterizationMixin(
                 interval=interval,
                 plot=False,
             )
-            result.append(phase)
-        if plot:
-            fig = go.Figure()
-            fig.add_trace(
-                go.Heatmap(
-                    x=frequency_range,
-                    y=power_range,
-                    z=result,
-                    colorscale="Viridis",
-                    colorbar=dict(
-                        title=dict(
-                            text="Phase (rad)",
-                            side="right",
-                        )
+            phase = result1d["phases"]
+            result2d.append(phase)
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Heatmap(
+                x=result1d["frequency_range"],
+                y=power_range,
+                z=result2d,
+                colorscale="Viridis",
+                colorbar=dict(
+                    title=dict(
+                        text="Phase (rad)",
+                        side="right",
+                    )
+                ),
+            )
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"Qubit spectroscopy : {target}",
+                subtitle=dict(
+                    text=f"readout_amplitud={result1d['readout_amplitude']}",
+                    font=dict(
+                        size=13,
+                        family="monospace",
                     ),
-                )
-            )
-            fig.update_layout(
-                title=f"Qubit spectroscopy : {target}",
-                xaxis_title="Frequency (GHz)",
-                yaxis_title="Power (dB)",
-                width=600,
-                height=300,
-            )
+                ),
+            ),
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Power (dB)",
+            width=600,
+            height=300,
+            margin=dict(t=80),
+        )
+        if plot:
             fig.show()
 
         if save_image:
@@ -1872,4 +2217,9 @@ class CharacterizationMixin(
                 height=300,
             )
 
-        return np.array(result)
+        return {
+            "frequency_range": result1d["frequency_range"],
+            "power_range": power_range,
+            "data": np.array(result2d),
+            "fig": fig,
+        }
