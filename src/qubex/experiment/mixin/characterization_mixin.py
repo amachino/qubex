@@ -415,22 +415,24 @@ class CharacterizationMixin(
                     )
                 )
                 fig.update_layout(
-                    title=f"Chevron pattern : {target}",
+                    title=dict(
+                        text=f"Chevron pattern : {target}",
+                        subtitle=dict(
+                            text=f"control_amplitude={amplitudes[target]}",
+                            font=dict(
+                                size=13,
+                                family="monospace",
+                            ),
+                        ),
+                    ),
                     xaxis_title="Drive frequency (GHz)",
                     yaxis_title="Time (ns)",
                     width=600,
                     height=400,
+                    margin=dict(t=80),
                 )
                 if plot:
                     fig.show()
-
-                if save_image:
-                    viz.save_figure_image(
-                        fig,
-                        name=f"chevron_pattern_{target}",
-                        width=600,
-                        height=400,
-                    )
 
                 fit_result = fitting.fit_detuned_rabi(
                     target=target,
@@ -439,6 +441,22 @@ class CharacterizationMixin(
                     plot=plot,
                 )
                 resonant_frequencies[target] = fit_result["f_resonance"]
+
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"chevron_pattern_{target}",
+                        width=600,
+                        height=400,
+                    )
+                    fig_fit = fit_result["fig"]
+                    if fig_fit is not None:
+                        viz.save_figure_image(
+                            fig_fit,
+                            name=f"chevron_pattern_fit_{target}",
+                            width=600,
+                            height=300,
+                        )
 
         rabi_rates = dict(sorted(rabi_rates.items()))
         chevron_data = dict(sorted(chevron_data.items()))
@@ -671,6 +689,7 @@ class CharacterizationMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
+        save_image: bool = False,
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
@@ -727,6 +746,16 @@ class CharacterizationMixin(
             )
             if "f0" in fit_result:
                 fit_data[target] = fit_result["f0"]
+
+            if save_image:
+                fig = fit_result["fig"]
+                if fig is not None:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"readout_frequency_{target}",
+                        width=600,
+                        height=300,
+                    )
 
         print("\nResults\n-------")
         for target, freq in fit_data.items():
@@ -1482,7 +1511,7 @@ class CharacterizationMixin(
         phases_unwrap = np.unwrap(phases)
         phases_unwrap -= phases_unwrap[0]
         phases_diff = np.gradient(phases_unwrap)
-        phases_diff -= np.mean(phases_diff)
+        phases_diff -= np.median(phases_diff)
         phases_diff_std = np.std(phases_diff)
         peaks, _ = find_peaks(
             np.abs(phases_diff),
@@ -1911,7 +1940,7 @@ class CharacterizationMixin(
                         idx += 1
 
         phases_unwrap = np.unwrap(phases)
-        phases_unwrap -= np.mean(phases_unwrap)
+        phases_unwrap -= np.median(phases_unwrap)
         phases_unwrap_std = np.std(phases_unwrap)
         peaks, _ = find_peaks(
             np.abs(phases_unwrap),
@@ -2097,6 +2126,7 @@ class CharacterizationMixin(
                 yaxis_title="Unwrapped phase (rad)",
                 width=600,
                 height=300,
+                margin=dict(t=80),
             )
             fig.show()
 
