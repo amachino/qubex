@@ -323,8 +323,11 @@ class MeasurementMixin(
         signals = defaultdict(list)
         plotter = IQPlotter(self.state_centers)
 
+        # TODO: workaround for the first measurement problem
+        sequences = [sequences[0]] + sequences
+
         with self.modified_frequencies(frequencies):
-            for seq in sequences:
+            for idx, seq in enumerate(sequences):
                 result = self.measure(
                     seq,
                     mode="avg",
@@ -334,6 +337,9 @@ class MeasurementMixin(
                     capture_window=capture_window or self.capture_window,
                     capture_margin=capture_margin or self.capture_margin,
                 )
+                if idx == 0:
+                    # TODO: workaround for the first measurement problem
+                    continue
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
                 if plot:
