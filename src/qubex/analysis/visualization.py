@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 import os
 from pathlib import Path
-from typing import Literal, Mapping
+from typing import Collection, Literal, Mapping
 
 import numpy as np
 import plotly.graph_objs as go
@@ -320,11 +320,13 @@ def plot_waveform(
 def scatter_iq_data(
     data: Mapping[str, IQArray],
     *,
+    mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
     title: str = "I/Q plane",
     xlabel: str = "In-phase (arb. units)",
     ylabel: str = "Quadrature (arb. units)",
     width: int = 500,
     height: int = 400,
+    text: Collection[str] | None = None,
     template: str = "qubex",
     return_figure: bool = False,
     save_image: bool = False,
@@ -339,8 +341,9 @@ def scatter_iq_data(
         scatter = go.Scatter(
             x=np.real(iq),
             y=np.imag(iq),
-            mode="markers",
+            mode=mode,
             name=qubit,
+            text=text if text is not None else qubit,
             marker=dict(
                 size=4,
                 color=f"rgba{color}",

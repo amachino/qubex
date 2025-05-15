@@ -358,6 +358,7 @@ class Measurement:
             mode="avg",
             shots=1,
             capture_window=duration,
+            readout_amplitudes={target: 0 for target in targets},
         )
 
     def _calc_backend_interval(
