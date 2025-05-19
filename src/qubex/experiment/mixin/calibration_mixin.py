@@ -1309,7 +1309,9 @@ class CalibrationMixin(
             cancel_phase = current_cr_param["cancel_phase"]
             time_range = _create_time_range(current_cr_param["duration"] * 2)
         else:
-            cr_amplitude = cr_amplitude or max_cr_amplitude
+            cr_amplitude = (
+                cr_amplitude if cr_amplitude is not None else max_cr_amplitude
+            )
             cr_phase = 0.0
             cancel_amplitude = 0.0
             cancel_phase = 0.0

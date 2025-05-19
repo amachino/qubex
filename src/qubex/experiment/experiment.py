@@ -734,10 +734,14 @@ class Experiment(
 
     def configure(
         self,
-        box_ids: list[str] | None = None,
-        exclude: list[str] | None = None,
+        box_ids: str | list[str] | None = None,
+        exclude: str | list[str] | None = None,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ):
+        if isinstance(box_ids, str):
+            box_ids = [box_ids]
+        if isinstance(exclude, str):
+            exclude = [exclude]
         if mode is None:
             mode = self.configuration_mode
         self.state_manager.load(

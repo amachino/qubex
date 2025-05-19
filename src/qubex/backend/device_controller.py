@@ -282,17 +282,19 @@ class DeviceController:
         box = self.qubecalib.create_box(box_name, reconnect=False)
         return box.link_status()
 
-    def connect(self, box_names: list[str] | None = None):
+    def connect(self, box_names: str | list[str] | None = None):
         """
         Connect to the boxes.
 
         Parameters
         ----------
-        box_names : list[str], optional
+        box_names : str | list[str], optional
             List of box names to connect to. If None, connect to all available boxes.
         """
         if box_names is None:
             box_names = self.available_boxes
+        if isinstance(box_names, str):
+            box_names = [box_names]
         self._boxpool = self.qubecalib.create_boxpool(*box_names)
         self._quel1system = self.qubecalib.sysdb.create_quel1system(*box_names)
         self._cap_resource_map = self.create_resource_map("cap")
@@ -323,6 +325,26 @@ class DeviceController:
         else:
             box = self._boxpool._boxes[box_name][0]
         return box
+
+    def initialize_boxes(
+        self,
+        box_names: str | list[str],
+    ):
+        """
+        Initialize the boxes.
+
+        Parameters
+        ----------
+        box_names : str | list[str]
+            List of box names to initialize.
+        """
+        if isinstance(box_names, str):
+            box_names = [box_names]
+        for box_name in box_names:
+            self._check_box_availabilty(box_name)
+            box = self.get_box(box_name, reconnect=False)
+            box.initialize_all_awgs()
+            box.initialize_all_capunits()
 
     def linkup(
         self,
