@@ -222,12 +222,16 @@ class DeviceController:
         self,
         type: Literal["cap", "gen"],
     ) -> dict[str, dict]:
+        if self._boxpool is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
         db = self.qubecalib.system_config_database
         result = {}
         for target in db._target_settings:
             channels = db.get_channels_by_target(target)
             bpc_list = [db.get_channel(channel) for channel in channels]
             for box_name, port_name, channel_number in bpc_list:
+                if box_name not in self._boxpool._boxes:
+                    continue
                 box = self.get_box(box_name, reconnect=False)
                 port_setting = db._port_settings[port_name]
                 if (
