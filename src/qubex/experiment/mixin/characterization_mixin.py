@@ -1810,6 +1810,9 @@ class CharacterizationMixin(
         phi = (np.angle(signals[0]) + np.angle(signals[-1])) / 2
         coeffs = np.array(signals) * np.exp(-1j * phi)
 
+        if ssb == "L":
+            coeffs = np.conjugate(coeffs)
+
         fit_result = fitting.fit_reflection_coefficient(
             target=target,
             freq_range=freq_range,

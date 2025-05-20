@@ -2379,7 +2379,7 @@ def fit_reflection_coefficient(
             x=np.real(data),
             y=np.imag(data),
             mode="markers",
-            name="I/Q (Data)",
+            name="Data",
             marker=dict(color=COLORS[0]),
         ),
         row=1,
@@ -2390,7 +2390,7 @@ def fit_reflection_coefficient(
             x=np.real(y_fine),
             y=np.imag(y_fine),
             mode="lines",
-            name="I/Q (Fit)",
+            name="Fit",
             marker=dict(color=COLORS[1]),
         ),
         row=1,
@@ -2400,9 +2400,9 @@ def fit_reflection_coefficient(
     fig.add_trace(
         go.Scatter(
             x=freq_range,
-            y=np.real(data),
+            y=np.abs(data),
             mode="markers",
-            name="Re (Data)",
+            name="Data",
             marker=dict(color=COLORS[0]),
         ),
         row=1,
@@ -2411,9 +2411,9 @@ def fit_reflection_coefficient(
     fig.add_trace(
         go.Scatter(
             x=x_fine,
-            y=np.real(y_fine),
+            y=np.abs(y_fine),
             mode="lines",
-            name="Re (Fit)",
+            name="|R| (Fit)",
             marker=dict(color=COLORS[1]),
         ),
         row=1,
@@ -2423,9 +2423,9 @@ def fit_reflection_coefficient(
     fig.add_trace(
         go.Scatter(
             x=freq_range,
-            y=np.imag(data),
+            y=np.angle(data),
             mode="markers",
-            name="Im (Data)",
+            name="Data",
             marker=dict(color=COLORS[0]),
         ),
         row=2,
@@ -2434,9 +2434,9 @@ def fit_reflection_coefficient(
     fig.add_trace(
         go.Scatter(
             x=x_fine,
-            y=np.imag(y_fine),
+            y=np.angle(y_fine),
             mode="lines",
-            name="Im (Fit)",
+            name="Fit",
             marker=dict(color=COLORS[1]),
         ),
         row=2,
@@ -2450,8 +2450,10 @@ def fit_reflection_coefficient(
         showlegend=False,
     )
 
+    v_max = max(max(np.abs(np.real(data))), max(np.abs(np.imag(data))))
+
     fig.update_xaxes(
-        title_text="Re",
+        title_text="Re(R)",
         row=1,
         col=1,
         tickformat=".2g",
@@ -2459,9 +2461,10 @@ def fit_reflection_coefficient(
         zeroline=True,
         zerolinecolor="black",
         showgrid=True,
+        range=[-v_max * 1.1, v_max * 1.1],
     )
     fig.update_yaxes(
-        title_text="Im",
+        title_text="Im(R)",
         row=1,
         col=1,
         scaleanchor="x",
@@ -2471,6 +2474,7 @@ def fit_reflection_coefficient(
         zeroline=True,
         zerolinecolor="black",
         showgrid=True,
+        range=[-v_max * 1.1, v_max * 1.1],
     )
     fig.update_xaxes(
         row=1,
@@ -2479,9 +2483,10 @@ def fit_reflection_coefficient(
         matches="x2",
     )
     fig.update_yaxes(
-        title_text="Re",
+        title_text="|R|",
         row=1,
         col=2,
+        range=[0, None],
     )
     fig.update_xaxes(
         title_text="Frequency (GHz)",
@@ -2490,9 +2495,10 @@ def fit_reflection_coefficient(
         matches="x2",
     )
     fig.update_yaxes(
-        title_text="Im",
+        title_text="arg(R)",
         row=2,
         col=2,
+        range=[-np.pi, np.pi],
     )
 
     if plot:

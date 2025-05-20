@@ -128,10 +128,13 @@ class Measurement:
 
         if skew_file_path is None:
             skew_file_path = f"{self._config_dir}/skew.yaml"
-        try:
-            self.device_controller.load_skew_file(box_ids, skew_file_path)
-        except Exception as e:
-            print(f"Failed to load the skew file: {e}")
+        if not Path(skew_file_path).exists():
+            print(f"Skew file not found: {skew_file_path}")
+        else:
+            try:
+                self.device_controller.load_skew_file(box_ids, skew_file_path)
+            except Exception as e:
+                print(f"Failed to load the skew file: {e}")
 
         if connect_devices:
             try:
