@@ -1754,6 +1754,7 @@ class CharacterizationMixin(
         frequency_range: ArrayLike,
         amplitude: float | None = None,
         phase_shift: float,
+        qubit_state: str = "0",
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
@@ -1794,10 +1795,14 @@ class CharacterizationMixin(
             cnco_freq=cnco,
             fnco_freq=0,
         ):
+            initialize_pulse = self.get_pulse_for_state(
+                target=qubit_label,
+                state=qubit_state,
+            )
             for freq in freq_range:
                 with self.modified_frequencies({read_label: freq}):
                     result = self.measure(
-                        {qubit_label: np.zeros(0)},
+                        {qubit_label: initialize_pulse},
                         mode="avg",
                         readout_amplitudes={qubit_label: amplitude},
                         shots=shots,
@@ -2225,4 +2230,122 @@ class CharacterizationMixin(
             "power_range": power_range,
             "data": np.array(result2d),
             "fig": fig,
+        }
+
+    def measure_dispersive_shift(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike,
+        readout_amplitude: float | None = None,
+        phase_shift: float,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = 0,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict:
+        # TODO: don't change the LO/NCO frequency
+
+        result_0 = self.measure_reflection_coefficient(
+            target,
+            frequency_range=frequency_range,
+            amplitude=readout_amplitude,
+            phase_shift=phase_shift,
+            qubit_state="0",
+            shots=shots,
+            interval=interval,
+            plot=False,
+            save_image=False,
+        )
+        result_1 = self.measure_reflection_coefficient(
+            target,
+            frequency_range=frequency_range,
+            amplitude=readout_amplitude,
+            phase_shift=phase_shift,
+            qubit_state="1",
+            shots=shots,
+            interval=interval,
+            plot=False,
+            save_image=False,
+        )
+
+        frequency_range = result_0["frequency_range"]
+        coeff_0 = result_0["reflection_coefficients"]
+        coeff_1 = result_1["reflection_coefficients"]
+        phases_0 = np.angle(coeff_0)
+        phases_0 -= phases_0[0]
+        phases_0 = np.unwrap(phases_0)
+        phases_1 = np.angle(coeff_1)
+        phases_1 -= phases_1[0]
+        phases_1 = np.unwrap(phases_1)
+        f_0 = result_0["f_r"]
+        f_1 = result_1["f_r"]
+        dispersive_shift = (f_1 - f_0) / 2
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                name="0",
+                mode="lines+markers",
+                x=frequency_range,
+                y=phases_0,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                name="1",
+                mode="lines+markers",
+                x=frequency_range,
+                y=phases_1,
+            )
+        )
+        fig.add_vline(
+            x=f_0,
+            line_width=1,
+            line_color="black",
+            line_dash="dot",
+            opacity=0.1,
+        )
+        fig.add_vline(
+            x=f_1,
+            line_width=1,
+            line_color="black",
+            line_dash="dot",
+            opacity=0.1,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"χ: {dispersive_shift * 1e3:.3f} MHz",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"Dispersive shift : {target}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Phase (rad)",
+            width=600,
+            height=300,
+        )
+
+        if plot:
+            fig.show()
+            print(f"f_0: {f_0:.4f} GHz")
+            print(f"f_1: {f_1:.4f} GHz")
+            print(f"χ: {dispersive_shift * 1e3:.3f} MHz")
+
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"dispersive_shift_{target}",
+                width=600,
+                height=300,
+            )
+
+        return {
+            "f_0": f_0,
+            "f_1": f_1,
+            "dispersive_shift": dispersive_shift,
         }
