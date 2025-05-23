@@ -1074,11 +1074,19 @@ class Measurement:
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
         capture_index = 0  # the first capture index
 
+        iq_data = {}
+        for target, iqs in sorted(backend_result.data.items()):
+            sideband = self.experiment_system.get_target(target).sideband
+            if sideband == "L":
+                iq_data[target] = np.conjugate(iqs)
+            else:
+                iq_data[target] = iqs
+
         if measure_mode == MeasureMode.SINGLE:
             backend_data = {
                 # iqs[capture_index]: ndarray[duration, shots]
                 target[label_slice]: iqs[capture_index].T.squeeze() * norm_factor
-                for target, iqs in sorted(backend_result.data.items())
+                for target, iqs in iq_data.items()
             }
             measure_data = {
                 qubit: MeasureData(
@@ -1093,7 +1101,7 @@ class Measurement:
             backend_data = {
                 # iqs[capture_index]: ndarray[duration, 1]
                 target[label_slice]: iqs[capture_index].squeeze() * norm_factor / shots
-                for target, iqs in sorted(backend_result.data.items())
+                for target, iqs in iq_data.items()
             }
             measure_data = {
                 qubit: MeasureData(
@@ -1121,9 +1129,17 @@ class Measurement:
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
 
+        iq_data = {}
+        for target, iqs in sorted(backend_result.data.items()):
+            sideband = self.experiment_system.get_target(target).sideband
+            if sideband == "L":
+                iq_data[target] = np.conjugate(iqs)
+            else:
+                iq_data[target] = iqs
+
         measure_data = defaultdict(list)
         if measure_mode == MeasureMode.SINGLE:
-            for target, iqs in sorted(backend_result.data.items()):
+            for target, iqs in iq_data.items():
                 qubit = target[label_slice]
                 for iq in iqs:
                     measure_data[qubit].append(
@@ -1135,7 +1151,7 @@ class Measurement:
                         )
                     )
         elif measure_mode == MeasureMode.AVG:
-            for target, iqs in sorted(backend_result.data.items()):
+            for target, iqs in iq_data.items():
                 qubit = target[label_slice]
                 for iq in iqs:
                     measure_data[qubit].append(
