@@ -320,7 +320,7 @@ def plot_waveform(
 def scatter_iq_data(
     data: Mapping[str, IQArray],
     *,
-    mode: Literal["lines", "markers", "lines+markers"] = "lines+markers",
+    mode: Literal["lines", "markers", "lines+markers"] = "markers",
     title: str = "I/Q plane",
     xlabel: str = "In-phase (arb. units)",
     ylabel: str = "Quadrature (arb. units)",

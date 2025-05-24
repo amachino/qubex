@@ -239,6 +239,7 @@ class MeasurementMixin(
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         targets = []
@@ -271,6 +272,7 @@ class MeasurementMixin(
             capture_window=capture_window,
             capture_margin=capture_margin,
             readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
             plot=plot,
         )
 
@@ -714,6 +716,11 @@ class MeasurementMixin(
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = True,
     ) -> list[MeasureResult]:
         if targets is None:
@@ -729,6 +736,11 @@ class MeasurementMixin(
                 {target: state for target in targets},  # type: ignore
                 shots=shots,
                 interval=interval,
+                control_window=control_window,
+                capture_window=capture_window,
+                capture_margin=capture_margin,
+                readout_duration=readout_duration,
+                readout_amplitudes=readout_amplitudes,
             )
             for state in states
         }

@@ -152,6 +152,7 @@ class MeasurementProtocol(Protocol):
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -368,6 +369,11 @@ class MeasurementProtocol(Protocol):
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = True,
     ) -> list[MeasureResult]: ...
 
