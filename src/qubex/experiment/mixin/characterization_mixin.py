@@ -1448,7 +1448,6 @@ class CharacterizationMixin(
             subranges[0][0],
         ] + [subrange[-1] for subrange in subranges]
 
-        phases: list[float] = []
         signals: list[complex] = []
 
         idx = 0
@@ -1478,16 +1477,17 @@ class CharacterizationMixin(
                     if idx > 0 and sub_idx == 0:
                         prev_freq = frequency_range[idx - 1]
                         with self.modified_frequencies({read_label: prev_freq}):
-                            new_result = self.measure(
+                            result = self.measure(
                                 {qubit_label: np.zeros(0)},
                                 mode="avg",
                                 readout_amplitudes={qubit_label: amplitude},
                                 shots=shots,
                                 interval=interval,
                             )
-                            new_signal = new_result.data[target].kerneled
-                            new_phase = np.angle(new_signal) - prev_freq * phase_shift
-                            phase_offset = new_phase - phases[-1]  # type: ignore
+                            raw_signal = result.data[target].kerneled
+                            phase_adjust = prev_freq * phase_shift + phase_offset
+                            signal = raw_signal * np.exp(-1j * phase_adjust)
+                            phase_offset += np.angle(signal) - np.angle(signals[-1])
 
                     with self.modified_frequencies({read_label: freq}):
                         result = self.measure(
@@ -1497,25 +1497,26 @@ class CharacterizationMixin(
                             shots=shots,
                             interval=interval,
                         )
-
-                        raw = result.data[target].kerneled
-                        ampl = np.abs(raw)
-                        phase = np.angle(raw)
-                        phase = phase - freq * phase_shift - phase_offset
-                        signal = ampl * np.exp(1j * phase)
+                        raw_signal = result.data[target].kerneled
+                        phase_adjust = freq * phase_shift + phase_offset
+                        signal = raw_signal * np.exp(-1j * phase_adjust)
                         signals.append(signal)
-                        phases.append(phase)  # type: ignore
-
                         idx += 1
 
-        phases_unwrap = np.unwrap(phases)
-        phases_unwrap -= phases_unwrap[0]
-        phases_diff = np.gradient(phases_unwrap)
-        phases_diff -= np.median(phases_diff)
-        phases_diff_std = np.std(phases_diff)
+        phases_array = np.angle(signals)
+        phases_array -= phases_array[0] + np.pi
+        phases_array %= 2 * np.pi
+        phases_array -= np.pi
+        # phases_diff = np.diff(phases_array)
+        # phases_diff[phases_diff > 0.5] -= 2 * np.pi
+        # phases_diff -= np.median(phases_diff)
+        # phases_unwrap = np.concatenate([phases_array[0:1], np.cumsum(phases_diff)])
+        phases_unwrap = np.unwrap(phases_array)  # , discont=1.5 * np.pi)
+        phases_diff = np.diff(phases_unwrap)
+
         peaks, _ = find_peaks(
             np.abs(phases_diff),
-            height=phases_diff_std * 2,
+            height=0.5,
             distance=10,
         )
         peak_freqs = frequency_range[peaks]
@@ -1527,20 +1528,20 @@ class CharacterizationMixin(
             vertical_spacing=0.05,
         )
         fig1.add_scatter(
-            name=target,
-            mode="markers+lines",
             row=1,
             col=1,
             x=frequency_range,
-            y=phases_unwrap,
-        )
-        fig1.add_scatter(
+            y=np.abs(signals),
             name=target,
             mode="markers+lines",
+        )
+        fig1.add_scatter(
             row=2,
             col=1,
             x=frequency_range,
-            y=np.abs(signals),
+            y=phases_array,
+            name=target,
+            mode="markers+lines",
         )
         for bound in bounds:
             fig1.add_vline(
@@ -1551,8 +1552,8 @@ class CharacterizationMixin(
                 opacity=0.1,
             )
         fig1.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
-        fig1.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
-        fig1.update_yaxes(title_text="Amplitude (arb. units)", row=2, col=1)
+        fig1.update_yaxes(title_text="Amplitude (arb. units)", row=1, col=1)
+        fig1.update_yaxes(title_text="Phase (rad)", row=2, col=1)
         fig1.update_layout(
             title=dict(
                 text=f"Resonator frequency scan : {mux.label}",
@@ -1568,13 +1569,27 @@ class CharacterizationMixin(
             margin=dict(t=80),
             showlegend=False,
         )
-
-        fig2 = go.Figure()
+        fig2 = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.05,
+        )
         fig2.add_scatter(
+            row=1,
+            col=1,
+            x=frequency_range,
+            y=phases_unwrap,
             name=target,
             mode="markers+lines",
+        )
+        fig2.add_scatter(
+            row=2,
+            col=1,
             x=frequency_range,
             y=phases_diff,
+            name=target,
+            mode="markers+lines",
         )
         for bound in bounds:
             fig2.add_vline(
@@ -1609,7 +1624,9 @@ class CharacterizationMixin(
                 opacity=0.6,
                 bgcolor="rgba(255, 255, 255, 0.8)",
             )
-
+        fig2.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
+        fig2.update_yaxes(title_text="Unwraped phase (rad)", row=1, col=1)
+        fig2.update_yaxes(title_text="Phase diff (rad)", row=2, col=1)
         fig2.update_layout(
             title=dict(
                 text=f"Resonator frequency scan : {mux.label}",
@@ -1621,9 +1638,9 @@ class CharacterizationMixin(
                     ),
                 ),
             ),
-            xaxis_title="Readout frequency (GHz)",
-            yaxis_title="Phase diff (rad)",
+            height=450,
             margin=dict(t=80),
+            showlegend=False,
         )
 
         if plot:
@@ -1694,7 +1711,7 @@ class CharacterizationMixin(
         for power in tqdm(power_range):
             power_linear = 10 ** (power / 10)
             amplitude = np.sqrt(power_linear)
-            phase_diff = self.scan_resonator_frequencies(
+            phases_diff = self.scan_resonator_frequencies(
                 target,
                 frequency_range=frequency_range,
                 phase_shift=phase_shift,
@@ -1704,9 +1721,9 @@ class CharacterizationMixin(
                 plot=False,
                 save_image=False,
             )["phases_diff"]
-            phase_diff = np.abs(phase_diff)
-            phase_diff = np.append(phase_diff, phase_diff[-1])
-            result.append(phase_diff)
+            abs_phases_diff = np.abs(phases_diff)
+            abs_phases_diff = np.append(abs_phases_diff, abs_phases_diff[-1])
+            result.append(abs_phases_diff)
 
         fig = go.Figure()
         fig.add_trace(
@@ -1717,7 +1734,7 @@ class CharacterizationMixin(
                 colorscale="Viridis",
                 colorbar=dict(
                     title=dict(
-                        text="Phase shift (rad)",
+                        text="Abs. phase shift (rad)",
                         side="right",
                     ),
                 ),
