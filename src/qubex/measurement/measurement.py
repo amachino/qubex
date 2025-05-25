@@ -1133,7 +1133,7 @@ class Measurement:
         for target, iqs in sorted(backend_result.data.items()):
             sideband = self.experiment_system.get_target(target).sideband
             if sideband == "L":
-                iq_data[target] = np.conjugate(iqs)
+                iq_data[target] = [np.conjugate(iq) for iq in iqs]
             else:
                 iq_data[target] = iqs
 
