@@ -11,7 +11,6 @@ from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit, least_squares, minimize
 from sklearn.decomposition import PCA
-from typing_extensions import deprecated
 
 COLORS = [
     "#0C5DA5",
@@ -260,45 +259,13 @@ def func_sqrt_lorentzian(
     return A / np.sqrt(1 + ((f - f0) / Omega) ** 2) + C
 
 
-@deprecated("Use func_resonator_reflection instead.")
-def func_resonance(
-    f: NDArray,
-    f_r: float,
-    kappa_ex: float,
-    kappa_in: float,
-    A: float,
-    phi: float,
-) -> NDArray:
-    """
-    Calculate a resonance function with given parameters.
-
-    Parameters
-    ----------
-    f : NDArray[np.float64]
-        Frequency points for the function evaluation.
-    f_r : float
-        Resonance frequency.
-    kappa_ex : float
-        External loss rate.
-    kappa_in : float
-        Internal loss rate.
-    """
-    return func_resonator_reflection(
-        f=f,
-        f_r=f_r,
-        kappa_ex=kappa_ex,
-        kappa_in=kappa_in,
-        A=A,
-        phi=phi,
-    )
-
-
 def func_resonator_reflection(
     f: NDArray,
     f_r: float,
     kappa_ex: float,
     kappa_in: float,
     A: float,
+    tau: float,
     phi: float,
 ) -> NDArray:
     """
@@ -316,12 +283,14 @@ def func_resonator_reflection(
         Internal loss rate.
     A : float
         Amplitude of the resonator reflection function.
+    tau : float
+        Time constant of the resonator reflection function.
     phi : float
         Phase offset of the resonator reflection function.
     """
     return (
         A
-        * np.exp(1j * phi)
+        * np.exp(1j * (2 * np.pi * f * tau + phi))
         * (1 - 2 * kappa_ex / (kappa_ex + kappa_in + 1j * (f - f_r)))
     )
 
@@ -2329,17 +2298,18 @@ def fit_reflection_coefficient(
             0.0,
             np.mean(np.abs(data)),
             0.0,
+            0.0,
         )
 
     if bounds is None:
         bounds = (
-            (np.min(freq_range), 0, 0, 0, -np.pi),
-            (np.max(freq_range), 1.0, 1.0, np.inf, np.pi),
+            (np.min(freq_range), 0, 0, 0, -np.pi, -np.inf),
+            (np.max(freq_range), 1.0, 1.0, np.inf, np.pi, np.inf),
         )
 
     def residuals(params, f, y):
-        f_r, kappa_ex, kappa_in, A, phi = params
-        y_model = func_resonator_reflection(f, f_r, kappa_ex, kappa_in, A, phi)
+        f_r, kappa_ex, kappa_in, A, phi, tau = params
+        y_model = func_resonator_reflection(f, f_r, kappa_ex, kappa_in, A, phi, tau)
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
     result = least_squares(
@@ -2351,7 +2321,7 @@ def fit_reflection_coefficient(
 
     fitted_params = result.x
 
-    f_r, kappa_ex, kappa_in, A, phi = fitted_params
+    f_r, kappa_ex, kappa_in, A, phi, tau = fitted_params
 
     r2 = 1 - np.sum(residuals(fitted_params, freq_range, data) ** 2) / np.sum(
         np.abs(data - np.mean(data)) ** 2
