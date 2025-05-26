@@ -2414,7 +2414,7 @@ def fit_reflection_coefficient(
     )
 
     fig.update_layout(
-        title=f"{title} : {target}",
+        title=title,
         width=800,
         height=450,
         showlegend=False,
@@ -2474,18 +2474,13 @@ def fit_reflection_coefficient(
     if plot:
         fig.show()
 
-        print(f"{target}\n--------------------")
-        print(f"Resonance frequency:\n  {f_r:.6f} GHz")
-        print(f"External loss rate:\n  {kappa_ex * 1e3:.6f} MHz")
-        print(f"Internal loss rate:\n  {kappa_in * 1e3:.6f} MHz")
-        print("--------------------\n")
-
     return {
         "f_r": f_r,
         "kappa_ex": kappa_ex,
         "kappa_in": kappa_in,
         "A": A,
         "phi": phi,
+        "tau": tau,
         "r2": r2,
         "fig": fig,
     }

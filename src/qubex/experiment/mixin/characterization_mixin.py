@@ -1864,7 +1864,7 @@ class CharacterizationMixin(
         f_resonator = self.targets[read_label].frequency
 
         if df is None:
-            df = 0.001
+            df = 0.0005
         if frequency_width is None:
             frequency_width = 0.05
         if readout_amplitude is None:
@@ -1872,12 +1872,12 @@ class CharacterizationMixin(
         if electrical_delay is None:
             electrical_delay = self.measure_electrical_delay(
                 target,
-                f_start=f_resonator - frequency_width / 2,
-                df=0.0001,
+                f_start=(f_resonator - frequency_width / 2) // df * df,
+                df=0.00005,
                 n_samples=50,
                 shots=128,
                 interval=1024,
-                plot=False,
+                plot=plot,
             )
 
         freq_range = np.arange(
@@ -1916,7 +1916,14 @@ class CharacterizationMixin(
             freq_range=freq_range,
             data=signals,
             plot=plot,
+            title=f"Reflection coefficient of {target} : |{qubit_state}〉",
         )
+
+        if plot:
+            print(f"{target} : |{qubit_state}〉")
+            print(f"f_r      : {fit_result['f_r']:.6f} GHz")
+            print(f"kappa_ex : {fit_result['kappa_ex'] * 1e3:.6f} MHz")
+            print(f"kappa_in : {fit_result['kappa_in'] * 1e3:.6f} MHz")
 
         fig = fit_result["fig"]
 
@@ -2332,81 +2339,81 @@ class CharacterizationMixin(
         target: str,
         *,
         df: float | None = None,
+        frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
+        threshold: float = 0.5,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
-        # TODO: don't change the LO/NCO frequency
-
         result_0 = self.measure_reflection_coefficient(
             target,
             df=df,
+            frequency_width=frequency_width,
             readout_amplitude=readout_amplitude,
             electrical_delay=electrical_delay,
             qubit_state="0",
             shots=shots,
             interval=interval,
-            plot=False,
+            plot=plot,
             save_image=False,
         )
         result_1 = self.measure_reflection_coefficient(
             target,
             df=df,
+            frequency_width=frequency_width,
             readout_amplitude=readout_amplitude,
             electrical_delay=electrical_delay,
             qubit_state="1",
             shots=shots,
             interval=interval,
-            plot=False,
+            plot=plot,
             save_image=False,
         )
 
         frequency_range = result_0["frequency_range"]
-        coeff_0 = result_0["reflection_coefficients"]
-        coeff_1 = result_1["reflection_coefficients"]
-        phases_0 = np.angle(coeff_0)
+        singals_0 = result_0["reflection_coefficients"]
+        signals_1 = result_1["reflection_coefficients"]
+        phases_0 = np.angle(singals_0)
         phases_0 -= phases_0[0]
-        phases_0 = np.unwrap(phases_0)
-        phases_1 = np.angle(coeff_1)
+        phases_diff_0 = np.diff(phases_0)
+        phases_diff_0[phases_diff_0 > threshold] -= 2 * np.pi
+        phases_0 = np.concatenate([[0], np.cumsum(phases_diff_0)])
+        phases_1 = np.angle(signals_1)
         phases_1 -= phases_1[0]
-        phases_1 = np.unwrap(phases_1)
+        phases_diff_1 = np.diff(phases_1)
+        phases_diff_1[phases_diff_1 > threshold] -= 2 * np.pi
+        phases_1 = np.concatenate([[0], np.cumsum(phases_diff_1)])
         f_0 = result_0["f_r"]
         f_1 = result_1["f_r"]
         dispersive_shift = (f_1 - f_0) / 2
 
         fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                name="0",
-                mode="lines+markers",
-                x=frequency_range,
-                y=phases_0,
-            )
+        fig.add_scatter(
+            x=frequency_range,
+            y=phases_0,
+            name="0",
+            mode="lines+markers",
         )
-        fig.add_trace(
-            go.Scatter(
-                name="1",
-                mode="lines+markers",
-                x=frequency_range,
-                y=phases_1,
-            )
+        fig.add_scatter(
+            x=frequency_range,
+            y=phases_1,
+            name="1",
+            mode="lines+markers",
         )
         fig.add_vline(
             x=f_0,
-            line_width=1,
-            line_color="black",
-            line_dash="dot",
-            opacity=0.1,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
         )
         fig.add_vline(
             x=f_1,
-            line_width=1,
-            line_color="black",
-            line_dash="dot",
-            opacity=0.1,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
         )
         fig.add_annotation(
             xref="paper",
@@ -2427,9 +2434,9 @@ class CharacterizationMixin(
 
         if plot:
             fig.show()
-            print(f"f_0: {f_0:.4f} GHz")
-            print(f"f_1: {f_1:.4f} GHz")
-            print(f"χ: {dispersive_shift * 1e3:.3f} MHz")
+            print(f"f_0  : {f_0:.4f} GHz")
+            print(f"f_1  : {f_1:.4f} GHz")
+            print(f"χ    : {dispersive_shift * 1e3:.3f} MHz")
 
         if save_image:
             viz.save_figure_image(
@@ -2443,4 +2450,108 @@ class CharacterizationMixin(
             "f_0": f_0,
             "f_1": f_1,
             "dispersive_shift": dispersive_shift,
+            "frequency_range": frequency_range,
+            "signals_0": singals_0,
+            "signals_1": signals_1,
+            "phases_0": phases_0,
+            "phases_1": phases_1,
+            "fig": fig,
+        }
+
+    def find_optimal_readout_frequency(
+        self,
+        target: str,
+        *,
+        df: float | None = None,
+        frequency_width: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict:
+        if df is None:
+            df = 0.0005
+        if frequency_width is None:
+            frequency_width = 0.01
+        result_0 = self.measure_reflection_coefficient(
+            target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            qubit_state="0",
+            shots=shots,
+            interval=interval,
+            plot=False,
+            save_image=False,
+        )
+        result_1 = self.measure_reflection_coefficient(
+            target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            qubit_state="1",
+            shots=shots,
+            interval=interval,
+            plot=False,
+            save_image=False,
+        )
+
+        frequency_range = result_0["frequency_range"]
+        singals_0 = result_0["reflection_coefficients"]
+        signals_1 = result_1["reflection_coefficients"]
+
+        distance = np.abs(signals_1 - singals_0)
+        f_opt = frequency_range[np.argmax(distance)]
+        fig = go.Figure()
+        fig.add_scatter(
+            x=frequency_range,
+            y=distance,
+            name="State distance",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=f_opt,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"f_opt: {f_opt:.4f} GHz",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"Dispersive shift : {target}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="State distance",
+            width=600,
+            height=300,
+        )
+
+        if plot:
+            fig.show()
+            print(f"f_opt: {f_opt:.4f} GHz")
+
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"optimal_readout_frequency_{target}",
+                width=600,
+                height=300,
+            )
+
+        return {
+            "f_opt": f_opt,
+            "frequency_range": frequency_range,
+            "signals_0": singals_0,
+            "signals_1": signals_1,
+            "fig": fig,
         }
