@@ -618,7 +618,7 @@ class CharacterizationProtocol(Protocol):
         target: str,
         *,
         frequency_range: ArrayLike | None = None,
-        amplitude: float | None = None,
+        readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
         subrange_width: float = 0.3,
         peak_height: float | None = None,
@@ -637,7 +637,7 @@ class CharacterizationProtocol(Protocol):
             Target qubit connected to the resonator of interest.
         frequency_range : ArrayLike, optional
             Frequency range of the scan in GHz.
-        amplitude : float, optional
+        readout_amplitude : float, optional
             Amplitude of the readout pulse. Defaults to None.
         electrical_delay : float, optional
             Electrical delay in ns. Defaults to None.
@@ -750,11 +750,11 @@ class CharacterizationProtocol(Protocol):
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
-        subrange_width: float = 0.3,
+        subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -807,11 +807,11 @@ class CharacterizationProtocol(Protocol):
         self,
         target: str,
         frequency_range: ArrayLike | None = None,
-        power_range: ArrayLike = np.arange(-60, 5, 5),
+        power_range: ArrayLike = np.arange(-60, 0, 5),
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -825,7 +825,7 @@ class CharacterizationProtocol(Protocol):
         frequency_range : ArrayLike, optional
             Frequency range of the scan in GHz. Defaults to None.
         power_range : ArrayLike, optional
-            Power range in dB. Defaults to np.arange(-60, 5, 5).
+            Power range in dB. Defaults to np.arange(-60, 0, 5).
         readout_amplitude : float, optional
             Amplitude of the readout pulse. Defaults to None.
         readout_frequency : float, optional

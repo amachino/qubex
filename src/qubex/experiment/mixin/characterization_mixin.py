@@ -24,7 +24,7 @@ from ...backend.experiment_system import (
     CNCO_CETNER_READ_R8,
 )
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
-from ...pulse import CPMG, Blank, PulseSchedule, Rect, Waveform
+from ...pulse import CPMG, Blank, FlatTop, Gaussian, PulseSchedule, Rect, Waveform
 from ...typing import TargetMap
 from ..experiment_constants import CALIBRATION_SHOTS, RABI_FREQUENCY, RABI_TIME_RANGE
 from ..experiment_result import (
@@ -420,7 +420,7 @@ class CharacterizationMixin(
                     title=dict(
                         text=f"Chevron pattern : {target}",
                         subtitle=dict(
-                            text=f"control_amplitude={amplitudes[target]}",
+                            text=f"control_amplitude={amplitudes[target]:.6g}",
                             font=dict(
                                 size=13,
                                 family="monospace",
@@ -1512,7 +1512,7 @@ class CharacterizationMixin(
         target: str,
         *,
         frequency_range: ArrayLike | None = None,
-        amplitude: float | None = None,
+        readout_amplitude: float | None = None,
         phase_shift: float | None = None,  # deprecated
         electrical_delay: float | None = None,
         subrange_width: float = 0.3,
@@ -1536,8 +1536,8 @@ class CharacterizationMixin(
         else:
             frequency_range = np.array(frequency_range)
 
-        if amplitude is None:
-            amplitude = self.params.readout_amplitude[qubit_label]
+        if readout_amplitude is None:
+            readout_amplitude = self.params.readout_amplitude[qubit_label]
 
         if electrical_delay is None:
             if phase_shift is not None:
@@ -1600,7 +1600,7 @@ class CharacterizationMixin(
                             result = self.measure(
                                 {qubit_label: np.zeros(0)},
                                 mode="avg",
-                                readout_amplitudes={qubit_label: amplitude},
+                                readout_amplitudes={qubit_label: readout_amplitude},
                                 shots=shots,
                                 interval=interval,
                             )
@@ -1613,7 +1613,7 @@ class CharacterizationMixin(
                         result = self.measure(
                             {qubit_label: np.zeros(0)},
                             mode="avg",
-                            readout_amplitudes={qubit_label: amplitude},
+                            readout_amplitudes={qubit_label: readout_amplitude},
                             shots=shots,
                             interval=interval,
                         )
@@ -1676,7 +1676,7 @@ class CharacterizationMixin(
             title=dict(
                 text=f"Resonator frequency scan : {mux.label}",
                 subtitle=dict(
-                    text=f"readout_amplitude={amplitude}",
+                    text=f"readout_amplitude={readout_amplitude:.6g}",
                     font=dict(
                         size=13,
                         family="monospace",
@@ -1749,7 +1749,7 @@ class CharacterizationMixin(
             title=dict(
                 text=f"Resonator frequency scan : {mux.label}",
                 subtitle=dict(
-                    text=f"readout_amplitude={amplitude}",
+                    text=f"readout_amplitude={readout_amplitude:.6g}",
                     font=dict(
                         size=13,
                         family="monospace",
@@ -1778,6 +1778,8 @@ class CharacterizationMixin(
             viz.save_figure_image(
                 fig2,
                 name=f"resonator_frequency_scan_{mux.label}_phase_diff",
+                width=600,
+                height=450,
             )
 
         return {
@@ -1835,7 +1837,7 @@ class CharacterizationMixin(
                 frequency_range=frequency_range,
                 phase_shift=phase_shift,
                 electrical_delay=electrical_delay,
-                amplitude=amplitude,
+                readout_amplitude=amplitude,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -1966,7 +1968,7 @@ class CharacterizationMixin(
 
         if plot:
             print(f"{target} : |{qubit_state}〉")
-            print(f"f_r      : {fit_result['f_r']:.6f} GHz")
+            print(f"f_r : {fit_result['f_r']:.6f} GHz")
             print(f"κ_e : {fit_result['kappa_ex'] * 1e3:.6f} MHz")
             print(f"κ_i : {fit_result['kappa_in'] * 1e3:.6f} MHz")
 
@@ -1994,11 +1996,11 @@ class CharacterizationMixin(
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
-        subrange_width: float = 0.3,
+        subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -2021,10 +2023,18 @@ class CharacterizationMixin(
                 frequency_range = np.arange(6.5, 9.5, 0.005)
         else:
             frequency_range = np.array(frequency_range)
+
+        if subrange_width is None:
+            subrange_width = 0.3
         subranges = ExperimentUtil.split_frequency_range(
             frequency_range=frequency_range,
             subrange_width=subrange_width,
         )
+
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = 1024
 
         bounds = [
             subranges[0][0],
@@ -2067,17 +2077,19 @@ class CharacterizationMixin(
                     ):
                         with PulseSchedule([qubit, resonator]) as ps:
                             ps.add(
-                                resonator,
-                                Rect(
-                                    duration=512,
-                                    amplitude=readout_amplitude,
+                                qubit,
+                                Gaussian(
+                                    duration=1024,
+                                    amplitude=control_amplitude,
+                                    sigma=128,
                                 ),
                             )
                             ps.add(
-                                qubit,
-                                Rect(
-                                    duration=512,
-                                    amplitude=control_amplitude,
+                                resonator,
+                                FlatTop(
+                                    duration=1024,
+                                    amplitude=readout_amplitude,
+                                    tau=128,
                                 ),
                             )
                         result = self.execute(
@@ -2169,7 +2181,7 @@ class CharacterizationMixin(
             title=dict(
                 text=f"Control frequency scan : {qubit}",
                 subtitle=dict(
-                    text=f"control_amplitude={control_amplitude}, readout_amplitude={readout_amplitude}",
+                    text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
                     font=dict(size=11, family="monospace"),
                 ),
             ),
@@ -2275,7 +2287,7 @@ class CharacterizationMixin(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
                     subtitle=dict(
-                        text=f"readout_amplitude={readout_amplitude}",
+                        text=f"readout_amplitude={readout_amplitude:.6g}",
                         font=dict(size=13, family="monospace"),
                     ),
                 ),
@@ -2305,11 +2317,11 @@ class CharacterizationMixin(
         self,
         target: str,
         frequency_range: ArrayLike | None = None,
-        power_range: ArrayLike = np.arange(-60, 5, 5),
+        power_range: ArrayLike = np.arange(-60, 0, 5),
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -2350,7 +2362,7 @@ class CharacterizationMixin(
             title=dict(
                 text=f"Qubit spectroscopy : {target}",
                 subtitle=dict(
-                    text=f"readout_amplitud={result1d['readout_amplitude']}",
+                    text=f"readout_amplitud={result1d['readout_amplitude']:.6g}",
                     font=dict(
                         size=13,
                         family="monospace",
