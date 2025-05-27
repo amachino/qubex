@@ -9,6 +9,7 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
+from rich.prompt import Confirm
 from scipy.signal import find_peaks
 from tqdm import tqdm
 from typing_extensions import deprecated
@@ -1282,6 +1283,7 @@ class CharacterizationMixin(
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
         read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+        ssb = self.targets[read_label].sideband
 
         if amplitude is None:
             amplitude = 1.0
@@ -1308,10 +1310,8 @@ class CharacterizationMixin(
         phase_offset = 0.0
 
         if read_box.type == BoxType.QUEL1SE_R8:
-            ssb = "L"
             cnco_center = CNCO_CETNER_READ_R8
         else:
-            ssb = "U"
             cnco_center = CNCO_CETNER_READ
 
         for subrange in subranges:
@@ -1406,40 +1406,76 @@ class CharacterizationMixin(
         f_start: float | None = None,
         df: float | None = None,
         n_samples: int | None = None,
-        amplitude: float | None = None,
+        readout_amplitude: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
+        confirm: bool = True,
     ) -> float:
-        if df is None:
-            df = 0.0001
-        if n_samples is None:
-            n_samples = 50
-        if amplitude is None:
-            amplitude = 1.0
-
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        ssb = self.targets[read_label].sideband
+        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+        f_nco = self.targets[read_label].fine_frequency
 
+        if df is None:
+            df = 0.0001  # 100 kHz step
+        if n_samples is None:
+            n_samples = 50
+        if readout_amplitude is None:
+            readout_amplitude = 1.0
         if f_start is None:
-            f_start = self.targets[read_label].fine_frequency
+            f_start = f_nco
         frequency_range = np.arange(f_start, f_start + df * n_samples, df)
 
-        phases = []
-        for freq in frequency_range:
-            with self.modified_frequencies({read_label: freq}):
-                result = self.measure(
-                    {qubit_label: np.zeros(0)},
-                    mode="avg",
-                    readout_amplitudes={qubit_label: amplitude},
-                    shots=shots,
-                    interval=interval,
-                    plot=False,
+        def _execute():
+            phases = []
+            for freq in frequency_range:
+                with self.modified_frequencies({read_label: freq}):
+                    result = self.measure(
+                        {qubit_label: np.zeros(0)},
+                        mode="avg",
+                        readout_amplitudes={qubit_label: readout_amplitude},
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    signal = result.data[target].kerneled
+                    phase = -np.angle(signal)
+                    phases.append(phase)
+            return phases
+
+        if abs(f_start - f_nco) > 0.2:
+            # if the frequency is far from the NCO frequency, we need to change the LO/NCO frequency
+            if confirm:
+                confirmed = Confirm.ask(
+                    "You are about to change the NCO frequencies. Do you want to proceed?"
                 )
-                signal = result.data[target].kerneled
-                phase = -np.angle(signal)
-                phases.append(phase)
+                if not confirmed:
+                    print("Operation cancelled.")
+                    return  # type: ignore
+
+            if read_box.type == BoxType.QUEL1SE_R8:
+                cnco_center = CNCO_CETNER_READ_R8
+            else:
+                cnco_center = CNCO_CETNER_READ
+            lo, cnco, _ = MixingUtil.calc_lo_cnco(
+                f_start * 1e9,
+                ssb=ssb,
+                cnco_center=cnco_center,
+            )
+            with self.state_manager.modified_device_settings(
+                label=read_label,
+                lo_freq=lo,
+                cnco_freq=cnco,
+                fnco_freq=0,
+            ):
+                logger.debug(f"LO: {lo}, CNCO: {cnco}")
+                phases = _execute()
+        else:
+            # if the frequency is close to the NCO frequency, we can use the current settings
+            phases = _execute()
 
         unwrapped = np.unwrap(phases)
 
@@ -1480,6 +1516,8 @@ class CharacterizationMixin(
         phase_shift: float | None = None,  # deprecated
         electrical_delay: float | None = None,
         subrange_width: float = 0.3,
+        peak_height: float | None = None,
+        peak_distance: int | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
@@ -1514,6 +1552,7 @@ class CharacterizationMixin(
                     f_start=frequency_range[0],
                     shots=shots,
                     plot=plot,
+                    confirm=False,
                 )
         else:
             tau = electrical_delay
@@ -1595,8 +1634,8 @@ class CharacterizationMixin(
 
         peaks, _ = find_peaks(
             np.abs(phases_diff),
-            height=0.5,
-            distance=10,
+            height=peak_height or 0.5,
+            distance=peak_distance or 10,
         )
         peak_freqs = frequency_range[peaks]
 
@@ -1864,7 +1903,7 @@ class CharacterizationMixin(
         f_resonator = self.targets[read_label].frequency
 
         if df is None:
-            df = 0.0005
+            df = 0.0005  # 500 kHz step
         if frequency_width is None:
             frequency_width = 0.05
         if readout_amplitude is None:
@@ -1878,6 +1917,7 @@ class CharacterizationMixin(
                 shots=128,
                 interval=1024,
                 plot=plot,
+                confirm=False,
             )
 
         freq_range = np.arange(
@@ -1907,6 +1947,11 @@ class CharacterizationMixin(
 
         signals = np.array(signals)
         amplitudes = np.abs(signals)
+        # amplitudes -= (
+        #     (amplitudes[-1] - amplitudes[0])
+        #     / (freq_range[-1] - freq_range[0])
+        #     * (freq_range - freq_range[0])
+        # )
         phases = np.angle(signals)
         phases -= phases[0]
         signals = amplitudes * np.exp(1j * phases)
@@ -1922,8 +1967,8 @@ class CharacterizationMixin(
         if plot:
             print(f"{target} : |{qubit_state}〉")
             print(f"f_r      : {fit_result['f_r']:.6f} GHz")
-            print(f"kappa_ex : {fit_result['kappa_ex'] * 1e3:.6f} MHz")
-            print(f"kappa_in : {fit_result['kappa_in'] * 1e3:.6f} MHz")
+            print(f"κ_e : {fit_result['kappa_ex'] * 1e3:.6f} MHz")
+            print(f"κ_i : {fit_result['kappa_in'] * 1e3:.6f} MHz")
 
         fig = fit_result["fig"]
 
@@ -1950,6 +1995,8 @@ class CharacterizationMixin(
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
         subrange_width: float = 0.3,
+        peak_height: float | None = None,
+        peak_distance: int | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
@@ -1969,9 +2016,9 @@ class CharacterizationMixin(
         # split frequency range to avoid the frequency sweep range limit
         if frequency_range is None:
             if ctrl_box.type == BoxType.QUEL1SE_R8:
-                frequency_range = np.arange(3.0, 5.0, 0.002)
+                frequency_range = np.arange(3.0, 5.0, 0.005)
             else:
-                frequency_range = np.arange(6.5, 9.5, 0.002)
+                frequency_range = np.arange(6.5, 9.5, 0.005)
         else:
             frequency_range = np.array(frequency_range)
         subranges = ExperimentUtil.split_frequency_range(
@@ -2054,8 +2101,8 @@ class CharacterizationMixin(
 
         peaks, _ = find_peaks(
             np.abs(phases),
-            height=3 * phases_std,
-            distance=10,
+            height=peak_height or 3 * phases_std,
+            distance=peak_distance or 10,
         )
         peak_freqs = frequency_range[peaks]
 
