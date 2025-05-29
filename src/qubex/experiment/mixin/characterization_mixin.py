@@ -2241,6 +2241,7 @@ class CharacterizationMixin(
             "fig": fig,
         }
 
+    @deprecated("Use `measure_qubit_resonance` instead.")
     def estimate_control_amplitude(
         self,
         target: str,
@@ -2312,6 +2313,105 @@ class CharacterizationMixin(
                 height=300,
             )
         return estimated_amplitude
+
+    def measure_qubit_resonance(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike | None = None,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
+        target_rabi_rate: float = RABI_FREQUENCY,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict:
+        qubit_label = Target.qubit_label(target)
+        qubit_frequency = self.qubits[qubit_label].frequency
+
+        if frequency_range is None:
+            frequency_range = np.arange(
+                qubit_frequency - 0.1,
+                qubit_frequency + 0.1,
+                0.001,
+            )
+        else:
+            frequency_range = np.asarray(frequency_range)
+
+        if control_amplitude is None:
+            control_amplitude = self.params.control_amplitude[qubit_label]
+        if readout_amplitude is None:
+            readout_amplitude = self.params.readout_amplitude[qubit_label]
+
+        data = self.scan_qubit_frequencies(
+            target,
+            frequency_range=frequency_range,
+            control_amplitude=control_amplitude,
+            readout_amplitude=readout_amplitude,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+        data = np.unwrap(data["phases"])
+
+        result = fitting.fit_sqrt_lorentzian(
+            target=target,
+            x=frequency_range,
+            y=data,
+            plot=False,
+            title="Qubit resonance fit",
+        )
+
+        rabi_rate = result.get("Omega")
+        if rabi_rate is None:
+            return {
+                "frequency_range": frequency_range,
+                "phases": data,
+                "rabi_rate": None,
+                "estimated_amplitude": None,
+                "fig": None,
+            }
+        estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
+
+        if plot:
+            fig = result["fig"]
+            fig.update_layout(
+                title=dict(
+                    text=f"Control amplitude estimation : {target}",
+                    subtitle=dict(
+                        text=f"control_amplitude={control_amplitude:.6g}, readout_amplitude={readout_amplitude:.6g}",
+                        font=dict(size=13, family="monospace"),
+                    ),
+                ),
+                xaxis_title="Control frequency (GHz)",
+                yaxis_title="Unwrapped phase (rad)",
+                width=600,
+                height=300,
+                margin=dict(t=80),
+            )
+            fig.show()
+
+            print("")
+            print(f"Control amplitude estimation : {target}")
+            print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
+            print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
+
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"measure_qubit_resonance{target}",
+                width=600,
+                height=300,
+            )
+        return {
+            "frequency_range": frequency_range,
+            "phases": data,
+            "rabi_rate": rabi_rate,
+            "estimated_amplitude": estimated_amplitude,
+            "fig": fig,
+        }
 
     def qubit_spectroscopy(
         self,

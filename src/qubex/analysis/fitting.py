@@ -1230,6 +1230,9 @@ def fit_sqrt_lorentzian(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    if np.max(y) > np.mean(y) + 3 * np.std(y):
+        y = -y
+
     if p0 is None:
         p0 = (
             np.min(y) - np.max(y),
@@ -1241,7 +1244,7 @@ def fit_sqrt_lorentzian(
     if bounds is None:
         bounds = (
             (-np.inf, np.min(x), 0, -np.inf),
-            (0, np.max(x), np.inf, np.inf),
+            (np.inf, np.max(x), np.inf, np.inf),
         )
 
     try:
