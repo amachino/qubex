@@ -972,7 +972,7 @@ class CharacterizationMixin(
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,

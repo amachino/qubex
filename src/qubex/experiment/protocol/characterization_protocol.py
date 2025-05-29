@@ -405,7 +405,7 @@ class CharacterizationProtocol(Protocol):
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
@@ -424,7 +424,7 @@ class CharacterizationProtocol(Protocol):
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
