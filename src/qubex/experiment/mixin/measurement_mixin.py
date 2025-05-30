@@ -319,12 +319,13 @@ class MeasurementMixin(
             raise ValueError("Invalid Rabi level.")
 
         if callable(sequence):
-            if isinstance(sequence(0), PulseSchedule):
+            initial_sequence = sequence(sweep_range[0])
+            if isinstance(initial_sequence, PulseSchedule):
                 sequences = [
                     sequence(param).repeated(repetitions).get_sampled_sequences()  # type: ignore
                     for param in sweep_range
                 ]
-            elif isinstance(sequence(0), dict):
+            elif isinstance(initial_sequence, dict):
                 sequences = [
                     {
                         target: waveform.repeated(repetitions).values
