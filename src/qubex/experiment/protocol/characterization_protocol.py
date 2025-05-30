@@ -704,6 +704,7 @@ class CharacterizationProtocol(Protocol):
         self,
         target: str,
         *,
+        center_frequency: float | None = None,
         df: float | None = None,
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,

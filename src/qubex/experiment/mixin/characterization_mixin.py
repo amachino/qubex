@@ -1920,6 +1920,7 @@ class CharacterizationMixin(
         self,
         target: str,
         *,
+        center_frequency: float | None = None,
         df: float | None = None,
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
@@ -1932,8 +1933,9 @@ class CharacterizationMixin(
     ) -> dict:
         qubit_label = Target.qubit_label(target)
         read_label = Target.read_label(target)
-        f_resonator = self.targets[read_label].frequency
 
+        if center_frequency is None:
+            center_frequency = self.targets[read_label].frequency
         if df is None:
             df = 0.0005  # 500 kHz step
         if frequency_width is None:
@@ -1943,7 +1945,7 @@ class CharacterizationMixin(
         if electrical_delay is None:
             electrical_delay = self.measure_electrical_delay(
                 target,
-                f_start=(f_resonator - frequency_width / 2) // df * df,
+                f_start=(center_frequency - frequency_width / 2) // df * df,
                 df=0.00005,
                 n_samples=50,
                 shots=128,
@@ -1953,8 +1955,8 @@ class CharacterizationMixin(
             )
 
         freq_range = np.arange(
-            f_resonator - frequency_width / 2,
-            f_resonator + frequency_width / 2,
+            center_frequency - frequency_width / 2,
+            center_frequency + frequency_width / 2,
             df,
         )
 
