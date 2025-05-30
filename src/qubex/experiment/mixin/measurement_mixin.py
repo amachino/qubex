@@ -39,6 +39,7 @@ from ...pulse import (
     Pulse,
     PulseArray,
     PulseSchedule,
+    RampType,
     Rect,
     Waveform,
 )
@@ -77,6 +78,9 @@ class MeasurementMixin(
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> MultipleMeasureResult:
         return self.measurement.execute(
             schedule=schedule,
@@ -88,6 +92,9 @@ class MeasurementMixin(
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
         )
 
     def measure(
@@ -104,6 +111,9 @@ class MeasurementMixin(
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
         plot: bool = False,
         capture_delay_words: int | None = None,
         _use_sequencer_execute: bool = True,
@@ -165,6 +175,9 @@ class MeasurementMixin(
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
+                readout_ramptime=readout_ramptime,
+                readout_drag_coeff=readout_drag_coeff,
+                readout_ramp_type=readout_ramp_type,
                 capture_delay_words=capture_delay_words,
                 _use_sequencer_execute=_use_sequencer_execute,
             )

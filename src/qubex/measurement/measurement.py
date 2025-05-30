@@ -26,7 +26,7 @@ from ..backend import (
     Target,
 )
 from ..backend.sequencer_mod import SequencerMod
-from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule
+from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from ..typing import IQArray, TargetMap
 from .measurement_result import (
     MeasureData,
@@ -393,6 +393,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
         capture_delay_words: int | None = None,
         _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
@@ -473,6 +476,9 @@ class Measurement:
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
+                readout_ramptime=readout_ramptime,
+                readout_drag_coeff=readout_drag_coeff,
+                readout_ramp_type=readout_ramp_type,
             )
             if self._use_sequencer_execute and _use_sequencer_execute:
                 backend_result = self.device_controller.execute_sequencer(
@@ -602,6 +608,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -651,6 +660,9 @@ class Measurement:
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -710,16 +722,27 @@ class Measurement:
         target: str,
         duration: float | None = None,
         amplitude: float | None = None,
+        tau: float | None = None,
+        beta: float | None = None,
+        type: RampType | None = None,
     ) -> FlatTop:
         qubit = Target.qubit_label(target)
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
             amplitude = self.control_params.readout_amplitude[qubit]
+        if tau is None:
+            tau = DEFAULT_READOUT_RAMPTIME
+        if beta is None:
+            beta = 0.0
+        if type is None:
+            type = "RaisedCosine"
         return FlatTop(
             duration=duration,
             amplitude=amplitude,
-            tau=DEFAULT_READOUT_RAMPTIME,
+            tau=tau,
+            beta=beta,
+            type=type,
         )
 
     def _create_sequencer(
@@ -732,6 +755,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> Sequencer:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
@@ -778,6 +804,9 @@ class Measurement:
                 target=qubit,
                 duration=readout_duration,
                 amplitude=readout_amplitudes.get(qubit),
+                tau=readout_ramptime,
+                beta=readout_drag_coeff,
+                type=readout_ramp_type,
             )
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_slice = slice(readout_start, readout_start + readout_length)
@@ -878,6 +907,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
@@ -915,6 +947,9 @@ class Measurement:
                                     target=target,
                                     duration=readout_duration,
                                     amplitude=readout_amplitudes.get(target),
+                                    tau=readout_ramptime,
+                                    beta=readout_drag_coeff,
+                                    type=readout_ramp_type,
                                 ).padded(
                                     total_duration=capture_window,
                                     pad_side="right",
@@ -1040,6 +1075,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> Sequencer:
         gen_sequences, cap_sequences = self._create_sampled_sequences_from_schedule(
             schedule=schedule,
@@ -1048,6 +1086,9 @@ class Measurement:
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
         )
 
         backend_interval = (

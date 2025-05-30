@@ -7,6 +7,7 @@ from .library import (
     FlatTop,
     Gaussian,
     RaisedCosine,
+    RampType,
     Rect,
     Sintegral,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "PulseSchedule",
     "PulseSequence",
     "RaisedCosine",
+    "RampType",
     "Rect",
     "Sintegral",
     "VirtualZ",

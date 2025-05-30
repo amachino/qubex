@@ -24,7 +24,16 @@ from ...backend.experiment_system import (
     CNCO_CETNER_READ_R8,
 )
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
-from ...pulse import CPMG, Blank, FlatTop, Gaussian, PulseSchedule, Rect, Waveform
+from ...pulse import (
+    CPMG,
+    Blank,
+    FlatTop,
+    Gaussian,
+    PulseSchedule,
+    RampType,
+    Rect,
+    Waveform,
+)
 from ...typing import TargetMap
 from ..experiment_constants import CALIBRATION_SHOTS, RABI_FREQUENCY, RABI_TIME_RANGE
 from ..experiment_result import (
@@ -1513,13 +1522,18 @@ class CharacterizationMixin(
         *,
         frequency_range: ArrayLike | None = None,
         readout_amplitude: float | None = None,
+        readout_duration: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        capture_window: float | None = None,
         phase_shift: float | None = None,  # deprecated
         electrical_delay: float | None = None,
         subrange_width: float = 0.3,
         peak_height: float | None = None,
         peak_distance: int | None = None,
         shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -1556,6 +1570,17 @@ class CharacterizationMixin(
                 )
         else:
             tau = electrical_delay
+
+        if capture_window is None:
+            capture_window = 8192
+        if readout_duration is None:
+            readout_duration = 8192
+        if readout_ramptime is None:
+            readout_ramptime = 128
+        if readout_ramp_type is None:
+            readout_ramp_type = "Bump"
+        if interval is None:
+            interval = 0
 
         # split frequency range to avoid the frequency sweep range limit
         frequency_range = np.array(frequency_range)
@@ -1614,6 +1639,11 @@ class CharacterizationMixin(
                             {qubit_label: np.zeros(0)},
                             mode="avg",
                             readout_amplitudes={qubit_label: readout_amplitude},
+                            readout_duration=readout_duration,
+                            readout_ramptime=readout_ramptime,
+                            readout_drag_coeff=readout_drag_coeff,
+                            readout_ramp_type=readout_ramp_type,
+                            capture_window=capture_window,
                             shots=shots,
                             interval=interval,
                         )
