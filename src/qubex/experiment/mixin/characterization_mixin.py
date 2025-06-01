@@ -2746,3 +2746,136 @@ class CharacterizationMixin(
             "signals_1": signals_1,
             "fig": fig,
         }
+
+    def ckp_sequence(
+        self,
+        target: str,
+        qubit_initial_state: str = "0",
+        qubit_pi_pulse: Waveform | None = None,
+        qubit_drive_scale: float = 0.8,
+        resonator_drive_amplitude: float = 1,
+        resonator_drive_detuning: float = 0,
+        resonator_drive_duration: int = 1024,
+        resonator_drive_ramptime: float = 32,
+    ):
+        qubit = self.qubits[target].label
+        resonator = self.resonators[target].label
+        pi_pulse = qubit_pi_pulse or self.hpi_pulse[target].repeated(2)
+        margin = Blank(64)
+        resonetor_pulse = FlatTop(
+            duration=resonator_drive_duration,
+            amplitude=resonator_drive_amplitude,
+            tau=resonator_drive_ramptime,
+        ).detuned(resonator_drive_detuning)
+        qubit_pulse = pi_pulse.padded(
+            resonator_drive_duration,
+            pad_side="left",
+        ).scaled(qubit_drive_scale)
+        readout_pulse = self.readout(target)
+        with PulseSchedule() as seq:
+            if qubit_initial_state == "1":
+                seq.add(qubit, pi_pulse)
+            seq.barrier()
+            seq.add(qubit, qubit_pulse)
+            seq.add(resonator, margin)
+            seq.add(resonator, resonetor_pulse)
+            seq.add(resonator, margin)
+            seq.add(resonator, readout_pulse)
+        return seq
+
+    def ckp_measurement(
+        self,
+        target: str,
+        qubit_initial_state: str,
+        qubit_detuning_range: NDArray = np.linspace(-0.03, 0.01, 30),
+        resonator_detuning_range: NDArray = np.linspace(-0.01, 0.01, 30),
+        qubit_drive_scale: float = 0.8,
+        qubit_pi_pulse=None,
+        resonator_drive_amplitude: float = 0.1,
+        resonator_drive_duration: int = 1024,
+    ):
+        results = []
+
+        for resonator_detuning in tqdm(resonator_detuning_range):
+            buffer = []
+            for qubit_detuning in qubit_detuning_range:
+                with self.modified_frequencies(
+                    {
+                        target: qubit_detuning + self.qubits[target].frequency,
+                    }
+                ):
+                    result = self.execute(
+                        self.ckp_sequence(
+                            target=target,
+                            qubit_initial_state=qubit_initial_state,
+                            qubit_drive_scale=qubit_drive_scale,
+                            qubit_pi_pulse=qubit_pi_pulse,
+                            resonator_drive_detuning=resonator_detuning,
+                            resonator_drive_duration=resonator_drive_duration,
+                            resonator_drive_amplitude=resonator_drive_amplitude,
+                        ),
+                    )
+                    data = result.data[target][-1]
+                    val = data.kerneled
+                    buffer.append(val)
+            results.append(buffer)
+
+        data = fitting.normalize(np.array(results), self.rabi_params[target])
+        if qubit_initial_state == "1":
+            data *= -1
+
+        fig = go.Figure(
+            data=[
+                go.Heatmap(
+                    z=data.T,
+                    x=resonator_detuning_range,
+                    y=qubit_detuning_range,
+                    colorscale="Viridis",
+                )
+            ]
+        )
+        fig.update_layout(
+            title="CKP Experiment",
+            xaxis_title="Resonator detuning (GHz)",
+            yaxis_title="Qubit detuning (GHz)",
+            withth=600,
+            height=400,
+        )
+        fig.show()
+
+        return data
+
+    def ckp_experiment(
+        self,
+        target: str,
+        qubit_detuning_range: NDArray = np.linspace(-0.03, 0.01, 30),
+        resonator_detuning_range: NDArray = np.linspace(-0.01, 0.01, 30),
+        qubit_drive_scale: float = 0.8,
+        qubit_pi_pulse: Waveform | None = None,
+        resonator_drive_amplitude: float = 0.1,
+        resonator_drive_duration: int = 1024,
+    ):
+        data_0 = self.ckp_measurement(
+            target=target,
+            qubit_initial_state="0",
+            qubit_detuning_range=qubit_detuning_range,
+            resonator_detuning_range=resonator_detuning_range,
+            qubit_drive_scale=qubit_drive_scale,
+            qubit_pi_pulse=qubit_pi_pulse,
+            resonator_drive_amplitude=resonator_drive_amplitude,
+            resonator_drive_duration=resonator_drive_duration,
+        )
+        data_1 = self.ckp_measurement(
+            target=target,
+            qubit_initial_state="1",
+            qubit_detuning_range=qubit_detuning_range,
+            resonator_detuning_range=resonator_detuning_range,
+            qubit_drive_scale=qubit_drive_scale,
+            qubit_pi_pulse=qubit_pi_pulse,
+            resonator_drive_amplitude=resonator_drive_amplitude,
+            resonator_drive_duration=resonator_drive_duration,
+        )
+        return {
+            "data_0": data_0,
+            "data_1": data_1,
+        }

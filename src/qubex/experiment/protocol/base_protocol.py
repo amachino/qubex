@@ -20,6 +20,11 @@ from ...backend import (
 )
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
+from ...measurement.measurement import (
+    DEFAULT_CAPTURE_MARGIN,
+    DEFAULT_CAPTURE_WINDOW,
+    DEFAULT_READOUT_DURATION,
+)
 from ...pulse import PulseSchedule, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..calibration_note import CalibrationNote
@@ -641,6 +646,39 @@ class BaseProtocol(Protocol):
         -------
         dict[str, float]
             Rabi rates for the control amplitude.
+        """
+        ...
+
+    def readout(
+        self,
+        target: str,
+        /,
+        *,
+        amplitude: float | None = None,
+        duration: float = DEFAULT_READOUT_DURATION,
+        capture_window: float = DEFAULT_CAPTURE_WINDOW,
+        capture_margin: float = DEFAULT_CAPTURE_MARGIN,
+    ) -> Waveform:
+        """
+        Generate a readout pulse for the target qubit.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        amplitude : float, optional
+            Amplitude of the readout pulse. Defaults to None.
+        duration : float, optional
+            Duration of the readout pulse in ns. Defaults to DEFAULT_READOUT_DURATION.
+        capture_window : float, optional
+            Capture window in ns. Defaults to DEFAULT_CAPTURE_WINDOW.
+        capture_margin : float, optional
+            Capture margin in ns. Defaults to DEFAULT_CAPTURE_MARGIN.
+
+        Returns
+        -------
+        Waveform
+            Readout pulse waveform.
         """
         ...
 
