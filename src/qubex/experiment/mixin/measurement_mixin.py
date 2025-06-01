@@ -379,6 +379,69 @@ class MeasurementMixin(
         result = ExperimentResult(data=sweep_data, rabi_params=self.rabi_params)
         return result
 
+    def sweep_measurement(
+        self,
+        sequence: ParametricPulseSchedule,
+        *,
+        sweep_range: ArrayLike,
+        frequencies: dict[str, float] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        plot: bool = True,
+        title: str = "Sweep result",
+        xlabel: str = "Sweep value",
+        ylabel: str = "Measured value",
+        xaxis_type: Literal["linear", "log"] = "linear",
+        yaxis_type: Literal["linear", "log"] = "linear",
+    ) -> ExperimentResult[SweepData]:
+        sweep_range = np.array(sweep_range)
+
+        rabi_params = self.ge_rabi_params
+
+        signals = defaultdict(list)
+        plotter = IQPlotter(self.state_centers)
+
+        # initialize awgs and capture units
+        self.device_controller.initialize_boxes(self.box_ids)
+
+        with self.modified_frequencies(frequencies):
+            for param in sweep_range:
+                result = self.execute(
+                    sequence(param),
+                    mode="avg",
+                    shots=shots,
+                    interval=interval,
+                    capture_window=capture_window or self.capture_window,
+                    capture_margin=capture_margin or self.capture_margin,
+                )
+                for target, data in result.data.items():
+                    signals[target].append(data[-1].kerneled)
+                if plot:
+                    plotter.update(signals)
+
+        if plot:
+            plotter.show()
+
+        sweep_data = {
+            target: SweepData(
+                target=target,
+                data=np.array(values),
+                sweep_range=sweep_range,
+                rabi_param=rabi_params.get(target),
+                state_centers=self.state_centers.get(target),
+                title=title,
+                xlabel=xlabel,
+                ylabel=ylabel,
+                xaxis_type=xaxis_type,
+                yaxis_type=yaxis_type,
+            )
+            for target, values in signals.items()
+        }
+        result = ExperimentResult(data=sweep_data, rabi_params=self.rabi_params)
+        return result
+
     def repeat_sequence(
         self,
         sequence: TargetMap[Waveform] | PulseSchedule,
