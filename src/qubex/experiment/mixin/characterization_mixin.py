@@ -2753,6 +2753,7 @@ class CharacterizationMixin(
         qubit_initial_state: str = "0",
         qubit_pi_pulse: Waveform | None = None,
         qubit_drive_scale: float = 0.8,
+        qubit_drive_detuning: float = 0,
         resonator_drive_amplitude: float = 1,
         resonator_drive_detuning: float = 0,
         resonator_drive_duration: int = 1024,
@@ -2761,25 +2762,28 @@ class CharacterizationMixin(
         qubit = self.qubits[target].label
         resonator = self.resonators[target].label
         pi_pulse = qubit_pi_pulse or self.hpi_pulse[target].repeated(2)
-        margin = Blank(64)
         resonetor_pulse = FlatTop(
             duration=resonator_drive_duration,
             amplitude=resonator_drive_amplitude,
             tau=resonator_drive_ramptime,
         ).detuned(resonator_drive_detuning)
-        qubit_pulse = pi_pulse.padded(
-            resonator_drive_duration,
-            pad_side="left",
-        ).scaled(qubit_drive_scale)
+        qubit_pulse = (
+            pi_pulse.padded(
+                resonator_drive_duration,
+                pad_side="left",
+            )
+            .scaled(qubit_drive_scale)
+            .detuned(qubit_drive_detuning)
+        )
         readout_pulse = self.readout(target)
         with PulseSchedule() as seq:
             if qubit_initial_state == "1":
                 seq.add(qubit, pi_pulse)
             seq.barrier()
             seq.add(qubit, qubit_pulse)
-            seq.add(resonator, margin)
+            seq.add(resonator, Blank(64))
             seq.add(resonator, resonetor_pulse)
-            seq.add(resonator, margin)
+            seq.add(resonator, Blank(1024))
             seq.add(resonator, readout_pulse)
         return seq
 
@@ -2794,30 +2798,33 @@ class CharacterizationMixin(
         resonator_drive_amplitude: float = 0.1,
         resonator_drive_duration: int = 1024,
     ):
+        qubit_label = Target.qubit_label(target)
+        read_label = Target.read_label(target)
+        qubit_ssb = self.targets[qubit_label].sideband
+        resonator_ssb = self.targets[read_label].sideband
         results = []
-
         for resonator_detuning in tqdm(resonator_detuning_range):
             buffer = []
             for qubit_detuning in qubit_detuning_range:
-                with self.modified_frequencies(
-                    {
-                        target: qubit_detuning + self.qubits[target].frequency,
-                    }
-                ):
-                    result = self.execute(
-                        self.ckp_sequence(
-                            target=target,
-                            qubit_initial_state=qubit_initial_state,
-                            qubit_drive_scale=qubit_drive_scale,
-                            qubit_pi_pulse=qubit_pi_pulse,
-                            resonator_drive_detuning=resonator_detuning,
-                            resonator_drive_duration=resonator_drive_duration,
-                            resonator_drive_amplitude=resonator_drive_amplitude,
-                        ),
-                    )
-                    data = result.data[target][-1]
-                    val = data.kerneled
-                    buffer.append(val)
+                if qubit_ssb == "L":
+                    qubit_detuning *= -1
+                if resonator_ssb == "L":
+                    resonator_detuning *= -1
+                result = self.execute(
+                    self.ckp_sequence(
+                        target=target,
+                        qubit_initial_state=qubit_initial_state,
+                        qubit_drive_scale=qubit_drive_scale,
+                        qubit_pi_pulse=qubit_pi_pulse,
+                        qubit_drive_detuning=qubit_detuning,
+                        resonator_drive_detuning=resonator_detuning,
+                        resonator_drive_duration=resonator_drive_duration,
+                        resonator_drive_amplitude=resonator_drive_amplitude,
+                    ),
+                )
+                data = result.data[target][-1]
+                val = data.kerneled
+                buffer.append(val)
             results.append(buffer)
 
         data = fitting.normalize(np.array(results), self.rabi_params[target])
@@ -2838,7 +2845,7 @@ class CharacterizationMixin(
             title="CKP Experiment",
             xaxis_title="Resonator detuning (GHz)",
             yaxis_title="Qubit detuning (GHz)",
-            withth=600,
+            width=600,
             height=400,
         )
         fig.show()
