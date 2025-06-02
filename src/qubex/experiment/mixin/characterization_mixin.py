@@ -34,6 +34,7 @@ from ...pulse import (
     Rect,
     Waveform,
 )
+from ...style import COLORS
 from ...typing import TargetMap
 from ..experiment_constants import CALIBRATION_SHOTS, RABI_FREQUENCY, RABI_TIME_RANGE
 from ..experiment_result import (
@@ -46,7 +47,12 @@ from ..experiment_result import (
     T2Data,
 )
 from ..experiment_util import ExperimentUtil
-from ..protocol import BaseProtocol, CharacterizationProtocol, MeasurementProtocol
+from ..protocol import (
+    BaseProtocol,
+    CalibrationProtocol,
+    CharacterizationProtocol,
+    MeasurementProtocol,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,7 @@ logger = logging.getLogger(__name__)
 class CharacterizationMixin(
     BaseProtocol,
     MeasurementProtocol,
+    CalibrationProtocol,
     CharacterizationProtocol,
 ):
     def measure_readout_snr(
@@ -2750,61 +2757,94 @@ class CharacterizationMixin(
     def ckp_sequence(
         self,
         target: str,
-        qubit_initial_state: str = "0",
+        qubit_initial_state: str | None = None,
+        qubit_drive_detuning: float | None = None,
         qubit_pi_pulse: Waveform | None = None,
-        qubit_drive_scale: float = 0.8,
-        qubit_drive_detuning: float = 0,
-        resonator_drive_amplitude: float = 1,
-        resonator_drive_detuning: float = 0,
-        resonator_drive_duration: int = 1024,
-        resonator_drive_ramptime: float = 32,
-    ):
+        qubit_drive_scale: float | None = None,
+        resonator_drive_detuning: float | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        resonator_drive_ramptime: float | None = None,
+    ) -> PulseSchedule:
         qubit = self.qubits[target].label
         resonator = self.resonators[target].label
-        pi_pulse = qubit_pi_pulse or self.hpi_pulse[target].repeated(2)
-        resonetor_pulse = FlatTop(
+
+        if qubit_initial_state is None:
+            qubit_initial_state = "0"
+        if qubit_drive_detuning is None:
+            qubit_drive_detuning = 0.0
+        if qubit_pi_pulse is None:
+            qubit_pi_pulse = self.hpi_pulse[target].repeated(2)
+        if qubit_drive_scale is None:
+            qubit_drive_scale = 0.8
+        if resonator_drive_detuning is None:
+            resonator_drive_detuning = 0.0
+        if resonator_drive_amplitude is None:
+            resonator_drive_amplitude = 0.1
+        if resonator_drive_duration is None:
+            resonator_drive_duration = 1024
+        if resonator_drive_ramptime is None:
+            resonator_drive_ramptime = 32
+
+        resonetor_drive_pulse = FlatTop(
             duration=resonator_drive_duration,
             amplitude=resonator_drive_amplitude,
             tau=resonator_drive_ramptime,
         ).detuned(resonator_drive_detuning)
-        qubit_pulse = (
-            pi_pulse.padded(
+        qubit_drive_pulse = (
+            qubit_pi_pulse.padded(
                 resonator_drive_duration,
                 pad_side="left",
             )
             .scaled(qubit_drive_scale)
             .detuned(qubit_drive_detuning)
         )
-        readout_pulse = self.readout(target)
+        resonator_readout_pulse = self.readout(target)
         with PulseSchedule() as seq:
             if qubit_initial_state == "1":
-                seq.add(qubit, pi_pulse)
+                seq.add(qubit, qubit_pi_pulse)
             seq.barrier()
-            seq.add(qubit, qubit_pulse)
+            seq.add(qubit, qubit_drive_pulse)
             seq.add(resonator, Blank(64))
-            seq.add(resonator, resonetor_pulse)
+            seq.add(resonator, resonetor_drive_pulse)
             seq.add(resonator, Blank(1024))
-            seq.add(resonator, readout_pulse)
+            seq.add(resonator, resonator_readout_pulse)
         return seq
 
     def ckp_measurement(
         self,
         target: str,
         qubit_initial_state: str,
-        qubit_detuning_range: NDArray = np.linspace(-0.03, 0.01, 30),
-        resonator_detuning_range: NDArray = np.linspace(-0.01, 0.01, 30),
-        qubit_drive_scale: float = 0.8,
-        qubit_pi_pulse=None,
-        resonator_drive_amplitude: float = 0.1,
-        resonator_drive_duration: int = 1024,
-    ):
+        qubit_detuning_range: ArrayLike | None = None,
+        qubit_pi_pulse: Waveform | None = None,
+        qubit_drive_scale: float | None = None,
+        resonator_detuning_range: ArrayLike | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        plot: bool = True,
+    ) -> dict:
+        if qubit_detuning_range is None:
+            qubit_detuning_range = np.linspace(-0.03, 0.01, 30)
+        else:
+            qubit_detuning_range = np.asarray(qubit_detuning_range)
+        if resonator_detuning_range is None:
+            resonator_detuning_range = np.linspace(-0.01, 0.01, 30)
+        else:
+            resonator_detuning_range = np.asarray(resonator_detuning_range)
+
         qubit_label = Target.qubit_label(target)
         read_label = Target.read_label(target)
         qubit_ssb = self.targets[qubit_label].sideband
         resonator_ssb = self.targets[read_label].sideband
-        results = []
+        f_qubit = self.targets[qubit_label].frequency
+        f_resonator = self.targets[read_label].frequency
+        qubit_frequency_range = qubit_detuning_range + f_qubit
+        resonator_frequency_range = resonator_detuning_range + f_resonator
+
+        result2d = []
+        qubit_resonance_frequencies = []
         for resonator_detuning in tqdm(resonator_detuning_range):
-            buffer = []
+            result1d = []
             for qubit_detuning in qubit_detuning_range:
                 if qubit_ssb == "L":
                     qubit_detuning *= -1
@@ -2823,66 +2863,232 @@ class CharacterizationMixin(
                     ),
                 )
                 data = result.data[target][-1]
-                val = data.kerneled
-                buffer.append(val)
-            results.append(buffer)
+                result1d.append(data.kerneled)
 
-        data = fitting.normalize(np.array(results), self.rabi_params[target])
+            f0 = fitting.fit_lorentzian(
+                x=qubit_frequency_range,
+                y=np.array(result1d),
+                plot=False,
+            )["f0"]
+            qubit_resonance_frequencies.append(f0)
+            result2d.append(result1d)
+
+        result2d = np.array(result2d)
+        data = fitting.normalize(result2d, self.rabi_params[target])
         if qubit_initial_state == "1":
             data *= -1
 
-        fig = go.Figure(
-            data=[
-                go.Heatmap(
-                    z=data.T,
-                    x=resonator_detuning_range,
-                    y=qubit_detuning_range,
-                    colorscale="Viridis",
-                )
-            ]
+        fig = go.Figure()
+        fig.add_heatmap(
+            z=data.T,
+            x=resonator_frequency_range,
+            y=qubit_frequency_range,
+            colorscale="Viridis",
+            colorbar=dict(
+                title=dict(
+                    text="Normalized signal",
+                    side="right",
+                ),
+            ),
         )
         fig.update_layout(
             title="CKP Experiment",
-            xaxis_title="Resonator detuning (GHz)",
-            yaxis_title="Qubit detuning (GHz)",
+            xaxis_title="Resonator frequency (GHz)",
+            yaxis_title="Qubit frequency (GHz)",
             width=600,
             height=400,
         )
-        fig.show()
+        if plot:
+            fig.show()
 
-        return data
+        qubit_resonance_frequencies = np.array(qubit_resonance_frequencies)
+        fit_result = fitting.fit_lorentzian(
+            x=resonator_frequency_range,
+            y=qubit_resonance_frequencies,
+            plot=plot,
+            title=f"CKP experiment fit : {target} : |{qubit_initial_state}〉",
+            xlabel="Resonator frequency (GHz)",
+            ylabel="Qubit frequency (GHz)",
+        )
+
+        return {
+            "qubit_frequency_range": qubit_frequency_range,
+            "resonator_frequency_range": resonator_frequency_range,
+            "qubit_detuning_range": qubit_detuning_range,
+            "resonator_detuning_range": resonator_detuning_range,
+            "qubit_resonance_frequencies": qubit_resonance_frequencies,
+            "qubit_initial_state": qubit_initial_state,
+            "data": data,
+            "fit_result": fit_result,
+        }
 
     def ckp_experiment(
         self,
         target: str,
-        qubit_detuning_range: NDArray = np.linspace(-0.03, 0.01, 30),
-        resonator_detuning_range: NDArray = np.linspace(-0.01, 0.01, 30),
-        qubit_drive_scale: float = 0.8,
+        qubit_detuning_range: ArrayLike | None = None,
         qubit_pi_pulse: Waveform | None = None,
-        resonator_drive_amplitude: float = 0.1,
-        resonator_drive_duration: int = 1024,
+        qubit_drive_scale: float | None = None,
+        resonator_detuning_range: ArrayLike | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        plot: bool = True,
     ):
-        data_0 = self.ckp_measurement(
+        if qubit_pi_pulse is None:
+            duration = 128
+            ramptime = 64
+            calib_result = self.calibrate_default_pulse(
+                target,
+                pulse_type="pi",
+                duration=duration,
+                ramptime=ramptime,
+                update_params=False,
+            )
+            amplitude = calib_result.data[target].calib_value
+            qubit_pi_pulse = FlatTop(
+                duration=duration,
+                amplitude=amplitude,
+                tau=ramptime,
+            )
+
+        result_0 = self.ckp_measurement(
             target=target,
             qubit_initial_state="0",
             qubit_detuning_range=qubit_detuning_range,
-            resonator_detuning_range=resonator_detuning_range,
-            qubit_drive_scale=qubit_drive_scale,
             qubit_pi_pulse=qubit_pi_pulse,
+            qubit_drive_scale=qubit_drive_scale,
+            resonator_detuning_range=resonator_detuning_range,
             resonator_drive_amplitude=resonator_drive_amplitude,
             resonator_drive_duration=resonator_drive_duration,
+            plot=plot,
         )
-        data_1 = self.ckp_measurement(
+        result_1 = self.ckp_measurement(
             target=target,
             qubit_initial_state="1",
             qubit_detuning_range=qubit_detuning_range,
-            resonator_detuning_range=resonator_detuning_range,
-            qubit_drive_scale=qubit_drive_scale,
             qubit_pi_pulse=qubit_pi_pulse,
+            qubit_drive_scale=qubit_drive_scale,
+            resonator_detuning_range=resonator_detuning_range,
             resonator_drive_amplitude=resonator_drive_amplitude,
             resonator_drive_duration=resonator_drive_duration,
+            plot=plot,
         )
+
+        x_data = result_0["resonator_frequency_range"]
+        fit_result_0 = result_0["fit_result"]
+        fit_result_1 = result_1["fit_result"]
+        y_data_0 = result_0["qubit_resonance_frequencies"]
+        y_data_1 = result_1["qubit_resonance_frequencies"]
+        x_fit = np.linspace(
+            x_data[0],
+            x_data[-1],
+            1000,
+        )
+        popt_0 = fit_result_0["popt"]
+        popt_1 = fit_result_1["popt"]
+        gamma_0 = fit_result_0["gamma"]
+        gamma_1 = fit_result_1["gamma"]
+        gamma = (gamma_0 + gamma_1) / 2
+        A_0 = fit_result_0["A"]
+        A_1 = fit_result_1["A"]
+        A = (A_0 + A_1) / 2
+        C_0 = fit_result_0["C"]
+        C_1 = fit_result_1["C"]
+        f_q_0 = (C_0 + C_1) / 2
+        y_fit_0 = fitting.func_lorentzian(x_fit, *popt_0)
+        y_fit_1 = fitting.func_lorentzian(x_fit, *popt_1)
+        f_r_0 = fit_result_0["f0"]
+        f_r_1 = fit_result_1["f0"]
+        f_r_m = (f_r_0 + f_r_1) / 2
+        delta = f_r_m - f_q_0
+        chi = (f_r_1 - f_r_0) / 2
+        kappa = gamma * 2
+        power = kappa * A / (8 * chi)
+        n_mean = 4 * power / kappa
+        n_crit = np.abs(delta / (4 * chi))
+
+        fig = go.Figure()
+        fig.add_scatter(
+            x=x_fit,
+            y=y_fit_0,
+            name="|0⟩ fit",
+            mode="lines",
+            line=dict(color=COLORS[0]),
+        )
+        fig.add_scatter(
+            x=x_data,
+            y=y_data_0,
+            name="|0⟩ data",
+            mode="markers",
+            marker=dict(color=COLORS[0]),
+        )
+        fig.add_scatter(
+            x=x_fit,
+            y=y_fit_1,
+            name="|1⟩ fit",
+            mode="lines",
+            line=dict(color=COLORS[1]),
+        )
+        fig.add_scatter(
+            x=x_data,
+            y=y_data_1,
+            name="|1⟩ data",
+            mode="markers",
+            marker=dict(color=COLORS[1]),
+        )
+        fig.add_vline(
+            x=f_r_0,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_vline(
+            x=f_r_1,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.05,
+            text=f"χ : {chi * 1e3:.3f} MHz<br>"
+            f"κ : {kappa * 1e3:.3f} MHz<br>"
+            f"|A|² : {power * 1e3:.3f} ph/μs<br>",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"CKP Experiment : {target}",
+            xaxis_title="Resonator frequency (GHz)",
+            yaxis_title="Qubit frequency (GHz)",
+            width=600,
+            height=300,
+        )
+        if plot:
+            fig.show()
+            print(f"f_r_0 : {f_r_0:.4f} GHz")
+            print(f"f_r_1 : {f_r_1:.4f} GHz")
+            print(f"f_r_m : {f_r_m:.4f} GHz")
+            print(f"f_q_0 : {f_q_0:.4f} GHz")
+            print(f"Δ     : {delta * 1e3:.3f} MHz")
+            print(f"χ     : {chi * 1e3:.3f} MHz")
+            print(f"κ     : {kappa * 1e3:.3f} MHz")
+            print(f"|A|²  : {power * 1e3:.3f} ph/μs")
+            print(f"n̅*    : {n_mean:.3f} ph")
+            print(f"n_c   : {n_crit:.3f} ph")
+
         return {
-            "data_0": data_0,
-            "data_1": data_1,
+            "f_r_0": f_r_0,
+            "f_r_1": f_r_1,
+            "f_r_m": f_r_m,
+            "f_q_0": f_q_0,
+            "delta": delta,
+            "chi": chi,
+            "kappa": kappa,
+            "power": power,
+            "n": n_mean,
+            "n_crit": n_crit,
+            "result_0": result_0,
+            "result_1": result_1,
         }

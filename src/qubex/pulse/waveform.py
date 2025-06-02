@@ -372,7 +372,7 @@ class Waveform(ABC):
             title = "Frequency spectrum"
 
         pulse = self.padded(
-            total_duration=self.duration * 10,
+            total_duration=self.duration * 100,
             pad_side="right",
         )
 

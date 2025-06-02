@@ -23,6 +23,7 @@ class CalibrationProtocol(Protocol):
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        update_params: bool = True,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,

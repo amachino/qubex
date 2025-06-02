@@ -1045,6 +1045,7 @@ def fit_lorentzian(
     y: ArrayLike,
     *,
     p0=None,
+    bounds=None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Lorentzian fit",
@@ -1088,15 +1089,23 @@ def fit_lorentzian(
     y = np.array(y, dtype=np.float64)
 
     if p0 is None:
-        p0 = (
-            np.abs(np.max(y) - np.min(y)),
-            np.mean(x),
-            (np.max(x) - np.min(x)) / 4,
-            np.min(y),
+        y_med = np.median(y)  # background level
+        idx_ext = np.argmax(np.abs(y - y_med))  # index of the extreme point
+        is_peak = y[idx_ext] > y_med
+        A_guess = (np.max(y) - np.min(y)) * (1 if is_peak else -1)
+        f0_guess = x[idx_ext]
+        gamma_guess = (np.max(x) - np.min(x)) / 4
+        C_guess = y_med
+        p0 = (A_guess, f0_guess, gamma_guess, C_guess)
+
+    if bounds is None:
+        bounds = (
+            (-np.inf, np.min(x), 0, -np.inf),
+            (np.inf, np.max(x), np.inf, np.inf),
         )
 
     try:
-        popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0)
+        popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return {}
@@ -1131,9 +1140,10 @@ def fit_lorentzian(
     fig.add_annotation(
         x=f0,
         y=func_lorentzian(f0, *popt),
-        text=f"max: {f0:.6g}",
+        text=f"ext: {f0:.6f}",
         showarrow=True,
         arrowhead=1,
+        bgcolor="rgba(255, 255, 255, 0.8)",
     )
     fig.add_annotation(
         xref="paper",
@@ -1159,10 +1169,10 @@ def fit_lorentzian(
         if target:
             print(f"Target: {target}")
         print("Fit : A / [1 + {(f - f0) / γ}^2] + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f0 = {f0:.3g} ± {f0_err:.1g}")
-        print(f"  γ = {gamma:.3g} ± {gamma_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.2f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
+        print(f"  γ = {gamma:.6g} ± {gamma_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
 
     return {
         "A": A,
@@ -1230,16 +1240,15 @@ def fit_sqrt_lorentzian(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
-    if np.max(y) > np.mean(y) + 3 * np.std(y):
-        y = -y
-
     if p0 is None:
-        p0 = (
-            np.min(y) - np.max(y),
-            np.mean(x),
-            (np.max(x) - np.min(x)) / 4,
-            np.max(y),
-        )
+        y_med = np.median(y)  # background level
+        idx_ext = np.argmax(np.abs(y - y_med))  # index of the extreme point
+        is_peak = y[idx_ext] > y_med
+        A_guess = (np.max(y) - np.min(y)) * (1 if is_peak else -1)
+        f0_guess = x[idx_ext]
+        Omega_guess = (np.max(x) - np.min(x)) / 4
+        C_guess = y_med
+        p0 = (A_guess, f0_guess, Omega_guess, C_guess)
 
     if bounds is None:
         bounds = (
@@ -1289,9 +1298,10 @@ def fit_sqrt_lorentzian(
     fig.add_annotation(
         x=f0,
         y=func_sqrt_lorentzian(f0, *popt),
-        text=f"max: {f0:.6f}",
+        text=f"ext: {f0:.6f}",
         showarrow=True,
         arrowhead=1,
+        bgcolor="rgba(255, 255, 255, 0.8)",
     )
     fig.add_annotation(
         xref="paper",
@@ -1317,10 +1327,10 @@ def fit_sqrt_lorentzian(
         if target:
             print(f"Target: {target}")
         print("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
-        print(f"  A = {A:.3f} ± {A_err:.1g}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
         print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
-        print(f"  Ω = {Omega:.3f} ± {Omega_err:.1g}")
-        print(f"  C = {C:.3f} ± {C_err:.1g}")
+        print(f"  Ω = {Omega:.6g} ± {Omega_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
 
     return {
         "A": A,
