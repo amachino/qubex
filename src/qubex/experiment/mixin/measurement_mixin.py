@@ -340,7 +340,7 @@ class MeasurementMixin(
         plotter = IQPlotter(self.state_centers)
 
         # initialize awgs and capture units
-        self.device_controller.initialize_boxes(self.box_ids)
+        self.device_controller.initialize_awgs(self.box_ids)
 
         with self.modified_frequencies(frequencies):
             for seq in sequences:
@@ -404,7 +404,7 @@ class MeasurementMixin(
         plotter = IQPlotter(self.state_centers)
 
         # initialize awgs and capture units
-        self.device_controller.initialize_boxes(self.box_ids)
+        self.device_controller.initialize_awgs(self.box_ids)
 
         with self.modified_frequencies(frequencies):
             for param in sweep_range:

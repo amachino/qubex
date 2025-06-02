@@ -330,12 +330,12 @@ class DeviceController:
             box = self._boxpool._boxes[box_name][0]
         return box
 
-    def initialize_boxes(
+    def initialize_awgs(
         self,
-        box_names: str | list[str],
+        box_names: str | Collection[str],
     ):
         """
-        Initialize the boxes.
+        Initialize all AWGs in the specified boxes.
 
         Parameters
         ----------
