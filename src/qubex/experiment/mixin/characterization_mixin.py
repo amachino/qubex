@@ -2822,6 +2822,7 @@ class CharacterizationMixin(
         resonator_drive_amplitude: float | None = None,
         resonator_drive_duration: float | None = None,
         plot: bool = True,
+        save_image: bool = True,
     ) -> dict:
         if qubit_detuning_range is None:
             qubit_detuning_range = np.linspace(-0.03, 0.01, 30)
@@ -2892,7 +2893,7 @@ class CharacterizationMixin(
             ),
         )
         fig.update_layout(
-            title="CKP Experiment",
+            title=f"CKP Experiment : {target} : |{qubit_initial_state}〉",
             xaxis_title="Resonator frequency (GHz)",
             yaxis_title="Qubit frequency (GHz)",
             width=600,
@@ -2900,6 +2901,14 @@ class CharacterizationMixin(
         )
         if plot:
             fig.show()
+
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"ckp_measurement_{target}_{qubit_initial_state}",
+                width=600,
+                height=400,
+            )
 
         qubit_resonance_frequencies = np.array(qubit_resonance_frequencies)
         fit_result = fitting.fit_lorentzian(
@@ -2932,6 +2941,7 @@ class CharacterizationMixin(
         resonator_drive_amplitude: float | None = None,
         resonator_drive_duration: float | None = None,
         plot: bool = True,
+        save_image: bool = True,
     ):
         if qubit_pi_pulse is None:
             duration = 128
@@ -2960,6 +2970,7 @@ class CharacterizationMixin(
             resonator_drive_amplitude=resonator_drive_amplitude,
             resonator_drive_duration=resonator_drive_duration,
             plot=plot,
+            save_image=save_image,
         )
         result_1 = self.ckp_measurement(
             target=target,
@@ -2971,6 +2982,7 @@ class CharacterizationMixin(
             resonator_drive_amplitude=resonator_drive_amplitude,
             resonator_drive_duration=resonator_drive_duration,
             plot=plot,
+            save_image=save_image,
         )
 
         x_data = result_0["resonator_frequency_range"]
@@ -2993,13 +3005,13 @@ class CharacterizationMixin(
         A = (A_0 + A_1) / 2
         C_0 = fit_result_0["C"]
         C_1 = fit_result_1["C"]
-        f_q_0 = (C_0 + C_1) / 2
+        f_q = (C_0 + C_1) / 2
         y_fit_0 = fitting.func_lorentzian(x_fit, *popt_0)
         y_fit_1 = fitting.func_lorentzian(x_fit, *popt_1)
         f_r_0 = fit_result_0["f0"]
         f_r_1 = fit_result_1["f0"]
-        f_r_m = (f_r_0 + f_r_1) / 2
-        delta = f_r_m - f_q_0
+        f_r = (f_r_0 + f_r_1) / 2
+        delta = f_r - f_q
         chi = (f_r_1 - f_r_0) / 2
         kappa = gamma * 2
         power = kappa * A / (8 * chi)
@@ -3067,10 +3079,10 @@ class CharacterizationMixin(
         )
         if plot:
             fig.show()
-            print(f"f_r_0 : {f_r_0:.4f} GHz")
-            print(f"f_r_1 : {f_r_1:.4f} GHz")
-            print(f"f_r_m : {f_r_m:.4f} GHz")
-            print(f"f_q_0 : {f_q_0:.4f} GHz")
+            print(f"f_r_0 : {f_r_0:.6f} GHz")
+            print(f"f_r_1 : {f_r_1:.6f} GHz")
+            print(f"f_r   : {f_r:.6f} GHz")
+            print(f"f_q   : {f_q:.6f} GHz")
             print(f"Δ     : {delta * 1e3:.3f} MHz")
             print(f"χ     : {chi * 1e3:.3f} MHz")
             print(f"κ     : {kappa * 1e3:.3f} MHz")
@@ -3078,11 +3090,19 @@ class CharacterizationMixin(
             print(f"n̅*    : {n_mean:.3f} ph")
             print(f"n_c   : {n_crit:.3f} ph")
 
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"ckp_experiment_{target}",
+                width=600,
+                height=300,
+            )
+
         return {
             "f_r_0": f_r_0,
             "f_r_1": f_r_1,
-            "f_r_m": f_r_m,
-            "f_q_0": f_q_0,
+            "f_r": f_r,
+            "f_q": f_q,
             "delta": delta,
             "chi": chi,
             "kappa": kappa,
