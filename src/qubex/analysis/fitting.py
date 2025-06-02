@@ -291,7 +291,7 @@ def func_resonator_reflection(
     return (
         A
         * np.exp(1j * (2 * np.pi * f * tau + phi))
-        * (1 - 2 * kappa_ex / (kappa_ex + kappa_in + 1j * (f - f_r)))
+        * (1 - 2 * kappa_ex / (kappa_ex + kappa_in + 2j * (f - f_r)))
     )
 
 
