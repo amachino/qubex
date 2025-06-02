@@ -1125,7 +1125,7 @@ class Measurement:
         if measure_mode == MeasureMode.SINGLE:
             backend_data = {
                 # iqs[capture_index]: ndarray[duration, shots]
-                target[label_slice]: iqs[capture_index].T.squeeze() * norm_factor
+                target[label_slice]: iqs[capture_index].T * norm_factor
                 for target, iqs in iq_data.items()
             }
             measure_data = {
@@ -1186,7 +1186,7 @@ class Measurement:
                         MeasureData(
                             target=qubit,
                             mode=measure_mode,
-                            raw=iq.T.squeeze() * norm_factor,
+                            raw=iq.T * norm_factor,
                             classifier=self.classifiers.get(qubit),
                         )
                     )
