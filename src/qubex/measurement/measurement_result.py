@@ -284,17 +284,29 @@ class MeasureResult:
             ]
         )
 
+    def get_memory(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        threshold: float | None = None,
+    ) -> list[str]:
+        """
+        Returns memory: list of bitstrings (e.g., ['0110', '1010', ...])
+        representing each shot's classified result.
+        """
+        classified_data = self.get_classified_data(targets, threshold=threshold)
+        return ["".join(map(str, row)) for row in classified_data]
+
     def get_counts(
         self,
         targets: Collection[str] | None = None,
         *,
         threshold: float | None = None,
     ) -> Counter:
-        classified_data = self.get_classified_data(targets, threshold=threshold)
         classified_labels = np.array(
-            ["".join(map(str, row)) for row in classified_data]
+            self.get_memory(targets, threshold=threshold)
         )
-        return Counter(classified_labels)
+        return Counter(classified_labels)    
 
     def get_probabilities(
         self,
