@@ -303,10 +303,8 @@ class MeasureResult:
         *,
         threshold: float | None = None,
     ) -> Counter:
-        classified_labels = np.array(
-            self.get_memory(targets, threshold=threshold)
-        )
-        return Counter(classified_labels)    
+        classified_labels = self.get_memory(targets, threshold=threshold)
+        return Counter(classified_labels)
 
     def get_probabilities(
         self,
