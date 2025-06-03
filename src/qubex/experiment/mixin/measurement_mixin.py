@@ -344,6 +344,7 @@ class MeasurementMixin(
 
         with self.modified_frequencies(frequencies):
             for seq in sequences:
+                # self.device_controller.initialize_awgs(self.box_ids)
                 result = self.measure(
                     seq,
                     mode="avg",

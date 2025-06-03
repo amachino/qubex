@@ -198,6 +198,22 @@ class Measurement:
         """Get the state classifiers."""
         return self._classifiers
 
+    def get_awg_frequency(self, target: str) -> float:
+        """
+        Get the AWG frequency for the target.
+
+        Parameters
+        ----------
+        target : str
+            The target label.
+
+        Returns
+        -------
+        float
+            The AWG frequency in Hz.
+        """
+        return self.experiment_system.get_awg_frequency(target)
+
     def update_classifiers(self, classifiers: TargetMap[StateClassifier]):
         """Update the state classifiers."""
         for target, classifier in classifiers.items():
@@ -811,7 +827,7 @@ class Measurement:
             readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
             readout_target = Target.read_label(qubit)
-            omega = 2 * np.pi * self.awg_frequencies[readout_target]
+            omega = 2 * np.pi * self.get_awg_frequency(readout_target)
             offset = readout_start * SAMPLING_PERIOD
             padded_waveform *= np.exp(-1j * omega * offset)
             readout_waveforms[readout_target] = padded_waveform
@@ -827,7 +843,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
@@ -846,7 +862,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
@@ -865,7 +881,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     pls.CapSampledSubSequence(
                         capture_slots=[
@@ -985,7 +1001,7 @@ class Measurement:
             if not ranges:
                 continue
             seq = sampled_sequences[target]
-            omega = 2 * np.pi * self.awg_frequencies[target]
+            omega = 2 * np.pi * self.get_awg_frequency(target)
             for rng in ranges:
                 offset = rng.start * SAMPLING_PERIOD
                 seq[rng] *= np.exp(-1j * omega * offset)
@@ -999,7 +1015,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     # has only one GenSampledSubSequence
                     pls.GenSampledSubSequence(
@@ -1055,7 +1071,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     # has only one CapSampledSubSequence
                     cap_sub_sequence,
