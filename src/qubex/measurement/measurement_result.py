@@ -378,10 +378,12 @@ class MeasureResult:
     ) -> dict[str, float]:
         if targets is None:
             targets = self.data.keys()
-        raw = self.get_probabilities(targets)
-        cm_inv = self.get_inverse_confusion_matrix(targets)
-        mitigated = np.array(list(raw.values())) @ cm_inv
         basis_labels = self.get_basis_labels(targets)
+        raw_probs = self.get_probabilities(targets)
+        # Ensure the order of raw matches basis_labels
+        raw = np.array([raw_probs.get(label, 0.0) for label in basis_labels])
+        cm_inv = self.get_inverse_confusion_matrix(targets)
+        mitigated = raw @ cm_inv
         mitigated_probabilities = {
             basis_label: mitigated[i] for i, basis_label in enumerate(basis_labels)
         }
@@ -569,10 +571,12 @@ class MultipleMeasureResult:
         if targets is None:
             targets = [(target, -1) for target in self.data.keys()]
         labels = [target for target, _ in targets]
-        raw = self.get_probabilities(targets)
-        cm_inv = self.get_inverse_confusion_matrix(labels)
-        mitigated = np.array(list(raw.values())) @ cm_inv
         basis_labels = self.get_basis_labels(labels)
+        raw_probs = self.get_probabilities(targets)
+        # Ensure the order of raw matches basis_labels
+        raw = np.array([raw_probs.get(label, 0.0) for label in basis_labels])
+        cm_inv = self.get_inverse_confusion_matrix(labels)
+        mitigated = raw @ cm_inv
         mitigated_probabilities = {
             basis_label: mitigated[i] for i, basis_label in enumerate(basis_labels)
         }

@@ -1336,7 +1336,10 @@ class MeasurementMixin(
             interval=interval,
         )
 
+        basis_labels = result.get_basis_labels(pair)
         prob_dict_raw = result.get_probabilities(pair)
+        # Ensure all basis labels are present in the raw probabilities
+        prob_dict_raw = {label: prob_dict_raw.get(label, 0) for label in basis_labels}
         prob_dict_mitigated = result.get_mitigated_probabilities(pair)
 
         labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
