@@ -2041,6 +2041,7 @@ class CharacterizationMixin(
         subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
+        simultaneous_drive: bool = True,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool = True,
@@ -2126,7 +2127,8 @@ class CharacterizationMixin(
                                     sigma=128,
                                 ),
                             )
-                            # ps.barrier()
+                            if not simultaneous_drive:
+                                ps.barrier()
                             ps.add(
                                 resonator,
                                 FlatTop(
