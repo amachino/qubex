@@ -124,7 +124,7 @@ class CharacterizationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
+        amplitude_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -140,7 +140,10 @@ class CharacterizationMixin(
         else:
             targets = list(targets)
 
-        amplitude_range = np.asarray(amplitude_range)
+        if amplitude_range is None:
+            amplitude_range = np.linspace(0.0, 0.2, 51)
+        else:
+            amplitude_range = np.asarray(amplitude_range)
 
         signal_buf = defaultdict(list)
         noise_buf = defaultdict(list)
@@ -2123,6 +2126,7 @@ class CharacterizationMixin(
                                     sigma=128,
                                 ),
                             )
+                            # ps.barrier()
                             ps.add(
                                 resonator,
                                 FlatTop(
@@ -2501,7 +2505,7 @@ class CharacterizationMixin(
             title=dict(
                 text=f"Qubit spectroscopy : {target}",
                 subtitle=dict(
-                    text=f"readout_amplitud={result1d['readout_amplitude']:.6g}",
+                    text=f"readout_amplitude={result1d['readout_amplitude']:.6g}",
                     font=dict(
                         size=13,
                         family="monospace",

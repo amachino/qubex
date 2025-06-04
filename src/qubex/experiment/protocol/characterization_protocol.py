@@ -74,7 +74,7 @@ class CharacterizationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
+        amplitude_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -91,7 +91,7 @@ class CharacterizationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target labels to sweep the readout amplitude. Defaults to None.
         amplitude_range : ArrayLike, optional
-            Range of the readout amplitude to sweep. Defaults to np.linspace(0.0, 1.0, 21).
+            Range of the readout amplitude to sweep. Defaults to None.
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Initial state of the qubits. Defaults to None.
         capture_window : float, optional
