@@ -81,7 +81,11 @@ class MeasurementMixin(
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        reset_awgs_and_capunits: bool = True,
     ) -> MultipleMeasureResult:
+        if reset_awgs_and_capunits:
+            self.device_controller.initialize_awgs_and_capunits(self.box_ids)
+
         return self.measurement.execute(
             schedule=schedule,
             mode=mode,
@@ -114,6 +118,7 @@ class MeasurementMixin(
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        reset_awgs_and_capunits: bool = True,
         plot: bool = False,
         capture_delay_words: int | None = None,
         _use_sequencer_execute: bool = True,
@@ -163,6 +168,9 @@ class MeasurementMixin(
                         waveforms[target] = waveform.values
                     else:
                         waveforms[target] = np.array(waveform, dtype=np.complex128)
+
+        if reset_awgs_and_capunits:
+            self.device_controller.initialize_awgs_and_capunits(self.box_ids)
 
         if frequencies is None:
             result = self.measurement.measure(
@@ -340,11 +348,10 @@ class MeasurementMixin(
         plotter = IQPlotter(self.state_centers)
 
         # initialize awgs and capture units
-        self.device_controller.initialize_awgs(self.box_ids)
+        self.device_controller.initialize_awgs_and_capunits(self.box_ids)
 
         with self.modified_frequencies(frequencies):
             for seq in sequences:
-                # self.device_controller.initialize_awgs(self.box_ids)
                 result = self.measure(
                     seq,
                     mode="avg",
@@ -353,6 +360,7 @@ class MeasurementMixin(
                     control_window=control_window or self.control_window,
                     capture_window=capture_window or self.capture_window,
                     capture_margin=capture_margin or self.capture_margin,
+                    reset_awgs_and_capunits=False,
                 )
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
@@ -405,7 +413,7 @@ class MeasurementMixin(
         plotter = IQPlotter(self.state_centers)
 
         # initialize awgs and capture units
-        self.device_controller.initialize_awgs(self.box_ids)
+        self.device_controller.initialize_awgs_and_capunits(self.box_ids)
 
         with self.modified_frequencies(frequencies):
             for param in sweep_range:
@@ -416,6 +424,7 @@ class MeasurementMixin(
                     interval=interval,
                     capture_window=capture_window or self.capture_window,
                     capture_margin=capture_margin or self.capture_margin,
+                    reset_awgs_and_capunits=False,
                 )
                 for target, data in result.data.items():
                     signals[target].append(data[-1].kerneled)

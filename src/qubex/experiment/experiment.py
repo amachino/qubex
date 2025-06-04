@@ -758,13 +758,13 @@ class Experiment(
     def reload(self):
         self._measurement.reload()
 
-    def reset_awgs(
+    def reset_awgs_and_capunits(
         self,
         box_ids: str | Collection[str] | None = None,
     ):
         if box_ids is None:
             box_ids = self.box_ids
-        self.device_controller.initialize_awgs(box_ids)
+        self.device_controller.initialize_awgs_and_capunits(box_ids)
 
     @deprecated("This method is tentative. It may be removed in the future.")
     def register_custom_target(

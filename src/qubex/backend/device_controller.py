@@ -330,7 +330,7 @@ class DeviceController:
             box = self._boxpool._boxes[box_name][0]
         return box
 
-    def initialize_awgs(
+    def initialize_awgs_and_capunits(
         self,
         box_names: str | Collection[str],
     ):
