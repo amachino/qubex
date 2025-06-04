@@ -11,7 +11,6 @@ from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from scipy.optimize import curve_fit, least_squares, minimize
 from sklearn.decomposition import PCA
-from typing_extensions import deprecated
 
 COLORS = [
     "#0C5DA5",
@@ -260,45 +259,13 @@ def func_sqrt_lorentzian(
     return A / np.sqrt(1 + ((f - f0) / Omega) ** 2) + C
 
 
-@deprecated("Use func_resonator_reflection instead.")
-def func_resonance(
-    f: NDArray,
-    f_r: float,
-    kappa_ex: float,
-    kappa_in: float,
-    A: float,
-    phi: float,
-) -> NDArray:
-    """
-    Calculate a resonance function with given parameters.
-
-    Parameters
-    ----------
-    f : NDArray[np.float64]
-        Frequency points for the function evaluation.
-    f_r : float
-        Resonance frequency.
-    kappa_ex : float
-        External loss rate.
-    kappa_in : float
-        Internal loss rate.
-    """
-    return func_resonator_reflection(
-        f=f,
-        f_r=f_r,
-        kappa_ex=kappa_ex,
-        kappa_in=kappa_in,
-        A=A,
-        phi=phi,
-    )
-
-
 def func_resonator_reflection(
     f: NDArray,
     f_r: float,
     kappa_ex: float,
     kappa_in: float,
     A: float,
+    tau: float,
     phi: float,
 ) -> NDArray:
     """
@@ -316,13 +283,15 @@ def func_resonator_reflection(
         Internal loss rate.
     A : float
         Amplitude of the resonator reflection function.
+    tau : float
+        Time constant of the resonator reflection function.
     phi : float
         Phase offset of the resonator reflection function.
     """
     return (
         A
-        * np.exp(1j * phi)
-        * (1 - 2 * kappa_ex / (kappa_ex + kappa_in + 1j * (f - f_r)))
+        * np.exp(1j * (2 * np.pi * f * tau + phi))
+        * (1 - 2 * kappa_ex / (kappa_ex + kappa_in + 2j * (f - f_r)))
     )
 
 
@@ -1076,6 +1045,7 @@ def fit_lorentzian(
     y: ArrayLike,
     *,
     p0=None,
+    bounds=None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Lorentzian fit",
@@ -1119,15 +1089,23 @@ def fit_lorentzian(
     y = np.array(y, dtype=np.float64)
 
     if p0 is None:
-        p0 = (
-            np.abs(np.max(y) - np.min(y)),
-            np.mean(x),
-            (np.max(x) - np.min(x)) / 4,
-            np.min(y),
+        y_med = np.median(y)  # background level
+        idx_ext = np.argmax(np.abs(y - y_med))  # index of the extreme point
+        is_peak = y[idx_ext] > y_med
+        A_guess = (np.max(y) - np.min(y)) * (1 if is_peak else -1)
+        f0_guess = x[idx_ext]
+        gamma_guess = (np.max(x) - np.min(x)) / 4
+        C_guess = y_med
+        p0 = (A_guess, f0_guess, gamma_guess, C_guess)
+
+    if bounds is None:
+        bounds = (
+            (-np.inf, np.min(x), 0, -np.inf),
+            (np.inf, np.max(x), np.inf, np.inf),
         )
 
     try:
-        popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0)
+        popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         print(f"Failed to fit the data for {target}.")
         return {}
@@ -1162,9 +1140,10 @@ def fit_lorentzian(
     fig.add_annotation(
         x=f0,
         y=func_lorentzian(f0, *popt),
-        text=f"max: {f0:.6g}",
+        text=f"ext: {f0:.6f}",
         showarrow=True,
         arrowhead=1,
+        bgcolor="rgba(255, 255, 255, 0.8)",
     )
     fig.add_annotation(
         xref="paper",
@@ -1190,10 +1169,10 @@ def fit_lorentzian(
         if target:
             print(f"Target: {target}")
         print("Fit : A / [1 + {(f - f0) / γ}^2] + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f0 = {f0:.3g} ± {f0_err:.1g}")
-        print(f"  γ = {gamma:.3g} ± {gamma_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.2f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
+        print(f"  γ = {gamma:.6g} ± {gamma_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
 
     return {
         "A": A,
@@ -1262,17 +1241,19 @@ def fit_sqrt_lorentzian(
     y = np.array(y, dtype=np.float64)
 
     if p0 is None:
-        p0 = (
-            np.min(y) - np.max(y),
-            np.mean(x),
-            (np.max(x) - np.min(x)) / 4,
-            np.max(y),
-        )
+        y_med = np.median(y)  # background level
+        idx_ext = np.argmax(np.abs(y - y_med))  # index of the extreme point
+        is_peak = y[idx_ext] > y_med
+        A_guess = (np.max(y) - np.min(y)) * (1 if is_peak else -1)
+        f0_guess = x[idx_ext]
+        Omega_guess = (np.max(x) - np.min(x)) / 4
+        C_guess = y_med
+        p0 = (A_guess, f0_guess, Omega_guess, C_guess)
 
     if bounds is None:
         bounds = (
             (-np.inf, np.min(x), 0, -np.inf),
-            (0, np.max(x), np.inf, np.inf),
+            (np.inf, np.max(x), np.inf, np.inf),
         )
 
     try:
@@ -1317,9 +1298,10 @@ def fit_sqrt_lorentzian(
     fig.add_annotation(
         x=f0,
         y=func_sqrt_lorentzian(f0, *popt),
-        text=f"max: {f0:.6f}",
+        text=f"ext: {f0:.6f}",
         showarrow=True,
         arrowhead=1,
+        bgcolor="rgba(255, 255, 255, 0.8)",
     )
     fig.add_annotation(
         xref="paper",
@@ -1345,10 +1327,10 @@ def fit_sqrt_lorentzian(
         if target:
             print(f"Target: {target}")
         print("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
-        print(f"  A = {A:.3f} ± {A_err:.1g}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
         print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
-        print(f"  Ω = {Omega:.3f} ± {Omega_err:.1g}")
-        print(f"  C = {C:.3f} ± {C_err:.1g}")
+        print(f"  Ω = {Omega:.6g} ± {Omega_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
 
     return {
         "A": A,
@@ -2329,17 +2311,18 @@ def fit_reflection_coefficient(
             0.0,
             np.mean(np.abs(data)),
             0.0,
+            0.0,
         )
 
     if bounds is None:
         bounds = (
-            (np.min(freq_range), 0, 0, 0, -np.pi),
-            (np.max(freq_range), 1.0, 1.0, np.inf, np.pi),
+            (np.min(freq_range), 0, 0, 0, -np.pi, -np.inf),
+            (np.max(freq_range), 1.0, 1.0, np.inf, np.pi, np.inf),
         )
 
     def residuals(params, f, y):
-        f_r, kappa_ex, kappa_in, A, phi = params
-        y_model = func_resonator_reflection(f, f_r, kappa_ex, kappa_in, A, phi)
+        f_r, kappa_ex, kappa_in, A, phi, tau = params
+        y_model = func_resonator_reflection(f, f_r, kappa_ex, kappa_in, A, phi, tau)
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
     result = least_squares(
@@ -2351,7 +2334,7 @@ def fit_reflection_coefficient(
 
     fitted_params = result.x
 
-    f_r, kappa_ex, kappa_in, A, phi = fitted_params
+    f_r, kappa_ex, kappa_in, A, phi, tau = fitted_params
 
     r2 = 1 - np.sum(residuals(fitted_params, freq_range, data) ** 2) / np.sum(
         np.abs(data - np.mean(data)) ** 2
@@ -2379,7 +2362,7 @@ def fit_reflection_coefficient(
             x=np.real(data),
             y=np.imag(data),
             mode="markers",
-            name="I/Q (Data)",
+            name="Data",
             marker=dict(color=COLORS[0]),
         ),
         row=1,
@@ -2390,7 +2373,7 @@ def fit_reflection_coefficient(
             x=np.real(y_fine),
             y=np.imag(y_fine),
             mode="lines",
-            name="I/Q (Fit)",
+            name="Fit",
             marker=dict(color=COLORS[1]),
         ),
         row=1,
@@ -2400,9 +2383,9 @@ def fit_reflection_coefficient(
     fig.add_trace(
         go.Scatter(
             x=freq_range,
-            y=np.real(data),
+            y=np.abs(data),
             mode="markers",
-            name="Re (Data)",
+            name="Data",
             marker=dict(color=COLORS[0]),
         ),
         row=1,
@@ -2411,9 +2394,9 @@ def fit_reflection_coefficient(
     fig.add_trace(
         go.Scatter(
             x=x_fine,
-            y=np.real(y_fine),
+            y=np.abs(y_fine),
             mode="lines",
-            name="Re (Fit)",
+            name="|R| (Fit)",
             marker=dict(color=COLORS[1]),
         ),
         row=1,
@@ -2423,9 +2406,9 @@ def fit_reflection_coefficient(
     fig.add_trace(
         go.Scatter(
             x=freq_range,
-            y=np.imag(data),
+            y=np.angle(data),
             mode="markers",
-            name="Im (Data)",
+            name="Data",
             marker=dict(color=COLORS[0]),
         ),
         row=2,
@@ -2434,9 +2417,9 @@ def fit_reflection_coefficient(
     fig.add_trace(
         go.Scatter(
             x=x_fine,
-            y=np.imag(y_fine),
+            y=np.angle(y_fine),
             mode="lines",
-            name="Im (Fit)",
+            name="Fit",
             marker=dict(color=COLORS[1]),
         ),
         row=2,
@@ -2444,14 +2427,16 @@ def fit_reflection_coefficient(
     )
 
     fig.update_layout(
-        title=f"{title} : {target}",
+        title=title,
         width=800,
         height=450,
         showlegend=False,
     )
 
+    v_max = max(max(np.abs(np.real(data))), max(np.abs(np.imag(data))))
+
     fig.update_xaxes(
-        title_text="Re",
+        title_text="Re(R)",
         row=1,
         col=1,
         tickformat=".2g",
@@ -2459,9 +2444,10 @@ def fit_reflection_coefficient(
         zeroline=True,
         zerolinecolor="black",
         showgrid=True,
+        range=[-v_max * 1.1, v_max * 1.1],
     )
     fig.update_yaxes(
-        title_text="Im",
+        title_text="Im(R)",
         row=1,
         col=1,
         scaleanchor="x",
@@ -2471,6 +2457,7 @@ def fit_reflection_coefficient(
         zeroline=True,
         zerolinecolor="black",
         showgrid=True,
+        range=[-v_max * 1.1, v_max * 1.1],
     )
     fig.update_xaxes(
         row=1,
@@ -2479,9 +2466,10 @@ def fit_reflection_coefficient(
         matches="x2",
     )
     fig.update_yaxes(
-        title_text="Re",
+        title_text="|R|",
         row=1,
         col=2,
+        range=[0, None],
     )
     fig.update_xaxes(
         title_text="Frequency (GHz)",
@@ -2490,19 +2478,14 @@ def fit_reflection_coefficient(
         matches="x2",
     )
     fig.update_yaxes(
-        title_text="Im",
+        title_text="arg(R)",
         row=2,
         col=2,
+        range=[-np.pi, np.pi],
     )
 
     if plot:
         fig.show()
-
-    print(f"{target}\n--------------------")
-    print(f"Resonance frequency:\n  {f_r:.6f} GHz")
-    print(f"External loss rate:\n  {kappa_ex * 1e3:.6f} MHz")
-    print(f"Internal loss rate:\n  {kappa_in * 1e3:.6f} MHz")
-    print("--------------------\n")
 
     return {
         "f_r": f_r,
@@ -2510,6 +2493,7 @@ def fit_reflection_coefficient(
         "kappa_in": kappa_in,
         "A": A,
         "phi": phi,
+        "tau": tau,
         "r2": r2,
         "fig": fig,
     }

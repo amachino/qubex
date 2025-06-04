@@ -51,6 +51,7 @@ class CalibrationMixin(
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
+        update_params: bool = True,
         plot: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -121,26 +122,27 @@ class CalibrationMixin(
 
             r2 = fit_result["r2"]
             if r2 > r2_threshold:
-                if pulse_type == "hpi":
-                    self.calib_note.update_hpi_param(
-                        target,
-                        {
-                            "target": target,
-                            "duration": pulse.duration,
-                            "amplitude": fit_result["amplitude"],
-                            "tau": pulse.tau,
-                        },
-                    )
-                elif pulse_type == "pi":
-                    self.calib_note.update_pi_param(
-                        target,
-                        {
-                            "target": target,
-                            "duration": pulse.duration,
-                            "amplitude": fit_result["amplitude"],
-                            "tau": pulse.tau,
-                        },
-                    )
+                if update_params:
+                    if pulse_type == "hpi":
+                        self.calib_note.update_hpi_param(
+                            target,
+                            {
+                                "target": target,
+                                "duration": pulse.duration,
+                                "amplitude": fit_result["amplitude"],
+                                "tau": pulse.tau,
+                            },
+                        )
+                    elif pulse_type == "pi":
+                        self.calib_note.update_pi_param(
+                            target,
+                            {
+                                "target": target,
+                                "duration": pulse.duration,
+                                "amplitude": fit_result["amplitude"],
+                                "tau": pulse.tau,
+                            },
+                        )
             else:
                 print(f"Error: R² value is too low ({r2:.3f})")
                 print(f"Calibration data not stored for {target}.")
@@ -1309,7 +1311,9 @@ class CalibrationMixin(
             cancel_phase = current_cr_param["cancel_phase"]
             time_range = _create_time_range(current_cr_param["duration"] * 2)
         else:
-            cr_amplitude = cr_amplitude or max_cr_amplitude
+            cr_amplitude = (
+                cr_amplitude if cr_amplitude is not None else max_cr_amplitude
+            )
             cr_phase = 0.0
             cancel_amplitude = 0.0
             cancel_phase = 0.0

@@ -39,6 +39,7 @@ from ...pulse import (
     Pulse,
     PulseArray,
     PulseSchedule,
+    RampType,
     Rect,
     Waveform,
 )
@@ -77,7 +78,14 @@ class MeasurementMixin(
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        reset_awgs_and_capunits: bool = True,
     ) -> MultipleMeasureResult:
+        if reset_awgs_and_capunits:
+            self.device_controller.initialize_awgs_and_capunits(self.box_ids)
+
         return self.measurement.execute(
             schedule=schedule,
             mode=mode,
@@ -88,6 +96,9 @@ class MeasurementMixin(
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
         )
 
     def measure(
@@ -104,6 +115,10 @@ class MeasurementMixin(
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        reset_awgs_and_capunits: bool = True,
         plot: bool = False,
         capture_delay_words: int | None = None,
         _use_sequencer_execute: bool = True,
@@ -154,6 +169,9 @@ class MeasurementMixin(
                     else:
                         waveforms[target] = np.array(waveform, dtype=np.complex128)
 
+        if reset_awgs_and_capunits:
+            self.device_controller.initialize_awgs_and_capunits(self.box_ids)
+
         if frequencies is None:
             result = self.measurement.measure(
                 waveforms=waveforms,
@@ -165,6 +183,9 @@ class MeasurementMixin(
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
+                readout_ramptime=readout_ramptime,
+                readout_drag_coeff=readout_drag_coeff,
+                readout_ramp_type=readout_ramp_type,
                 capture_delay_words=capture_delay_words,
                 _use_sequencer_execute=_use_sequencer_execute,
             )
@@ -239,6 +260,7 @@ class MeasurementMixin(
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         targets = []
@@ -271,6 +293,7 @@ class MeasurementMixin(
             capture_window=capture_window,
             capture_margin=capture_margin,
             readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
             plot=plot,
         )
 
@@ -304,12 +327,13 @@ class MeasurementMixin(
             raise ValueError("Invalid Rabi level.")
 
         if callable(sequence):
-            if isinstance(sequence(0), PulseSchedule):
+            initial_sequence = sequence(sweep_range[0])
+            if isinstance(initial_sequence, PulseSchedule):
                 sequences = [
                     sequence(param).repeated(repetitions).get_sampled_sequences()  # type: ignore
                     for param in sweep_range
                 ]
-            elif isinstance(sequence(0), dict):
+            elif isinstance(initial_sequence, dict):
                 sequences = [
                     {
                         target: waveform.repeated(repetitions).values
@@ -323,11 +347,11 @@ class MeasurementMixin(
         signals = defaultdict(list)
         plotter = IQPlotter(self.state_centers)
 
-        # TODO: workaround for the first measurement problem
-        sequences = [sequences[0]] + sequences
+        # initialize awgs and capture units
+        self.device_controller.initialize_awgs_and_capunits(self.box_ids)
 
         with self.modified_frequencies(frequencies):
-            for idx, seq in enumerate(sequences):
+            for seq in sequences:
                 result = self.measure(
                     seq,
                     mode="avg",
@@ -336,12 +360,74 @@ class MeasurementMixin(
                     control_window=control_window or self.control_window,
                     capture_window=capture_window or self.capture_window,
                     capture_margin=capture_margin or self.capture_margin,
+                    reset_awgs_and_capunits=False,
                 )
-                if idx == 0:
-                    # TODO: workaround for the first measurement problem
-                    continue
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
+                if plot:
+                    plotter.update(signals)
+
+        if plot:
+            plotter.show()
+
+        sweep_data = {
+            target: SweepData(
+                target=target,
+                data=np.array(values),
+                sweep_range=sweep_range,
+                rabi_param=rabi_params.get(target),
+                state_centers=self.state_centers.get(target),
+                title=title,
+                xlabel=xlabel,
+                ylabel=ylabel,
+                xaxis_type=xaxis_type,
+                yaxis_type=yaxis_type,
+            )
+            for target, values in signals.items()
+        }
+        result = ExperimentResult(data=sweep_data, rabi_params=self.rabi_params)
+        return result
+
+    def sweep_measurement(
+        self,
+        sequence: ParametricPulseSchedule,
+        *,
+        sweep_range: ArrayLike,
+        frequencies: dict[str, float] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        plot: bool = True,
+        title: str = "Sweep result",
+        xlabel: str = "Sweep value",
+        ylabel: str = "Measured value",
+        xaxis_type: Literal["linear", "log"] = "linear",
+        yaxis_type: Literal["linear", "log"] = "linear",
+    ) -> ExperimentResult[SweepData]:
+        sweep_range = np.array(sweep_range)
+
+        rabi_params = self.ge_rabi_params
+
+        signals = defaultdict(list)
+        plotter = IQPlotter(self.state_centers)
+
+        # initialize awgs and capture units
+        self.device_controller.initialize_awgs_and_capunits(self.box_ids)
+
+        with self.modified_frequencies(frequencies):
+            for param in sweep_range:
+                result = self.execute(
+                    sequence(param),
+                    mode="avg",
+                    shots=shots,
+                    interval=interval,
+                    capture_window=capture_window or self.capture_window,
+                    capture_margin=capture_margin or self.capture_margin,
+                    reset_awgs_and_capunits=False,
+                )
+                for target, data in result.data.items():
+                    signals[target].append(data[-1].kerneled)
                 if plot:
                     plotter.update(signals)
 
@@ -714,6 +800,11 @@ class MeasurementMixin(
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = True,
     ) -> list[MeasureResult]:
         if targets is None:
@@ -729,6 +820,11 @@ class MeasurementMixin(
                 {target: state for target in targets},  # type: ignore
                 shots=shots,
                 interval=interval,
+                control_window=control_window,
+                capture_window=capture_window,
+                capture_margin=capture_margin,
+                readout_duration=readout_duration,
+                readout_amplitudes=readout_amplitudes,
             )
             for state in states
         }
@@ -1199,6 +1295,63 @@ class MeasurementMixin(
 
         return result_pops, result_errs
 
+    def mle_fit_density_matrix(
+        self,
+        expected_values: dict[str, float],
+    ) -> NDArray:
+        import cvxpy as cp
+
+        """
+        Fit a physical density matrix (Hermitian, PSD, trace=1) using
+        maximum likelihood estimation (MLE) from expectation values.
+
+        This implementation is inspired by Qiskit-Ignis's MLE tomography fitter:
+        https://github.com/qiskit-community/qiskit-ignis/blob/master/qiskit/ignis/verification/tomography/fitters/base_fitter.py
+
+        While independently implemented for the Qubex project, it follows the same
+        core methodology (e.g., CVXPY-based convex optimization with physical constraints).
+
+        Args:
+            expected_values: A dictionary mapping Pauli label strings like 'XX', 'XY', etc.
+                            to their corresponding measured expectation values.
+
+        Returns:
+            A 4x4 complex numpy array representing the fitted physical density matrix.
+        """
+        paulis = {
+            "I": np.array([[1, 0], [0, 1]], dtype=complex),
+            "X": np.array([[0, 1], [1, 0]], dtype=complex),
+            "Y": np.array([[0, -1j], [1j, 0]], dtype=complex),
+            "Z": np.array([[1, 0], [0, -1]], dtype=complex),
+        }
+
+        A_list: list[NDArray] = []
+        b_list: list[float] = []
+        for basis, val in expected_values.items():
+            p1, p2 = basis[0], basis[1]
+            pauli_op = np.kron(paulis[p1], paulis[p2])
+            A_list.append(pauli_op.reshape(1, -1).conj())
+            b_list.append(val)
+        A = np.vstack(A_list)
+        b = np.array(b_list)
+
+        rho = cp.Variable((4, 4), hermitian=True)
+        constraints = [rho >> 0, cp.trace(rho) == 1]
+        objective = cp.Minimize(cp.sum_squares(A @ cp.vec(rho, order="F") - b))
+        problem = cp.Problem(objective, constraints)
+        problem.solve(solver=cp.SCS)
+
+        if rho.value is None:
+            raise RuntimeError("CVXPY failed to solve the MLE problem.")
+
+        # Post-process: clip tiny negative eigenvalues
+        eigvals, eigvecs = np.linalg.eigh(rho.value)
+        eigvals_clipped = np.clip(eigvals, 0, None)
+        rho_fixed = eigvecs @ np.diag(eigvals_clipped) @ eigvecs.conj().T
+        rho_fixed /= np.trace(rho_fixed)
+
+        return rho_fixed
+
     def measure_bell_state(
         self,
         control_qubit: str,
@@ -1249,7 +1402,10 @@ class MeasurementMixin(
             interval=interval,
         )
 
+        basis_labels = result.get_basis_labels(pair)
         prob_dict_raw = result.get_probabilities(pair)
+        # Ensure all basis labels are present in the raw probabilities
+        prob_dict_raw = {label: prob_dict_raw.get(label, 0) for label in basis_labels}
         prob_dict_mitigated = result.get_mitigated_probabilities(pair)
 
         labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
@@ -1308,6 +1464,7 @@ class MeasurementMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
+        mle_fit: bool = True,
     ) -> dict:
         probabilities = {}
         for control_basis, target_basis in tqdm(
@@ -1359,7 +1516,10 @@ class MeasurementMixin(
                 rho += e * pauli
                 expected_values[basis] = e
 
-        rho = rho / 4
+        if mle_fit:
+            rho = self.mle_fit_density_matrix(expected_values)
+        else:
+            rho = rho / 4
         phi = np.array([1, 0, 0, 1]) / np.sqrt(2)
         fidelity = np.real(phi @ rho @ phi.T.conj())
 

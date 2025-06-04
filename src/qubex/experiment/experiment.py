@@ -734,10 +734,14 @@ class Experiment(
 
     def configure(
         self,
-        box_ids: list[str] | None = None,
-        exclude: list[str] | None = None,
+        box_ids: str | list[str] | None = None,
+        exclude: str | list[str] | None = None,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ):
+        if isinstance(box_ids, str):
+            box_ids = [box_ids]
+        if isinstance(exclude, str):
+            exclude = [exclude]
         if mode is None:
             mode = self.configuration_mode
         self.state_manager.load(
@@ -753,6 +757,14 @@ class Experiment(
 
     def reload(self):
         self._measurement.reload()
+
+    def reset_awgs_and_capunits(
+        self,
+        box_ids: str | Collection[str] | None = None,
+    ):
+        if box_ids is None:
+            box_ids = self.box_ids
+        self.device_controller.initialize_awgs_and_capunits(box_ids)
 
     @deprecated("This method is tentative. It may be removed in the future.")
     def register_custom_target(

@@ -222,12 +222,16 @@ class DeviceController:
         self,
         type: Literal["cap", "gen"],
     ) -> dict[str, dict]:
+        if self._boxpool is None:
+            raise ValueError("Boxes not connected. Call connect() method first.")
         db = self.qubecalib.system_config_database
         result = {}
         for target in db._target_settings:
             channels = db.get_channels_by_target(target)
             bpc_list = [db.get_channel(channel) for channel in channels]
             for box_name, port_name, channel_number in bpc_list:
+                if box_name not in self._boxpool._boxes:
+                    continue
                 box = self.get_box(box_name, reconnect=False)
                 port_setting = db._port_settings[port_name]
                 if (
@@ -282,17 +286,19 @@ class DeviceController:
         box = self.qubecalib.create_box(box_name, reconnect=False)
         return box.link_status()
 
-    def connect(self, box_names: list[str] | None = None):
+    def connect(self, box_names: str | list[str] | None = None):
         """
         Connect to the boxes.
 
         Parameters
         ----------
-        box_names : list[str], optional
+        box_names : str | list[str], optional
             List of box names to connect to. If None, connect to all available boxes.
         """
         if box_names is None:
             box_names = self.available_boxes
+        if isinstance(box_names, str):
+            box_names = [box_names]
         self._boxpool = self.qubecalib.create_boxpool(*box_names)
         self._quel1system = self.qubecalib.sysdb.create_quel1system(*box_names)
         self._cap_resource_map = self.create_resource_map("cap")
@@ -323,6 +329,26 @@ class DeviceController:
         else:
             box = self._boxpool._boxes[box_name][0]
         return box
+
+    def initialize_awgs_and_capunits(
+        self,
+        box_names: str | Collection[str],
+    ):
+        """
+        Initialize all AWGs in the specified boxes.
+
+        Parameters
+        ----------
+        box_names : str | list[str]
+            List of box names to initialize.
+        """
+        if isinstance(box_names, str):
+            box_names = [box_names]
+        for box_name in box_names:
+            self._check_box_availabilty(box_name)
+            box = self.get_box(box_name, reconnect=False)
+            box.initialize_all_awgs()
+            box.initialize_all_capunits()
 
     def linkup(
         self,

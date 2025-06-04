@@ -74,7 +74,7 @@ class CharacterizationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        amplitude_range: ArrayLike = np.linspace(0.0, 0.1, 21),
+        amplitude_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -91,7 +91,7 @@ class CharacterizationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target labels to sweep the readout amplitude. Defaults to None.
         amplitude_range : ArrayLike, optional
-            Range of the readout amplitude to sweep. Defaults to np.linspace(0.0, 1.0, 21).
+            Range of the readout amplitude to sweep. Defaults to None.
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Initial state of the qubits. Defaults to None.
         capture_window : float, optional
@@ -405,7 +405,7 @@ class CharacterizationProtocol(Protocol):
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
@@ -424,7 +424,7 @@ class CharacterizationProtocol(Protocol):
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
@@ -580,39 +580,36 @@ class CharacterizationProtocol(Protocol):
         """
         ...
 
-    def measure_phase_shift(
+    def measure_electrical_delay(
         self,
         target: str,
         *,
-        frequency_range: ArrayLike | None = None,
+        df: float | None = None,
+        n_samples: int | None = None,
         amplitude: float | None = None,
-        subrange_width: float = 0.3,
-        shots: int = 128,
+        shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
     ) -> float:
         """
-        Measures the phase shift caused by the length of the transmission line.
+        Measures the electrical delay of the target qubit.
 
         Parameters
         ----------
         target : str
-            Target qubit connected to the resonator of interest.
-        frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz.
+            Target qubit to measure the electrical delay.
+        df : float, optional
+            Frequency step for the measurement in GHz. Defaults to None.
+        n_samples : int, optional
+            Number of samples for the measurement. Defaults to None.
         amplitude : float, optional
             Amplitude of the readout pulse. Defaults to None.
         shots : int, optional
-            Number of shots. Defaults to 128.
+            Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
             Interval between shots. Defaults to 0.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        float
-            Phase shift in rad/GHz.
         """
         ...
 
@@ -621,9 +618,11 @@ class CharacterizationProtocol(Protocol):
         target: str,
         *,
         frequency_range: ArrayLike | None = None,
-        amplitude: float | None = None,
-        phase_shift: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
         subrange_width: float = 0.3,
+        peak_height: float | None = None,
+        peak_distance: int | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
@@ -638,10 +637,10 @@ class CharacterizationProtocol(Protocol):
             Target qubit connected to the resonator of interest.
         frequency_range : ArrayLike, optional
             Frequency range of the scan in GHz.
-        amplitude : float, optional
+        readout_amplitude : float, optional
             Amplitude of the readout pulse. Defaults to None.
-        phase_shift : float, optional
-            Phase shift in rad/GHz. If None, it will be measured.
+        electrical_delay : float, optional
+            Electrical delay in ns. Defaults to None.
         subrange_width : float, optional
             Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
@@ -666,7 +665,7 @@ class CharacterizationProtocol(Protocol):
         *,
         frequency_range: ArrayLike | None = None,
         power_range: ArrayLike = np.arange(-60, 5, 5),
-        phase_shift: float | None = None,
+        electrical_delay: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
         plot: bool = True,
@@ -683,8 +682,8 @@ class CharacterizationProtocol(Protocol):
             Frequency range of the scan in GHz. Defaults to None.
         power_range : ArrayLike, optional
             Power range in dB. Defaults to np.arange(-60, 5, 5).
-        phase_shift : float, optional
-            Phase shift in rad/GHz.
+        electrical_delay : float, optional
+            Electrical delay in ns. Defaults to None.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -705,11 +704,14 @@ class CharacterizationProtocol(Protocol):
         self,
         target: str,
         *,
-        frequency_range: ArrayLike,
-        amplitude: float | None = None,
-        phase_shift: float,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
+        center_frequency: float | None = None,
+        df: float | None = None,
+        frequency_width: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        qubit_state: str = "0",
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -727,9 +729,9 @@ class CharacterizationProtocol(Protocol):
         phase_shift : float
             Phase shift in rad/GHz.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots. Defaults to CALIBRATION_SHOTS.
         interval : float, optional
-            Interval between shots. Defaults to 0.
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         save_image : bool, optional
@@ -749,9 +751,11 @@ class CharacterizationProtocol(Protocol):
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
-        subrange_width: float = 0.3,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
+        subrange_width: float | None = None,
+        peak_height: float | None = None,
+        peak_distance: int | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = False,
     ) -> dict:
@@ -804,11 +808,11 @@ class CharacterizationProtocol(Protocol):
         self,
         target: str,
         frequency_range: ArrayLike | None = None,
-        power_range: ArrayLike = np.arange(-60, 5, 5),
+        power_range: ArrayLike = np.arange(-60, 0, 5),
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -822,7 +826,7 @@ class CharacterizationProtocol(Protocol):
         frequency_range : ArrayLike, optional
             Frequency range of the scan in GHz. Defaults to None.
         power_range : ArrayLike, optional
-            Power range in dB. Defaults to np.arange(-60, 5, 5).
+            Power range in dB. Defaults to np.arange(-60, 0, 5).
         readout_amplitude : float, optional
             Amplitude of the readout pulse. Defaults to None.
         readout_frequency : float, optional

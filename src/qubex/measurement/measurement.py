@@ -26,7 +26,7 @@ from ..backend import (
     Target,
 )
 from ..backend.sequencer_mod import SequencerMod
-from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule
+from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from ..typing import IQArray, TargetMap
 from .measurement_result import (
     MeasureData,
@@ -128,10 +128,13 @@ class Measurement:
 
         if skew_file_path is None:
             skew_file_path = f"{self._config_dir}/skew.yaml"
-        try:
-            self.device_controller.load_skew_file(box_ids, skew_file_path)
-        except Exception as e:
-            print(f"Failed to load the skew file: {e}")
+        if not Path(skew_file_path).exists():
+            print(f"Skew file not found: {skew_file_path}")
+        else:
+            try:
+                self.device_controller.load_skew_file(box_ids, skew_file_path)
+            except Exception as e:
+                print(f"Failed to load the skew file: {e}")
 
         if connect_devices:
             try:
@@ -194,6 +197,22 @@ class Measurement:
     def classifiers(self) -> TargetMap[StateClassifier]:
         """Get the state classifiers."""
         return self._classifiers
+
+    def get_awg_frequency(self, target: str) -> float:
+        """
+        Get the AWG frequency for the target.
+
+        Parameters
+        ----------
+        target : str
+            The target label.
+
+        Returns
+        -------
+        float
+            The AWG frequency in Hz.
+        """
+        return self.experiment_system.get_awg_frequency(target)
 
     def update_classifiers(self, classifiers: TargetMap[StateClassifier]):
         """Update the state classifiers."""
@@ -358,6 +377,7 @@ class Measurement:
             mode="avg",
             shots=1,
             capture_window=duration,
+            readout_amplitudes={target: 0 for target in targets},
         )
 
     def _calc_backend_interval(
@@ -388,6 +408,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
         capture_delay_words: int | None = None,
         _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
@@ -468,6 +491,9 @@ class Measurement:
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
+                readout_ramptime=readout_ramptime,
+                readout_drag_coeff=readout_drag_coeff,
+                readout_ramp_type=readout_ramp_type,
             )
             if self._use_sequencer_execute and _use_sequencer_execute:
                 backend_result = self.device_controller.execute_sequencer(
@@ -597,6 +623,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -646,6 +675,9 @@ class Measurement:
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -705,16 +737,27 @@ class Measurement:
         target: str,
         duration: float | None = None,
         amplitude: float | None = None,
+        tau: float | None = None,
+        beta: float | None = None,
+        type: RampType | None = None,
     ) -> FlatTop:
         qubit = Target.qubit_label(target)
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
             amplitude = self.control_params.readout_amplitude[qubit]
+        if tau is None:
+            tau = DEFAULT_READOUT_RAMPTIME
+        if beta is None:
+            beta = 0.0
+        if type is None:
+            type = "RaisedCosine"
         return FlatTop(
             duration=duration,
             amplitude=amplitude,
-            tau=DEFAULT_READOUT_RAMPTIME,
+            tau=tau,
+            beta=beta,
+            type=type,
         )
 
     def _create_sequencer(
@@ -727,6 +770,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> Sequencer:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
@@ -773,12 +819,15 @@ class Measurement:
                 target=qubit,
                 duration=readout_duration,
                 amplitude=readout_amplitudes.get(qubit),
+                tau=readout_ramptime,
+                beta=readout_drag_coeff,
+                type=readout_ramp_type,
             )
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
             readout_target = Target.read_label(qubit)
-            omega = 2 * np.pi * self.awg_frequencies[readout_target]
+            omega = 2 * np.pi * self.get_awg_frequency(readout_target)
             offset = readout_start * SAMPLING_PERIOD
             padded_waveform *= np.exp(-1j * omega * offset)
             readout_waveforms[readout_target] = padded_waveform
@@ -794,7 +843,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
@@ -813,7 +862,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
@@ -832,7 +881,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     pls.CapSampledSubSequence(
                         capture_slots=[
@@ -873,6 +922,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
@@ -910,6 +962,9 @@ class Measurement:
                                     target=target,
                                     duration=readout_duration,
                                     amplitude=readout_amplitudes.get(target),
+                                    tau=readout_ramptime,
+                                    beta=readout_drag_coeff,
+                                    type=readout_ramp_type,
                                 ).padded(
                                     total_duration=capture_window,
                                     pad_side="right",
@@ -946,7 +1001,7 @@ class Measurement:
             if not ranges:
                 continue
             seq = sampled_sequences[target]
-            omega = 2 * np.pi * self.awg_frequencies[target]
+            omega = 2 * np.pi * self.get_awg_frequency(target)
             for rng in ranges:
                 offset = rng.start * SAMPLING_PERIOD
                 seq[rng] *= np.exp(-1j * omega * offset)
@@ -960,7 +1015,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     # has only one GenSampledSubSequence
                     pls.GenSampledSubSequence(
@@ -1016,7 +1071,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.awg_frequencies[target],
+                modulation_frequency=self.get_awg_frequency(target),
                 sub_sequences=[
                     # has only one CapSampledSubSequence
                     cap_sub_sequence,
@@ -1035,6 +1090,9 @@ class Measurement:
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
     ) -> Sequencer:
         gen_sequences, cap_sequences = self._create_sampled_sequences_from_schedule(
             schedule=schedule,
@@ -1043,6 +1101,9 @@ class Measurement:
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
         )
 
         backend_interval = (
@@ -1069,11 +1130,19 @@ class Measurement:
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
         capture_index = 0  # the first capture index
 
+        iq_data = {}
+        for target, iqs in sorted(backend_result.data.items()):
+            sideband = self.experiment_system.get_target(target).sideband
+            if sideband == "L":
+                iq_data[target] = np.conjugate(iqs)
+            else:
+                iq_data[target] = iqs
+
         if measure_mode == MeasureMode.SINGLE:
             backend_data = {
                 # iqs[capture_index]: ndarray[duration, shots]
-                target[label_slice]: iqs[capture_index].T.squeeze() * norm_factor
-                for target, iqs in sorted(backend_result.data.items())
+                target[label_slice]: iqs[capture_index].T * norm_factor
+                for target, iqs in iq_data.items()
             }
             measure_data = {
                 qubit: MeasureData(
@@ -1088,7 +1157,7 @@ class Measurement:
             backend_data = {
                 # iqs[capture_index]: ndarray[duration, 1]
                 target[label_slice]: iqs[capture_index].squeeze() * norm_factor / shots
-                for target, iqs in sorted(backend_result.data.items())
+                for target, iqs in iq_data.items()
             }
             measure_data = {
                 qubit: MeasureData(
@@ -1116,21 +1185,29 @@ class Measurement:
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
 
+        iq_data = {}
+        for target, iqs in sorted(backend_result.data.items()):
+            sideband = self.experiment_system.get_target(target).sideband
+            if sideband == "L":
+                iq_data[target] = [np.conjugate(iq) for iq in iqs]
+            else:
+                iq_data[target] = iqs
+
         measure_data = defaultdict(list)
         if measure_mode == MeasureMode.SINGLE:
-            for target, iqs in sorted(backend_result.data.items()):
+            for target, iqs in iq_data.items():
                 qubit = target[label_slice]
                 for iq in iqs:
                     measure_data[qubit].append(
                         MeasureData(
                             target=qubit,
                             mode=measure_mode,
-                            raw=iq.T.squeeze() * norm_factor,
+                            raw=iq.T * norm_factor,
                             classifier=self.classifiers.get(qubit),
                         )
                     )
         elif measure_mode == MeasureMode.AVG:
-            for target, iqs in sorted(backend_result.data.items()):
+            for target, iqs in iq_data.items():
                 qubit = target[label_slice]
                 for iq in iqs:
                     measure_data[qubit].append(

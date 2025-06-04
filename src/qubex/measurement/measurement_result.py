@@ -284,22 +284,27 @@ class MeasureResult:
             ]
         )
 
+    def get_memory(
+        self,
+        targets: Collection[str] | None = None,
+        *,
+        threshold: float | None = None,
+    ) -> list[str]:
+        """
+        Returns memory: list of bitstrings (e.g., ['0110', '1010', ...])
+        representing each shot's classified result.
+        """
+        classified_data = self.get_classified_data(targets, threshold=threshold)
+        return ["".join(map(str, row)) for row in classified_data]
+
     def get_counts(
         self,
         targets: Collection[str] | None = None,
         *,
         threshold: float | None = None,
-    ) -> dict[str, int]:
-        classified_data = self.get_classified_data(targets, threshold=threshold)
-        classified_labels = np.array(
-            ["".join(map(str, row)) for row in classified_data]
-        )
-        counts = dict(Counter(classified_labels))
-        basis_labels = self.get_basis_labels(targets)
-        counts = {
-            basis_label: counts.get(basis_label, 0) for basis_label in basis_labels
-        }
-        return counts
+    ) -> Counter:
+        classified_labels = self.get_memory(targets, threshold=threshold)
+        return Counter(classified_labels)
 
     def get_probabilities(
         self,
@@ -366,10 +371,12 @@ class MeasureResult:
     ) -> dict[str, int]:
         if targets is None:
             targets = self.data.keys()
-        raw = self.get_counts(targets)
-        cm_inv = self.get_inverse_confusion_matrix(targets)
-        mitigated = np.array(list(raw.values())) @ cm_inv
+        raw_counter = self.get_counts(targets)
         basis_labels = self.get_basis_labels(targets)
+        # Ensure all basis labels are present in the raw counts
+        raw = np.array([raw_counter.get(label, 0) for label in basis_labels])
+        cm_inv = self.get_inverse_confusion_matrix(targets)
+        mitigated = raw @ cm_inv
         mitigated_counts = {
             basis_label: int(mitigated[i]) for i, basis_label in enumerate(basis_labels)
         }
@@ -381,10 +388,12 @@ class MeasureResult:
     ) -> dict[str, float]:
         if targets is None:
             targets = self.data.keys()
-        raw = self.get_probabilities(targets)
-        cm_inv = self.get_inverse_confusion_matrix(targets)
-        mitigated = np.array(list(raw.values())) @ cm_inv
         basis_labels = self.get_basis_labels(targets)
+        raw_probs = self.get_probabilities(targets)
+        # Ensure the order of raw matches basis_labels
+        raw = np.array([raw_probs.get(label, 0.0) for label in basis_labels])
+        cm_inv = self.get_inverse_confusion_matrix(targets)
+        mitigated = raw @ cm_inv
         mitigated_probabilities = {
             basis_label: mitigated[i] for i, basis_label in enumerate(basis_labels)
         }
@@ -479,19 +488,14 @@ class MultipleMeasureResult:
         targets: Collection[tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
-    ) -> dict[str, int]:
+    ) -> Counter:
         if targets is None:
             targets = [(target, -1) for target in self.data.keys()]
         classified_data = self.get_classified_data(targets, threshold=threshold)
         classified_labels = np.array(
             ["".join(map(str, row)) for row in classified_data]
         )
-        counts = dict(Counter(classified_labels))
-        basis_labels = self.get_basis_labels([target for target, _ in targets])
-        counts = {
-            basis_label: counts.get(basis_label, 0) for basis_label in basis_labels
-        }
-        return counts
+        return Counter(classified_labels)
 
     def get_probabilities(
         self,
@@ -577,10 +581,12 @@ class MultipleMeasureResult:
         if targets is None:
             targets = [(target, -1) for target in self.data.keys()]
         labels = [target for target, _ in targets]
-        raw = self.get_probabilities(targets)
-        cm_inv = self.get_inverse_confusion_matrix(labels)
-        mitigated = np.array(list(raw.values())) @ cm_inv
         basis_labels = self.get_basis_labels(labels)
+        raw_probs = self.get_probabilities(targets)
+        # Ensure the order of raw matches basis_labels
+        raw = np.array([raw_probs.get(label, 0.0) for label in basis_labels])
+        cm_inv = self.get_inverse_confusion_matrix(labels)
+        mitigated = raw @ cm_inv
         mitigated_probabilities = {
             basis_label: mitigated[i] for i, basis_label in enumerate(basis_labels)
         }

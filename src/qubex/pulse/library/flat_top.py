@@ -4,9 +4,12 @@ from typing import Final, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from typing_extensions import TypeAlias
 
 from ..pulse import Pulse
 from .drag import Drag
+
+RampType: TypeAlias = Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"]
 
 
 class FlatTop(Pulse):
@@ -44,7 +47,7 @@ class FlatTop(Pulse):
         amplitude: float,
         tau: float,
         beta: float | None = None,
-        type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "RaisedCosine",
+        type: RampType = "RaisedCosine",
         **kwargs,
     ):
         self.amplitude: Final = amplitude
@@ -72,7 +75,7 @@ class FlatTop(Pulse):
         amplitude: float,
         tau: float,
         beta: float | None = None,
-        type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "RaisedCosine",
+        type: RampType = "RaisedCosine",
     ) -> NDArray:
         """
         Flat-top pulse function.
@@ -89,8 +92,8 @@ class FlatTop(Pulse):
             Rise and fall time of the pulse in ns.
         beta : float, optional
             DRAG correction coefficient. Default is None.
-        type : Literal["gaussian", "raised_cosine"], optional
-            Type of the pulse. Default is "gaussian".
+        type : RampType, optional
+            Type of the pulse. Default is "RaisedCosine".
 
         Returns
         -------

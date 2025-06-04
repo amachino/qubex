@@ -173,8 +173,8 @@ class Waveform(ABC):
     def plot(
         self,
         *,
-        polar=False,
-        title=None,
+        polar: bool = False,
+        title: str | None = None,
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
         divide_by_two_pi: bool = False,
     ):
@@ -336,6 +336,67 @@ class Waveform(ABC):
         fig.update_yaxes(title_text=ylabel_1, row=1, col=1)
         fig.update_yaxes(title_text=ylabel_2, row=2, col=1)
         fig.update_layout(width=600)
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "scale": 3,
+                },
+            }
+        )
+
+    def plot_fft(
+        self,
+        *,
+        title: str | None = None,
+        xlabel: str = "Frequency (MHz)",
+        ylabel: str = "Amplitude (arb. units)",
+    ):
+        """
+        Plots the FFT of the waveform.
+
+        Parameters
+        ----------
+        title : str, optional
+            Title of the plot.
+        xlabel : str, optional
+            Label of the x-axis.
+        ylabel : str, optional
+            Label of the y-axis.
+        """
+        if self.length == 0:
+            print("Waveform is empty.")
+            return
+
+        if title is None:
+            title = "Frequency spectrum"
+
+        pulse = self.padded(
+            total_duration=self.duration * 100,
+            pad_side="right",
+        )
+
+        N = pulse.length
+        values = pulse.values
+        fft_values = np.fft.fft(values)
+        freqs = np.fft.fftfreq(N, d=self.SAMPLING_PERIOD)
+        idx = np.argsort(freqs)
+        freqs = freqs[idx]
+        fft_values = np.abs(fft_values[idx])  # type: ignore
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=freqs * 1e3,
+                y=fft_values,
+                mode="lines",
+                name="FFT",
+            )
+        )
+        fig.update_layout(
+            title=title,
+            xaxis_title=xlabel,
+            yaxis_title=ylabel,
+        )
         fig.show(
             config={
                 "toImageButtonOptions": {

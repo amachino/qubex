@@ -8,7 +8,7 @@ from numpy.typing import ArrayLike, NDArray
 
 from ...measurement import MeasureResult, MultipleMeasureResult
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from ...pulse import PulseSchedule, Waveform
+from ...pulse import PulseSchedule, RampType, Waveform
 from ...typing import (
     IQArray,
     ParametricPulseSchedule,
@@ -90,6 +90,9 @@ class MeasurementProtocol(Protocol):
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -152,6 +155,7 @@ class MeasurementProtocol(Protocol):
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -368,6 +372,11 @@ class MeasurementProtocol(Protocol):
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = True,
     ) -> list[MeasureResult]: ...
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Collection, Union
+from typing import Collection, Literal, Union
 
 from pydantic.dataclasses import dataclass
 
@@ -68,6 +68,10 @@ class Target(Model):
             return ""
         else:
             raise ValueError("Invalid quantum object.")
+
+    @property
+    def sideband(self) -> Literal["U", "L"] | None:
+        return self.channel.port.sideband
 
     @property
     def coarse_frequency(self) -> float:
