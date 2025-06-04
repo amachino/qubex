@@ -1295,8 +1295,12 @@ class MeasurementMixin(
 
         return result_pops, result_errs
 
-    def mle_fit_density_matrix(self, expected_values: dict[str, float]) -> np.ndarray:
+    def mle_fit_density_matrix(
+        self,
+        expected_values: dict[str, float],
+    ) -> NDArray:
         import cvxpy as cp
+
         """
         Fit a physical density matrix (Hermitian, PSD, trace=1) using
         maximum likelihood estimation (MLE) from expectation values.
@@ -1333,7 +1337,7 @@ class MeasurementMixin(
 
         rho = cp.Variable((4, 4), hermitian=True)
         constraints = [rho >> 0, cp.trace(rho) == 1]
-        objective = cp.Minimize(cp.sum_squares(A @ cp.vec(rho, order='F') - b))
+        objective = cp.Minimize(cp.sum_squares(A @ cp.vec(rho, order="F") - b))
         problem = cp.Problem(objective, constraints)
         problem.solve(solver=cp.SCS)
 
@@ -1347,6 +1351,7 @@ class MeasurementMixin(
         rho_fixed /= np.trace(rho_fixed)
 
         return rho_fixed
+
     def measure_bell_state(
         self,
         control_qubit: str,
