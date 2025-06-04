@@ -2578,9 +2578,9 @@ class CharacterizationMixin(
         )
 
         frequency_range = result_0["frequency_range"]
-        singals_0 = result_0["reflection_coefficients"]
+        signals_0 = result_0["reflection_coefficients"]
         signals_1 = result_1["reflection_coefficients"]
-        phases_0 = np.angle(singals_0)
+        phases_0 = np.angle(signals_0)
         phases_0 -= phases_0[0]
         phases_diff_0 = np.diff(phases_0)
         phases_diff_0[phases_diff_0 > threshold] -= 2 * np.pi
@@ -2655,7 +2655,7 @@ class CharacterizationMixin(
             "f_1": f_1,
             "dispersive_shift": dispersive_shift,
             "frequency_range": frequency_range,
-            "signals_0": singals_0,
+            "signals_0": signals_0,
             "signals_1": signals_1,
             "phases_0": phases_0,
             "phases_1": phases_1,
