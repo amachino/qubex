@@ -990,6 +990,7 @@ class CharacterizationMixin(
         *,
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
+        secound_rotation_axis: Literal["X", "Y"] = "X",
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -1038,10 +1039,13 @@ class CharacterizationMixin(
 
                     # Ramsey sequence for the target qubit
                     for target in target_qubits:
-                        hpi = self.hpi_pulse[target]
-                        ps.add(target, hpi)
+                        x90 = self.hpi_pulse[target]
+                        ps.add(target, x90)
                         ps.add(target, Blank(T))
-                        ps.add(target, hpi.shifted(np.pi))
+                        if secound_rotation_axis == "X":
+                            ps.add(target, x90.shifted(np.pi))
+                        else:
+                            ps.add(target, x90.shifted(-np.pi / 2))
                 return ps
 
             detuned_frequencies = {
