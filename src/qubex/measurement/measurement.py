@@ -856,13 +856,14 @@ class Measurement:
             )
         for target, waveform in readout_waveforms.items():
             # add GenSampledSequence (readout)
+            modulation_frequency = self.get_awg_frequency(target)
             gen_sequences[target] = pls.GenSampledSequence(
                 target_name=target,
                 prev_blank=0,
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.get_awg_frequency(target),
+                modulation_frequency=modulation_frequency,
                 sub_sequences=[
                     pls.GenSampledSubSequence(
                         real=np.real(waveform),
@@ -881,7 +882,7 @@ class Measurement:
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
-                modulation_frequency=self.get_awg_frequency(target),
+                modulation_frequency=modulation_frequency,
                 sub_sequences=[
                     pls.CapSampledSubSequence(
                         capture_slots=[
