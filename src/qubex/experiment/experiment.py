@@ -535,6 +535,35 @@ class Experiment(
                     tau=param["tau"],
                 )
         return result
+    
+    @property
+    def cr_pulse(self) -> dict[str, PulseSchedule]:
+        result = {}
+        for cr_label in self.cr_targets:
+            control_qubit, target_qubit = Target.cr_qubit_pair(cr_label)
+            cr_param = self.calib_note.get_cr_param(cr_label)
+            if cr_param is not None and None not in cr_param.values():
+                cancel_amplitude = cr_param["cancel_amplitude"]
+                cancel_phase = cr_param["cancel_phase"]
+                rotary_amplitude = cr_param["rotary_amplitude"]
+                cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
+                result[cr_label] = CrossResonance(
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
+                    cr_amplitude=cr_param["cr_amplitude"],
+                    cr_duration=cr_param["duration"],
+                    cr_ramptime=cr_param["ramptime"],
+                    cr_phase=cr_param["cr_phase"],
+                    cr_beta=cr_param["cr_beta"],
+                    cancel_amplitude=np.abs(cancel_pulse),
+                    cancel_phase=np.angle(cancel_pulse),
+                    cancel_beta=cr_param["cancel_beta"],
+                    echo=True,
+                    pi_pulse=self.x180(control_qubit),
+                    pi_margin=0.0,
+                )
+
+        return result
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
