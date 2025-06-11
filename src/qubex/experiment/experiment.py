@@ -148,7 +148,6 @@ class Experiment(
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        use_neopulse: bool = False,
     ):
         self._load_config(
             chip_id=chip_id,
@@ -179,7 +178,6 @@ class Experiment(
             qubits=qubits,
             config_dir=self._config_dir,
             params_dir=self._params_dir,
-            use_neopulse=use_neopulse,
             connect_devices=connect_devices,
             configuration_mode=configuration_mode,
         )

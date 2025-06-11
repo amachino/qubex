@@ -64,8 +64,6 @@ class Measurement:
         connect_devices: bool = True,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
-        use_neopulse: bool = False,
-        use_sequencer_execute: bool = True,
     ):
         """
         Initialize the Measurement.
@@ -99,8 +97,6 @@ class Measurement:
         self._qubits = qubits
         self._config_dir = config_dir
         self._params_dir = params_dir
-        self._use_neopulse = use_neopulse
-        self._use_sequencer_execute = use_sequencer_execute
         self._classifiers: TargetMap[StateClassifier] = {}
         self._initialize(
             connect_devices=connect_devices,
@@ -414,7 +410,6 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         capture_delay_words: int | None = None,
-        _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -469,149 +464,27 @@ class Measurement:
             capture_window=capture_window,
         )
         measure_mode = MeasureMode(mode)
-        if self._use_neopulse:
-            # deprecated
-            sequence = self._create_sequence(
-                waveforms=waveforms,
-                control_window=control_window,
-                capture_window=capture_window,
-                capture_margin=capture_margin,
-                readout_duration=readout_duration,
-                readout_amplitudes=readout_amplitudes,
-            )
-            backend_result = self.device_controller.execute_sequence(
-                sequence=sequence,
-                repeats=shots,
-                interval=backend_interval,
-                integral_mode=measure_mode.integral_mode,
-            )
-        else:
-            sequencer = self._create_sequencer(
-                waveforms=waveforms,
-                interval=backend_interval,
-                capture_window=capture_window,
-                capture_margin=capture_margin,
-                readout_duration=readout_duration,
-                readout_amplitudes=readout_amplitudes,
-                readout_ramptime=readout_ramptime,
-                readout_drag_coeff=readout_drag_coeff,
-                readout_ramp_type=readout_ramp_type,
-            )
-            if self._use_sequencer_execute and _use_sequencer_execute:
-                backend_result = self.device_controller.execute_sequencer(
-                    sequencer=sequencer,
-                    repeats=shots,
-                    integral_mode=measure_mode.integral_mode,
-                )
-            else:
-                backend_result = self.device_controller._execute_sequencer(
-                    sequencer=sequencer,
-                    repeats=shots,
-                    integral_mode=measure_mode.integral_mode,
-                    capture_delay_words=capture_delay_words,
-                )
+        sequencer = self._create_sequencer(
+            waveforms=waveforms,
+            interval=backend_interval,
+            capture_window=capture_window,
+            capture_margin=capture_margin,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
+        )
+        backend_result = self.device_controller.execute_sequencer(
+            sequencer=sequencer,
+            repeats=shots,
+            integral_mode=measure_mode.integral_mode,
+        )
         return self._create_measure_result(
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=shots,
         )
-
-    @deprecated("Use `measure` instead.")
-    def measure_batch(
-        self,
-        waveforms_list: Collection[TargetMap[IQArray]],
-        *,
-        mode: Literal["single", "avg"] = "avg",
-        shots: int | None = None,
-        interval: float | None = None,
-        control_window: float | None = None,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-    ):
-        """
-        Measure with the given control waveforms.
-
-        Parameters
-        ----------
-        waveforms_list : Collection[TargetMap[IQArray]]
-            The control waveforms for each target.
-            Waveforms are complex I/Q arrays with the sampling period of 2 ns.
-        mode : Literal["single", "avg"], optional
-            The measurement mode, by default "single".
-            - "single": Measure once.
-            - "avg": Measure multiple times and average the results.
-        shots : int, optional
-            The number of shots, by default DEFAULT_SHOTS.
-        interval : float, optional
-            The interval in ns, by default DEFAULT_INTERVAL.
-        control_window : float, optional
-            The control window in ns, by default None.
-        capture_window : float, optional
-            The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
-        capture_margin : float, optional
-            The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
-        readout_duration : float, optional
-            The readout duration in ns, by default DEFAULT_READOUT_DURATION.
-        readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit, by default None.
-
-        Yields
-        ------
-        MeasureResult
-            The measurement results.
-        """
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-        if capture_window is None:
-            capture_window = DEFAULT_CAPTURE_WINDOW
-
-        measure_mode = MeasureMode(mode)
-        self.device_controller.clear_command_queue()
-        for waveforms in waveforms_list:
-            backend_interval = self._calc_backend_interval(
-                waveforms=waveforms,
-                interval=interval,
-                control_window=control_window,
-                capture_window=capture_window,
-            )
-            if self._use_neopulse:
-                # deprecated
-                sequence = self._create_sequence(
-                    waveforms=waveforms,
-                    control_window=control_window,
-                    capture_window=capture_window,
-                    capture_margin=capture_margin,
-                    readout_duration=readout_duration,
-                    readout_amplitudes=readout_amplitudes,
-                )
-                self.device_controller.add_sequence(
-                    sequence=sequence,
-                    interval=backend_interval,
-                )
-            else:
-                sequencer = self._create_sequencer(
-                    waveforms=waveforms,
-                    interval=backend_interval,
-                    capture_window=capture_window,
-                    capture_margin=capture_margin,
-                    readout_duration=readout_duration,
-                    readout_amplitudes=readout_amplitudes,
-                )
-                self.device_controller.add_sequencer(sequencer)
-        backend_results = self.device_controller.execute(
-            repeats=shots,
-            integral_mode=measure_mode.integral_mode,
-        )
-        for backend_result in backend_results:
-            yield self._create_measure_result(
-                backend_result=backend_result,
-                measure_mode=measure_mode,
-                shots=shots,
-            )
 
     def execute(
         self,
@@ -691,48 +564,6 @@ class Measurement:
             measure_mode=measure_mode,
             shots=shots,
         )
-
-    @deprecated("Use `create_sequencer` instead.")
-    def _create_sequence(
-        self,
-        *,
-        waveforms: TargetMap[IQArray],
-        control_window: float | None = None,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-    ) -> pls.Sequence:
-        if control_window is None:
-            control_window = DEFAULT_CONTROL_WINDOW
-        if capture_window is None:
-            capture_window = DEFAULT_CAPTURE_WINDOW
-        if capture_margin is None:
-            capture_margin = DEFAULT_CAPTURE_MARGIN
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
-        if readout_amplitudes is None:
-            readout_amplitudes = self.control_params.readout_amplitude
-
-        capture = pls.Capture(duration=capture_window)
-        qubits = {Target.qubit_label(target) for target in waveforms}
-        with pls.Sequence() as sequence:
-            with pls.Flushright():
-                pls.padding(control_window)
-                for target, waveform in waveforms.items():
-                    pls.Arbit(np.array(waveform)).target(target)
-            with pls.Series():
-                pls.padding(capture_margin)
-                with pls.Flushleft():
-                    for qubit in qubits:
-                        readout_target = Target.read_label(qubit)
-                        pls.RaisedCosFlatTop(
-                            duration=readout_duration,
-                            amplitude=readout_amplitudes[qubit],
-                            rise_time=DEFAULT_READOUT_RAMPTIME,
-                        ).target(readout_target)
-                        capture.target(readout_target)
-        return sequence
 
     def readout_pulse(
         self,

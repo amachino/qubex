@@ -187,7 +187,6 @@ class MeasurementMixin(
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
                 capture_delay_words=capture_delay_words,
-                _use_sequencer_execute=_use_sequencer_execute,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -202,7 +201,6 @@ class MeasurementMixin(
                     readout_duration=readout_duration,
                     readout_amplitudes=readout_amplitudes,
                     capture_delay_words=capture_delay_words,
-                    _use_sequencer_execute=_use_sequencer_execute,
                 )
         if plot:
             result.plot()
