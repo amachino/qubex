@@ -12,7 +12,6 @@ import numpy as np
 import numpy.typing as npt
 from qubecalib import Sequencer
 from qubecalib import neopulse as pls
-from typing_extensions import deprecated
 
 from ..backend import (
     DEFAULT_CONFIG_DIR,
@@ -578,7 +577,36 @@ class Measurement:
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
-            amplitude = self.control_params.readout_amplitude[qubit]
+            amplitude = self.control_params.get_readout_amplitude(qubit)
+        if tau is None:
+            tau = DEFAULT_READOUT_RAMPTIME
+        if beta is None:
+            beta = 0.0
+        if type is None:
+            type = "RaisedCosine"
+        return FlatTop(
+            duration=duration,
+            amplitude=amplitude,
+            tau=tau,
+            beta=beta,
+            type=type,
+        )
+
+    def pump_pulse(
+        self,
+        target: str,
+        duration: float | None = None,
+        amplitude: float | None = None,
+        tau: float | None = None,
+        beta: float | None = None,
+        type: RampType | None = None,
+    ) -> FlatTop:
+        qubit = Target.qubit_label(target)
+        mux = self.experiment_system.get_mux_by_qubit(qubit)
+        if duration is None:
+            duration = DEFAULT_READOUT_DURATION
+        if amplitude is None:
+            amplitude = self.control_params.get_pump_amplitude(mux.index)
         if tau is None:
             tau = DEFAULT_READOUT_RAMPTIME
         if beta is None:
@@ -752,6 +780,7 @@ class Measurement:
         self,
         schedule: PulseSchedule,
         add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
@@ -759,6 +788,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        plot: bool = False,
     ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
@@ -836,11 +866,70 @@ class Measurement:
             pad_side="right",
         )
 
-        # get sampled sequences
-        sampled_sequences = schedule.get_sampled_sequences()
-
         # get readout ranges
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
+
+        # add pump pulses if necessary
+        if add_pump_pulses:
+            with PulseSchedule() as ps_with_pumps:
+                ps_with_pumps.call(schedule)
+                for target, ranges in readout_ranges.items():
+                    if not ranges:
+                        continue
+                    mux = self.experiment_system.get_mux_by_qubit(
+                        Target.qubit_label(target)
+                    )
+                    # add pump pulses to overlap with the readout pulses
+                    for i in range(len(ranges)):
+                        current_range = ranges[i]
+
+                        if i == 0:
+                            blank_duration = current_range.start * SAMPLING_PERIOD
+                        else:
+                            prev_range = ranges[i - 1]
+                            blank_duration = (
+                                current_range.start - prev_range.stop
+                            ) * SAMPLING_PERIOD
+
+                        pump_duration = (
+                            current_range.stop - current_range.start
+                        ) * SAMPLING_PERIOD
+
+                        pump_amplitude = self.control_params.get_pump_amplitude(
+                            mux.index
+                        )
+
+                        ps_with_pumps.add(
+                            mux.label,
+                            PulseArray(
+                                [
+                                    Blank(blank_duration),
+                                    self.pump_pulse(
+                                        target=target,
+                                        duration=pump_duration,
+                                        amplitude=pump_amplitude,
+                                        tau=readout_ramptime,
+                                        beta=0.0,
+                                        type=readout_ramp_type,
+                                    ).padded(
+                                        total_duration=capture_window,
+                                        pad_side="right",
+                                    ),
+                                ]
+                            ),
+                        )
+
+            if not ps_with_pumps.is_valid():
+                raise ValueError("Invalid pulse schedule with pump pulses.")
+
+            # update the schedule
+            schedule = ps_with_pumps
+
+        if plot:
+            schedule.plot()
+
+        # get sampled sequences
+        sampled_sequences = schedule.get_sampled_sequences()
 
         # adjust the phase of the readout pulses
         for target, ranges in readout_ranges.items():
@@ -965,6 +1054,7 @@ class Measurement:
         schedule: PulseSchedule,
         interval: float,
         add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
@@ -976,6 +1066,7 @@ class Measurement:
         gen_sequences, cap_sequences = self._create_sampled_sequences_from_schedule(
             schedule=schedule,
             add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
             capture_window=capture_window,
             capture_margin=capture_margin,
             readout_duration=readout_duration,

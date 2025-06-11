@@ -277,7 +277,7 @@ class ConfigLoader:
                 readout_fsc=params.get("readout_fsc", {}),
                 pump_fsc=params.get("pump_fsc", {}),
                 capture_delay=params.get("capture_delay", {}),
-                pump_frequency=params.get("pump_frequency", {}),
+                jpa_params=params.get("jpa_params", {}),
             )
             control_params_dict[chip_id] = control_params
         return control_params_dict

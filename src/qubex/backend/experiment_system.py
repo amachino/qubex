@@ -6,6 +6,7 @@ from typing import Collection, Final, Literal, Optional
 
 import numpy as np
 from pydantic.dataclasses import dataclass
+from typing_extensions import TypedDict
 
 from .control_system import (
     Box,
@@ -31,6 +32,8 @@ DEFAULT_READOUT_FSC: Final = 40527
 DEFAULT_PUMP_FSC: Final = 40527
 DEFAULT_CAPTURE_DELAY: Final = 7
 DEFAULT_PUMP_FREQUENCY: Final = 10.0
+DEFAULT_PUMP_AMPLITUDE: Final = 0.0
+DEFAULT_DC_VOLTAGE: Final = 0.0
 
 
 LO_STEP = 500_000_000
@@ -57,6 +60,12 @@ class QubitPortSet(Model):
     read_in_port: CapPort
 
 
+class JPAParam(TypedDict):
+    dc_voltage: Optional[float]
+    pump_frequency: Optional[float]
+    pump_amplitude: Optional[float]
+
+
 @dataclass
 class ControlParams(Model):
     control_amplitude: dict[str, float]
@@ -68,7 +77,7 @@ class ControlParams(Model):
     readout_fsc: dict[int, int]
     pump_fsc: dict[int, int]
     capture_delay: dict[int, int]
-    pump_frequency: dict[int, float]
+    jpa_params: dict[int, Optional[JPAParam]]
 
     def get_control_amplitude(self, qubit: str) -> float:
         return self.control_amplitude.get(qubit, DEFAULT_CONTROL_AMPLITUDE)
@@ -98,7 +107,25 @@ class ControlParams(Model):
         return self.capture_delay.get(mux, DEFAULT_CAPTURE_DELAY)
 
     def get_pump_frequency(self, mux: int) -> float:
-        return self.pump_frequency.get(mux, DEFAULT_PUMP_FREQUENCY)
+        jpa_param = self.jpa_params.get(mux)
+        if jpa_param is None:
+            return DEFAULT_PUMP_FREQUENCY
+        else:
+            return jpa_param.get("pump_frequency") or DEFAULT_PUMP_FREQUENCY
+
+    def get_pump_amplitude(self, mux: int) -> float:
+        jpa_param = self.jpa_params.get(mux)
+        if jpa_param is None:
+            return DEFAULT_PUMP_AMPLITUDE
+        else:
+            return jpa_param.get("pump_amplitude") or DEFAULT_PUMP_AMPLITUDE
+
+    def get_dc_voltage(self, mux: int) -> float:
+        jpa_param = self.jpa_params.get(mux)
+        if jpa_param is None:
+            return DEFAULT_DC_VOLTAGE
+        else:
+            return jpa_param.get("dc_voltage") or DEFAULT_DC_VOLTAGE
 
 
 class ExperimentSystem:
