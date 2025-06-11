@@ -1089,7 +1089,7 @@ class Measurement:
                 )
             last_range = ranges[-1]
             last_duration = len(last_range)
-            # last_post_blank is the time to the end of the schedul
+            # last_post_blank is the time to the end of the schedule
             last_post_blank = schedule.length - last_range.stop
 
             cap_sub_sequence.capture_slots.append(
