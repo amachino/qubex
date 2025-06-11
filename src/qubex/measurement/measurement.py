@@ -45,8 +45,10 @@ DEFAULT_CAPTURE_DELAY: Final = 896  # ns
 DEFAULT_READOUT_DURATION: Final = 512  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 INTERVAL_STEP: Final = 10240  # ns
-MIN_LENGTH: Final = 64  # samples
-MIN_DURATION: Final = MIN_LENGTH * SAMPLING_PERIOD  # ns
+WORD_LENGTH: Final = 4  # samples
+WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
+BLOCK_LENGTH: Final = WORD_LENGTH * 16  # samples
+BLOCK_DURATION: Final = BLOCK_LENGTH * SAMPLING_PERIOD  # ns
 
 logger = logging.getLogger(__name__)
 
@@ -785,7 +787,7 @@ class Measurement:
 
         qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
-        control_length = math.ceil(control_length / MIN_LENGTH) * MIN_LENGTH
+        control_length = math.ceil(control_length / BLOCK_LENGTH) * BLOCK_LENGTH
         if control_window is not None:
             control_length = max(
                 control_length,
@@ -889,14 +891,14 @@ class Measurement:
                             pls.CaptureSlots(
                                 duration=capture_length,
                                 post_blank=None,
-                                original_duration=capture_window,
+                                original_duration=None,  # type: ignore
                                 original_post_blank=None,
                             )
                         ],
                         repeats=None,
                         prev_blank=readout_start,
                         post_blank=None,
-                        original_prev_blank=readout_start,
+                        original_prev_blank=None,  # type: ignore
                         original_post_blank=None,
                     )
                 ],
@@ -986,9 +988,8 @@ class Measurement:
             raise ValueError("No readout targets in the pulse schedule.")
 
         # WORKAROUND: add 2 words (8 samples) blank for the first extra capture by left padding
-        word_duration = SAMPLING_PERIOD * 4
-        extra_sum_section_duration = word_duration
-        extra_post_blank_duration = word_duration
+        extra_sum_section_duration = WORD_DURATION
+        extra_post_blank_duration = WORD_DURATION
         extra_capture_duration = extra_sum_section_duration + extra_post_blank_duration
         schedule = schedule.padded(
             total_duration=schedule.duration + extra_capture_duration,
@@ -996,7 +997,9 @@ class Measurement:
         )
 
         # ensure the schedule duration is a multiple of MIN_DURATION by right padding
-        sequence_duration = math.ceil(schedule.duration / MIN_DURATION) * MIN_DURATION
+        sequence_duration = (
+            math.ceil(schedule.duration / BLOCK_DURATION) * BLOCK_DURATION
+        )
         schedule = schedule.padded(
             total_duration=sequence_duration,
             pad_side="right",
@@ -1068,36 +1071,45 @@ class Measurement:
             for i in range(len(ranges) - 1):
                 current_range = ranges[i]
                 next_range = ranges[i + 1]
-                duration = len(current_range)
-                # post_blank is the time to the next readout pulse
-                post_blank = next_range.start - current_range.stop
-                if post_blank <= 0:
+                capture_range_length = len(current_range)
+                # post_blank_length is the number of samples to the next readout pulse
+                post_blank_length = next_range.start - current_range.stop
+
+                if current_range.start % WORD_LENGTH != 0:
                     raise ValueError(
-                        "Readout pulses must have blank time between them."
+                        f"Capture range should start at a multiple of 4 samples ({WORD_DURATION} ns)."
                     )
-                if post_blank % word_duration != 0:
+                if capture_range_length % WORD_LENGTH != 0:
                     raise ValueError(
-                        f"Blank time between readout pulses must be a multiple of {word_duration} ns."
+                        f"Capture duration should be a multiple of 4 samples ({WORD_DURATION} ns)."
+                    )
+                if post_blank_length < WORD_LENGTH:
+                    raise ValueError(
+                        f"Readout pulses must have at least {WORD_DURATION} ns post-blank time."
+                    )
+                if post_blank_length % WORD_LENGTH != 0:
+                    raise ValueError(
+                        f"Post-blank time should be a multiple of 4 samples ({WORD_DURATION} ns)."
                     )
                 cap_sub_sequence.capture_slots.append(
                     pls.CaptureSlots(
-                        duration=duration,
-                        post_blank=post_blank,
-                        original_duration=duration,
-                        original_post_blank=post_blank,
+                        duration=capture_range_length,
+                        post_blank=post_blank_length,
+                        original_duration=None,  # type: ignore
+                        original_post_blank=None,  # type: ignore
                     )
                 )
-            last_range = ranges[-1]
-            last_duration = len(last_range)
-            # last_post_blank is the time to the end of the schedule
-            last_post_blank = schedule.length - last_range.stop
+            last_capture_range = ranges[-1]
+            last_capture_range_length = len(last_capture_range)
+            # last_post_blank_length is the number of samples to the end of the schedule
+            last_post_blank_length = schedule.length - last_capture_range.stop
 
             cap_sub_sequence.capture_slots.append(
                 pls.CaptureSlots(
-                    duration=last_duration,
-                    post_blank=last_post_blank,
-                    original_duration=last_duration,
-                    original_post_blank=last_post_blank,
+                    duration=last_capture_range_length,
+                    post_blank=last_post_blank_length,
+                    original_duration=None,  # type: ignore
+                    original_post_blank=None,  # type: ignore,
                 )
             )
             cap_sequence = pls.CapSampledSequence(
