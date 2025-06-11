@@ -71,6 +71,7 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
@@ -91,6 +92,7 @@ class MeasurementMixin(
                     shots=shots,
                     interval=interval,
                     add_last_measurement=add_last_measurement,
+                    add_pump_pulses=add_pump_pulses,
                     capture_window=capture_window,
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
@@ -106,6 +108,7 @@ class MeasurementMixin(
                 shots=shots,
                 interval=interval,
                 add_last_measurement=add_last_measurement,
+                add_pump_pulses=add_pump_pulses,
                 capture_window=capture_window,
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
@@ -125,6 +128,7 @@ class MeasurementMixin(
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        add_pump_pulses: bool = False,
         control_window: float | None = None,
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -134,7 +138,6 @@ class MeasurementMixin(
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         reset_awgs_and_capunits: bool = True,
-        add_pump_pulses: bool = False,
         plot: bool = False,
     ) -> MeasureResult:
         control_window = control_window or self.control_window
@@ -192,6 +195,7 @@ class MeasurementMixin(
                 mode=mode,
                 shots=shots,
                 interval=interval,
+                add_pump_pulses=add_pump_pulses,
                 control_window=control_window,
                 capture_window=capture_window,
                 capture_margin=capture_margin,
@@ -200,7 +204,6 @@ class MeasurementMixin(
                 readout_ramptime=readout_ramptime,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
-                add_pump_pulses=add_pump_pulses,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -209,6 +212,7 @@ class MeasurementMixin(
                     mode=mode,
                     shots=shots,
                     interval=interval,
+                    add_pump_pulses=add_pump_pulses,
                     control_window=control_window,
                     capture_window=capture_window,
                     capture_margin=capture_margin,
@@ -217,7 +221,6 @@ class MeasurementMixin(
                     readout_ramptime=readout_ramptime,
                     readout_drag_coeff=readout_drag_coeff,
                     readout_ramp_type=readout_ramp_type,
-                    add_pump_pulses=add_pump_pulses,
                 )
         if plot:
             result.plot()
@@ -232,12 +235,12 @@ class MeasurementMixin(
         mode: Literal["single", "avg"] = "single",
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        add_pump_pulses: bool = False,
         control_window: float | None = None,
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        add_pump_pulses: bool = False,
         plot: bool = False,
     ) -> MeasureResult:
         targets = []
@@ -266,12 +269,12 @@ class MeasurementMixin(
             mode=mode,
             shots=shots,
             interval=interval,
+            add_pump_pulses=add_pump_pulses,
             control_window=control_window,
             capture_window=capture_window,
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
-            add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
 

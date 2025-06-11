@@ -24,6 +24,7 @@ from ..backend import (
     StateManager,
     Target,
 )
+from ..backend.dc_voltage_controller import dc_voltage
 from ..backend.sequencer_mod import SequencerMod
 from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from ..typing import IQArray, TargetMap
@@ -345,6 +346,34 @@ class Measurement:
             with self.state_manager.modified_frequencies(target_frequencies):
                 yield
 
+    @contextmanager
+    def apply_dc_voltages(self, targets: str | Collection[str]):
+        """
+        Temporarily apply DC voltages to the specified targets.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            The list of target names.
+
+        Examples
+        --------
+        >>> with meas.apply_dc_voltages(["Q00", "Q01"]):
+        ...     result = meas.measure({
+        ...         "Q00": [0.1 + 0.2j, 0.2 + 0.3j, 0.3 + 0.4j],
+        ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
+        ...     })
+        """
+        if isinstance(targets, str):
+            targets = [targets]
+        qubits = [Target.qubit_label(target) for target in targets]
+        muxes = {
+            self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
+        }
+        voltages = {mux + 1: self.control_params.get_dc_voltage(mux) for mux in muxes}
+        with dc_voltage(voltages):
+            yield
+
     def measure_noise(
         self,
         targets: Collection[str],
@@ -400,6 +429,7 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
+        add_pump_pulses: bool = False,
         control_window: float | None = None,
         capture_window: float | None = None,
         capture_margin: float | None = None,
@@ -408,7 +438,6 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool = False,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -466,6 +495,7 @@ class Measurement:
         sequencer = self._create_sequencer(
             waveforms=waveforms,
             interval=backend_interval,
+            add_pump_pulses=add_pump_pulses,
             capture_window=capture_window,
             capture_margin=capture_margin,
             readout_duration=readout_duration,
@@ -473,7 +503,6 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            add_pump_pulses=add_pump_pulses,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -494,6 +523,7 @@ class Measurement:
         shots: int | None = None,
         interval: float | None = None,
         add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
         capture_window: float | None = None,
         capture_margin: float | None = None,
         readout_duration: float | None = None,
@@ -501,7 +531,6 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool = False,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -547,6 +576,7 @@ class Measurement:
             schedule=schedule,
             interval=interval,
             add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
             capture_window=capture_window,
             capture_margin=capture_margin,
             readout_duration=readout_duration,
@@ -554,7 +584,6 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            add_pump_pulses=add_pump_pulses,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
