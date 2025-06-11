@@ -848,6 +848,11 @@ class MeasurementMixin(
         save_dir: Path | str | None = None,
         shots: int = 8192,
         interval: float = DEFAULT_INTERVAL,
+        control_window: float | None = None,
+        capture_window: float | None = None,
+        capture_margin: float | None = None,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -862,6 +867,11 @@ class MeasurementMixin(
             n_states=n_states,
             shots=shots,
             interval=interval,
+            control_window=control_window,
+            capture_window=capture_window,
+            capture_margin=capture_margin,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
             plot=False,
         )
 
