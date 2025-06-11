@@ -17,7 +17,6 @@ from ...analysis import IQPlotter, fitting
 from ...analysis import visualization as viz
 from ...backend import Target
 from ...measurement import (
-    MeasureData,
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
@@ -25,10 +24,7 @@ from ...measurement import (
     StateClassifierKMeans,
 )
 from ...measurement.measurement import (
-    DEFAULT_CAPTURE_DELAY,
-    DEFAULT_CAPTURE_WINDOW,
     DEFAULT_INTERVAL,
-    DEFAULT_READOUT_DURATION,
     DEFAULT_SHOTS,
     SAMPLING_PERIOD,
 )
@@ -70,6 +66,7 @@ class MeasurementMixin(
         self,
         schedule: PulseSchedule,
         *,
+        frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -86,20 +83,38 @@ class MeasurementMixin(
         if reset_awgs_and_capunits:
             self.device_controller.initialize_awgs_and_capunits(self.box_ids)
 
-        return self.measurement.execute(
-            schedule=schedule,
-            mode=mode,
-            shots=shots,
-            interval=interval,
-            add_last_measurement=add_last_measurement,
-            capture_window=capture_window,
-            capture_margin=capture_margin,
-            readout_duration=readout_duration,
-            readout_amplitudes=readout_amplitudes,
-            readout_ramptime=readout_ramptime,
-            readout_drag_coeff=readout_drag_coeff,
-            readout_ramp_type=readout_ramp_type,
-        )
+        if frequencies is not None:
+            with self.modified_frequencies(frequencies):
+                result = self.measurement.execute(
+                    schedule=schedule,
+                    mode=mode,
+                    shots=shots,
+                    interval=interval,
+                    add_last_measurement=add_last_measurement,
+                    capture_window=capture_window,
+                    capture_margin=capture_margin,
+                    readout_duration=readout_duration,
+                    readout_amplitudes=readout_amplitudes,
+                    readout_ramptime=readout_ramptime,
+                    readout_drag_coeff=readout_drag_coeff,
+                    readout_ramp_type=readout_ramp_type,
+                )
+        else:
+            result = self.measurement.execute(
+                schedule=schedule,
+                mode=mode,
+                shots=shots,
+                interval=interval,
+                add_last_measurement=add_last_measurement,
+                capture_window=capture_window,
+                capture_margin=capture_margin,
+                readout_duration=readout_duration,
+                readout_amplitudes=readout_amplitudes,
+                readout_ramptime=readout_ramptime,
+                readout_drag_coeff=readout_drag_coeff,
+                readout_ramp_type=readout_ramp_type,
+            )
+        return result
 
     def measure(
         self,
@@ -119,9 +134,8 @@ class MeasurementMixin(
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         reset_awgs_and_capunits: bool = True,
+        add_pump_pulses: bool = False,
         plot: bool = False,
-        capture_delay_words: int | None = None,
-        _use_sequencer_execute: bool = True,
     ) -> MeasureResult:
         control_window = control_window or self.control_window
         capture_window = capture_window or self.capture_window
@@ -186,7 +200,7 @@ class MeasurementMixin(
                 readout_ramptime=readout_ramptime,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
-                capture_delay_words=capture_delay_words,
+                add_pump_pulses=add_pump_pulses,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -200,47 +214,11 @@ class MeasurementMixin(
                     capture_margin=capture_margin,
                     readout_duration=readout_duration,
                     readout_amplitudes=readout_amplitudes,
-                    capture_delay_words=capture_delay_words,
+                    readout_ramptime=readout_ramptime,
+                    readout_drag_coeff=readout_drag_coeff,
+                    readout_ramp_type=readout_ramp_type,
+                    add_pump_pulses=add_pump_pulses,
                 )
-        if plot:
-            result.plot()
-        return result
-
-    def measure_readout_waveform(
-        self,
-        *,
-        target: str | None = None,
-        frequency: float | None = None,
-        amplitude: float | None = None,
-        duration: float = DEFAULT_READOUT_DURATION,
-        capture_window: float = DEFAULT_CAPTURE_WINDOW,
-        capture_delay: float = DEFAULT_CAPTURE_DELAY,
-        mode: Literal["single", "avg"] = "avg",
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = False,
-    ) -> MeasureData:
-        if target is None:
-            target = self.qubit_labels[0]
-        qubit = Target.qubit_label(target)
-        resonator = Target.read_label(target)
-        if frequency is None:
-            frequency = self.resonators[qubit].frequency
-        if amplitude is None:
-            amplitude = self.params.readout_amplitude[qubit]
-        capture_delay_words = int(capture_delay // 8)
-        with self.modified_frequencies({resonator: frequency}):
-            result = self.measure(
-                sequence={qubit: np.zeros(0)},
-                mode=mode,
-                shots=shots,
-                interval=interval,
-                readout_duration=duration,
-                readout_amplitudes={qubit: amplitude},
-                capture_window=capture_window,
-                capture_delay_words=capture_delay_words,
-                _use_sequencer_execute=False,
-            ).data[qubit]
         if plot:
             result.plot()
         return result
@@ -259,6 +237,7 @@ class MeasurementMixin(
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        add_pump_pulses: bool = False,
         plot: bool = False,
     ) -> MeasureResult:
         targets = []
@@ -292,6 +271,7 @@ class MeasurementMixin(
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
 
@@ -803,6 +783,7 @@ class MeasurementMixin(
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> list[MeasureResult]:
         if targets is None:
@@ -823,6 +804,7 @@ class MeasurementMixin(
                 capture_margin=capture_margin,
                 readout_duration=readout_duration,
                 readout_amplitudes=readout_amplitudes,
+                add_pump_pulses=add_pump_pulses,
             )
             for state in states
         }
@@ -851,6 +833,7 @@ class MeasurementMixin(
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> dict:
         if targets is None:
@@ -870,6 +853,7 @@ class MeasurementMixin(
             capture_margin=capture_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            add_pump_pulses=add_pump_pulses,
             plot=False,
         )
 

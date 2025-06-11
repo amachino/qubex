@@ -408,7 +408,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        capture_delay_words: int | None = None,
+        add_pump_pulses: bool = False,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -473,6 +473,7 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
+            add_pump_pulses=add_pump_pulses,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -500,6 +501,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        add_pump_pulses: bool = False,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -552,6 +554,7 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
+            add_pump_pulses=add_pump_pulses,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -634,6 +637,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        add_pump_pulses: bool = False,
     ) -> Sequencer:
         if capture_window is None:
             capture_window = DEFAULT_CAPTURE_WINDOW
@@ -657,6 +661,7 @@ class Measurement:
         readout_length = self._number_of_samples(readout_duration)
         total_length = control_length + margin_length + capture_length
         readout_start = control_length + margin_length
+        readout_slice = slice(readout_start, readout_start + readout_length)
 
         # zero padding (control)
         # [0, .., 0, 0, control, 0, 0, .., 0, 0, 0, 0, 0, .., 0, 0, 0]
@@ -685,7 +690,6 @@ class Measurement:
                 type=readout_ramp_type,
             )
             padded_waveform = np.zeros(total_length, dtype=np.complex128)
-            readout_slice = slice(readout_start, readout_start + readout_length)
             padded_waveform[readout_slice] = readout_pulse.values
             readout_target = Target.read_label(qubit)
             omega = 2 * np.pi * self.get_awg_frequency(readout_target)
@@ -693,11 +697,49 @@ class Measurement:
             padded_waveform *= np.exp(-1j * omega * offset)
             readout_waveforms[readout_target] = padded_waveform
 
+        # zero padding (pump)
+        # [0, .., 0, 0, 0, 0, 0, 0, 0, .., 0, 0, 0, pump, 0, ..., 0]
+        # |<- control_length -><- margin_length -><- capture_length ->|
+        pump_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
+        if add_pump_pulses:
+            for qubit in qubits:
+                mux = self.experiment_system.get_mux_by_qubit(qubit)
+                pump_pulse = self.pump_pulse(
+                    target=qubit,
+                    duration=readout_duration,
+                    amplitude=self.control_params.get_pump_amplitude(mux.index),
+                    tau=readout_ramptime,
+                    beta=0.0,
+                    type=readout_ramp_type,
+                )
+                padded_pump_waveform = np.zeros(total_length, dtype=np.complex128)
+                padded_pump_waveform[readout_slice] = pump_pulse.values
+                pump_waveforms[mux.label] = padded_pump_waveform
+
         # create dict of GenSampledSequence and CapSampledSequence
         gen_sequences: dict[str, pls.GenSampledSequence] = {}
         cap_sequences: dict[str, pls.CapSampledSequence] = {}
         for target, waveform in control_waveforms.items():
             # add GenSampledSequence (control)
+            gen_sequences[target] = pls.GenSampledSequence(
+                target_name=target,
+                prev_blank=0,
+                post_blank=None,
+                original_prev_blank=0,
+                original_post_blank=None,
+                modulation_frequency=self.get_awg_frequency(target),
+                sub_sequences=[
+                    pls.GenSampledSubSequence(
+                        real=np.real(waveform),
+                        imag=np.imag(waveform),
+                        repeats=1,
+                        post_blank=None,
+                        original_post_blank=None,
+                    )
+                ],
+            )
+        for target, waveform in pump_waveforms.items():
+            # add GenSampledSequence (pump)
             gen_sequences[target] = pls.GenSampledSequence(
                 target_name=target,
                 prev_blank=0,
@@ -764,7 +806,11 @@ class Measurement:
             )
 
         # create resource map
-        all_targets = list(control_waveforms.keys()) + list(readout_waveforms.keys())
+        all_targets = (
+            list(control_waveforms.keys())
+            + list(readout_waveforms.keys())
+            + list(pump_waveforms.keys())
+        )
         resource_map = self.device_controller.get_resource_map(all_targets)
 
         # return Sequencer
