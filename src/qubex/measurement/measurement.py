@@ -45,8 +45,10 @@ DEFAULT_CAPTURE_DELAY: Final = 896  # ns
 DEFAULT_READOUT_DURATION: Final = 512  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 INTERVAL_STEP: Final = 10240  # ns
-MIN_LENGTH: Final = 64  # samples
-MIN_DURATION: Final = MIN_LENGTH * SAMPLING_PERIOD  # ns
+WORD_LENGTH: Final = 4  # samples
+WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
+BLOCK_LENGTH: Final = WORD_LENGTH * 16  # samples
+BLOCK_DURATION: Final = BLOCK_LENGTH * SAMPLING_PERIOD  # ns
 
 logger = logging.getLogger(__name__)
 
@@ -785,7 +787,7 @@ class Measurement:
 
         qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
-        control_length = math.ceil(control_length / MIN_LENGTH) * MIN_LENGTH
+        control_length = math.ceil(control_length / BLOCK_LENGTH) * BLOCK_LENGTH
         if control_window is not None:
             control_length = max(
                 control_length,
@@ -889,14 +891,14 @@ class Measurement:
                             pls.CaptureSlots(
                                 duration=capture_length,
                                 post_blank=None,
-                                original_duration=capture_window,
+                                original_duration=None,  # type: ignore
                                 original_post_blank=None,
                             )
                         ],
                         repeats=None,
                         prev_blank=readout_start,
                         post_blank=None,
-                        original_prev_blank=readout_start,
+                        original_prev_blank=None,  # type: ignore
                         original_post_blank=None,
                     )
                 ],
@@ -985,10 +987,22 @@ class Measurement:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
-        sequence_duration = math.ceil(schedule.duration / MIN_DURATION) * MIN_DURATION
+        # WORKAROUND: add 2 words (8 samples) blank for the first extra capture by left padding
+        extra_sum_section_duration = WORD_DURATION
+        extra_post_blank_duration = WORD_DURATION
+        extra_capture_duration = extra_sum_section_duration + extra_post_blank_duration
+        schedule = schedule.padded(
+            total_duration=schedule.duration + extra_capture_duration,
+            pad_side="left",
+        )
+
+        # ensure the schedule duration is a multiple of MIN_DURATION by right padding
+        sequence_duration = (
+            math.ceil(schedule.duration / BLOCK_DURATION) * BLOCK_DURATION
+        )
         schedule = schedule.padded(
             total_duration=sequence_duration,
-            pad_side="left",
+            pad_side="right",
         )
 
         # get sampled sequences
@@ -1037,32 +1051,65 @@ class Measurement:
             cap_sub_sequence = pls.CapSampledSubSequence(
                 capture_slots=[],
                 repeats=None,
-                # prev_blank is the time to the first readout pulse
-                prev_blank=ranges[0].start,
+                prev_blank=0,
                 post_blank=None,
-                original_prev_blank=ranges[0].start,
+                original_prev_blank=0,
                 original_post_blank=None,
             )
+
+            # WORKAROUND: add an extra capture to ensure the first capture begins at a multiple of 64 samples
+            post_blank_to_first_readout = ranges[0].start - extra_sum_section_duration
+            cap_sub_sequence.capture_slots.append(
+                pls.CaptureSlots(
+                    duration=extra_sum_section_duration,  # type: ignore
+                    post_blank=post_blank_to_first_readout,  # type: ignore
+                    original_duration=extra_sum_section_duration,  # type: ignore
+                    original_post_blank=post_blank_to_first_readout,  # type: ignore
+                )
+            )
+
             for i in range(len(ranges) - 1):
                 current_range = ranges[i]
                 next_range = ranges[i + 1]
+                capture_range_length = len(current_range)
+                # post_blank_length is the number of samples to the next readout pulse
+                post_blank_length = next_range.start - current_range.stop
+
+                if current_range.start % WORD_LENGTH != 0:
+                    raise ValueError(
+                        f"Capture range should start at a multiple of 4 samples ({WORD_DURATION} ns)."
+                    )
+                if capture_range_length % WORD_LENGTH != 0:
+                    raise ValueError(
+                        f"Capture duration should be a multiple of 4 samples ({WORD_DURATION} ns)."
+                    )
+                if post_blank_length < WORD_LENGTH:
+                    raise ValueError(
+                        f"Readout pulses must have at least {WORD_DURATION} ns post-blank time."
+                    )
+                if post_blank_length % WORD_LENGTH != 0:
+                    raise ValueError(
+                        f"Post-blank time should be a multiple of 4 samples ({WORD_DURATION} ns)."
+                    )
                 cap_sub_sequence.capture_slots.append(
                     pls.CaptureSlots(
-                        duration=len(current_range),
-                        # post_blank is the time to the next readout pulse
-                        post_blank=next_range.start - current_range.stop,
-                        original_duration=len(current_range),
-                        original_post_blank=next_range.start - current_range.stop,
+                        duration=capture_range_length,
+                        post_blank=post_blank_length,
+                        original_duration=None,  # type: ignore
+                        original_post_blank=None,  # type: ignore
                     )
                 )
-            last_range = ranges[-1]
+            last_capture_range = ranges[-1]
+            last_capture_range_length = len(last_capture_range)
+            # last_post_blank_length is the number of samples to the end of the schedule
+            last_post_blank_length = schedule.length - last_capture_range.stop
+
             cap_sub_sequence.capture_slots.append(
                 pls.CaptureSlots(
-                    duration=len(last_range),
-                    # post_blank is the time to the end of the schedule
-                    post_blank=schedule.length - last_range.stop,
-                    original_duration=len(last_range),
-                    original_post_blank=schedule.length - last_range.stop,
+                    duration=last_capture_range_length,
+                    post_blank=last_post_blank_length,
+                    original_duration=None,  # type: ignore
+                    original_post_blank=None,  # type: ignore,
                 )
             )
             cap_sequence = pls.CapSampledSequence(
@@ -1198,7 +1245,10 @@ class Measurement:
         if measure_mode == MeasureMode.SINGLE:
             for target, iqs in iq_data.items():
                 qubit = target[label_slice]
-                for iq in iqs:
+                for idx, iq in enumerate(iqs):
+                    if idx == 0:
+                        # skip the first extra capture
+                        continue
                     measure_data[qubit].append(
                         MeasureData(
                             target=qubit,
@@ -1210,7 +1260,10 @@ class Measurement:
         elif measure_mode == MeasureMode.AVG:
             for target, iqs in iq_data.items():
                 qubit = target[label_slice]
-                for iq in iqs:
+                for idx, iq in enumerate(iqs):
+                    if idx == 0:
+                        # skip the first extra capture
+                        continue
                     measure_data[qubit].append(
                         MeasureData(
                             target=qubit,
