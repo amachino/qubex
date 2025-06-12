@@ -66,6 +66,7 @@ from .experiment_constants import (
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
+from .experiment_exceptions import CalibrationMissingError
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import ExperimentResult, RabiData
@@ -470,7 +471,7 @@ class Experiment(
             else:
                 result[target] = FlatTop(
                     duration=HPI_DURATION,
-                    amplitude=self.params.control_amplitude[target],
+                    amplitude=self.params.get_control_amplitude(target),
                     tau=HPI_RAMPTIME,
                 )
         return result
@@ -674,6 +675,107 @@ class Experiment(
 
         if len(not_stored) > 0:
             print(f"Rabi parameters are not stored for qubits: {not_stored}")
+
+    def get_hpi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the π/2 pulse for the given target.
+        """
+        param = self.calib_note.get_hpi_param(
+            target,
+            valid_days=valid_days or self._calibration_valid_days,
+        )
+        if param is not None:
+            return FlatTop(
+                duration=param["duration"],
+                amplitude=param["amplitude"],
+                tau=param["tau"],
+            )
+        else:
+            return FlatTop(
+                duration=HPI_DURATION,
+                amplitude=self.params.get_control_amplitude(target),
+                tau=HPI_RAMPTIME,
+            )
+
+    def get_pi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the π pulse for the given target.
+        """
+        param = self.calib_note.get_pi_param(
+            target,
+            valid_days=valid_days or self._calibration_valid_days,
+        )
+        if param is not None:
+            return FlatTop(
+                duration=param["duration"],
+                amplitude=param["amplitude"],
+                tau=param["tau"],
+            )
+        else:
+            raise CalibrationMissingError(
+                message="π pulse parameters are not stored.",
+                target=target,
+            )
+
+    def get_drag_hpi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the DRAG π/2 pulse for the given target.
+        """
+        param = self.calib_note.get_drag_hpi_param(
+            target,
+            valid_days=valid_days or self._calibration_valid_days,
+        )
+        if param is not None:
+            return Drag(
+                duration=param["duration"],
+                amplitude=param["amplitude"],
+                beta=param["beta"],
+            )
+        else:
+            raise CalibrationMissingError(
+                message="DRAG π/2 pulse parameters are not stored.",
+                target=target,
+            )
+
+    def get_drag_pi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the DRAG π pulse for the given target.
+        """
+        param = self.calib_note.get_drag_pi_param(
+            target,
+            valid_days=valid_days or self._calibration_valid_days,
+        )
+        if param is not None:
+            return Drag(
+                duration=param["duration"],
+                amplitude=param["amplitude"],
+                beta=param["beta"],
+            )
+        else:
+            raise CalibrationMissingError(
+                message="DRAG π pulse parameters are not stored.",
+                target=target,
+            )
 
     def get_pulse_for_state(
         self,
@@ -1159,108 +1261,66 @@ class Experiment(
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
+        valid_days: int | None = None,
     ) -> Waveform:
-        if type != "flattop":
-            param = self.calib_note.get_drag_hpi_param(
-                target,
-                valid_days=self._calibration_valid_days,
-            )
-            if param is not None:
-                return Drag(
-                    duration=param["duration"],
-                    amplitude=param["amplitude"],
-                    beta=param["beta"],
-                )
         try:
-            param = self.calib_note.get_hpi_param(
-                target,
-                valid_days=self._calibration_valid_days,
-            )
-            if param is None:
-                raise ValueError(f"hpi_param for {target} are not stored.")
-            return FlatTop(
-                duration=param["duration"],
-                amplitude=param["amplitude"],
-                tau=param["tau"],
-            )
-        except KeyError:
-            raise ValueError(f"Invalid target: {target}")
+            x90 = self.get_drag_hpi_pulse(target)
+        except CalibrationMissingError:
+            x90 = self.get_hpi_pulse(target, valid_days=valid_days)
+        return x90
 
     def x90m(
         self,
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
+        valid_days: int | None = None,
     ) -> Waveform:
-        return self.x90(target, type=type).scaled(-1)
+        return self.x90(target, valid_days=valid_days).scaled(-1)
 
     def x180(
         self,
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
-        use_hpi: bool = False,
+        valid_days: int | None = None,
     ) -> Waveform:
-        if use_hpi:
-            return self.x90(target, type=type).repeated(2)
-
-        if type != "flattop":
-            param = self.calib_note.get_drag_pi_param(
-                target,
-                valid_days=self._calibration_valid_days,
-            )
-            if param is not None:
-                return Drag(
-                    duration=param["duration"],
-                    amplitude=param["amplitude"],
-                    beta=param["beta"],
-                )
         try:
-            param = self.calib_note.get_pi_param(
-                target,
-                valid_days=self._calibration_valid_days,
-            )
-            if param is None:
-                return self.x90(target, type=type).repeated(2)
-            else:
-                return FlatTop(
-                    duration=param["duration"],
-                    amplitude=param["amplitude"],
-                    tau=param["tau"],
-                )
-        except KeyError:
-            raise ValueError(f"Invalid target: {target}")
+            x180 = self.get_drag_pi_pulse(target, valid_days=valid_days)
+        except CalibrationMissingError:
+            try:
+                x180 = self.get_pi_pulse(target, valid_days=valid_days)
+            except CalibrationMissingError:
+                x90 = self.x90(target, valid_days=valid_days)
+                x180 = x90.repeated(2)
+        return x180
 
     def y90(
         self,
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
+        valid_days: int | None = None,
     ) -> Waveform:
-        return self.x90(target, type=type).shifted(np.pi / 2)
+        return self.x90(target, valid_days=valid_days).shifted(np.pi / 2)
 
     def y90m(
         self,
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
+        valid_days: int | None = None,
     ) -> Waveform:
-        return self.x90(target, type=type).shifted(-np.pi / 2)
+        return self.x90(target, valid_days=valid_days).shifted(-np.pi / 2)
 
     def y180(
         self,
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
-        use_hpi: bool = False,
+        valid_days: int | None = None,
     ) -> Waveform:
-        return self.x180(target, type=type, use_hpi=use_hpi).shifted(np.pi / 2)
+        return self.x180(target, valid_days=valid_days).shifted(np.pi / 2)
 
     def z90(
         self,

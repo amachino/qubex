@@ -328,6 +328,98 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def get_hpi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the π/2 pulse for the given target.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        valid_days : int, optional
+            Number of days the pulse is valid. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            π/2 pulse waveform.
+        """
+        ...
+
+    def get_pi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the π pulse for the given target.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        valid_days : int, optional
+            Number of days the pulse is valid. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            π pulse waveform.
+        """
+        ...
+
+    def get_drag_hpi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the DRAG π/2 pulse for the given target.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        valid_days : int, optional
+            Number of days the pulse is valid. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            DRAG π/2 pulse waveform.
+        """
+        ...
+
+    def get_drag_pi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the DRAG π pulse for the given target.
+
+        Parameters
+        ----------
+        target : str
+            Target qubit.
+        valid_days : int, optional
+            Number of days the pulse is valid. Defaults to None.
+
+        Returns
+        -------
+        Waveform
+            DRAG π pulse waveform.
+        """
+        ...
+
     def get_pulse_for_state(
         self,
         target: str,
@@ -687,7 +779,7 @@ class BaseProtocol(Protocol):
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
+        valid_days: int | None = None,
     ) -> Waveform:
         """
         Generate a π/2 pulse along the x-axis.
@@ -696,8 +788,6 @@ class BaseProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        type : Literal["flattop", "drag"], optional
-            Type of the pulse. Defaults to None.
 
         Returns
         -------
@@ -711,7 +801,7 @@ class BaseProtocol(Protocol):
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
+        valid_days: int | None = None,
     ) -> Waveform:
         """
         Generate a -π/2 pulse along the x-axis.
@@ -720,8 +810,6 @@ class BaseProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        type : Literal["flattop", "drag"], optional
-            Type of the pulse. Defaults to None.
 
         Returns
         -------
@@ -735,8 +823,7 @@ class BaseProtocol(Protocol):
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
-        use_hpi: bool = False,
+        valid_days: int | None = None,
     ) -> Waveform:
         """
         Generate a π pulse along the x-axis.
@@ -745,10 +832,6 @@ class BaseProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        type : Literal["flattop", "drag"], optional
-            Type of the pulse. Defaults to None.
-        use_hpi : bool, optional
-            Whether to generate the π pulse as π/2 pulse * 2. Defaults to False.
 
         Returns
         -------
@@ -762,7 +845,7 @@ class BaseProtocol(Protocol):
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
+        valid_days: int | None = None,
     ) -> Waveform:
         """
         Generate a π/2 pulse along the y-axis.
@@ -771,8 +854,6 @@ class BaseProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        type : Literal["flattop", "drag"], optional
-            Type of the pulse. Defaults to None.
 
         Returns
         -------
@@ -786,7 +867,7 @@ class BaseProtocol(Protocol):
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
+        valid_days: int | None = None,
     ) -> Waveform:
         """
         Generate a -π/2 pulse along the y-axis.
@@ -795,8 +876,6 @@ class BaseProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        type : Literal["flattop", "drag"], optional
-            Type of the pulse. Defaults to None.
 
         Returns
         -------
@@ -810,8 +889,7 @@ class BaseProtocol(Protocol):
         target: str,
         /,
         *,
-        type: Literal["flattop", "drag"] | None = None,
-        use_hpi: bool = False,
+        valid_days: int | None = None,
     ) -> Waveform:
         """
         Generate a π pulse along the y-axis.
@@ -820,10 +898,6 @@ class BaseProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        type : Literal["flattop", "drag"], optional
-            Type of the pulse. Defaults to None.
-        use_hpi : bool, optional
-            Whether to generate the π pulse as π/2 pulse * 2. Defaults to False.
 
         Returns
         -------
