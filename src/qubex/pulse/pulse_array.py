@@ -244,24 +244,32 @@ class PulseArray(Waveform):
 
     def scaled(self, scale: float) -> PulseArray:
         """Returns a copy of the pulse array scaled by the given factor."""
+        if scale == 1:
+            return self
         new_array = deepcopy(self)
         new_array._scale *= scale
         return new_array
 
     def detuned(self, detuning: float) -> PulseArray:
         """Returns a copy of the pulse array detuned by the given frequency."""
+        if detuning == 0:
+            return self
         new_array = deepcopy(self)
         new_array._detuning += detuning
         return new_array
 
     def shifted(self, phase: float) -> PulseArray:
         """Returns a copy of the pulse array shifted by the given phase."""
+        if phase == 0:
+            return self
         new_array = deepcopy(self)
         new_array._phase += phase
         return new_array
 
     def repeated(self, n: int) -> PulseArray:
         """Returns a copy of the pulse array repeated n times."""
+        if n == 1:
+            return self
         new_array = deepcopy(self)
         new_array._elements = list(new_array._elements) * n
         return new_array

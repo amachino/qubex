@@ -258,6 +258,8 @@ class PulseSchedule:
         """
         Returns a scaled pulse schedule.
         """
+        if scale == 1:
+            return self
         new_sched = deepcopy(self)
         for channel in new_sched._channels.values():
             channel.sequence._scale *= scale
@@ -267,6 +269,8 @@ class PulseSchedule:
         """
         Returns a detuned pulse schedule.
         """
+        if detuning == 0:
+            return self
         new_sched = deepcopy(self)
         for channel in new_sched._channels.values():
             channel.sequence._detuning += detuning
@@ -276,6 +280,8 @@ class PulseSchedule:
         """
         Returns a shifted pulse schedule.
         """
+        if phase == 0:
+            return self
         new_sched = deepcopy(self)
         for channel in new_sched._channels.values():
             channel.sequence._phase += phase
@@ -285,6 +291,8 @@ class PulseSchedule:
         """
         Returns a repeated pulse schedule.
         """
+        if n == 1:
+            return self
         new_sched = PulseSchedule()
         for label, channel in self._channels.items():
             new_sched.add(label, channel.sequence.repeated(n))
