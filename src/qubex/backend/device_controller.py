@@ -330,12 +330,12 @@ class DeviceController:
             box = self._boxpool._boxes[box_name][0]
         return box
 
-    def initialize_awgs_and_capunits(
+    def initialize_awg_and_capunits(
         self,
         box_names: str | Collection[str],
     ):
         """
-        Initialize all AWGs in the specified boxes.
+        Initialize all awg and capture units in the specified boxes.
 
         Parameters
         ----------

@@ -79,10 +79,10 @@ class MeasurementMixin(
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        reset_awgs_and_capunits: bool = True,
+        reset_awg_and_capunits: bool = True,
     ) -> MultipleMeasureResult:
-        if reset_awgs_and_capunits:
-            self.device_controller.initialize_awgs_and_capunits(self.box_ids)
+        if reset_awg_and_capunits:
+            self.device_controller.initialize_awg_and_capunits(self.box_ids)
 
         if frequencies is not None:
             with self.modified_frequencies(frequencies):
@@ -137,7 +137,7 @@ class MeasurementMixin(
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        reset_awgs_and_capunits: bool = True,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MeasureResult:
         control_window = control_window or self.control_window
@@ -186,8 +186,8 @@ class MeasurementMixin(
                     else:
                         waveforms[target] = np.array(waveform, dtype=np.complex128)
 
-        if reset_awgs_and_capunits:
-            self.device_controller.initialize_awgs_and_capunits(self.box_ids)
+        if reset_awg_and_capunits:
+            self.device_controller.initialize_awg_and_capunits(self.box_ids)
 
         if frequencies is None:
             result = self.measurement.measure(
@@ -311,7 +311,9 @@ class MeasurementMixin(
             initial_sequence = sequence(sweep_range[0])
             if isinstance(initial_sequence, PulseSchedule):
                 sequences = [
-                    sequence(param).repeated(repetitions).get_sampled_sequences()  # type: ignore
+                    sequence(param)
+                    .repeated(repetitions)  # type: ignore
+                    .get_sampled_sequences(copy=False)
                     for param in sweep_range
                 ]
             elif isinstance(initial_sequence, dict):
@@ -329,7 +331,7 @@ class MeasurementMixin(
         plotter = IQPlotter(self.state_centers)
 
         # initialize awgs and capture units
-        self.device_controller.initialize_awgs_and_capunits(self.box_ids)
+        self.device_controller.initialize_awg_and_capunits(self.box_ids)
 
         with self.modified_frequencies(frequencies):
             for seq in sequences:
@@ -341,7 +343,7 @@ class MeasurementMixin(
                     control_window=control_window or self.control_window,
                     capture_window=capture_window or self.capture_window,
                     capture_margin=capture_margin or self.capture_margin,
-                    reset_awgs_and_capunits=False,
+                    reset_awg_and_capunits=False,
                 )
                 for target, data in result.data.items():
                     signals[target].append(data.kerneled)
@@ -394,7 +396,7 @@ class MeasurementMixin(
         plotter = IQPlotter(self.state_centers)
 
         # initialize awgs and capture units
-        self.device_controller.initialize_awgs_and_capunits(self.box_ids)
+        self.device_controller.initialize_awg_and_capunits(self.box_ids)
 
         with self.modified_frequencies(frequencies):
             for param in sweep_range:
@@ -405,7 +407,7 @@ class MeasurementMixin(
                     interval=interval,
                     capture_window=capture_window or self.capture_window,
                     capture_margin=capture_margin or self.capture_margin,
-                    reset_awgs_and_capunits=False,
+                    reset_awg_and_capunits=False,
                 )
                 for target, data in result.data.items():
                     signals[target].append(data[-1].kerneled)
@@ -949,6 +951,7 @@ class MeasurementMixin(
         initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> dict[str, tuple[float, float, float]]:
         if isinstance(sequence, PulseSchedule):
@@ -967,6 +970,9 @@ class MeasurementMixin(
 
         qubits = set(Target.qubit_label(target) for target in sequence)
         targets = list(qubits | sequence.keys())
+
+        if reset_awg_and_capunits:
+            self.reset_awg_and_capunits()
 
         for basis in ["X", "Y", "Z"]:
             with PulseSchedule(targets) as ps:
@@ -999,6 +1005,7 @@ class MeasurementMixin(
                 ps,
                 shots=shots,
                 interval=interval,
+                reset_awg_and_capunits=False,
                 plot=plot,
             )
             for qubit, data in measure_result.data.items():
@@ -1034,9 +1041,14 @@ class MeasurementMixin(
         initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = True,
     ) -> dict[str, NDArray[np.float64]]:
         buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
+
+        if reset_awg_and_capunits:
+            self.reset_awg_and_capunits()
+
         for sequence in tqdm(sequences):
             state_vectors = self.state_tomography(
                 sequence=sequence,
@@ -1044,6 +1056,7 @@ class MeasurementMixin(
                 initial_state=initial_state,
                 shots=shots,
                 interval=interval,
+                reset_awg_and_capunits=False,
                 plot=False,
             )
             for target, state_vector in state_vectors.items():

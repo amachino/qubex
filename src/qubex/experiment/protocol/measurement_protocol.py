@@ -32,6 +32,7 @@ class MeasurementProtocol(Protocol):
         capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        reset_awg_and_capunits: bool = True,
     ) -> MultipleMeasureResult:
         """
         Execute the given schedule.
@@ -93,6 +94,7 @@ class MeasurementProtocol(Protocol):
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -400,6 +402,7 @@ class MeasurementProtocol(Protocol):
         initial_state: TargetMap[str] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> dict[str, tuple[float, float, float]]:
         """

@@ -576,6 +576,24 @@ class BaseProtocol(Protocol):
         """Reload the configuration files."""
         ...
 
+    def reset_awg_and_capunits(
+        self,
+        box_ids: str | Collection[str] | None = None,
+    ):
+        """
+        Reset all awg and capture units.
+
+        Parameters
+        ----------
+        box_ids : str | Collection[str] | None, optional
+            Box IDs to reset. Defaults to None.
+
+        Examples
+        --------
+        >>> ex.reset_awg_and_capunits()
+        """
+        ...
+
     def modified_frequencies(
         self,
         frequencies: dict[str, float] | None,

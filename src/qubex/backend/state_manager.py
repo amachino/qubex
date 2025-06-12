@@ -640,7 +640,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         port_cache["lo_freq"] = lo_freq
         port_cache["cnco_freq"] = cnco_freq
         port_cache["channels"][channel.number]["fnco_freq"] = fnco_freq
-        self.device_controller.initialize_awgs_and_capunits(port.box_id)
+        self.device_controller.initialize_awg_and_capunits(port.box_id)
 
         if target.is_read:
             cap_channel = self.experiment_system.get_cap_target(label).channel
@@ -661,7 +661,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             cap_port_cache["lo_freq"] = lo_freq
             cap_port_cache["cnco_freq"] = cnco_freq
             cap_port_cache["runits"][cap_channel.number]["fnco_freq"] = fnco_freq
-            self.device_controller.initialize_awgs_and_capunits(cap_port.box_id)
+            self.device_controller.initialize_awg_and_capunits(cap_port.box_id)
 
         self.experiment_system.update_port_params(
             label,

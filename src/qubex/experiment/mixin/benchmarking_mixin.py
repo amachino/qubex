@@ -326,12 +326,15 @@ class BenchmarkingMixin(
 
         fidelities = []
 
+        self.reset_awg_and_capunits()
+
         for n_clifford in tqdm(n_cliffords_range):
             result = self.measure(
                 sequence=rb_sequence(n_clifford),
                 mode="single",
                 shots=shots,
                 interval=interval,
+                reset_awg_and_capunits=False,
                 plot=False,
             )
             if mitigate_readout:
