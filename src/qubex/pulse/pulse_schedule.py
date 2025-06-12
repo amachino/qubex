@@ -190,6 +190,7 @@ class PulseSchedule:
     def call(
         self,
         schedule: PulseSchedule,
+        copy: bool = False,
     ):
         """
         Call another pulse schedule in the current pulse schedule.
@@ -218,7 +219,7 @@ class PulseSchedule:
             raise ValueError("Cannot call itself.")
 
         self.barrier(schedule.labels)
-        sequences = schedule.get_sequences()
+        sequences = schedule.get_sequences(copy=copy)
         for label, sequence in sequences.items():
             self.add(label, sequence)
 
@@ -477,6 +478,7 @@ class PulseSchedule:
         label: str,
         duration: float | None = None,
         align: Literal["start", "end"] = "start",
+        copy: bool = True,
     ) -> PulseArray:
         """
         Returns the pulse sequence for a specific channel.
@@ -489,22 +491,33 @@ class PulseSchedule:
             The duration of the sequences.
         align : {"start", "end"}, optional
             The alignment of the sequences.
+        copy : bool, optional
+            If True, returns a copy of the sequence.
 
         Returns
         -------
         PulseArray
             The pulse sequence for the channel.
         """
+        sequence = self._channels[label].sequence
         if duration is not None:
             pad_side: Literal["right", "left"] = "right" if align == "start" else "left"
-            return self._channels[label].sequence.padded(duration, pad_side)
+            if copy:
+                return sequence.padded(duration, pad_side)
+            else:
+                sequence.pad(duration, pad_side)
+                return sequence
         else:
-            return self._channels[label].sequence.copy()
+            if copy:
+                return sequence.copy()
+            else:
+                return sequence
 
     def get_sequences(
         self,
         duration: float | None = None,
         align: Literal["start", "end"] = "start",
+        copy: bool = True,
     ) -> dict[str, PulseArray]:
         """
         Returns the pulse sequences.
@@ -515,6 +528,8 @@ class PulseSchedule:
             The duration of the sequences.
         align : {"start", "end"}, optional
             The alignment of the sequences.
+        copy : bool, optional
+            If True, returns a copy of the sequences.
 
         Returns
         -------
@@ -522,7 +537,13 @@ class PulseSchedule:
             The pulse sequences.
         """
         return {
-            label: self.get_sequence(label, duration, align) for label in self.labels
+            label: self.get_sequence(
+                label=label,
+                duration=duration,
+                align=align,
+                copy=copy,
+            )
+            for label in self.labels
         }
 
     def get_sampled_sequence(
@@ -530,6 +551,7 @@ class PulseSchedule:
         label: str,
         duration: float | None = None,
         align: Literal["start", "end"] = "start",
+        copy: bool = True,
     ) -> npt.NDArray[np.complex128]:
         """
         Returns the sampled pulse sequence for a specific channel.
@@ -542,19 +564,30 @@ class PulseSchedule:
             The duration of the sequences.
         align : {"start", "end"}, optional
             The alignment of the sequences.
+        copy : bool, optional
+            If True, returns a copy of the sequence.
 
         Returns
         -------
         npt.NDArray[np.complex128]
             The sampled pulse sequence for the channel.
         """
-        sequence = self.get_sequence(label, duration, align)
-        return sequence.values
+        sequence = self.get_sequence(
+            label=label,
+            duration=duration,
+            align=align,
+            copy=False,
+        )
+        if copy:
+            return sequence.values.copy()
+        else:
+            return sequence.values
 
     def get_sampled_sequences(
         self,
         duration: float | None = None,
         align: Literal["start", "end"] = "start",
+        copy: bool = True,
     ) -> dict[str, npt.NDArray[np.complex128]]:
         """
         Returns the sampled pulse sequences.
@@ -565,6 +598,8 @@ class PulseSchedule:
             The duration of the sequences.
         align : {"start", "end"}, optional
             The alignment of the sequences.
+        copy : bool, optional
+            If True, returns a copy of the sequences.
 
         Returns
         -------
@@ -572,7 +607,12 @@ class PulseSchedule:
             The sampled pulse sequences
         """
         return {
-            label: self.get_sampled_sequence(label, duration, align)
+            label: self.get_sampled_sequence(
+                label=label,
+                duration=duration,
+                align=align,
+                copy=copy,
+            )
             for label in self.labels
         }
 
@@ -631,7 +671,9 @@ class PulseSchedule:
         ranges: dict[str, list[range]] = {label: [] for label in labels}
         for label in labels:
             current_offset = 0
-            for waveform in self._channels[label].sequence.get_waveforms():
+            for waveform in self._channels[label].sequence.get_flattend_waveforms(
+                apply_frame_shifts=False
+            ):
                 next_offset = current_offset + waveform.length
                 if not isinstance(waveform, Blank):
                     ranges[label].append(range(current_offset, next_offset))

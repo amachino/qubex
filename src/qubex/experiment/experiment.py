@@ -785,7 +785,7 @@ class Experiment(
         if state == "0":
             return Blank(0)
         elif state == "1":
-            return self.x90(target).repeated(2)
+            return self.x180(target)
         else:
             if state == "+":
                 return self.y90(target)
