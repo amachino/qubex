@@ -145,9 +145,9 @@ class CalibrationNote(ExperimentNote):
     def get_rabi_param(
         self,
         target: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> RabiParam | None:
-        return self.get_property(RABI_PARAMS, target, cutoff_days)
+        return self.get_property(RABI_PARAMS, target, valid_days)
 
     def update_rabi_param(
         self,
@@ -165,9 +165,9 @@ class CalibrationNote(ExperimentNote):
     def get_hpi_param(
         self,
         target: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> FlatTopParam | None:
-        return self.get_property(HPI_PARAMS, target, cutoff_days)
+        return self.get_property(HPI_PARAMS, target, valid_days)
 
     def update_hpi_param(
         self,
@@ -185,9 +185,9 @@ class CalibrationNote(ExperimentNote):
     def get_pi_param(
         self,
         target: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> FlatTopParam | None:
-        return self.get_property(PI_PARAMS, target, cutoff_days)
+        return self.get_property(PI_PARAMS, target, valid_days)
 
     def update_pi_param(
         self,
@@ -205,9 +205,9 @@ class CalibrationNote(ExperimentNote):
     def get_drag_hpi_param(
         self,
         target: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> DragParam | None:
-        return self.get_property(DRAG_HPI_PARAMS, target, cutoff_days)
+        return self.get_property(DRAG_HPI_PARAMS, target, valid_days)
 
     def update_drag_hpi_param(
         self,
@@ -225,9 +225,9 @@ class CalibrationNote(ExperimentNote):
     def get_drag_pi_param(
         self,
         target: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> DragParam | None:
-        return self.get_property(DRAG_PI_PARAMS, target, cutoff_days)
+        return self.get_property(DRAG_PI_PARAMS, target, valid_days)
 
     def update_drag_pi_param(
         self,
@@ -245,9 +245,9 @@ class CalibrationNote(ExperimentNote):
     def get_state_param(
         self,
         target: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> StateParam | None:
-        return self.get_property(STATE_PARAMS, target, cutoff_days)
+        return self.get_property(STATE_PARAMS, target, valid_days)
 
     def update_state_param(
         self,
@@ -265,9 +265,9 @@ class CalibrationNote(ExperimentNote):
     def get_cr_param(
         self,
         target: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> CrossResonanceParam | None:
-        return self.get_property(CR_PARAMS, target, cutoff_days)
+        return self.get_property(CR_PARAMS, target, valid_days)
 
     def update_cr_param(
         self,
@@ -286,18 +286,18 @@ class CalibrationNote(ExperimentNote):
         self,
         key: str,
         target: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> Any:
         property = self.get(key)
         value = property.get(target)
         if value is None:
             return None
-        if cutoff_days is None:
+        if valid_days is None:
             return value
         timestamp = value["timestamp"]
         time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
         days_passed = (datetime.now() - time).days
-        if days_passed >= cutoff_days:
+        if days_passed >= valid_days:
             logger.warning(
                 f"{key}['{target}'] is outdated and ignored ({days_passed} days passed)."
             )
@@ -330,18 +330,18 @@ class CalibrationNote(ExperimentNote):
     def get(
         self,
         key: str,
-        cutoff_days: int | None = None,
+        valid_days: int | None = None,
     ) -> dict[str, Any]:
         property = super().get(key)
         if property is None:
             return {}
-        if cutoff_days is None:
+        if valid_days is None:
             return property
         value = {}
         for k, v in property.items():
             timestamp = v["timestamp"]
             time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
-            if (datetime.now() - time).days < cutoff_days:
+            if (datetime.now() - time).days < valid_days:
                 value[k] = v
         return value
 

@@ -177,8 +177,12 @@ def test_update_cr_param(tmp_path):
             "ramptime": 0.5,
             "cr_amplitude": 0.5,
             "cr_phase": 0.5,
+            "cr_beta": 0.5,
             "cancel_amplitude": 0.5,
             "cancel_phase": 0.5,
+            "cancel_beta": 0.5,
+            "rotary_amplitude": 0.5,
+            "zx_rotation_rate": 0.5,
         },
     )
     param = note.get_cr_param("Q00") or {}
@@ -187,8 +191,12 @@ def test_update_cr_param(tmp_path):
     assert param["ramptime"] == 0.5
     assert param["cr_amplitude"] == 0.5
     assert param["cr_phase"] == 0.5
+    assert param["cr_beta"] == 0.5
     assert param["cancel_amplitude"] == 0.5
     assert param["cancel_phase"] == 0.5
+    assert param["cancel_beta"] == 0.5
+    assert param["rotary_amplitude"] == 0.5
+    assert param["zx_rotation_rate"] == 0.5
 
 
 def test_timestamp(tmp_path):
@@ -232,8 +240,8 @@ def test_timestamp(tmp_path):
     assert updated_timestamp > timestamp
 
 
-def test_get_param_with_cutoff_days(tmp_path):
-    """CalibrationNote should return None if the param is older than the cutoff_days."""
+def test_get_param_with_valid_days(tmp_path):
+    """CalibrationNote should return None if the param is older than valid days."""
     chip_id = "CHIP_ID"
     calibration_dir = tmp_path / ".calibration"
     note = CalibrationNote(chip_id=chip_id, calibration_dir=calibration_dir)
@@ -253,5 +261,5 @@ def test_get_param_with_cutoff_days(tmp_path):
             ),
         },
     )
-    assert note.get_rabi_param("Q00", cutoff_days=1) is None
-    assert note.get_rabi_param("Q00", cutoff_days=3) is not None
+    assert note.get_rabi_param("Q00", valid_days=1) is None
+    assert note.get_rabi_param("Q00", valid_days=3) is not None

@@ -55,6 +55,7 @@ from ..version import get_package_version
 from . import experiment_tool
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
+    CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
@@ -148,6 +149,7 @@ class Experiment(
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
     ):
         self._load_config(
             chip_id=chip_id,
@@ -173,6 +175,7 @@ class Experiment(
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
+        self._calibration_valid_days: Final = calibration_valid_days
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
@@ -454,7 +457,10 @@ class Experiment(
     def hpi_pulse(self) -> dict[str, Waveform]:
         result = {}
         for target in self.ge_targets:
-            param = self.calib_note.get_hpi_param(target)
+            param = self.calib_note.get_hpi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
             if param is not None and None not in param.values():
                 result[target] = FlatTop(
                     duration=param["duration"],
@@ -473,7 +479,10 @@ class Experiment(
     def pi_pulse(self) -> dict[str, Waveform]:
         result = {}
         for target in self.ge_targets:
-            param = self.calib_note.get_pi_param(target)
+            param = self.calib_note.get_pi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
             if param is not None and None not in param.values():
                 result[target] = FlatTop(
                     duration=param["duration"],
@@ -486,7 +495,10 @@ class Experiment(
     def drag_hpi_pulse(self) -> dict[str, Waveform]:
         result = {}
         for target in self.ge_targets:
-            param = self.calib_note.get_drag_hpi_param(target)
+            param = self.calib_note.get_drag_hpi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
             if param is not None and None not in param.values():
                 result[target] = Drag(
                     duration=param["duration"],
@@ -499,7 +511,10 @@ class Experiment(
     def drag_pi_pulse(self) -> dict[str, Waveform]:
         result = {}
         for target in self.ge_targets:
-            param = self.calib_note.get_drag_pi_param(target)
+            param = self.calib_note.get_drag_pi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
             if param is not None and None not in param.values():
                 result[target] = Drag(
                     duration=param["duration"],
@@ -512,7 +527,10 @@ class Experiment(
     def ef_hpi_pulse(self) -> dict[str, Waveform]:
         result = {}
         for target in self.ef_targets:
-            param = self.calib_note.get_hpi_param(target)
+            param = self.calib_note.get_hpi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
             if param is not None and None not in param.values():
                 result[target] = FlatTop(
                     duration=param["duration"],
@@ -525,7 +543,10 @@ class Experiment(
     def ef_pi_pulse(self) -> dict[str, Waveform]:
         result = {}
         for target in self.ef_targets:
-            param = self.calib_note.get_pi_param(target)
+            param = self.calib_note.get_pi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
             if param is not None and None not in param.values():
                 result[target] = FlatTop(
                     duration=param["duration"],
@@ -538,7 +559,10 @@ class Experiment(
     def rabi_params(self) -> dict[str, RabiParam]:
         result = {}
         for target in self.ge_targets | self.ef_targets:
-            param = self.calib_note.get_rabi_param(target)
+            param = self.calib_note.get_rabi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
             if param is not None and None not in param.values():
                 result[target] = RabiParam(
                     target=param.get("target"),
@@ -584,7 +608,10 @@ class Experiment(
     def state_centers(self) -> dict[str, dict[int, complex]]:
         result = {}
         for target in self.qubit_labels:
-            param = self.calib_note.get_state_param(target)
+            param = self.calib_note.get_state_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
             if param is not None:
                 result[target] = {
                     int(state): complex(center[0], center[1])
@@ -1134,27 +1161,29 @@ class Experiment(
         *,
         type: Literal["flattop", "drag"] | None = None,
     ) -> Waveform:
-        if type is None:
-            type = "drag" if target in self.calib_note.drag_hpi_params else "flattop"
-        try:
-            if type == "flattop":
-                param = self.calib_note.get_hpi_param(target)
-                if param is None:
-                    raise ValueError(f"hpi_param for {target} are not stored.")
-                return FlatTop(
-                    duration=param["duration"],
-                    amplitude=param["amplitude"],
-                    tau=param["tau"],
-                )
-            elif type == "drag":
-                param = self.calib_note.get_drag_hpi_param(target)
-                if param is None:
-                    raise ValueError(f"drag_hpi_param for {target} are not stored.")
+        if type != "flattop":
+            param = self.calib_note.get_drag_hpi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
+            if param is not None:
                 return Drag(
                     duration=param["duration"],
                     amplitude=param["amplitude"],
                     beta=param["beta"],
                 )
+        try:
+            param = self.calib_note.get_hpi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
+            if param is None:
+                raise ValueError(f"hpi_param for {target} are not stored.")
+            return FlatTop(
+                duration=param["duration"],
+                amplitude=param["amplitude"],
+                tau=param["tau"],
+            )
         except KeyError:
             raise ValueError(f"Invalid target: {target}")
 
@@ -1175,29 +1204,32 @@ class Experiment(
         type: Literal["flattop", "drag"] | None = None,
         use_hpi: bool = False,
     ) -> Waveform:
-        if type is None:
-            type = "drag" if target in self.calib_note.drag_pi_params else "flattop"
         if use_hpi:
             return self.x90(target, type=type).repeated(2)
-        try:
-            if type == "flattop":
-                param = self.calib_note.get_pi_param(target)
-                if param is None:
-                    return self.x90(target, type=type).repeated(2)
-                else:
-                    return FlatTop(
-                        duration=param["duration"],
-                        amplitude=param["amplitude"],
-                        tau=param["tau"],
-                    )
-            elif type == "drag":
-                param = self.calib_note.get_drag_pi_param(target)
-                if param is None:
-                    raise ValueError(f"darg_pi_param for {target} are not stored.")
+
+        if type != "flattop":
+            param = self.calib_note.get_drag_pi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
+            if param is not None:
                 return Drag(
                     duration=param["duration"],
                     amplitude=param["amplitude"],
                     beta=param["beta"],
+                )
+        try:
+            param = self.calib_note.get_pi_param(
+                target,
+                valid_days=self._calibration_valid_days,
+            )
+            if param is None:
+                return self.x90(target, type=type).repeated(2)
+            else:
+                return FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
                 )
         except KeyError:
             raise ValueError(f"Invalid target: {target}")
@@ -1283,7 +1315,10 @@ class Experiment(
         x180_margin: float = 0.0,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_param = self.calib_note.get_cr_param(cr_label)
+        cr_param = self.calib_note.get_cr_param(
+            cr_label,
+            valid_days=self._calibration_valid_days,
+        )
         if cr_param is None:
             raise ValueError(f"CR parameters for {cr_label} are not stored.")
 
