@@ -824,7 +824,7 @@ class CharacterizationMixin(
             def t1_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
-                        ps.add(target, self.hpi_pulse[target].repeated(2))
+                        ps.add(target, self.get_hpi_pulse(target).repeated(2))
                         ps.add(target, Blank(T))
                 return ps
 
@@ -924,7 +924,7 @@ class CharacterizationMixin(
             def t2_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
-                        hpi = self.hpi_pulse[target]
+                        hpi = self.get_hpi_pulse(target)
                         pi = pi_cpmg or hpi.repeated(2)
                         ps.add(target, hpi)
                         if T > 0:
@@ -1039,7 +1039,7 @@ class CharacterizationMixin(
 
                     # Ramsey sequence for the target qubit
                     for target in target_qubits:
-                        x90 = self.hpi_pulse[target]
+                        x90 = self.get_hpi_pulse(target)
                         ps.add(target, x90)
                         ps.add(target, Blank(T))
                         if secound_rotation_axis == "X":
@@ -1173,7 +1173,7 @@ class CharacterizationMixin(
     ):
         if x90 is None:
             x90 = {
-                target_qubit: self.hpi_pulse[target_qubit],
+                target_qubit: self.get_hpi_pulse(target_qubit),
             }
         elif isinstance(x90, Waveform):
             x90 = {
@@ -1182,8 +1182,8 @@ class CharacterizationMixin(
 
         if x180 is None:
             x180 = {
-                target_qubit: self.hpi_pulse[target_qubit].repeated(2),
-                spectator_qubit: self.hpi_pulse[spectator_qubit].repeated(2),
+                target_qubit: self.get_hpi_pulse(target_qubit).repeated(2),
+                spectator_qubit: self.get_hpi_pulse(spectator_qubit).repeated(2),
             }
         elif isinstance(x180, Waveform):
             x180 = {
@@ -2784,7 +2784,7 @@ class CharacterizationMixin(
         if qubit_drive_detuning is None:
             qubit_drive_detuning = 0.0
         if qubit_pi_pulse is None:
-            qubit_pi_pulse = self.hpi_pulse[target].repeated(2)
+            qubit_pi_pulse = self.get_hpi_pulse(target).repeated(2)
         if qubit_drive_scale is None:
             qubit_drive_scale = 0.8
         if resonator_drive_detuning is None:

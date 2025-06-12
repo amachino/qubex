@@ -257,12 +257,12 @@ class MeasurementMixin(
                 elif state == "g":
                     ps.add(target, Blank(0))
                 elif state == "e":
-                    ps.add(target, self.hpi_pulse[target].repeated(2))
+                    ps.add(target, self.get_hpi_pulse(target).repeated(2))
                 elif state == "f":
-                    ps.add(target, self.hpi_pulse[target].repeated(2))
+                    ps.add(target, self.get_hpi_pulse(target).repeated(2))
                     ps.barrier()
                     ef_label = Target.ef_label(target)
-                    ps.add(ef_label, self.ef_hpi_pulse[ef_label].repeated(2))
+                    ps.add(ef_label, self.get_hpi_pulse(ef_label).repeated(2))
 
         return self.measure(
             sequence=ps,
@@ -712,7 +712,7 @@ class MeasurementMixin(
             with PulseSchedule() as ps:
                 # prepare qubits to the excited state
                 for ge in ge_labels:
-                    ps.add(ge, self.hpi_pulse[ge].repeated(2))
+                    ps.add(ge, self.get_hpi_pulse(ge).repeated(2))
                 ps.barrier()
                 # apply the ef drive to induce the ef Rabi oscillation
                 for ef in ef_labels:

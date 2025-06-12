@@ -288,7 +288,7 @@ class CalibrationMixin(
 
             def sequence(x: float) -> PulseSchedule:
                 with PulseSchedule() as ps:
-                    ps.add(ge_label, self.hpi_pulse[ge_label].repeated(2))
+                    ps.add(ge_label, self.get_hpi_pulse(ge_label).repeated(2))
                     ps.barrier()
                     ps.add(ef_label, pulse.scaled(x).repeated(repetitions))
                 return ps
@@ -618,7 +618,7 @@ class CalibrationMixin(
                             beta=beta,
                         )
                         x90m = x90p.scaled(-1)
-                        y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
                         ps.add(
                             target,
                             PulseArray(
@@ -636,7 +636,7 @@ class CalibrationMixin(
                             beta=beta,
                         )
                         x180m = x180p.scaled(-1)
-                        y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
                         ps.add(
                             target,
                             PulseArray(
@@ -899,17 +899,15 @@ class CalibrationMixin(
             time_range = np.array(time_range)
 
         if x90 is None:
-            x90 = self.hpi_pulse
-            if control_qubit in self.drag_hpi_pulse:
-                x90[control_qubit] = self.drag_hpi_pulse[control_qubit]
-            if target_qubit in self.drag_hpi_pulse:
-                x90[target_qubit] = self.drag_hpi_pulse[target_qubit]
+            x90 = {
+                control_qubit: self.x90(control_qubit),
+                target_qubit: self.x90(target_qubit),
+            }
 
         if x180 is None:
-            if control_qubit in self.drag_pi_pulse:
-                x180 = self.drag_pi_pulse
-            else:
-                x180 = self.pi_pulse
+            x180 = {
+                control_qubit: self.x180(control_qubit),
+            }
 
         control_states = []
         target_states = []
@@ -1669,7 +1667,7 @@ class CalibrationMixin(
         ftarget: float = 1e-3,
         timeout: int = 300,
     ) -> Waveform:
-        pulse = self.drag_hpi_pulse[qubit]
+        pulse = self.get_drag_hpi_pulse(qubit)
         N = pulse.length
         initial_params = list(pulse.real) + list(pulse.imag)
         es = cma.CMAEvolutionStrategy(
