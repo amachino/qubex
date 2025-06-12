@@ -1291,6 +1291,7 @@ class CalibrationMixin(
         tolerance: float = 10e-6,
         adiabatic_safe_factor: float = 0.75,
         max_amplitude: float = 1.0,
+        max_time_range: float = 4096.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -1302,7 +1303,7 @@ class CalibrationMixin(
         ) -> NDArray:
             period = 4 * zx90_duration
             dt = (period / n_points_per_cycle) // SAMPLING_PERIOD * SAMPLING_PERIOD
-            duration = period * n_cycles
+            duration = min(period * n_cycles, max_time_range)
             return np.arange(0, duration + 1, dt)
 
         cr_label = f"{control_qubit}-{target_qubit}"
