@@ -1550,6 +1550,7 @@ class CharacterizationMixin(
         interval: float | None = None,
         plot: bool = True,
         save_image: bool = False,
+        optimize: bool = False,
     ) -> dict:
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
@@ -1674,13 +1675,26 @@ class CharacterizationMixin(
         phases %= 2 * np.pi
         phases -= np.pi
         phases_unwrap = np.unwrap(phases)
-        phases_diff = np.diff(phases_unwrap)
-
-        peaks, _ = find_peaks(
-            np.abs(phases_diff),
-            height=peak_height or 0.5,
-            distance=peak_distance or 10,
-        )
+        if optimize:
+            from scipy.ndimage import gaussian_filter1d
+            phases_unwrap = gaussian_filter1d(phases_unwrap, sigma=2.0)
+            phases_diff = np.diff(phases_unwrap)
+            peaks, props = find_peaks(
+                np.abs(phases_diff),
+                distance=peak_distance or 10,
+                prominence=0.05,
+            )
+            num_resonators = 4
+            sorted_peaks = sorted(zip(props["prominences"], peaks), reverse=True)
+            top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
+            peaks = [idx for _, idx in top_peaks]
+        else:
+            phases_diff = np.diff(phases_unwrap)
+            peaks, _ = find_peaks(
+                np.abs(phases_diff),
+                height=peak_height or 0.5,
+                distance=peak_distance or 10,
+            )
         peak_freqs = frequency_range[peaks]
 
         fig1 = make_subplots(
