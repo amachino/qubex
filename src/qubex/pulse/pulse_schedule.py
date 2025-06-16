@@ -584,12 +584,9 @@ class PulseSchedule:
             label=label,
             duration=duration,
             align=align,
-            copy=False,
+            copy=copy,
         )
-        if copy:
-            return sequence.values.copy()
-        else:
-            return sequence.values
+        return sequence.values
 
     def get_sampled_sequences(
         self,
