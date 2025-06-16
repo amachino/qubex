@@ -1550,7 +1550,7 @@ class CharacterizationMixin(
         interval: float | None = None,
         plot: bool = True,
         save_image: bool = False,
-        filter: str | None = None,
+        filter: Literal["gaussian", "savgol"] | None = None,
     ) -> dict:
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
