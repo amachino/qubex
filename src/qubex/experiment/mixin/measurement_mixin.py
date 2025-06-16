@@ -80,6 +80,7 @@ class MeasurementMixin(
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         reset_awg_and_capunits: bool = True,
+        plot: bool = False,
     ) -> MultipleMeasureResult:
         if reset_awg_and_capunits:
             self.device_controller.initialize_awg_and_capunits(self.box_ids)
@@ -100,6 +101,7 @@ class MeasurementMixin(
                     readout_ramptime=readout_ramptime,
                     readout_drag_coeff=readout_drag_coeff,
                     readout_ramp_type=readout_ramp_type,
+                    plot=plot,
                 )
         else:
             result = self.measurement.execute(
@@ -116,7 +118,11 @@ class MeasurementMixin(
                 readout_ramptime=readout_ramptime,
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
+                plot=plot,
             )
+
+        if plot:
+            result.plot()
         return result
 
     def measure(
@@ -952,6 +958,7 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
+        method: Literal["measure", "execute"] = "measure",
         plot: bool = False,
     ) -> dict[str, tuple[float, float, float]]:
         if isinstance(sequence, PulseSchedule):
@@ -1001,23 +1008,43 @@ class MeasurementMixin(
                     elif basis == "Y":
                         ps.add(qubit, x90p)
 
-            measure_result = self.measure(
-                ps,
-                shots=shots,
-                interval=interval,
-                reset_awg_and_capunits=False,
-                plot=plot,
-            )
-            for qubit, data in measure_result.data.items():
-                rabi_param = self.rabi_params[qubit]
-                if rabi_param is None:
-                    raise ValueError("Rabi parameters are not stored.")
-                values = data.kerneled
-                values_rotated = values * np.exp(-1j * rabi_param.angle)
-                values_normalized = (
-                    np.imag(values_rotated) - rabi_param.offset
-                ) / rabi_param.amplitude
-                buffer[qubit] += [values_normalized]
+            if method == "execute":
+                measure_result = self.execute(
+                    ps,
+                    shots=shots,
+                    interval=interval,
+                    reset_awg_and_capunits=False,
+                    add_last_measurement=True,
+                    plot=plot,
+                )
+                for qubit, data in measure_result.data.items():
+                    rabi_param = self.rabi_params[qubit]
+                    if rabi_param is None:
+                        raise ValueError("Rabi parameters are not stored.")
+                    values = data[-1].kerneled
+                    values_rotated = values * np.exp(-1j * rabi_param.angle)
+                    values_normalized = (
+                        np.imag(values_rotated) - rabi_param.offset
+                    ) / rabi_param.amplitude
+                    buffer[qubit] += [values_normalized]
+            else:
+                measure_result = self.measure(
+                    ps,
+                    shots=shots,
+                    interval=interval,
+                    reset_awg_and_capunits=False,
+                    plot=plot,
+                )
+                for qubit, data in measure_result.data.items():
+                    rabi_param = self.rabi_params[qubit]
+                    if rabi_param is None:
+                        raise ValueError("Rabi parameters are not stored.")
+                    values = data.kerneled
+                    values_rotated = values * np.exp(-1j * rabi_param.angle)
+                    values_normalized = (
+                        np.imag(values_rotated) - rabi_param.offset
+                    ) / rabi_param.amplitude
+                    buffer[qubit] += [values_normalized]
 
         result = {
             qubit: (
@@ -1042,6 +1069,7 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
+        method: Literal["measure", "execute"] = "measure",
         plot: bool = True,
     ) -> dict[str, NDArray[np.float64]]:
         buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
@@ -1057,6 +1085,7 @@ class MeasurementMixin(
                 shots=shots,
                 interval=interval,
                 reset_awg_and_capunits=False,
+                method=method,
                 plot=False,
             )
             for target, state_vector in state_vectors.items():
@@ -1080,6 +1109,7 @@ class MeasurementMixin(
         n_samples: int | None = 100,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        method: Literal["measure", "execute"] = "measure",
         plot: bool = True,
     ) -> TargetMap[NDArray[np.float64]]:
         self.validate_rabi_params()
@@ -1179,6 +1209,7 @@ class MeasurementMixin(
             initial_state=initial_state,
             shots=shots,
             interval=interval,
+            method=method,
             plot=plot,
         )
 

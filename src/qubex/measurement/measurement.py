@@ -531,6 +531,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        plot: bool = False,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -584,6 +585,7 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
+            plot=plot,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -1137,6 +1139,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        plot: bool = False,
     ) -> Sequencer:
         gen_sequences, cap_sequences = self._create_sampled_sequences_from_schedule(
             schedule=schedule,
@@ -1149,6 +1152,7 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
+            plot=plot,
         )
 
         backend_interval = (

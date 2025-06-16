@@ -38,6 +38,7 @@ from ..measurement.measurement import (
     DEFAULT_INTERVAL,
     DEFAULT_PARAMS_DIR,
     DEFAULT_READOUT_DURATION,
+    DEFAULT_READOUT_RAMPTIME,
     DEFAULT_SHOTS,
 )
 from ..pulse import (
@@ -1239,6 +1240,7 @@ class Experiment(
         *,
         amplitude: float | None = None,
         duration: float = DEFAULT_READOUT_DURATION,
+        ramptime: float = DEFAULT_READOUT_RAMPTIME,
         capture_window: float = DEFAULT_CAPTURE_WINDOW,
         capture_margin: float = DEFAULT_CAPTURE_MARGIN,
     ) -> Waveform:
@@ -1249,6 +1251,7 @@ class Experiment(
                     target=target,
                     duration=duration,
                     amplitude=amplitude,
+                    tau=ramptime,
                 ).padded(
                     total_duration=capture_window,
                     pad_side="right",
