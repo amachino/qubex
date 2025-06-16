@@ -2405,7 +2405,7 @@ class CharacterizationMixin(
         )
         data = np.unwrap(data["phases"])
 
-        result = fitting.fit_sqrt_lorentzian(
+        fit_result = fitting.fit_sqrt_lorentzian(
             target=target,
             x=frequency_range,
             y=data,
@@ -2413,7 +2413,7 @@ class CharacterizationMixin(
             title="Qubit resonance fit",
         )
 
-        rabi_rate = result.get("Omega")
+        rabi_rate = fit_result.get("Omega")
         if rabi_rate is None:
             return {
                 "frequency_range": frequency_range,
@@ -2425,7 +2425,7 @@ class CharacterizationMixin(
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
         if plot:
-            fig = result["fig"]
+            fig = fit_result["fig"]
             fig.update_layout(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
@@ -2442,11 +2442,6 @@ class CharacterizationMixin(
             )
             fig.show()
 
-            print("")
-            print(f"Control amplitude estimation : {target}")
-            print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
-            print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
-
         if save_image:
             viz.save_figure_image(
                 fig,
@@ -2460,6 +2455,7 @@ class CharacterizationMixin(
             "rabi_rate": rabi_rate,
             "estimated_amplitude": estimated_amplitude,
             "fig": fig,
+            **fit_result,
         }
 
     def qubit_spectroscopy(
@@ -2903,7 +2899,13 @@ class CharacterizationMixin(
             ),
         )
         fig.update_layout(
-            title=f"CKP Experiment : {target} : |{qubit_initial_state}〉",
+            title=dict(
+                text=f"CKP measurement : {target} : |{qubit_initial_state}〉",
+                subtitle=dict(
+                    text=f"resonator_drive_amplitude={resonator_drive_amplitude:.6g}",
+                    font=dict(size=11, family="monospace"),
+                ),
+            ),
             xaxis_title="Resonator frequency (GHz)",
             yaxis_title="Qubit frequency (GHz)",
             width=600,
@@ -3076,12 +3078,18 @@ class CharacterizationMixin(
             y=0.05,
             text=f"χ : {chi * 1e3:.3f} MHz<br>"
             f"κ : {kappa * 1e3:.3f} MHz<br>"
-            f"|A|² : {power * 1e3:.3f} ph/μs<br>",
+            f"|A|² : {power * 1e3:.3f} MHz<br>",
             showarrow=False,
             bgcolor="rgba(255, 255, 255, 0.8)",
         )
         fig.update_layout(
-            title=f"CKP Experiment : {target}",
+            title=dict(
+                text=f"CKP Experiment : {target}",
+                subtitle=dict(
+                    text=f"resonator_drive_amplitude={resonator_drive_amplitude:.6g}",
+                    font=dict(size=11, family="monospace"),
+                ),
+            ),
             xaxis_title="Resonator frequency (GHz)",
             yaxis_title="Qubit frequency (GHz)",
             width=600,
@@ -3096,9 +3104,9 @@ class CharacterizationMixin(
             print(f"Δ     : {delta * 1e3:.3f} MHz")
             print(f"χ     : {chi * 1e3:.3f} MHz")
             print(f"κ     : {kappa * 1e3:.3f} MHz")
-            print(f"|A|²  : {power * 1e3:.3f} ph/μs")
-            print(f"n̅*    : {n_mean:.3f} ph")
-            print(f"n_c   : {n_crit:.3f} ph")
+            print(f"|A|²  : {power * 1e3:.3f} MHz")
+            print(f"n̅*    : {n_mean:.3f}")
+            print(f"n_c   : {n_crit:.3f}")
 
         if save_image:
             viz.save_figure_image(
