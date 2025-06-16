@@ -712,6 +712,11 @@ class Measurement:
         # |<- control_length -><- margin_length -><- capture_length ->|
         readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for qubit in qubits:
+            readout_target = Target.read_label(qubit)
+            if readout_target in control_waveforms:
+                padded_waveform = control_waveforms[readout_target]
+            else:
+                padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_pulse = self.readout_pulse(
                 target=qubit,
                 duration=readout_duration,
@@ -720,9 +725,7 @@ class Measurement:
                 beta=readout_drag_coeff,
                 type=readout_ramp_type,
             )
-            padded_waveform = np.zeros(total_length, dtype=np.complex128)
             padded_waveform[readout_slice] = readout_pulse.values
-            readout_target = Target.read_label(qubit)
             omega = 2 * np.pi * self.get_awg_frequency(readout_target)
             offset = readout_start * SAMPLING_PERIOD
             padded_waveform *= np.exp(-1j * omega * offset)
