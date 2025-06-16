@@ -1550,6 +1550,7 @@ class CharacterizationMixin(
         interval: float | None = None,
         plot: bool = True,
         save_image: bool = False,
+        filter: Literal["gaussian", "savgol"] | None = None,
     ) -> dict:
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
@@ -1675,12 +1676,43 @@ class CharacterizationMixin(
         phases -= np.pi
         phases_unwrap = np.unwrap(phases)
         phases_diff = np.diff(phases_unwrap)
-
-        peaks, _ = find_peaks(
-            np.abs(phases_diff),
-            height=peak_height or 0.5,
-            distance=peak_distance or 10,
-        )
+        if filter == "gaussian":
+            from scipy.ndimage import gaussian_filter1d
+            phases_unwrap_for_peak = gaussian_filter1d(phases_unwrap, sigma=2.0)
+            phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
+            peaks, props = find_peaks(
+                np.abs(phases_diff_for_peak),
+                distance=peak_distance or 10,
+                prominence=0.05,
+            )
+            num_resonators = 4
+            sorted_peaks = sorted(zip(props["prominences"], peaks), reverse=True)
+            top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
+            peaks = [idx for _, idx in top_peaks]
+        elif filter == "savgol":
+            from scipy.signal import savgol_filter
+            # window_length: around 5% of the data length
+            window_frac = 0.05
+            window_length = int(len(phases) * window_frac)
+            window_length = max(7, window_length // 2 * 2 + 1)  # minimum 7, odd number
+            polyorder = 3
+            phases_unwrap_for_peak = savgol_filter(phases_unwrap, window_length=window_length, polyorder=polyorder)
+            phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
+            peaks, props = find_peaks(
+                np.abs(phases_diff_for_peak),
+                distance=peak_distance or 10,
+                prominence=0.05,
+            )
+            num_resonators = 4
+            sorted_peaks = sorted(zip(props["prominences"], peaks), reverse=True)
+            top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
+            peaks = [idx for _, idx in top_peaks]
+        else:
+            peaks, _ = find_peaks(
+                np.abs(phases_diff),
+                height=peak_height or 0.5,
+                distance=peak_distance or 10,
+            )
         peak_freqs = frequency_range[peaks]
 
         fig1 = make_subplots(
