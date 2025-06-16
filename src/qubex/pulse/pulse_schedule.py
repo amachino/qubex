@@ -311,7 +311,7 @@ class PulseSchedule:
         show_physical_pulse: bool = False,
         title: str = "Pulse Sequence",
         width: int = 800,
-        n_samples: int = 1024,
+        n_samples: int | None = None,
         divide_by_two_pi: bool = False,
         time_unit: Literal["ns", "samples"] = "ns",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
@@ -365,7 +365,7 @@ class PulseSchedule:
             phase = -np.append(seq.frame_shifts, seq.final_frame_shift)
             phase = (phase + np.pi) % (2 * np.pi) - np.pi
 
-            if len(times) > n_samples:
+            if n_samples is not None and len(times) > n_samples:
                 times = self._downsample(times, n_samples)
                 real = self._downsample(real, n_samples)
                 imag = self._downsample(imag, n_samples)
