@@ -1678,6 +1678,7 @@ class CharacterizationMixin(
         phases_diff = np.diff(phases_unwrap)
         if filter == "gaussian":
             from scipy.ndimage import gaussian_filter1d
+
             phases_unwrap_for_peak = gaussian_filter1d(phases_unwrap, sigma=2.0)
             phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
             peaks, props = find_peaks(
@@ -1691,12 +1692,15 @@ class CharacterizationMixin(
             peaks = [idx for _, idx in top_peaks]
         elif filter == "savgol":
             from scipy.signal import savgol_filter
+
             # window_length: around 5% of the data length
             window_frac = 0.05
             window_length = int(len(phases) * window_frac)
             window_length = max(7, window_length // 2 * 2 + 1)  # minimum 7, odd number
             polyorder = 3
-            phases_unwrap_for_peak = savgol_filter(phases_unwrap, window_length=window_length, polyorder=polyorder)
+            phases_unwrap_for_peak = savgol_filter(
+                phases_unwrap, window_length=window_length, polyorder=polyorder
+            )
             phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
             peaks, props = find_peaks(
                 np.abs(phases_diff_for_peak),
@@ -2987,6 +2991,11 @@ class CharacterizationMixin(
         plot: bool = True,
         save_image: bool = True,
     ):
+        if resonator_drive_amplitude is None:
+            resonator_drive_amplitude = self.params.get_readout_amplitude(
+                Target.qubit_label(target)
+            )
+
         if qubit_pi_pulse is None:
             duration = 128
             ramptime = 64
