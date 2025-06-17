@@ -103,7 +103,7 @@ class PulseArray(Waveform):
                 logger.warning(f"Unknown element type: {type(obj)}")
         return elements
 
-    def get_flattend_waveforms(
+    def get_flattened_waveforms(
         self,
         apply_frame_shifts: bool = True,
     ) -> list[Waveform]:
