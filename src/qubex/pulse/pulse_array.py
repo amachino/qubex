@@ -132,7 +132,7 @@ class PulseArray(Waveform):
         if len(self.elements) == 0:
             return np.array([])
 
-        waveforms = self.get_flattend_waveforms(apply_frame_shifts)
+        waveforms = self.get_flattened_waveforms(apply_frame_shifts)
 
         if len(waveforms) == 0:
             return np.array([])

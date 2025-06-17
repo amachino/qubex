@@ -676,7 +676,7 @@ class PulseSchedule:
         ranges: dict[str, list[range]] = {label: [] for label in labels}
         for label in labels:
             current_offset = 0
-            for waveform in self._channels[label].sequence.get_flattend_waveforms(
+            for waveform in self._channels[label].sequence.get_flattened_waveforms(
                 apply_frame_shifts=False
             ):
                 next_offset = current_offset + waveform.length
