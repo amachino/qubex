@@ -2942,8 +2942,8 @@ class CharacterizationMixin(
                     font=dict(size=11, family="monospace"),
                 ),
             ),
-            xaxis_title="Resonator frequency (GHz)",
-            yaxis_title="Qubit frequency (GHz)",
+            xaxis_title="Resonator drive frequency (GHz)",
+            yaxis_title="Qubit drive frequency (GHz)",
             width=600,
             height=400,
         )
@@ -2964,8 +2964,8 @@ class CharacterizationMixin(
             y=qubit_resonance_frequencies,
             plot=plot,
             title=f"CKP experiment fit : {target} : |{qubit_initial_state}〉",
-            xlabel="Resonator frequency (GHz)",
-            ylabel="Qubit frequency (GHz)",
+            xlabel="Resonator drive frequency (GHz)",
+            ylabel="Qubit drive frequency (GHz)",
         )
 
         return {
@@ -3131,8 +3131,8 @@ class CharacterizationMixin(
                     font=dict(size=11, family="monospace"),
                 ),
             ),
-            xaxis_title="Resonator frequency (GHz)",
-            yaxis_title="Qubit frequency (GHz)",
+            xaxis_title="Resonator drive frequency (GHz)",
+            yaxis_title="Qubit drive frequency (GHz)",
             width=600,
             height=300,
         )
