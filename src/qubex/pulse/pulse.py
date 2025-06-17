@@ -113,24 +113,32 @@ class Pulse(Waveform):
 
     def scaled(self, scale: float) -> Pulse:
         """Returns a copy of the pulse scaled by the given factor."""
+        if scale == 1:
+            return self
         new_pulse = deepcopy(self)
         new_pulse._scale *= scale
         return new_pulse
 
     def detuned(self, detuning: float) -> Pulse:
         """Returns a copy of the pulse detuned by the given frequency."""
+        if detuning == 0:
+            return self
         new_pulse = deepcopy(self)
         new_pulse._detuning += detuning
         return new_pulse
 
     def shifted(self, phase: float) -> Pulse:
         """Returns a copy of the pulse shifted by the given phase."""
+        if phase == 0:
+            return self
         new_pulse = deepcopy(self)
         new_pulse._phase += phase
         return new_pulse
 
     def repeated(self, n: int) -> Pulse:
         """Returns a copy of the pulse repeated n times."""
+        if n == 1:
+            return self
         new_pulse = deepcopy(self)
         new_pulse._values = np.tile(self._values, n)
         return new_pulse

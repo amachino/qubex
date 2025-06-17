@@ -288,7 +288,7 @@ class CalibrationMixin(
 
             def sequence(x: float) -> PulseSchedule:
                 with PulseSchedule() as ps:
-                    ps.add(ge_label, self.hpi_pulse[ge_label].repeated(2))
+                    ps.add(ge_label, self.get_hpi_pulse(ge_label).repeated(2))
                     ps.barrier()
                     ps.add(ef_label, pulse.scaled(x).repeated(repetitions))
                 return ps
@@ -618,7 +618,7 @@ class CalibrationMixin(
                             beta=beta,
                         )
                         x90m = x90p.scaled(-1)
-                        y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
                         ps.add(
                             target,
                             PulseArray(
@@ -636,7 +636,7 @@ class CalibrationMixin(
                             beta=beta,
                         )
                         x180m = x180p.scaled(-1)
-                        y90m = self.hpi_pulse[target].shifted(-np.pi / 2)
+                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
                         ps.add(
                             target,
                             PulseArray(
@@ -892,6 +892,7 @@ class CalibrationMixin(
         ] = "RaisedCosine",
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
     ) -> dict:
         if time_range is None:
             time_range = np.arange(0, 1001, 20)
@@ -899,17 +900,18 @@ class CalibrationMixin(
             time_range = np.array(time_range)
 
         if x90 is None:
-            x90 = self.hpi_pulse
-            if control_qubit in self.drag_hpi_pulse:
-                x90[control_qubit] = self.drag_hpi_pulse[control_qubit]
-            if target_qubit in self.drag_hpi_pulse:
-                x90[target_qubit] = self.drag_hpi_pulse[target_qubit]
+            x90 = {
+                control_qubit: self.x90(control_qubit),
+                target_qubit: self.x90(target_qubit),
+            }
 
         if x180 is None:
-            if control_qubit in self.drag_pi_pulse:
-                x180 = self.drag_pi_pulse
-            else:
-                x180 = self.pi_pulse
+            x180 = {
+                control_qubit: self.x180(control_qubit),
+            }
+
+        if reset_awg_and_capunits:
+            self.reset_awg_and_capunits()
 
         control_states = []
         target_states = []
@@ -932,6 +934,7 @@ class CalibrationMixin(
                 initial_state={control_qubit: control_state},
                 shots=shots,
                 interval=interval,
+                reset_awg_and_capunits=False,
                 plot=False,
             )
             control_states.append(np.array(result[control_qubit]))
@@ -957,6 +960,7 @@ class CalibrationMixin(
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
@@ -979,6 +983,9 @@ class CalibrationMixin(
 
         effective_drive_range = time_range + ramptime
 
+        if reset_awg_and_capunits:
+            self.reset_awg_and_capunits()
+
         result_0 = self.measure_cr_dynamics(
             time_range=time_range,
             ramptime=ramptime,
@@ -993,6 +1000,7 @@ class CalibrationMixin(
             x90=x90,
             shots=shots,
             interval=interval,
+            reset_awg_and_capunits=False,
         )
 
         control_states_0 = result_0["control_states"]
@@ -1039,6 +1047,7 @@ class CalibrationMixin(
             ramp_type="RaisedCosine",
             shots=shots,
             interval=interval,
+            reset_awg_and_capunits=False,
         )
 
         control_states_1 = result_1["control_states"]
@@ -1175,6 +1184,7 @@ class CalibrationMixin(
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> dict:
         if ramptime is None:
@@ -1203,6 +1213,7 @@ class CalibrationMixin(
             x90=x90,
             shots=shots,
             interval=interval,
+            reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
         )
 
@@ -1280,9 +1291,11 @@ class CalibrationMixin(
         tolerance: float = 10e-6,
         adiabatic_safe_factor: float = 0.75,
         max_amplitude: float = 1.0,
+        max_time_range: float = 4096.0,
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = True,
     ) -> dict:
         def _create_time_range(
@@ -1290,7 +1303,7 @@ class CalibrationMixin(
         ) -> NDArray:
             period = 4 * zx90_duration
             dt = (period / n_points_per_cycle) // SAMPLING_PERIOD * SAMPLING_PERIOD
-            duration = period * n_cycles
+            duration = min(period * n_cycles, max_time_range)
             return np.arange(0, duration + 1, dt)
 
         cr_label = f"{control_qubit}-{target_qubit}"
@@ -1349,6 +1362,7 @@ class CalibrationMixin(
                 x90=x90,
                 shots=shots,
                 interval=interval,
+                reset_awg_and_capunits=reset_awg_and_capunits,
                 plot=plot,
             )
 
@@ -1669,7 +1683,7 @@ class CalibrationMixin(
         ftarget: float = 1e-3,
         timeout: int = 300,
     ) -> Waveform:
-        pulse = self.drag_hpi_pulse[qubit]
+        pulse = self.get_drag_hpi_pulse(qubit)
         N = pulse.length
         initial_params = list(pulse.real) + list(pulse.imag)
         es = cma.CMAEvolutionStrategy(

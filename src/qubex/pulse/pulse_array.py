@@ -75,8 +75,13 @@ class PulseArray(Waveform):
 
     @property
     def elements(self) -> list[Waveform | PhaseShift]:
-        """Returns the list of pulses and phase shifts in the pulse array."""
+        """Returns the list of waveforms and phase shifts in the pulse array."""
         return self._elements
+
+    @property
+    def waveforms(self) -> list[Waveform]:
+        """Returns the list of waveforms in the pulse array."""
+        return [obj for obj in self._elements if isinstance(obj, Waveform)]
 
     @property
     def flattened_elements(self) -> list[Pulse | PhaseShift]:
@@ -98,7 +103,7 @@ class PulseArray(Waveform):
                 logger.warning(f"Unknown element type: {type(obj)}")
         return elements
 
-    def get_waveforms(
+    def get_flattened_waveforms(
         self,
         apply_frame_shifts: bool = True,
     ) -> list[Waveform]:
@@ -127,7 +132,7 @@ class PulseArray(Waveform):
         if len(self.elements) == 0:
             return np.array([])
 
-        waveforms = self.get_waveforms(apply_frame_shifts)
+        waveforms = self.get_flattened_waveforms(apply_frame_shifts)
 
         if len(waveforms) == 0:
             return np.array([])
@@ -139,7 +144,7 @@ class PulseArray(Waveform):
     @property
     def length(self) -> int:
         """Returns the total length of the pulse array in samples."""
-        return sum([waveform.length for waveform in self.get_waveforms()])
+        return sum([waveform.length for waveform in self.waveforms])
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
@@ -239,24 +244,32 @@ class PulseArray(Waveform):
 
     def scaled(self, scale: float) -> PulseArray:
         """Returns a copy of the pulse array scaled by the given factor."""
+        if scale == 1:
+            return self
         new_array = deepcopy(self)
         new_array._scale *= scale
         return new_array
 
     def detuned(self, detuning: float) -> PulseArray:
         """Returns a copy of the pulse array detuned by the given frequency."""
+        if detuning == 0:
+            return self
         new_array = deepcopy(self)
         new_array._detuning += detuning
         return new_array
 
     def shifted(self, phase: float) -> PulseArray:
         """Returns a copy of the pulse array shifted by the given phase."""
+        if phase == 0:
+            return self
         new_array = deepcopy(self)
         new_array._phase += phase
         return new_array
 
     def repeated(self, n: int) -> PulseArray:
         """Returns a copy of the pulse array repeated n times."""
+        if n == 1:
+            return self
         new_array = deepcopy(self)
         new_array._elements = list(new_array._elements) * n
         return new_array

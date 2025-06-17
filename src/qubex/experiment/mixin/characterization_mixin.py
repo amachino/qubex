@@ -824,7 +824,7 @@ class CharacterizationMixin(
             def t1_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
-                        ps.add(target, self.hpi_pulse[target].repeated(2))
+                        ps.add(target, self.get_hpi_pulse(target).repeated(2))
                         ps.add(target, Blank(T))
                 return ps
 
@@ -924,7 +924,7 @@ class CharacterizationMixin(
             def t2_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
-                        hpi = self.hpi_pulse[target]
+                        hpi = self.get_hpi_pulse(target)
                         pi = pi_cpmg or hpi.repeated(2)
                         ps.add(target, hpi)
                         if T > 0:
@@ -990,6 +990,7 @@ class CharacterizationMixin(
         *,
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
+        secound_rotation_axis: Literal["X", "Y"] = "X",
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -1038,10 +1039,13 @@ class CharacterizationMixin(
 
                     # Ramsey sequence for the target qubit
                     for target in target_qubits:
-                        hpi = self.hpi_pulse[target]
-                        ps.add(target, hpi)
+                        x90 = self.get_hpi_pulse(target)
+                        ps.add(target, x90)
                         ps.add(target, Blank(T))
-                        ps.add(target, hpi.shifted(np.pi))
+                        if secound_rotation_axis == "X":
+                            ps.add(target, x90.shifted(np.pi))
+                        else:
+                            ps.add(target, x90.shifted(-np.pi / 2))
                 return ps
 
             detuned_frequencies = {
@@ -1169,7 +1173,7 @@ class CharacterizationMixin(
     ):
         if x90 is None:
             x90 = {
-                target_qubit: self.hpi_pulse[target_qubit],
+                target_qubit: self.get_hpi_pulse(target_qubit),
             }
         elif isinstance(x90, Waveform):
             x90 = {
@@ -1178,8 +1182,8 @@ class CharacterizationMixin(
 
         if x180 is None:
             x180 = {
-                target_qubit: self.hpi_pulse[target_qubit].repeated(2),
-                spectator_qubit: self.hpi_pulse[spectator_qubit].repeated(2),
+                target_qubit: self.get_hpi_pulse(target_qubit).repeated(2),
+                spectator_qubit: self.get_hpi_pulse(spectator_qubit).repeated(2),
             }
         elif isinstance(x180, Waveform):
             x180 = {
@@ -1546,6 +1550,7 @@ class CharacterizationMixin(
         interval: float | None = None,
         plot: bool = True,
         save_image: bool = False,
+        filter: Literal["gaussian", "savgol"] | None = None,
     ) -> dict:
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
@@ -1671,12 +1676,43 @@ class CharacterizationMixin(
         phases -= np.pi
         phases_unwrap = np.unwrap(phases)
         phases_diff = np.diff(phases_unwrap)
-
-        peaks, _ = find_peaks(
-            np.abs(phases_diff),
-            height=peak_height or 0.5,
-            distance=peak_distance or 10,
-        )
+        if filter == "gaussian":
+            from scipy.ndimage import gaussian_filter1d
+            phases_unwrap_for_peak = gaussian_filter1d(phases_unwrap, sigma=2.0)
+            phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
+            peaks, props = find_peaks(
+                np.abs(phases_diff_for_peak),
+                distance=peak_distance or 10,
+                prominence=0.05,
+            )
+            num_resonators = 4
+            sorted_peaks = sorted(zip(props["prominences"], peaks), reverse=True)
+            top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
+            peaks = [idx for _, idx in top_peaks]
+        elif filter == "savgol":
+            from scipy.signal import savgol_filter
+            # window_length: around 5% of the data length
+            window_frac = 0.05
+            window_length = int(len(phases) * window_frac)
+            window_length = max(7, window_length // 2 * 2 + 1)  # minimum 7, odd number
+            polyorder = 3
+            phases_unwrap_for_peak = savgol_filter(phases_unwrap, window_length=window_length, polyorder=polyorder)
+            phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
+            peaks, props = find_peaks(
+                np.abs(phases_diff_for_peak),
+                distance=peak_distance or 10,
+                prominence=0.05,
+            )
+            num_resonators = 4
+            sorted_peaks = sorted(zip(props["prominences"], peaks), reverse=True)
+            top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
+            peaks = [idx for _, idx in top_peaks]
+        else:
+            peaks, _ = find_peaks(
+                np.abs(phases_diff),
+                height=peak_height or 0.5,
+                distance=peak_distance or 10,
+            )
         peak_freqs = frequency_range[peaks]
 
         fig1 = make_subplots(
@@ -2401,7 +2437,7 @@ class CharacterizationMixin(
         )
         data = np.unwrap(data["phases"])
 
-        result = fitting.fit_sqrt_lorentzian(
+        fit_result = fitting.fit_sqrt_lorentzian(
             target=target,
             x=frequency_range,
             y=data,
@@ -2409,7 +2445,7 @@ class CharacterizationMixin(
             title="Qubit resonance fit",
         )
 
-        rabi_rate = result.get("Omega")
+        rabi_rate = fit_result.get("Omega")
         if rabi_rate is None:
             return {
                 "frequency_range": frequency_range,
@@ -2421,7 +2457,7 @@ class CharacterizationMixin(
         estimated_amplitude = target_rabi_rate / rabi_rate * control_amplitude
 
         if plot:
-            fig = result["fig"]
+            fig = fit_result["fig"]
             fig.update_layout(
                 title=dict(
                     text=f"Control amplitude estimation : {target}",
@@ -2438,11 +2474,6 @@ class CharacterizationMixin(
             )
             fig.show()
 
-            print("")
-            print(f"Control amplitude estimation : {target}")
-            print(f"  {control_amplitude:.6f} -> {rabi_rate * 1e3:.3f} MHz")
-            print(f"  {estimated_amplitude:.6f} -> {target_rabi_rate * 1e3:.3f} MHz")
-
         if save_image:
             viz.save_figure_image(
                 fig,
@@ -2456,6 +2487,7 @@ class CharacterizationMixin(
             "rabi_rate": rabi_rate,
             "estimated_amplitude": estimated_amplitude,
             "fig": fig,
+            **fit_result,
         }
 
     def qubit_spectroscopy(
@@ -2780,7 +2812,7 @@ class CharacterizationMixin(
         if qubit_drive_detuning is None:
             qubit_drive_detuning = 0.0
         if qubit_pi_pulse is None:
-            qubit_pi_pulse = self.hpi_pulse[target].repeated(2)
+            qubit_pi_pulse = self.get_hpi_pulse(target).repeated(2)
         if qubit_drive_scale is None:
             qubit_drive_scale = 0.8
         if resonator_drive_detuning is None:
@@ -2899,7 +2931,13 @@ class CharacterizationMixin(
             ),
         )
         fig.update_layout(
-            title=f"CKP Experiment : {target} : |{qubit_initial_state}〉",
+            title=dict(
+                text=f"CKP measurement : {target} : |{qubit_initial_state}〉",
+                subtitle=dict(
+                    text=f"resonator_drive_amplitude={resonator_drive_amplitude:.6g}",
+                    font=dict(size=11, family="monospace"),
+                ),
+            ),
             xaxis_title="Resonator frequency (GHz)",
             yaxis_title="Qubit frequency (GHz)",
             width=600,
@@ -3072,12 +3110,18 @@ class CharacterizationMixin(
             y=0.05,
             text=f"χ : {chi * 1e3:.3f} MHz<br>"
             f"κ : {kappa * 1e3:.3f} MHz<br>"
-            f"|A|² : {power * 1e3:.3f} ph/μs<br>",
+            f"|A|² : {power * 1e3:.3f} MHz<br>",
             showarrow=False,
             bgcolor="rgba(255, 255, 255, 0.8)",
         )
         fig.update_layout(
-            title=f"CKP Experiment : {target}",
+            title=dict(
+                text=f"CKP Experiment : {target}",
+                subtitle=dict(
+                    text=f"resonator_drive_amplitude={resonator_drive_amplitude:.6g}",
+                    font=dict(size=11, family="monospace"),
+                ),
+            ),
             xaxis_title="Resonator frequency (GHz)",
             yaxis_title="Qubit frequency (GHz)",
             width=600,
@@ -3092,9 +3136,9 @@ class CharacterizationMixin(
             print(f"Δ     : {delta * 1e3:.3f} MHz")
             print(f"χ     : {chi * 1e3:.3f} MHz")
             print(f"κ     : {kappa * 1e3:.3f} MHz")
-            print(f"|A|²  : {power * 1e3:.3f} ph/μs")
-            print(f"n̅*    : {n_mean:.3f} ph")
-            print(f"n_c   : {n_crit:.3f} ph")
+            print(f"|A|²  : {power * 1e3:.3f} MHz")
+            print(f"n̅*    : {n_mean:.3f}")
+            print(f"n_c   : {n_crit:.3f}")
 
         if save_image:
             viz.save_figure_image(
