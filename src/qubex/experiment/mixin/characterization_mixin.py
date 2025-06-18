@@ -1453,6 +1453,7 @@ class CharacterizationMixin(
         frequency_range = np.arange(f_start, f_start + df * n_samples, df)
 
         def _execute():
+            self.reset_awg_and_capunits()
             phases = []
             for freq in frequency_range:
                 with self.modified_frequencies({read_label: freq}):
@@ -1463,6 +1464,7 @@ class CharacterizationMixin(
                         shots=shots,
                         interval=interval,
                         plot=False,
+                        reset_awg_and_capunits=False,
                     )
                     signal = result.data[target].kerneled
                     phase = -np.angle(signal)
@@ -1621,6 +1623,8 @@ class CharacterizationMixin(
             cnco_center = CNCO_CETNER_READ
 
         for subrange in subranges:
+            self.reset_awg_and_capunits()
+
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_center * 1e9,
@@ -1643,6 +1647,7 @@ class CharacterizationMixin(
                                 readout_amplitudes={qubit_label: readout_amplitude},
                                 shots=shots,
                                 interval=interval,
+                                reset_awg_and_capunits=False,
                             )
                             raw = result.data[target].kerneled
                             phase_adjust = 2 * np.pi * prev_freq * tau - phase_offset
@@ -1661,6 +1666,7 @@ class CharacterizationMixin(
                             capture_window=capture_window,
                             shots=shots,
                             interval=interval,
+                            reset_awg_and_capunits=False,
                         )
                         raw = result.data[target].kerneled
                         phase_adjust = 2 * np.pi * freq * tau - phase_offset
@@ -2016,6 +2022,9 @@ class CharacterizationMixin(
             target=qubit_label,
             state=qubit_state,
         )
+
+        self.reset_awg_and_capunits()
+
         for freq in freq_range:
             with self.modified_frequencies({read_label: freq}):
                 result = self.measure(
@@ -2024,6 +2033,7 @@ class CharacterizationMixin(
                     readout_amplitudes={qubit_label: readout_amplitude},
                     shots=shots,
                     interval=interval,
+                    reset_awg_and_capunits=False,
                 )
                 signal = result.data[target].kerneled
                 signal = signal * np.exp(1j * 2 * np.pi * freq * electrical_delay)
@@ -2151,6 +2161,7 @@ class CharacterizationMixin(
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
+                self.reset_awg_and_capunits()
                 for control_frequency in subrange:
                     with self.modified_frequencies(
                         {
@@ -2182,6 +2193,7 @@ class CharacterizationMixin(
                             mode="avg",
                             shots=shots,
                             interval=interval,
+                            reset_awg_and_capunits=False,
                         )
                         signal = result.data[qubit][-1].kerneled
                         signals.append(signal)
@@ -2886,6 +2898,7 @@ class CharacterizationMixin(
 
         result2d = []
         qubit_resonance_frequencies = []
+        self.reset_awg_and_capunits()
         for resonator_detuning in tqdm(resonator_detuning_range):
             result1d = []
             for qubit_detuning in qubit_detuning_range:
@@ -2904,6 +2917,7 @@ class CharacterizationMixin(
                         resonator_drive_duration=resonator_drive_duration,
                         resonator_drive_amplitude=resonator_drive_amplitude,
                     ),
+                    reset_awg_and_capunits=False,
                 )
                 data = result.data[target][-1]
                 result1d.append(data.kerneled)
