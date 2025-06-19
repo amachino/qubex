@@ -91,8 +91,8 @@ class CalibrationMixin(
             ampl = self.calc_control_amplitude(target, rabi_rate)
 
             # create a range of amplitudes around the estimated value
-            ampl_min = 0
-            ampl_max = ampl / n_rotations
+            ampl_min = ampl * (1 - 0.5 / n_rotations)
+            ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_min = np.clip(ampl_min, 0, 1)
             ampl_max = np.clip(ampl_max, 0, 1)
             if ampl_min == ampl_max:
@@ -100,7 +100,7 @@ class CalibrationMixin(
                 ampl_max = 1
             ampl_range = np.linspace(ampl_min, ampl_max, n_points)
 
-            n_per_rotation = 1 if pulse_type == "pi" else 2
+            n_per_rotation = 2 if pulse_type == "pi" else 4
 
             sweep_data = self.sweep_parameter(
                 sequence=lambda x: {target: pulse.scaled(x)},
@@ -274,8 +274,8 @@ class CalibrationMixin(
 
             ampl = self.calc_control_amplitude(ef_label, rabi_rate)
 
-            ampl_min = 0
-            ampl_max = ampl / n_rotations
+            ampl_min = ampl * (1 - 0.5 / n_rotations)
+            ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_min = np.clip(ampl_min, 0, 1)
             ampl_max = np.clip(ampl_max, 0, 1)
             if ampl_min == ampl_max:
@@ -283,7 +283,7 @@ class CalibrationMixin(
                 ampl_max = 1
             ampl_range = np.linspace(ampl_min, ampl_max, n_points)
 
-            n_per_rotation = 1 if pulse_type == "pi" else 2
+            n_per_rotation = 2 if pulse_type == "pi" else 4
             repetitions = n_per_rotation * n_rotations
 
             def sequence(x: float) -> PulseSchedule:
@@ -478,8 +478,8 @@ class CalibrationMixin(
             else:
                 raise ValueError("Invalid pulse type.")
 
-            ampl_min = 0
-            ampl_max = ampl / n_rotations
+            ampl_min = ampl * (1 - 0.5 / n_rotations)
+            ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_min = np.clip(ampl_min, 0, 1)
             ampl_max = np.clip(ampl_max, 0, 1)
             if ampl_min == ampl_max:

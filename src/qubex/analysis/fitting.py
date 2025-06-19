@@ -2137,7 +2137,7 @@ def fit_ampl_calib_data(
     amplitude_range: NDArray,
     data: NDArray,
     p0=None,
-    maximize: bool = False,
+    maximize: bool = True,
     plot: bool = True,
     title: str = "Amplitude calibration",
     xlabel: str = "Amplitude (arb. units)",
