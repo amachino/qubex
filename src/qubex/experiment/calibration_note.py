@@ -298,7 +298,7 @@ class CalibrationNote(ExperimentNote):
         time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
         days_passed = (datetime.now() - time).days
         if days_passed >= valid_days:
-            logger.warning(
+            logger.info(
                 f"{key}['{target}'] is outdated and ignored ({days_passed} days passed)."
             )
             return None
