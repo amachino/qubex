@@ -4,7 +4,7 @@ import logging
 import math
 from collections import defaultdict
 from contextlib import contextmanager
-from functools import reduce
+from functools import cache, reduce
 from pathlib import Path
 from typing import Collection, Final, Literal
 
@@ -598,6 +598,7 @@ class Measurement:
             shots=shots,
         )
 
+    @cache
     def readout_pulse(
         self,
         target: str,
