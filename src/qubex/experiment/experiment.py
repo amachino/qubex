@@ -32,13 +32,14 @@ from ..backend import (
 from ..clifford import Clifford, CliffordGenerator
 from ..measurement import Measurement, MeasureResult, StateClassifier
 from ..measurement.measurement import (
-    DEFAULT_CAPTURE_MARGIN,
+    DEFAULT_CAPTURE_OFFSET,
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_CONFIG_DIR,
     DEFAULT_INTERVAL,
     DEFAULT_PARAMS_DIR,
     DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_RAMPTIME,
+    DEFAULT_READOUT_POST_MARGIN,
+    DEFAULT_READOUT_PRE_MARGIN,
     DEFAULT_SHOTS,
 )
 from ..pulse import (
@@ -48,6 +49,7 @@ from ..pulse import (
     FlatTop,
     PulseArray,
     PulseSchedule,
+    RampType,
     VirtualZ,
     Waveform,
 )
@@ -144,10 +146,11 @@ class Experiment(
         connect_devices: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
         drag_pi_duration: int = DRAG_PI_DURATION,
-        control_window: int | None = None,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
         readout_duration: int = DEFAULT_READOUT_DURATION,
+        readout_pre_margin: int = DEFAULT_READOUT_PRE_MARGIN,
+        readout_post_margin: int = DEFAULT_READOUT_POST_MARGIN,
+        capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        capture_offset: float = DEFAULT_CAPTURE_OFFSET,
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
@@ -170,10 +173,11 @@ class Experiment(
         self._params_dir: Final = params_dir
         self._drag_hpi_duration: Final = drag_hpi_duration
         self._drag_pi_duration: Final = drag_pi_duration
-        self._control_window: Final = control_window
-        self._capture_window: Final = capture_window
-        self._capture_margin: Final = capture_margin
         self._readout_duration: Final = readout_duration
+        self._readout_pre_margin: Final = readout_pre_margin
+        self._readout_post_margin: Final = readout_post_margin
+        self._capture_window: Final = capture_window
+        self._capture_offset: Final = capture_offset
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
@@ -423,36 +427,35 @@ class Experiment(
         return self._calib_note
 
     @property
-    @deprecated("This property is deprecated. Use `calib_note` instead.")
-    def system_note(self) -> ExperimentNote:
-        return self._system_note
-
-    @property
-    def control_window(self) -> int | None:
-        return self._control_window
-
-    @property
-    def capture_window(self) -> int:
-        return self._capture_window
-
-    @property
-    def capture_margin(self) -> int:
-        return self._capture_margin
-
-    @property
-    def readout_duration(self) -> int:
-        return self._readout_duration
-
-    @property
     def note(self) -> ExperimentNote:
         return self._user_note
 
     @property
-    def drag_hpi_duration(self) -> int:
+    def capture_window(self) -> float:
+        return self._capture_window
+
+    @property
+    def capture_offset(self) -> float:
+        return self._capture_offset
+
+    @property
+    def readout_duration(self) -> float:
+        return self._readout_duration
+
+    @property
+    def readout_pre_margin(self) -> float:
+        return self._readout_pre_margin
+
+    @property
+    def readout_post_margin(self) -> float:
+        return self._readout_post_margin
+
+    @property
+    def drag_hpi_duration(self) -> float:
         return self._drag_hpi_duration
 
     @property
-    def drag_pi_duration(self) -> int:
+    def drag_pi_duration(self) -> float:
         return self._drag_pi_duration
 
     @property
@@ -1023,11 +1026,14 @@ class Experiment(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        readout_duration: int = DEFAULT_READOUT_DURATION,
+        shots: int | None = None,
+        interval: float | None = None,
         readout_amplitude: float | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        capture_window: float | None = None,
+        capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> MeasureResult:
@@ -1039,15 +1045,23 @@ class Experiment(
         targets : Collection[str] | str, optional
             Target labels to check the waveforms.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots.
         interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        capture_window : int, optional
-            Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
-        readout_duration : int, optional
-            Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+            Interval between shots.
         readout_amplitude : float, optional
-            Readout amplitude. Defaults to None.
+            Amplitude of the readout pulse.
+        readout_duration : float, optional
+            Duration of the readout pulse in ns.
+        readout_pre_margin : float, optional
+            Pre-margin of the readout pulse in ns.
+        readout_post_margin : float, optional
+            Post-margin of the readout pulse in ns.
+        capture_window : float, optional
+            Capture window for the readout signal in ns.
+        capture_offset : float, optional
+            Offset for the capture window in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the readout sequence. Defaults to False.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -1067,15 +1081,21 @@ class Experiment(
         else:
             targets = list(targets)
 
+        if readout_amplitude is not None:
+            readout_amplitudes = {target: readout_amplitude for target in targets}
+        else:
+            readout_amplitudes = None
+
         result = self.measure(
             sequence={target: np.zeros(0) for target in targets},
             shots=shots,
             interval=interval,
-            capture_window=capture_window,
+            readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
-            readout_amplitudes={target: readout_amplitude for target in targets}
-            if readout_amplitude is not None
-            else None,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            capture_window=capture_window,
+            capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
         )
         if plot:
@@ -1238,25 +1258,23 @@ class Experiment(
         target: str,
         /,
         *,
+        duration: float | None = None,
         amplitude: float | None = None,
-        duration: float = DEFAULT_READOUT_DURATION,
-        ramptime: float = DEFAULT_READOUT_RAMPTIME,
-        capture_window: float = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: float = DEFAULT_CAPTURE_MARGIN,
+        ramptime: float | None = None,
+        type: RampType | None = None,
+        drag_coeff: float | None = None,
+        pre_margin: float | None = None,
+        post_margin: float | None = None,
     ) -> Waveform:
-        return PulseArray(
-            [
-                Blank(capture_margin),
-                self.measurement.readout_pulse(
-                    target=target,
-                    duration=duration,
-                    amplitude=amplitude,
-                    tau=ramptime,
-                ).padded(
-                    total_duration=capture_window,
-                    pad_side="right",
-                ),
-            ]
+        return self.measurement.readout_pulse(
+            target=target,
+            duration=duration,
+            amplitude=amplitude,
+            ramptime=ramptime,
+            type=type,
+            drag_coeff=drag_coeff,
+            pre_margin=pre_margin,
+            post_margin=post_margin,
         )
 
     def x90(

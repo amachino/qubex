@@ -21,9 +21,9 @@ from ...backend import (
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
 from ...measurement.measurement import (
-    DEFAULT_CAPTURE_MARGIN,
     DEFAULT_CAPTURE_WINDOW,
     DEFAULT_READOUT_DURATION,
+    DEFAULT_READOUT_PRE_MARGIN,
 )
 from ...pulse import PulseSchedule, VirtualZ, Waveform
 from ...typing import TargetMap
@@ -151,42 +151,42 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def system_note(self) -> ExperimentNote:
-        """Get the system note."""
-        ...
-
-    @property
     def note(self) -> ExperimentNote:
         """Get the user note."""
         ...
 
     @property
-    def control_window(self) -> int | None:
-        """Get the control window."""
-        ...
-
-    @property
-    def capture_window(self) -> int:
+    def capture_window(self) -> float:
         """Get the capture window."""
         ...
 
     @property
-    def capture_margin(self) -> int:
-        """Get the capture margin."""
+    def capture_offset(self) -> float:
+        """Get the capture offset."""
         ...
 
     @property
-    def readout_duration(self) -> int:
+    def readout_duration(self) -> float:
         """Get the readout duration."""
         ...
 
     @property
-    def drag_hpi_duration(self) -> int:
+    def readout_pre_margin(self) -> float:
+        """Get the readout pre margin."""
+        ...
+
+    @property
+    def readout_post_margin(self) -> float:
+        """Get the readout post margin."""
+        ...
+
+    @property
+    def drag_hpi_duration(self) -> float:
         """Get the DRAG π/2 duration."""
         ...
 
     @property
-    def drag_pi_duration(self) -> int:
+    def drag_pi_duration(self) -> float:
         """Get the DRAG π duration."""
         ...
 
@@ -767,7 +767,7 @@ class BaseProtocol(Protocol):
         amplitude: float | None = None,
         duration: float = DEFAULT_READOUT_DURATION,
         capture_window: float = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: float = DEFAULT_CAPTURE_MARGIN,
+        capture_margin: float = DEFAULT_READOUT_PRE_MARGIN,
     ) -> Waveform:
         """
         Generate a readout pulse for the target qubit.
