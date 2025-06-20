@@ -406,6 +406,14 @@ class Experiment(
         }
 
     @property
+    def cr_labels(self) -> list[str]:
+        return self.get_cr_labels()
+
+    @property
+    def cr_pairs(self) -> list[tuple[str, str]]:
+        return self.get_cr_pairs()
+
+    @property
     def boxes(self) -> dict[str, Box]:
         boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
         return {box.id: box for box in boxes}
@@ -637,6 +645,67 @@ class Experiment(
     @property
     def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
         return self._configuration_mode
+
+    def get_qubit_label(self, index: int) -> str:
+        """
+        Get the qubit label from the given qubit index.
+        """
+        return self.quantum_system.get_qubit(index).label
+
+    def get_resonator_label(self, index: int) -> str:
+        """
+        Get the resonator label from the given resonator index.
+        """
+        return self.quantum_system.get_resonator(index).label
+
+    def get_cr_label(
+        self,
+        control_index: int,
+        target_index: int,
+    ) -> str:
+        """
+        Get the cross-resonance label from the given control and target qubit indices.
+        """
+        control_qubit = self.quantum_system.get_qubit(control_index)
+        target_qubit = self.quantum_system.get_qubit(target_index)
+        label = Target.cr_label(control_qubit.label, target_qubit.label)
+        return label
+
+    def get_cr_pairs(
+        self,
+        low_to_high: bool = True,
+        high_to_low: bool = False,
+    ) -> list[tuple[str, str]]:
+        """
+        Get the cross-resonance pairs.
+        """
+        cr_pairs = []
+        for label in self.cr_targets:
+            pair = Target.cr_qubit_pair(label)
+            control_qubit = self.quantum_system.get_qubit(pair[0])
+            target_qubit = self.quantum_system.get_qubit(pair[1])
+            if target_qubit.label not in self.available_targets:
+                continue
+            if control_qubit.frequency < target_qubit.frequency:
+                if low_to_high:
+                    cr_pairs.append(pair)
+            else:
+                if high_to_low:
+                    cr_pairs.append(pair)
+        return cr_pairs
+
+    def get_cr_labels(
+        self,
+        low_to_high: bool = True,
+        high_to_low: bool = False,
+    ) -> list[str]:
+        """
+        Get the cross-resonance labels.
+        """
+        return [
+            Target.cr_label(*pair)
+            for pair in self.get_cr_pairs(low_to_high, high_to_low)
+        ]
 
     def validate_rabi_params(
         self,
