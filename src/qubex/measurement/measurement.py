@@ -42,7 +42,7 @@ DEFAULT_CAPTURE_WINDOW: Final = 512  # ns
 DEFAULT_CAPTURE_OFFSET: Final = 0  # ns
 DEFAULT_READOUT_DURATION: Final = 384  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
-DEFAULT_READOUT_PRE_MARGIN: Final = 8  # ns
+DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
 DEFAULT_READOUT_POST_MARGIN: Final = 128  # ns
 WORD_LENGTH: Final = 4  # samples
 WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
@@ -756,13 +756,14 @@ class Measurement:
             readout_waveforms[readout_target] = padded_waveform
 
         # zero padding (pump)
+        pump_duration = readout_pre_margin + readout_duration + readout_post_margin
         pump_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         if add_pump_pulses:
             for qubit in qubits:
                 mux = self.experiment_system.get_mux_by_qubit(qubit)
                 pump_pulse = self.pump_pulse(
                     target=qubit,
-                    duration=readout_duration,
+                    duration=pump_duration,
                     amplitude=self.control_params.get_pump_amplitude(mux.index),
                     ramptime=readout_ramptime,
                     type=readout_ramp_type,
@@ -996,9 +997,12 @@ class Measurement:
                                 current_range.start - prev_range.stop
                             ) * SAMPLING_PERIOD
 
+                        # start the pump pulse before the readout pulse if there is a pre-margin
+                        blank_duration -= readout_pre_margin
+
                         pump_duration = (
                             current_range.stop - current_range.start
-                        ) * SAMPLING_PERIOD
+                        ) * SAMPLING_PERIOD + readout_pre_margin
 
                         pump_amplitude = self.control_params.get_pump_amplitude(
                             mux.index

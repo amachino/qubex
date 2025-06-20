@@ -1266,6 +1266,10 @@ class Experiment(
         pre_margin: float | None = None,
         post_margin: float | None = None,
     ) -> Waveform:
+        duration = duration or self.readout_duration
+        pre_margin = pre_margin or self.readout_pre_margin
+        post_margin = post_margin or self.readout_post_margin
+
         return self.measurement.readout_pulse(
             target=target,
             duration=duration,
