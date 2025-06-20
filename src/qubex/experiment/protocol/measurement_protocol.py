@@ -443,13 +443,20 @@ class MeasurementProtocol(Protocol):
 
     def build_classifier(
         self,
-        targets: str | Collection[str] | str | None = None,
+        targets: Collection[str] | str | None = None,
         *,
-        n_states: Literal[2, 3] = 2,
+        n_states: Literal[2, 3] | None = None,
         save_classifier: bool = True,
         save_dir: Path | str | None = None,
-        shots: int = 8192,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        capture_window: float | None = None,
+        add_pump_pulses: bool = False,
+        simultaneous: bool = False,
         plot: bool = True,
     ) -> dict: ...
 

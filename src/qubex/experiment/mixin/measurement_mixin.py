@@ -48,6 +48,7 @@ from ...typing import (
 from ..experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
+    CLASSIFIER_SHOTS,
     RABI_TIME_RANGE,
 )
 from ..experiment_result import ExperimentResult, RabiData, SweepData
@@ -866,10 +867,83 @@ class MeasurementMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        n_states: Literal[2, 3] = 2,
+        n_states: Literal[2, 3] | None = None,
         save_classifier: bool = True,
         save_dir: Path | str | None = None,
-        shots: int = 8192,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        capture_window: float | None = None,
+        add_pump_pulses: bool = False,
+        simultaneous: bool = False,
+        plot: bool = True,
+    ) -> dict:
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if simultaneous:
+            return self._build_classifier(
+                targets=targets,
+                n_states=n_states,
+                save_classifier=save_classifier,
+                save_dir=save_dir,
+                shots=shots,
+                interval=interval,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                capture_window=capture_window,
+                add_pump_pulses=add_pump_pulses,
+                plot=plot,
+            )
+        else:
+            fidelities = {}
+            average_fidelities = {}
+            data = {}
+            classifiers = {}
+            for target in targets:
+                result = self._build_classifier(
+                    targets=target,
+                    n_states=n_states,
+                    save_classifier=save_classifier,
+                    save_dir=save_dir,
+                    shots=shots,
+                    interval=interval,
+                    readout_amplitudes=readout_amplitudes,
+                    readout_duration=readout_duration,
+                    readout_pre_margin=readout_pre_margin,
+                    readout_post_margin=readout_post_margin,
+                    capture_window=capture_window,
+                    add_pump_pulses=add_pump_pulses,
+                    plot=plot,
+                )
+                fidelities[target] = result["readout_fidelties"][target]
+                average_fidelities[target] = result["average_readout_fidelity"][target]
+                data[target] = result["data"]
+                classifiers[target] = result["classifiers"][target]
+            return {
+                "readout_fidelties": fidelities,
+                "average_readout_fidelity": average_fidelities,
+                "data": data,
+                "classifiers": classifiers,
+            }
+
+    def _build_classifier(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        n_states: Literal[2, 3] | None = None,
+        save_classifier: bool = True,
+        save_dir: Path | str | None = None,
+        shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -885,6 +959,10 @@ class MeasurementMixin(
             targets = [targets]
         else:
             targets = list(targets)
+        if n_states is None:
+            n_states = 2
+        if shots is None:
+            shots = CLASSIFIER_SHOTS
 
         results = self.measure_state_distribution(
             targets=targets,
@@ -977,7 +1055,7 @@ class MeasurementMixin(
         return {
             "readout_fidelties": fidelities,
             "average_readout_fidelity": average_fidelities,
-            "measure_results": results,
+            "data": data,
             "classifiers": classifiers,
         }
 
