@@ -1485,6 +1485,15 @@ def fit_rabi(
     else:
         r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
+    # Identify ground and excited state I/Q values
+    # After rotation, |g⟩ is at offset+amplitude and |e⟩ is at offset-amplitude in Q
+    rotated_0 = complex(0, offset + amplitude)  # (I, Q) = (0, offset+amplitude)
+    rotated_1 = complex(0, offset - amplitude)  # (I, Q) = (0, offset-amplitude)
+
+    # Rotate back to original I/Q plane
+    iq_0 = rotated_0 * np.exp(1j * angle)
+    iq_1 = rotated_1 * np.exp(1j * angle)
+
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
         func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
@@ -1554,6 +1563,10 @@ def fit_rabi(
         "angle": angle,
         "noise": noise,
         "r2": r2,
+        "rotated_0": rotated_0,
+        "rotated_1": rotated_1,
+        "iq_0": iq_0,
+        "iq_1": iq_1,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
