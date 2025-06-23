@@ -303,9 +303,12 @@ class MeasurementMixin(
             plot=plot,
         )
 
-    def measure_reference_phases(
+    def obtain_reference_phases(
         self,
         targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> dict[str, float]:
         if targets is None:
             targets = self.qubit_labels
@@ -314,13 +317,19 @@ class MeasurementMixin(
         else:
             targets = list(targets)
 
+        if shots is None:
+            shots = CLASSIFIER_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         result = self.measure(
             sequence={target: [] for target in targets},
-            mode="avg",
-            shots=CALIBRATION_SHOTS,
-            interval=DEFAULT_INTERVAL,
+            shots=shots,
+            interval=interval,
         )
-        return {target: result.get_readout_phase(target) for target in targets}
+        phases = {target: result.get_readout_phase(target) for target in targets}
+        self.calib_note._reference_phases.update(phases)
+        return phases
 
     def sweep_parameter(
         self,
@@ -549,14 +558,13 @@ class MeasurementMixin(
         else:
             targets = list(targets)
 
-        ref_phases = self.measure_reference_phases(targets)
-        self.calib_note._reference_phases = ref_phases
-
         time_range = np.asarray(time_range)
 
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
+
+        self.obtain_reference_phases(targets)
 
         if simultaneous:
             result = self.rabi_experiment(
@@ -672,7 +680,7 @@ class MeasurementMixin(
             }
 
         # rabi sequence with rect pulses of duration T
-        def rabi_sequence(T: int) -> PulseSchedule:
+        def rabi_sequence(T: float) -> PulseSchedule:
             with PulseSchedule(targets) as ps:
                 for target in targets:
                     ps.add(

@@ -42,7 +42,8 @@ class RabiParam:
     Data class representing the parameters of Rabi oscillation.
 
     ```
-    rabi = amplitude * cos(2π * frequency * time + phase) + offset) + noise
+    rabi_1d = amplitude * cos(2π * frequency * time + phase) + offset)
+    rabi_2d = (distance + 1j * rabi_1d) * exp(1j * angle) ± noise
     ```
 
     Attributes
@@ -54,13 +55,15 @@ class RabiParam:
     frequency : float
         Frequency of the Rabi oscillation.
     phase : float
-        Initial phase of the Rabi oscillation.
+        Phase of the Rabi oscillation in radians.
     offset : float
-        Vertical offset of the Rabi oscillation.
+        Offset of the Rabi oscillation.
     noise : float
-        Fluctuation of the Rabi oscillation.
+        Noise level of the Rabi oscillation.
     angle : float
-        Angle of the Rabi oscillation.
+        Angle of the Rabi oscillation in radians.
+    distance : float
+        Distance of the Rabi oscillation in the complex plane.
     r2 : float
         Coefficient of determination.
     """
@@ -72,7 +75,16 @@ class RabiParam:
     offset: float
     noise: float
     angle: float
+    distance: float
     r2: float
+
+    @property
+    def endpoints(self) -> tuple[complex, complex]:
+        rotated_0 = complex(self.distance, self.offset + self.amplitude)
+        rotated_1 = complex(self.distance, self.offset - self.amplitude)
+        iq_0 = complex(rotated_0 * np.exp(1j * self.angle))
+        iq_1 = complex(rotated_1 * np.exp(1j * self.angle))
+        return iq_0, iq_1
 
 
 def normalize(
@@ -1414,6 +1426,7 @@ def fit_rabi(
         angle = angle_ge + np.pi / 2
 
     rotated = data * np.exp(-1j * angle)
+    distance = float(np.mean(rotated.real))
     noise = float(np.std(rotated.real))
 
     x = times
@@ -1461,6 +1474,7 @@ def fit_rabi(
                 offset=np.nan,
                 noise=noise,
                 angle=angle,
+                distance=distance,
                 r2=np.nan,
             ),
         }
@@ -1485,12 +1499,8 @@ def fit_rabi(
     else:
         r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
-    # Identify ground and excited state I/Q values
-    # After rotation, |g⟩ is at offset+amplitude and |e⟩ is at offset-amplitude in Q
-    rotated_0 = complex(0, offset + amplitude)  # (I, Q) = (0, offset+amplitude)
-    rotated_1 = complex(0, offset - amplitude)  # (I, Q) = (0, offset-amplitude)
-
-    # Rotate back to original I/Q plane
+    rotated_0 = complex(distance, offset + amplitude)
+    rotated_1 = complex(distance, offset - amplitude)
     iq_0 = rotated_0 * np.exp(1j * angle)
     iq_1 = rotated_1 * np.exp(1j * angle)
 
@@ -1548,6 +1558,7 @@ def fit_rabi(
             offset=offset,
             noise=noise,
             angle=angle,
+            distance=distance,
             r2=r2,
         ),
         "amplitude": amplitude,
@@ -1561,6 +1572,7 @@ def fit_rabi(
         "offset_err": offset_err,
         "tau_err": tau_err,
         "angle": angle,
+        "distance": distance,
         "noise": noise,
         "r2": r2,
         "rotated_0": rotated_0,

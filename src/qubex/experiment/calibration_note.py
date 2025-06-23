@@ -22,7 +22,6 @@ logger = getLogger(__name__)
 
 class Parameter(TypedDict, total=False):
     timestamp: str
-    reference_phase: float
 
 
 class RabiParam(Parameter):
@@ -33,6 +32,7 @@ class RabiParam(Parameter):
     offset: float
     noise: float
     angle: float
+    distance: float
     r2: float
 
 

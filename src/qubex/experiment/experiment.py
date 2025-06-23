@@ -576,17 +576,21 @@ class Experiment(
                 target,
                 valid_days=self._calibration_valid_days,
             )
-            if param is not None and None not in param.values():
-                result[target] = RabiParam(
-                    target=param.get("target"),
-                    frequency=param.get("frequency"),
-                    amplitude=param.get("amplitude"),
-                    phase=param.get("phase"),
-                    offset=param.get("offset"),
-                    noise=param.get("noise"),
-                    angle=param.get("angle"),
-                    r2=param.get("r2"),
-                )
+            if param is not None:
+                try:
+                    result[target] = RabiParam(
+                        target=param.get("target"),
+                        frequency=param.get("frequency"),
+                        amplitude=param.get("amplitude"),
+                        phase=param.get("phase"),
+                        offset=param.get("offset"),
+                        noise=param.get("noise"),
+                        angle=param.get("angle"),
+                        distance=param.get("distance"),
+                        r2=param.get("r2"),
+                    )
+                except TypeError:
+                    raise ValueError(f"Invalid Rabi parameters for {target}: {param}")
         return result
 
     @property
@@ -742,6 +746,7 @@ class Experiment(
                         "offset": rabi_param.offset,
                         "noise": rabi_param.noise,
                         "angle": rabi_param.angle,
+                        "distance": rabi_param.distance,
                         "r2": rabi_param.r2,
                     },
                 )
