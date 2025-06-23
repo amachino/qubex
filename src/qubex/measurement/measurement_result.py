@@ -181,9 +181,6 @@ class MeasureData:
             result = np.where(max_probs > threshold, labels, -1)
             return result
 
-    def get_readout_phase(self) -> float:
-        return float(np.angle(self.kerneled))
-
     def plot(
         self,
         title: str | None = None,
@@ -401,11 +398,6 @@ class MeasureResult:
             basis_label: mitigated[i] for i, basis_label in enumerate(basis_labels)
         }
         return mitigated_probabilities
-
-    def get_readout_phase(self, target: str) -> float:
-        if target not in self.data:
-            raise ValueError(f"Target {target} not found in data")
-        return self.data[target].get_readout_phase()
 
     def plot(
         self,

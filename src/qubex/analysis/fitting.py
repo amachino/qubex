@@ -66,6 +66,8 @@ class RabiParam:
         Distance of the Rabi oscillation in the complex plane.
     r2 : float
         Coefficient of determination.
+    reference_phase : float
+        Reference phase for the Rabi oscillation, used for normalization.
     """
 
     target: str
@@ -77,6 +79,7 @@ class RabiParam:
     angle: float
     distance: float
     r2: float
+    reference_phase: float
 
     @property
     def endpoints(self) -> tuple[complex, complex]:
@@ -1372,6 +1375,7 @@ def fit_rabi(
     times: NDArray,
     data: NDArray,
     tau_est: float | None = None,
+    ground_state: complex | None = None,
     plot: bool = True,
     is_damped: bool = False,
     ylabel: str | None = None,
@@ -1390,6 +1394,8 @@ def fit_rabi(
         Complex signal data corresponding to the Rabi oscillations.
     tau_est : float | None, optional
         Initial guess for the damping time constant.
+    ground_state : complex | None, optional
+        Ground state I/Q value to align the data.
     plot : bool, optional
         Whether to plot the data and the fit.
     is_damped : bool, optional
@@ -1411,19 +1417,24 @@ def fit_rabi(
     data = np.asarray(data, dtype=np.complex64)
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
-    if len(data) < 2:
-        angle = 0.0
+    data_vec = np.column_stack([data.real, data.imag])
+    pca = PCA(n_components=2).fit(data_vec)
+
+    if ground_state is not None:
+        # If a ground state is provided, use it to determine the initial point
+        initial_point = np.array([ground_state.real, ground_state.imag])
     else:
-        data_vec = np.column_stack([data.real, data.imag])
-        pca = PCA(n_components=2).fit(data_vec)
-        start_point = data_vec[0]
-        mean_point = pca.mean_
-        data_direction = mean_point - start_point
-        principal_component = pca.components_[0]
-        dot_product = np.dot(data_direction, principal_component)
-        ge_vector = principal_component if dot_product > 0 else -principal_component
-        angle_ge = np.arctan2(ge_vector[1], ge_vector[0])
-        angle = angle_ge + np.pi / 2
+        initial_point = data_vec[0]
+
+    reference_phase = float(np.arctan2(initial_point[1], initial_point[0]))
+
+    mean_point = pca.mean_
+    data_direction = mean_point - initial_point
+    principal_component = pca.components_[0]
+    dot_product = np.dot(data_direction, principal_component)
+    ge_vector = principal_component if dot_product > 0 else -principal_component
+    angle_ge = np.arctan2(ge_vector[1], ge_vector[0])
+    angle = angle_ge + np.pi / 2
 
     rotated = data * np.exp(-1j * angle)
     distance = float(np.mean(rotated.real))
@@ -1476,6 +1487,7 @@ def fit_rabi(
                 angle=angle,
                 distance=distance,
                 r2=np.nan,
+                reference_phase=reference_phase,
             ),
         }
 
@@ -1560,6 +1572,7 @@ def fit_rabi(
             angle=angle,
             distance=distance,
             r2=r2,
+            reference_phase=reference_phase,
         ),
         "amplitude": amplitude,
         "frequency": frequency,
@@ -1579,6 +1592,7 @@ def fit_rabi(
         "rotated_1": rotated_1,
         "iq_0": iq_0,
         "iq_1": iq_1,
+        "reference_phase": reference_phase,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,

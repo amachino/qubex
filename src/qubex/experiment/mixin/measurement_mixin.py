@@ -303,13 +303,14 @@ class MeasurementMixin(
             plot=plot,
         )
 
-    def obtain_reference_phases(
+    def measure_ground_states(
         self,
         targets: Collection[str] | str | None = None,
         *,
         shots: int | None = None,
         interval: float | None = None,
-    ) -> dict[str, float]:
+        store_reference_phases: bool = True,
+    ) -> dict:
         if targets is None:
             targets = self.qubit_labels
         elif isinstance(targets, str):
@@ -318,18 +319,29 @@ class MeasurementMixin(
             targets = list(targets)
 
         if shots is None:
-            shots = CLASSIFIER_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
+            shots = CALIBRATION_SHOTS
 
-        result = self.measure(
-            sequence={target: [] for target in targets},
+        result = self.measure_state(
+            {target: "g" for target in targets},
+            mode="avg",
             shots=shots,
             interval=interval,
         )
-        phases = {target: result.get_readout_phase(target) for target in targets}
-        self.calib_note._reference_phases.update(phases)
-        return phases
+
+        iq_values = {
+            target: complex(measure_data.kerneled)
+            for target, measure_data in result.data.items()
+        }
+        if store_reference_phases:
+            self.calib_note._reference_phases.update(
+                {
+                    target: float(np.angle(iq_value))
+                    for target, iq_value in iq_values.items()
+                }
+            )
+        return {
+            "iq": iq_values,
+        }
 
     def sweep_parameter(
         self,
@@ -564,8 +576,6 @@ class MeasurementMixin(
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
 
-        self.obtain_reference_phases(targets)
-
         if simultaneous:
             result = self.rabi_experiment(
                 amplitudes=amplitudes,
@@ -673,6 +683,9 @@ class MeasurementMixin(
 
         effective_time_range = time_range + ramptime
 
+        # measure ground states
+        ground_states = self.measure_ground_states(targets)["iq"]
+
         # target frequencies
         if frequencies is None:
             frequencies = {
@@ -719,6 +732,7 @@ class MeasurementMixin(
                 target=data.target,
                 times=effective_time_range,
                 data=data.data,
+                ground_state=ground_states.get(target),
                 plot=plot,
                 is_damped=is_damped,
             )

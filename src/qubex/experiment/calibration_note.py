@@ -34,6 +34,7 @@ class RabiParam(Parameter):
     angle: float
     distance: float
     r2: float
+    reference_phase: float
 
 
 class StateParam(Parameter):

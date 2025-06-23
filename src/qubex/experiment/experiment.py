@@ -588,6 +588,7 @@ class Experiment(
                         angle=param.get("angle"),
                         distance=param.get("distance"),
                         r2=param.get("r2"),
+                        reference_phase=param.get("reference_phase"),
                     )
                 except TypeError:
                     raise ValueError(f"Invalid Rabi parameters for {target}: {param}")
@@ -748,6 +749,7 @@ class Experiment(
                         "angle": rabi_param.angle,
                         "distance": rabi_param.distance,
                         "r2": rabi_param.r2,
+                        "reference_phase": rabi_param.reference_phase,
                     },
                 )
 
