@@ -328,19 +328,20 @@ class MeasurementMixin(
             interval=interval,
         )
 
-        iq_values = {
+        iq = {
             target: complex(measure_data.kerneled)
             for target, measure_data in result.data.items()
         }
+        phase = {target: float(np.angle(v)) for target, v in iq.items()}
+        amplitude = {target: float(np.abs(v)) for target, v in iq.items()}
+
         if store_reference_phases:
-            self.calib_note._reference_phases.update(
-                {
-                    target: float(np.angle(iq_value))
-                    for target, iq_value in iq_values.items()
-                }
-            )
+            self.calib_note._reference_phases.update(phase)
+
         return {
-            "iq": iq_values,
+            "iq": iq,
+            "phase": phase,
+            "amplitude": amplitude,
         }
 
     def sweep_parameter(
