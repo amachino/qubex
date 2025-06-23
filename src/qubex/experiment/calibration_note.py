@@ -22,6 +22,7 @@ logger = getLogger(__name__)
 
 class Parameter(TypedDict, total=False):
     timestamp: str
+    reference_phase: float
 
 
 class RabiParam(Parameter):
@@ -76,6 +77,7 @@ class CalibrationNote(ExperimentNote):
         file_path: Path | str | None = None,
     ):
         self._chip_id = chip_id
+        self._reference_phases = {}
         if file_path is None:
             file_path = Path(calibration_dir) / f"{chip_id}.json"
         else:
