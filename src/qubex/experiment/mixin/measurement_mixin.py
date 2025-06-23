@@ -146,7 +146,7 @@ class MeasurementMixin(
         initial_states: dict[str, str] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
-        interval: float | None,
+        interval: float | None = None,
         capture_window: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -302,6 +302,25 @@ class MeasurementMixin(
             add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
+
+    def measure_reference_phases(
+        self,
+        targets: Collection[str] | str | None = None,
+    ) -> dict[str, float]:
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        result = self.measure(
+            sequence={target: [] for target in targets},
+            mode="avg",
+            shots=CALIBRATION_SHOTS,
+            interval=DEFAULT_INTERVAL,
+        )
+        return {target: result.get_readout_phase(target) for target in targets}
 
     def sweep_parameter(
         self,
@@ -529,6 +548,9 @@ class MeasurementMixin(
             targets = [targets]
         else:
             targets = list(targets)
+
+        ref_phases = self.measure_reference_phases(targets)
+        self.calib_note._reference_phases = ref_phases
 
         time_range = np.asarray(time_range)
 
