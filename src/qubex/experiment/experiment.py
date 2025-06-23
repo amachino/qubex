@@ -98,11 +98,11 @@ class Experiment(
     chip_id : str
         Identifier of the quantum chip.
     muxes : Collection[str | int], optional
-        Mux labels to use in the experiment. Defaults to None.
+        Mux labels to use in the experiment.
     qubits : Collection[str | int], optional
-        Qubit labels to use in the experiment. Defaults to None.
+        Qubit labels to use in the experiment.
     exclude_qubits : Collection[str | int], optional
-        Qubit labels to exclude in the experiment. Defaults to None.
+        Qubit labels to exclude in the experiment.
     config_dir : str, optional
         Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
     params_dir : str, optional
@@ -1068,7 +1068,7 @@ class Experiment(
         Parameters
         ----------
         targets : Collection[str] | str, optional
-            Target labels to check the noise. Defaults to None.
+            Target labels to check the noise.
         duration : int, optional
             Duration of the noise measurement. Defaults to 2048.
         plot : bool, optional

@@ -38,9 +38,9 @@ class CalibrationProtocol(Protocol):
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -82,9 +82,9 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -126,9 +126,9 @@ class CalibrationProtocol(Protocol):
         targes : Collection[str] | str, optional
             Target qubits to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -173,9 +173,9 @@ class CalibrationProtocol(Protocol):
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -217,9 +217,9 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -261,9 +261,9 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -313,7 +313,7 @@ class CalibrationProtocol(Protocol):
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -368,7 +368,7 @@ class CalibrationProtocol(Protocol):
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 1.
         degree : int, optional
@@ -432,7 +432,7 @@ class CalibrationProtocol(Protocol):
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         plot : bool, optional
@@ -494,7 +494,7 @@ class CalibrationProtocol(Protocol):
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         plot : bool, optional

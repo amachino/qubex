@@ -20,12 +20,7 @@ from ...backend import (
 )
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
-from ...measurement.measurement import (
-    DEFAULT_CAPTURE_WINDOW,
-    DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_PRE_MARGIN,
-)
-from ...pulse import PulseSchedule, VirtualZ, Waveform
+from ...pulse import PulseSchedule, RampType, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..calibration_note import CalibrationNote
 from ..experiment_constants import RABI_FREQUENCY
@@ -342,7 +337,7 @@ class BaseProtocol(Protocol):
         target : str
             Target qubit.
         valid_days : int, optional
-            Number of days the pulse is valid. Defaults to None.
+            Number of days the pulse is valid.
 
         Returns
         -------
@@ -365,7 +360,7 @@ class BaseProtocol(Protocol):
         target : str
             Target qubit.
         valid_days : int, optional
-            Number of days the pulse is valid. Defaults to None.
+            Number of days the pulse is valid.
 
         Returns
         -------
@@ -388,7 +383,7 @@ class BaseProtocol(Protocol):
         target : str
             Target qubit.
         valid_days : int, optional
-            Number of days the pulse is valid. Defaults to None.
+            Number of days the pulse is valid.
 
         Returns
         -------
@@ -411,7 +406,7 @@ class BaseProtocol(Protocol):
         target : str
             Target qubit.
         valid_days : int, optional
-            Number of days the pulse is valid. Defaults to None.
+            Number of days the pulse is valid.
 
         Returns
         -------
@@ -527,7 +522,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         box_ids : list[str], optional
-            List of the box IDs to link up. Defaults to None.
+            List of the box IDs to link up.
 
         Examples
         --------
@@ -545,7 +540,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         box_ids : list[str], optional
-            List of the box IDs to resynchronize. Defaults to None.
+            List of the box IDs to resynchronize.
 
         Examples
         --------
@@ -564,7 +559,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         box_ids : list[str], optional
-            List of the box IDs to configure. Defaults to None.
+            List of the box IDs to configure.
 
         Examples
         --------
@@ -586,7 +581,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         box_ids : str | Collection[str] | None, optional
-            Box IDs to reset. Defaults to None.
+            Box IDs to reset.
 
         Examples
         --------
@@ -676,7 +671,7 @@ class BaseProtocol(Protocol):
         rabi_rate : float
             Target Rabi rate in GHz.
         rabi_amplitude_ratio : float, optional
-            Ratio of the Rabi amplitude. Defaults to None.
+            Ratio of the Rabi amplitude.
 
         Returns
         -------
@@ -701,9 +696,9 @@ class BaseProtocol(Protocol):
         rabi_rate : float, optional
             Target Rabi rate in GHz. Defaults to RABI_FREQUENCY.
         current_amplitudes : dict[str, float], optional
-            Current control amplitudes. Defaults to None.
+            Current control amplitudes.
         current_rabi_params : dict[str, RabiParam], optional
-            Current Rabi parameters. Defaults to None.
+            Current Rabi parameters.
         print_result : bool, optional
             Whether to print the result. Defaults to True.
 
@@ -764,10 +759,13 @@ class BaseProtocol(Protocol):
         target: str,
         /,
         *,
+        duration: float | None = None,
         amplitude: float | None = None,
-        duration: float = DEFAULT_READOUT_DURATION,
-        capture_window: float = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: float = DEFAULT_READOUT_PRE_MARGIN,
+        ramptime: float | None = None,
+        type: RampType | None = None,
+        drag_coeff: float | None = None,
+        pre_margin: float | None = None,
+        post_margin: float | None = None,
     ) -> Waveform:
         """
         Generate a readout pulse for the target qubit.
@@ -776,14 +774,20 @@ class BaseProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to None.
         duration : float, optional
-            Duration of the readout pulse in ns. Defaults to DEFAULT_READOUT_DURATION.
-        capture_window : float, optional
-            Capture window in ns. Defaults to DEFAULT_CAPTURE_WINDOW.
-        capture_margin : float, optional
-            Capture margin in ns. Defaults to DEFAULT_CAPTURE_MARGIN.
+            Duration of the readout pulse in ns.
+        amplitude : float, optional
+            Amplitude of the readout pulse.
+        ramptime : float, optional
+            Rise and fall time of the readout pulse in ns.
+        type : RampType, optional
+            Type of the ramp for the readout pulse.
+        drag_coeff : float, optional
+            DRAG correction coefficient.
+        pre_margin : float, optional
+            Pre margin for the readout pulse in ns.
+        post_margin : float, optional
+            Post margin for the readout pulse in ns.
 
         Returns
         -------

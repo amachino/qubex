@@ -49,11 +49,11 @@ class BenchmarkingProtocol(Protocol):
         n : int
             Number of Clifford gates.
         x90 : Waveform | dict[str, Waveform], optional
-            π/2 pulse used for the experiment. Defaults to None.
+            π/2 pulse used for the experiment.
         interleaved_waveform : Waveform | dict[str, PulseArray] | dict[str, Waveform], optional
-            Waveform of the interleaved gate. Defaults to None.
+            Waveform of the interleaved gate.
         interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
-            Clifford map of the interleaved gate. Defaults to None.
+            Clifford map of the interleaved gate.
         seed : int, optional
             Random seed.
 
@@ -110,13 +110,13 @@ class BenchmarkingProtocol(Protocol):
         n : int
             Number of Clifford gates.
         x90 : Waveform | TargetMap[Waveform], optional
-            π/2 pulse used for 1Q gates. Defaults to None.
+            π/2 pulse used for 1Q gates.
         zx90 : PulseSchedule | dict[str, Waveform], optional
-            ZX90 pulses used for 2Q gates. Defaults to None.
+            ZX90 pulses used for 2Q gates.
         interleaved_waveform : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
-            Waveform of the interleaved gate. Defaults to None.
+            Waveform of the interleaved gate.
         interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
-            Clifford map of the interleaved gate. Defaults to None.
+            Clifford map of the interleaved gate.
         seed : int, optional
             Random seed.
 
@@ -174,11 +174,11 @@ class BenchmarkingProtocol(Protocol):
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords. Defaults to range(0, 1001, 50).
         x90 : Waveform, optional
-            π/2 pulse used for the experiment. Defaults to None.
+            π/2 pulse used for the experiment.
         interleaved_waveform : Waveform, optional
-            Waveform of the interleaved gate. Defaults to None.
+            Waveform of the interleaved gate.
         interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
-            Clifford map of the interleaved gate. Defaults to None.
+            Clifford map of the interleaved gate.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         seed : int, optional
@@ -266,17 +266,17 @@ class BenchmarkingProtocol(Protocol):
         target : str
             Target qubit.
         n_cliffords_range : ArrayLike, optional
-            Range of the number of Cliffords. Defaults to None.
+            Range of the number of Cliffords.
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform | dict[str, Waveform], optional
-            π/2 pulse used for the experiment. Defaults to None.
+            π/2 pulse used for the experiment.
         zx90 : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
-            ZX90 pulses used for 2Q gates. Defaults to None.
+            ZX90 pulses used for 2Q gates.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         seeds : ArrayLike, optional
-            Random seeds. Defaults to None.
+            Random seeds.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -328,13 +328,13 @@ class BenchmarkingProtocol(Protocol):
         n_trials : int, optional
             Number of trials for different random seeds. Defaults to 30.
         x90 : Waveform, optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse.
         zx90 : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
-            ZX90 pulses used for 2Q gates. Defaults to None.
+            ZX90 pulses used for 2Q gates.
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         seeds : ArrayLike, optional
-            Random seeds. Defaults to None.
+            Random seeds.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional

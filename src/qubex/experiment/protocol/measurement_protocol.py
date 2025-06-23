@@ -135,7 +135,7 @@ class MeasurementProtocol(Protocol):
         frequencies : Optional[dict[str, float]]
             Frequencies of the qubits.
         initial_states : dict[str, str], optional
-            Initial states of the qubits. Defaults to None.
+            Initial states of the qubits.
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
@@ -433,9 +433,7 @@ class MeasurementProtocol(Protocol):
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
-        control_window: float | None = None,
         capture_window: float | None = None,
-        capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = True,
@@ -479,9 +477,9 @@ class MeasurementProtocol(Protocol):
         sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Sequence to measure for each target.
         x90 : TargetMap[Waveform], optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse.
         initial_state : TargetMap[str], optional
-            Initial state of each target. Defaults to None.
+            Initial state of each target.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -518,9 +516,9 @@ class MeasurementProtocol(Protocol):
         sequences : Sequence[TargetMap[IQArray]] | Sequence[TargetMap[Waveform]] | Sequence[PulseSchedule]
             Sequences to measure for each target.
         x90 : TargetMap[Waveform], optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse.
         initial_state : TargetMap[str], optional
-            Initial state of each target. Defaults to None.
+            Initial state of each target.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -554,9 +552,9 @@ class MeasurementProtocol(Protocol):
         waveforms : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Waveforms to measure for each target.
         x90 : TargetMap[Waveform], optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse.
         initial_state : TargetMap[str], optional
-            Initial state of each target. Defaults to None.
+            Initial state of each target.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional

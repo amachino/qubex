@@ -257,7 +257,7 @@ class ExperimentNote:
         d : dict
             The dictionary to sort.
         depth : int, optional
-            The depth to sort to. Defaults to None.
+            The depth to sort to.
 
         Returns
         -------
