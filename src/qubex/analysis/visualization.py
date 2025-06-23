@@ -318,7 +318,7 @@ def plot_waveform(
 
 
 def scatter_iq_data(
-    data: Mapping[str, IQArray],
+    data: IQArray | Mapping[str, IQArray],
     *,
     mode: Literal["lines", "markers", "lines+markers"] = "markers",
     title: str = "I/Q plane",
@@ -331,6 +331,9 @@ def scatter_iq_data(
     return_figure: bool = False,
     save_image: bool = False,
 ):
+    if not isinstance(data, Mapping):
+        data = {"data": data}
+
     fig = go.Figure()
     colors = get_colors(alpha=0.8)
     max_val = np.max([np.max(np.abs(data[qubit])) for qubit in data])

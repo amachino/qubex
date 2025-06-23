@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
@@ -104,7 +104,7 @@ def func_cos(
     A: complex,
     omega: float,
     phi: float,
-    C: float,
+    C: complex,
 ) -> NDArray:
     """
     Calculate a cosine function with given parameters.
@@ -119,7 +119,7 @@ def func_cos(
         Angular frequency of the cosine function.
     phi : float
         Phase offset of the cosine function.
-    C : float
+    C : complex
         Vertical offset of the cosine function.
     """
     return A * np.cos(omega * t + phi) + C
@@ -130,7 +130,7 @@ def func_damped_cos(
     A: complex,
     omega: float,
     phi: float,
-    C: float,
+    C: complex,
     tau: float,
 ) -> NDArray:
     """
@@ -563,7 +563,7 @@ def fit_cosine(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    tau_est: float = 10_000,
+    tau_est: float | None = None,
     is_damped: bool = False,
     target: str | None = None,
     title: str = "Cosine fit",
@@ -580,11 +580,11 @@ def fit_cosine(
         x values for the data.
     y : ArrayLike
         y values for the data.
-    tau_est : float, optional
+    tau_est : float | None, optional
         Initial guess for the damping time constant.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
-    target : str, optional
+    target : str | None, optional
         Identifier of the target.
     title : str, optional
         Title of the plot.
@@ -615,9 +615,15 @@ def fit_cosine(
     phase_est = np.angle(F[i])
     offset_est = (np.max(y) + np.min(y)) / 2
 
+    if tau_est is None:
+        tau_est = 10_000.0
+
     logger.debug(
         f"Initial guess: A = {amplitude_est:.3g}, ω = {omega_est:.3g}, φ = {phase_est:.3g}, C = {offset_est:.3g}"
     )
+
+    p0: tuple[Any, ...]
+    bounds: tuple[tuple[Any, ...], tuple[Any, ...]]
 
     if is_damped:
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
@@ -696,13 +702,13 @@ def fit_cosine(
         if target:
             print(f"Target: {target}")
         print("Fit: A * cos(2πft + φ) + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f = {f:.3g} ± {f_err:.1g}")
-        print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  f = {f:.6g} ± {f_err:.1g}")
+        print(f"  φ = {phi:.6g} ± {phi_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
         if is_damped:
-            print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
-        print(f"  R² = {r2:.3f}")
+            print(f"  τ = {tau:.6g} ± {tau_err:.1g}")
+        print(f"  R² = {r2:.6g}")
         print("")
 
     return {
@@ -869,11 +875,11 @@ def fit_delayed_cosine(
         if target:
             print(f"Target: {target}")
         print("Fit: A * cos(2πft + φ) + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f = {f:.3g} ± {f_err:.1g}")
-        print(f"  t0 = {t0:.3g} ± {t0_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.3f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  f = {f:.6g} ± {f_err:.1g}")
+        print(f"  t0 = {t0:.6g} ± {t0_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.6g}")
         print("")
 
     return {
@@ -923,7 +929,7 @@ def fit_exp_decay(
         Whether to plot the data and the fit.
     target : str, optional
         Identifier of the target.
-    title : str, optional
+    title : str | None, optional
         Title of the plot.
     xlabel : str, optional
         Label for the x-axis.
@@ -1014,10 +1020,10 @@ def fit_exp_decay(
         if target:
             print(f"Target: {target}")
         print("Fit: A * exp(-t/τ) + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  τ = {tau * 1e-3:.3g} ± {tau_err * 1e-3:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.3f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  τ = {tau * 1e-3:.6g} ± {tau_err * 1e-3:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.6g}")
         print("")
 
     result = {
@@ -1353,7 +1359,7 @@ def fit_rabi(
     target: str,
     times: NDArray,
     data: NDArray,
-    tau_est: float = 10_000,
+    tau_est: float | None = None,
     plot: bool = True,
     is_damped: bool = False,
     ylabel: str | None = None,
@@ -1370,15 +1376,15 @@ def fit_rabi(
         Array of time points for the Rabi oscillations.
     data : NDArray[np.complex64]
         Complex signal data corresponding to the Rabi oscillations.
-    tau_est : float, optional
+    tau_est : float | None, optional
         Initial guess for the damping time constant.
     plot : bool, optional
         Whether to plot the data and the fit.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
-    ylabel : str, optional
+    ylabel : str | None, optional
         Label for the y-axis.
-    yaxis_range : tuple[float, float], optional
+    yaxis_range : tuple[float, float] | None, optional
         Range for the y-axis.
 
     Returns
@@ -1386,6 +1392,9 @@ def fit_rabi(
     dict
         Fitted parameters and the figure.
     """
+    if tau_est is None:
+        tau_est = 10_000.0
+
     times = np.asarray(times, dtype=np.float64)
     data = np.asarray(data, dtype=np.complex64)
 
@@ -1476,6 +1485,15 @@ def fit_rabi(
     else:
         r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
 
+    # Identify ground and excited state I/Q values
+    # After rotation, |g⟩ is at offset+amplitude and |e⟩ is at offset-amplitude in Q
+    rotated_0 = complex(0, offset + amplitude)  # (I, Q) = (0, offset+amplitude)
+    rotated_1 = complex(0, offset - amplitude)  # (I, Q) = (0, offset-amplitude)
+
+    # Rotate back to original I/Q plane
+    iq_0 = rotated_0 * np.exp(1j * angle)
+    iq_1 = rotated_1 * np.exp(1j * angle)
+
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
         func_cos(x_fine, *popt) if not is_damped else func_damped_cos(x_fine, *popt)
@@ -1519,7 +1537,7 @@ def fit_rabi(
         fig.show(config=_plotly_config(f"rabi_{target}"))
 
         print(f"Target: {target}")
-        print(f"Rabi frequency: {frequency * 1e3:.3g} ± {frequency_err * 1e3:.1g} MHz")
+        print(f"Rabi frequency: {frequency * 1e3:.6g} ± {frequency_err * 1e3:.1g} MHz")
 
     result = {
         "rabi_param": RabiParam(
@@ -1545,6 +1563,10 @@ def fit_rabi(
         "angle": angle,
         "noise": noise,
         "r2": r2,
+        "rotated_0": rotated_0,
+        "rotated_1": rotated_1,
+        "iq_0": iq_0,
+        "iq_1": iq_1,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -1811,12 +1833,12 @@ def fit_ramsey(
 
         print(f"Target: {target}")
         print("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f = {f:.3g} ± {f_err:.1g}")
-        print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
-        print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.3f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  f = {f:.6g} ± {f_err:.1g}")
+        print(f"  φ = {phi:.6g} ± {phi_err:.1g}")
+        print(f"  τ = {tau:.6g} ± {tau_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.6g}")
         print("")
 
     result = {
@@ -1968,13 +1990,13 @@ def fit_rb(
 
         print(f"Target: {target}")
         print("Fit: A * p^n + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  p = {p:.3g} ± {p_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.3f}")
-        print(f"Depolarizing rate: {depolarizing_rate:.6f}")
-        print(f"Average gate error: {avg_gate_error:.6f}")
-        print(f"Average gate fidelity: {avg_gate_fidelity:.6f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  p = {p:.6g} ± {p_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.6g}")
+        print(f"Depolarizing rate: {depolarizing_rate:.6g}")
+        print(f"Average gate error: {avg_gate_error:.6g}")
+        print(f"Average gate fidelity: {avg_gate_fidelity:.6g}")
         print("")
 
     return {
@@ -2714,12 +2736,12 @@ def fit_reflection_coefficient_double(
         fig.show()
 
     print(f"{target}\n--------------------")
-    print(f"Resonance frequency #0:\n  {f_r0:.6f} GHz")
-    print(f"Resonance frequency #1:\n  {f_r1:.6f} GHz")
-    print(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6f} MHz")
-    print(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6f} MHz")
-    print(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6f} MHz")
-    print(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6f} MHz")
+    print(f"Resonance frequency #0:\n  {f_r0:.6g} GHz")
+    print(f"Resonance frequency #1:\n  {f_r1:.6g} GHz")
+    print(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6g} MHz")
+    print(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6g} MHz")
+    print(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6g} MHz")
+    print(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6g} MHz")
     print("--------------------\n")
 
     return {
