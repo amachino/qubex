@@ -761,9 +761,11 @@ class Experiment(
         targets: Collection[str] | str | None = None,
     ):
         if targets is None:
-            targets = self.rabi_params.keys()
+            targets = self.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
+        else:
+            targets = list(targets)
 
         reference_phases = self.obtain_reference_points(targets=targets)["phase"]
 
