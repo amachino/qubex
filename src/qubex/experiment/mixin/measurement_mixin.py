@@ -320,7 +320,7 @@ class MeasurementMixin(
             targets = list(targets)
 
         if shots is None:
-            shots = CALIBRATION_SHOTS
+            shots = CLASSIFIER_SHOTS
 
         result = self.measure_state(
             {target: "g" for target in targets},
@@ -1021,6 +1021,8 @@ class MeasurementMixin(
         if shots is None:
             shots = CLASSIFIER_SHOTS
 
+        self.obtain_reference_points(targets)
+
         results = self.measure_state_distribution(
             targets=targets,
             n_states=n_states,
@@ -1105,6 +1107,7 @@ class MeasurementMixin(
                     str(state): [center.real, center.imag]
                     for state, center in classifiers[target].centers.items()
                 },
+                "reference_phase": self.calib_note._reference_phases[target],
             }
             for target in targets
         }

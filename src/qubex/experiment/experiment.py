@@ -767,15 +767,16 @@ class Experiment(
         else:
             targets = list(targets)
 
-        reference_phases = self.obtain_reference_points(targets=targets)["phase"]
+        new_reference_phases = self.obtain_reference_points(targets=targets)["phase"]
 
-        for target, reference_phase in reference_phases.items():
+        # correct rabi params
+        for target, new_reference_phase in new_reference_phases.items():
             rabi_param = self.rabi_params.get(target)
             if rabi_param is None:
                 print(f"Rabi parameters for {target} are not stored.")
                 continue
             else:
-                rabi_param.correct(new_reference_phase=reference_phase)
+                rabi_param.correct(new_reference_phase=new_reference_phase)
 
             self.calib_note.update_rabi_param(
                 target,
@@ -792,6 +793,27 @@ class Experiment(
                     "reference_phase": rabi_param.reference_phase,
                 },
             )
+
+        # correct state params
+        for target, new_reference_phase in new_reference_phases.items():
+            state_param = self.calib_note.get_state_param(target)
+            if state_param is not None:
+                reference_phase = state_param.get("reference_phase")
+                if reference_phase is None:
+                    state_param["reference_phase"] = new_reference_phase
+                    continue
+                else:
+                    centers = state_param["centers"]
+                    phase_diff = new_reference_phase - reference_phase
+                    for state, points in centers.items():
+                        iq = complex(points[0], points[1])
+                        iq *= np.exp(1j * phase_diff)
+                        centers[str(state)] = [iq.real, iq.imag]
+                    state_param["reference_phase"] = new_reference_phase
+                self.calib_note.update_state_param(
+                    target,
+                    state_param,
+                )
 
     def get_hpi_pulse(
         self,

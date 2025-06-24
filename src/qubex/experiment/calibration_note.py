@@ -40,6 +40,7 @@ class RabiParam(Parameter):
 class StateParam(Parameter):
     target: str
     centers: dict[str, list[float]]
+    reference_phase: float
 
 
 class FlatTopParam(Parameter):
