@@ -13,7 +13,6 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
-from ..analysis.fitting import RabiParam
 from ..backend import (
     Box,
     Chip,
@@ -80,6 +79,7 @@ from .mixin import (
     CharacterizationMixin,
     MeasurementMixin,
 )
+from .rabi_param import RabiParam
 
 console = Console()
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
 
@@ -34,84 +33,6 @@ def _plotly_config(filename: str) -> dict:
             "scale": 3,
         },
     }
-
-
-@dataclass
-class RabiParam:
-    """
-    Data class representing the parameters of Rabi oscillation.
-
-    ```
-    rabi_1d = amplitude * cos(2π * frequency * time + phase) + offset)
-    rabi_2d = (distance + 1j * rabi_1d) * exp(1j * angle) ± noise
-    ```
-
-    Attributes
-    ----------
-    target : str
-        Identifier of the target.
-    amplitude : float
-        Amplitude of the Rabi oscillation.
-    frequency : float
-        Frequency of the Rabi oscillation.
-    phase : float
-        Phase of the Rabi oscillation in radians.
-    offset : float
-        Offset of the Rabi oscillation.
-    noise : float
-        Noise level of the Rabi oscillation.
-    angle : float
-        Angle of the Rabi oscillation in radians.
-    distance : float
-        Distance of the Rabi oscillation in the complex plane.
-    r2 : float
-        Coefficient of determination.
-    reference_phase : float
-        Reference phase for the Rabi oscillation, used for normalization.
-    """
-
-    target: str
-    amplitude: float
-    frequency: float
-    phase: float
-    offset: float
-    noise: float
-    angle: float
-    distance: float
-    r2: float
-    reference_phase: float
-
-    @property
-    def endpoints(self) -> tuple[complex, complex]:
-        rotated_0 = complex(self.distance, self.offset + self.amplitude)
-        rotated_1 = complex(self.distance, self.offset - self.amplitude)
-        iq_0 = complex(rotated_0 * np.exp(1j * self.angle))
-        iq_1 = complex(rotated_1 * np.exp(1j * self.angle))
-        return iq_0, iq_1
-
-
-def normalize(
-    values: NDArray,
-    param: RabiParam,
-) -> NDArray:
-    """
-    Normalizes the measured I/Q values.
-
-    Parameters
-    ----------
-    values : NDArray
-        Measured I/Q values.
-    param : RabiParam
-        Parameters of the Rabi oscillation.
-
-    Returns
-    -------
-    NDArray
-        Normalized I/Q values.
-    """
-    rotated = values * np.exp(-1j * param.angle)
-    normalized = (np.imag(rotated) - param.offset) / param.amplitude
-    return normalized
 
 
 def func_cos(
@@ -1375,7 +1296,7 @@ def fit_rabi(
     times: NDArray,
     data: NDArray,
     tau_est: float | None = None,
-    ground_state: complex | None = None,
+    reference_point: complex | None = None,
     plot: bool = True,
     is_damped: bool = False,
     ylabel: str | None = None,
@@ -1394,8 +1315,8 @@ def fit_rabi(
         Complex signal data corresponding to the Rabi oscillations.
     tau_est : float | None, optional
         Initial guess for the damping time constant.
-    ground_state : complex | None, optional
-        Ground state I/Q value to align the data.
+    reference_point : complex | None, optional
+        Reference point for the I/Q values.
     plot : bool, optional
         Whether to plot the data and the fit.
     is_damped : bool, optional
@@ -1420,9 +1341,9 @@ def fit_rabi(
     data_vec = np.column_stack([data.real, data.imag])
     pca = PCA(n_components=2).fit(data_vec)
 
-    if ground_state is not None:
-        # If a ground state is provided, use it to determine the initial point
-        initial_point = np.array([ground_state.real, ground_state.imag])
+    if reference_point is not None:
+        # If a reference point is provided, use it to determine the initial point
+        initial_point = np.array([reference_point.real, reference_point.imag])
     else:
         initial_point = data_vec[0]
 
@@ -1477,18 +1398,6 @@ def fit_rabi(
         return {
             "status": "error",
             "message": "Failed to fit the data.",
-            "rabi_param": RabiParam(
-                target=target,
-                amplitude=np.nan,
-                frequency=np.nan,
-                phase=np.nan,
-                offset=np.nan,
-                noise=noise,
-                angle=angle,
-                distance=distance,
-                r2=np.nan,
-                reference_phase=reference_phase,
-            ),
         }
 
     if is_damped:
@@ -1562,18 +1471,6 @@ def fit_rabi(
         print(f"Rabi frequency: {frequency * 1e3:.6g} ± {frequency_err * 1e3:.1g} MHz")
 
     result = {
-        "rabi_param": RabiParam(
-            target=target,
-            amplitude=amplitude,
-            frequency=frequency,
-            phase=phase,
-            offset=offset,
-            noise=noise,
-            angle=angle,
-            distance=distance,
-            r2=r2,
-            reference_phase=reference_phase,
-        ),
         "amplitude": amplitude,
         "frequency": frequency,
         "phase": phase,
@@ -3105,27 +3002,3 @@ def fit_rotation(
         "fig": fig,
         "fig3d": fig3d,
     }
-
-
-def rotate(
-    data: ArrayLike,
-    angle: float,
-) -> NDArray[np.complex128]:
-    """
-    Rotate complex data points by a specified angle.
-
-    Parameters
-    ----------
-    data : ArrayLike
-        Array of complex data points to be rotated.
-    angle : float
-        Angle in radians by which to rotate the data points.
-
-    Returns
-    -------
-    NDArray[np.complex128]
-        Rotated complex data points.
-    """
-    points = np.array(data)
-    rotated_points = points * np.exp(1j * angle)
-    return rotated_points

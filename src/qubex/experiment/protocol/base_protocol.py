@@ -5,7 +5,6 @@ from typing import Collection, ContextManager, Literal, Protocol
 
 from numpy.typing import NDArray
 
-from ...analysis.fitting import RabiParam
 from ...backend import (
     Box,
     ControlParams,
@@ -27,6 +26,7 @@ from ..experiment_constants import RABI_FREQUENCY
 from ..experiment_note import ExperimentNote
 from ..experiment_record import ExperimentRecord
 from ..experiment_util import ExperimentUtil
+from ..rabi_param import RabiParam
 
 
 class BaseProtocol(Protocol):

@@ -53,6 +53,7 @@ from ..experiment_constants import (
 )
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
+from ..rabi_param import RabiParam
 
 logger = logging.getLogger(__name__)
 
@@ -303,13 +304,13 @@ class MeasurementMixin(
             plot=plot,
         )
 
-    def measure_ground_states(
+    def obtain_reference_points(
         self,
         targets: Collection[str] | str | None = None,
         *,
         shots: int | None = None,
         interval: float | None = None,
-        store_reference_phases: bool = True,
+        store_reference_points: bool = True,
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
@@ -335,7 +336,7 @@ class MeasurementMixin(
         phase = {target: float(np.angle(v)) for target, v in iq.items()}
         amplitude = {target: float(np.abs(v)) for target, v in iq.items()}
 
-        if store_reference_phases:
+        if store_reference_points:
             self.calib_note._reference_phases.update(phase)
 
         return {
@@ -684,8 +685,8 @@ class MeasurementMixin(
 
         effective_time_range = time_range + ramptime
 
-        # measure ground states
-        ground_states = self.measure_ground_states(targets)["iq"]
+        # measure ground states as reference points
+        reference_points = self.obtain_reference_points(targets)["iq"]
 
         # target frequencies
         if frequencies is None:
@@ -733,11 +734,22 @@ class MeasurementMixin(
                 target=data.target,
                 times=effective_time_range,
                 data=data.data,
-                ground_state=ground_states.get(target),
+                reference_point=reference_points.get(target),
                 plot=plot,
                 is_damped=is_damped,
             )
-            rabi_params[target] = fit_result["rabi_param"]
+            rabi_params[target] = RabiParam(
+                target=target,
+                amplitude=fit_result["amplitude"],
+                frequency=fit_result["frequency"],
+                phase=fit_result["phase"],
+                offset=fit_result["offset"],
+                noise=fit_result["noise"],
+                angle=fit_result["angle"],
+                distance=fit_result["distance"],
+                r2=fit_result["r2"],
+                reference_phase=fit_result["reference_phase"],
+            )
 
         # store the Rabi parameters if necessary
         if store_params:

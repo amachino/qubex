@@ -16,7 +16,6 @@ from typing_extensions import deprecated
 
 from ...analysis import fitting
 from ...analysis import visualization as viz
-from ...analysis.fitting import RabiParam
 from ...backend import BoxType, MixingUtil, Target
 from ...backend.experiment_system import (
     CNCO_CENTER_CTRL,
@@ -53,6 +52,7 @@ from ..protocol import (
     CharacterizationProtocol,
     MeasurementProtocol,
 )
+from ..rabi_param import RabiParam
 
 logger = logging.getLogger(__name__)
 
@@ -2925,7 +2925,7 @@ class CharacterizationMixin(
             result2d.append(result1d)
 
         result2d = np.array(result2d)
-        data = fitting.normalize(result2d, self.rabi_params[target])
+        data = self.rabi_params[target].normalize(result2d)
         if qubit_initial_state == "1":
             data *= -1
 
