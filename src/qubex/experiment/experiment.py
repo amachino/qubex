@@ -756,6 +756,41 @@ class Experiment(
         if len(not_stored) > 0:
             print(f"Rabi parameters are not stored for qubits: {not_stored}")
 
+    def correct_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+    ):
+        if targets is None:
+            targets = self.rabi_params.keys()
+        elif isinstance(targets, str):
+            targets = [targets]
+
+        reference_phases = self.obtain_reference_points(targets=targets)["phase"]
+
+        for target, reference_phase in reference_phases.items():
+            rabi_param = self.rabi_params.get(target)
+            if rabi_param is None:
+                print(f"Rabi parameters for {target} are not stored.")
+                continue
+            else:
+                rabi_param.correct(new_reference_phase=reference_phase)
+
+            self.calib_note.update_rabi_param(
+                target,
+                {
+                    "target": rabi_param.target,
+                    "frequency": rabi_param.frequency,
+                    "amplitude": rabi_param.amplitude,
+                    "phase": rabi_param.phase,
+                    "offset": rabi_param.offset,
+                    "noise": rabi_param.noise,
+                    "angle": rabi_param.angle,
+                    "distance": rabi_param.distance,
+                    "r2": rabi_param.r2,
+                    "reference_phase": rabi_param.reference_phase,
+                },
+            )
+
     def get_hpi_pulse(
         self,
         target: str,
