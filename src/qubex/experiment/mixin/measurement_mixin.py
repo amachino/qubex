@@ -625,6 +625,9 @@ class MeasurementMixin(
 
         time_range = np.asarray(time_range)
 
+        if ramptime is None:
+            ramptime = 20.0
+
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
@@ -731,7 +734,6 @@ class MeasurementMixin(
         time_range = np.array(time_range, dtype=np.float64)
 
         if ramptime is None:
-            # TODO: Fix fit_rabi to support ramptime
             ramptime = 0.0
 
         effective_time_range = time_range + ramptime
