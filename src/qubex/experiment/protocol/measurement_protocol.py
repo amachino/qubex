@@ -249,6 +249,39 @@ class MeasurementProtocol(Protocol):
         """
         ...
 
+    def obtain_reference_points(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        store_reference_points: bool = True,
+    ) -> dict:
+        """
+        Obtains the reference points for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Targets to obtain reference points for. Defaults to None (all targets).
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        store_reference_points : bool, optional
+            Whether to store the reference points. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the reference points for each target.
+
+        Examples
+        --------
+        >>> ref_points = ex.obtain_reference_points(targets=["Q00", "Q01"])
+        """
+        ...
+
     def sweep_parameter(
         self,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,

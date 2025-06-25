@@ -304,6 +304,68 @@ class MeasurementMixin(
             plot=plot,
         )
 
+    def measure_ground_state(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        capture_window: float | None = None,
+        capture_offset: float | None = None,
+        add_pump_pulses: bool = False,
+        plot: bool = False,
+    ) -> MeasureResult:
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        return self.measure_state(
+            states={target: "g" for target in targets},
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            capture_window=capture_window,
+            capture_offset=capture_offset,
+            add_pump_pulses=add_pump_pulses,
+            plot=plot,
+        )
+
+    def classify_data(
+        self,
+        target: str,
+        data: NDArray[np.complex128],
+        plot: bool = True,
+    ):
+        """
+        Classify the provided data using the classifier for the specified target qubit.
+
+        Parameters
+        ----------
+        target : str
+            The label of the target qubit.
+        data : NDArray[np.complex128]
+            The data to classify in IQ format.
+
+        Returns
+        -------
+        dict[int, int]
+            A dictionary with state labels as keys and their counts as values.
+        """
+        classifier = self.classifiers[target]
+        return classifier.classify(target, data, plot=plot)
+
     def obtain_reference_points(
         self,
         targets: Collection[str] | str | None = None,
@@ -322,8 +384,8 @@ class MeasurementMixin(
         if shots is None:
             shots = CLASSIFIER_SHOTS
 
-        result = self.measure_state(
-            {target: "g" for target in targets},
+        result = self.measure_ground_state(
+            targets=targets,
             mode="avg",
             shots=shots,
             interval=interval,
@@ -1052,7 +1114,11 @@ class MeasurementMixin(
             }
         elif self.classifier_type == "gmm":
             classifiers = {
-                target: StateClassifierGMM.fit(data[target]) for target in targets
+                target: StateClassifierGMM.fit(
+                    data[target],
+                    phase=self.reference_phases[target],
+                )
+                for target in targets
             }
         else:
             raise ValueError("Invalid classifier type.")

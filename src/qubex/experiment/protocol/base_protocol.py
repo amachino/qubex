@@ -302,6 +302,11 @@ class BaseProtocol(Protocol):
         """Get the Clifford dict."""
         ...
 
+    @property
+    def reference_phases(self) -> dict[str, float]:
+        """Get the reference phases for each target."""
+        ...
+
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,

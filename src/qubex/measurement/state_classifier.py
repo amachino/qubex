@@ -20,6 +20,7 @@ class StateClassifier(ABC):
     label_map: dict[int, int]
     confusion_matrix: NDArray
     scale: float
+    phase: float
     created_at: str
 
     def save(self, path: Path | str):
