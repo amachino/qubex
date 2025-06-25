@@ -59,6 +59,7 @@ from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
+    CLASSIFIER_SHOTS,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     HPI_DURATION,
@@ -716,6 +717,10 @@ class Experiment(
             for pair in self.get_cr_pairs(low_to_high, high_to_low)
         ]
 
+    @staticmethod
+    def cr_pair(cr_label: str) -> tuple[str, str]:
+        return Target.cr_qubit_pair(cr_label)
+
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
@@ -763,6 +768,7 @@ class Experiment(
     def correct_rabi_params(
         self,
         targets: Collection[str] | str | None = None,
+        *,
         reference_phases: dict[str, float] | None = None,
         save: bool = True,
     ):
@@ -807,6 +813,7 @@ class Experiment(
     def correct_classifiers(
         self,
         targets: Collection[str] | str | None = None,
+        *,
         reference_phases: dict[str, float] | None = None,
         save: bool = True,
     ):
@@ -852,6 +859,80 @@ class Experiment(
                 )
         if save:
             self.save_calib_note()
+
+    def correct_cr_params(
+        self,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ):
+        if cr_labels is None:
+            cr_labels = self.cr_labels
+        elif isinstance(cr_labels, str):
+            cr_labels = [cr_labels]
+        else:
+            cr_labels = list(cr_labels)
+
+        for label in cr_labels:
+            control_qubit, target_qubit = self.cr_pair(label)
+            if label not in self.calib_note.cr_params:
+                continue
+            result = self.state_tomography(
+                self.zx90(control_qubit, target_qubit),
+                shots=CLASSIFIER_SHOTS,
+            )
+            x, y, _ = result[target_qubit]
+            phase = np.arctan2(y, x)
+            current_param = self.calib_note.get_cr_param(label)
+            self.calib_note.update_cr_param(
+                label,
+                {
+                    "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
+                },
+            )
+        if save:
+            self.save_calib_note()
+
+    def correct_calibration(
+        self,
+        qubit_labels: Collection[str] | str | None = None,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ) -> None:
+        """
+        Correct the calibration parameters for the given qubits and cross-resonance pairs.
+        """
+        if qubit_labels is None:
+            qubit_labels = self.qubit_labels
+        elif isinstance(qubit_labels, str):
+            qubit_labels = [qubit_labels]
+        else:
+            qubit_labels = list(qubit_labels)
+
+        if cr_labels is None:
+            cr_labels = self.cr_labels
+        elif isinstance(cr_labels, str):
+            cr_labels = [cr_labels]
+        else:
+            cr_labels = list(cr_labels)
+
+        reference_phases = self.obtain_reference_points(qubit_labels)["phase"]
+
+        self.correct_rabi_params(
+            qubit_labels,
+            reference_phases=reference_phases,
+            save=save,
+        )
+        self.correct_classifiers(
+            qubit_labels,
+            reference_phases=reference_phases,
+            save=save,
+        )
+        self.correct_cr_params(
+            cr_labels,
+            save=save,
+        )
 
     def get_hpi_pulse(
         self,

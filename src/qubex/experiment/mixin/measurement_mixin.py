@@ -304,11 +304,10 @@ class MeasurementMixin(
             plot=plot,
         )
 
-    def measure_ground_state(
+    def measure_idle_states(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -318,8 +317,8 @@ class MeasurementMixin(
         capture_window: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
-        plot: bool = False,
-    ) -> MeasureResult:
+        plot: bool = True,
+    ) -> dict:
         if targets is None:
             targets = self.qubit_labels
         elif isinstance(targets, str):
@@ -327,9 +326,9 @@ class MeasurementMixin(
         else:
             targets = list(targets)
 
-        return self.measure_state(
+        result = self.measure_state(
             states={target: "g" for target in targets},
-            mode=mode,
+            mode="single",
             shots=shots,
             interval=interval,
             readout_amplitudes=readout_amplitudes,
@@ -339,32 +338,22 @@ class MeasurementMixin(
             capture_window=capture_window,
             capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
-            plot=plot,
+            plot=False,
         )
+        data = {target: result.data[target].kerneled for target in targets}
+        counts = {
+            target: self.classifiers[target].classify(
+                target,
+                data[target],
+                plot=plot,
+            )
+            for target in targets
+        }
 
-    def classify_data(
-        self,
-        target: str,
-        data: NDArray[np.complex128],
-        plot: bool = True,
-    ):
-        """
-        Classify the provided data using the classifier for the specified target qubit.
-
-        Parameters
-        ----------
-        target : str
-            The label of the target qubit.
-        data : NDArray[np.complex128]
-            The data to classify in IQ format.
-
-        Returns
-        -------
-        dict[int, int]
-            A dictionary with state labels as keys and their counts as values.
-        """
-        classifier = self.classifiers[target]
-        return classifier.classify(target, data, plot=plot)
+        return {
+            "data": data,
+            "counts": counts,
+        }
 
     def obtain_reference_points(
         self,
@@ -384,8 +373,8 @@ class MeasurementMixin(
         if shots is None:
             shots = CLASSIFIER_SHOTS
 
-        result = self.measure_ground_state(
-            targets=targets,
+        result = self.measure_state(
+            {target: "g" for target in targets},
             mode="avg",
             shots=shots,
             interval=interval,

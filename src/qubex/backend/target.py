@@ -273,9 +273,8 @@ class Target(Model):
         qubit = cls.qubit_label(label)
         return f"R{qubit}"
 
-    @classmethod
+    @staticmethod
     def cr_qubit_pair(
-        cls,
         label: str,
     ) -> tuple[str, str]:
         if match := re.match(r"^(Q\d+)-(Q\d+)$", label):
