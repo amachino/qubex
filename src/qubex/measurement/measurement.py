@@ -872,6 +872,7 @@ class Measurement:
         # calculate the backend interval
         backend_interval = total_length * SAMPLING_PERIOD + interval
         backend_interval = math.ceil(backend_interval / BLOCK_DURATION) * BLOCK_DURATION
+        backend_interval += BLOCK_DURATION  # TODO: remove this hack
 
         # return Sequencer
         return SequencerMod(
