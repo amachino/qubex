@@ -899,10 +899,7 @@ class Experiment(
         cr_labels: Collection[str] | str | None = None,
         *,
         save: bool = True,
-    ) -> None:
-        """
-        Correct the calibration parameters for the given qubits and cross-resonance pairs.
-        """
+    ):
         if qubit_labels is None:
             qubit_labels = self.qubit_labels
         elif isinstance(qubit_labels, str):
