@@ -49,6 +49,8 @@ from ..experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
     CLASSIFIER_SHOTS,
+    HPI_DURATION,
+    HPI_RAMPTIME,
     RABI_TIME_RANGE,
 )
 from ..experiment_result import ExperimentResult, RabiData, SweepData
@@ -626,7 +628,7 @@ class MeasurementMixin(
         time_range = np.asarray(time_range)
 
         if ramptime is None:
-            ramptime = 20.0
+            ramptime = HPI_DURATION - HPI_RAMPTIME
 
         if amplitudes is None:
             ampl = self.params.control_amplitude

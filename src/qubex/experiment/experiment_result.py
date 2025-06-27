@@ -782,10 +782,12 @@ class AmplRabiData(TargetData):
     def fit(self) -> dict:
         return fitting.fit_linear(
             self.sweep_range,
-            self.data,
+            self.data * 1e3,  # Convert to MHz
             title=f"Rabi rate vs drive amplitude : {self.target}",
             xlabel="Drive amplitude (arb. units)",
             ylabel="Rabi rate (MHz)",
+            xmin=0.0,
+            ymin=0.0,
         )
 
 

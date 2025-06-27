@@ -35,7 +35,11 @@ from ...pulse import (
 )
 from ...style import COLORS
 from ...typing import TargetMap
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_FREQUENCY, RABI_TIME_RANGE
+from ..experiment_constants import (
+    CALIBRATION_SHOTS,
+    RABI_FREQUENCY,
+    RABI_TIME_RANGE,
+)
 from ..experiment_result import (
     AmplRabiData,
     ExperimentResult,
@@ -568,8 +572,9 @@ class CharacterizationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = np.arange(0, 201, 4),
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
+        ramptime: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -581,6 +586,9 @@ class CharacterizationMixin(
         else:
             targets = list(targets)
 
+        if ramptime is None:
+            ramptime = 0
+
         time_range = np.array(time_range, dtype=np.float64)
         amplitude_range = np.array(amplitude_range, dtype=np.float64)
         rabi_rates: dict[str, list[float]] = defaultdict(list)
@@ -590,6 +598,7 @@ class CharacterizationMixin(
             rabi_result = self.rabi_experiment(
                 amplitudes={target: amplitude for target in targets},
                 time_range=time_range,
+                ramptime=ramptime,
                 shots=shots,
                 interval=interval,
                 plot=False,

@@ -289,6 +289,8 @@ def fit_linear(
     ylabel: str = "y",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
+    xmin: float | None = None,
+    ymin: float | None = None,
 ) -> dict:
     """
     Fit data to a linear function y = a * x.
@@ -358,6 +360,8 @@ def fit_linear(
         yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
+        xaxis=dict(range=[xmin, np.max(x)] if xmin is not None else None),
+        yaxis=dict(range=[ymin, np.max(y)] if ymin is not None else None),
     )
 
     if plot:
