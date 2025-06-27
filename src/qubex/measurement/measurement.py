@@ -4,7 +4,7 @@ import logging
 import math
 from collections import defaultdict
 from contextlib import contextmanager
-from functools import reduce
+from functools import cache, reduce
 from pathlib import Path
 from typing import Collection, Final, Literal
 
@@ -422,6 +422,7 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         add_pump_pulses: bool = False,
+        enable_dsp_sum: bool = False,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -494,6 +495,7 @@ class Measurement:
             sequencer=sequencer,
             repeats=shots,
             integral_mode=measure_mode.integral_mode,
+            enable_sum=enable_dsp_sum,
         )
         return self._create_measure_result(
             backend_result=backend_result,
@@ -519,6 +521,7 @@ class Measurement:
         capture_offset: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
+        enable_dsp_sum: bool = False,
         plot: bool = False,
     ) -> MultipleMeasureResult:
         """
@@ -558,6 +561,8 @@ class Measurement:
             Whether to add the last measurement, by default False.
         add_pump_pulses : bool, optional
             Whether to add pump pulses, by default False.
+        enable_dsp_sum : bool, optional
+            Whether to enable DSP summation, by default False.
         plot : bool, optional
             Whether to plot the results, by default False.
 
@@ -593,6 +598,7 @@ class Measurement:
             sequencer=sequencer,
             repeats=shots,
             integral_mode=measure_mode.integral_mode,
+            enable_sum=enable_dsp_sum,
         )
         return self._create_multiple_measure_result(
             backend_result=backend_result,
@@ -600,7 +606,7 @@ class Measurement:
             shots=shots,
         )
 
-    # @cache
+    @cache
     def readout_pulse(
         self,
         target: str,
@@ -645,7 +651,7 @@ class Measurement:
             ]
         )
 
-    # @cache
+    @cache
     def pump_pulse(
         self,
         target: str,
@@ -955,8 +961,9 @@ class Measurement:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
-        # WORKAROUND: add 2 words (8 samples) blank for the first extra capture by left padding
-        extra_sum_section_duration = WORD_DURATION
+        # WORKAROUND: add 3 words (12 samples) blank for the first extra capture by left padding
+        # NOTE: at least 2 words (8 samples) are required for DSP summation
+        extra_sum_section_duration = WORD_DURATION * 2
         extra_post_blank_duration = WORD_DURATION
         extra_capture_duration = extra_sum_section_duration + extra_post_blank_duration
         schedule = schedule.padded(
@@ -1225,8 +1232,8 @@ class Measurement:
 
         if measure_mode == MeasureMode.SINGLE:
             backend_data = {
-                # iqs[capture_index]: ndarray[duration, shots]
-                target[label_slice]: iqs[capture_index].T * norm_factor
+                # iqs[capture_index]: ndarray[shots, duration]
+                target[label_slice]: iqs[capture_index] * norm_factor
                 for target, iqs in iq_data.items()
             }
             measure_data = {
@@ -1240,7 +1247,7 @@ class Measurement:
             }
         elif measure_mode == MeasureMode.AVG:
             backend_data = {
-                # iqs[capture_index]: ndarray[duration, 1]
+                # iqs[capture_index]: ndarray[1, duration]
                 target[label_slice]: iqs[capture_index].squeeze() * norm_factor / shots
                 for target, iqs in iq_data.items()
             }
@@ -1290,7 +1297,7 @@ class Measurement:
                         MeasureData(
                             target=qubit,
                             mode=measure_mode,
-                            raw=iq.T * norm_factor,
+                            raw=iq * norm_factor,
                             classifier=self.classifiers.get(qubit),
                         )
                     )

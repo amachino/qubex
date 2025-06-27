@@ -39,6 +39,7 @@ class MeasurementProtocol(Protocol):
         readout_ramp_type: RampType | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
+        enable_dsp_sum: bool | None = None,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MultipleMeasureResult:
@@ -81,6 +82,8 @@ class MeasurementProtocol(Protocol):
             Whether to add pump pulses to the sequence. Defaults to False.
         reset_awg_and_capunits : bool, optional
             Whether to reset the AWG and capture units before the experiment. Defaults to True.
+        enable_dsp_sum : bool | None, optional
+            Whether to enable DSP summation. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -111,7 +114,7 @@ class MeasurementProtocol(Protocol):
         initial_states: dict[str, str] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
-        interval: float | None,
+        interval: float | None = None,
         capture_window: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -121,8 +124,9 @@ class MeasurementProtocol(Protocol):
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        reset_awg_and_capunits: bool = True,
         add_pump_pulses: bool = False,
+        enable_dsp_sum: bool | None = None,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -160,10 +164,12 @@ class MeasurementProtocol(Protocol):
             Readout DRAG coefficient.
         readout_ramp_type : RampType, optional
             Readout ramp type. Defaults to "RaisedCosine".
-        reset_awg_and_capunits : bool, optional
-            Whether to reset the AWG and capture units before the experiment. Defaults to True.
         add_pump_pulses : bool, optional
             Whether to add pump pulses to the sequence. Defaults to False.
+        enable_dsp_sum : bool | None, optional
+            Whether to enable DSP summation. Defaults to None.
+        reset_awg_and_capunits : bool, optional
+            Whether to reset the AWG and capture units before the experiment. Defaults to True.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 

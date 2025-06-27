@@ -131,6 +131,7 @@ class SequencerMod(Sequencer):
                 integral_mode=self.integral_mode,
                 dsp_demodulation=self.dsp_demodulation,
                 software_demodulation=self.software_demodulation,
+                enable_sum=self.enable_sum,
             )
         )
         # phase_offset_list_by_target = {

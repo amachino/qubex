@@ -747,58 +747,6 @@ class DeviceController:
             )
             yield result
 
-    @deprecated("Use execute_sequencer instead.")
-    def execute_sequence(
-        self,
-        sequence: Sequence,
-        *,
-        repeats: int,
-        interval: int,
-        integral_mode: str = "integral",
-        dsp_demodulation: bool = True,
-        software_demodulation: bool = False,
-        time_offset: dict[str, int] = {},  # {box_name: time_offset}
-        time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
-    ) -> RawResult:
-        """
-        Execute a single sequence and return the measurement result.
-
-        Parameters
-        ----------
-        sequence : Sequence
-            The sequence to execute.
-        repeats : int
-            Number of repeats of the sequence.
-        interval : int
-            Interval between sequences.
-        integral_mode : {"integral", "single"}, optional
-            Integral mode.
-        dsp_demodulation : bool, optional
-            Enable DSP demodulation.
-        software_demodulation : bool, optional
-            Enable software demodulation.
-
-        Returns
-        -------
-        RawResult
-            Measurement result.
-        """
-        self.clear_command_queue()
-        self.add_sequence(
-            sequence,
-            interval=interval,
-            time_offset=time_offset,
-            time_to_start=time_to_start,
-        )
-        return next(
-            self.execute(
-                repeats=repeats,
-                integral_mode=integral_mode,
-                dsp_demodulation=dsp_demodulation,
-                software_demodulation=software_demodulation,
-            )
-        )
-
     def execute_sequencer(
         self,
         sequencer: Sequencer,
@@ -807,6 +755,7 @@ class DeviceController:
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
+        enable_sum: bool = False,
     ) -> RawResult:
         """
         Execute a single sequence and return the measurement result.
@@ -848,6 +797,7 @@ class DeviceController:
                 integral_mode=integral_mode,
                 dsp_demodulation=dsp_demodulation,
                 software_demodulation=software_demodulation,
+                enable_sum=enable_sum,
             )
             status, data, config = sequencer.execute(self.boxpool)
             return RawResult(

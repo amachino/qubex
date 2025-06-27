@@ -85,6 +85,7 @@ class MeasurementMixin(
         readout_ramp_type: RampType | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
+        enable_dsp_sum: bool | None = None,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MultipleMeasureResult:
@@ -93,6 +94,9 @@ class MeasurementMixin(
         readout_duration = readout_duration or self.readout_duration
         readout_pre_margin = readout_pre_margin or self.readout_pre_margin
         readout_post_margin = readout_post_margin or self.readout_pre_margin
+
+        if enable_dsp_sum is None:
+            enable_dsp_sum = True if mode == "single" else False
 
         if reset_awg_and_capunits:
             self.device_controller.initialize_awg_and_capunits(self.box_ids)
@@ -115,6 +119,7 @@ class MeasurementMixin(
                     readout_ramp_type=readout_ramp_type,
                     add_last_measurement=add_last_measurement,
                     add_pump_pulses=add_pump_pulses,
+                    enable_dsp_sum=enable_dsp_sum,
                     plot=plot,
                 )
         else:
@@ -134,6 +139,7 @@ class MeasurementMixin(
                 readout_ramp_type=readout_ramp_type,
                 add_last_measurement=add_last_measurement,
                 add_pump_pulses=add_pump_pulses,
+                enable_dsp_sum=enable_dsp_sum,
                 plot=plot,
             )
 
@@ -159,8 +165,9 @@ class MeasurementMixin(
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        reset_awg_and_capunits: bool = True,
         add_pump_pulses: bool = False,
+        enable_dsp_sum: bool | None = None,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MeasureResult:
         capture_window = capture_window or self.capture_window
@@ -169,6 +176,9 @@ class MeasurementMixin(
         readout_pre_margin = readout_pre_margin or self.readout_pre_margin
         readout_post_margin = readout_post_margin or self.readout_pre_margin
         waveforms: dict[str, NDArray[np.complex128]] = {}
+
+        if enable_dsp_sum is None:
+            enable_dsp_sum = True if mode == "single" else False
 
         if isinstance(sequence, PulseSchedule):
             if not sequence.is_valid():
@@ -229,6 +239,7 @@ class MeasurementMixin(
                 readout_drag_coeff=readout_drag_coeff,
                 readout_ramp_type=readout_ramp_type,
                 add_pump_pulses=add_pump_pulses,
+                enable_dsp_sum=enable_dsp_sum,
             )
         else:
             with self.modified_frequencies(frequencies):
@@ -247,6 +258,7 @@ class MeasurementMixin(
                     readout_drag_coeff=readout_drag_coeff,
                     readout_ramp_type=readout_ramp_type,
                     add_pump_pulses=add_pump_pulses,
+                    enable_dsp_sum=enable_dsp_sum,
                 )
         if plot:
             result.plot()
