@@ -1,6 +1,31 @@
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
+
+def rotate(
+    data: ArrayLike,
+    angle: float,
+) -> NDArray[np.complex128]:
+    """
+    Rotate complex data points by a specified angle.
+
+    Parameters
+    ----------
+    data : ArrayLike
+        Array of complex data points to be rotated.
+    angle : float
+        Angle in radians by which to rotate the data points.
+
+    Returns
+    -------
+    NDArray[np.complex128]
+        Rotated complex data points.
+    """
+    points = np.array(data)
+    rotated_points = points * np.exp(1j * angle)
+    return rotated_points
 
 
 def calc_1q_gate_coherence_limit(

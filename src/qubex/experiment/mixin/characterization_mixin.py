@@ -16,7 +16,6 @@ from typing_extensions import deprecated
 
 from ...analysis import fitting
 from ...analysis import visualization as viz
-from ...analysis.fitting import RabiParam
 from ...backend import BoxType, MixingUtil, Target
 from ...backend.experiment_system import (
     CNCO_CENTER_CTRL,
@@ -36,7 +35,11 @@ from ...pulse import (
 )
 from ...style import COLORS
 from ...typing import TargetMap
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_FREQUENCY, RABI_TIME_RANGE
+from ..experiment_constants import (
+    CALIBRATION_SHOTS,
+    RABI_FREQUENCY,
+    RABI_TIME_RANGE,
+)
 from ..experiment_result import (
     AmplRabiData,
     ExperimentResult,
@@ -53,6 +56,7 @@ from ..protocol import (
     CharacterizationProtocol,
     MeasurementProtocol,
 )
+from ..rabi_param import RabiParam
 
 logger = logging.getLogger(__name__)
 
@@ -568,8 +572,9 @@ class CharacterizationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = np.arange(0, 201, 4),
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
+        ramptime: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -581,6 +586,9 @@ class CharacterizationMixin(
         else:
             targets = list(targets)
 
+        if ramptime is None:
+            ramptime = 0
+
         time_range = np.array(time_range, dtype=np.float64)
         amplitude_range = np.array(amplitude_range, dtype=np.float64)
         rabi_rates: dict[str, list[float]] = defaultdict(list)
@@ -590,6 +598,7 @@ class CharacterizationMixin(
             rabi_result = self.rabi_experiment(
                 amplitudes={target: amplitude for target in targets},
                 time_range=time_range,
+                ramptime=ramptime,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -2925,7 +2934,7 @@ class CharacterizationMixin(
             result2d.append(result1d)
 
         result2d = np.array(result2d)
-        data = fitting.normalize(result2d, self.rabi_params[target])
+        data = self.rabi_params[target].normalize(result2d)
         if qubit_initial_state == "1":
             data *= -1
 

@@ -49,10 +49,13 @@ from ..experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
     CLASSIFIER_SHOTS,
+    HPI_DURATION,
+    HPI_RAMPTIME,
     RABI_TIME_RANGE,
 )
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
+from ..rabi_param import RabiParam
 
 logger = logging.getLogger(__name__)
 
@@ -303,13 +306,64 @@ class MeasurementMixin(
             plot=plot,
         )
 
-    def measure_ground_states(
+    def measure_idle_states(
         self,
         targets: Collection[str] | str | None = None,
         *,
         shots: int | None = None,
         interval: float | None = None,
-        store_reference_phases: bool = True,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        capture_window: float | None = None,
+        capture_offset: float | None = None,
+        add_pump_pulses: bool = False,
+        plot: bool = True,
+    ) -> dict:
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        result = self.measure_state(
+            states={target: "g" for target in targets},
+            mode="single",
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            capture_window=capture_window,
+            capture_offset=capture_offset,
+            add_pump_pulses=add_pump_pulses,
+            plot=False,
+        )
+        data = {target: result.data[target].kerneled for target in targets}
+        counts = {
+            target: self.classifiers[target].classify(
+                target,
+                data[target],
+                plot=plot,
+            )
+            for target in targets
+        }
+
+        return {
+            "data": data,
+            "counts": counts,
+        }
+
+    def obtain_reference_points(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        store_reference_points: bool = True,
     ) -> dict:
         if targets is None:
             targets = self.qubit_labels
@@ -319,7 +373,7 @@ class MeasurementMixin(
             targets = list(targets)
 
         if shots is None:
-            shots = CALIBRATION_SHOTS
+            shots = CLASSIFIER_SHOTS
 
         result = self.measure_state(
             {target: "g" for target in targets},
@@ -335,7 +389,7 @@ class MeasurementMixin(
         phase = {target: float(np.angle(v)) for target, v in iq.items()}
         amplitude = {target: float(np.abs(v)) for target, v in iq.items()}
 
-        if store_reference_phases:
+        if store_reference_points:
             self.calib_note._reference_phases.update(phase)
 
         return {
@@ -573,6 +627,9 @@ class MeasurementMixin(
 
         time_range = np.asarray(time_range)
 
+        if ramptime is None:
+            ramptime = HPI_DURATION - HPI_RAMPTIME
+
         if amplitudes is None:
             ampl = self.params.control_amplitude
             amplitudes = {target: ampl[target] for target in targets}
@@ -679,13 +736,12 @@ class MeasurementMixin(
         time_range = np.array(time_range, dtype=np.float64)
 
         if ramptime is None:
-            # TODO: Fix fit_rabi to support ramptime
             ramptime = 0.0
 
         effective_time_range = time_range + ramptime
 
-        # measure ground states
-        ground_states = self.measure_ground_states(targets)["iq"]
+        # measure ground states as reference points
+        reference_points = self.obtain_reference_points(targets)["iq"]
 
         # target frequencies
         if frequencies is None:
@@ -733,11 +789,22 @@ class MeasurementMixin(
                 target=data.target,
                 times=effective_time_range,
                 data=data.data,
-                ground_state=ground_states.get(target),
+                reference_point=reference_points.get(target),
                 plot=plot,
                 is_damped=is_damped,
             )
-            rabi_params[target] = fit_result["rabi_param"]
+            rabi_params[target] = RabiParam(
+                target=target,
+                amplitude=fit_result["amplitude"],
+                frequency=fit_result["frequency"],
+                phase=fit_result["phase"],
+                offset=fit_result["offset"],
+                noise=fit_result["noise"],
+                angle=fit_result["angle"],
+                distance=fit_result["distance"],
+                r2=fit_result["r2"],
+                reference_phase=fit_result["reference_phase"],
+            )
 
         # store the Rabi parameters if necessary
         if store_params:
@@ -1009,6 +1076,8 @@ class MeasurementMixin(
         if shots is None:
             shots = CLASSIFIER_SHOTS
 
+        self.obtain_reference_points(targets)
+
         results = self.measure_state_distribution(
             targets=targets,
             n_states=n_states,
@@ -1038,7 +1107,11 @@ class MeasurementMixin(
             }
         elif self.classifier_type == "gmm":
             classifiers = {
-                target: StateClassifierGMM.fit(data[target]) for target in targets
+                target: StateClassifierGMM.fit(
+                    data[target],
+                    phase=self.reference_phases[target],
+                )
+                for target in targets
             }
         else:
             raise ValueError("Invalid classifier type.")
@@ -1093,6 +1166,7 @@ class MeasurementMixin(
                     str(state): [center.real, center.imag]
                     for state, center in classifiers[target].centers.items()
                 },
+                "reference_phase": self.calib_note._reference_phases[target],
             }
             for target in targets
         }

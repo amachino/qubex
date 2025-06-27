@@ -249,6 +249,93 @@ class MeasurementProtocol(Protocol):
         """
         ...
 
+    def measure_idle_states(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        capture_window: float | None = None,
+        capture_offset: float | None = None,
+        add_pump_pulses: bool = False,
+        plot: bool = True,
+    ) -> dict:
+        """
+        Measures the idle states of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Targets to measure. Defaults to None (all targets).
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        capture_window : float, optional
+            Capture window in ns.
+        capture_offset : float, optional
+            Capture offset in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the idle states for each target.
+
+        Examples
+        --------
+        >>> idle_states = ex.measure_idle_states(targets=["Q00", "Q01"])
+        """
+        ...
+
+    def obtain_reference_points(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        store_reference_points: bool = True,
+    ) -> dict:
+        """
+        Obtains the reference points for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Targets to obtain reference points for. Defaults to None (all targets).
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        store_reference_points : bool, optional
+            Whether to store the reference points. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the reference points for each target.
+
+        Examples
+        --------
+        >>> ref_points = ex.obtain_reference_points(targets=["Q00", "Q01"])
+        """
+        ...
+
     def sweep_parameter(
         self,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
@@ -403,9 +490,10 @@ class MeasurementProtocol(Protocol):
         *,
         amplitudes: dict[str, float],
         time_range: ArrayLike = RABI_TIME_RANGE,
+        ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
-        is_damped: bool = False,
+        is_damped: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,

@@ -5,7 +5,6 @@ from typing import Collection, ContextManager, Literal, Protocol
 
 from numpy.typing import NDArray
 
-from ...analysis.fitting import RabiParam
 from ...backend import (
     Box,
     ControlParams,
@@ -27,6 +26,7 @@ from ..experiment_constants import RABI_FREQUENCY
 from ..experiment_note import ExperimentNote
 from ..experiment_record import ExperimentRecord
 from ..experiment_util import ExperimentUtil
+from ..rabi_param import RabiParam
 
 
 class BaseProtocol(Protocol):
@@ -118,6 +118,16 @@ class BaseProtocol(Protocol):
     @property
     def cr_targets(self) -> dict[str, Target]:
         """Get the available CR target dict."""
+        ...
+
+    @property
+    def cr_labels(self) -> list[str]:
+        """Get the list of CR labels."""
+        ...
+
+    @property
+    def cr_pairs(self) -> list[tuple[str, str]]:
+        """Get the list of CR pairs."""
         ...
 
     @property
@@ -302,6 +312,11 @@ class BaseProtocol(Protocol):
         """Get the Clifford dict."""
         ...
 
+    @property
+    def reference_phases(self) -> dict[str, float]:
+        """Get the reference phases for each target."""
+        ...
+
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
@@ -320,6 +335,87 @@ class BaseProtocol(Protocol):
         ----------
         rabi_params : dict[str, RabiParam]
             Parameters of the Rabi oscillation.
+        """
+        ...
+
+    def correct_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        """
+        Correct the Rabi parameters for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Target labels to correct. If None, all targets are corrected.
+        reference_phases : dict[str, float] | None, optional
+            Reference phases for the targets. If None, uses the default reference phases.
+        save : bool, optional
+            Whether to save the corrected parameters. Defaults to True.
+        """
+        ...
+
+    def correct_classifiers(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        """
+        Correct the classifiers for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Target labels to correct. If None, all targets are corrected.
+        reference_phases : dict[str, float] | None, optional
+            Reference phases for the targets. If None, uses the default reference phases.
+        save : bool, optional
+            Whether to save the corrected parameters. Defaults to True.
+        """
+        ...
+
+    def correct_cr_params(
+        self,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ):
+        """
+        Correct the CR parameters for the given CRs.
+
+        Parameters
+        ----------
+        cr_labels : Collection[str] | str | None, optional
+            CR labels to correct. If None, all CRs are corrected.
+        save : bool, optional
+            Whether to save the corrected parameters. Defaults to True.
+        """
+        ...
+
+    def correct_calibration(
+        self,
+        qubit_labels: Collection[str] | str | None = None,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ):
+        """
+        Correct the calibration for the given qubits and CRs.
+
+        Parameters
+        ----------
+        qubit_labels : Collection[str] | str | None, optional
+            Qubit labels to correct. If None, all qubits are corrected.
+        cr_labels : Collection[str] | str | None, optional
+            CR labels to correct. If None, all CRs are corrected.
+        save : bool, optional
+            Whether to save the corrected parameters. Defaults to True.
         """
         ...
 

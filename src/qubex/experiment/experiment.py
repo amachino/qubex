@@ -13,7 +13,6 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
-from ..analysis.fitting import RabiParam
 from ..backend import (
     Box,
     Chip,
@@ -60,6 +59,7 @@ from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
+    CLASSIFIER_SHOTS,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     HPI_DURATION,
@@ -80,6 +80,7 @@ from .mixin import (
     CharacterizationMixin,
     MeasurementMixin,
 )
+from .rabi_param import RabiParam
 
 console = Console()
 
@@ -651,6 +652,10 @@ class Experiment(
     def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
         return self._configuration_mode
 
+    @property
+    def reference_phases(self) -> dict[str, float]:
+        return self.calib_note._reference_phases
+
     def get_qubit_label(self, index: int) -> str:
         """
         Get the qubit label from the given qubit index.
@@ -712,6 +717,10 @@ class Experiment(
             for pair in self.get_cr_pairs(low_to_high, high_to_low)
         ]
 
+    @staticmethod
+    def cr_pair(cr_label: str) -> tuple[str, str]:
+        return Target.cr_qubit_pair(cr_label)
+
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
@@ -755,6 +764,172 @@ class Experiment(
 
         if len(not_stored) > 0:
             print(f"Rabi parameters are not stored for qubits: {not_stored}")
+
+    def correct_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if reference_phases is None:
+            phases = self.obtain_reference_points(targets=targets)["phase"]
+        else:
+            phases = reference_phases
+
+        for target, phase in phases.items():
+            rabi_param = self.rabi_params.get(target)
+            if rabi_param is None:
+                print(f"Rabi parameters for {target} are not stored.")
+                continue
+            else:
+                rabi_param.correct(new_reference_phase=phase)
+
+            self.calib_note.update_rabi_param(
+                target,
+                {
+                    "target": rabi_param.target,
+                    "frequency": rabi_param.frequency,
+                    "amplitude": rabi_param.amplitude,
+                    "phase": rabi_param.phase,
+                    "offset": rabi_param.offset,
+                    "noise": rabi_param.noise,
+                    "angle": rabi_param.angle,
+                    "distance": rabi_param.distance,
+                    "r2": rabi_param.r2,
+                    "reference_phase": rabi_param.reference_phase,
+                },
+            )
+        if save:
+            self.save_calib_note()
+
+    def correct_classifiers(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if reference_phases is None:
+            phases = self.obtain_reference_points(targets=targets)["phase"]
+        else:
+            phases = reference_phases
+
+        for target, phase in phases.items():
+            classifier = self.classifiers.get(target)
+            if classifier is not None:
+                classifier.phase = phase
+                if save:
+                    classifier.save(
+                        path=self.classifier_dir / self.chip_id / f"{target}.pkl"
+                    )
+
+        for target, phase in phases.items():
+            state_param = self.calib_note.get_state_param(target)
+            if state_param is not None:
+                reference_phase = state_param.get("reference_phase")
+                if reference_phase is None:
+                    state_param["reference_phase"] = phase
+                    continue
+                else:
+                    centers = state_param["centers"]
+                    phase_diff = phase - reference_phase
+                    for state, points in centers.items():
+                        iq = complex(points[0], points[1])
+                        iq *= np.exp(1j * phase_diff)
+                        centers[str(state)] = [iq.real, iq.imag]
+                    state_param["reference_phase"] = phase
+                self.calib_note.update_state_param(
+                    target,
+                    state_param,
+                )
+        if save:
+            self.save_calib_note()
+
+    def correct_cr_params(
+        self,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ):
+        if cr_labels is None:
+            cr_labels = self.cr_labels
+        elif isinstance(cr_labels, str):
+            cr_labels = [cr_labels]
+        else:
+            cr_labels = list(cr_labels)
+
+        for label in cr_labels:
+            control_qubit, target_qubit = self.cr_pair(label)
+            if label not in self.calib_note.cr_params:
+                continue
+            result = self.state_tomography(
+                self.zx90(control_qubit, target_qubit),
+                shots=CLASSIFIER_SHOTS,
+            )
+            x, y, _ = result[target_qubit]
+            phase = np.arctan2(y, x)
+            current_param = self.calib_note.get_cr_param(label)
+            self.calib_note.update_cr_param(
+                label,
+                {
+                    "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
+                },
+            )
+        if save:
+            self.save_calib_note()
+
+    def correct_calibration(
+        self,
+        qubit_labels: Collection[str] | str | None = None,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ):
+        if qubit_labels is None:
+            qubit_labels = self.qubit_labels
+        elif isinstance(qubit_labels, str):
+            qubit_labels = [qubit_labels]
+        else:
+            qubit_labels = list(qubit_labels)
+
+        if cr_labels is None:
+            cr_labels = self.cr_labels
+        elif isinstance(cr_labels, str):
+            cr_labels = [cr_labels]
+        else:
+            cr_labels = list(cr_labels)
+
+        reference_phases = self.obtain_reference_points(qubit_labels)["phase"]
+
+        self.correct_rabi_params(
+            qubit_labels,
+            reference_phases=reference_phases,
+            save=save,
+        )
+        self.correct_classifiers(
+            qubit_labels,
+            reference_phases=reference_phases,
+            save=save,
+        )
+        self.correct_cr_params(
+            cr_labels,
+            save=save,
+        )
 
     def get_hpi_pulse(
         self,
