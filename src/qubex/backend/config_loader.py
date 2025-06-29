@@ -13,8 +13,8 @@ from .quantum_system import Chip, QuantumSystem
 
 logger = getLogger(__name__)
 
-DEFAULT_CONFIG_DIR: Final = "/home/shared/config"
-DEFAULT_PARAMS_DIR: Final = "/home/shared/config"
+DEFAULT_CONFIG_DIR: Final = "/home/shared/qubex-config/config"
+DEFAULT_PARAMS_DIR: Final = "/home/shared/qubex-config/params"
 
 CHIP_FILE: Final = "chip.yaml"
 BOX_FILE: Final = "box.yaml"
