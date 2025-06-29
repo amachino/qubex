@@ -993,7 +993,7 @@ class CharacterizationMixin(
         *,
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
-        secound_rotation_axis: Literal["X", "Y"] = "X",
+        second_rotation_axis: Literal["X", "Y"] = "X",
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -1045,7 +1045,7 @@ class CharacterizationMixin(
                         x90 = self.get_hpi_pulse(target)
                         ps.add(target, x90)
                         ps.add(target, Blank(T))
-                        if secound_rotation_axis == "X":
+                        if second_rotation_axis == "X":
                             ps.add(target, x90.shifted(np.pi))
                         else:
                             ps.add(target, x90.shifted(-np.pi / 2))
