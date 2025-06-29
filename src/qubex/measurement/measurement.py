@@ -14,9 +14,8 @@ from qubecalib import Sequencer
 from qubecalib import neopulse as pls
 
 from ..backend import (
-    DEFAULT_CONFIG_DIR,
-    DEFAULT_PARAMS_DIR,
     SAMPLING_PERIOD,
+    ConfigLoader,
     ControlParams,
     DeviceController,
     ExperimentSystem,
@@ -58,8 +57,8 @@ class Measurement:
         *,
         chip_id: str,
         qubits: Collection[str] | None = None,
-        config_dir: str = DEFAULT_CONFIG_DIR,
-        params_dir: str = DEFAULT_PARAMS_DIR,
+        config_dir: str | None,
+        params_dir: str | None,
         connect_devices: bool = True,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
@@ -74,9 +73,9 @@ class Measurement:
         qubits : Sequence[str], optional
             The list of qubit labels, by default None.
         config_dir : str, optional
-            The configuration directory, by default DEFAULT_CONFIG_DIR.
+            The configuration directory.
         params_dir : str, optional
-            The parameters directory, by default DEFAULT_PARAMS_DIR.
+            The parameters directory.
         connect_devices : bool, optional
             Whether to connect the devices, by default True.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
@@ -94,10 +93,10 @@ class Measurement:
         """
         self._chip_id = chip_id
         self._qubits = qubits
-        self._config_dir = config_dir
-        self._params_dir = params_dir
         self._classifiers: TargetMap[StateClassifier] = {}
         self._initialize(
+            config_dir=config_dir,
+            params_dir=params_dir,
             connect_devices=connect_devices,
             configuration_mode=configuration_mode,
             skew_file_path=skew_file_path,
@@ -105,6 +104,8 @@ class Measurement:
 
     def _initialize(
         self,
+        config_dir: Path | str | None,
+        params_dir: Path | str | None,
         connect_devices: bool,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
@@ -112,8 +113,8 @@ class Measurement:
         self._state_manager = StateManager.shared()
         self.state_manager.load(
             chip_id=self._chip_id,
-            config_dir=self._config_dir,
-            params_dir=self._params_dir,
+            config_dir=config_dir,
+            params_dir=params_dir,
             configuration_mode=configuration_mode,
         )
         box_ids = []
@@ -124,7 +125,7 @@ class Measurement:
             return
 
         if skew_file_path is None:
-            skew_file_path = f"{self._config_dir}/skew.yaml"
+            skew_file_path = f"{self.config_loader.config_path}/skew.yaml"
         if not Path(skew_file_path).exists():
             print(f"Skew file not found: {skew_file_path}")
         else:
@@ -142,12 +143,21 @@ class Measurement:
 
     def reload(self):
         """Reload the measuremnt settings."""
-        self._initialize(connect_devices=True)
+        self._initialize(
+            config_dir=self.config_loader.config_path,
+            params_dir=self.config_loader.params_path,
+            connect_devices=True,
+        )
 
     @property
     def state_manager(self) -> StateManager:
         """Get the state manager."""
         return self._state_manager
+
+    @property
+    def config_loader(self) -> ConfigLoader:
+        """Get the configuration loader."""
+        return self._state_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:

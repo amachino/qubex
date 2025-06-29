@@ -11,7 +11,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import Sequence
 
-from .config_loader import DEFAULT_CONFIG_DIR, DEFAULT_PARAMS_DIR, ConfigLoader
+from .config_loader import ConfigLoader
 from .control_system import CapPort, GenPort, PortType
 from .device_controller import DeviceController
 from .experiment_system import ExperimentSystem
@@ -203,8 +203,8 @@ class StateManager:
         self,
         *,
         chip_id: str,
-        config_dir: str = DEFAULT_CONFIG_DIR,
-        params_dir: str = DEFAULT_PARAMS_DIR,
+        config_dir: Path | str | None,
+        params_dir: Path | str | None,
         targets_to_exclude: list[str] | None = None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):

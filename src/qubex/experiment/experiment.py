@@ -16,6 +16,7 @@ from typing_extensions import deprecated
 from ..backend import (
     Box,
     Chip,
+    ConfigLoader,
     ControlParams,
     ControlSystem,
     DeviceController,
@@ -33,9 +34,7 @@ from ..measurement import Measurement, MeasureResult, StateClassifier
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_OFFSET,
     DEFAULT_CAPTURE_WINDOW,
-    DEFAULT_CONFIG_DIR,
     DEFAULT_INTERVAL,
-    DEFAULT_PARAMS_DIR,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
@@ -105,9 +104,9 @@ class Experiment(
     exclude_qubits : Collection[str | int], optional
         Qubit labels to exclude in the experiment.
     config_dir : str, optional
-        Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
+        Directory of the configuration files.
     params_dir : str, optional
-        Directory of the parameter files. Defaults to DEFAULT_PARAMS_DIR.
+        Directory of the parameter files.
     connect_devices : bool, optional
         Whether to connect the devices. Defaults to True.
     drag_hpi_duration : int, optional
@@ -141,8 +140,8 @@ class Experiment(
         muxes: Collection[str | int] | None = None,
         qubits: Collection[str | int] | None = None,
         exclude_qubits: Collection[str | int] | None = None,
-        config_dir: str = DEFAULT_CONFIG_DIR,
-        params_dir: str = DEFAULT_PARAMS_DIR,
+        config_dir: str | None = None,
+        params_dir: str | None = None,
         calib_note_path: Path | str | None = None,
         connect_devices: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
@@ -170,8 +169,6 @@ class Experiment(
         )
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
-        self._config_dir: Final = config_dir
-        self._params_dir: Final = params_dir
         self._drag_hpi_duration: Final = drag_hpi_duration
         self._drag_pi_duration: Final = drag_pi_duration
         self._readout_duration: Final = readout_duration
@@ -186,8 +183,8 @@ class Experiment(
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
-            config_dir=self._config_dir,
-            params_dir=self._params_dir,
+            config_dir=config_dir,
+            params_dir=params_dir,
             connect_devices=connect_devices,
             configuration_mode=configuration_mode,
         )
@@ -212,8 +209,8 @@ class Experiment(
     def _load_config(
         self,
         chip_id: str,
-        config_dir: str,
-        params_dir: str,
+        config_dir: str | None,
+        params_dir: str | None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
     ):
         """Load the configuration files."""
@@ -309,6 +306,10 @@ class Experiment(
     @property
     def state_manager(self) -> StateManager:
         return StateManager.shared()
+
+    @property
+    def config_loader(self) -> ConfigLoader:
+        return self.state_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
@@ -425,11 +426,11 @@ class Experiment(
 
     @property
     def config_path(self) -> str:
-        return str(Path(self._config_dir).resolve())
+        return str(Path(self.config_loader.config_path).resolve())
 
     @property
     def params_path(self) -> str:
-        return str(Path(self._params_dir).resolve())
+        return str(Path(self.config_loader.params_path).resolve())
 
     @property
     def calib_note(self) -> CalibrationNote:
