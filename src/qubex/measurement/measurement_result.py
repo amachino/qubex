@@ -50,9 +50,9 @@ class MeasureData:
         self,
     ) -> NDArray:
         if self.mode == MeasureMode.SINGLE:
-            return np.mean(self.raw, axis=1)
+            return np.sum(self.raw, axis=1)
         elif self.mode == MeasureMode.AVG:
-            return np.asarray(np.mean(self.raw))
+            return np.asarray(np.sum(self.raw))
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
