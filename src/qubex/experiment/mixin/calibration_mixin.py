@@ -875,11 +875,11 @@ class CalibrationMixin(
         control_qubit: str,
         target_qubit: str,
         time_range: ArrayLike | None = None,
-        ramptime: float = 0.0,
-        cr_amplitude: float = 1.0,
-        cr_phase: float = 0.0,
-        cancel_amplitude: float = 0.0,
-        cancel_phase: float = 0.0,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
         echo: bool = False,
         control_state: str = "0",
         x90: TargetMap[Waveform] | None = None,
@@ -893,11 +893,24 @@ class CalibrationMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
+        plot: bool = True,
     ) -> dict:
+        cr_label = f"{control_qubit}-{target_qubit}"
         if time_range is None:
             time_range = np.arange(0, 1001, 20)
         else:
             time_range = np.array(time_range)
+        if ramptime is None:
+            ramptime = 16.0
+        if cr_amplitude is None:
+            cr_amplitude = 1.0
+        if cr_phase is None:
+            cr_phase = 0.0
+        if cancel_amplitude is None:
+            cancel_amplitude = 0.0
+        if cancel_phase is None:
+            cancel_phase = 0.0
+        effective_drive_range = time_range + ramptime
 
         if x90 is None:
             x90 = {
@@ -940,10 +953,41 @@ class CalibrationMixin(
             control_states.append(np.array(result[control_qubit]))
             target_states.append(np.array(result[target_qubit]))
 
+        control_states = np.array(control_states)
+        target_states = np.array(target_states)
+
+        fit_result = fitting.fit_rotation(
+            effective_drive_range,
+            target_states,
+            plot=False,
+            title=f"Target qubit dynamics of {cr_label} : |{control_state}〉",
+            xlabel="Drive time (ns)",
+            ylabel=f"Expectation value : {target_qubit}",
+        )
+
+        if plot:
+            print(f"Control = |{control_state}〉")
+            print(f"Control qubit : {control_qubit}")
+            viz.plot_bloch_vectors(
+                effective_drive_range,
+                control_states,
+                title=f"Control qubit dynamics of {cr_label} : |{control_state}〉",
+                xlabel="Drive time (ns)",
+                ylabel=f"Expectation value : {control_qubit}",
+            )
+            viz.display_bloch_sphere(control_states)
+
+            print(f"Target qubit : {target_qubit}")
+            fit_result["fig"].show()
+            fit_result["fig3d"].show()
+            viz.display_bloch_sphere(target_states)
+
         return {
             "time_range": time_range,
-            "control_states": np.array(control_states),
-            "target_states": np.array(target_states),
+            "effective_drive_range": effective_drive_range,
+            "control_states": control_states,
+            "target_states": target_states,
+            "fit_result": fit_result,
         }
 
     def cr_hamiltonian_tomography(
@@ -965,23 +1009,8 @@ class CalibrationMixin(
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if time_range is None:
-            time_range = np.arange(0, 1001, 50)
-        else:
-            time_range = np.array(time_range)
-
-        if ramptime is None:
-            ramptime = 0.0
         if cr_amplitude is None:
             cr_amplitude = 1.0
-        if cr_phase is None:
-            cr_phase = 0.0
-        if cancel_amplitude is None:
-            cancel_amplitude = 0.0
-        if cancel_phase is None:
-            cancel_phase = 0.0
-
-        effective_drive_range = time_range + ramptime
 
         if reset_awg_and_capunits:
             self.reset_awg_and_capunits()
@@ -1001,36 +1030,8 @@ class CalibrationMixin(
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=False,
+            plot=plot,
         )
-
-        control_states_0 = result_0["control_states"]
-        target_states_0 = result_0["target_states"]
-
-        fit_0 = fitting.fit_rotation(
-            effective_drive_range,
-            target_states_0,
-            plot=False,
-            title=f"Target qubit dynamics of {cr_label} : |0〉",
-            xlabel="Drive time (ns)",
-            ylabel=f"Expectation value : {target_qubit}",
-        )
-
-        if plot:
-            print("Control = |0〉")
-            print(f"Control qubit : {control_qubit}")
-            viz.plot_bloch_vectors(
-                effective_drive_range,
-                control_states_0,
-                title=f"Control qubit dynamics of {cr_label} : |0〉",
-                xlabel="Drive time (ns)",
-                ylabel=f"Expectation value : {control_qubit}",
-            )
-            viz.display_bloch_sphere(control_states_0)
-
-            print(f"Target qubit : {target_qubit}")
-            fit_0["fig"].show()
-            fit_0["fig3d"].show()
-            viz.display_bloch_sphere(target_states_0)
 
         result_1 = self.measure_cr_dynamics(
             time_range=time_range,
@@ -1048,39 +1049,11 @@ class CalibrationMixin(
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=False,
+            plot=plot,
         )
 
-        control_states_1 = result_1["control_states"]
-        target_states_1 = result_1["target_states"]
-
-        fit_1 = fitting.fit_rotation(
-            effective_drive_range,
-            target_states_1,
-            plot=False,
-            title=f"Target qubit dynamics of {cr_label} : |1〉",
-            xlabel="Drive time (ns)",
-            ylabel=f"Expectation value : {target_qubit}",
-        )
-
-        if plot:
-            print("Control = |1〉")
-            print(f"Target qubit : {control_qubit}")
-            viz.plot_bloch_vectors(
-                effective_drive_range,
-                control_states_1,
-                title=f"Control qubit dynamics of {cr_label} : |1〉",
-                xlabel="Drive time (ns)",
-                ylabel=f"Expectation value : {control_qubit}",
-            )
-            viz.display_bloch_sphere(control_states_1)
-
-            print(f"Target qubit : {target_qubit}")
-            fit_1["fig"].show()
-            fit_1["fig3d"].show()
-            viz.display_bloch_sphere(target_states_1)
-
-        Omega_0 = fit_0["Omega"]
-        Omega_1 = fit_1["Omega"]
+        Omega_0 = result_0["fit_result"]["Omega"]
+        Omega_1 = result_1["fit_result"]["Omega"]
         Omega = np.concatenate(
             [
                 0.5 * (Omega_0 + Omega_1),
@@ -1102,12 +1075,10 @@ class CalibrationMixin(
         print(f"  control ({control_qubit}) : {f_control * 1e3:.3f} MHz")
         print(f"  target  ({target_qubit}) : {f_target * 1e3:.3f} MHz")
         print(f"  Δ ({cr_label}) : {f_delta * 1e3:.3f} MHz")
-        print()
 
         print("Rotation coefficients:")
         for key, value in coeffs.items():
             print(f"  {key} : {value * 1e3:+.3f} MHz")
-        print()
 
         # xt (cross-talk) rotation
         xt_rotation = coeffs["IX"] + 1j * coeffs["IY"]
@@ -1125,7 +1096,6 @@ class CalibrationMixin(
         print(
             f"  phase : {xt_rotation_phase:.3f} rad ({xt_rotation_phase_deg:.1f} deg)"
         )
-        print()
 
         # cr (cross-resonance) rotation
         cr_rotation = coeffs["ZX"] + 1j * coeffs["ZY"]
@@ -1145,14 +1115,12 @@ class CalibrationMixin(
         print(
             f"  phase : {cr_rotation_phase:.3f} rad ({cr_rotation_phase_deg:.1f} deg)"
         )
-        print()
 
         # ZX90 gate
         cr_rabi_rate = self.calc_rabi_rate(control_qubit, cr_amplitude)
         print("Estimated ZX90 gate:")
         print(f"  drive    : {cr_rabi_rate * 1e3:.1f} MHz ({cr_amplitude:.3f})")
         print(f"  duration : {zx90_duration:.1f} ns")
-        print()
 
         return {
             "Omega": Omega,

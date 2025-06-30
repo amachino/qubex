@@ -517,17 +517,25 @@ class CalibrationProtocol(Protocol):
         control_qubit: str,
         target_qubit: str,
         time_range: ArrayLike | None = None,
-        ramptime: float = 0.0,
-        cr_amplitude: float = 1.0,
-        cr_phase: float = 0.0,
-        cancel_amplitude: float = 0.0,
-        cancel_phase: float = 0.0,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
         echo: bool = False,
         control_state: str = "0",
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
+        ramp_type: Literal[
+            "Gaussian",
+            "RaisedCosine",
+            "Sintegral",
+            "Bump",
+        ] = "RaisedCosine",
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = True,
     ) -> dict: ...
 
     def cr_hamiltonian_tomography(
@@ -544,6 +552,7 @@ class CalibrationProtocol(Protocol):
         x90: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> dict: ...
 
