@@ -395,7 +395,7 @@ class CharacterizationProtocol(Protocol):
         *,
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
-        second_rotation_axis: Literal["X", "Y"] = "X",
+        second_rotation_axis: Literal["X", "Y"] = "Y",
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -414,7 +414,7 @@ class CharacterizationProtocol(Protocol):
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.001 GHz.
         second_rotation_axis : Literal["X", "Y"], optional
-            Axis of the second rotation pulse. Defaults to "X".
+            Axis of the second rotation pulse. Defaults to "Y".
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         shots : int, optional

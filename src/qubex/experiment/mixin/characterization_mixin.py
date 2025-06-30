@@ -993,7 +993,7 @@ class CharacterizationMixin(
         *,
         time_range: ArrayLike = np.arange(0, 10_001, 100),
         detuning: float = 0.001,
-        second_rotation_axis: Literal["X", "Y"] = "X",
+        second_rotation_axis: Literal["X", "Y"] = "Y",
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
