@@ -707,36 +707,36 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
         title="TARGET FREQUENCIES",
     )
     table.add_column("LABEL", justify="left")
-    table.add_column("TARGET", justify="right")
-    table.add_column("COARSE", justify="right")
-    table.add_column("FINE", justify="right")
-    # table.add_column("LO", justify="right")
+    table.add_column("F_TARGET", justify="right")
+    table.add_column("F_FINE", justify="right")
+    table.add_column("F_DIFF", justify="right")
+    table.add_column("LO", justify="right")
     table.add_column("NCO", justify="right")
+    table.add_column("CNCO", justify="right")
     table.add_column("FNCO", justify="right")
-    table.add_column("DIFF", justify="right")
 
     rows = []
     for target in targets:
         qubit = target.qubit
         tfreq = target.frequency
-        cfreq = target.coarse_frequency
         ffreq = target.fine_frequency
-        # lo = target.channel.lo_freq
-        nco = target.channel.nco_freq
-        fnco = target.channel.fnco_freq
         diff = tfreq - ffreq
+        lo = target.channel.lo_freq
+        nco = target.channel.nco_freq
+        cnco = target.channel.cnco_freq
+        fnco = target.channel.fnco_freq
         rows.append(
             (
                 qubit,
                 [
                     target.label,
                     f"{tfreq * 1e3:.3f}",
-                    f"{cfreq * 1e3:.3f}",
                     f"{ffreq * 1e3:.3f}",
-                    # f"{lo * 1e-6:.0f}",
-                    f"{nco * 1e-6:.3f}",
-                    f"{fnco * 1e-6:+.3f}",
                     f"{diff * 1e3:+.3f}",
+                    f"{lo * 1e-6:.0f}",
+                    f"{nco * 1e-6:.3f}",
+                    f"{cnco * 1e-6:.3f}",
+                    f"{fnco * 1e-6:+.3f}",
                 ],
             )
         )
@@ -749,7 +749,7 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
                 table.add_section()
             current_qubit = qubit
 
-        abs_diff = abs(float(row[-1]))
+        abs_diff = abs(float(row[3]))
         if abs_diff >= 250 or math.isnan(abs_diff):
             style = "bold red"
         elif abs_diff >= 200:
@@ -782,22 +782,22 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
         title="CROSS-RESONANCE TARGETS",
     )
     table.add_column("LABEL", justify="left")
-    table.add_column("TARGET", justify="right")
-    table.add_column("COARSE", justify="right")
-    table.add_column("FINE", justify="right")
-    # table.add_column("LO", justify="right")
+    table.add_column("F_TARGET", justify="right")
+    table.add_column("F_FINE", justify="right")
+    table.add_column("F_DIFF", justify="right")
+    table.add_column("LO", justify="right")
     table.add_column("NCO", justify="right")
+    table.add_column("CNCO", justify="right")
     table.add_column("FNCO", justify="right")
-    table.add_column("DIFF", justify="right")
 
     rows = []
     for target in targets:
         qubit = target.qubit
         tfreq = target.frequency
-        cfreq = target.coarse_frequency
         ffreq = target.fine_frequency
-        # lo = target.channel.lo_freq
+        lo = target.channel.lo_freq
         nco = target.channel.nco_freq
+        cnco = target.channel.cnco_freq
         fnco = target.channel.fnco_freq
         diff = tfreq - ffreq
         rows.append(
@@ -806,12 +806,12 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
                 [
                     target.label,
                     f"{tfreq * 1e3:.3f}",
-                    f"{cfreq * 1e3:.3f}",
                     f"{ffreq * 1e3:.3f}",
-                    # f"{lo * 1e-6:.0f}",
-                    f"{nco * 1e-6:.3f}",
-                    f"{fnco * 1e-6:+.3f}",
                     f"{diff * 1e3:+.3f}",
+                    f"{lo * 1e-6:.0f}",
+                    f"{nco * 1e-6:.3f}",
+                    f"{cnco * 1e-6:.3f}",
+                    f"{fnco * 1e-6:+.3f}",
                 ],
             )
         )
@@ -824,7 +824,7 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
                 table.add_section()
             current_qubit = qubit
 
-        abs_diff = abs(float(row[-1]))
+        abs_diff = abs(float(row[3]))
         if abs_diff >= 250 or math.isnan(abs_diff):
             style = "bold red"
         elif abs_diff >= 200:
