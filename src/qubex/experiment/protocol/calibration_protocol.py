@@ -288,7 +288,7 @@ class CalibrationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         n_points: int = 20,
@@ -309,7 +309,7 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
-            Spectator state. Defaults to "0".
+            Spectator state.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         duration : float, optional
@@ -344,7 +344,7 @@ class CalibrationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"] = "hpi",
         beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
@@ -362,7 +362,7 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
-            Spectator state. Defaults to "0".
+            Spectator state.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
@@ -391,7 +391,7 @@ class CalibrationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
@@ -414,7 +414,7 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
-            Spectator state. Defaults to "0".
+            Spectator state.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -453,7 +453,7 @@ class CalibrationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
@@ -476,7 +476,7 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
-            Spectator state. Defaults to "0".
+            Spectator state.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional

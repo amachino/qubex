@@ -411,7 +411,7 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         n_points: int = 20,
@@ -489,20 +489,22 @@ class CalibrationMixin(
 
             n_per_rotation = 2 if pulse_type == "pi" else 4
 
-            spectators = self.get_spectators(target)
+            if spectator_state is not None:
+                spectators = self.get_spectators(target)
 
             def sequence(x: float) -> PulseSchedule:
                 with PulseSchedule() as ps:
-                    for spectator in spectators:
-                        if spectator.label in self.qubit_labels:
-                            ps.add(
-                                spectator.label,
-                                self.get_pulse_for_state(
-                                    target=spectator.label,
-                                    state=spectator_state,
-                                ),
-                            )
-                    ps.barrier()
+                    if spectator_state is not None:
+                        for spectator in spectators:
+                            if spectator.label in self.qubit_labels:
+                                ps.add(
+                                    spectator.label,
+                                    self.get_pulse_for_state(
+                                        target=spectator.label,
+                                        state=spectator_state,
+                                    ),
+                                )
+                        ps.barrier()
                     ps.add(
                         target, pulse.scaled(x).repeated(n_per_rotation * n_rotations)
                     )
@@ -563,7 +565,7 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"] = "hpi",
         beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
@@ -597,20 +599,22 @@ class CalibrationMixin(
 
             sweep_range = np.array(beta_range) + drag_beta
 
-            spectators = self.get_spectators(target)
+            if spectator_state is not None:
+                spectators = self.get_spectators(target)
 
             def sequence(beta: float) -> PulseSchedule:
                 with PulseSchedule() as ps:
-                    for spectator in spectators:
-                        if spectator.label in self.qubit_labels:
-                            ps.add(
-                                spectator.label,
-                                self.get_pulse_for_state(
-                                    target=spectator.label,
-                                    state=spectator_state,
-                                ),
-                            )
-                    ps.barrier()
+                    if spectator_state is not None:
+                        for spectator in spectators:
+                            if spectator.label in self.qubit_labels:
+                                ps.add(
+                                    spectator.label,
+                                    self.get_pulse_for_state(
+                                        target=spectator.label,
+                                        state=spectator_state,
+                                    ),
+                                )
+                        ps.barrier()
                     if pulse_type == "hpi":
                         x90p = Drag(
                             duration=drag_duration,
@@ -705,7 +709,7 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
@@ -789,7 +793,7 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
