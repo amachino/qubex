@@ -138,7 +138,6 @@ class Measurement:
             try:
                 self.device_controller.connect(box_ids)
                 self.state_manager.pull(box_ids)
-                self.device_controller.resync_clocks(box_ids)
             except Exception as e:
                 print(f"Failed to connect to devices: {e}")
 
@@ -972,10 +971,13 @@ class Measurement:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
-        # WORKAROUND: add 3 words (12 samples) blank for the first extra capture by left padding
-        # NOTE: at least 2 words (8 samples) are required for DSP summation
-        extra_sum_section_duration = WORD_DURATION * 2
-        extra_post_blank_duration = WORD_DURATION
+        # WORKAROUND: add some blank for the first extra capture by left padding
+        # at least 4 words (16 samples) are required for DSP summation
+        # at least 1 word (4 samples) is required for the post-blank
+        extra_sum_section_length = WORD_LENGTH * 4
+        extra_sum_section_duration = extra_sum_section_length * SAMPLING_PERIOD
+        extra_post_blank_length = WORD_LENGTH
+        extra_post_blank_duration = extra_post_blank_length * SAMPLING_PERIOD
         extra_capture_duration = extra_sum_section_duration + extra_post_blank_duration
         schedule = schedule.padded(
             total_duration=schedule.duration + extra_capture_duration,
@@ -1102,13 +1104,12 @@ class Measurement:
             )
 
             # WORKAROUND: add an extra capture to ensure the first capture begins at a multiple of 64 samples
-            post_blank_to_first_readout = ranges[0].start - extra_sum_section_duration
             cap_sub_sequence.capture_slots.append(
                 pls.CaptureSlots(
-                    duration=extra_sum_section_duration,  # type: ignore
-                    post_blank=post_blank_to_first_readout,  # type: ignore
-                    original_duration=extra_sum_section_duration,  # type: ignore
-                    original_post_blank=post_blank_to_first_readout,  # type: ignore
+                    duration=extra_sum_section_length,
+                    post_blank=extra_post_blank_length,
+                    original_duration=None,  # type: ignore
+                    original_post_blank=None,  # type: ignore
                 )
             )
 
