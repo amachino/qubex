@@ -39,8 +39,8 @@ DEFAULT_DC_VOLTAGE: Final = 0.0
 LO_STEP = 500_000_000
 NCO_STEP = 23_437_500
 CNCO_CENTER_CTRL = 2_250_000_000
-CNCO_CETNER_READ = 1_500_000_000
-CNCO_CETNER_READ_R8 = 2_250_000_000
+CNCO_CENTER_READ = 1_500_000_000
+CNCO_CENTER_READ_R8 = 2_250_000_000
 FNCO_MAX = 750_000_000
 AWG_MAX = 250_000_000
 
@@ -605,7 +605,7 @@ class ExperimentSystem:
         lo, cnco, _ = MixingUtil.calc_lo_cnco(
             f=frequency * 1e9,
             ssb=ssb,
-            cnco_center=CNCO_CETNER_READ,
+            cnco_center=CNCO_CENTER_READ,
         )
         fnco, _ = MixingUtil.calc_fnco(
             f=frequency * 1e9,
@@ -644,10 +644,10 @@ class ExperimentSystem:
 
         if box.type == BoxType.QUEL1SE_R8:
             ssb = "L"
-            cnco_center = CNCO_CETNER_READ_R8
+            cnco_center = CNCO_CENTER_READ_R8
         else:
             ssb = "U"
-            cnco_center = CNCO_CETNER_READ
+            cnco_center = CNCO_CENTER_READ
 
         config = self._create_readout_configuration(
             mux,
@@ -691,10 +691,10 @@ class ExperimentSystem:
 
         if box.type == BoxType.QUEL1SE_R8:
             ssb = "L"
-            cnco_center = CNCO_CETNER_READ_R8
+            cnco_center = CNCO_CENTER_READ_R8
         else:
             ssb = "U"
-            cnco_center = CNCO_CETNER_READ
+            cnco_center = CNCO_CENTER_READ
 
         config = self._create_readout_configuration(
             mux,
@@ -723,7 +723,7 @@ class ExperimentSystem:
         self,
         mux: Mux,
         ssb: Literal["U", "L"] = "U",
-        cnco_center: int = CNCO_CETNER_READ,
+        cnco_center: int = CNCO_CENTER_READ,
     ) -> dict:
         """
         Finds the (lo, cnco, fnco) values for the readout mux.
@@ -735,7 +735,7 @@ class ExperimentSystem:
         ssb : Literal["U", "L"], optional
             The sideband, by default "U".
         cnco_center : int, optional
-            The center frequency of the CNCO, by default CNCO_CETNER_READ.
+            The center frequency of the CNCO, by default CNCO_CENTER_READ.
 
         Returns
         -------

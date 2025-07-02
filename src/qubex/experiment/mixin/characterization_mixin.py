@@ -19,8 +19,8 @@ from ...analysis import visualization as viz
 from ...backend import BoxType, MixingUtil, Target
 from ...backend.experiment_system import (
     CNCO_CENTER_CTRL,
-    CNCO_CETNER_READ,
-    CNCO_CETNER_READ_R8,
+    CNCO_CENTER_READ,
+    CNCO_CENTER_READ_R8,
 )
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
 from ...pulse import (
@@ -1336,9 +1336,9 @@ class CharacterizationMixin(
         phase_offset = 0.0
 
         if read_box.type == BoxType.QUEL1SE_R8:
-            cnco_center = CNCO_CETNER_READ_R8
+            cnco_center = CNCO_CENTER_READ_R8
         else:
-            cnco_center = CNCO_CETNER_READ
+            cnco_center = CNCO_CENTER_READ
 
         for subrange in subranges:
             # change LO/NCO frequency to the center of the subrange
@@ -1485,9 +1485,9 @@ class CharacterizationMixin(
                     return  # type: ignore
 
             if read_box.type == BoxType.QUEL1SE_R8:
-                cnco_center = CNCO_CETNER_READ_R8
+                cnco_center = CNCO_CENTER_READ_R8
             else:
-                cnco_center = CNCO_CETNER_READ
+                cnco_center = CNCO_CENTER_READ
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_start * 1e9,
                 ssb=ssb,
@@ -1620,10 +1620,10 @@ class CharacterizationMixin(
 
         if read_box.type == BoxType.QUEL1SE_R8:
             ssb = "L"
-            cnco_center = CNCO_CETNER_READ_R8
+            cnco_center = CNCO_CENTER_READ_R8
         else:
             ssb = "U"
-            cnco_center = CNCO_CETNER_READ
+            cnco_center = CNCO_CENTER_READ
 
         for subrange in subranges:
             self.reset_awg_and_capunits()

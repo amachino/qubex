@@ -30,8 +30,8 @@ class PulseArray(Waveform):
         Scaling factor of the pulse array.
     detuning : float, optional
         Detuning of the pulse array in GHz.
-    phase_shift : float, optional
-        Phase shift of the pulse array in rad.
+    phase : float, optional
+        Phase of the pulse array in rad.
 
     Examples
     --------
