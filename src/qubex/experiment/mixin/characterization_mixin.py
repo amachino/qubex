@@ -72,7 +72,7 @@ class CharacterizationMixin(
         targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -100,7 +100,7 @@ class CharacterizationMixin(
             mode="single",
             shots=shots,
             interval=interval,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
         )
@@ -128,7 +128,7 @@ class CharacterizationMixin(
         *,
         amplitude_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         readout_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -154,7 +154,7 @@ class CharacterizationMixin(
             result = self.measure_readout_snr(
                 targets=targets,
                 initial_state=initial_state,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 readout_duration=readout_duration,
                 readout_amplitudes={target: amplitude for target in targets},
                 shots=shots,
@@ -255,7 +255,7 @@ class CharacterizationMixin(
             result = self.measure_readout_snr(
                 targets=targets,
                 initial_state=initial_state,
-                capture_window=T + 512,
+                capture_duration=T + 512,
                 readout_duration=T,
                 readout_amplitudes=readout_amplitudes,
                 shots=shots,
@@ -1545,7 +1545,7 @@ class CharacterizationMixin(
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         phase_shift: float | None = None,  # deprecated
         electrical_delay: float | None = None,
         subrange_width: float = 0.3,
@@ -1591,8 +1591,8 @@ class CharacterizationMixin(
         else:
             tau = electrical_delay
 
-        if capture_window is None:
-            capture_window = 8192
+        if capture_duration is None:
+            capture_duration = 8192
         if readout_duration is None:
             readout_duration = 8192
         if readout_ramptime is None:
@@ -1666,7 +1666,7 @@ class CharacterizationMixin(
                             readout_ramptime=readout_ramptime,
                             readout_drag_coeff=readout_drag_coeff,
                             readout_ramp_type=readout_ramp_type,
-                            capture_window=capture_window,
+                            capture_duration=capture_duration,
                             shots=shots,
                             interval=interval,
                             reset_awg_and_capunits=False,

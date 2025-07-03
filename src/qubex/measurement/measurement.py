@@ -37,7 +37,7 @@ from .state_classifier import StateClassifier
 
 DEFAULT_SHOTS: Final = 1024
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
-DEFAULT_CAPTURE_WINDOW: Final = 512  # ns
+DEFAULT_CAPTURE_DURATION: Final = 512  # ns
 DEFAULT_CAPTURE_OFFSET: Final = 0  # ns
 DEFAULT_READOUT_DURATION: Final = 384  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
@@ -435,7 +435,7 @@ class Measurement:
             waveforms={target: np.zeros(0) for target in targets},
             mode="avg",
             shots=1,
-            capture_window=duration,
+            capture_duration=duration,
             readout_amplitudes={target: 0 for target in targets},
         )
 
@@ -446,7 +446,7 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -474,8 +474,8 @@ class Measurement:
             The number of shots.
         interval : float, optional
             The interval in ns.
-        capture_window : float, optional
-            The capture window in ns.
+        capture_duration : float, optional
+            The capture duration in ns.
         capture_offset : float, optional
             The capture offset in ns.
         readout_amplitudes : dict[str, float], optional
@@ -522,7 +522,7 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
         )
         backend_result = self.device_controller.execute_sequencer(
@@ -551,7 +551,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
@@ -587,8 +587,8 @@ class Measurement:
             The readout drag coefficient.
         readout_ramp_type : RampType, optional
             The readout ramp type.
-        capture_window : float, optional
-            The capture window in ns.
+        capture_duration : float, optional
+            The capture duration in ns.
         capture_offset : float, optional
             The capture offset in ns.
         add_last_measurement : bool, optional
@@ -622,7 +622,7 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
@@ -723,7 +723,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
     ) -> Sequencer:
@@ -737,8 +737,8 @@ class Measurement:
             readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
         if readout_post_margin is None:
             readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-        if capture_window is None:
-            capture_window = DEFAULT_CAPTURE_WINDOW
+        if capture_duration is None:
+            capture_duration = DEFAULT_CAPTURE_DURATION
         if capture_offset is None:
             capture_offset = 0.0
 
@@ -752,7 +752,7 @@ class Measurement:
         total_length = control_length + total_readout_length
         total_length = math.ceil(total_length / BLOCK_LENGTH) * BLOCK_LENGTH
         readout_slice = slice(control_length, control_length + total_readout_length)
-        capture_length = self._number_of_samples(capture_window)
+        capture_length = self._number_of_samples(capture_duration)
         offset_length = self._number_of_samples(capture_offset, allow_negative=True)
         capture_start = control_length + pre_margin_length + offset_length
         if capture_start < 0 or capture_start % WORD_LENGTH != 0:
@@ -933,7 +933,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
@@ -947,8 +947,8 @@ class Measurement:
             readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
         if readout_post_margin is None:
             readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-        if capture_window is None:
-            capture_window = DEFAULT_CAPTURE_WINDOW
+        if capture_duration is None:
+            capture_duration = DEFAULT_CAPTURE_DURATION
         if capture_offset is None:
             capture_offset = 0.0
 
@@ -1209,7 +1209,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
@@ -1227,7 +1227,7 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,

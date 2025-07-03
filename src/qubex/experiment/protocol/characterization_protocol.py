@@ -26,7 +26,7 @@ class CharacterizationProtocol(Protocol):
         targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -43,7 +43,7 @@ class CharacterizationProtocol(Protocol):
             Target labels to measure the readout SNR.
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Initial state of the qubits.
-        capture_window : float, optional
+        capture_duration : float, optional
             Capture window.
         readout_duration : float, optional
             Readout duration.
@@ -73,7 +73,7 @@ class CharacterizationProtocol(Protocol):
         *,
         amplitude_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         readout_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -90,7 +90,7 @@ class CharacterizationProtocol(Protocol):
             Range of the readout amplitude to sweep.
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Initial state of the qubits.
-        capture_window : float, optional
+        capture_duration : float, optional
             Capture window.
         readout_duration : float, optional
             Readout duration.

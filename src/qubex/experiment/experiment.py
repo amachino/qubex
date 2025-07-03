@@ -32,8 +32,8 @@ from ..backend import (
 from ..clifford import Clifford, CliffordGenerator
 from ..measurement import Measurement, MeasureResult, StateClassifier
 from ..measurement.measurement import (
+    DEFAULT_CAPTURE_DURATION,
     DEFAULT_CAPTURE_OFFSET,
-    DEFAULT_CAPTURE_WINDOW,
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
@@ -113,7 +113,7 @@ class Experiment(
         Duration of the DRAG HPI pulse. Defaults to DRAG_HPI_DURATION.
     drag_pi_duration : int, optional
         Duration of the DRAG π pulse. Defaults to DRAG_PI_DURATION.
-    capture_window : int, optional
+    capture_duration : int, optional
         Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
     readout_duration : int, optional
         Readout duration. Defaults to DEFAULT_READOUT_DURATION.
@@ -148,7 +148,7 @@ class Experiment(
         readout_duration: int = DEFAULT_READOUT_DURATION,
         readout_pre_margin: int = DEFAULT_READOUT_PRE_MARGIN,
         readout_post_margin: int = DEFAULT_READOUT_POST_MARGIN,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        capture_duration: int = DEFAULT_CAPTURE_DURATION,
         capture_offset: float = DEFAULT_CAPTURE_OFFSET,
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
@@ -173,7 +173,7 @@ class Experiment(
         self._readout_duration: Final = readout_duration
         self._readout_pre_margin: Final = readout_pre_margin
         self._readout_post_margin: Final = readout_post_margin
-        self._capture_window: Final = capture_window
+        self._capture_duration: Final = capture_duration
         self._capture_offset: Final = capture_offset
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
@@ -438,8 +438,8 @@ class Experiment(
         return self._user_note
 
     @property
-    def capture_window(self) -> float:
-        return self._capture_window
+    def capture_duration(self) -> float:
+        return self._capture_duration
 
     @property
     def capture_offset(self) -> float:
@@ -1297,7 +1297,7 @@ class Experiment(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
@@ -1321,10 +1321,10 @@ class Experiment(
             Pre-margin of the readout pulse in ns.
         readout_post_margin : float, optional
             Post-margin of the readout pulse in ns.
-        capture_window : float, optional
-            Capture window for the readout signal in ns.
+        capture_duration : float, optional
+            Capture duration for the readout signal in ns.
         capture_offset : float, optional
-            Offset for the capture window in ns.
+            Offset for the capture in ns.
         add_pump_pulses : bool, optional
             Whether to add pump pulses to the readout sequence. Defaults to False.
         plot : bool, optional
@@ -1359,7 +1359,7 @@ class Experiment(
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
         )

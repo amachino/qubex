@@ -161,8 +161,8 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def capture_window(self) -> float:
-        """Get the capture window."""
+    def capture_duration(self) -> float:
+        """Get the capture duration."""
         ...
 
     @property

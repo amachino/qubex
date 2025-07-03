@@ -74,7 +74,7 @@ class MeasurementMixin(
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -89,7 +89,7 @@ class MeasurementMixin(
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MultipleMeasureResult:
-        capture_window = capture_window or self.capture_window
+        capture_duration = capture_duration or self.capture_duration
         capture_offset = capture_offset or self.capture_offset
         readout_duration = readout_duration or self.readout_duration
         readout_pre_margin = readout_pre_margin or self.readout_pre_margin
@@ -108,7 +108,7 @@ class MeasurementMixin(
                     mode=mode,
                     shots=shots,
                     interval=interval,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     capture_offset=capture_offset,
                     readout_amplitudes=readout_amplitudes,
                     readout_duration=readout_duration,
@@ -128,7 +128,7 @@ class MeasurementMixin(
                 mode=mode,
                 shots=shots,
                 interval=interval,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 capture_offset=capture_offset,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
@@ -156,7 +156,7 @@ class MeasurementMixin(
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -170,7 +170,7 @@ class MeasurementMixin(
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MeasureResult:
-        capture_window = capture_window or self.capture_window
+        capture_duration = capture_duration or self.capture_duration
         capture_offset = capture_offset or self.capture_offset
         readout_duration = readout_duration or self.readout_duration
         readout_pre_margin = readout_pre_margin or self.readout_pre_margin
@@ -229,7 +229,7 @@ class MeasurementMixin(
                 mode=mode,
                 shots=shots,
                 interval=interval,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 capture_offset=capture_offset,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
@@ -248,7 +248,7 @@ class MeasurementMixin(
                     mode=mode,
                     shots=shots,
                     interval=interval,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     capture_offset=capture_offset,
                     readout_amplitudes=readout_amplitudes,
                     readout_duration=readout_duration,
@@ -277,7 +277,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = False,
@@ -312,7 +312,7 @@ class MeasurementMixin(
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
@@ -328,7 +328,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
@@ -349,7 +349,7 @@ class MeasurementMixin(
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
             plot=False,
@@ -424,7 +424,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         plot: bool = True,
         title: str = "Sweep result",
@@ -479,7 +479,7 @@ class MeasurementMixin(
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     capture_offset=capture_offset,
                     reset_awg_and_capunits=False,
                 )
@@ -521,7 +521,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         plot: bool = True,
         title: str = "Sweep result",
@@ -551,7 +551,7 @@ class MeasurementMixin(
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     capture_offset=capture_offset,
                     reset_awg_and_capunits=False,
                 )
@@ -950,7 +950,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> list[MeasureResult]:
@@ -971,7 +971,7 @@ class MeasurementMixin(
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 add_pump_pulses=add_pump_pulses,
             )
             for state in states
@@ -1000,7 +1000,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         add_pump_pulses: bool = False,
         simultaneous: bool = False,
         plot: bool = True,
@@ -1024,7 +1024,7 @@ class MeasurementMixin(
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 add_pump_pulses=add_pump_pulses,
                 plot=plot,
             )
@@ -1045,7 +1045,7 @@ class MeasurementMixin(
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     add_pump_pulses=add_pump_pulses,
                     plot=plot,
                 )
@@ -1073,7 +1073,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> dict:
@@ -1099,7 +1099,7 @@ class MeasurementMixin(
             readout_post_margin=readout_post_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             add_pump_pulses=add_pump_pulses,
             plot=False,
         )
