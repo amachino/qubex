@@ -104,21 +104,35 @@ class Experiment(
     exclude_qubits : Collection[str | int], optional
         Qubit labels to exclude in the experiment.
     config_dir : str, optional
-        Directory of the configuration files.
+        Path to the configuration directory containing:
+          - box.yaml
+          - chip.yaml
+          - wiring.yaml
+          - skew.yaml
     params_dir : str, optional
-        Directory of the parameter files.
-    connect_devices : bool, optional
-        Whether to connect the devices. Defaults to True.
+        Path to the parameters directory containing:
+          - params.yaml
+          - props.yaml
+    calib_note_path : Path | str, optional
+        Path to the calibration note file.
+    calibration_valid_days : int, optional
+        Number of days for which the calibration is valid.
     drag_hpi_duration : int, optional
-        Duration of the DRAG HPI pulse. Defaults to DRAG_HPI_DURATION.
+        Duration of the DRAG HPI pulse.
     drag_pi_duration : int, optional
-        Duration of the DRAG π pulse. Defaults to DRAG_PI_DURATION.
-    capture_duration : int, optional
-        Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
+        Duration of the DRAG π pulse.
     readout_duration : int, optional
-        Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+        Duration of the readout pulse.
+    readout_pre_margin : int, optional
+        Pre-margin of the readout pulse.
+    readout_post_margin : int, optional
+        Post-margin of the readout pulse.
+    capture_duration : int, optional
+        Capture duration for the readout signal.
+    capture_offset : float, optional
+        Offset for the capture in ns.
     classifier_dir : Path | str, optional
-        Directory of the state classifiers. Defaults to CLASSIFIER_DIR.
+        Directory of the state classifiers.
     classifier_type : Literal["kmeans", "gmm"], optional
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
@@ -143,6 +157,7 @@ class Experiment(
         config_dir: str | None = None,
         params_dir: str | None = None,
         calib_note_path: Path | str | None = None,
+        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
         drag_pi_duration: int = DRAG_PI_DURATION,
         readout_duration: int = DEFAULT_READOUT_DURATION,
@@ -153,7 +168,6 @@ class Experiment(
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
     ):
         self._load_config(
             chip_id=chip_id,
