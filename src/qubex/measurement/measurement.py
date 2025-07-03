@@ -4,7 +4,7 @@ import logging
 import math
 from collections import defaultdict
 from contextlib import contextmanager
-from functools import cache, reduce
+from functools import cache, cached_property, reduce
 from pathlib import Path
 from typing import Collection, Final, Literal
 
@@ -56,12 +56,12 @@ class Measurement:
         self,
         *,
         chip_id: str,
-        qubits: Collection[str] | None = None,
-        config_dir: str | None,
-        params_dir: str | None,
+        qubits: Collection[str],
+        config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
+        load_configs: bool = True,
         connect_devices: bool = True,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        skew_file_path: Path | str | None = None,
     ):
         """
         Initialize the Measurement.
@@ -70,18 +70,18 @@ class Measurement:
         ----------
         chip_id : str
             The quantum chip ID (e.g., "64Q").
-        qubits : Sequence[str], optional
-            The list of qubit labels, by default None.
+        qubits : Sequence[str]
+            The list of qubit labels.
         config_dir : str, optional
             The configuration directory.
         params_dir : str, optional
             The parameters directory.
+        load_configs : bool, optional
+            Whether to load the configurations, by default True.
         connect_devices : bool, optional
             Whether to connect the devices, by default True.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
-        skew_file_path : Path | str | None, optional
-            The skew file path, by default None.
 
         Examples
         --------
@@ -91,63 +91,76 @@ class Measurement:
         ...     qubits=["Q00", "Q01"],
         ... )
         """
-        self._chip_id = chip_id
-        self._qubits = qubits
+        self._chip_id: Final = chip_id
+        self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
-        self._initialize(
-            config_dir=config_dir,
-            params_dir=params_dir,
-            connect_devices=connect_devices,
-            configuration_mode=configuration_mode,
-            skew_file_path=skew_file_path,
-        )
+        self._system_manager = SystemManager.shared()
+        if load_configs:
+            self.load(
+                config_dir=config_dir,
+                params_dir=params_dir,
+                configuration_mode=configuration_mode,
+            )
+        if connect_devices:
+            self.connect()
 
-    def _initialize(
+    def load(
         self,
         config_dir: Path | str | None,
         params_dir: Path | str | None,
-        connect_devices: bool,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        skew_file_path: Path | str | None = None,
     ):
-        self._system_manager = SystemManager.shared()
+        """
+        Load the measurement settings.
+
+        Parameters
+        ----------
+        config_dir : Path | str | None
+            The configuration directory.
+        params_dir : Path | str | None
+            The parameters directory.
+        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+            The configuration mode, by default "ge-cr-cr".
+        """
         self.system_manager.load(
             chip_id=self._chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
         )
-        box_ids = []
-        if self._qubits is not None:
-            boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
-            box_ids = [box.id for box in boxes]
-        if len(box_ids) == 0:
-            return
+        self.system_manager.load_skew_file(self.box_ids)
 
-        if skew_file_path is None:
-            skew_file_path = f"{self.config_loader.config_path}/skew.yaml"
-        if not Path(skew_file_path).exists():
-            print(f"Skew file not found: {skew_file_path}")
-        else:
-            try:
-                self.device_controller.load_skew_file(box_ids, skew_file_path)
-            except Exception as e:
-                print(f"Failed to load the skew file: {e}")
-
-        if connect_devices:
-            try:
-                self.device_controller.connect(box_ids)
-                self.system_manager.pull(box_ids)
-            except Exception as e:
-                print(f"Failed to connect to devices: {e}")
+    def connect(self):
+        """Connect to the devices."""
+        try:
+            if len(self.box_ids) == 0:
+                print("No boxes are selected. Please check the configuration.")
+                return
+            self.device_controller.connect(self.box_ids)
+            self.device_controller.resync_clocks(self.box_ids)
+            self.system_manager.pull(self.box_ids)
+            print("Successfully connected.")
+        except Exception as e:
+            print(f"Failed to connect to devices: {e}")
 
     def reload(self):
         """Reload the measuremnt settings."""
-        self._initialize(
+        self.load(
             config_dir=self.config_loader.config_path,
             params_dir=self.config_loader.params_path,
-            connect_devices=True,
         )
+        self.connect()
+
+    @property
+    def qubits(self) -> list[str]:
+        """Get the list of qubit labels."""
+        return self._qubits
+
+    @cached_property
+    def box_ids(self) -> list[str]:
+        """Get the list of box IDs."""
+        boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
+        return [box.id for box in boxes]
 
     @property
     def system_manager(self) -> SystemManager:
@@ -245,6 +258,17 @@ class Measurement:
         targets = list(targets)
         confusion_matrix = self.get_confusion_matrix(targets)
         return np.linalg.inv(confusion_matrix)
+
+    def is_connected(self) -> bool:
+        """
+        Check if the measurement system is connected to the devices.
+
+        Returns
+        -------
+        bool
+            True if connected, False otherwise.
+        """
+        return self.device_controller._quel1system is not None
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """

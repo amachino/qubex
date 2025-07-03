@@ -232,6 +232,19 @@ class SystemManager:
         experiment_system = self.config_loader.get_experiment_system(chip_id)
         self.set_experiment_system(experiment_system)
 
+    def load_skew_file(
+        self,
+        box_ids: list[str],
+    ):
+        skew_file_path = self.config_loader.config_path / "skew.yaml"
+        if not Path(skew_file_path).exists():
+            print(f"Skew file not found: {skew_file_path}")
+        else:
+            try:
+                self.device_controller.load_skew_file(box_ids, skew_file_path)
+            except Exception as e:
+                print(f"Failed to load the skew file: {e}")
+
     def pull(
         self,
         box_ids: Sequence[str],

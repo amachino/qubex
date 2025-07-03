@@ -143,7 +143,6 @@ class Experiment(
         config_dir: str | None = None,
         params_dir: str | None = None,
         calib_note_path: Path | str | None = None,
-        connect_devices: bool = True,
         drag_hpi_duration: int = DRAG_HPI_DURATION,
         drag_pi_duration: int = DRAG_PI_DURATION,
         readout_duration: int = DEFAULT_READOUT_DURATION,
@@ -183,10 +182,8 @@ class Experiment(
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
-            config_dir=config_dir,
-            params_dir=params_dir,
-            connect_devices=connect_devices,
-            configuration_mode=configuration_mode,
+            load_configs=False,
+            connect_devices=False,
         )
         self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
@@ -1073,7 +1070,18 @@ class Experiment(
     ) -> NDArray:
         return self.measurement.get_inverse_confusion_matrix(targets)
 
+    def is_connected(self) -> bool:
+        return self._measurement.is_connected()
+
     def check_status(self):
+        if not self.is_connected():
+            print("Not connected to the devices. Call `connect()` method first.")
+            return
+
+        if len(self.box_ids) == 0:
+            print("No boxes are selected.")
+            return
+
         # link status
         link_status = self._measurement.check_link_status(self.box_ids)
         if link_status["status"]:
@@ -1097,6 +1105,11 @@ class Experiment(
         else:
             print("Config status: NG")
         print(self.system_manager.device_settings)
+
+    def connect(
+        self,
+    ) -> None:
+        self._measurement.connect()
 
     def linkup(
         self,

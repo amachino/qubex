@@ -603,8 +603,16 @@ class BaseProtocol(Protocol):
         """
         ...
 
-    def check_status(self):
+    def is_connected(self) -> bool:
+        """Check if the devices are connected."""
+        ...
+
+    def check_status(self) -> None:
         """Check the status of the measurement system."""
+        ...
+
+    def connect(self) -> None:
+        """Connect to the measurement system."""
         ...
 
     def linkup(
