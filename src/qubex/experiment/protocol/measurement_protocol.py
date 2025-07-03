@@ -15,7 +15,7 @@ from ...typing import (
     ParametricWaveformDict,
     TargetMap,
 )
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE
+from ..experiment_constants import CALIBRATION_SHOTS, DEFAULT_RABI_TIME_RANGE
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 
 
@@ -469,7 +469,7 @@ class MeasurementProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
         is_damped: bool = False,
@@ -484,7 +484,7 @@ class MeasurementProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -495,7 +495,7 @@ class MeasurementProtocol(Protocol):
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,

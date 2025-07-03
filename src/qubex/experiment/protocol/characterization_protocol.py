@@ -8,7 +8,11 @@ from numpy.typing import ArrayLike
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import Waveform
 from ...typing import TargetMap
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_FREQUENCY, RABI_TIME_RANGE
+from ..experiment_constants import (
+    CALIBRATION_SHOTS,
+    DEFAULT_RABI_FREQUENCY,
+    DEFAULT_RABI_TIME_RANGE,
+)
 from ..experiment_result import (
     AmplRabiData,
     ExperimentResult,
@@ -151,7 +155,7 @@ class CharacterizationProtocol(Protocol):
         targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
@@ -216,7 +220,7 @@ class CharacterizationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -791,7 +795,7 @@ class CharacterizationProtocol(Protocol):
         frequency_range: ArrayLike,
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
-        target_rabi_rate: float = RABI_FREQUENCY,
+        target_rabi_rate: float = DEFAULT_RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,

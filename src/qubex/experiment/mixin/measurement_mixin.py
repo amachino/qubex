@@ -48,10 +48,9 @@ from ...typing import (
 from ..experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
-    CLASSIFIER_SHOTS,
+    DEFAULT_RABI_TIME_RANGE,
     HPI_DURATION,
     HPI_RAMPTIME,
-    RABI_TIME_RANGE,
 )
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
@@ -385,7 +384,7 @@ class MeasurementMixin(
             targets = list(targets)
 
         if shots is None:
-            shots = CLASSIFIER_SHOTS
+            shots = 10000
 
         result = self.measure_state(
             {target: "g" for target in targets},
@@ -619,7 +618,7 @@ class MeasurementMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         ramptime: float | None = None,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
@@ -685,7 +684,8 @@ class MeasurementMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        ramptime: float | None = None,
         is_damped: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -700,6 +700,9 @@ class MeasurementMixin(
 
         time_range = np.asarray(time_range)
 
+        if ramptime is None:
+            ramptime = HPI_DURATION - HPI_RAMPTIME
+
         ef_labels = [Target.ef_label(target) for target in targets]
         ef_targets = [self.targets[ef] for ef in ef_labels]
 
@@ -712,6 +715,7 @@ class MeasurementMixin(
             data = self.ef_rabi_experiment(
                 amplitudes={label: amplitudes[label]},
                 time_range=time_range,
+                ramptime=ramptime,
                 is_damped=is_damped,
                 shots=shots,
                 interval=interval,
@@ -731,7 +735,7 @@ class MeasurementMixin(
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
@@ -848,6 +852,7 @@ class MeasurementMixin(
         *,
         amplitudes: dict[str, float],
         time_range: ArrayLike,
+        ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
         is_damped: bool = True,
@@ -861,10 +866,14 @@ class MeasurementMixin(
         }
         ge_labels = [Target.ge_label(label) for label in amplitudes]
         ef_labels = [Target.ef_label(label) for label in amplitudes]
-        ef_targets = [self.targets[ef] for ef in ef_labels]
 
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
+
+        if ramptime is None:
+            ramptime = 0.0
+
+        effective_time_range = time_range + ramptime
 
         # target frequencies
         if frequencies is None:
@@ -877,7 +886,7 @@ class MeasurementMixin(
             with PulseSchedule() as ps:
                 # prepare qubits to the excited state
                 for ge in ge_labels:
-                    ps.add(ge, self.get_hpi_pulse(ge).repeated(2))
+                    ps.add(ge, self.x180(ge))
                 ps.barrier()
                 # apply the ef drive to induce the ef Rabi oscillation
                 for ef in ef_labels:
@@ -900,40 +909,48 @@ class MeasurementMixin(
             plot=plot,
         )
 
-        # sweep data with the ef labels
-        sweep_data = {ef.label: sweep_result.data[ef.qubit] for ef in ef_targets}
-
         # fit the Rabi oscillation
-        rabi_params = {
-            target: fitting.fit_rabi(
-                target=target,
-                times=data.sweep_range,
+        ef_rabi_params = {}
+        ef_rabi_data = {}
+        for qubit, data in sweep_result.data.items():
+            ef_label = Target.ef_label(qubit)
+            ge_rabi_param = self.ge_rabi_params[qubit]
+            iq_e = ge_rabi_param.endpoints[1]
+            fit_result = fitting.fit_rabi(
+                target=qubit,
+                times=effective_time_range,
                 data=data.data,
+                reference_point=iq_e,
                 plot=plot,
                 is_damped=is_damped,
-            )["rabi_param"]
-            for target, data in sweep_data.items()
-        }
+            )
+            ef_rabi_params[ef_label] = RabiParam(
+                target=ef_label,
+                amplitude=fit_result["amplitude"],
+                frequency=fit_result["frequency"],
+                phase=fit_result["phase"],
+                offset=fit_result["offset"],
+                noise=fit_result["noise"],
+                angle=fit_result["angle"],
+                distance=fit_result["distance"],
+                r2=fit_result["r2"],
+                reference_phase=fit_result["reference_phase"],
+            )
+            ef_rabi_data[ef_label] = RabiData(
+                target=ef_label,
+                data=data.data,
+                time_range=effective_time_range,
+                rabi_param=ef_rabi_params[ef_label],
+            )
 
         # store the Rabi parameters if necessary
         if store_params:
-            self.store_rabi_params(rabi_params)
-
-        # create the Rabi data for each target
-        rabi_data = {
-            target: RabiData(
-                target=target,
-                data=data.data,
-                time_range=time_range,
-                rabi_param=rabi_params[target],
-            )
-            for target, data in sweep_data.items()
-        }
+            self.store_rabi_params(ef_rabi_params)
 
         # create the experiment result
         result = ExperimentResult(
-            data=rabi_data,
-            rabi_params=rabi_params,
+            data=ef_rabi_data,
+            rabi_params=ef_rabi_params,
         )
 
         # return the result
@@ -1086,7 +1103,7 @@ class MeasurementMixin(
         if n_states is None:
             n_states = 2
         if shots is None:
-            shots = CLASSIFIER_SHOTS
+            shots = 10000
 
         self.obtain_reference_points(targets)
 

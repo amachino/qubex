@@ -58,13 +58,12 @@ from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
-    CLASSIFIER_SHOTS,
+    DEFAULT_RABI_FREQUENCY,
+    DEFAULT_RABI_TIME_RANGE,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     HPI_DURATION,
     HPI_RAMPTIME,
-    RABI_FREQUENCY,
-    RABI_TIME_RANGE,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
@@ -876,6 +875,7 @@ class Experiment(
         self,
         cr_labels: Collection[str] | str | None = None,
         *,
+        shots: int = 10000,
         save: bool = True,
     ):
         if cr_labels is None:
@@ -891,7 +891,7 @@ class Experiment(
                 continue
             result = self.state_tomography(
                 self.zx90(control_qubit, target_qubit),
-                shots=CLASSIFIER_SHOTS,
+                shots=shots,
             )
             x, y, _ = result[target_qubit]
             phase = np.arctan2(y, x)
@@ -1123,7 +1123,12 @@ class Experiment(
     def connect(
         self,
     ) -> None:
-        self._measurement.connect()
+        try:
+            self._measurement.connect()
+            print("Successfully connected.")
+        except Exception as e:
+            print(f"Failed to connect to the devices: {e}")
+            raise
 
     def linkup(
         self,
@@ -1166,7 +1171,12 @@ class Experiment(
         )
 
     def reload(self):
-        self._measurement.reload()
+        try:
+            self._measurement.reload()
+            print("Successfully reloaded.")
+        except Exception as e:
+            print(f"Failed to reload the devices: {e}")
+            raise
 
     def reset_awg_and_capunits(
         self,
@@ -1385,7 +1395,7 @@ class Experiment(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         store_params: bool = False,
@@ -1459,12 +1469,15 @@ class Experiment(
 
     def calc_control_amplitudes(
         self,
-        rabi_rate: float = RABI_FREQUENCY,
+        rabi_rate: float | None = None,
         *,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
     ) -> dict[str, float]:
+        if rabi_rate is None:
+            rabi_rate = DEFAULT_RABI_FREQUENCY
+
         current_rabi_params = current_rabi_params or self.rabi_params
 
         if current_rabi_params is None:

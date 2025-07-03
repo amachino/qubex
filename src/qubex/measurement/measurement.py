@@ -139,7 +139,6 @@ class Measurement:
             self.device_controller.connect(self.box_ids)
             self.device_controller.resync_clocks(self.box_ids)
             self.system_manager.pull(self.box_ids)
-            print("Successfully connected.")
         except Exception as e:
             print(f"Failed to connect to devices: {e}")
 

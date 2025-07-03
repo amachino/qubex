@@ -37,8 +37,8 @@ from ...style import COLORS
 from ...typing import TargetMap
 from ..experiment_constants import (
     CALIBRATION_SHOTS,
-    RABI_FREQUENCY,
-    RABI_TIME_RANGE,
+    DEFAULT_RABI_FREQUENCY,
+    DEFAULT_RABI_TIME_RANGE,
 )
 from ..experiment_result import (
     AmplRabiData,
@@ -333,7 +333,7 @@ class CharacterizationMixin(
         targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
@@ -415,8 +415,7 @@ class CharacterizationMixin(
                             data=data.data,
                             plot=False,
                         )
-                        rabi_param = fit_result["rabi_param"]
-                        rabi_rates_buffer[target].append(rabi_param.frequency)
+                        rabi_rates_buffer[target].append(fit_result["frequency"])
                         data.rabi_param = shared_rabi_params[target]
                         chevron_data_buffer[target].append(data.normalized)
 
@@ -2349,7 +2348,7 @@ class CharacterizationMixin(
         frequency_range: ArrayLike,
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
-        target_rabi_rate: float = RABI_FREQUENCY,
+        target_rabi_rate: float = DEFAULT_RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2421,7 +2420,7 @@ class CharacterizationMixin(
         frequency_range: ArrayLike | None = None,
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
-        target_rabi_rate: float = RABI_FREQUENCY,
+        target_rabi_rate: float = DEFAULT_RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
