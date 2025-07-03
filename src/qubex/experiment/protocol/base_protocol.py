@@ -14,7 +14,7 @@ from ...backend import (
     QuantumSystem,
     Qubit,
     Resonator,
-    StateManager,
+    SystemManager,
     Target,
 )
 from ...clifford import Clifford, CliffordGenerator
@@ -41,8 +41,8 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def state_manager(self) -> StateManager:
-        """Get the state manager."""
+    def system_manager(self) -> SystemManager:
+        """Get the system manager."""
         ...
 
     @property

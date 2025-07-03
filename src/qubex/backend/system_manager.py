@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -20,22 +21,31 @@ console = Console()
 
 
 @dataclass
-class State:
-    system: int
-    controller: int
-    device: int
+class StateHash:
+    experiment_system: int
+    device_controller: int
+    device_settings: int
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, StateHash):
+            return NotImplemented
+        return (
+            self.experiment_system == other.experiment_system
+            and self.device_controller == other.device_controller
+            and self.device_settings == other.device_settings
+        )
 
 
-class StateManager:
+class SystemManager:
     """
-    Singleton class that manages the state of the experiment system and the device controller.
+    Singleton class to manage the system state.
 
     Attributes
     ----------
-    _instance : StateManager
-        Shared instance of the StateManager.
+    _instance : SystemManager
+        Shared instance of the SystemManager.
     _initialized : bool
-        Whether the StateManager is initialized.
+        Whether the SystemManager is initialized.
     """
 
     _instance = None
@@ -49,13 +59,13 @@ class StateManager:
     @classmethod
     def shared(cls):
         """
-        Get the shared instance of the StateManager.
+        Get the shared instance of the SystemManager.
 
         Returns
         -------
 
-        StateManager
-            Shared instance of the StateManager.
+        SystemManager
+            Shared instance of the SystemManager.
         """
         if cls._instance is None:
             cls._instance = cls()
@@ -63,18 +73,18 @@ class StateManager:
 
     def __init__(self):
         """
-        Initialize the StateManager.
+        Initialize the SystemManager.
 
         Notes
         -----
-        This class is a singleton. Use `StateManager.shared()` to get the shared instance.
+        This class is a singleton. Use `SystemManager.shared()` to get the shared instance.
         """
         if self._initialized:
             return
         self._experiment_system = None
         self._device_controller = DeviceController()
         self._device_settings = {}
-        self._cached_state = State(0, 0, 0)
+        self._cached_state = StateHash(0, 0, 0)
         self._initialized = True
 
     @property
@@ -85,7 +95,7 @@ class StateManager:
     @property
     def is_loaded(self) -> bool:
         """Check if the experiment system is loaded."""
-        return self.experiment_system is not None
+        return self._experiment_system is not None
 
     @property
     def experiment_system(self) -> ExperimentSystem:
@@ -94,8 +104,31 @@ class StateManager:
             raise ValueError("Experiment system is not loaded.")
         return self._experiment_system
 
-    @experiment_system.setter
-    def experiment_system(self, experiment_system: ExperimentSystem):
+    @property
+    def device_controller(self) -> DeviceController:
+        """Get the device controller."""
+        return self._device_controller
+
+    @property
+    def device_settings(self) -> dict:
+        """Get the device settings."""
+        return self._device_settings or {}
+
+    @property
+    def state(self) -> StateHash:
+        """Get the current state."""
+        return StateHash(
+            experiment_system=self.experiment_system.hash,
+            device_controller=self.device_controller.hash,
+            device_settings=hash(str(self.device_settings)),
+        )
+
+    @property
+    def cached_state(self) -> StateHash:
+        """Get the cached state."""
+        return self._cached_state
+
+    def set_experiment_system(self, experiment_system: ExperimentSystem):
         """
         Set the experiment system.
 
@@ -113,31 +146,7 @@ class StateManager:
         self._update_device_controller(experiment_system)
         self.update_cache()
 
-    @property
-    def device_controller(self) -> DeviceController:
-        """Get the device controller."""
-        return self._device_controller
-
-    @device_controller.setter
-    def device_controller(self, device_controller: DeviceController):
-        """
-        Set the device controller.
-
-        Parameters
-        ----------
-        device_controller : DeviceController
-            Device controller to set.
-        """
-        self._device_controller = device_controller
-        self.update_cache()
-
-    @property
-    def device_settings(self) -> dict:
-        """Get the device settings."""
-        return self._device_settings or {}
-
-    @device_settings.setter
-    def device_settings(self, device_settings: dict):
+    def set_device_settings(self, device_settings: dict):
         """
         Set the device settings.
 
@@ -155,20 +164,6 @@ class StateManager:
         self._experiment_system = self._create_experiment_system(device_settings)
         self.update_cache()
 
-    @property
-    def state(self) -> State:
-        """Get the current state."""
-        return State(
-            system=self.experiment_system.hash,
-            controller=self.device_controller.hash,
-            device=hash(str(self.device_settings)),
-        )
-
-    @property
-    def cached_state(self) -> State:
-        """Get the cached state."""
-        return self._cached_state
-
     def update_cache(self):
         """Update the cached state."""
         self._cached_state = self.state
@@ -176,14 +171,15 @@ class StateManager:
     def is_synced(
         self,
         *,
-        box_ids: Sequence[str] | None = None,
+        box_ids: Sequence[str],
     ) -> bool:
         """
         Check if the state is synced.
 
         Parameters
         ----------
-        box_ids : Sequence[str], optional
+        box_ids : Sequence[str]
+            Box IDs to check.
 
         Returns
         -------
@@ -191,11 +187,13 @@ class StateManager:
             Whether the state is synced.
         """
         if self.state != self.cached_state:
-            # print("Local state is changed.")
+            warnings.warn("The current state is different from the cached state. ")
             return False
         device_settings = self._fetch_device_settings(box_ids=box_ids)
         if self.device_settings != device_settings:
-            # print("Remote state is different.")
+            warnings.warn(
+                "The current device settings are different from the fetched device settings. "
+            )
             return False
         return True
 
@@ -209,16 +207,20 @@ class StateManager:
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
         """
-        Load the experiment system and the device controller.
+        Load the experiment system and device controller.
 
         Parameters
         ----------
         chip_id : str
             Chip ID.
         config_dir : str, optional
-            Configuration directory, by default DEFAULT_CONFIG_DIR.
+            Configuration directory.
         params_dir : str, optional
-            Parameters directory, by default DEFAULT_PARAMS_DIR.
+            Parameters directory.
+        targets_to_exclude : list[str], optional
+            List of target labels to exclude, by default None.
+        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+            Configuration mode, by default "ge-cr-cr".
         """
         self._config_loader = ConfigLoader(
             chip_id=chip_id,
@@ -227,11 +229,12 @@ class StateManager:
             targets_to_exclude=targets_to_exclude,
             configuration_mode=configuration_mode,
         )
-        self.experiment_system = self.config_loader.get_experiment_system(chip_id)
+        experiment_system = self.config_loader.get_experiment_system(chip_id)
+        self.set_experiment_system(experiment_system)
 
     def pull(
         self,
-        box_ids: Sequence[str] | None = None,
+        box_ids: Sequence[str],
     ):
         """
         Pull the hardware state to the software state.
@@ -240,19 +243,15 @@ class StateManager:
 
         Parameters
         ----------
-        box_ids : Sequence[str], optional
-            Box IDs to fetch, by default None.
+        box_ids : Sequence[str]
+            Box IDs to fetch the device settings for.
         """
-        boxes = self.experiment_system.boxes
-        if box_ids is not None:
-            boxes = [box for box in boxes if box.id in box_ids]
-
         device_settings = self._fetch_device_settings(box_ids=box_ids)
-        self.device_settings = device_settings
+        self.set_device_settings(device_settings)
 
     def push(
         self,
-        box_ids: Sequence[str] | None = None,
+        box_ids: Sequence[str],
         confirm: bool = True,
     ):
         """
@@ -262,13 +261,12 @@ class StateManager:
 
         Parameters
         ----------
-        box_ids : Sequence[str], optional
-            Box IDs to configure, by default None.
+        box_ids : Sequence[str]
+            Box IDs to configure.
+        confirm : bool, optional
+            Whether to confirm the operation, by default True.
         """
-        boxes = self.experiment_system.boxes
-        if box_ids is not None:
-            boxes = [box for box in boxes if box.id in box_ids]
-
+        boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         boxes_str = "\n".join([f"{box.id} ({box.name})" for box in boxes])
 
         if confirm:
@@ -441,13 +439,12 @@ This operation will overwrite the existing device settings. Do you want to conti
 
     def _fetch_device_settings(
         self,
-        box_ids: Sequence[str] | None = None,
+        box_ids: Sequence[str],
     ):
-        boxes = self.experiment_system.boxes
-        if box_ids is not None:
-            boxes = [box for box in boxes if box.id in box_ids]
+        boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         result: dict = {}
         for box in boxes:
+            # TODO: run this in a separate thread
             box_config = self.device_controller.dump_box(box.id)
             self.device_controller.boxpool._box_config_cache[box.id] = box_config
             result[box.id] = {"ports": {}}
@@ -606,7 +603,7 @@ This operation will overwrite the existing device settings. Do you want to conti
 
         Examples
         --------
-        >>> with state_manager.modified_device_settings(
+        >>> with system_manager.modified_device_settings(
         ...     "Q00",
         ...     lo_freq=10_000_000_000,
         ...     cnco_freq=1_500,

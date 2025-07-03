@@ -19,11 +19,11 @@ except ImportError:
     pass
 
 
-from ..backend import LatticeGraph, StateManager
+from ..backend import LatticeGraph, SystemManager
 from ..diagnostics import ChipInspector
 
 console = Console()
-state_manager = StateManager.shared()
+system_manager = SystemManager.shared()
 
 
 def check_skew(
@@ -80,12 +80,12 @@ Do you want to continue?
 
 def get_qubecalib() -> QubeCalib:
     """Get the QubeCalib instance."""
-    return state_manager.device_controller.qubecalib
+    return system_manager.device_controller.qubecalib
 
 
 def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
-    qc = state_manager.device_controller.qubecalib
+    qc = system_manager.device_controller.qubecalib
     box = qc.create_box(box_id, reconnect=False)
     box.reconnect()
     return box
@@ -93,12 +93,12 @@ def get_quel1_box(box_id: str) -> Quel1Box:
 
 def dump_box(box_id: str) -> dict:
     """Dump the information of a box."""
-    return state_manager.device_controller.dump_box(box_id)
+    return system_manager.device_controller.dump_box(box_id)
 
 
 def dump_port(box_id: str, port_number: int) -> dict:
     """Dump the information of a port."""
-    return state_manager.device_controller.dump_port(box_id, port_number)
+    return system_manager.device_controller.dump_port(box_id, port_number)
 
 
 def reboot_fpga(box_id: str) -> None:
@@ -106,7 +106,7 @@ def reboot_fpga(box_id: str) -> None:
     # Run the following commands in the terminal.
     # $ source /tools/Xilinx/Vivado/2020.1/settings64.sh
     # $ quel_reboot_fpga --port 3121 --adapter xxx
-    experiment_system = state_manager.experiment_system
+    experiment_system = system_manager.experiment_system
     box = experiment_system.get_box(box_id)
     adapter = box.adapter
     reboot_command = f"quel_reboot_fpga --port 3121 --adapter {adapter}"
@@ -134,11 +134,11 @@ This operation will reset LO/NCO settings. Do you want to continue?
         return
 
     print("Relinking up the boxes...")
-    state_manager.device_controller.relinkup_boxes(
+    system_manager.device_controller.relinkup_boxes(
         box_ids,
         noise_threshold=noise_threshold,
     )
-    state_manager.device_controller.sync_clocks(box_ids)
+    system_manager.device_controller.sync_clocks(box_ids)
     print("Operation completed.")
 
 
@@ -149,7 +149,7 @@ def reset_clockmaster(ipaddr: str = "10.3.0.255") -> bool:
 
 def resync_clocks(box_ids: Collection[str]) -> bool:
     """Resync the clocks of the boxes."""
-    return state_manager.device_controller.resync_clocks(list(box_ids))
+    return system_manager.device_controller.resync_clocks(list(box_ids))
 
 
 def print_chip_info(
@@ -176,14 +176,14 @@ def print_chip_info(
     save_image: bool = False,
 ) -> None:
     """Print the information of the chip."""
-    chip = state_manager.experiment_system.chip
+    chip = system_manager.experiment_system.chip
 
     props: dict[str, dict[str, float]] = {
         key: {
             qubit: value if value is not None else math.nan
             for qubit, value in values.items()
         }
-        for key, values in state_manager.config_loader._props_dict[chip.id].items()
+        for key, values in system_manager.config_loader._props_dict[chip.id].items()
     }
 
     graph = LatticeGraph(chip.n_qubits)
@@ -225,8 +225,8 @@ def print_chip_info(
     if "chip_summary" in info_type:
         inspector = ChipInspector(
             chip_id=chip.id,
-            config_dir=state_manager.config_loader._config_dir,
-            props_dir=state_manager.config_loader._params_dir,
+            config_dir=system_manager.config_loader._config_dir,
+            props_dir=system_manager.config_loader._params_dir,
         )
         if chip.n_qubits == 144:
             inspection_params = {
@@ -606,7 +606,7 @@ def print_chip_info(
 def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     """Print the wiring information of the chip."""
 
-    experiment_system = state_manager.experiment_system
+    experiment_system = system_manager.experiment_system
 
     table = Table(
         show_header=True,
@@ -683,12 +683,12 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
 
 def print_box_info(box_id: str, fetch: bool = True) -> None:
     """Print the information of a box."""
-    state_manager.print_box_info(box_id, fetch=fetch)
+    system_manager.print_box_info(box_id, fetch=fetch)
 
 
 def print_target_frequencies(qubits: Collection[str] | str | None = None) -> None:
     """Print the target frequencies of the qubits."""
-    experiment_system = state_manager.experiment_system
+    experiment_system = system_manager.experiment_system
 
     if qubits is None:
         qubits = [qubit.label for qubit in experiment_system.qubits]
@@ -766,13 +766,13 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
 def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
     """Print the target frequencies of the qubits."""
     if qubits is None:
-        qubits = [qubit.label for qubit in state_manager.experiment_system.qubits]
+        qubits = [qubit.label for qubit in system_manager.experiment_system.qubits]
     elif isinstance(qubits, str):
         qubits = [qubits]
 
     targets = [
         target
-        for target in state_manager.experiment_system.cr_targets
+        for target in system_manager.experiment_system.cr_targets
         if target.qubit in qubits and not target.label.endswith("-CR")
     ]
 

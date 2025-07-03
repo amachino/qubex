@@ -20,7 +20,7 @@ from ..backend import (
     DeviceController,
     ExperimentSystem,
     RawResult,
-    StateManager,
+    SystemManager,
     Target,
 )
 from ..backend.dc_voltage_controller import dc_voltage
@@ -110,8 +110,8 @@ class Measurement:
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         skew_file_path: Path | str | None = None,
     ):
-        self._state_manager = StateManager.shared()
-        self.state_manager.load(
+        self._system_manager = SystemManager.shared()
+        self.system_manager.load(
             chip_id=self._chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
@@ -137,7 +137,7 @@ class Measurement:
         if connect_devices:
             try:
                 self.device_controller.connect(box_ids)
-                self.state_manager.pull(box_ids)
+                self.system_manager.pull(box_ids)
             except Exception as e:
                 print(f"Failed to connect to devices: {e}")
 
@@ -150,24 +150,24 @@ class Measurement:
         )
 
     @property
-    def state_manager(self) -> StateManager:
+    def system_manager(self) -> SystemManager:
         """Get the state manager."""
-        return self._state_manager
+        return self._system_manager
 
     @property
     def config_loader(self) -> ConfigLoader:
         """Get the configuration loader."""
-        return self._state_manager.config_loader
+        return self._system_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
         """Get the experiment system."""
-        return self._state_manager.experiment_system
+        return self._system_manager.experiment_system
 
     @property
     def device_controller(self) -> DeviceController:
         """Get the device controller."""
-        return self._state_manager.device_controller
+        return self._system_manager.device_controller
 
     @property
     def control_params(self) -> ControlParams:
@@ -352,7 +352,7 @@ class Measurement:
         if target_frequencies is None:
             yield
         else:
-            with self.state_manager.modified_frequencies(target_frequencies):
+            with self.system_manager.modified_frequencies(target_frequencies):
                 yield
 
     @contextmanager

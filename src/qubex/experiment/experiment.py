@@ -25,7 +25,7 @@ from ..backend import (
     QuantumSystem,
     Qubit,
     Resonator,
-    StateManager,
+    SystemManager,
     Target,
     TargetType,
 )
@@ -214,7 +214,7 @@ class Experiment(
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
     ):
         """Load the configuration files."""
-        self.state_manager.load(
+        self.system_manager.load(
             chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
@@ -304,16 +304,16 @@ class Experiment(
         return self._measurement
 
     @property
-    def state_manager(self) -> StateManager:
-        return StateManager.shared()
+    def system_manager(self) -> SystemManager:
+        return SystemManager.shared()
 
     @property
     def config_loader(self) -> ConfigLoader:
-        return self.state_manager.config_loader
+        return self.system_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
-        return self.state_manager.experiment_system
+        return self.system_manager.experiment_system
 
     @property
     def quantum_system(self) -> QuantumSystem:
@@ -325,7 +325,7 @@ class Experiment(
 
     @property
     def device_controller(self) -> DeviceController:
-        return self.state_manager.device_controller
+        return self.system_manager.device_controller
 
     @property
     def params(self) -> ControlParams:
@@ -1091,12 +1091,12 @@ class Experiment(
         print(clock_status["clocks"])
 
         # config status
-        config_status = self.state_manager.is_synced(box_ids=self.box_ids)
+        config_status = self.system_manager.is_synced(box_ids=self.box_ids)
         if config_status:
             print("Config status: OK")
         else:
             print("Config status: NG")
-        print(self.state_manager.device_settings)
+        print(self.system_manager.device_settings)
 
     def linkup(
         self,
@@ -1127,14 +1127,14 @@ class Experiment(
             exclude = [exclude]
         if mode is None:
             mode = self.configuration_mode
-        self.state_manager.load(
+        self.system_manager.load(
             chip_id=self.chip_id,
             config_dir=self.config_path,
             params_dir=self.params_path,
             targets_to_exclude=exclude,
             configuration_mode=mode,
         )
-        self.state_manager.push(
+        self.system_manager.push(
             box_ids=box_ids or self.box_ids,
         )
 
@@ -1190,7 +1190,7 @@ class Experiment(
                 cnco=port.cnco_freq,
             )
             port.channels[channel_number].fnco_freq = fnco
-            self.state_manager.push(box_ids=[box_id])
+            self.system_manager.push(box_ids=[box_id])
 
     @contextmanager
     def modified_frequencies(
@@ -1200,7 +1200,7 @@ class Experiment(
         if frequencies is None:
             yield
         else:
-            with self.state_manager.modified_frequencies(frequencies):
+            with self.system_manager.modified_frequencies(frequencies):
                 yield
 
     def save_calib_note(

@@ -1348,7 +1348,7 @@ class CharacterizationMixin(
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.state_manager.modified_device_settings(
+            with self.system_manager.modified_device_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -1493,7 +1493,7 @@ class CharacterizationMixin(
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.state_manager.modified_device_settings(
+            with self.system_manager.modified_device_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -1634,7 +1634,7 @@ class CharacterizationMixin(
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.state_manager.modified_device_settings(
+            with self.system_manager.modified_device_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -2158,7 +2158,7 @@ class CharacterizationMixin(
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.state_manager.modified_device_settings(
+            with self.system_manager.modified_device_settings(
                 label=qubit,
                 lo_freq=lo,
                 cnco_freq=cnco,
