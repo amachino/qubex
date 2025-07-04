@@ -1034,6 +1034,10 @@ def fit_lorentzian(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+
     if p0 is None:
         y_med = np.median(y)  # background level
         idx_ext = np.argmax(np.abs(y - y_med))  # index of the extreme point

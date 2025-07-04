@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -48,6 +50,21 @@ class RabiParam:
     distance: float
     r2: float
     reference_phase: float
+
+    @classmethod
+    def nan(cls, target: str) -> RabiParam:
+        return cls(
+            target=target,
+            amplitude=np.nan,
+            frequency=np.nan,
+            phase=np.nan,
+            offset=np.nan,
+            noise=np.nan,
+            angle=np.nan,
+            distance=np.nan,
+            r2=np.nan,
+            reference_phase=np.nan,
+        )
 
     @property
     def endpoints(self) -> tuple[complex, complex]:

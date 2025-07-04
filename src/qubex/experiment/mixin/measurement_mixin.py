@@ -815,19 +815,20 @@ class MeasurementMixin(
                 is_damped=is_damped,
             )
             if fit_result["status"] != "success":
-                continue
-            rabi_params[target] = RabiParam(
-                target=target,
-                amplitude=fit_result["amplitude"],
-                frequency=fit_result["frequency"],
-                phase=fit_result["phase"],
-                offset=fit_result["offset"],
-                noise=fit_result["noise"],
-                angle=fit_result["angle"],
-                distance=fit_result["distance"],
-                r2=fit_result["r2"],
-                reference_phase=fit_result["reference_phase"],
-            )
+                rabi_params[target] = RabiParam.nan(target=target)
+            else:
+                rabi_params[target] = RabiParam(
+                    target=target,
+                    amplitude=fit_result["amplitude"],
+                    frequency=fit_result["frequency"],
+                    phase=fit_result["phase"],
+                    offset=fit_result["offset"],
+                    noise=fit_result["noise"],
+                    angle=fit_result["angle"],
+                    distance=fit_result["distance"],
+                    r2=fit_result["r2"],
+                    reference_phase=fit_result["reference_phase"],
+                )
 
         # store the Rabi parameters if necessary
         if store_params:
@@ -934,19 +935,20 @@ class MeasurementMixin(
                 is_damped=is_damped,
             )
             if fit_result["status"] != "success":
-                continue
-            ef_rabi_params[ef_label] = RabiParam(
-                target=ef_label,
-                amplitude=fit_result["amplitude"],
-                frequency=fit_result["frequency"],
-                phase=fit_result["phase"],
-                offset=fit_result["offset"],
-                noise=fit_result["noise"],
-                angle=fit_result["angle"],
-                distance=fit_result["distance"],
-                r2=fit_result["r2"],
-                reference_phase=fit_result["reference_phase"],
-            )
+                ef_rabi_params[ef_label] = RabiParam.nan(target=ef_label)
+            else:
+                ef_rabi_params[ef_label] = RabiParam(
+                    target=ef_label,
+                    amplitude=fit_result["amplitude"],
+                    frequency=fit_result["frequency"],
+                    phase=fit_result["phase"],
+                    offset=fit_result["offset"],
+                    noise=fit_result["noise"],
+                    angle=fit_result["angle"],
+                    distance=fit_result["distance"],
+                    r2=fit_result["r2"],
+                    reference_phase=fit_result["reference_phase"],
+                )
             ef_rabi_data[ef_label] = RabiData(
                 target=ef_label,
                 data=data.data,
