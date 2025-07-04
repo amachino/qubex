@@ -693,6 +693,8 @@ class MeasurementMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
+        # TODO: Integrate with obtain_rabi_params
+
         if targets is None:
             targets = self.qubit_labels
         elif isinstance(targets, str):
@@ -708,8 +710,9 @@ class MeasurementMixin(
         ef_labels = [Target.ef_label(target) for target in targets]
         ef_targets = [self.targets[ef] for ef in ef_labels]
 
-        ampl = self.params.control_amplitude
-        amplitudes = {ef.label: ampl[ef.qubit] / np.sqrt(2) for ef in ef_targets}
+        amplitudes = {
+            ef.label: self.params.get_control_amplitude(ef.qubit) for ef in ef_targets
+        }
 
         rabi_data = {}
         rabi_params = {}
@@ -811,6 +814,8 @@ class MeasurementMixin(
                 plot=plot,
                 is_damped=is_damped,
             )
+            if fit_result["status"] != "success":
+                continue
             rabi_params[target] = RabiParam(
                 target=target,
                 amplitude=fit_result["amplitude"],
@@ -863,6 +868,8 @@ class MeasurementMixin(
         plot: bool = True,
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]:
+        # TODO: Integrate with rabi_experiment
+
         amplitudes = {
             Target.ef_label(label): amplitude for label, amplitude in amplitudes.items()
         }
@@ -926,6 +933,8 @@ class MeasurementMixin(
                 plot=plot,
                 is_damped=is_damped,
             )
+            if fit_result["status"] != "success":
+                continue
             ef_rabi_params[ef_label] = RabiParam(
                 target=ef_label,
                 amplitude=fit_result["amplitude"],

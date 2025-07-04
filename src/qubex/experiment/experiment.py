@@ -1399,6 +1399,7 @@ class Experiment(
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         store_params: bool = False,
+        rabi_level: Literal["ge", "ef"] = "ge",
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -1435,16 +1436,27 @@ class Experiment(
         else:
             targets = list(targets)
         time_range = np.asarray(time_range)
-        ampl = self.params.control_amplitude
-        amplitudes = {target: ampl[target] for target in targets}
-        result = self.rabi_experiment(
-            amplitudes=amplitudes,
-            time_range=time_range,
-            shots=shots,
-            interval=interval,
-            store_params=store_params,
-            plot=plot,
-        )
+        amplitudes = {
+            target: self.params.get_control_amplitude(target) for target in targets
+        }
+        if rabi_level == "ge":
+            result = self.rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=store_params,
+                plot=plot,
+            )
+        elif rabi_level == "ef":
+            result = self.ef_rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=store_params,
+                plot=plot,
+            )
         return result
 
     def calc_control_amplitude(
@@ -1454,14 +1466,15 @@ class Experiment(
         *,
         rabi_amplitude_ratio: float | None = None,
     ) -> float:
+        qubit = Target.qubit_label(target)
         if rabi_amplitude_ratio is None:
             rabi_param = self.rabi_params.get(target)
-            default_amplitude = self.params.control_amplitude.get(target)
+            default_amplitude = self.params.get_control_amplitude(qubit)
 
             if rabi_param is None:
                 raise ValueError(f"Rabi parameters for {target} are not stored.")
             if default_amplitude is None:
-                raise ValueError(f"Control amplitude for {target} is not defined.")
+                raise ValueError(f"Control amplitude for {qubit} is not defined.")
 
             rabi_amplitude_ratio = rabi_param.frequency / default_amplitude
 
@@ -1485,15 +1498,9 @@ class Experiment(
 
         if current_amplitudes is None:
             current_amplitudes = {}
-            default_ampl = self.params.control_amplitude
             for target in current_rabi_params:
-                if self.targets[target].is_ge:
-                    current_amplitudes[target] = default_ampl[target]
-                elif self.targets[target].is_ef:
-                    qubit = Target.qubit_label(target)
-                    current_amplitudes[target] = default_ampl[qubit] / np.sqrt(2)
-                else:
-                    raise ValueError("Invalid target.")
+                qubit = Target.qubit_label(target)
+                current_amplitudes[target] = self.params.get_control_amplitude(qubit)
 
         amplitudes = {
             target: current_amplitudes[target]

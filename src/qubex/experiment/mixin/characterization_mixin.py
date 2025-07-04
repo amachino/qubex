@@ -509,7 +509,9 @@ class CharacterizationMixin(
 
         detuning_range = np.array(detuning_range, dtype=np.float64)
         time_range = np.array(time_range, dtype=np.float64)
-        ampl = self.params.control_amplitude
+        amplitudes = {
+            target: self.params.get_control_amplitude(target) for target in targets
+        }
         rabi_rates: dict[str, list[float]] = defaultdict(list)
         rabi_data: dict[str, list[RabiData]] = defaultdict(list)
 
@@ -517,7 +519,7 @@ class CharacterizationMixin(
             if rabi_level == "ge":
                 rabi_result = self.rabi_experiment(
                     time_range=time_range,
-                    amplitudes={target: ampl[target] for target in targets},
+                    amplitudes=amplitudes,
                     detuning=detuning,
                     shots=shots,
                     interval=interval,
@@ -526,9 +528,7 @@ class CharacterizationMixin(
             elif rabi_level == "ef":
                 rabi_result = self.ef_rabi_experiment(
                     time_range=time_range,
-                    amplitudes={
-                        target: ampl[target] / np.sqrt(2) for target in targets
-                    },
+                    amplitudes=amplitudes,
                     detuning=detuning,
                     shots=shots,
                     interval=interval,
