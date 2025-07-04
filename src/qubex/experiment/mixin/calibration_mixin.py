@@ -1455,6 +1455,8 @@ class CalibrationMixin(
             if duration % duration_unit != 0:
                 duration = (duration // duration_unit + 1) * duration_unit
 
+        # TODO: Check if duration is multiple of duration_unit
+
         def ecr_sequence(amplitude: float, n_repetitions: int) -> PulseSchedule:
             scaled_cancel_pulse = amplitude / cr_amplitude * cancel_pulse
             ecr = CrossResonance(

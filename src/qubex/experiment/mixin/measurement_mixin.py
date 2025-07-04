@@ -529,6 +529,8 @@ class MeasurementMixin(
         xaxis_type: Literal["linear", "log"] = "linear",
         yaxis_type: Literal["linear", "log"] = "linear",
     ) -> ExperimentResult[SweepData]:
+        # TODO: Support ParametricWaveformDict and replace the sweep_parameter method
+
         sweep_range = np.array(sweep_range)
 
         rabi_params = self.ge_rabi_params
