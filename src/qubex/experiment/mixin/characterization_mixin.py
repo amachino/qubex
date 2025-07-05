@@ -2597,7 +2597,7 @@ class CharacterizationMixin(
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
         threshold: float = 0.5,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
@@ -2644,32 +2644,32 @@ class CharacterizationMixin(
         f_1 = result_1["f_r"]
         dispersive_shift = (f_1 - f_0) / 2
 
-        fig = go.Figure()
-        fig.add_scatter(
+        fig1 = go.Figure()
+        fig1.add_scatter(
             x=frequency_range,
             y=phases_0,
             name="0",
             mode="lines+markers",
         )
-        fig.add_scatter(
+        fig1.add_scatter(
             x=frequency_range,
             y=phases_1,
             name="1",
             mode="lines+markers",
         )
-        fig.add_vline(
+        fig1.add_vline(
             x=f_0,
             line_width=2,
             line_color="red",
             opacity=0.6,
         )
-        fig.add_vline(
+        fig1.add_vline(
             x=f_1,
             line_width=2,
             line_color="red",
             opacity=0.6,
         )
-        fig.add_annotation(
+        fig1.add_annotation(
             xref="paper",
             yref="paper",
             x=0.95,
@@ -2678,7 +2678,7 @@ class CharacterizationMixin(
             showarrow=False,
             bgcolor="rgba(255, 255, 255, 0.8)",
         )
-        fig.update_layout(
+        fig1.update_layout(
             title=f"Dispersive shift : {target}",
             xaxis_title="Frequency (GHz)",
             yaxis_title="Phase (rad)",
@@ -2686,15 +2686,49 @@ class CharacterizationMixin(
             height=300,
         )
 
+        distance = np.abs(signals_1 - signals_0)
+        optimal_frequency = frequency_range[np.argmax(distance)]
+        fig2 = go.Figure()
+        fig2.add_scatter(
+            x=frequency_range,
+            y=distance,
+            name="State distance",
+            mode="lines+markers",
+        )
+        fig2.add_vline(
+            x=optimal_frequency,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig2.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"f_opt: {optimal_frequency:.4f} GHz",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig2.update_layout(
+            title=f"State separation : {target}",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="State distance",
+            width=600,
+            height=300,
+        )
+
         if plot:
-            fig.show()
+            fig1.show()
+            fig2.show()
             print(f"f_0  : {f_0:.4f} GHz")
             print(f"f_1  : {f_1:.4f} GHz")
             print(f"χ    : {dispersive_shift * 1e3:.3f} MHz")
+            print(f"f_opt: {optimal_frequency:.4f} GHz")
 
         if save_image:
             viz.save_figure_image(
-                fig,
+                fig1,
                 name=f"dispersive_shift_{target}",
                 width=600,
                 height=300,
@@ -2704,12 +2738,13 @@ class CharacterizationMixin(
             "f_0": f_0,
             "f_1": f_1,
             "dispersive_shift": dispersive_shift,
+            "optimal_frequency": optimal_frequency,
             "frequency_range": frequency_range,
             "signals_0": signals_0,
             "signals_1": signals_1,
             "phases_0": phases_0,
             "phases_1": phases_1,
-            "fig": fig,
+            "fig": fig1,
         }
 
     def find_optimal_readout_frequency(
@@ -2720,15 +2755,15 @@ class CharacterizationMixin(
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
-        shots: int = DEFAULT_SHOTS,
+        shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
         if df is None:
-            df = 0.0005
+            df = 0.0002
         if frequency_width is None:
-            frequency_width = 0.01
+            frequency_width = 0.02
         result_0 = self.measure_reflection_coefficient(
             target,
             df=df,
@@ -2755,11 +2790,11 @@ class CharacterizationMixin(
         )
 
         frequency_range = result_0["frequency_range"]
-        singals_0 = result_0["reflection_coefficients"]
+        signals_0 = result_0["reflection_coefficients"]
         signals_1 = result_1["reflection_coefficients"]
 
-        distance = np.abs(signals_1 - singals_0)
-        f_opt = frequency_range[np.argmax(distance)]
+        distance = np.abs(signals_1 - signals_0)
+        optimal_frequency = frequency_range[np.argmax(distance)]
         fig = go.Figure()
         fig.add_scatter(
             x=frequency_range,
@@ -2768,7 +2803,7 @@ class CharacterizationMixin(
             mode="lines+markers",
         )
         fig.add_vline(
-            x=f_opt,
+            x=optimal_frequency,
             line_width=2,
             line_color="red",
             opacity=0.6,
@@ -2778,12 +2813,12 @@ class CharacterizationMixin(
             yref="paper",
             x=0.95,
             y=0.95,
-            text=f"f_opt: {f_opt:.4f} GHz",
+            text=f"f_opt: {optimal_frequency:.4f} GHz",
             showarrow=False,
             bgcolor="rgba(255, 255, 255, 0.8)",
         )
         fig.update_layout(
-            title=f"Dispersive shift : {target}",
+            title=f"State separation : {target}",
             xaxis_title="Frequency (GHz)",
             yaxis_title="State distance",
             width=600,
@@ -2792,7 +2827,7 @@ class CharacterizationMixin(
 
         if plot:
             fig.show()
-            print(f"f_opt: {f_opt:.4f} GHz")
+            print(f"f_opt: {optimal_frequency:.4f} GHz")
 
         if save_image:
             viz.save_figure_image(
@@ -2803,9 +2838,104 @@ class CharacterizationMixin(
             )
 
         return {
-            "f_opt": f_opt,
+            "optimal_frequency": optimal_frequency,
             "frequency_range": frequency_range,
-            "signals_0": singals_0,
+            "signals_0": signals_0,
+            "signals_1": signals_1,
+            "fig": fig,
+        }
+
+    def find_optimal_readout_amplitude(
+        self,
+        target: str,
+        *,
+        amplitude_range: ArrayLike | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict:
+        if amplitude_range is None:
+            amplitude_range = np.arange(0.01, 0.51, 0.01)
+        else:
+            amplitude_range = np.array(amplitude_range)
+
+        buffer_0 = []
+        buffer_1 = []
+        for amplitude in tqdm(amplitude_range):
+            result_0 = self.measure_state(
+                {target: "0"},
+                mode="avg",
+                readout_amplitudes={target: amplitude},
+                shots=shots,
+                interval=interval,
+            )
+            result_1 = self.measure_state(
+                {target: "1"},
+                mode="avg",
+                readout_amplitudes={target: amplitude},
+                shots=shots,
+                interval=interval,
+            )
+            buffer_0.append(result_0.data[target].kerneled)
+            buffer_1.append(result_1.data[target].kerneled)
+        signals_0 = np.array(buffer_0)
+        signals_1 = np.array(buffer_1)
+
+        distance = np.abs(signals_1 - signals_0)
+        optimal_amplitude = amplitude_range[np.argmax(distance)]
+        fig = go.Figure()
+        fig.add_scatter(
+            x=amplitude_range,
+            y=distance,
+            name="State distance",
+            mode="lines+markers",
+        )
+        fig.add_vline(
+            x=optimal_amplitude,
+            line_width=2,
+            line_color="red",
+            opacity=0.6,
+        )
+        fig.add_annotation(
+            xref="paper",
+            yref="paper",
+            x=0.95,
+            y=0.95,
+            text=f"amp_opt: {optimal_amplitude:.4f}",
+            showarrow=False,
+            bgcolor="rgba(255, 255, 255, 0.8)",
+        )
+        fig.update_layout(
+            title=f"State separation : {target}",
+            xaxis_title="Amplitude (arb. units)",
+            yaxis_title="State distance",
+            width=600,
+            height=300,
+        )
+
+        if plot:
+            viz.scatter_iq_data(
+                {
+                    "0": signals_0,
+                    "1": signals_1,
+                }
+            )
+            fig.show()
+            print(f"amp_opt: {optimal_amplitude:.4f}")
+
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"optimal_readout_amplitude_{target}",
+                width=600,
+                height=300,
+            )
+
+        return {
+            "optimal_amplitude": optimal_amplitude,
+            "amplitude_range": amplitude_range,
+            "signals_0": signals_0,
             "signals_1": signals_1,
             "fig": fig,
         }
