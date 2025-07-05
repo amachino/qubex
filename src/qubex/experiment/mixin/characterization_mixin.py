@@ -2928,7 +2928,7 @@ class CharacterizationMixin(
                 x=qubit_frequency_range,
                 y=np.array(result1d),
                 plot=False,
-            )["f0"]
+            ).get("f0", np.nan)
             qubit_resonance_frequencies.append(f0)
             result2d.append(result1d)
 
