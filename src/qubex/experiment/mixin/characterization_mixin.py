@@ -2856,7 +2856,7 @@ class CharacterizationMixin(
         save_image: bool = True,
     ) -> dict:
         if amplitude_range is None:
-            amplitude_range = np.arange(0.01, 0.51, 0.01)
+            amplitude_range = np.arange(0.01, 0.21, 0.01)
         else:
             amplitude_range = np.array(amplitude_range)
 
