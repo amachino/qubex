@@ -18,6 +18,7 @@ from ..protocol import BaseProtocol, BenchmarkingProtocol, MeasurementProtocol
 
 DEFAULT_CLIFFORD_RANGE_1Q = np.arange(0, 1001, 100)
 DEFAULT_CLIFFORD_RANGE_2Q = np.arange(0, 41, 4)
+DEFAULT_RB_N_TRIALS = 30
 
 
 class BenchmarkingMixin(
@@ -27,8 +28,8 @@ class BenchmarkingMixin(
 ):
     def rb_sequence(
         self,
-        *,
         target: str,
+        *,
         n: int,
         x90: Waveform | TargetMap[Waveform] | None = None,
         zx90: PulseSchedule | None = None,
@@ -128,8 +129,8 @@ class BenchmarkingMixin(
 
     def rb_sequence_2q(
         self,
-        *,
         target: str,
+        *,
         n: int,
         x90: TargetMap[Waveform] | None = None,
         zx90: PulseSchedule | None = None,
@@ -210,8 +211,8 @@ class BenchmarkingMixin(
         in_parallel: bool = False,
         n_cliffords_range: ArrayLike | None = None,
         x90: TargetMap[Waveform] | None = None,
-        interleaved_waveform: TargetMap[Waveform] | None = None,
         interleaved_clifford: Clifford | None = None,
+        interleaved_waveform: TargetMap[Waveform] | None = None,
         seed: int | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -446,7 +447,7 @@ class BenchmarkingMixin(
             targets = list(targets)
 
         if n_trials is None:
-            n_trials = 30
+            n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
             seeds = np.random.randint(0, 2**32, n_trials)
@@ -559,15 +560,6 @@ class BenchmarkingMixin(
         else:
             targets = list(targets)
 
-        if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
-        else:
-            seeds = np.array(seeds, dtype=int)
-            if len(seeds) != n_trials:
-                raise ValueError(
-                    "The number of seeds must be equal to the number of trials."
-                )
-
         target_object = self.experiment_system.get_target(targets[0])
         is_2q = target_object.is_cr
 
@@ -578,6 +570,18 @@ class BenchmarkingMixin(
                 n_cliffords_range = DEFAULT_CLIFFORD_RANGE_1Q
         else:
             n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
+        if n_trials is None:
+            n_trials = DEFAULT_RB_N_TRIALS
+
+        if seeds is None:
+            seeds = np.random.randint(0, 2**32, n_trials)
+        else:
+            seeds = np.array(seeds, dtype=int)
+            if len(seeds) != n_trials:
+                raise ValueError(
+                    "The number of seeds must be equal to the number of trials."
+                )
 
         if isinstance(interleaved_clifford, str):
             clifford = self.clifford.get(interleaved_clifford)
@@ -754,3 +758,83 @@ class BenchmarkingMixin(
                 "fig": fig,
             }
         return results
+
+    def benchmark_1q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        in_parallel: bool = False,
+        plot: bool = True,
+        save_image: bool = True,
+    ):
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if in_parallel:
+            self.interleaved_randomized_benchmarking(
+                targets,
+                in_parallel=in_parallel,
+                interleaved_clifford="X90",
+                plot=plot,
+                save_image=save_image,
+            )
+            self.interleaved_randomized_benchmarking(
+                targets,
+                in_parallel=in_parallel,
+                interleaved_clifford="X180",
+                plot=plot,
+                save_image=save_image,
+            )
+        else:
+            for target in targets:
+                self.interleaved_randomized_benchmarking(
+                    target,
+                    in_parallel=in_parallel,
+                    interleaved_clifford="X90",
+                    plot=plot,
+                    save_image=save_image,
+                )
+                self.interleaved_randomized_benchmarking(
+                    target,
+                    in_parallel=in_parallel,
+                    interleaved_clifford="X180",
+                    plot=plot,
+                    save_image=save_image,
+                )
+
+    def benchmark_2q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        in_parallel: bool = False,
+        plot: bool = True,
+        save_image: bool = True,
+    ):
+        if targets is None:
+            targets = self.cr_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if in_parallel:
+            self.interleaved_randomized_benchmarking(
+                targets,
+                in_parallel=in_parallel,
+                interleaved_clifford="ZX90",
+                plot=plot,
+                save_image=save_image,
+            )
+        else:
+            for target in targets:
+                self.interleaved_randomized_benchmarking(
+                    target,
+                    in_parallel=in_parallel,
+                    interleaved_clifford="ZX90",
+                    plot=plot,
+                    save_image=save_image,
+                )
