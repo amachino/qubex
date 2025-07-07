@@ -7,7 +7,6 @@ from typing import Literal, Sequence
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
-from typing_extensions import deprecated
 
 from ..style import COLORS
 from .blank import Blank
@@ -430,8 +429,3 @@ class PulseArray(Waveform):
                 },
             }
         )
-
-
-@deprecated("Use `PulseArray` instead.")
-class PulseSequence(PulseArray):
-    pass

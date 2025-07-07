@@ -13,7 +13,7 @@ from .library import (
 )
 from .phase_shift import PhaseShift, VirtualZ
 from .pulse import Pulse
-from .pulse_array import PulseArray, PulseSequence
+from .pulse_array import PulseArray
 from .pulse_schedule import PulseChannel, PulseSchedule
 from .waveform import Waveform
 
@@ -30,7 +30,6 @@ __all__ = [
     "PulseArray",
     "PulseChannel",
     "PulseSchedule",
-    "PulseSequence",
     "RaisedCosine",
     "RampType",
     "Rect",
