@@ -48,10 +48,9 @@ from ...typing import (
 from ..experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
-    CLASSIFIER_SHOTS,
+    DEFAULT_RABI_TIME_RANGE,
     HPI_DURATION,
     HPI_RAMPTIME,
-    RABI_TIME_RANGE,
 )
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..protocol import BaseProtocol, MeasurementProtocol
@@ -74,7 +73,7 @@ class MeasurementMixin(
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -89,7 +88,7 @@ class MeasurementMixin(
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MultipleMeasureResult:
-        capture_window = capture_window or self.capture_window
+        capture_duration = capture_duration or self.capture_duration
         capture_offset = capture_offset or self.capture_offset
         readout_duration = readout_duration or self.readout_duration
         readout_pre_margin = readout_pre_margin or self.readout_pre_margin
@@ -108,7 +107,7 @@ class MeasurementMixin(
                     mode=mode,
                     shots=shots,
                     interval=interval,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     capture_offset=capture_offset,
                     readout_amplitudes=readout_amplitudes,
                     readout_duration=readout_duration,
@@ -128,7 +127,7 @@ class MeasurementMixin(
                 mode=mode,
                 shots=shots,
                 interval=interval,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 capture_offset=capture_offset,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
@@ -156,7 +155,7 @@ class MeasurementMixin(
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -170,7 +169,7 @@ class MeasurementMixin(
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MeasureResult:
-        capture_window = capture_window or self.capture_window
+        capture_duration = capture_duration or self.capture_duration
         capture_offset = capture_offset or self.capture_offset
         readout_duration = readout_duration or self.readout_duration
         readout_pre_margin = readout_pre_margin or self.readout_pre_margin
@@ -229,7 +228,7 @@ class MeasurementMixin(
                 mode=mode,
                 shots=shots,
                 interval=interval,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 capture_offset=capture_offset,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
@@ -248,7 +247,7 @@ class MeasurementMixin(
                     mode=mode,
                     shots=shots,
                     interval=interval,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     capture_offset=capture_offset,
                     readout_amplitudes=readout_amplitudes,
                     readout_duration=readout_duration,
@@ -277,7 +276,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = False,
@@ -312,7 +311,7 @@ class MeasurementMixin(
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
@@ -328,7 +327,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
@@ -349,7 +348,7 @@ class MeasurementMixin(
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
             plot=False,
@@ -385,7 +384,7 @@ class MeasurementMixin(
             targets = list(targets)
 
         if shots is None:
-            shots = CLASSIFIER_SHOTS
+            shots = 10000
 
         result = self.measure_state(
             {target: "g" for target in targets},
@@ -424,7 +423,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         plot: bool = True,
         title: str = "Sweep result",
@@ -479,7 +478,7 @@ class MeasurementMixin(
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     capture_offset=capture_offset,
                     reset_awg_and_capunits=False,
                 )
@@ -521,7 +520,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         plot: bool = True,
         title: str = "Sweep result",
@@ -530,6 +529,8 @@ class MeasurementMixin(
         xaxis_type: Literal["linear", "log"] = "linear",
         yaxis_type: Literal["linear", "log"] = "linear",
     ) -> ExperimentResult[SweepData]:
+        # TODO: Support ParametricWaveformDict and replace the sweep_parameter method
+
         sweep_range = np.array(sweep_range)
 
         rabi_params = self.ge_rabi_params
@@ -551,7 +552,7 @@ class MeasurementMixin(
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     capture_offset=capture_offset,
                     reset_awg_and_capunits=False,
                 )
@@ -619,7 +620,7 @@ class MeasurementMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         ramptime: float | None = None,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
@@ -685,12 +686,15 @@ class MeasurementMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        ramptime: float | None = None,
         is_damped: bool = True,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
+        # TODO: Integrate with obtain_rabi_params
+
         if targets is None:
             targets = self.qubit_labels
         elif isinstance(targets, str):
@@ -700,11 +704,15 @@ class MeasurementMixin(
 
         time_range = np.asarray(time_range)
 
+        if ramptime is None:
+            ramptime = HPI_DURATION - HPI_RAMPTIME
+
         ef_labels = [Target.ef_label(target) for target in targets]
         ef_targets = [self.targets[ef] for ef in ef_labels]
 
-        ampl = self.params.control_amplitude
-        amplitudes = {ef.label: ampl[ef.qubit] / np.sqrt(2) for ef in ef_targets}
+        amplitudes = {
+            ef.label: self.params.get_control_amplitude(ef.qubit) for ef in ef_targets
+        }
 
         rabi_data = {}
         rabi_params = {}
@@ -712,6 +720,7 @@ class MeasurementMixin(
             data = self.ef_rabi_experiment(
                 amplitudes={label: amplitudes[label]},
                 time_range=time_range,
+                ramptime=ramptime,
                 is_damped=is_damped,
                 shots=shots,
                 interval=interval,
@@ -731,7 +740,7 @@ class MeasurementMixin(
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
@@ -805,18 +814,21 @@ class MeasurementMixin(
                 plot=plot,
                 is_damped=is_damped,
             )
-            rabi_params[target] = RabiParam(
-                target=target,
-                amplitude=fit_result["amplitude"],
-                frequency=fit_result["frequency"],
-                phase=fit_result["phase"],
-                offset=fit_result["offset"],
-                noise=fit_result["noise"],
-                angle=fit_result["angle"],
-                distance=fit_result["distance"],
-                r2=fit_result["r2"],
-                reference_phase=fit_result["reference_phase"],
-            )
+            if fit_result["status"] != "success":
+                rabi_params[target] = RabiParam.nan(target=target)
+            else:
+                rabi_params[target] = RabiParam(
+                    target=target,
+                    amplitude=fit_result["amplitude"],
+                    frequency=fit_result["frequency"],
+                    phase=fit_result["phase"],
+                    offset=fit_result["offset"],
+                    noise=fit_result["noise"],
+                    angle=fit_result["angle"],
+                    distance=fit_result["distance"],
+                    r2=fit_result["r2"],
+                    reference_phase=fit_result["reference_phase"],
+                )
 
         # store the Rabi parameters if necessary
         if store_params:
@@ -848,6 +860,7 @@ class MeasurementMixin(
         *,
         amplitudes: dict[str, float],
         time_range: ArrayLike,
+        ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
         is_damped: bool = True,
@@ -856,15 +869,21 @@ class MeasurementMixin(
         plot: bool = True,
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]:
+        # TODO: Integrate with rabi_experiment
+
         amplitudes = {
             Target.ef_label(label): amplitude for label, amplitude in amplitudes.items()
         }
         ge_labels = [Target.ge_label(label) for label in amplitudes]
         ef_labels = [Target.ef_label(label) for label in amplitudes]
-        ef_targets = [self.targets[ef] for ef in ef_labels]
 
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
+
+        if ramptime is None:
+            ramptime = 0.0
+
+        effective_time_range = time_range + ramptime
 
         # target frequencies
         if frequencies is None:
@@ -877,7 +896,7 @@ class MeasurementMixin(
             with PulseSchedule() as ps:
                 # prepare qubits to the excited state
                 for ge in ge_labels:
-                    ps.add(ge, self.get_hpi_pulse(ge).repeated(2))
+                    ps.add(ge, self.x180(ge))
                 ps.barrier()
                 # apply the ef drive to induce the ef Rabi oscillation
                 for ef in ef_labels:
@@ -900,40 +919,51 @@ class MeasurementMixin(
             plot=plot,
         )
 
-        # sweep data with the ef labels
-        sweep_data = {ef.label: sweep_result.data[ef.qubit] for ef in ef_targets}
-
         # fit the Rabi oscillation
-        rabi_params = {
-            target: fitting.fit_rabi(
-                target=target,
-                times=data.sweep_range,
+        ef_rabi_params = {}
+        ef_rabi_data = {}
+        for qubit, data in sweep_result.data.items():
+            ef_label = Target.ef_label(qubit)
+            ge_rabi_param = self.ge_rabi_params[qubit]
+            iq_e = ge_rabi_param.endpoints[1]
+            fit_result = fitting.fit_rabi(
+                target=qubit,
+                times=effective_time_range,
                 data=data.data,
+                reference_point=iq_e,
                 plot=plot,
                 is_damped=is_damped,
-            )["rabi_param"]
-            for target, data in sweep_data.items()
-        }
+            )
+            if fit_result["status"] != "success":
+                ef_rabi_params[ef_label] = RabiParam.nan(target=ef_label)
+            else:
+                ef_rabi_params[ef_label] = RabiParam(
+                    target=ef_label,
+                    amplitude=fit_result["amplitude"],
+                    frequency=fit_result["frequency"],
+                    phase=fit_result["phase"],
+                    offset=fit_result["offset"],
+                    noise=fit_result["noise"],
+                    angle=fit_result["angle"],
+                    distance=fit_result["distance"],
+                    r2=fit_result["r2"],
+                    reference_phase=fit_result["reference_phase"],
+                )
+            ef_rabi_data[ef_label] = RabiData(
+                target=ef_label,
+                data=data.data,
+                time_range=effective_time_range,
+                rabi_param=ef_rabi_params[ef_label],
+            )
 
         # store the Rabi parameters if necessary
         if store_params:
-            self.store_rabi_params(rabi_params)
-
-        # create the Rabi data for each target
-        rabi_data = {
-            target: RabiData(
-                target=target,
-                data=data.data,
-                time_range=time_range,
-                rabi_param=rabi_params[target],
-            )
-            for target, data in sweep_data.items()
-        }
+            self.store_rabi_params(ef_rabi_params)
 
         # create the experiment result
         result = ExperimentResult(
-            data=rabi_data,
-            rabi_params=rabi_params,
+            data=ef_rabi_data,
+            rabi_params=ef_rabi_params,
         )
 
         # return the result
@@ -950,7 +980,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> list[MeasureResult]:
@@ -971,7 +1001,7 @@ class MeasurementMixin(
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 add_pump_pulses=add_pump_pulses,
             )
             for state in states
@@ -1000,7 +1030,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         add_pump_pulses: bool = False,
         simultaneous: bool = False,
         plot: bool = True,
@@ -1024,7 +1054,7 @@ class MeasurementMixin(
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
                 readout_post_margin=readout_post_margin,
-                capture_window=capture_window,
+                capture_duration=capture_duration,
                 add_pump_pulses=add_pump_pulses,
                 plot=plot,
             )
@@ -1045,7 +1075,7 @@ class MeasurementMixin(
                     readout_duration=readout_duration,
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
-                    capture_window=capture_window,
+                    capture_duration=capture_duration,
                     add_pump_pulses=add_pump_pulses,
                     plot=plot,
                 )
@@ -1073,7 +1103,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> dict:
@@ -1086,7 +1116,7 @@ class MeasurementMixin(
         if n_states is None:
             n_states = 2
         if shots is None:
-            shots = CLASSIFIER_SHOTS
+            shots = 10000
 
         self.obtain_reference_points(targets)
 
@@ -1099,7 +1129,7 @@ class MeasurementMixin(
             readout_post_margin=readout_post_margin,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             add_pump_pulses=add_pump_pulses,
             plot=False,
         )
@@ -1341,6 +1371,55 @@ class MeasurementMixin(
 
         return result
 
+    def partial_waveform(self, waveform: Waveform, index: int) -> Waveform:
+        """Returns a partial waveform up to the given index."""
+
+        # If the index is 0, return an empty Pulse as the initial state.
+        if index == 0:
+            return Pulse([])
+
+        elif isinstance(waveform, Pulse):
+            # If the index is greater than the waveform length, return the waveform itself.
+            if index >= waveform.length:
+                return waveform
+            # If the index is less than the waveform length, return a partial waveform.
+            else:
+                return Pulse(waveform.values[0 : index - 1])
+
+        # If the waveform is a PulseArray, we need to extract the partial sequence.
+        elif isinstance(waveform, PulseArray):
+            offset = 0
+            pulse_array = PulseArray([])
+
+            # Iterate over the objects in the PulseArray.
+            for obj in waveform.elements:
+                # If the object is a PhaseShift gate, we can simply add it to the array.
+                if isinstance(obj, PhaseShift):
+                    pulse_array.add(obj)
+                    continue
+                elif isinstance(obj, Pulse):
+                    # If the index become equal to the offset, we can stop iterating.
+                    if index == offset:
+                        break
+                    # If the endpoint of obj is greater than the index, add the partial Pulse and break.
+                    elif obj.length > index - offset:
+                        pulse = Pulse(obj.values[0 : index - offset])
+                        pulse_array.add(pulse)
+                        break
+                    # If the endpoint of obj is less than or equal to the index, add the whole Pulse.
+                    else:
+                        pulse_array.add(obj)
+                        offset += obj.length
+                        # NOTE: Don't break here even offset become equal to index,
+                        # because we may have PhaseShift gates after the Pulse.
+                else:
+                    # NOTE: PulseArray should be flattened before calling this function.
+                    logger.error(f"Invalid type: {type(obj)}")
+            return pulse_array
+        else:
+            logger.error(f"Invalid type: {type(waveform)}")
+            return waveform
+
     def pulse_tomography(
         self,
         sequence: PulseSchedule | TargetMap[Waveform] | TargetMap[IQArray],
@@ -1381,51 +1460,6 @@ class MeasurementMixin(
                 for target in pulses:
                     pulses[target].plot(title=f"Waveform : {target}")
 
-        def partial_waveform(waveform: Waveform, index: int) -> Waveform:
-            """Returns a partial waveform up to the given index."""
-
-            # If the index is 0, return an empty Pulse as the initial state.
-            if index == 0:
-                return Pulse([])
-
-            elif isinstance(waveform, Pulse):
-                # If the index is greater than the waveform length, return the waveform itself.
-                if index >= waveform.length:
-                    return waveform
-                # If the index is less than the waveform length, return a partial waveform.
-                else:
-                    return Pulse(waveform.values[0 : index - 1])
-
-            # If the waveform is a PulseArray, we need to extract the partial sequence.
-            elif isinstance(waveform, PulseArray):
-                current_index = 0
-                pulse_array = PulseArray([])
-
-                # Iterate over the objects in the PulseArray.
-                for obj in waveform.elements:
-                    # If the object is a PhaseShift gate, we can simply add it to the array.
-                    if isinstance(obj, PhaseShift):
-                        pulse_array.add(obj)
-                        continue
-                    elif isinstance(obj, Pulse):
-                        # If the object is a Pulse, we need to check the index.
-                        if index - current_index == 0:
-                            continue
-                        elif index - current_index < obj.length:
-                            pulse = Pulse(obj.values[0 : index - current_index - 1])
-                            pulse_array.add(pulse)
-                            break
-                        else:
-                            pulse_array.add(obj)
-                            current_index += obj.length
-                    else:
-                        # NOTE: PulseArray should be flattened before calling this function.
-                        logger.error(f"Invalid type: {type(obj)}")
-                return pulse_array
-            else:
-                logger.error(f"Invalid type: {type(waveform)}")
-                return waveform
-
         if n_samples is None or pulse_length < n_samples:
             indices = np.arange(pulse_length + 1)
         else:
@@ -1438,7 +1472,7 @@ class MeasurementMixin(
 
         sequences = [
             {
-                target: partial_waveform(pulse, i)
+                target: self.partial_waveform(pulse, i)
                 for target, pulse in flattened_pulses.items()
             }
             for i in indices

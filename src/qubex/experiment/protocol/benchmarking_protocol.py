@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Literal, Protocol
+from typing import Collection, Protocol
 
-import numpy as np
 from numpy.typing import ArrayLike
 
 from ...clifford import Clifford
-from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import PulseArray, PulseSchedule, Waveform
 from ...typing import TargetMap
 from ..experiment_result import ExperimentResult, RBData
@@ -15,28 +13,24 @@ from ..experiment_result import ExperimentResult, RBData
 class BenchmarkingProtocol(Protocol):
     def rb_sequence(
         self,
-        *,
         target: str,
+        *,
         n: int,
-        x90: dict[str, Waveform] | None = None,
-        zx90: PulseSchedule | dict[str, Waveform] | None = None,
-        interleaved_waveform: (
-            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
-        ) = None,
+        x90: Waveform | TargetMap[Waveform] | None = None,
+        zx90: PulseSchedule | None = None,
+        interleaved_waveform: Waveform | PulseSchedule | None = None,
         interleaved_clifford: Clifford | None = None,
         seed: int | None = None,
     ) -> PulseSchedule: ...
 
     def rb_sequence_1q(
         self,
-        *,
         target: str,
+        *,
         n: int,
-        x90: Waveform | dict[str, Waveform] | None = None,
-        interleaved_waveform: (
-            Waveform | dict[str, PulseArray] | dict[str, Waveform] | None
-        ) = None,
-        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
+        x90: Waveform | None = None,
+        interleaved_clifford: Clifford | None = None,
+        interleaved_waveform: Waveform | None = None,
         seed: int | None = None,
     ) -> PulseArray:
         """
@@ -48,11 +42,11 @@ class BenchmarkingProtocol(Protocol):
             Target qubit.
         n : int
             Number of Clifford gates.
-        x90 : Waveform | dict[str, Waveform], optional
+        x90 : Waveform , optional
             π/2 pulse used for the experiment.
-        interleaved_waveform : Waveform | dict[str, PulseArray] | dict[str, Waveform], optional
+        interleaved_waveform : Waveform | None, optional
             Waveform of the interleaved gate.
-        interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
+        interleaved_clifford : Clifford | None, optional
             Clifford map of the interleaved gate.
         seed : int, optional
             Random seed.
@@ -74,30 +68,20 @@ class BenchmarkingProtocol(Protocol):
         ...     target="Q00",
         ...     n=100,
         ...     x90=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford={
-        ...         "I": (1, "I"),
-        ...         "X": (1, "X"),
-        ...         "Y": (-1, "Y"),
-        ...         "Z": (-1, "Z"),
-        ...     },
+        ...     interleaved_clifford="X90",
         ... )
         """
         ...
 
     def rb_sequence_2q(
         self,
-        *,
         target: str,
+        *,
         n: int,
         x90: TargetMap[Waveform] | None = None,
-        zx90: (
-            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
-        ) = None,
-        interleaved_waveform: (
-            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
-        ) = None,
-        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
+        zx90: PulseSchedule | None = None,
+        interleaved_clifford: Clifford | None = None,
+        interleaved_waveform: PulseSchedule | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
         """
@@ -109,13 +93,13 @@ class BenchmarkingProtocol(Protocol):
             Target qubit.
         n : int
             Number of Clifford gates.
-        x90 : Waveform | TargetMap[Waveform], optional
+        x90 : TargetMap[Waveform], optional
             π/2 pulse used for 1Q gates.
-        zx90 : PulseSchedule | dict[str, Waveform], optional
+        zx90 : PulseSchedule | None, optional
             ZX90 pulses used for 2Q gates.
-        interleaved_waveform : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
+        interleaved_waveform : PulseSchedule | None, optional
             Waveform of the interleaved gate.
-        interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
+        interleaved_clifford : Clifford | None, optional
             Clifford map of the interleaved gate.
         seed : int, optional
             Random seed.
@@ -144,23 +128,23 @@ class BenchmarkingProtocol(Protocol):
         ...         "Q01": Rect(duration=30, amplitude=0.1),
         ...     },
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford=Clifford.CNOT(),
+        ...     interleaved_clifford=Clifford.ZX90(),
         ... )
         """
         ...
 
     def rb_experiment_1q(
         self,
+        targets: Collection[str] | str,
         *,
-        target: str,
+        in_parallel: bool = False,
         n_cliffords_range: ArrayLike | None = None,
-        x90: Waveform | dict[str, Waveform] | None = None,
-        interleaved_waveform: Waveform | None = None,
-        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        x90: TargetMap[Waveform] | None = None,
+        interleaved_clifford: Clifford | None = None,
+        interleaved_waveform: TargetMap[Waveform] | None = None,
         seed: int | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
     ) -> ExperimentResult[RBData]:
@@ -169,24 +153,22 @@ class BenchmarkingProtocol(Protocol):
 
         Parameters
         ----------
-        target : str
-            Target qubit.
+        targets : Collection[str] | str
+            Target qubits.
         n_cliffords_range : ArrayLike, optional
-            Range of the number of Cliffords. Defaults to range(0, 1001, 50).
-        x90 : Waveform, optional
+            Range of the number of Cliffords.
+        x90 : TargetMap[Waveform], optional
             π/2 pulse used for the experiment.
-        interleaved_waveform : Waveform, optional
-            Waveform of the interleaved gate.
-        interleaved_clifford : Clifford | dict[str, tuple[complex, str]], optional
+        interleaved_clifford : Clifford | None, optional
             Clifford map of the interleaved gate.
-        spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Spectator state. Defaults to "0".
-        seed : int, optional
+        interleaved_waveform : TargetMap[Waveform], optional
+            Waveform of the interleaved gate.
+        seed : int | None, optional
             Random seed.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        shots : int | None, optional
+            Number of shots.
+        interval : float | None, optional
+            Interval between shots.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         save_image : bool, optional
@@ -210,51 +192,40 @@ class BenchmarkingProtocol(Protocol):
         ...     n_cliffords_range=range(0, 1001, 50),
         ...     x90=Rect(duration=30, amplitude=0.1),
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford={
-        ...         "I": (1, "I"),
-        ...         "X": (1, "X"),
-        ...         "Y": (-1, "Y"),
-        ...         "Z": (-1, "Z"),
-        ...     },
+        ...     interleaved_clifford=Clifford.X90(),
         ... )
         """
         ...
 
     def rb_experiment_2q(
         self,
+        targets: Collection[str] | str,
         *,
-        target: str,
-        n_cliffords_range: ArrayLike = np.arange(0, 21, 2),
+        in_parallel: bool = False,
+        n_cliffords_range: ArrayLike | None = None,
         x90: TargetMap[Waveform] | None = None,
-        zx90: (
-            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
-        ) = None,
-        interleaved_waveform: (
-            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
-        ) = None,
-        interleaved_clifford: Clifford | dict[str, tuple[complex, str]] | None = None,
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        zx90: TargetMap[PulseSchedule] | None = None,
+        interleaved_clifford: Clifford | None = None,
+        interleaved_waveform: TargetMap[PulseSchedule] | None = None,
         seed: int | None = None,
         mitigate_readout: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
     ): ...
 
     def randomized_benchmarking(
         self,
-        target: str,
+        targets: Collection[str] | str,
         *,
+        in_parallel: bool = False,
         n_cliffords_range: ArrayLike | None = None,
-        n_trials: int = 30,
-        x90: Waveform | dict[str, Waveform] | None = None,
-        zx90: (
-            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
-        ) = None,
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        n_trials: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
         seeds: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -263,24 +234,22 @@ class BenchmarkingProtocol(Protocol):
 
         Parameters
         ----------
-        target : str
-            Target qubit.
+        targets : Collection[str] | str
+            Target qubits.
         n_cliffords_range : ArrayLike, optional
             Range of the number of Cliffords.
         n_trials : int, optional
-            Number of trials for different random seeds. Defaults to 30.
-        x90 : Waveform | dict[str, Waveform], optional
+            Number of trials for different random seeds.
+        x90 : Waveform | None, optional
             π/2 pulse used for the experiment.
-        zx90 : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
+        zx90 : TargetMap[PulseSchedule] | None, optional
             ZX90 pulses used for 2Q gates.
-        spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Spectator state. Defaults to "0".
         seeds : ArrayLike, optional
             Random seeds.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots.
         interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         save_image : bool, optional
@@ -295,20 +264,20 @@ class BenchmarkingProtocol(Protocol):
 
     def interleaved_randomized_benchmarking(
         self,
+        targets: Collection[str] | str,
         *,
-        target: str,
-        interleaved_waveform: Waveform | PulseSchedule,
-        interleaved_clifford: Clifford | dict[str, tuple[complex, str]],
+        in_parallel: bool = False,
+        interleaved_clifford: str | Clifford,
+        interleaved_waveform: TargetMap[PulseSchedule]
+        | TargetMap[Waveform]
+        | None = None,
         n_cliffords_range: ArrayLike | None = None,
-        n_trials: int = 30,
-        x90: TargetMap[Waveform] | Waveform | None = None,
-        zx90: (
-            PulseSchedule | dict[str, PulseArray] | dict[str, Waveform] | None
-        ) = None,
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        n_trials: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
         seeds: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -319,26 +288,24 @@ class BenchmarkingProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        interleaved_waveform : Waveform
-            Waveform of the interleaved gate.
-        interleaved_clifford : str | Clifford | dict[str, tuple[complex, str]]
+        interleaved_clifford : str | Clifford
             Clifford map of the interleaved gate.
+        interleaved_waveform : TargetMap[PulseSchedule] | TargetMap[Waveform] | None, optional
+            Waveform of the interleaved gate.
         n_cliffords_range : ArrayLike, optional
-            Range of the number of Cliffords. Defaults to range(0, 1001, 100).
+            Range of the number of Cliffords.
         n_trials : int, optional
-            Number of trials for different random seeds. Defaults to 30.
-        x90 : Waveform, optional
-            π/2 pulse.
-        zx90 : PulseSchedule | dict[str, PulseArray] | dict[str, Waveform], optional
+            Number of trials for different random seeds.
+        x90 : TargetMap[Waveform] | None, optional
+            π/2 pulse used for the experiment.
+        zx90 : TargetMap[PulseSchedule] | None, optional
             ZX90 pulses used for 2Q gates.
-        spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Spectator state. Defaults to "0".
         seeds : ArrayLike, optional
             Random seeds.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots.
         interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         save_image : bool, optional
@@ -353,20 +320,12 @@ class BenchmarkingProtocol(Protocol):
         --------
         >>> result = ex.interleaved_randomized_benchmarking(
         ...     target="Q00",
+        ...     interleaved_clifford="X90",
         ...     interleaved_waveform=Rect(duration=30, amplitude=0.1),
-        ...     interleaved_clifford={
-        ...         "I": (1, "I"),
-        ...         "X": (1, "X"),
-        ...         "Y": (1, "Z"),
-        ...         "Z": (-1, "Y"),
-        ...     },
         ...     n_cliffords_range=range(0, 1001, 100),
         ...     n_trials=30,
         ...     x90=Rect(duration=30, amplitude=0.1),
-        ...     spectator_state="0",
-        ...     show_ref=True,
         ...     shots=1024,
-        ...     interval=1024,
         ...     plot=True,
         ... )
         """

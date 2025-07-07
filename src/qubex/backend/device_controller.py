@@ -253,6 +253,8 @@ class DeviceController:
             self._boxpool._box_config_cache.clear()
 
     def load_skew_file(self, box_list: list[str], file_path: str | Path):
+        if len(box_list) == 0:
+            return
         clockmaster_setting = self.qubecalib.sysdb._clockmaster_setting
         if clockmaster_setting is None:
             raise ValueError("Clockmaster setting not found in system configuration.")
@@ -481,6 +483,9 @@ class DeviceController:
         box_list : list[str]
             List of box names.
         """
+        if len(box_list) < 2:
+            # NOTE: clockmaster will crash if there is only one box
+            return True
         self.qubecalib.resync(*box_list)
         return self.check_clocks(box_list)
 
@@ -778,33 +783,20 @@ class DeviceController:
         RawResult
             Measurement result.
         """
-        if self._boxpool is None:
-            # deprecated
-            self.clear_command_queue()
-            self.add_sequencer(sequencer)
-            return next(
-                self.execute(
-                    repeats=repeats,
-                    integral_mode=integral_mode,
-                    dsp_demodulation=dsp_demodulation,
-                    software_demodulation=software_demodulation,
-                )
-            )
-        else:
-            sequencer.set_measurement_option(
-                repeats=repeats,
-                interval=sequencer.interval,  # type: ignore
-                integral_mode=integral_mode,
-                dsp_demodulation=dsp_demodulation,
-                software_demodulation=software_demodulation,
-                enable_sum=enable_sum,
-            )
-            status, data, config = sequencer.execute(self.boxpool)
-            return RawResult(
-                status=status,
-                data=data,
-                config=config,
-            )
+        sequencer.set_measurement_option(
+            repeats=repeats,
+            interval=sequencer.interval,  # type: ignore
+            integral_mode=integral_mode,
+            dsp_demodulation=dsp_demodulation,
+            software_demodulation=software_demodulation,
+            enable_sum=enable_sum,
+        )
+        status, data, config = sequencer.execute(self.boxpool)
+        return RawResult(
+            status=status,
+            data=data,
+            config=config,
+        )
 
     def _execute_sequencer(
         self,

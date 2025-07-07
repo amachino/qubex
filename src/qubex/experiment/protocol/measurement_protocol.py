@@ -15,7 +15,7 @@ from ...typing import (
     ParametricWaveformDict,
     TargetMap,
 )
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE
+from ..experiment_constants import CALIBRATION_SHOTS, DEFAULT_RABI_TIME_RANGE
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 
 
@@ -28,7 +28,7 @@ class MeasurementProtocol(Protocol):
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -58,7 +58,7 @@ class MeasurementProtocol(Protocol):
             Interval between shots in ns.
         frequencies : Optional[dict[str, float]], optional
             Frequencies of the qubits.
-        capture_window : float, optional
+        capture_duration : float, optional
             Capture window in ns.
         capture_offset : float, optional
             Capture offset in ns.
@@ -115,7 +115,7 @@ class MeasurementProtocol(Protocol):
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -146,7 +146,7 @@ class MeasurementProtocol(Protocol):
             Number of shots.
         interval : float, optional
             Interval between shots in ns.
-        capture_window : float, optional
+        capture_duration : float, optional
             Capture window in ns.
         capture_offset : float, optional
             Capture offset in ns.
@@ -199,7 +199,7 @@ class MeasurementProtocol(Protocol):
         mode: Literal["single", "avg"] = "single",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -221,7 +221,7 @@ class MeasurementProtocol(Protocol):
             Number of shots.
         interval : float, optional
             Interval between shots in ns.
-        capture_window : float, optional
+        capture_duration : float, optional
             Capture window in ns.
         capture_offset : float, optional
             Capture offset in ns.
@@ -265,7 +265,7 @@ class MeasurementProtocol(Protocol):
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
@@ -289,7 +289,7 @@ class MeasurementProtocol(Protocol):
             Readout pre-margin in ns.
         readout_post_margin : float, optional
             Readout post-margin in ns.
-        capture_window : float, optional
+        capture_duration : float, optional
             Capture window in ns.
         capture_offset : float, optional
             Capture offset in ns.
@@ -352,7 +352,7 @@ class MeasurementProtocol(Protocol):
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int | None = None,
         interval: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
@@ -384,7 +384,7 @@ class MeasurementProtocol(Protocol):
             Number of shots.
         interval : float, optional
             Interval between shots in ns.
-        capture_window : float, optional
+        capture_duration : float, optional
             Capture window in ns.
         capture_offset : float, optional
             Capture offset in ns.
@@ -469,7 +469,7 @@ class MeasurementProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
         is_damped: bool = False,
@@ -484,7 +484,7 @@ class MeasurementProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -495,7 +495,7 @@ class MeasurementProtocol(Protocol):
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
@@ -527,7 +527,7 @@ class MeasurementProtocol(Protocol):
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = True,
@@ -546,7 +546,7 @@ class MeasurementProtocol(Protocol):
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         add_pump_pulses: bool = False,
         simultaneous: bool = False,
         plot: bool = True,

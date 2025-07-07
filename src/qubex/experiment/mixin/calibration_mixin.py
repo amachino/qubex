@@ -1080,7 +1080,7 @@ class CalibrationMixin(
         print(f"  target  ({target_qubit}) : {f_target * 1e3:.3f} MHz")
         print(f"  Δ ({cr_label}) : {f_delta * 1e3:.3f} MHz")
 
-        print("Rotation coefficients:")
+        print("Rotation rates:")
         for key, value in coeffs.items():
             print(f"  {key} : {value * 1e3:+.3f} MHz")
 
@@ -1454,6 +1454,8 @@ class CalibrationMixin(
             duration = duration_buffer / (8 * zx_frequency) + ramptime
             if duration % duration_unit != 0:
                 duration = (duration // duration_unit + 1) * duration_unit
+
+        # TODO: Check if duration is multiple of duration_unit
 
         def ecr_sequence(amplitude: float, n_repetitions: int) -> PulseSchedule:
             scaled_cancel_pulse = amplitude / cr_amplitude * cancel_pulse
@@ -1940,3 +1942,55 @@ class CalibrationMixin(
             "cr_param": cr_param,
             "result": es.result,
         }
+
+    def calibrate_1q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        plot: bool = True,
+    ):
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        self.obtain_rabi_params(targets, plot=plot)
+        self.calibrate_hpi_pulse(targets, plot=plot)
+        self.calibrate_drag_hpi_pulse(targets, plot=plot)
+        self.calibrate_drag_pi_pulse(targets, plot=plot)
+        self.build_classifier(targets, plot=plot)
+        self.save_calib_note()
+
+    def calibrate_2q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        plot: bool = True,
+    ):
+        if targets is None:
+            targets = self.cr_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        pairs = [Target.cr_qubit_pair(target) for target in targets]
+
+        for control_qubit, target_qubit in pairs:
+            try:
+                self.obtain_cr_params(
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
+                    plot=plot,
+                )
+                self.calibrate_zx90(
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
+                    plot=plot,
+                )
+                self.save_calib_note()
+            except Exception as e:
+                print(f"Error calibrating {control_qubit}-{target_qubit}: {e}")
+                continue

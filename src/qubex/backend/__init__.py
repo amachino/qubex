@@ -4,7 +4,7 @@ from .device_controller import SAMPLING_PERIOD, DeviceController, RawResult
 from .experiment_system import ControlParams, ExperimentSystem, MixingUtil, WiringInfo
 from .lattice_graph import LatticeGraph
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
-from .state_manager import StateManager
+from .system_manager import SystemManager
 from .target import Target, TargetType
 
 __all__ = [
@@ -27,7 +27,7 @@ __all__ = [
     "Qubit",
     "RawResult",
     "Resonator",
-    "StateManager",
+    "SystemManager",
     "SAMPLING_PERIOD",
     "Target",
     "TargetType",

@@ -310,6 +310,10 @@ def fit_linear(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+
     def func_linear(x, a):
         return a * x
 
@@ -439,6 +443,10 @@ def fit_polynomial(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+
     popt = np.polyfit(x, y, degree)
     fun = np.poly1d(popt)
     y_fit = fun(x)
@@ -542,6 +550,10 @@ def fit_cosine(
     """
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
 
     dt = x[1] - x[0]
     N = len(x)
@@ -722,6 +734,10 @@ def fit_delayed_cosine(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+
     dt = x[1] - x[0]
     N = len(x)
     f = np.fft.fftfreq(N, dt)[1 : N // 2]
@@ -888,6 +904,10 @@ def fit_exp_decay(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+
     if p0 is None:
         tau_guess = 20_000
         p0 = (
@@ -1033,6 +1053,10 @@ def fit_lorentzian(
     """
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
 
     if p0 is None:
         y_med = np.median(y)  # background level
@@ -1185,6 +1209,10 @@ def fit_sqrt_lorentzian(
     """
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
 
     if p0 is None:
         y_med = np.median(y)  # background level

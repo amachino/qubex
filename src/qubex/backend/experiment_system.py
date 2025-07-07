@@ -556,24 +556,12 @@ class ExperimentSystem:
                     )
                     self._gen_target_dict[cr_target.label] = cr_target
             elif mode == "ge-cr-cr":
-                ef_target = Target.new_ef_target(
-                    qubit=qubit,
-                    channel=port.channels[0],
-                )
-                self._gen_target_dict[ef_target.label] = ef_target
                 for i, ch in config["channels"].items():
                     for label in ch["targets"]:
                         if match := re.match(r"^(Q\d+)$", label):
                             qubit_label = match.group(1)
                             qubit = self.get_qubit(qubit_label)
                             target = Target.new_ge_target(
-                                qubit=qubit,
-                                channel=port.channels[i],
-                            )
-                        elif match := re.match(r"^(Q\d+)-ef$", label):
-                            qubit_label = match.group(1)
-                            qubit = self.get_qubit(qubit_label)
-                            target = Target.new_ef_target(
                                 qubit=qubit,
                                 channel=port.channels[i],
                             )

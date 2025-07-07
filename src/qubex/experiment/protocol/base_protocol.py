@@ -14,7 +14,7 @@ from ...backend import (
     QuantumSystem,
     Qubit,
     Resonator,
-    StateManager,
+    SystemManager,
     Target,
 )
 from ...clifford import Clifford, CliffordGenerator
@@ -22,7 +22,6 @@ from ...measurement import Measurement, StateClassifier
 from ...pulse import PulseSchedule, RampType, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..calibration_note import CalibrationNote
-from ..experiment_constants import RABI_FREQUENCY
 from ..experiment_note import ExperimentNote
 from ..experiment_record import ExperimentRecord
 from ..experiment_util import ExperimentUtil
@@ -41,8 +40,8 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def state_manager(self) -> StateManager:
-        """Get the state manager."""
+    def system_manager(self) -> SystemManager:
+        """Get the system manager."""
         ...
 
     @property
@@ -161,8 +160,8 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def capture_window(self) -> float:
-        """Get the capture window."""
+    def capture_duration(self) -> float:
+        """Get the capture duration."""
         ...
 
     @property
@@ -603,8 +602,16 @@ class BaseProtocol(Protocol):
         """
         ...
 
-    def check_status(self):
+    def is_connected(self) -> bool:
+        """Check if the devices are connected."""
+        ...
+
+    def check_status(self) -> None:
         """Check the status of the measurement system."""
+        ...
+
+    def connect(self) -> None:
+        """Connect to the measurement system."""
         ...
 
     def linkup(
@@ -779,7 +786,7 @@ class BaseProtocol(Protocol):
     def calc_control_amplitudes(
         self,
         *,
-        rabi_rate: float = RABI_FREQUENCY,
+        rabi_rate: float | None = None,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
@@ -790,7 +797,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         rabi_rate : float, optional
-            Target Rabi rate in GHz. Defaults to RABI_FREQUENCY.
+            Target Rabi rate in GHz.
         current_amplitudes : dict[str, float], optional
             Current control amplitudes.
         current_rabi_params : dict[str, RabiParam], optional

@@ -25,15 +25,15 @@ from ..backend import (
     QuantumSystem,
     Qubit,
     Resonator,
-    StateManager,
+    SystemManager,
     Target,
     TargetType,
 )
 from ..clifford import Clifford, CliffordGenerator
 from ..measurement import Measurement, MeasureResult, StateClassifier
 from ..measurement.measurement import (
+    DEFAULT_CAPTURE_DURATION,
     DEFAULT_CAPTURE_OFFSET,
-    DEFAULT_CAPTURE_WINDOW,
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
@@ -58,13 +58,12 @@ from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
-    CLASSIFIER_SHOTS,
+    DEFAULT_RABI_FREQUENCY,
+    DEFAULT_RABI_TIME_RANGE,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     HPI_DURATION,
     HPI_RAMPTIME,
-    RABI_FREQUENCY,
-    RABI_TIME_RANGE,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
@@ -104,21 +103,35 @@ class Experiment(
     exclude_qubits : Collection[str | int], optional
         Qubit labels to exclude in the experiment.
     config_dir : str, optional
-        Directory of the configuration files.
+        Path to the configuration directory containing:
+          - box.yaml
+          - chip.yaml
+          - wiring.yaml
+          - skew.yaml
     params_dir : str, optional
-        Directory of the parameter files.
-    connect_devices : bool, optional
-        Whether to connect the devices. Defaults to True.
+        Path to the parameters directory containing:
+          - params.yaml
+          - props.yaml
+    calib_note_path : Path | str, optional
+        Path to the calibration note file.
+    calibration_valid_days : int, optional
+        Number of days for which the calibration is valid.
     drag_hpi_duration : int, optional
-        Duration of the DRAG HPI pulse. Defaults to DRAG_HPI_DURATION.
+        Duration of the DRAG HPI pulse.
     drag_pi_duration : int, optional
-        Duration of the DRAG π pulse. Defaults to DRAG_PI_DURATION.
-    capture_window : int, optional
-        Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
+        Duration of the DRAG π pulse.
     readout_duration : int, optional
-        Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+        Duration of the readout pulse.
+    readout_pre_margin : int, optional
+        Pre-margin of the readout pulse.
+    readout_post_margin : int, optional
+        Post-margin of the readout pulse.
+    capture_duration : int, optional
+        Capture duration for the readout signal.
+    capture_offset : float, optional
+        Offset for the capture in ns.
     classifier_dir : Path | str, optional
-        Directory of the state classifiers. Defaults to CLASSIFIER_DIR.
+        Directory of the state classifiers.
     classifier_type : Literal["kmeans", "gmm"], optional
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
@@ -140,21 +153,20 @@ class Experiment(
         muxes: Collection[str | int] | None = None,
         qubits: Collection[str | int] | None = None,
         exclude_qubits: Collection[str | int] | None = None,
-        config_dir: str | None = None,
-        params_dir: str | None = None,
+        config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
         calib_note_path: Path | str | None = None,
-        connect_devices: bool = True,
-        drag_hpi_duration: int = DRAG_HPI_DURATION,
-        drag_pi_duration: int = DRAG_PI_DURATION,
-        readout_duration: int = DEFAULT_READOUT_DURATION,
-        readout_pre_margin: int = DEFAULT_READOUT_PRE_MARGIN,
-        readout_post_margin: int = DEFAULT_READOUT_POST_MARGIN,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
+        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
+        drag_hpi_duration: float = DRAG_HPI_DURATION,
+        drag_pi_duration: float = DRAG_PI_DURATION,
+        readout_duration: float = DEFAULT_READOUT_DURATION,
+        readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN,
+        readout_post_margin: float = DEFAULT_READOUT_POST_MARGIN,
+        capture_duration: float = DEFAULT_CAPTURE_DURATION,
         capture_offset: float = DEFAULT_CAPTURE_OFFSET,
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
     ):
         self._load_config(
             chip_id=chip_id,
@@ -174,7 +186,7 @@ class Experiment(
         self._readout_duration: Final = readout_duration
         self._readout_pre_margin: Final = readout_pre_margin
         self._readout_post_margin: Final = readout_post_margin
-        self._capture_window: Final = capture_window
+        self._capture_duration: Final = capture_duration
         self._capture_offset: Final = capture_offset
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
@@ -183,10 +195,8 @@ class Experiment(
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
-            config_dir=config_dir,
-            params_dir=params_dir,
-            connect_devices=connect_devices,
-            configuration_mode=configuration_mode,
+            load_configs=False,
+            connect_devices=False,
         )
         self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
@@ -209,12 +219,12 @@ class Experiment(
     def _load_config(
         self,
         chip_id: str,
-        config_dir: str | None,
-        params_dir: str | None,
+        config_dir: Path | str | None,
+        params_dir: Path | str | None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
     ):
         """Load the configuration files."""
-        self.state_manager.load(
+        self.system_manager.load(
             chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
@@ -304,16 +314,16 @@ class Experiment(
         return self._measurement
 
     @property
-    def state_manager(self) -> StateManager:
-        return StateManager.shared()
+    def system_manager(self) -> SystemManager:
+        return SystemManager.shared()
 
     @property
     def config_loader(self) -> ConfigLoader:
-        return self.state_manager.config_loader
+        return self.system_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
-        return self.state_manager.experiment_system
+        return self.system_manager.experiment_system
 
     @property
     def quantum_system(self) -> QuantumSystem:
@@ -325,7 +335,7 @@ class Experiment(
 
     @property
     def device_controller(self) -> DeviceController:
-        return self.state_manager.device_controller
+        return self.system_manager.device_controller
 
     @property
     def params(self) -> ControlParams:
@@ -441,8 +451,8 @@ class Experiment(
         return self._user_note
 
     @property
-    def capture_window(self) -> float:
-        return self._capture_window
+    def capture_duration(self) -> float:
+        return self._capture_duration
 
     @property
     def capture_offset(self) -> float:
@@ -894,6 +904,7 @@ class Experiment(
         self,
         cr_labels: Collection[str] | str | None = None,
         *,
+        shots: int = 10000,
         save: bool = True,
     ):
         if cr_labels is None:
@@ -909,7 +920,7 @@ class Experiment(
                 continue
             result = self.state_tomography(
                 self.zx90(control_qubit, target_qubit),
-                shots=CLASSIFIER_SHOTS,
+                shots=shots,
             )
             x, y, _ = result[target_qubit]
             phase = np.arctan2(y, x)
@@ -1102,7 +1113,18 @@ class Experiment(
     ) -> NDArray:
         return self.measurement.get_inverse_confusion_matrix(targets)
 
+    def is_connected(self) -> bool:
+        return self._measurement.is_connected()
+
     def check_status(self):
+        if not self.is_connected():
+            print("Not connected to the devices. Call `connect()` method first.")
+            return
+
+        if len(self.box_ids) == 0:
+            print("No boxes are selected.")
+            return
+
         # link status
         link_status = self._measurement.check_link_status(self.box_ids)
         if link_status["status"]:
@@ -1120,12 +1142,22 @@ class Experiment(
         print(clock_status["clocks"])
 
         # config status
-        config_status = self.state_manager.is_synced(box_ids=self.box_ids)
+        config_status = self.system_manager.is_synced(box_ids=self.box_ids)
         if config_status:
             print("Config status: OK")
         else:
             print("Config status: NG")
-        print(self.state_manager.device_settings)
+        print(self.system_manager.device_settings)
+
+    def connect(
+        self,
+    ) -> None:
+        try:
+            self._measurement.connect()
+            print("Successfully connected.")
+        except Exception as e:
+            print(f"Failed to connect to the devices: {e}")
+            raise
 
     def linkup(
         self,
@@ -1156,19 +1188,24 @@ class Experiment(
             exclude = [exclude]
         if mode is None:
             mode = self.configuration_mode
-        self.state_manager.load(
+        self.system_manager.load(
             chip_id=self.chip_id,
             config_dir=self.config_path,
             params_dir=self.params_path,
             targets_to_exclude=exclude,
             configuration_mode=mode,
         )
-        self.state_manager.push(
+        self.system_manager.push(
             box_ids=box_ids or self.box_ids,
         )
 
     def reload(self):
-        self._measurement.reload()
+        try:
+            self._measurement.reload()
+            print("Successfully reloaded.")
+        except Exception as e:
+            print(f"Failed to reload the devices: {e}")
+            raise
 
     def reset_awg_and_capunits(
         self,
@@ -1219,7 +1256,7 @@ class Experiment(
                 cnco=port.cnco_freq,
             )
             port.channels[channel_number].fnco_freq = fnco
-            self.state_manager.push(box_ids=[box_id])
+            self.system_manager.push(box_ids=[box_id])
 
     @contextmanager
     def modified_frequencies(
@@ -1229,7 +1266,7 @@ class Experiment(
         if frequencies is None:
             yield
         else:
-            with self.state_manager.modified_frequencies(frequencies):
+            with self.system_manager.modified_frequencies(frequencies):
                 yield
 
     def save_calib_note(
@@ -1313,7 +1350,7 @@ class Experiment(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_window: float | None = None,
+        capture_duration: float | None = None,
         capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
@@ -1337,10 +1374,10 @@ class Experiment(
             Pre-margin of the readout pulse in ns.
         readout_post_margin : float, optional
             Post-margin of the readout pulse in ns.
-        capture_window : float, optional
-            Capture window for the readout signal in ns.
+        capture_duration : float, optional
+            Capture duration for the readout signal in ns.
         capture_offset : float, optional
-            Offset for the capture window in ns.
+            Offset for the capture in ns.
         add_pump_pulses : bool, optional
             Whether to add pump pulses to the readout sequence. Defaults to False.
         plot : bool, optional
@@ -1375,7 +1412,7 @@ class Experiment(
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            capture_window=capture_window,
+            capture_duration=capture_duration,
             capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
         )
@@ -1387,10 +1424,11 @@ class Experiment(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         store_params: bool = False,
+        rabi_level: Literal["ge", "ef"] = "ge",
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -1427,16 +1465,27 @@ class Experiment(
         else:
             targets = list(targets)
         time_range = np.asarray(time_range)
-        ampl = self.params.control_amplitude
-        amplitudes = {target: ampl[target] for target in targets}
-        result = self.rabi_experiment(
-            amplitudes=amplitudes,
-            time_range=time_range,
-            shots=shots,
-            interval=interval,
-            store_params=store_params,
-            plot=plot,
-        )
+        amplitudes = {
+            target: self.params.get_control_amplitude(target) for target in targets
+        }
+        if rabi_level == "ge":
+            result = self.rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=store_params,
+                plot=plot,
+            )
+        elif rabi_level == "ef":
+            result = self.ef_rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=store_params,
+                plot=plot,
+            )
         return result
 
     def calc_control_amplitude(
@@ -1446,14 +1495,15 @@ class Experiment(
         *,
         rabi_amplitude_ratio: float | None = None,
     ) -> float:
+        qubit = Target.qubit_label(target)
         if rabi_amplitude_ratio is None:
             rabi_param = self.rabi_params.get(target)
-            default_amplitude = self.params.control_amplitude.get(target)
+            default_amplitude = self.params.get_control_amplitude(qubit)
 
             if rabi_param is None:
                 raise ValueError(f"Rabi parameters for {target} are not stored.")
             if default_amplitude is None:
-                raise ValueError(f"Control amplitude for {target} is not defined.")
+                raise ValueError(f"Control amplitude for {qubit} is not defined.")
 
             rabi_amplitude_ratio = rabi_param.frequency / default_amplitude
 
@@ -1461,12 +1511,15 @@ class Experiment(
 
     def calc_control_amplitudes(
         self,
-        rabi_rate: float = RABI_FREQUENCY,
+        rabi_rate: float | None = None,
         *,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
     ) -> dict[str, float]:
+        if rabi_rate is None:
+            rabi_rate = DEFAULT_RABI_FREQUENCY
+
         current_rabi_params = current_rabi_params or self.rabi_params
 
         if current_rabi_params is None:
@@ -1474,15 +1527,9 @@ class Experiment(
 
         if current_amplitudes is None:
             current_amplitudes = {}
-            default_ampl = self.params.control_amplitude
             for target in current_rabi_params:
-                if self.targets[target].is_ge:
-                    current_amplitudes[target] = default_ampl[target]
-                elif self.targets[target].is_ef:
-                    qubit = Target.qubit_label(target)
-                    current_amplitudes[target] = default_ampl[qubit] / np.sqrt(2)
-                else:
-                    raise ValueError("Invalid target.")
+                qubit = Target.qubit_label(target)
+                current_amplitudes[target] = self.params.get_control_amplitude(qubit)
 
         amplitudes = {
             target: current_amplitudes[target]
