@@ -13,8 +13,10 @@ import qutip as qt
 from scipy.interpolate import interp1d
 
 from ..analysis.visualization import plot_bloch_vectors
-from ..pulse import PulseSchedule, Waveform
+from ..pulse import PulseSchedule, Waveform, get_sampling_period
 from .quantum_system import Object, QuantumSystem
+
+DEFAULT_TIME_STEP: Final = 0.1
 
 
 class Control:
@@ -36,7 +38,7 @@ class Control:
         waveform : Waveform | list | npt.NDArray
             The I/Q values of each segment in rad/ns.
         durations : list | npt.NDArray | None, optional
-            The durations of each segment in ns, by default None
+            The durations of each segment in ns.
         frequency : float | None, optional
             The control frequency in GHz.
         """
@@ -196,7 +198,7 @@ class SimulationResult:
         list[qt.Qobj]
             The substates of the qubit.
         frame : Literal["qubit", "drive"] | None, optional
-            The frame of the substates, by default "qubit"
+            The frame of the substates, by default "qubit".
         """
         if frame is None:
             frame = "qubit"
@@ -251,9 +253,9 @@ class SimulationResult:
         label : str
             The label of the qubit.
         n_samples : int | None, optional
-            The number of samples to return, by default None
+            The number of samples to return.
         frame : Literal["qubit", "drive"] | None, optional
-            The frame of the substates, by default None
+            The frame of the substates.
 
         Returns
         -------
@@ -293,9 +295,9 @@ class SimulationResult:
         dim : int, optional
             The dimension of the qubit, by default 2
         n_samples : int | None, optional
-            The number of samples to return, by default None
+            The number of samples to return.
         frame : Literal["qubit", "drive"] | None, optional
-            The frame of the substates, by default None
+            The frame of the substates.
 
         Returns
         -------
@@ -344,9 +346,9 @@ class SimulationResult:
         label : str
             The label of the qubit.
         n_samples : int | None, optional
-            The number of samples to return, by default None
+            The number of samples to return.
         frame : Literal["qubit", "drive"] | None, optional
-            The frame of the substates, by default None
+            The frame of the substates.
         """
         rho = self.get_density_matrices(
             label,
@@ -365,7 +367,7 @@ class SimulationResult:
         Parameters
         ----------
         label : Optional[str], optional
-            The label of the qubit, by default
+            The label of the qubit.
         """
         states = self.states if label is None else self.get_substates(label)
         population = np.real(states[-1].diag())
@@ -385,7 +387,7 @@ class SimulationResult:
         Parameters
         ----------
         label : Optional[str], optional
-            The label of the qubit, by default
+            The label of the qubit.
         """
         states = self.states if label is None else self.get_substates(label)
         populations = defaultdict(list)
@@ -450,7 +452,7 @@ class QuantumSimulator:
         self,
         controls: list[Control] | PulseSchedule,
         initial_state: qt.Qobj | dict | None = None,
-        dt: float = 0.1,
+        dt: float | None = None,
         n_samples: int | None = None,
     ) -> SimulationResult:
         """
@@ -461,29 +463,30 @@ class QuantumSimulator:
         controls : list[Control] | PulseSchedule
             The control signals.
         initial_state : qt.Qobj | dict | None, optional
-            The initial state of the quantum system, by default None
+            The initial state of the quantum system.
         dt : float, optional
-            The time step of the simulation, by default 0.1
+            The time step of the simulation.
         n_samples : int | None, optional
-            The number of samples to return, by default None
+            The number of samples to return.
 
         Returns
         -------
         SimulationResult
             The result of the simulation.
         """
+        if initial_state is None:
+            initial_state = self.system.ground_state
         if not isinstance(initial_state, qt.Qobj):
             initial_state = self.system.state(initial_state)
         if initial_state.dims[0] != self.system.object_dimensions:
             raise ValueError("The dims of the initial state do not match the system.")
+        if dt is None:
+            dt = DEFAULT_TIME_STEP
 
         if isinstance(controls, PulseSchedule):
             controls = self._convert_pulse_schedule_to_controls(controls)
 
         self._validate_controls(controls)
-
-        if initial_state is None:
-            initial_state = self.system.ground_state
 
         control = controls[0]
         N = int(control.duration / dt)
@@ -538,8 +541,9 @@ class QuantumSimulator:
         self,
         controls: list[Control] | PulseSchedule,
         initial_state: qt.Qobj | dict | None = None,
-        dt: float = 0.1,
+        dt: float | None = None,
         n_samples: int | None = None,
+        frame: Literal["qubit", "drive"] | None = None,
     ) -> SimulationResult:
         """
         Simulate the dynamics of the quantum system using the `mesolve` function.
@@ -549,35 +553,41 @@ class QuantumSimulator:
         controls : list[Control] | PulseSchedule
             The control signals.
         initial_state : qt.Qobj | dict | None, optional
-            The initial state of the quantum system, by default None
+            The initial state of the quantum system.
         dt : float, optional
-            The time step of the simulation, by default 0.1
+            The time step of the simulation.
         n_samples : int | None, optional
-            The number of samples to return, by default None
+            The number of samples to return.
 
         Returns
         -------
         SimulationResult
             The result of the simulation.
         """
+        if initial_state is None:
+            initial_state = self.system.ground_state
         if not isinstance(initial_state, qt.Qobj):
             initial_state = self.system.state(initial_state)
         if initial_state.dims[0] != self.system.object_dimensions:
             raise ValueError("The dims of the initial state do not match the system.")
+        if dt is None:
+            dt = DEFAULT_TIME_STEP
 
         if isinstance(controls, PulseSchedule):
             controls = self._convert_pulse_schedule_to_controls(controls)
 
         self._validate_controls(controls)
 
-        if initial_state is None:
-            initial_state = self.system.ground_state
+        options = self._create_mesolve_options(
+            controls=controls,
+            initial_state=initial_state,
+            dt=dt,
+            frame=frame,
+        )
 
-        control = controls[0]
-        N = int(control.duration / dt)
-        times = np.linspace(0, control.duration, N + 1)
+        times = options["tlist"]
 
-        if control.n_segments == 0:
+        if len(times) == 1:
             return SimulationResult(
                 system=self.system,
                 times=times,
@@ -586,57 +596,12 @@ class QuantumSimulator:
                 unitaries=np.array([self.system.identity_matrix]),
             )
 
-        static_hamiltonian = self.system.zero_matrix
-        coupling_hamiltonian: list = []
-        control_hamiltonian: list = []
-        collapse_operators: list = []
-
-        # Add static terms
-        for label in self.system.object_labels:
-            static_hamiltonian += self.system.get_rotating_object_hamiltonian(label)
-
-        # Add coupling terms
-        for coupling in self.system.couplings:
-            ad_0 = self.system.get_raising_operator(coupling.pair[0])
-            a_1 = self.system.get_lowering_operator(coupling.pair[1])
-            op = ad_0 * a_1
-            g = 2 * np.pi * coupling.strength
-            Delta = self.system.get_coupling_detuning(coupling.label)
-            coeffs = g * np.exp(-1j * Delta * times)  # continuous
-            coupling_hamiltonian.append([op, coeffs])
-            coupling_hamiltonian.append([op.dag(), np.conj(coeffs)])
-
-        # Add control terms
-        for control in controls:
-            target = control.target
-            object = self.system.get_object(target)
-            a = self.system.get_lowering_operator(target)
-            ad = self.system.get_raising_operator(target)
-            delta = 2 * np.pi * (control.frequency - object.frequency)
-            samples = control.get_samples(times)
-            Omega = 0.5 * samples  # discrete
-            gamma = Omega * np.exp(-1j * delta * times)  # continuous
-            control_hamiltonian.append([ad, gamma])
-            control_hamiltonian.append([a, np.conj(gamma)])
-
-        # Total Hamiltonian
-        H = [static_hamiltonian] + coupling_hamiltonian + control_hamiltonian
-
-        # Add collapse operators
-        for object in self.system.objects:
-            a = self.system.get_lowering_operator(object.label)
-            N = self.system.get_number_operator(object.label)
-            relaxation_operator = np.sqrt(object.relaxation_rate) * a
-            dephasing_operator = np.sqrt(object.dephasing_rate) * N
-            collapse_operators.append(relaxation_operator)
-            collapse_operators.append(dephasing_operator)
-
         # Run the simulation
         result = qt.mesolve(
-            H=H,
-            rho0=initial_state,
-            tlist=times,
-            c_ops=collapse_operators,
+            H=options["H"],
+            rho0=options["rho0"],
+            tlist=options["tlist"],
+            c_ops=options["c_ops"],
         )
 
         states = np.array(result.states)
@@ -652,6 +617,220 @@ class QuantumSimulator:
             states=states,
             unitaries=np.array([]),
         )
+
+    def create_hamiltonian_ndarray(
+        self,
+        controls: list[Control] | PulseSchedule,
+        initial_state: qt.Qobj | dict | None = None,
+        dt: float | None = None,
+        frame: Literal["qubit", "drive"] | None = None,
+    ) -> npt.NDArray[np.complex64]:
+        """
+        Create the Hamiltonian for the quantum system.
+
+        Parameters
+        ----------
+        controls : list[Control] | PulseSchedule
+            The control signals.
+        initial_state : qt.Qobj | dict | None, optional
+            The initial state of the quantum system.
+        dt : float, optional
+            The time step of the simulation.
+        frame : Literal["qubit", "drive"] | None, optional
+            The frame of the simulation.
+
+        Returns
+        -------
+        npt.NDArray[np.complex64]
+            The Hamiltonian of the quantum system.
+        """
+        options = self._create_mesolve_options(
+            controls=controls,
+            initial_state=initial_state,
+            dt=dt,
+            frame=frame,
+        )
+        Hs = options["H"]
+        H = np.ones(Hs[1][1].shape + Hs[0].shape, dtype=np.complex64) * Hs[0].full()
+        for i in range(1, len(Hs)):
+            H += Hs[i][1][:, None, None] * Hs[i][0].full()
+        return H
+
+    def calculate_adiabatic_coefficients(
+        self,
+        controls: list[Control] | PulseSchedule,
+        dt: float | None = None,
+        plot: bool = True,
+    ) -> npt.NDArray[np.complex64]:
+        """
+        Calculate the adiabatic coefficients.
+
+        Parameters
+        ----------
+        controls : list[Control] | PulseSchedule
+            The control signals.
+        initial_state : qt.Qobj | dict | None, optional
+            The initial state of the quantum system.
+        dt : float, optional
+            The time step of the simulation.
+        frame : Literal["qubit", "drive"] | None, optional
+            The frame of the simulation.
+
+        Returns
+        -------
+        npt.NDArray[np.complex64]
+            The adiabatic coefficients of the quantum system.
+        """
+        if dt is None:
+            dt = get_sampling_period()
+        H = self.create_hamiltonian_ndarray(
+            controls=controls,
+            dt=dt,
+            frame="drive",
+        )[:-1]
+        times = np.arange(H.shape[0]) * dt
+        dHdt = np.gradient(H, dt, axis=0)
+        E, V = np.linalg.eigh(H)
+        V_dag = np.swapaxes(V.conj(), -1, -2)
+        M = V_dag @ dHdt @ V
+        dE = E[..., :, None] - E[..., None, :]
+        N = H.shape[-1]
+        diag_mask = np.eye(N, dtype=bool)[None, :, :]
+        dE = np.where(diag_mask, np.inf, dE)
+        A = np.abs(M) / dE**2
+        A_total = A.sum(axis=(-2, -1))
+
+        if plot:
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    x=times,
+                    y=A_total,
+                    mode="lines+markers",
+                    name="Adiabatic Coefficients",
+                )
+            )
+            fig.update_layout(
+                title="Adiabatic Coefficients",
+                xaxis_title="Time (ns)",
+                yaxis_title="Coefficient",
+            )
+            fig.show()
+
+        return A_total
+
+    def _create_mesolve_options(
+        self,
+        controls: list[Control] | PulseSchedule,
+        initial_state: qt.Qobj | dict | None = None,
+        dt: float | None = None,
+        frame: Literal["qubit", "drive"] | None = None,
+    ):
+        """
+        Create the options for the `mesolve` function.
+
+        Parameters
+        ----------
+        controls : list[Control] | PulseSchedule
+            The control signals.
+        initial_state : qt.Qobj | dict | None, optional
+            The initial state of the quantum system.
+        dt : float, optional
+            The time step of the simulation.
+
+        Returns
+        -------
+        dict
+            The options for the `mesolve` function.
+
+        Notes
+        -----
+        Calculates in the rotating frame of each object, not the drive frame.
+        """
+        if initial_state is None:
+            initial_state = self.system.ground_state
+        if not isinstance(initial_state, qt.Qobj):
+            initial_state = self.system.state(initial_state)
+        if initial_state.dims[0] != self.system.object_dimensions:
+            raise ValueError("The dims of the initial state do not match the system.")
+        if dt is None:
+            dt = DEFAULT_TIME_STEP
+        if frame is None:
+            frame = "drive"
+
+        if isinstance(controls, PulseSchedule):
+            controls = self._convert_pulse_schedule_to_controls(controls)
+
+        self._validate_controls(controls)
+
+        control = controls[0]
+        N = int(control.duration / dt)
+        times = np.linspace(0, control.duration, N + 1)
+
+        frame_frequencies = {
+            object.label: object.frequency for object in self.system.objects
+        }
+        if frame == "drive":
+            # Use the control frequencies if available
+            for control in controls:
+                frame_frequencies[control.target] = control.frequency
+
+        static_hamiltonian = self.system.zero_matrix
+        coupling_hamiltonian: list = []
+        control_hamiltonian: list = []
+        collapse_operators: list = []
+
+        # Add static terms
+        for object in self.system.objects:
+            detuning = object.frequency - frame_frequencies[object.label]
+            omega = 2 * np.pi * detuning
+            alpha = 2 * np.pi * object.anharmonicity
+            a = self.system.get_lowering_operator(object.label)
+            ad = a.dag()
+            static_hamiltonian += omega * ad * a + 0.5 * alpha * (ad * ad * a * a)
+
+        # Add coupling terms
+        for coupling in self.system.couplings:
+            pair = coupling.pair
+            ad_0 = self.system.get_raising_operator(pair[0])
+            a_1 = self.system.get_lowering_operator(pair[1])
+            op = ad_0 * a_1
+            g = 2 * np.pi * coupling.strength
+            f0 = frame_frequencies[pair[0]]
+            f1 = frame_frequencies[pair[1]]
+            Delta = 2 * np.pi * (f0 - f1)
+            coeffs = g * np.exp(1j * Delta * times)
+            coupling_hamiltonian.append([op, coeffs])
+            coupling_hamiltonian.append([op.dag(), np.conj(coeffs)])
+
+        # Add control terms
+        for control in controls:
+            target = control.target
+            object = self.system.get_object(target)
+            a = self.system.get_lowering_operator(target)
+            ad = self.system.get_raising_operator(target)
+            Omega = 0.5 * control.get_samples(times)
+            control_hamiltonian.append([ad, Omega])
+            control_hamiltonian.append([a, np.conj(Omega)])
+
+        # Total Hamiltonian
+        H = [static_hamiltonian] + coupling_hamiltonian + control_hamiltonian
+
+        # Add collapse operators
+        for object in self.system.objects:
+            a = self.system.get_lowering_operator(object.label)
+            N = self.system.get_number_operator(object.label)
+            relaxation_operator = np.sqrt(object.relaxation_rate) * a
+            dephasing_operator = np.sqrt(object.dephasing_rate) * N
+            collapse_operators.append(relaxation_operator)
+            collapse_operators.append(dephasing_operator)
+
+        return {
+            "H": H,
+            "rho0": initial_state,
+            "tlist": times,
+            "c_ops": collapse_operators,
+        }
 
     @staticmethod
     def _convert_pulse_schedule_to_controls(
