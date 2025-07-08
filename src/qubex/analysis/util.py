@@ -34,16 +34,16 @@ def hamiltonian(
     """
     H0 = np.diag(
         [
-            ((qubit_frequency - drive_frequency) - 0.5 * qubit_anharmonicity) * i
-            + 0.5 * qubit_anharmonicity * i**2
-            for i in range(dimension)
+            ((qubit_frequency - drive_frequency) - 0.5 * qubit_anharmonicity) * n
+            + 0.5 * qubit_anharmonicity * n**2
+            for n in range(dimension)
         ]
     )
     H1 = np.zeros((dimension, dimension), dtype=np.complex128)
 
     for i in range(dimension - 1):
-        H1[i, i + 1] = np.conj(drive_amplitude) * np.sqrt(i + 1)
-        H1[i + 1, i] = drive_amplitude * np.sqrt(i + 1)
+        H1[i, i + 1] = 0.5 * np.conj(drive_amplitude) * np.sqrt(i + 1)
+        H1[i + 1, i] = 0.5 * drive_amplitude * np.sqrt(i + 1)
 
     return H0 + H1
 
@@ -93,11 +93,11 @@ def adiabatic_coefficients(
     )
     dHdt = np.gradient(H, sampling_period, axis=0, edge_order=2)
     E, V = np.linalg.eigh(H)
-    V_dag = np.swapaxes(V.conj(), -1, -2)
+    V_dag = np.swapaxes(V.conj(), -2, -1)
     M = V_dag @ dHdt @ V
     dE = E[..., :, None] - E[..., None, :]
-    zero_mask = np.isclose(dE, 0, atol=1e-10)
-    dE = np.where(zero_mask, np.inf, dE)
+    diag_mask = np.eye(dimension, dtype=bool)
+    dE = np.where(diag_mask, np.inf, dE)
     A = np.abs(M) / dE**2
     A_total = np.sum(A, axis=(-2, -1))
     return A_total
