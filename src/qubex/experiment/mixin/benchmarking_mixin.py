@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Collection, Mapping
 
 import numpy as np
 from numpy.typing import ArrayLike
-from tqdm import tqdm
 
 from ...analysis import fitting
 from ...analysis import visualization as viz
@@ -13,11 +13,8 @@ from ...clifford import Clifford
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 from ...typing import TargetMap
-from ..experiment_result import ExperimentResult, RBData
 from ..protocol import BaseProtocol, BenchmarkingProtocol, MeasurementProtocol
 
-DEFAULT_CLIFFORD_RANGE_1Q = np.arange(0, 1001, 100)
-DEFAULT_CLIFFORD_RANGE_2Q = np.arange(0, 41, 4)
 DEFAULT_RB_N_TRIALS = 30
 
 
@@ -208,24 +205,41 @@ class BenchmarkingMixin(
         self,
         targets: Collection[str] | str,
         *,
-        in_parallel: bool = False,
         n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: TargetMap[Waveform] | None = None,
-        seed: int | None = None,
+        in_parallel: bool = False,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
-    ) -> ExperimentResult[RBData]:
+    ) -> dict:
         if isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
 
-        if n_cliffords_range is None:
-            n_cliffords_range = DEFAULT_CLIFFORD_RANGE_1Q
+        if n_cliffords_range is not None:
+            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
+        if n_trials is None:
+            n_trials = DEFAULT_RB_N_TRIALS
+
+        if seeds is None:
+            seeds = np.random.randint(0, 2**32, n_trials)
+        else:
+            seeds = np.array(seeds, dtype=int)
+            if len(seeds) != n_trials:
+                raise ValueError(
+                    "The number of seeds must be equal to the number of trials."
+                )
+
+        if max_n_cliffords is None:
+            max_n_cliffords = 2**11
 
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -233,48 +247,90 @@ class BenchmarkingMixin(
         if interval is None:
             interval = DEFAULT_INTERVAL
 
-        if in_parallel:
-            execution_groups = [targets]
-        else:
-            execution_groups = [[target] for target in targets]
-
         for target in targets:
             target_object = self.experiment_system.get_target(target)
             if target_object.is_cr:
                 raise ValueError(f"`{target}` is not a 1Q target.")
 
-        intermediate_results = {}
-        for target_group in execution_groups:
+        if in_parallel:
+            target_groups = [targets]
+        else:
+            target_groups = [[target] for target in targets]
 
-            def rb_sequence(N: int) -> PulseSchedule:
-                with PulseSchedule(target_group) as ps:
-                    for target in target_group:
-                        rb_sequence = self.rb_sequence_1q(
-                            target,
-                            n=N,
-                            x90=x90.get(target) if x90 else None,
-                            interleaved_waveform=interleaved_waveform.get(target)
-                            if interleaved_waveform
-                            else None,
-                            interleaved_clifford=interleaved_clifford,
+        def rb_sequence(
+            targets: list[str],
+            n_clifford: int,
+            seed: int,
+        ) -> PulseSchedule:
+            with PulseSchedule(targets) as ps:
+                for target in targets:
+                    rb_sequence = self.rb_sequence_1q(
+                        target,
+                        n=n_clifford,
+                        x90=x90.get(target) if x90 else None,
+                        interleaved_waveform=interleaved_waveform.get(target)
+                        if interleaved_waveform
+                        else None,
+                        interleaved_clifford=interleaved_clifford,
+                        seed=seed,
+                    )
+                    ps.add(target, rb_sequence)
+            return ps
+
+        return_data = {}
+
+        for target_group in target_groups:
+            idx = 0
+            sweep_range = []
+            mean_data = defaultdict(list)
+            std_data = defaultdict(list)
+            while True:
+                if n_cliffords_range is None:
+                    n_clifford = 0 if idx == 0 else 2 ** (idx - 1)
+                    if n_clifford > max_n_cliffords:
+                        break
+                else:
+                    if idx >= len(n_cliffords_range):
+                        break
+                    n_clifford = n_cliffords_range[idx]
+
+                idx += 1
+                sweep_range.append(n_clifford)
+
+                trial_data = defaultdict(list)
+                for seed in seeds:
+                    result = self.measure(
+                        sequence=rb_sequence(
+                            n_clifford=n_clifford,
+                            targets=target_group,
                             seed=seed,
-                        )
-                        ps.add(target, rb_sequence)
-                return ps
+                        ),
+                        mode="avg",
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    iq = result.data[target].kerneled
+                    z = self.rabi_params[target].normalize(iq)
+                    trial_data[target].append((z + 1) / 2)
 
-            sweep_result = self.sweep_parameter(
-                rb_sequence,
-                sweep_range=n_cliffords_range,
-                shots=shots,
-                interval=interval,
-                plot=False,
-            )
+                mean_data[target].append(np.mean(trial_data[target]))
+                std_data[target].append(np.std(trial_data[target]))
 
-            for target, sweep_data in sweep_result.data.items():
+            sweep_range = np.array(sweep_range, dtype=int)
+
+            mean_data = {target: np.array(data) for target, data in mean_data.items()}
+            std_data = {target: np.array(data) for target, data in std_data.items()}
+
+            for target in target_group:
+                mean = mean_data[target]
+                std = std_data[target] if n_trials > 1 else None
+
                 fit_result = fitting.fit_rb(
                     target=target,
-                    x=sweep_data.sweep_range,
-                    y=(sweep_data.normalized + 1) / 2,
+                    x=sweep_range,
+                    y=mean,
+                    error_y=std,
                     bounds=((0, 0, 0), (0.5, 1, 1)),
                     title="Randomized benchmarking",
                     xlabel="Number of Cliffords",
@@ -290,34 +346,28 @@ class BenchmarkingMixin(
                         name=f"rb_{target}",
                     )
 
-                intermediate_results[target] = {
-                    "sweep_data": sweep_data,
-                    "fit_result": fit_result,
+                return_data[target] = {
+                    "n_cliffords": sweep_range,
+                    "mean": mean,
+                    "std": std,
+                    **fit_result,
                 }
 
-        data = {
-            qubit: RBData.new(
-                results["sweep_data"],
-                depolarizing_rate=results["fit_result"]["depolarizing_rate"],
-                avg_gate_error=results["fit_result"]["avg_gate_error"],
-                avg_gate_fidelity=results["fit_result"]["avg_gate_fidelity"],
-            )
-            for qubit, results in intermediate_results.items()
-        }
-
-        return ExperimentResult(data=data)
+        return return_data
 
     def rb_experiment_2q(
         self,
         targets: Collection[str] | str,
         *,
-        in_parallel: bool = False,
         n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: TargetMap[PulseSchedule] | None = None,
-        seed: int | None = None,
+        in_parallel: bool = False,
         mitigate_readout: bool = True,
         shots: int | None = None,
         interval: float | None = None,
@@ -331,8 +381,23 @@ class BenchmarkingMixin(
         else:
             targets = list(targets)
 
-        if n_cliffords_range is None:
-            n_cliffords_range = DEFAULT_CLIFFORD_RANGE_2Q
+        if n_cliffords_range is not None:
+            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+
+        if n_trials is None:
+            n_trials = DEFAULT_RB_N_TRIALS
+
+        if seeds is None:
+            seeds = np.random.randint(0, 2**32, n_trials)
+        else:
+            seeds = np.array(seeds, dtype=int)
+            if len(seeds) != n_trials:
+                raise ValueError(
+                    "The number of seeds must be equal to the number of trials."
+                )
+
+        if max_n_cliffords is None:
+            max_n_cliffords = 2**7
 
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -340,73 +405,114 @@ class BenchmarkingMixin(
         if interval is None:
             interval = DEFAULT_INTERVAL
 
-        n_cliffords_range = np.array(n_cliffords_range, dtype=int)
+        if shots is None:
+            shots = DEFAULT_SHOTS
+
+        if interval is None:
+            interval = DEFAULT_INTERVAL
 
         if in_parallel:
-            execution_groups = [targets]
+            target_groups = [targets]
         else:
-            execution_groups = [[target] for target in targets]
+            target_groups = [[target] for target in targets]
 
         for target in targets:
             target_object = self.experiment_system.get_target(target)
             if not target_object.is_cr:
                 raise ValueError(f"`{target}` is not a 2Q target.")
 
-        final_data = {}
-        for target_group in execution_groups:
-
-            def rb_sequence(N: int) -> PulseSchedule:
-                with PulseSchedule() as ps:
-                    seq: dict[str, PulseSchedule] = {}
-                    for target in target_group:
-                        seq[target] = self.rb_sequence_2q(
-                            target=target,
-                            n=N,
-                            x90=x90,
-                            zx90=zx90.get(target) if zx90 else None,
-                            interleaved_waveform=interleaved_waveform.get(target)
-                            if interleaved_waveform
-                            else None,
-                            interleaved_clifford=interleaved_clifford,
-                            seed=seed,
-                        )
-                    max_duration = max([seq.duration for seq in seq.values()])
-
-                    for target in target_group:
-                        ps.call(
-                            seq[target].padded(
-                                total_duration=max_duration,
-                                pad_side="left",
-                            )
-                        )
-                return ps
-
-            fidelities = {target: [] for target in target_group}
-            for n_clifford in tqdm(n_cliffords_range):
-                result = self.measure(
-                    sequence=rb_sequence(N=n_clifford),
-                    mode="single",
-                    shots=shots,
-                    interval=interval,
-                    plot=False,
-                )
+        def rb_sequence(
+            targets: list[str],
+            n_clifford: int,
+            seed: int,
+        ) -> PulseSchedule:
+            with PulseSchedule() as ps:
+                seq: dict[str, PulseSchedule] = {}
+                for target in targets:
+                    seq[target] = self.rb_sequence_2q(
+                        target=target,
+                        n=n_clifford,
+                        x90=x90,
+                        zx90=zx90.get(target) if zx90 else None,
+                        interleaved_waveform=interleaved_waveform.get(target)
+                        if interleaved_waveform
+                        else None,
+                        interleaved_clifford=interleaved_clifford,
+                        seed=seed,
+                    )
+                max_duration = max([seq.duration for seq in seq.values()])
 
                 for target in target_group:
-                    control_qubit, target_qubit = Target.cr_qubit_pair(target)
-                    if mitigate_readout:
-                        prob = result.get_mitigated_probabilities(
-                            [control_qubit, target_qubit]
+                    ps.call(
+                        seq[target].padded(
+                            total_duration=max_duration,
+                            pad_side="left",
                         )
-                    else:
-                        prob = result.get_probabilities([control_qubit, target_qubit])
+                    )
+            return ps
 
-                    fidelities[target].append(prob["00"])
+        return_data = {}
+        for target_group in target_groups:
+            idx = 0
+            sweep_range = []
+            mean_data = defaultdict(list)
+            std_data = defaultdict(list)
+            while True:
+                if n_cliffords_range is None:
+                    n_clifford = 0 if idx == 0 else 2 ** (idx - 1)
+                    if n_clifford > max_n_cliffords:
+                        break
+                else:
+                    if idx >= len(n_cliffords_range):
+                        break
+                    n_clifford = n_cliffords_range[idx]
+
+                idx += 1
+                sweep_range.append(n_clifford)
+
+                trial_data = defaultdict(list)
+                for seed in seeds:
+                    result = self.measure(
+                        sequence=rb_sequence(
+                            n_clifford=n_clifford,
+                            targets=target_group,
+                            seed=seed,
+                        ),
+                        mode="single",
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+
+                    for target in target_group:
+                        control_qubit, target_qubit = Target.cr_qubit_pair(target)
+                        if mitigate_readout:
+                            prob = result.get_mitigated_probabilities(
+                                [control_qubit, target_qubit]
+                            )
+                        else:
+                            prob = result.get_probabilities(
+                                [control_qubit, target_qubit]
+                            )
+                        trial_data[target].append(prob["00"])
+
+                mean_data[target].append(np.mean(trial_data[target]))
+                std_data[target].append(np.std(trial_data[target]))
+
+            sweep_range = np.array(sweep_range, dtype=int)
+
+            mean_data = {target: np.array(data) for target, data in mean_data.items()}
+            std_data = {target: np.array(data) for target, data in std_data.items()}
 
             for target in target_group:
+                mean = mean_data[target]
+                std = std_data[target] if n_trials > 1 else None
+
                 fit_result = fitting.fit_rb(
                     target=target,
-                    x=n_cliffords_range,
-                    y=np.array(fidelities[target]),
+                    x=sweep_range,
+                    y=mean,
+                    error_y=std,
                     dimension=4,
                     title="Randomized benchmarking",
                     xlabel="Number of Cliffords",
@@ -416,26 +522,26 @@ class BenchmarkingMixin(
                     plot=plot,
                 )
 
-                final_data[target] = {
-                    "n_cliffords": n_cliffords_range,
-                    "fidelities": fidelities[target],
-                    "depolarizing_rate": fit_result["depolarizing_rate"],
-                    "avg_gate_error": fit_result["avg_gate_error"],
-                    "avg_gate_fidelity": fit_result["avg_gate_fidelity"],
+                return_data[target] = {
+                    "n_cliffords": sweep_range,
+                    "mean": mean,
+                    "std": std,
+                    **fit_result,
                 }
 
-        return final_data
+        return return_data
 
     def randomized_benchmarking(
         self,
         targets: Collection[str] | str,
         *,
-        in_parallel: bool = False,
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
-        seeds: ArrayLike | None = None,
+        in_parallel: bool = False,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool = True,
@@ -446,110 +552,53 @@ class BenchmarkingMixin(
         else:
             targets = list(targets)
 
-        if n_trials is None:
-            n_trials = DEFAULT_RB_N_TRIALS
-
-        if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
-        else:
-            seeds = np.array(seeds, dtype=int)
-            if len(seeds) != n_trials:
-                raise ValueError(
-                    "The number of seeds must be equal to the number of trials."
-                )
-
         target_object = self.experiment_system.get_target(targets[0])
         is_2q = target_object.is_cr
 
-        if n_cliffords_range is None:
-            if is_2q:
-                n_cliffords_range = DEFAULT_CLIFFORD_RANGE_2Q
-            else:
-                n_cliffords_range = DEFAULT_CLIFFORD_RANGE_1Q
-        else:
-            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
-
-        rb_signals = {target: [] for target in targets}
-
-        for seed in tqdm(seeds):
-            seed = int(seed)
-            with self.util.no_output():
-                if is_2q:
-                    rb_results = self.rb_experiment_2q(
-                        targets,
-                        in_parallel=in_parallel,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        zx90=zx90,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                    )
-                    for target, rb_result in rb_results.items():
-                        rb_signals[target].append(rb_result["fidelities"])
-                else:
-                    rb_results = self.rb_experiment_1q(
-                        targets,
-                        in_parallel=in_parallel,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                        save_image=False,
-                    )
-                    for target, rb_result in rb_results.data.items():
-                        rb_signals[target].append((rb_result.normalized + 1) / 2)
-
-        result = {}
-        for target in targets:
-            mean = np.mean(rb_signals[target], axis=0)
-            std = np.std(rb_signals[target], axis=0)
-
-            fit_result = fitting.fit_rb(
-                target=target,
-                x=n_cliffords_range,
-                y=mean,
-                error_y=std,
-                dimension=4 if is_2q else 2,
+        if is_2q:
+            return self.rb_experiment_2q(
+                targets=targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                zx90=zx90,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
                 plot=plot,
-                title="Randomized benchmarking",
-                xlabel="Number of Cliffords",
-                ylabel="Normalized signal",
-                xaxis_type="linear",
-                yaxis_type="linear",
             )
-
-            if save_image:
-                viz.save_figure_image(
-                    fit_result["fig"],
-                    name=f"randomized_benchmarking_{target}",
-                )
-
-            result[target] = {
-                "n_cliffords": n_cliffords_range,
-                "mean": mean,
-                "std": std,
-                **fit_result,
-            }
-        return result
+        else:
+            return self.rb_experiment_1q(
+                targets=targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
 
     def interleaved_randomized_benchmarking(
         self,
         targets: Collection[str] | str,
         *,
-        in_parallel: bool = False,
         interleaved_clifford: str | Clifford,
         interleaved_waveform: TargetMap[PulseSchedule]
         | TargetMap[Waveform]
         | None = None,
         n_cliffords_range: ArrayLike | None = None,
         n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
-        seeds: ArrayLike | None = None,
+        in_parallel: bool = False,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool = True,
@@ -562,26 +611,6 @@ class BenchmarkingMixin(
 
         target_object = self.experiment_system.get_target(targets[0])
         is_2q = target_object.is_cr
-
-        if n_cliffords_range is None:
-            if is_2q:
-                n_cliffords_range = DEFAULT_CLIFFORD_RANGE_2Q
-            else:
-                n_cliffords_range = DEFAULT_CLIFFORD_RANGE_1Q
-        else:
-            n_cliffords_range = np.array(n_cliffords_range, dtype=int)
-
-        if n_trials is None:
-            n_trials = DEFAULT_RB_N_TRIALS
-
-        if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
-        else:
-            seeds = np.array(seeds, dtype=int)
-            if len(seeds) != n_trials:
-                raise ValueError(
-                    "The number of seeds must be equal to the number of trials."
-                )
 
         if isinstance(interleaved_clifford, str):
             clifford = self.clifford.get(interleaved_clifford)
@@ -589,84 +618,75 @@ class BenchmarkingMixin(
                 raise ValueError(f"Invalid Clifford: {interleaved_clifford}")
             interleaved_clifford = clifford
 
-        rb_results = {target: [] for target in targets}
-        irb_results = {target: [] for target in targets}
-
-        for seed in tqdm(seeds):
-            seed = int(seed)
-            with self.util.no_output():
-                if is_2q:
-                    rb_result = self.rb_experiment_2q(
-                        targets,
-                        in_parallel=in_parallel,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        zx90=zx90,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                    )
-                    for target in targets:
-                        rb_signal = rb_result[target]["fidelities"]
-                        rb_results[target].append(rb_signal)
-
-                    irb_result = self.rb_experiment_2q(
-                        targets=targets,
-                        in_parallel=False,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        zx90=zx90,
-                        interleaved_waveform=interleaved_waveform,  # type: ignore
-                        interleaved_clifford=interleaved_clifford,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                    )
-                    for target in targets:
-                        irb_signal = irb_result[target]["fidelities"]
-                        irb_results[target].append(irb_signal)
-                else:
-                    rb_result = self.rb_experiment_1q(
-                        targets,
-                        in_parallel=in_parallel,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                        save_image=False,
-                    )
-                    for target in targets:
-                        rb_signal = (rb_result.data[target].normalized + 1) / 2
-                        rb_results[target].append(rb_signal)
-
-                    irb_result = self.rb_experiment_1q(
-                        targets=targets,
-                        in_parallel=in_parallel,
-                        n_cliffords_range=n_cliffords_range,
-                        x90=x90,
-                        interleaved_waveform=interleaved_waveform,  # type: ignore
-                        interleaved_clifford=interleaved_clifford,
-                        seed=seed,
-                        shots=shots,
-                        interval=interval,
-                        plot=False,
-                        save_image=False,
-                    )
-                    for target in targets:
-                        irb_signal = (irb_result.data[target].normalized + 1) / 2
-                        irb_results[target].append(irb_signal)
+        if is_2q:
+            rb_result = self.rb_experiment_2q(
+                targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                zx90=zx90,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                plot=True,
+            )
+            n_cliffords_range = rb_result[targets[0]]["n_cliffords"]
+            irb_result = self.rb_experiment_2q(
+                targets=targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                zx90=zx90,
+                interleaved_waveform=interleaved_waveform,  # type: ignore
+                interleaved_clifford=interleaved_clifford,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                plot=True,
+            )
+        else:
+            rb_result = self.rb_experiment_1q(
+                targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                plot=True,
+                save_image=False,
+            )
+            n_cliffords_range = rb_result[targets[0]]["n_cliffords"]
+            irb_result = self.rb_experiment_1q(
+                targets=targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                interleaved_waveform=interleaved_waveform,  # type: ignore
+                interleaved_clifford=interleaved_clifford,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                plot=True,
+                save_image=False,
+            )
 
         results = {}
         for target in targets:
-            rb_mean = np.mean(rb_results[target], axis=0)
-            rb_std = np.std(rb_results[target], axis=0)
+            n_cliffords = rb_result[target]["n_cliffords"]
+            rb_mean = rb_result[target]["mean"]
+            rb_std = rb_result[target]["std"]
             rb_fit_result = fitting.fit_rb(
                 target=target,
-                x=n_cliffords_range,
+                x=n_cliffords,
                 y=rb_mean,
                 error_y=rb_std,
                 dimension=4 if is_2q else 2,
@@ -679,11 +699,11 @@ class BenchmarkingMixin(
             avg_gate_fidelity_rb = rb_fit_result["avg_gate_fidelity"]
             avg_gate_fidelity_err_rb = rb_fit_result["avg_gate_fidelity_err"]
 
-            irb_mean = np.mean(irb_results[target], axis=0)
-            irb_std = np.std(irb_results[target], axis=0)
+            irb_mean = irb_result[target]["mean"]
+            irb_std = irb_result[target]["std"]
             irb_fit_result = fitting.fit_rb(
                 target=target,
-                x=n_cliffords_range,
+                x=n_cliffords,
                 y=irb_mean,
                 error_y=irb_std,
                 dimension=4 if is_2q else 2,
@@ -709,7 +729,7 @@ class BenchmarkingMixin(
 
             fig = fitting.plot_irb(
                 target=target,
-                x=n_cliffords_range,
+                x=n_cliffords,
                 y_rb=rb_mean,
                 y_irb=irb_mean,
                 error_y_rb=rb_std,
