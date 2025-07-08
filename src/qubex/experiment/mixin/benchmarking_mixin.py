@@ -762,6 +762,13 @@ class BenchmarkingMixin(
             )
             print()
 
+            if gate_error < 0.1 * avg_gate_fidelity_rb:
+                # TODO: use a more appropriate threshold based on the system.
+                # NOTE: average number of gates per 2Q Clifford: 1Q=2.589, 2Q=1.5
+                print(
+                    f"Warning: Gate error ({gate_error * 100:.3f}%) is too low compared to the average gate fidelity (RB) ({avg_gate_fidelity_rb * 100:.3f}%)."
+                )
+
             results[target] = {
                 "gate_error": gate_error,
                 "gate_fidelity": gate_fidelity,
