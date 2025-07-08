@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Collection, Mapping
+from typing import Collection, Literal, Mapping
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -16,6 +16,8 @@ from ...typing import TargetMap
 from ..protocol import BaseProtocol, BenchmarkingProtocol, MeasurementProtocol
 
 DEFAULT_RB_N_TRIALS = 30
+DEFAULT_MAX_N_CLIFFORDS_1Q = 2048
+DEFAULT_MAX_N_CLIFFORDS_2Q = 128
 
 
 class BenchmarkingMixin(
@@ -215,6 +217,7 @@ class BenchmarkingMixin(
         in_parallel: bool = False,
         shots: int | None = None,
         interval: float | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
@@ -239,13 +242,16 @@ class BenchmarkingMixin(
                 )
 
         if max_n_cliffords is None:
-            max_n_cliffords = 2**11
+            max_n_cliffords = DEFAULT_MAX_N_CLIFFORDS_1Q
 
         if shots is None:
             shots = DEFAULT_SHOTS
 
         if interval is None:
             interval = DEFAULT_INTERVAL
+
+        if xaxis_type is None:
+            xaxis_type = "linear"
 
         for target in targets:
             target_object = self.experiment_system.get_target(target)
@@ -310,12 +316,23 @@ class BenchmarkingMixin(
                         interval=interval,
                         plot=False,
                     )
-                    iq = result.data[target].kerneled
-                    z = self.rabi_params[target].normalize(iq)
-                    trial_data[target].append((z + 1) / 2)
+                    for target, data in result.data.items():
+                        iq = data.kerneled
+                        z = self.rabi_params[target].normalize(iq)
+                        trial_data[target].append((z + 1) / 2)
 
-                mean_data[target].append(np.mean(trial_data[target]))
-                std_data[target].append(np.std(trial_data[target]))
+                check_vals = {}
+
+                for target in target_group:
+                    mean = np.mean(trial_data[target])
+                    std = np.std(trial_data[target])
+                    mean_data[target].append(mean)
+                    std_data[target].append(std)
+                    check_vals[target] = mean - std
+
+                max_check_val = np.max(list(check_vals.values()))
+                if max_check_val < 0.5:
+                    break
 
             sweep_range = np.array(sweep_range, dtype=int)
 
@@ -335,7 +352,7 @@ class BenchmarkingMixin(
                     title="Randomized benchmarking",
                     xlabel="Number of Cliffords",
                     ylabel="Normalized signal",
-                    xaxis_type="linear",
+                    xaxis_type=xaxis_type,
                     yaxis_type="linear",
                     plot=plot,
                 )
@@ -343,7 +360,7 @@ class BenchmarkingMixin(
                 if save_image:
                     viz.save_figure_image(
                         fit_result["fig"],
-                        name=f"rb_{target}",
+                        name=f"rb_experiment_1q_{target}",
                     )
 
                 return_data[target] = {
@@ -371,7 +388,9 @@ class BenchmarkingMixin(
         mitigate_readout: bool = True,
         shots: int | None = None,
         interval: float | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
         plot: bool = True,
+        save_image: bool = True,
     ):
         if self.state_centers is None:
             raise ValueError("State classifiers are not built.")
@@ -380,6 +399,13 @@ class BenchmarkingMixin(
             targets = [targets]
         else:
             targets = list(targets)
+
+        targets = [
+            target
+            for target in targets
+            if self.experiment_system.get_target(target).is_cr
+            and target in self.calib_note.cr_params
+        ]
 
         if n_cliffords_range is not None:
             n_cliffords_range = np.array(n_cliffords_range, dtype=int)
@@ -397,7 +423,7 @@ class BenchmarkingMixin(
                 )
 
         if max_n_cliffords is None:
-            max_n_cliffords = 2**7
+            max_n_cliffords = DEFAULT_MAX_N_CLIFFORDS_2Q
 
         if shots is None:
             shots = DEFAULT_SHOTS
@@ -410,6 +436,9 @@ class BenchmarkingMixin(
 
         if interval is None:
             interval = DEFAULT_INTERVAL
+
+        if xaxis_type is None:
+            xaxis_type = "linear"
 
         if in_parallel:
             target_groups = [targets]
@@ -496,8 +525,18 @@ class BenchmarkingMixin(
                             )
                         trial_data[target].append(prob["00"])
 
-                mean_data[target].append(np.mean(trial_data[target]))
-                std_data[target].append(np.std(trial_data[target]))
+                check_vals = {}
+
+                for target in target_group:
+                    mean = np.mean(trial_data[target])
+                    std = np.std(trial_data[target])
+                    mean_data[target].append(mean)
+                    std_data[target].append(std)
+                    check_vals[target] = mean - std
+
+                max_check_val = np.max(list(check_vals.values()))
+                if max_check_val < 0.25:
+                    break
 
             sweep_range = np.array(sweep_range, dtype=int)
 
@@ -517,10 +556,16 @@ class BenchmarkingMixin(
                     title="Randomized benchmarking",
                     xlabel="Number of Cliffords",
                     ylabel="Normalized signal",
-                    xaxis_type="linear",
+                    xaxis_type=xaxis_type,
                     yaxis_type="linear",
                     plot=plot,
                 )
+
+                if save_image:
+                    viz.save_figure_image(
+                        fit_result["fig"],
+                        name=f"rb_experiment_1q_{target}",
+                    )
 
                 return_data[target] = {
                     "n_cliffords": sweep_range,
@@ -542,6 +587,7 @@ class BenchmarkingMixin(
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
         in_parallel: bool = False,
+        xaxis_type: Literal["linear", "log"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool = True,
@@ -567,6 +613,7 @@ class BenchmarkingMixin(
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
+                xaxis_type=xaxis_type,
                 plot=plot,
             )
         else:
@@ -580,6 +627,7 @@ class BenchmarkingMixin(
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
+                xaxis_type=xaxis_type,
                 plot=plot,
                 save_image=save_image,
             )
