@@ -96,8 +96,8 @@ def adiabatic_coefficients(
     V_dag = np.swapaxes(V.conj(), -1, -2)
     M = V_dag @ dHdt @ V
     dE = E[..., :, None] - E[..., None, :]
-    diag_mask = np.eye(dimension, dtype=bool)[None, :, :]
-    dE = np.where(diag_mask, np.inf, dE)
+    zero_mask = np.isclose(dE, 0, atol=1e-10)
+    dE = np.where(zero_mask, np.inf, dE)
     A = np.abs(M) / dE**2
     A_total = np.sum(A, axis=(-2, -1))
     return A_total
