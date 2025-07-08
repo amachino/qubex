@@ -576,63 +576,7 @@ class BenchmarkingMixin(
 
         return return_data
 
-    def randomized_benchmarking(
-        self,
-        targets: Collection[str] | str,
-        *,
-        n_cliffords_range: ArrayLike | None = None,
-        n_trials: int | None = None,
-        seeds: ArrayLike | None = None,
-        max_n_cliffords: int | None = None,
-        x90: TargetMap[Waveform] | None = None,
-        zx90: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
-        xaxis_type: Literal["linear", "log"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
-    ) -> dict:
-        if isinstance(targets, str):
-            targets = [targets]
-        else:
-            targets = list(targets)
-
-        target_object = self.experiment_system.get_target(targets[0])
-        is_2q = target_object.is_cr
-
-        if is_2q:
-            return self.rb_experiment_2q(
-                targets=targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                zx90=zx90,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                xaxis_type=xaxis_type,
-                plot=plot,
-            )
-        else:
-            return self.rb_experiment_1q(
-                targets=targets,
-                n_cliffords_range=n_cliffords_range,
-                n_trials=n_trials,
-                seeds=seeds,
-                max_n_cliffords=max_n_cliffords,
-                x90=x90,
-                in_parallel=in_parallel,
-                shots=shots,
-                interval=interval,
-                xaxis_type=xaxis_type,
-                plot=plot,
-                save_image=save_image,
-            )
-
-    def interleaved_randomized_benchmarking(
+    def irb_experiment(
         self,
         targets: Collection[str] | str,
         *,
@@ -657,16 +601,16 @@ class BenchmarkingMixin(
         else:
             targets = list(targets)
 
-        target_object = self.experiment_system.get_target(targets[0])
-        is_2q = target_object.is_cr
-
         if isinstance(interleaved_clifford, str):
             clifford = self.clifford.get(interleaved_clifford)
             if clifford is None:
                 raise ValueError(f"Invalid Clifford: {interleaved_clifford}")
             interleaved_clifford = clifford
 
+        is_2q = self.experiment_system.get_target(targets[0]).is_cr
+
         if is_2q:
+            dimension = 4
             rb_result = self.rb_experiment_2q(
                 targets,
                 n_cliffords_range=n_cliffords_range,
@@ -678,9 +622,9 @@ class BenchmarkingMixin(
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
-                plot=True,
+                plot=False,
+                save_image=False,
             )
-            n_cliffords_range = rb_result[targets[0]]["n_cliffords"]
             irb_result = self.rb_experiment_2q(
                 targets=targets,
                 n_cliffords_range=n_cliffords_range,
@@ -694,9 +638,11 @@ class BenchmarkingMixin(
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
-                plot=True,
+                plot=False,
+                save_image=False,
             )
         else:
+            dimension = 2
             rb_result = self.rb_experiment_1q(
                 targets,
                 n_cliffords_range=n_cliffords_range,
@@ -707,10 +653,9 @@ class BenchmarkingMixin(
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
-                plot=True,
+                plot=False,
                 save_image=False,
             )
-            n_cliffords_range = rb_result[targets[0]]["n_cliffords"]
             irb_result = self.rb_experiment_1q(
                 targets=targets,
                 n_cliffords_range=n_cliffords_range,
@@ -723,21 +668,21 @@ class BenchmarkingMixin(
                 in_parallel=in_parallel,
                 shots=shots,
                 interval=interval,
-                plot=True,
+                plot=False,
                 save_image=False,
             )
 
         results = {}
         for target in targets:
-            n_cliffords = rb_result[target]["n_cliffords"]
+            rb_n_cliffords = rb_result[target]["n_cliffords"]
             rb_mean = rb_result[target]["mean"]
             rb_std = rb_result[target]["std"]
             rb_fit_result = fitting.fit_rb(
                 target=target,
-                x=n_cliffords,
+                x=rb_n_cliffords,
                 y=rb_mean,
                 error_y=rb_std,
-                dimension=4 if is_2q else 2,
+                dimension=dimension,
                 plot=False,
             )
             A_rb = rb_fit_result["A"]
@@ -747,14 +692,15 @@ class BenchmarkingMixin(
             avg_gate_fidelity_rb = rb_fit_result["avg_gate_fidelity"]
             avg_gate_fidelity_err_rb = rb_fit_result["avg_gate_fidelity_err"]
 
+            irb_n_cliffords = irb_result[target]["n_cliffords"]
             irb_mean = irb_result[target]["mean"]
             irb_std = irb_result[target]["std"]
             irb_fit_result = fitting.fit_rb(
                 target=target,
-                x=n_cliffords,
+                x=irb_n_cliffords,
                 y=irb_mean,
                 error_y=irb_std,
-                dimension=4 if is_2q else 2,
+                dimension=dimension,
                 plot=False,
                 title="Interleaved randomized benchmarking",
             )
@@ -765,7 +711,6 @@ class BenchmarkingMixin(
             avg_gate_fidelity_irb = irb_fit_result["avg_gate_fidelity"]
             avg_gate_fidelity_err_irb = irb_fit_result["avg_gate_fidelity_err"]
 
-            dimension = 4 if is_2q else 2
             gate_error = (dimension - 1) * (1 - (p_irb / p_rb)) / dimension
             gate_fidelity = 1 - gate_error
 
@@ -777,7 +722,7 @@ class BenchmarkingMixin(
 
             fig = fitting.plot_irb(
                 target=target,
-                x=n_cliffords,
+                x=rb_n_cliffords,
                 y_rb=rb_mean,
                 y_irb=irb_mean,
                 error_y_rb=rb_std,
@@ -825,6 +770,128 @@ class BenchmarkingMixin(
                 "irb_fit_result": irb_fit_result,
                 "fig": fig,
             }
+        return results
+
+    def randomized_benchmarking(
+        self,
+        targets: Collection[str] | str,
+        *,
+        n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
+        in_parallel: bool = False,
+        xaxis_type: Literal["linear", "log"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict:
+        if isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        target_object = self.experiment_system.get_target(targets[0])
+        is_2q = target_object.is_cr
+
+        if is_2q:
+            return self.rb_experiment_2q(
+                targets=targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                zx90=zx90,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                xaxis_type=xaxis_type,
+                plot=plot,
+                save_image=save_image,
+            )
+        else:
+            return self.rb_experiment_1q(
+                targets=targets,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                xaxis_type=xaxis_type,
+                plot=plot,
+                save_image=save_image,
+            )
+
+    def interleaved_randomized_benchmarking(
+        self,
+        targets: Collection[str] | str,
+        *,
+        interleaved_clifford: str | Clifford,
+        interleaved_waveform: TargetMap[PulseSchedule]
+        | TargetMap[Waveform]
+        | None = None,
+        n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
+        in_parallel: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict:
+        if isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if in_parallel:
+            results = self.irb_experiment(
+                targets=targets,
+                interleaved_clifford=interleaved_clifford,
+                interleaved_waveform=interleaved_waveform,
+                n_cliffords_range=n_cliffords_range,
+                n_trials=n_trials,
+                seeds=seeds,
+                max_n_cliffords=max_n_cliffords,
+                x90=x90,
+                zx90=zx90,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                save_image=save_image,
+            )
+        else:
+            results = {}
+            for target in targets:
+                result = self.irb_experiment(
+                    targets=target,
+                    interleaved_clifford=interleaved_clifford,
+                    interleaved_waveform=interleaved_waveform,
+                    n_cliffords_range=n_cliffords_range,
+                    n_trials=n_trials,
+                    seeds=seeds,
+                    max_n_cliffords=max_n_cliffords,
+                    x90=x90,
+                    zx90=zx90,
+                    in_parallel=in_parallel,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                    save_image=save_image,
+                )
+                results[target] = result[target]
+
         return results
 
     def benchmark_1q(
