@@ -1957,12 +1957,13 @@ class CalibrationMixin(
             targets = list(targets)
 
         try:
-            self.obtain_rabi_params(targets, plot=plot)
-            self.calibrate_hpi_pulse(targets, plot=plot)
-            self.calibrate_drag_hpi_pulse(targets, plot=plot)
-            self.calibrate_drag_pi_pulse(targets, plot=plot)
-            self.build_classifier(targets, plot=plot)
-            self.save_calib_note()
+            for target in targets:
+                self.obtain_rabi_params(target, plot=plot)
+                self.calibrate_hpi_pulse(target, plot=plot)
+                self.calibrate_drag_hpi_pulse(target, plot=plot)
+                self.calibrate_drag_pi_pulse(target, plot=plot)
+                self.build_classifier(target, plot=plot)
+                self.save_calib_note()
         except Exception as e:
             print(f"Error calibrating 1Q gates for {targets}: {e}")
             return

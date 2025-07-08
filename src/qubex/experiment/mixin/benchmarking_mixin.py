@@ -926,20 +926,24 @@ class BenchmarkingMixin(
             )
         else:
             for target in targets:
-                self.interleaved_randomized_benchmarking(
-                    target,
-                    in_parallel=in_parallel,
-                    interleaved_clifford="X90",
-                    plot=plot,
-                    save_image=save_image,
-                )
-                self.interleaved_randomized_benchmarking(
-                    target,
-                    in_parallel=in_parallel,
-                    interleaved_clifford="X180",
-                    plot=plot,
-                    save_image=save_image,
-                )
+                try:
+                    self.interleaved_randomized_benchmarking(
+                        target,
+                        in_parallel=in_parallel,
+                        interleaved_clifford="X90",
+                        plot=plot,
+                        save_image=save_image,
+                    )
+                    self.interleaved_randomized_benchmarking(
+                        target,
+                        in_parallel=in_parallel,
+                        interleaved_clifford="X180",
+                        plot=plot,
+                        save_image=save_image,
+                    )
+                except ValueError as e:
+                    print(f"Failed to benchmark {target}: {e}")
+                    continue
 
     def benchmark_2q(
         self,
@@ -966,10 +970,14 @@ class BenchmarkingMixin(
             )
         else:
             for target in targets:
-                self.interleaved_randomized_benchmarking(
-                    target,
-                    in_parallel=in_parallel,
-                    interleaved_clifford="ZX90",
-                    plot=plot,
-                    save_image=save_image,
-                )
+                try:
+                    self.interleaved_randomized_benchmarking(
+                        target,
+                        in_parallel=in_parallel,
+                        interleaved_clifford="ZX90",
+                        plot=plot,
+                        save_image=save_image,
+                    )
+                except ValueError as e:
+                    print(f"Failed to benchmark {target}: {e}")
+                    continue

@@ -132,15 +132,12 @@ class Measurement:
 
     def connect(self):
         """Connect to the devices."""
-        try:
-            if len(self.box_ids) == 0:
-                print("No boxes are selected. Please check the configuration.")
-                return
-            self.device_controller.connect(self.box_ids)
-            self.device_controller.resync_clocks(self.box_ids)
-            self.system_manager.pull(self.box_ids)
-        except Exception as e:
-            print(f"Failed to connect to devices: {e}")
+        if len(self.box_ids) == 0:
+            print("No boxes are selected. Please check the configuration.")
+            return
+        self.device_controller.connect(self.box_ids)
+        self.device_controller.resync_clocks(self.box_ids)
+        self.system_manager.pull(self.box_ids)
 
     def reload(self):
         """Reload the measuremnt settings."""

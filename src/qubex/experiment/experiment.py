@@ -579,7 +579,7 @@ class Experiment(
                     tau=param["tau"],
                 )
         return result
-    
+
     @property
     def cr_pulse(self) -> dict[str, PulseSchedule]:
         result = {}
@@ -590,7 +590,9 @@ class Experiment(
                 cancel_amplitude = cr_param["cancel_amplitude"]
                 cancel_phase = cr_param["cancel_phase"]
                 rotary_amplitude = cr_param["rotary_amplitude"]
-                cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
+                cancel_pulse = (
+                    cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
+                )
                 result[cr_label] = CrossResonance(
                     control_qubit=control_qubit,
                     target_qubit=target_qubit,
