@@ -130,14 +130,19 @@ class Measurement:
         )
         self.system_manager.load_skew_file(self.box_ids)
 
-    def connect(self):
+    def connect(
+        self,
+        *,
+        sync_clocks: bool = True,
+    ):
         """Connect to the devices."""
         if len(self.box_ids) == 0:
             print("No boxes are selected. Please check the configuration.")
             return
         self.device_controller.connect(self.box_ids)
-        self.device_controller.resync_clocks(self.box_ids)
         self.system_manager.pull(self.box_ids)
+        if sync_clocks:
+            self.device_controller.resync_clocks(self.box_ids)
 
     def reload(self):
         """Reload the measuremnt settings."""

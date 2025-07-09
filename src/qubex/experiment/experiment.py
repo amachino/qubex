@@ -1153,9 +1153,11 @@ class Experiment(
 
     def connect(
         self,
+        *,
+        sync_clocks: bool = True,
     ) -> None:
         try:
-            self._measurement.connect()
+            self._measurement.connect(sync_clocks=sync_clocks)
             print("Successfully connected.")
         except Exception as e:
             print(f"Failed to connect to the devices: {e}")
