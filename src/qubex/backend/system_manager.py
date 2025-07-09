@@ -506,7 +506,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                         mux = experiment_system.get_mux_by_readout_port(port)
                         if mux is None:
                             continue
-                        ndelay_or_nwait = control_params.capture_delay[mux.index]
+                        ndelay_or_nwait = control_params.get_capture_delay(mux.index)
                     elif port.type == PortType.MNTR_IN:
                         ndelay_or_nwait = 7  # TODO: make this configurable
                     else:
