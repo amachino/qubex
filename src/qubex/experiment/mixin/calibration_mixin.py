@@ -24,6 +24,8 @@ from ...pulse import (
 from ...typing import TargetMap
 from ..experiment_constants import (
     CALIBRATION_SHOTS,
+    DEFAULT_CR_RAMPTIME,
+    DEFAULT_CR_TIME_RANGE,
     DRAG_COEFF,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
@@ -894,6 +896,7 @@ class CalibrationMixin(
             "Sintegral",
             "Bump",
         ] = "RaisedCosine",
+        pi_margin: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
@@ -901,11 +904,11 @@ class CalibrationMixin(
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
         if time_range is None:
-            time_range = np.arange(0, 1001, 20)
+            time_range = np.array(DEFAULT_CR_TIME_RANGE, dtype=float)
         else:
-            time_range = np.array(time_range)
+            time_range = np.array(time_range, dtype=float)
         if ramptime is None:
-            ramptime = 16.0
+            ramptime = DEFAULT_CR_RAMPTIME
         if cr_amplitude is None:
             cr_amplitude = 1.0
         if cr_phase is None:
@@ -914,6 +917,9 @@ class CalibrationMixin(
             cancel_amplitude = 0.0
         if cancel_phase is None:
             cancel_phase = 0.0
+        if pi_margin is None:
+            pi_margin = 0.0
+
         effective_drive_range = time_range + ramptime
 
         if x90 is None:
@@ -945,6 +951,7 @@ class CalibrationMixin(
                     cancel_phase=cancel_phase,
                     echo=echo,
                     pi_pulse=x180[control_qubit],
+                    pi_margin=pi_margin,
                     ramp_type=ramp_type,
                 ),
                 x90=x90,
@@ -1006,6 +1013,7 @@ class CalibrationMixin(
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
         x90: TargetMap[Waveform] | None = None,
+        pi_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
@@ -1031,6 +1039,8 @@ class CalibrationMixin(
             echo=False,
             control_state="0",
             x90=x90,
+            ramp_type="RaisedCosine",
+            pi_margin=pi_margin,
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=False,
@@ -1050,6 +1060,7 @@ class CalibrationMixin(
             control_state="1",
             x90=x90,
             ramp_type="RaisedCosine",
+            pi_margin=pi_margin,
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=False,
@@ -1154,13 +1165,14 @@ class CalibrationMixin(
         update_cr_phase: bool = True,
         update_cancel_pulse: bool = True,
         x90: TargetMap[Waveform] | None = None,
+        pi_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> dict:
         if ramptime is None:
-            ramptime = 0.0
+            ramptime = DEFAULT_CR_RAMPTIME
         if cr_amplitude is None:
             cr_amplitude = 1.0
         if cr_phase is None:
@@ -1183,6 +1195,7 @@ class CalibrationMixin(
             cancel_amplitude=cancel_amplitude,
             cancel_phase=cancel_phase,
             x90=x90,
+            pi_margin=pi_margin,
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
@@ -1254,7 +1267,7 @@ class CalibrationMixin(
         target_qubit: str,
         *,
         time_range: ArrayLike | None = None,
-        ramptime: float = 16,
+        ramptime: float | None = None,
         cr_amplitude: float | None = None,
         n_iterations: int = 4,
         n_cycles: int = 2,
@@ -1270,6 +1283,9 @@ class CalibrationMixin(
         reset_awg_and_capunits: bool = True,
         plot: bool = True,
     ) -> dict:
+        if ramptime is None:
+            ramptime = DEFAULT_CR_RAMPTIME
+
         def _create_time_range(
             zx90_duration: float,
         ) -> NDArray:
@@ -1400,7 +1416,7 @@ class CalibrationMixin(
         control_qubit: str,
         target_qubit: str,
         *,
-        ramptime: float = 16.0,
+        ramptime: float | None = None,
         duration: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
@@ -1420,6 +1436,8 @@ class CalibrationMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict:
+        if ramptime is None:
+            ramptime = DEFAULT_CR_RAMPTIME
         if x180 is None:
             x180 = self.x180(control_qubit)
         elif not isinstance(x180, Waveform):
