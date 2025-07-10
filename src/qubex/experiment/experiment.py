@@ -698,6 +698,25 @@ class Experiment(
     def reference_phases(self) -> dict[str, float]:
         return self.calib_note._reference_phases
 
+    def load_calibration_data(self, path: Path | str | None = None):
+        """
+        Load the calibration data from the given path or from the default calibration note file.
+        """
+        if path is None:
+            # TODO: Make this path configurable
+            path = (
+                f"/home/shared/qubex-config/{self.chip_id}/calibration/calib_note.json"
+            )
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Calibration file '{path}' does not exist.")
+        try:
+            self._calib_note.load(path)
+            print(f"Calibration data loaded from {path}")
+        except Exception as e:
+            raise CalibrationMissingError(
+                f"Failed to load calibration data from {path}: {e}"
+            ) from e
+
     def get_qubit_label(self, index: int) -> str:
         """
         Get the qubit label from the given qubit index.

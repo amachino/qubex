@@ -689,6 +689,7 @@ class BenchmarkingMixin(
             p_rb = rb_fit_result["p"]
             p_rb_err = rb_fit_result["p_err"]
             C_rb = rb_fit_result["C"]
+            avg_gate_error_rb = rb_fit_result["avg_gate_error"]
             avg_gate_fidelity_rb = rb_fit_result["avg_gate_fidelity"]
             avg_gate_fidelity_err_rb = rb_fit_result["avg_gate_fidelity_err"]
 
@@ -762,11 +763,11 @@ class BenchmarkingMixin(
             )
             print()
 
-            if gate_error < 0.1 * avg_gate_fidelity_rb:
+            if gate_error < 0.1 * avg_gate_error_rb:
                 # TODO: use a more appropriate threshold based on the system.
                 # NOTE: average number of gates per 2Q Clifford: 1Q=2.589, 2Q=1.5
                 print(
-                    f"Warning: Gate error ({gate_error * 100:.3f}%) is too low compared to the average gate fidelity (RB) ({avg_gate_fidelity_rb * 100:.3f}%)."
+                    f"Warning: Gate error ({gate_error * 100:.3f}%) is too low compared to the average gate error (RB) ({avg_gate_error_rb * 100:.3f}%)."
                 )
 
             results[target] = {
@@ -905,7 +906,10 @@ class BenchmarkingMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        n_trials: int | None = None,
         in_parallel: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
     ):
@@ -919,15 +923,21 @@ class BenchmarkingMixin(
         if in_parallel:
             self.interleaved_randomized_benchmarking(
                 targets,
-                in_parallel=in_parallel,
                 interleaved_clifford="X90",
+                n_trials=n_trials,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
                 plot=plot,
                 save_image=save_image,
             )
             self.interleaved_randomized_benchmarking(
                 targets,
-                in_parallel=in_parallel,
                 interleaved_clifford="X180",
+                n_trials=n_trials,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
                 plot=plot,
                 save_image=save_image,
             )
@@ -936,15 +946,21 @@ class BenchmarkingMixin(
                 try:
                     self.interleaved_randomized_benchmarking(
                         target,
-                        in_parallel=in_parallel,
                         interleaved_clifford="X90",
+                        n_trials=n_trials,
+                        in_parallel=in_parallel,
+                        shots=shots,
+                        interval=interval,
                         plot=plot,
                         save_image=save_image,
                     )
                     self.interleaved_randomized_benchmarking(
                         target,
-                        in_parallel=in_parallel,
                         interleaved_clifford="X180",
+                        n_trials=n_trials,
+                        in_parallel=in_parallel,
+                        shots=shots,
+                        interval=interval,
                         plot=plot,
                         save_image=save_image,
                     )
@@ -956,7 +972,10 @@ class BenchmarkingMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        n_trials: int | None = None,
         in_parallel: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
         save_image: bool = True,
     ):
@@ -970,8 +989,11 @@ class BenchmarkingMixin(
         if in_parallel:
             self.interleaved_randomized_benchmarking(
                 targets,
-                in_parallel=in_parallel,
                 interleaved_clifford="ZX90",
+                n_trials=n_trials,
+                in_parallel=in_parallel,
+                shots=shots,
+                interval=interval,
                 plot=plot,
                 save_image=save_image,
             )
@@ -980,8 +1002,11 @@ class BenchmarkingMixin(
                 try:
                     self.interleaved_randomized_benchmarking(
                         target,
-                        in_parallel=in_parallel,
                         interleaved_clifford="ZX90",
+                        n_trials=n_trials,
+                        in_parallel=in_parallel,
+                        shots=shots,
+                        interval=interval,
                         plot=plot,
                         save_image=save_image,
                     )
