@@ -233,7 +233,7 @@ class BenchmarkingMixin(
             n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = [int(s) for s in np.random.randint(0, 2**32, size=n_trials)]
         else:
             seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
@@ -414,7 +414,7 @@ class BenchmarkingMixin(
             n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = [int(s) for s in np.random.randint(0, 2**32, size=n_trials)]
         else:
             seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
