@@ -233,7 +233,7 @@ class BenchmarkingMixin(
             n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
-            seeds = [int(s) for s in np.random.randint(0, 2**32, size=n_trials)]
+            seeds = np.random.randint(0, 2**32, n_trials)
         else:
             seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
@@ -305,6 +305,7 @@ class BenchmarkingMixin(
 
                 trial_data = defaultdict(list)
                 for seed in seeds:
+                    seed = int(seed)  # Ensure seed is an integer
                     result = self.measure(
                         sequence=rb_sequence(
                             n_clifford=n_clifford,
@@ -414,7 +415,7 @@ class BenchmarkingMixin(
             n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
-            seeds = [int(s) for s in np.random.randint(0, 2**32, size=n_trials)]
+            seeds = np.random.randint(0, 2**32, n_trials)
         else:
             seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
@@ -501,6 +502,7 @@ class BenchmarkingMixin(
 
                 trial_data = defaultdict(list)
                 for seed in seeds:
+                    seed = int(seed)  # Ensure seed is an integer
                     result = self.measure(
                         sequence=rb_sequence(
                             n_clifford=n_clifford,
