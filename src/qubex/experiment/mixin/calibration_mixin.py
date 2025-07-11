@@ -894,11 +894,12 @@ class CalibrationMixin(
             "Sintegral",
             "Bump",
         ] = "RaisedCosine",
-        pi_margin: float | None = None,
+        x180_margin: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = True,
+        show_bloch_sphere: bool = True,
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
         if time_range is None:
@@ -915,8 +916,8 @@ class CalibrationMixin(
             cancel_amplitude = 0.0
         if cancel_phase is None:
             cancel_phase = 0.0
-        if pi_margin is None:
-            pi_margin = 0.0
+        if x180_margin is None:
+            x180_margin = 0.0
 
         effective_drive_range = time_range + ramptime
 
@@ -949,7 +950,7 @@ class CalibrationMixin(
                     cancel_phase=cancel_phase,
                     echo=echo,
                     pi_pulse=x180[control_qubit],
-                    pi_margin=pi_margin,
+                    pi_margin=x180_margin,
                     ramp_type=ramp_type,
                 ),
                 x90=x90,
@@ -984,12 +985,14 @@ class CalibrationMixin(
                 xlabel="Drive time (ns)",
                 ylabel=f"Expectation value : {control_qubit}",
             )
-            viz.display_bloch_sphere(control_states)
+            if show_bloch_sphere:
+                viz.display_bloch_sphere(control_states)
 
             print(f"Target qubit : {target_qubit}")
             fit_result["fig"].show()
-            fit_result["fig3d"].show()
-            viz.display_bloch_sphere(target_states)
+            if show_bloch_sphere:
+                fit_result["fig3d"].show()
+                viz.display_bloch_sphere(target_states)
 
         return {
             "time_range": time_range,
@@ -1011,11 +1014,12 @@ class CalibrationMixin(
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
         x90: TargetMap[Waveform] | None = None,
-        pi_margin: float | None = None,
+        x180_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
+        show_bloch_sphere: bool = True,
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
 
@@ -1038,11 +1042,12 @@ class CalibrationMixin(
             control_state="0",
             x90=x90,
             ramp_type="RaisedCosine",
-            pi_margin=pi_margin,
+            x180_margin=x180_margin,
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=False,
             plot=plot,
+            show_bloch_sphere=show_bloch_sphere,
         )
 
         result_1 = self.measure_cr_dynamics(
@@ -1058,11 +1063,12 @@ class CalibrationMixin(
             control_state="1",
             x90=x90,
             ramp_type="RaisedCosine",
-            pi_margin=pi_margin,
+            x180_margin=x180_margin,
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=False,
             plot=plot,
+            show_bloch_sphere=show_bloch_sphere,
         )
 
         Omega_0 = result_0["fit_result"]["Omega"]
@@ -1091,7 +1097,7 @@ class CalibrationMixin(
 
         print("Rotation rates:")
         for key, value in coeffs.items():
-            print(f"  {key} : {value * 1e3:+.3f} MHz")
+            print(f"  {key} : {value * 1e3:+.4f} MHz")
 
         # xt (cross-talk) rotation
         xt_rotation = coeffs["IX"] + 1j * coeffs["IY"]
@@ -1104,7 +1110,7 @@ class CalibrationMixin(
         xt_rotation_phase_deg = np.angle(xt_rotation, deg=True)
         print("XT (crosstalk) rotation:")
         print(
-            f"  rate  : {xt_rotation_amplitude * 1e3:.3f} MHz ({xt_rotation_amplitude_hw:.6f})"
+            f"  rate  : {xt_rotation_amplitude * 1e3:.4f} MHz ({xt_rotation_amplitude_hw:.6f})"
         )
         print(
             f"  phase : {xt_rotation_phase:.3f} rad ({xt_rotation_phase_deg:.1f} deg)"
@@ -1123,7 +1129,7 @@ class CalibrationMixin(
 
         print("CR (cross-resonance) rotation:")
         print(
-            f"  rate  : {cr_rotation_amplitude * 1e3:.3f} MHz ({cr_rotation_amplitude_hw:.6f})"
+            f"  rate  : {cr_rotation_amplitude * 1e3:.4f} MHz ({cr_rotation_amplitude_hw:.6f})"
         )
         print(
             f"  phase : {cr_rotation_phase:.3f} rad ({cr_rotation_phase_deg:.1f} deg)"
@@ -1163,11 +1169,12 @@ class CalibrationMixin(
         update_cr_phase: bool = True,
         update_cancel_pulse: bool = True,
         x90: TargetMap[Waveform] | None = None,
-        pi_margin: float | None = None,
+        x180_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
+        show_bloch_sphere: bool = True,
     ) -> dict:
         if ramptime is None:
             ramptime = DEFAULT_CR_RAMPTIME
@@ -1193,11 +1200,12 @@ class CalibrationMixin(
             cancel_amplitude=cancel_amplitude,
             cancel_phase=cancel_phase,
             x90=x90,
-            pi_margin=pi_margin,
+            x180_margin=x180_margin,
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
+            show_bloch_sphere=show_bloch_sphere,
         )
 
         shift = -result["cr_rotation_phase"]
@@ -1222,14 +1230,24 @@ class CalibrationMixin(
         new_cancel_amplitude = np.abs(new_cancel_pulse)
         new_cancel_phase = np.angle(new_cancel_pulse)
 
+        cr_amplitude_diff = new_cr_amplitude - cr_amplitude
+        cr_phase_diff = new_cr_phase - cr_phase
+        cancel_amplitude_diff = new_cancel_amplitude - cancel_amplitude
+        cancel_phase_diff = new_cancel_phase - cancel_phase
+
         print("Updated CR params:")
-        print(f"  CR amplitude     : {cr_amplitude:+.3f} -> {new_cr_amplitude:+.3f}")
-        print(f"  CR phase         : {cr_phase:+.3f} -> {new_cr_phase:+.3f}")
         print(
-            f"  Cancel amplitude : {cancel_amplitude:+.3f} -> {new_cancel_amplitude:+.3f}"
+            f"  CR amplitude     : {cr_amplitude:+.4f} {cr_amplitude_diff:+.4f} -> {new_cr_amplitude:+.4f}"
         )
-        print(f"  Cancel phase     : {cancel_phase:+.3f} -> {new_cancel_phase:+.3f}")
-        print()
+        print(
+            f"  CR phase         : {cr_phase:+.4f} {cr_phase_diff:+.4f} -> {new_cr_phase:+.4f}"
+        )
+        print(
+            f"  Cancel amplitude : {cancel_amplitude:+.4f} {cancel_amplitude_diff:+.4f} -> {new_cancel_amplitude:+.4f}"
+        )
+        print(
+            f"  Cancel phase     : {cancel_phase:+.4f} {cancel_phase_diff:+.4f} -> {new_cancel_phase:+.4f}"
+        )
 
         cr_label = f"{control_qubit}-{target_qubit}"
         duration = (
@@ -1238,8 +1256,9 @@ class CalibrationMixin(
 
         zx_rotation_rate = result["coeffs"]["ZX"] / cr_amplitude
 
-        self.calib_note.cr_params = {
-            cr_label: {
+        self.calib_note.update_cr_param(
+            cr_label,
+            {
                 "target": cr_label,
                 "duration": duration,
                 "ramptime": ramptime,
@@ -1251,8 +1270,8 @@ class CalibrationMixin(
                 "cancel_beta": 0.0,
                 "rotary_amplitude": 0.0,
                 "zx_rotation_rate": zx_rotation_rate,
-            }
-        }
+            },
+        )
 
         return {
             **result,
@@ -1271,15 +1290,17 @@ class CalibrationMixin(
         n_cycles: int = 2,
         n_points_per_cycle: int = 10,
         use_stored_params: bool = False,
-        tolerance: float = 10e-6,
+        tolerance: float = 0.005e-3,
         adiabatic_safe_factor: float = 0.75,
         max_amplitude: float = 1.0,
         max_time_range: float = 4096.0,
         x90: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = True,
+        show_bloch_sphere: bool = True,
     ) -> dict:
         if ramptime is None:
             ramptime = DEFAULT_CR_RAMPTIME
@@ -1301,14 +1322,17 @@ class CalibrationMixin(
         max_cr_amplitude = self.calc_control_amplitude(control_qubit, max_cr_rabi)
         max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
 
-        current_cr_param = self.calib_note.cr_params.get(cr_label)
+        current_cr_param = self.calib_note.get_cr_param(cr_label)
 
         if use_stored_params and current_cr_param is not None:
             cr_amplitude = current_cr_param["cr_amplitude"]
             cr_phase = current_cr_param["cr_phase"]
             cancel_amplitude = current_cr_param["cancel_amplitude"]
             cancel_phase = current_cr_param["cancel_phase"]
-            time_range = _create_time_range(current_cr_param["duration"] * 2)
+            zx90_duration = 1 / (
+                4 * cr_amplitude * current_cr_param["zx_rotation_rate"]
+            )
+            time_range = _create_time_range(zx90_duration)
         else:
             cr_amplitude = (
                 cr_amplitude if cr_amplitude is not None else max_cr_amplitude
@@ -1316,9 +1340,9 @@ class CalibrationMixin(
             cr_phase = 0.0
             cancel_amplitude = 0.0
             cancel_phase = 0.0
-            time_range = (
-                time_range if time_range is not None else np.arange(0, 1001, 20)
-            )
+            if time_range is None:
+                time_range = DEFAULT_CR_TIME_RANGE
+            time_range = np.array(time_range, dtype=float)
 
         params_history = [
             {
@@ -1346,15 +1370,17 @@ class CalibrationMixin(
                 cancel_amplitude=params["cancel_amplitude"],
                 cancel_phase=params["cancel_phase"],
                 x90=x90,
+                x180_margin=x180_margin,
                 shots=shots,
                 interval=interval,
                 reset_awg_and_capunits=reset_awg_and_capunits,
                 plot=plot,
+                show_bloch_sphere=show_bloch_sphere,
             )
-
+            next_time_range = _create_time_range(result["zx90_duration"])
             params_history.append(
                 {
-                    "time_range": _create_time_range(result["zx90_duration"]),
+                    "time_range": next_time_range,
                     "cr_phase": result["cr_param"]["cr_phase"],
                     "cancel_amplitude": result["cr_param"]["cancel_amplitude"],
                     "cancel_phase": result["cr_param"]["cancel_phase"],
@@ -1371,13 +1397,13 @@ class CalibrationMixin(
 
                 if abs(IX) < tolerance and abs(IY) < tolerance:
                     print("Convergence reached.")
-                    print(f"  IX : {IX * 1e3:.3f} MHz")
-                    print(f"  IY : {IY * 1e3:.3f} MHz")
+                    print(f"  IX : {IX * 1e3:.4f} MHz")
+                    print(f"  IY : {IY * 1e3:.4f} MHz")
                     break
                 if abs(IX_diff) < tolerance and abs(IY_diff) < tolerance:
                     print("Convergence reached.")
-                    print(f"  IX_diff : {IX_diff * 1e3:.3f} MHz")
-                    print(f"  IY_diff : {IY_diff * 1e3:.3f} MHz")
+                    print(f"  IX_diff : {IX_diff * 1e3:.4f} MHz")
+                    print(f"  IY_diff : {IY_diff * 1e3:.4f} MHz")
                     break
 
         hamiltonian_coeffs = {

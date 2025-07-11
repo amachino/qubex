@@ -4,8 +4,9 @@ from typing import Collection
 
 import cma
 import numpy as np
+import scipy.optimize
 
-from ...measurement.measurement import DEFAULT_INTERVAL
+from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import (
     CrossResonance,
     Drag,
@@ -14,9 +15,6 @@ from ...pulse import (
     Waveform,
 )
 from ...typing import TargetMap
-from ..experiment_constants import (
-    CALIBRATION_SHOTS,
-)
 from ..protocol import (
     BaseProtocol,
     BenchmarkingProtocol,
@@ -155,14 +153,18 @@ class OptimizationMixin(
         target_qubit: str,
         *,
         obejective_type: str = "orbit",
+        optimize_method: str = "cma",
+        update_cr_param: bool = True,
         opt_params: Collection[str] | None = None,
         seed: int = 42,
         ftarget: float = 1e-3,
         timeout: int = 300,
+        n_cliffords: int = 10,
+        n_trials: int = 3,
         duration: float | None = None,
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | None = None,
-        shots: int = CALIBRATION_SHOTS,
+        shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ):
         if opt_params is None:
@@ -170,8 +172,10 @@ class OptimizationMixin(
                 "cr_amplitude",
                 "cr_phase",
                 "cr_beta",
+                "cancel_amplitude",
                 "cancel_phase",
                 "cancel_beta",
+                "rotary_amplitude",
             ]
 
         if x180 is None:
@@ -194,37 +198,37 @@ class OptimizationMixin(
             "cr_amplitude": {
                 "initial": cr_param["cr_amplitude"],
                 "bounds": [0.0, 1.0],
-                "std": 0.01,
+                "std": 0.001,
             },
             "cr_phase": {
                 "initial": cr_param["cr_phase"],
                 "bounds": [-np.pi, np.pi],
-                "std": 0.01,
+                "std": 0.001,
             },
             "cr_beta": {
                 "initial": cr_param["cr_beta"],
                 "bounds": [-10.0, 10.0],
-                "std": 0.1,
+                "std": 0.001,
             },
             "cancel_amplitude": {
                 "initial": cr_param["cancel_amplitude"],
                 "bounds": [0.0, 1.0],
-                "std": 0.01,
+                "std": 0.001,
             },
             "cancel_phase": {
                 "initial": cr_param["cancel_phase"],
                 "bounds": [-np.pi, np.pi],
-                "std": 0.01,
+                "std": 0.001,
             },
             "cancel_beta": {
                 "initial": cr_param["cancel_beta"],
                 "bounds": [-10.0, 10.0],
-                "std": 0.1,
+                "std": 0.001,
             },
             "rotary_amplitude": {
                 "initial": cr_param["rotary_amplitude"],
-                "bounds": [0.0, 1.0],
-                "std": 0.1,
+                "bounds": [0.0, 20.0],
+                "std": 0.01,
             },
         }
 
@@ -275,21 +279,27 @@ class OptimizationMixin(
             )
 
             if obejective_type == "orbit":
-                n_cliffords = 20
-                rb_seq = self.rb_sequence_2q(
-                    cr_label,
-                    n=n_cliffords,
-                    zx90=ecr,
-                )
-                result = self.measure(
-                    rb_seq,
-                    mode="single",
-                    shots=shots,
-                    interval=interval,
-                    plot=False,
-                )
-                prob = result.get_mitigated_probabilities([control_qubit, target_qubit])
-                loss = -prob["00"]
+                loss_list = []
+                for _ in range(n_trials):
+                    rb_seq = self.rb_sequence_2q(
+                        cr_label,
+                        n=n_cliffords,
+                        zx90=ecr,
+                    )
+                    result = self.measure(
+                        rb_seq,
+                        mode="single",
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    )
+                    prob = result.get_mitigated_probabilities(
+                        [control_qubit, target_qubit]
+                    )
+                    loss = 1 - prob["00"]
+                    loss_list.append(loss)
+                loss = np.mean(loss_list)
+                return loss
             else:
                 ecr_0 = ecr
                 with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr_1:
@@ -322,30 +332,67 @@ class OptimizationMixin(
         bounds = [bounds0, bounds1]
         stds = [opt_params_dict[k]["std"] for k in opt_params]
 
-        es = cma.CMAEvolutionStrategy(
-            initial_params,
-            1.0,
-            {
-                "seed": seed,
-                "ftarget": ftarget,
-                "timeout": timeout,
-                "bounds": bounds,
-                "CMA_stds": stds,
-            },
-        )
-        es.optimize(objective_func)
+        if optimize_method == "Nelder-Mead":
 
-        print("Optimized parameters:")
-        opt_result = {}
-        for key, value in zip(opt_params, es.result.xbest):
-            opt_result[key] = value
-            print(f"  {key} : {value:.6f}")
+            def nm_callback(xk):
+                current_loss = objective_func(xk)
+                print(f"[Nelder-Mead] step: loss = {current_loss:.6f}, x = {xk}")
 
-        cr_param.update(opt_result)
+            result = scipy.optimize.minimize(
+                objective_func,
+                x0=initial_params,
+                method="Nelder-Mead",
+                callback=nm_callback,
+                options={
+                    "maxiter": 30,
+                    "xatol": 1e-6,
+                    "fatol": ftarget,
+                    "disp": True,
+                },
+            )
 
-        self.calib_note.update_cr_param(cr_label, cr_param)
+            print("Optimized parameters:")
+            opt_result = {}
+            for key, value in zip(opt_params, result.x):
+                opt_result[key] = value
+                print(f"  {key} : {value:.6f}")
 
-        return {
-            "cr_param": cr_param,
-            "result": es.result,
-        }
+            cr_param.update(opt_result)
+            if update_cr_param:
+                self.calib_note.update_cr_param(cr_label, cr_param)
+
+            return {
+                "cr_param": cr_param,
+                "result": result,
+            }
+        elif optimize_method == "cma":
+            es = cma.CMAEvolutionStrategy(
+                initial_params,
+                1.0,
+                {
+                    "seed": seed,
+                    "ftarget": ftarget,
+                    "timeout": timeout,
+                    "bounds": bounds,
+                    "CMA_stds": stds,
+                },
+            )
+            es.optimize(objective_func)
+
+            print("Optimized parameters:")
+            opt_result = {}
+            for key, value in zip(opt_params, es.result.xbest):
+                opt_result[key] = value
+                print(f"  {key} : {value:.6f}")
+
+            cr_param.update(opt_result)
+            if update_cr_param:
+                self.calib_note.update_cr_param(cr_label, cr_param)
+
+            return {
+                "cr_param": cr_param,
+                "result": es.result,
+            }
+
+        else:
+            raise ValueError(f"Unsupported optimization method: {optimize_method}")

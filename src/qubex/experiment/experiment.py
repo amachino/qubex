@@ -77,6 +77,7 @@ from .mixin import (
     CalibrationMixin,
     CharacterizationMixin,
     MeasurementMixin,
+    OptimizationMixin,
 )
 from .rabi_param import RabiParam
 
@@ -88,6 +89,7 @@ class Experiment(
     CharacterizationMixin,
     CalibrationMixin,
     MeasurementMixin,
+    OptimizationMixin,
 ):
     """
     Class representing an experiment.

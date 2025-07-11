@@ -329,7 +329,7 @@ class BenchmarkingMixin(
                     std = np.std(trial_data[target])
                     mean_data[target].append(mean)
                     std_data[target].append(std)
-                    check_vals[target] = mean - std
+                    check_vals[target] = mean - std * 0.5
 
                 max_check_val = np.max(list(check_vals.values()))
                 if max_check_val < 0.5:
@@ -534,7 +534,7 @@ class BenchmarkingMixin(
                     std = np.std(trial_data[target])
                     mean_data[target].append(mean)
                     std_data[target].append(std)
-                    check_vals[target] = mean - std
+                    check_vals[target] = mean - std * 0.5
 
                 max_check_val = np.max(list(check_vals.values()))
                 if max_check_val < 0.25:
