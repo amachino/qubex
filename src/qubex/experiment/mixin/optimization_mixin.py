@@ -159,11 +159,13 @@ class OptimizationMixin(
         seed: int = 42,
         ftarget: float = 1e-3,
         timeout: int = 300,
+        maxiter: int = 30,
         n_cliffords: int = 10,
         n_trials: int = 3,
         duration: float | None = None,
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ):
@@ -193,6 +195,8 @@ class OptimizationMixin(
             duration = cr_param["duration"]
         if ramptime is None:
             ramptime = cr_param["ramptime"]
+        if x180_margin is None:
+            x180_margin = 0.0
 
         defaults = {
             "cr_amplitude": {
@@ -244,7 +248,12 @@ class OptimizationMixin(
             raise ValueError("opt_params must be a list or dictionary.")
         opt_params = list(opt_params_dict.keys())
 
+        best_loss = float("inf")
+        best_params = None
+
         def objective_func(params_vec):
+            nonlocal best_loss, best_params
+
             params = {k: v["initial"] for k, v in defaults.items()}
             for k, v in zip(opt_params, params_vec):
                 params[k] = v
@@ -276,6 +285,7 @@ class OptimizationMixin(
                 cancel_beta=cancel_beta,
                 echo=True,
                 pi_pulse=pi_pulse,
+                pi_margin=x180_margin,
             )
 
             if obejective_type == "orbit":
@@ -299,7 +309,6 @@ class OptimizationMixin(
                     loss = 1 - prob["00"]
                     loss_list.append(loss)
                 loss = np.mean(loss_list)
-                return loss
             else:
                 ecr_0 = ecr
                 with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr_1:
@@ -324,75 +333,96 @@ class OptimizationMixin(
                 loss_t1 = np.linalg.norm(result_1[target_qubit] - np.array((0, 1, 0)))
 
                 loss = loss_c0 + loss_t0 + loss_c1 + loss_t1
-                return loss
+
+            if loss < best_loss:
+                best_loss = loss
+                best_params = params_vec.copy()
+
+            return loss
 
         initial_params = [opt_params_dict[k]["initial"] for k in opt_params]
-        bounds0 = [opt_params_dict[k]["bounds"][0] for k in opt_params]
-        bounds1 = [opt_params_dict[k]["bounds"][1] for k in opt_params]
-        bounds = [bounds0, bounds1]
-        stds = [opt_params_dict[k]["std"] for k in opt_params]
 
-        if optimize_method == "Nelder-Mead":
+        try:
+            if optimize_method == "Nelder-Mead":
 
-            def nm_callback(xk):
-                current_loss = objective_func(xk)
-                print(f"[Nelder-Mead] step: loss = {current_loss:.6f}, x = {xk}")
+                def nm_callback(xk):
+                    current_loss = objective_func(xk)
+                    print(f"[Nelder-Mead] step: loss = {current_loss:.6f}, x = {xk}")
 
-            result = scipy.optimize.minimize(
-                objective_func,
-                x0=initial_params,
-                method="Nelder-Mead",
-                callback=nm_callback,
-                options={
-                    "maxiter": 30,
-                    "xatol": 1e-6,
-                    "fatol": ftarget,
-                    "disp": True,
-                },
-            )
+                result = scipy.optimize.minimize(
+                    objective_func,
+                    x0=initial_params,
+                    method="Nelder-Mead",
+                    callback=nm_callback,
+                    options={
+                        "maxiter": maxiter,
+                        "fatol": ftarget,
+                        "disp": True,
+                    },
+                )
 
-            print("Optimized parameters:")
-            opt_result = {}
-            for key, value in zip(opt_params, result.x):
-                opt_result[key] = value
-                print(f"  {key} : {value:.6f}")
+                print("Optimized parameters:")
+                opt_result = {}
+                for key, value in zip(opt_params, result.x):
+                    opt_result[key] = value
+                    print(f"  {key} : {value:.6f}")
 
-            cr_param.update(opt_result)
-            if update_cr_param:
-                self.calib_note.update_cr_param(cr_label, cr_param)
+                cr_param.update(opt_result)
+                if update_cr_param:
+                    self.calib_note.update_cr_param(cr_label, cr_param)
 
-            return {
-                "cr_param": cr_param,
-                "result": result,
-            }
-        elif optimize_method == "cma":
-            es = cma.CMAEvolutionStrategy(
-                initial_params,
-                1.0,
-                {
-                    "seed": seed,
-                    "ftarget": ftarget,
-                    "timeout": timeout,
-                    "bounds": bounds,
-                    "CMA_stds": stds,
-                },
-            )
-            es.optimize(objective_func)
+                return {
+                    "cr_param": cr_param,
+                    "result": result,
+                }
+            elif optimize_method == "cma":
+                bounds0 = [opt_params_dict[k]["bounds"][0] for k in opt_params]
+                bounds1 = [opt_params_dict[k]["bounds"][1] for k in opt_params]
+                bounds = [bounds0, bounds1]
+                stds = [opt_params_dict[k]["std"] for k in opt_params]
 
-            print("Optimized parameters:")
-            opt_result = {}
-            for key, value in zip(opt_params, es.result.xbest):
-                opt_result[key] = value
-                print(f"  {key} : {value:.6f}")
+                es = cma.CMAEvolutionStrategy(
+                    initial_params,
+                    1.0,
+                    {
+                        "seed": seed,
+                        "maxiter": maxiter,
+                        "ftarget": ftarget,
+                        "timeout": timeout,
+                        "bounds": bounds,
+                        "CMA_stds": stds,
+                    },
+                )
+                es.optimize(objective_func)
 
-            cr_param.update(opt_result)
-            if update_cr_param:
-                self.calib_note.update_cr_param(cr_label, cr_param)
+                print("Optimized parameters:")
+                opt_result = {}
+                for key, value in zip(opt_params, es.result.xbest):
+                    opt_result[key] = value
+                    print(f"  {key} : {value:.6f}")
 
-            return {
-                "cr_param": cr_param,
-                "result": es.result,
-            }
+                cr_param.update(opt_result)
+                if update_cr_param:
+                    self.calib_note.update_cr_param(cr_label, cr_param)
 
-        else:
-            raise ValueError(f"Unsupported optimization method: {optimize_method}")
+                return {
+                    "cr_param": cr_param,
+                    "result": es.result,
+                }
+            else:
+                raise ValueError(f"Unsupported optimization method: {optimize_method}")
+
+        except KeyboardInterrupt:
+            print("Optimization interrupted by user.")
+            if best_params is not None:
+                opt_result = {k: v for k, v in zip(opt_params, best_params)}
+                cr_param.update(opt_result)  # type: ignore
+                if update_cr_param:
+                    self.calib_note.update_cr_param(cr_label, cr_param)
+                return {
+                    "cr_param": cr_param,
+                    "result": {
+                        "xbest": best_params,
+                        "fbest": best_loss,
+                    },
+                }
