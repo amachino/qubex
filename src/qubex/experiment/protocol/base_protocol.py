@@ -316,6 +316,25 @@ class BaseProtocol(Protocol):
         """Get the reference phases for each target."""
         ...
 
+    def get_rabi_param(
+        self,
+        target: str,
+    ) -> RabiParam:
+        """
+        Get the Rabi parameters for the given target.
+
+        Parameters
+        ----------
+        target : str
+            Target label.
+
+        Returns
+        -------
+        RabiParam
+            Rabi parameters for the target.
+        """
+        ...
+
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,

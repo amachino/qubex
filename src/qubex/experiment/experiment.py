@@ -613,29 +613,10 @@ class Experiment(
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
-        result = {}
-        for target in self.ge_targets | self.ef_targets:
-            param = self.calib_note.get_rabi_param(
-                target,
-                valid_days=self._calibration_valid_days,
-            )
-            if param is not None:
-                try:
-                    result[target] = RabiParam(
-                        target=param.get("target"),
-                        frequency=param.get("frequency"),
-                        amplitude=param.get("amplitude"),
-                        phase=param.get("phase"),
-                        offset=param.get("offset"),
-                        noise=param.get("noise"),
-                        angle=param.get("angle"),
-                        distance=param.get("distance"),
-                        r2=param.get("r2"),
-                        reference_phase=param.get("reference_phase"),
-                    )
-                except TypeError:
-                    raise ValueError(f"Invalid Rabi parameters for {target}: {param}")
-        return result
+        return {
+            target: self.get_rabi_param(target)
+            for target in self.ge_targets | self.ef_targets
+        }
 
     @property
     def ge_rabi_params(self) -> dict[str, RabiParam]:
@@ -796,6 +777,40 @@ class Experiment(
             for target in targets:
                 if target not in self.rabi_params:
                     raise ValueError(f"Rabi parameters for {target} are not stored.")
+
+    def get_rabi_param(
+        self,
+        target: str,
+        valid_days: int | None = None,
+    ) -> RabiParam:
+        """
+        Get the Rabi parameters for the given target.
+        """
+        if valid_days is None:
+            valid_days = self._calibration_valid_days
+
+        param = self.calib_note.get_rabi_param(
+            target,
+            valid_days=valid_days,
+        )
+        if param is not None:
+            try:
+                return RabiParam(
+                    target=param.get("target"),
+                    frequency=param.get("frequency"),
+                    amplitude=param.get("amplitude"),
+                    phase=param.get("phase"),
+                    offset=param.get("offset"),
+                    noise=param.get("noise"),
+                    angle=param.get("angle"),
+                    distance=param.get("distance"),
+                    r2=param.get("r2"),
+                    reference_phase=param.get("reference_phase"),
+                )
+            except TypeError:
+                raise ValueError(f"Invalid Rabi parameters for {target}: {param}")
+        else:
+            raise ValueError(f"Rabi parameters for {target} are not stored.")
 
     def store_rabi_params(
         self,
