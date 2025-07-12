@@ -22,6 +22,7 @@ MARGIN_R = 70
 MARGIN_B = 70
 MARGIN_T = 70
 TITLE_FONT_SIZE = 18
+SUBTITLE_FONT_SIZE = 13
 AXIS_TITLEFONT_SIZE = 16
 AXIS_TICKFONT_SIZE = 14
 LEGEND_FONT_SIZE = 14
@@ -33,7 +34,7 @@ pio.templates["qubex"] = go.layout.Template(
         ),
         title=dict(
             font=dict(size=TITLE_FONT_SIZE),
-            x=0.5,
+            subtitle_font=dict(size=SUBTITLE_FONT_SIZE),
         ),
         xaxis=dict(
             mirror=True,

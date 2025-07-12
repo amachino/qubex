@@ -6,6 +6,7 @@ from typing import Collection, Literal
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
+from plotly.subplots import make_subplots
 
 from ...analysis import fitting
 from ...analysis import visualization as viz
@@ -899,7 +900,6 @@ class CalibrationMixin(
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = True,
-        show_bloch_sphere: bool = True,
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
         if time_range is None:
@@ -918,15 +918,11 @@ class CalibrationMixin(
             cancel_phase = 0.0
         if x180_margin is None:
             x180_margin = 0.0
-
-        effective_drive_range = time_range + ramptime
-
         if x90 is None:
             x90 = {
                 control_qubit: self.x90(control_qubit),
                 target_qubit: self.x90(target_qubit),
             }
-
         if x180 is None:
             x180 = {
                 control_qubit: self.x180(control_qubit),
@@ -966,33 +962,30 @@ class CalibrationMixin(
         control_states = np.array(control_states)
         target_states = np.array(target_states)
 
+        effective_drive_range = time_range + ramptime
+
         fit_result = fitting.fit_rotation(
             effective_drive_range,
             target_states,
             plot=False,
             title=f"Target qubit dynamics of {cr_label} : |{control_state}〉",
             xlabel="Drive time (ns)",
-            ylabel=f"Expectation value : {target_qubit}",
+            ylabel=f"Target qubit : {target_qubit}",
         )
 
         if plot:
-            print(f"Control = |{control_state}〉")
-            print(f"Control qubit : {control_qubit}")
             viz.plot_bloch_vectors(
                 effective_drive_range,
                 control_states,
                 title=f"Control qubit dynamics of {cr_label} : |{control_state}〉",
                 xlabel="Drive time (ns)",
-                ylabel=f"Expectation value : {control_qubit}",
+                ylabel=f"Control qubit : {control_qubit}",
             )
-            if show_bloch_sphere:
-                viz.display_bloch_sphere(control_states)
+            viz.display_bloch_sphere(control_states)
 
-            print(f"Target qubit : {target_qubit}")
             fit_result["fig"].show()
-            if show_bloch_sphere:
-                fit_result["fig3d"].show()
-                viz.display_bloch_sphere(target_states)
+            fit_result["fig3d"].show()
+            viz.display_bloch_sphere(target_states)
 
         return {
             "time_range": time_range,
@@ -1000,6 +993,8 @@ class CalibrationMixin(
             "control_states": control_states,
             "target_states": target_states,
             "fit_result": fit_result,
+            "cr_amplitude": cr_amplitude,
+            "ramptime": ramptime,
         }
 
     def cr_hamiltonian_tomography(
@@ -1019,12 +1014,14 @@ class CalibrationMixin(
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
-        show_bloch_sphere: bool = True,
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
 
         if cr_amplitude is None:
             cr_amplitude = 1.0
+
+        if ramptime is None:
+            ramptime = DEFAULT_CR_RAMPTIME
 
         if reset_awg_and_capunits:
             self.reset_awg_and_capunits()
@@ -1046,8 +1043,7 @@ class CalibrationMixin(
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=False,
-            plot=plot,
-            show_bloch_sphere=show_bloch_sphere,
+            plot=False,
         )
 
         result_1 = self.measure_cr_dynamics(
@@ -1067,8 +1063,7 @@ class CalibrationMixin(
             shots=shots,
             interval=interval,
             reset_awg_and_capunits=False,
-            plot=plot,
-            show_bloch_sphere=show_bloch_sphere,
+            plot=False,
         )
 
         Omega_0 = result_0["fit_result"]["Omega"]
@@ -1090,15 +1085,6 @@ class CalibrationMixin(
         f_target = self.qubits[target_qubit].frequency
         f_delta = f_control - f_target
 
-        print("Qubit frequencies:")
-        print(f"  control ({control_qubit}) : {f_control * 1e3:.3f} MHz")
-        print(f"  target  ({target_qubit}) : {f_target * 1e3:.3f} MHz")
-        print(f"  Δ ({cr_label}) : {f_delta * 1e3:.3f} MHz")
-
-        print("Rotation rates:")
-        for key, value in coeffs.items():
-            print(f"  {key} : {value * 1e3:+.4f} MHz")
-
         # xt (cross-talk) rotation
         xt_rotation = coeffs["IX"] + 1j * coeffs["IY"]
         xt_rotation_amplitude = np.abs(xt_rotation)
@@ -1108,13 +1094,6 @@ class CalibrationMixin(
         )
         xt_rotation_phase = np.angle(xt_rotation)
         xt_rotation_phase_deg = np.angle(xt_rotation, deg=True)
-        print("XT (crosstalk) rotation:")
-        print(
-            f"  rate  : {xt_rotation_amplitude * 1e3:.4f} MHz ({xt_rotation_amplitude_hw:.6f})"
-        )
-        print(
-            f"  phase : {xt_rotation_phase:.3f} rad ({xt_rotation_phase_deg:.1f} deg)"
-        )
 
         # cr (cross-resonance) rotation
         cr_rotation = coeffs["ZX"] + 1j * coeffs["ZY"]
@@ -1127,19 +1106,230 @@ class CalibrationMixin(
         cr_rotation_phase_deg = np.angle(cr_rotation, deg=True)
         zx90_duration = 1 / (4 * cr_rotation_amplitude)
 
-        print("CR (cross-resonance) rotation:")
-        print(
-            f"  rate  : {cr_rotation_amplitude * 1e3:.4f} MHz ({cr_rotation_amplitude_hw:.6f})"
-        )
-        print(
-            f"  phase : {cr_rotation_phase:.3f} rad ({cr_rotation_phase_deg:.1f} deg)"
-        )
-
         # ZX90 gate
         cr_rabi_rate = self.calc_rabi_rate(control_qubit, cr_amplitude)
-        print("Estimated ZX90 gate:")
-        print(f"  drive    : {cr_rabi_rate * 1e3:.1f} MHz ({cr_amplitude:.3f})")
-        print(f"  duration : {zx90_duration:.1f} ns")
+
+        fig_c = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.1,
+        )
+        fig_c_0 = viz.plot_bloch_vectors(
+            result_0["effective_drive_range"],
+            result_0["control_states"],
+            return_figure=True,
+        )
+        fig_c_1 = viz.plot_bloch_vectors(
+            result_1["effective_drive_range"],
+            result_1["control_states"],
+            return_figure=True,
+        )
+        for data in fig_c_0.data:  # type: ignore
+            data: go.Scatter
+            fig_c.add_trace(
+                go.Scatter(
+                    x=data.x,
+                    y=data.y,
+                    mode=data.mode,
+                    line=data.line,
+                    marker=data.marker,
+                    name=data.name,
+                    showlegend=True,
+                ),
+                row=1,
+                col=1,
+            )
+        for data in fig_c_1.data:  # type: ignore
+            data: go.Scatter
+            fig_c.add_trace(
+                go.Scatter(
+                    x=data.x,
+                    y=data.y,
+                    mode=data.mode,
+                    line=data.line,
+                    marker=data.marker,
+                    name=data.name,
+                    showlegend=False,
+                ),
+                row=2,
+                col=1,
+            )
+        fig_c.update_xaxes(
+            title_text="Drive time (ns)",
+            row=2,
+            col=1,
+        )
+        fig_c.update_yaxes(
+            title_text="Control : |0〉",
+            range=[-1.1, 1.1],
+            row=1,
+            col=1,
+        )
+        fig_c.update_yaxes(
+            title_text="Control : |1〉",
+            range=[-1.1, 1.1],
+            row=2,
+            col=1,
+        )
+        fig_c.update_layout(
+            title=dict(
+                text=f"Control qubit dynamics : {cr_label}",
+                subtitle=dict(
+                    text=f"Δ = {f_delta * 1e3:.0f} MHz , Ω = {cr_rabi_rate * 1e3:.1f} MHz , τ = {ramptime:.0f} ns"
+                ),
+            ),
+            height=400,
+            width=600,
+            showlegend=True,
+            margin=dict(t=90),
+        )
+
+        fig_t = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.1,
+        )
+        fig_t_0 = result_0["fit_result"]["fig"]
+        fig_t_1 = result_1["fit_result"]["fig"]
+
+        for data in fig_t_0.data:
+            data: go.Scatter
+            fig_t.add_trace(
+                go.Scatter(
+                    x=data.x,
+                    y=data.y,
+                    mode=data.mode,
+                    line=data.line,
+                    marker=data.marker,
+                    name=data.name,
+                    showlegend=True,
+                ),
+                row=1,
+                col=1,
+            )
+        for data in fig_t_1.data:
+            data: go.Scatter
+            fig_t.add_trace(
+                go.Scatter(
+                    x=data.x,
+                    y=data.y,
+                    mode=data.mode,
+                    line=data.line,
+                    marker=data.marker,
+                    name=data.name,
+                    showlegend=False,
+                ),
+                row=2,
+                col=1,
+            )
+        fig_t.update_xaxes(
+            title_text="Drive time (ns)",
+            row=2,
+            col=1,
+        )
+        fig_t.update_yaxes(
+            title_text="Control : |0〉",
+            range=[-1.1, 1.1],
+            row=1,
+            col=1,
+        )
+        fig_t.update_yaxes(
+            title_text="Control : |1〉",
+            range=[-1.1, 1.1],
+            row=2,
+            col=1,
+        )
+        fig_t.update_layout(
+            title=dict(
+                text=f"Target qubit dynamics : {cr_label}",
+                subtitle=dict(
+                    text=f"Δ = {f_delta * 1e3:.0f} MHz , Ω = {cr_rabi_rate * 1e3:.1f} MHz , τ = {ramptime:.0f} ns"
+                ),
+            ),
+            height=400,
+            width=600,
+            showlegend=True,
+            margin=dict(t=90),
+        )
+
+        fig_t_3d = make_subplots(
+            rows=1,
+            cols=2,
+            subplot_titles=[
+                "Control : |0〉",
+                "Control : |1〉",
+            ],
+            specs=[[{"type": "scatter3d"}, {"type": "scatter3d"}]],
+            horizontal_spacing=0.01,
+        )
+        fig_t_3d_0 = result_0["fit_result"]["fig3d"]
+        fig_t_3d_1 = result_1["fit_result"]["fig3d"]
+        for data in fig_t_3d_0.data:
+            fig_t_3d.add_trace(
+                data,
+                row=1,
+                col=1,
+            )
+        for data in fig_t_3d_1.data:
+            fig_t_3d.add_trace(
+                data,
+                row=1,
+                col=2,
+            )
+        fig_t_3d.update_annotations(
+            dict(
+                font=dict(size=13),
+            )
+        )
+        fig_t_3d.update_layout(
+            title=dict(
+                text=f"Target qubit dynamics : {cr_label}",
+                subtitle=dict(
+                    text=f"Δ = {f_delta * 1e3:.0f} MHz , Ω = {cr_rabi_rate * 1e3:.1f} MHz , τ = {ramptime:.0f} ns"
+                ),
+                y=0.95,
+            ),
+            height=400,
+            width=600,
+            showlegend=False,
+            margin=dict(t=110, b=10, l=10, r=10),
+        )
+
+        if plot:
+            fig_c.show()
+            fig_t.show()
+            fig_t_3d.show()
+
+            print("Qubit frequencies:")
+            print(f"  control ({control_qubit}) : {f_control * 1e3:.3f} MHz")
+            print(f"  target  ({target_qubit}) : {f_target * 1e3:.3f} MHz")
+            print(f"  Δ ({cr_label}) : {f_delta * 1e3:.3f} MHz")
+
+            print("Rotation rates:")
+            for key, value in coeffs.items():
+                print(f"  {key} : {value * 1e3:+.4f} MHz")
+
+            print("XT (crosstalk) rotation:")
+            print(
+                f"  rate  : {xt_rotation_amplitude * 1e3:.4f} MHz ({xt_rotation_amplitude_hw:.6f})"
+            )
+            print(
+                f"  phase : {xt_rotation_phase:.3f} rad ({xt_rotation_phase_deg:.1f} deg)"
+            )
+
+            print("CR (cross-resonance) rotation:")
+            print(
+                f"  rate  : {cr_rotation_amplitude * 1e3:.4f} MHz ({cr_rotation_amplitude_hw:.6f})"
+            )
+            print(
+                f"  phase : {cr_rotation_phase:.3f} rad ({cr_rotation_phase_deg:.1f} deg)"
+            )
+
+            print("Estimated ZX90 gate:")
+            print(f"  drive    : {cr_rabi_rate * 1e3:.1f} MHz ({cr_amplitude:.3f})")
+            print(f"  duration : {zx90_duration:.1f} ns")
 
         return {
             "Omega": Omega,
@@ -1153,6 +1343,10 @@ class CalibrationMixin(
             "cr_drive_amplitude": cr_rabi_rate,
             "cr_drive_amplitude_hw": cr_amplitude,
             "zx90_duration": zx90_duration,
+            "result_0": result_0,
+            "result_1": result_1,
+            "fig_c": fig_c,
+            "fig_t": fig_t,
         }
 
     def update_cr_params(
@@ -1174,7 +1368,6 @@ class CalibrationMixin(
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
-        show_bloch_sphere: bool = True,
     ) -> dict:
         if ramptime is None:
             ramptime = DEFAULT_CR_RAMPTIME
@@ -1205,7 +1398,6 @@ class CalibrationMixin(
             interval=interval,
             reset_awg_and_capunits=reset_awg_and_capunits,
             plot=plot,
-            show_bloch_sphere=show_bloch_sphere,
         )
 
         shift = -result["cr_rotation_phase"]
@@ -1235,19 +1427,20 @@ class CalibrationMixin(
         cancel_amplitude_diff = new_cancel_amplitude - cancel_amplitude
         cancel_phase_diff = new_cancel_phase - cancel_phase
 
-        print("Updated CR params:")
-        print(
-            f"  CR amplitude     : {cr_amplitude:+.4f} {cr_amplitude_diff:+.4f} -> {new_cr_amplitude:+.4f}"
-        )
-        print(
-            f"  CR phase         : {cr_phase:+.4f} {cr_phase_diff:+.4f} -> {new_cr_phase:+.4f}"
-        )
-        print(
-            f"  Cancel amplitude : {cancel_amplitude:+.4f} {cancel_amplitude_diff:+.4f} -> {new_cancel_amplitude:+.4f}"
-        )
-        print(
-            f"  Cancel phase     : {cancel_phase:+.4f} {cancel_phase_diff:+.4f} -> {new_cancel_phase:+.4f}"
-        )
+        if plot:
+            print("Updated CR params:")
+            print(
+                f"  CR amplitude     : {cr_amplitude:+.4f} {cr_amplitude_diff:+.4f} -> {new_cr_amplitude:+.4f}"
+            )
+            print(
+                f"  CR phase         : {cr_phase:+.4f} {cr_phase_diff:+.4f} -> {new_cr_phase:+.4f}"
+            )
+            print(
+                f"  Cancel amplitude : {cancel_amplitude:+.4f} {cancel_amplitude_diff:+.4f} -> {new_cancel_amplitude:+.4f}"
+            )
+            print(
+                f"  Cancel phase     : {cancel_phase:+.4f} {cancel_phase_diff:+.4f} -> {new_cancel_phase:+.4f}"
+            )
 
         cr_label = f"{control_qubit}-{target_qubit}"
         duration = (
@@ -1288,7 +1481,7 @@ class CalibrationMixin(
         cr_amplitude: float | None = None,
         n_iterations: int = 4,
         n_cycles: int = 2,
-        n_points_per_cycle: int = 10,
+        n_points_per_cycle: int = 6,
         use_stored_params: bool = False,
         tolerance: float = 0.005e-3,
         adiabatic_safe_factor: float = 0.75,
@@ -1300,7 +1493,6 @@ class CalibrationMixin(
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         plot: bool = True,
-        show_bloch_sphere: bool = True,
     ) -> dict:
         if ramptime is None:
             ramptime = DEFAULT_CR_RAMPTIME
@@ -1375,7 +1567,6 @@ class CalibrationMixin(
                 interval=interval,
                 reset_awg_and_capunits=reset_awg_and_capunits,
                 plot=plot,
-                show_bloch_sphere=show_bloch_sphere,
             )
             next_time_range = _create_time_range(result["zx90_duration"])
             params_history.append(

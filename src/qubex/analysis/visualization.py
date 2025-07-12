@@ -10,7 +10,7 @@ import plotly.graph_objs as go
 import qctrlvisualizer as qcv
 from numpy.typing import ArrayLike, NDArray
 
-from ..style import get_colors, get_config
+from ..style import COLORS, get_colors, get_config
 from ..typing import IQArray
 
 
@@ -213,6 +213,7 @@ def plot_bloch_vectors(
             y=bloch_vectors[:, 0],
             mode=mode,
             name="〈X〉",
+            line=dict(color=COLORS[0]),
         )
     )
     fig.add_trace(
@@ -221,6 +222,7 @@ def plot_bloch_vectors(
             y=bloch_vectors[:, 1],
             mode=mode,
             name="〈Y〉",
+            line=dict(color=COLORS[1]),
         )
     )
     fig.add_trace(
@@ -229,6 +231,7 @@ def plot_bloch_vectors(
             y=bloch_vectors[:, 2],
             mode=mode,
             name="〈Z〉",
+            line=dict(color=COLORS[2]),
         )
     )
     fig.update_layout(

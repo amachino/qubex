@@ -2970,7 +2970,7 @@ def fit_rotation(
             y=data[:, 1],
             z=data[:, 2],
             mode="markers",
-            marker=dict(size=3),
+            marker=dict(size=3, color=COLORS[0]),
             hoverinfo="skip",
         )
     )
@@ -2983,7 +2983,7 @@ def fit_rotation(
             y=fit[:, 1],
             z=fit[:, 2],
             mode="lines",
-            line=dict(width=4),
+            line=dict(width=4, color=COLORS[1]),
             hoverinfo="skip",
         )
     )
