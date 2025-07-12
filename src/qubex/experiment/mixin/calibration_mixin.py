@@ -998,14 +998,27 @@ class CalibrationMixin(
         }
 
     def _ramptime(self, control_qubit: str, target_qubit: str) -> float:
-        f_control = self.qubits[control_qubit].frequency
-        f_target = self.qubits[target_qubit].frequency
-        f_delta = f_control - f_target
+        f_ge_control = self.qubits[control_qubit].frequency
+        f_ef_target = self.qubits[target_qubit].ef_frequency
 
-        if np.abs(f_delta) < 0.5:
-            return DEFAULT_CR_RAMPTIME * 2
-        else:
+        if f_ge_control < f_ef_target:
             return DEFAULT_CR_RAMPTIME
+        else:
+            return DEFAULT_CR_RAMPTIME * 2
+
+    def _adiabatic_safe_factor(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+    ) -> float:
+        # f_ge_control = self.qubits[control_qubit].frequency
+        # f_ef_target = self.qubits[target_qubit].ef_frequency
+
+        # if f_ge_control < f_ef_target:
+        #     return 0.75
+        # else:
+        #     return 0.5
+        return 0.75
 
     def cr_hamiltonian_tomography(
         self,
@@ -1491,7 +1504,7 @@ class CalibrationMixin(
         n_points_per_cycle: int = 6,
         use_stored_params: bool = False,
         tolerance: float = 0.005e-3,
-        adiabatic_safe_factor: float = 0.75,
+        adiabatic_safe_factor: float | None = None,
         max_amplitude: float = 1.0,
         max_time_range: float = 4096.0,
         x90: TargetMap[Waveform] | None = None,
@@ -1503,6 +1516,10 @@ class CalibrationMixin(
     ) -> dict:
         if ramptime is None:
             ramptime = self._ramptime(control_qubit, target_qubit)
+        if adiabatic_safe_factor is None:
+            adiabatic_safe_factor = self._adiabatic_safe_factor(
+                control_qubit, target_qubit
+            )
 
         def _create_time_range(
             zx90_duration: float,
@@ -1643,7 +1660,7 @@ class CalibrationMixin(
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
         degree: int = 3,
-        adiabatic_safe_factor: float = 0.75,
+        adiabatic_safe_factor: float | None = None,
         max_amplitude: float = 1.0,
         rotary_multiple: float = 9.0,
         use_drag: bool = True,
@@ -1660,6 +1677,10 @@ class CalibrationMixin(
     ) -> dict:
         if ramptime is None:
             ramptime = self._ramptime(control_qubit, target_qubit)
+        if adiabatic_safe_factor is None:
+            adiabatic_safe_factor = self._adiabatic_safe_factor(
+                control_qubit, target_qubit
+            )
         if x180 is None:
             x180 = self.x180(control_qubit)
         elif not isinstance(x180, Waveform):
@@ -1964,6 +1985,8 @@ class CalibrationMixin(
                 self.obtain_cr_params(
                     control_qubit=control_qubit,
                     target_qubit=target_qubit,
+                    n_iterations=6,
+                    tolerance=10e-6,
                     plot=plot,
                 )
                 self.calibrate_zx90(
