@@ -997,6 +997,16 @@ class CalibrationMixin(
             "ramptime": ramptime,
         }
 
+    def _ramptime(self, control_qubit: str, target_qubit: str) -> float:
+        f_control = self.qubits[control_qubit].frequency
+        f_target = self.qubits[target_qubit].frequency
+        f_delta = f_control - f_target
+
+        if np.abs(f_delta) < 0.5:
+            return DEFAULT_CR_RAMPTIME * 2
+        else:
+            return DEFAULT_CR_RAMPTIME
+
     def cr_hamiltonian_tomography(
         self,
         *,
@@ -1021,7 +1031,7 @@ class CalibrationMixin(
             cr_amplitude = 1.0
 
         if ramptime is None:
-            ramptime = DEFAULT_CR_RAMPTIME
+            ramptime = self._ramptime(control_qubit, target_qubit)
 
         if reset_awg_and_capunits:
             self.reset_awg_and_capunits()
@@ -1281,6 +1291,7 @@ class CalibrationMixin(
         fig_t_3d.update_annotations(
             dict(
                 font=dict(size=13),
+                yshift=-20,
             )
         )
         fig_t_3d.update_layout(
@@ -1289,12 +1300,11 @@ class CalibrationMixin(
                 subtitle=dict(
                     text=f"Δ = {f_delta * 1e3:.0f} MHz , Ω = {cr_rabi_rate * 1e3:.1f} MHz , τ = {ramptime:.0f} ns"
                 ),
-                y=0.95,
             ),
             height=400,
             width=600,
             showlegend=False,
-            margin=dict(t=110, b=10, l=10, r=10),
+            margin=dict(t=90, b=10, l=10, r=10),
         )
 
         if plot:
@@ -1370,7 +1380,7 @@ class CalibrationMixin(
         plot: bool = False,
     ) -> dict:
         if ramptime is None:
-            ramptime = DEFAULT_CR_RAMPTIME
+            ramptime = self._ramptime(control_qubit, target_qubit)
         if cr_amplitude is None:
             cr_amplitude = 1.0
         if cr_phase is None:
@@ -1443,9 +1453,6 @@ class CalibrationMixin(
             )
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        duration = (
-            (0.5 * result["zx90_duration"]) // SAMPLING_PERIOD + 1
-        ) * SAMPLING_PERIOD
 
         zx_rotation_rate = result["coeffs"]["ZX"] / cr_amplitude
 
@@ -1453,7 +1460,7 @@ class CalibrationMixin(
             cr_label,
             {
                 "target": cr_label,
-                "duration": duration,
+                "duration": 0.0,
                 "ramptime": ramptime,
                 "cr_amplitude": new_cr_amplitude,
                 "cr_phase": new_cr_phase,
@@ -1495,7 +1502,7 @@ class CalibrationMixin(
         plot: bool = True,
     ) -> dict:
         if ramptime is None:
-            ramptime = DEFAULT_CR_RAMPTIME
+            ramptime = self._ramptime(control_qubit, target_qubit)
 
         def _create_time_range(
             zx90_duration: float,
@@ -1652,7 +1659,7 @@ class CalibrationMixin(
         plot: bool = True,
     ) -> dict:
         if ramptime is None:
-            ramptime = DEFAULT_CR_RAMPTIME
+            ramptime = self._ramptime(control_qubit, target_qubit)
         if x180 is None:
             x180 = self.x180(control_qubit)
         elif not isinstance(x180, Waveform):
@@ -1684,13 +1691,22 @@ class CalibrationMixin(
         max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
 
         if duration is None:
-            duration = duration_buffer / (8 * zx_frequency) + ramptime
-            if duration % duration_unit != 0:
-                duration = (duration // duration_unit + 1) * duration_unit
+            if cr_param["duration"] == 0.0:
+                duration = duration_buffer / (8 * zx_frequency) + ramptime
+                if duration % duration_unit != 0:
+                    duration = (duration // duration_unit + 1) * duration_unit
+            else:
+                duration = cr_param["duration"]
 
+        print(f"duration : {duration} ns")
+        print(f"ramptime : {ramptime} ns")
         # TODO: Check if duration is multiple of duration_unit
 
-        def ecr_sequence(amplitude: float, n_repetitions: int) -> PulseSchedule:
+        def ecr_sequence(
+            amplitude: float,
+            duration: float,
+            n_repetitions: int,
+        ) -> PulseSchedule:
             scaled_cancel_pulse = amplitude / cr_amplitude * cancel_pulse
             ecr = CrossResonance(
                 control_qubit=control_qubit,
@@ -1715,7 +1731,11 @@ class CalibrationMixin(
                 ps.call(ecr)
             return ps
 
-        def calibrate(n_repetitions, amplitude_range) -> dict:
+        def calibrate(
+            amplitude_range,
+            duration: float,
+            n_repetitions: int,
+        ) -> dict:
             min_amplitude = np.clip(amplitude_range[0], 0.0, max_cr_amplitude)
             max_amplitude = np.clip(amplitude_range[-1], 0.0, max_cr_amplitude)
             amplitude_range = np.linspace(
@@ -1723,9 +1743,12 @@ class CalibrationMixin(
                 max_amplitude,
                 len(amplitude_range),
             )
-
             sweep_result = self.sweep_parameter(
-                lambda x: ecr_sequence(x, n_repetitions),
+                lambda x: ecr_sequence(
+                    amplitude=x,
+                    duration=duration,
+                    n_repetitions=n_repetitions,
+                ),
                 sweep_range=amplitude_range,
                 shots=shots,
                 interval=interval,
@@ -1762,16 +1785,29 @@ class CalibrationMixin(
         if amplitude_range is None:
             print(f"Estimating CR amplitude of {cr_label} (n_repetitions = 1)")
             rough_result = calibrate(
-                n_repetitions=n_repetitions,
                 amplitude_range=np.linspace(0.0, cr_amplitude * 2, 20),
+                duration=duration,
+                n_repetitions=n_repetitions,
             )
             rough_amplitude = rough_result["root"]
             if rough_amplitude is None:
-                raise ValueError("Could not find a root for the rough calibration.")
-            else:
-                min_amplitude = float(rough_amplitude * 0.8)
-                max_amplitude = float(rough_amplitude * 1.2)
-                amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
+                duration = (
+                    duration * duration_buffer // duration_unit + 1
+                ) * duration_unit
+                print(f"Retrying with duration = {duration} ns")
+                rough_result = calibrate(
+                    amplitude_range=np.linspace(0.0, cr_amplitude * 2, 20),
+                    duration=duration,
+                    n_repetitions=n_repetitions,
+                )
+                rough_amplitude = rough_result["root"]
+                if rough_amplitude is None:
+                    raise ValueError(
+                        "Could not find a root for the CR amplitude calibration."
+                    )
+            min_amplitude = float(rough_amplitude * 0.8)
+            max_amplitude = float(rough_amplitude * 1.2)
+            amplitude_range = np.linspace(min_amplitude, max_amplitude, 50)
         else:
             amplitude_range = np.asarray(amplitude_range)
 
@@ -1779,8 +1815,9 @@ class CalibrationMixin(
             f"Calibrating CR amplitude of {cr_label} (n_repetitions = {n_repetitions})"
         )
         result_n1 = calibrate(
-            n_repetitions=n_repetitions,
             amplitude_range=amplitude_range,
+            duration=duration,
+            n_repetitions=n_repetitions,
         )
         amplitude_range = np.asarray(result_n1["amplitude_range"])
         signal_n1 = result_n1["signal"]
@@ -1790,8 +1827,9 @@ class CalibrationMixin(
             f"Calibrating CR amplitude of {cr_label} (n_repetitions = {n_repetitions + 2})"
         )
         result_n3 = calibrate(
-            n_repetitions=n_repetitions + 2,
             amplitude_range=amplitude_range,
+            duration=duration,
+            n_repetitions=n_repetitions + 2,
         )
         signal_n3 = result_n3["signal"]
         fit_result_n3 = result_n3["fit_result"]
