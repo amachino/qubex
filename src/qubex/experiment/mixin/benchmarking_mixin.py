@@ -332,7 +332,7 @@ class BenchmarkingMixin(
                     check_vals[target] = mean - std * 0.5
 
                 max_check_val = np.max(list(check_vals.values()))
-                if max_check_val < 0.5:
+                if n_cliffords_range is None and max_check_val < 0.5:
                     break
 
             sweep_range = np.array(sweep_range, dtype=int)
@@ -537,7 +537,7 @@ class BenchmarkingMixin(
                     check_vals[target] = mean - std * 0.5
 
                 max_check_val = np.max(list(check_vals.values()))
-                if max_check_val < 0.25:
+                if n_cliffords_range is None and max_check_val < 0.25:
                     break
 
             sweep_range = np.array(sweep_range, dtype=int)
