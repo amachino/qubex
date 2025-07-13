@@ -152,16 +152,16 @@ class OptimizationMixin(
         control_qubit: str,
         target_qubit: str,
         *,
-        obejective_type: str = "orbit",
-        optimize_method: str = "cma",
+        objective_type: str = "rb",  # "rb" or "st"
+        optimize_method: str = "cma",  # "nm" or "cma"
         update_cr_param: bool = True,
         opt_params: Collection[str] | None = None,
         seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
-        maxiter: int = 30,
-        n_cliffords: int = 10,
-        n_trials: int = 3,
+        ftarget: float | None = None,
+        timeout: int | None = None,
+        maxiter: int | None = None,
+        n_cliffords: int = 5,
+        n_trials: int = 5,
         duration: float | None = None,
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | None = None,
@@ -247,6 +247,7 @@ class OptimizationMixin(
         else:
             raise ValueError("opt_params must be a list or dictionary.")
         opt_params = list(opt_params_dict.keys())
+        n_opt_params = len(opt_params)
 
         best_loss = float("inf")
         best_params = None
@@ -288,7 +289,7 @@ class OptimizationMixin(
                 pi_margin=x180_margin,
             )
 
-            if obejective_type == "orbit":
+            if objective_type == "rb":
                 loss_list = []
                 for _ in range(n_trials):
                     rb_seq = self.rb_sequence_2q(
@@ -309,7 +310,7 @@ class OptimizationMixin(
                     loss = 1 - prob["00"]
                     loss_list.append(loss)
                 loss = np.mean(loss_list)
-            else:
+            elif objective_type == "st":
                 ecr_0 = ecr
                 with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr_1:
                     ecr_1.add(control_qubit, pi_pulse)
@@ -333,6 +334,8 @@ class OptimizationMixin(
                 loss_t1 = np.linalg.norm(result_1[target_qubit] - np.array((0, 1, 0)))
 
                 loss = loss_c0 + loss_t0 + loss_c1 + loss_t1
+            else:
+                raise ValueError(f"Unsupported objective type: {objective_type}")
 
             if loss < best_loss:
                 best_loss = loss
@@ -343,11 +346,16 @@ class OptimizationMixin(
         initial_params = [opt_params_dict[k]["initial"] for k in opt_params]
 
         try:
-            if optimize_method == "Nelder-Mead":
+            if optimize_method == "nm":
 
                 def nm_callback(xk):
                     current_loss = objective_func(xk)
-                    print(f"[Nelder-Mead] step: loss = {current_loss:.6f}, x = {xk}")
+                    print(f"loss = {current_loss:.6f}, x = {xk}")
+
+                if ftarget is None:
+                    ftarget = 1e3
+                if maxiter is None:
+                    maxiter = 100
 
                 result = scipy.optimize.minimize(
                     objective_func,
@@ -360,22 +368,16 @@ class OptimizationMixin(
                         "disp": True,
                     },
                 )
+                best_params = result.x
 
-                print("Optimized parameters:")
-                opt_result = {}
-                for key, value in zip(opt_params, result.x):
-                    opt_result[key] = value
-                    print(f"  {key} : {value:.6f}")
-
-                cr_param.update(opt_result)
-                if update_cr_param:
-                    self.calib_note.update_cr_param(cr_label, cr_param)
-
-                return {
-                    "cr_param": cr_param,
-                    "result": result,
-                }
             elif optimize_method == "cma":
+                if ftarget is None:
+                    ftarget = 1e-2
+                if timeout is None:
+                    timeout = 60 * 60
+                if maxiter is None:
+                    maxiter = n_opt_params * 100
+
                 bounds0 = [opt_params_dict[k]["bounds"][0] for k in opt_params]
                 bounds1 = [opt_params_dict[k]["bounds"][1] for k in opt_params]
                 bounds = [bounds0, bounds1]
@@ -394,35 +396,34 @@ class OptimizationMixin(
                     },
                 )
                 es.optimize(objective_func)
+                result = es.result
+                best_params = result.xbest
 
-                print("Optimized parameters:")
-                opt_result = {}
-                for key, value in zip(opt_params, es.result.xbest):
-                    opt_result[key] = value
-                    print(f"  {key} : {value:.6f}")
-
-                cr_param.update(opt_result)
-                if update_cr_param:
-                    self.calib_note.update_cr_param(cr_label, cr_param)
-
-                return {
-                    "cr_param": cr_param,
-                    "result": es.result,
-                }
             else:
                 raise ValueError(f"Unsupported optimization method: {optimize_method}")
 
         except KeyboardInterrupt:
             print("Optimization interrupted by user.")
-            if best_params is not None:
-                opt_result = {k: v for k, v in zip(opt_params, best_params)}
-                cr_param.update(opt_result)  # type: ignore
-                if update_cr_param:
-                    self.calib_note.update_cr_param(cr_label, cr_param)
-                return {
-                    "cr_param": cr_param,
-                    "result": {
-                        "xbest": best_params,
-                        "fbest": best_loss,
-                    },
-                }
+            result = {}
+        finally:
+            print("Optimized parameters:")
+            opt_result = {}
+            if best_params is None:
+                raise RuntimeError("No best parameters found during optimization.")
+            for key, value in zip(opt_params, best_params):
+                old_value = cr_param.get(key, None)
+                opt_result[key] = value
+                print(f"  {key}:")
+                print(f"    {old_value:.6f} -> {value:.6f} ({value - old_value:+.6f})")
+
+            cr_param.update(opt_result)
+            if update_cr_param:
+                self.calib_note.update_cr_param(cr_label, cr_param)
+
+            return {
+                "method": optimize_method,
+                "best_params": best_params,
+                "best_loss": best_loss,
+                "cr_param": cr_param,
+                "result": result,
+            }
