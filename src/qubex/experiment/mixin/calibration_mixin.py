@@ -1944,6 +1944,8 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
         if targets is None:
@@ -1955,11 +1957,36 @@ class CalibrationMixin(
 
         for target in targets:
             try:
-                self.obtain_rabi_params(target, plot=plot)
-                self.calibrate_hpi_pulse(target, plot=plot)
-                self.calibrate_drag_hpi_pulse(target, plot=plot)
-                self.calibrate_drag_pi_pulse(target, plot=plot)
-                self.build_classifier(target, plot=plot)
+                self.obtain_rabi_params(
+                    target,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+                self.calibrate_hpi_pulse(
+                    target,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+                self.calibrate_drag_hpi_pulse(
+                    target,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+                self.calibrate_drag_pi_pulse(
+                    target,
+                    shots=shots,
+                    interval=interval,
+                    plot=plot,
+                )
+                self.build_classifier(
+                    target,
+                    shots=shots * 4,
+                    interval=interval,
+                    plot=plot,
+                )
                 self.save_calib_note()
             except Exception as e:
                 print(f"Error calibrating 1Q gates for {targets}: {e}")
@@ -1969,6 +1996,8 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
         if targets is None:
@@ -1987,11 +2016,15 @@ class CalibrationMixin(
                     target_qubit=target_qubit,
                     n_iterations=6,
                     tolerance=10e-6,
+                    shots=shots,
+                    interval=interval,
                     plot=plot,
                 )
                 self.calibrate_zx90(
                     control_qubit=control_qubit,
                     target_qubit=target_qubit,
+                    shots=shots,
+                    interval=interval,
                     plot=plot,
                 )
                 self.save_calib_note()
