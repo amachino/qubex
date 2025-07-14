@@ -100,28 +100,7 @@ class MeasurementMixin(
         if reset_awg_and_capunits:
             self.device_controller.initialize_awg_and_capunits(self.box_ids)
 
-        if frequencies is not None:
-            with self.modified_frequencies(frequencies):
-                result = self.measurement.execute(
-                    schedule=schedule,
-                    mode=mode,
-                    shots=shots,
-                    interval=interval,
-                    capture_duration=capture_duration,
-                    capture_offset=capture_offset,
-                    readout_amplitudes=readout_amplitudes,
-                    readout_duration=readout_duration,
-                    readout_pre_margin=readout_pre_margin,
-                    readout_post_margin=readout_post_margin,
-                    readout_ramptime=readout_ramptime,
-                    readout_drag_coeff=readout_drag_coeff,
-                    readout_ramp_type=readout_ramp_type,
-                    add_last_measurement=add_last_measurement,
-                    add_pump_pulses=add_pump_pulses,
-                    enable_dsp_sum=enable_dsp_sum,
-                    plot=plot,
-                )
-        else:
+        with self.modified_frequencies(frequencies):
             result = self.measurement.execute(
                 schedule=schedule,
                 mode=mode,
@@ -222,7 +201,7 @@ class MeasurementMixin(
         if reset_awg_and_capunits:
             self.device_controller.initialize_awg_and_capunits(self.box_ids)
 
-        if frequencies is None:
+        with self.modified_frequencies(frequencies):
             result = self.measurement.measure(
                 waveforms=waveforms,
                 mode=mode,
@@ -240,25 +219,6 @@ class MeasurementMixin(
                 add_pump_pulses=add_pump_pulses,
                 enable_dsp_sum=enable_dsp_sum,
             )
-        else:
-            with self.modified_frequencies(frequencies):
-                result = self.measurement.measure(
-                    waveforms=waveforms,
-                    mode=mode,
-                    shots=shots,
-                    interval=interval,
-                    capture_duration=capture_duration,
-                    capture_offset=capture_offset,
-                    readout_amplitudes=readout_amplitudes,
-                    readout_duration=readout_duration,
-                    readout_pre_margin=readout_pre_margin,
-                    readout_post_margin=readout_pre_margin,
-                    readout_ramptime=readout_ramptime,
-                    readout_drag_coeff=readout_drag_coeff,
-                    readout_ramp_type=readout_ramp_type,
-                    add_pump_pulses=add_pump_pulses,
-                    enable_dsp_sum=enable_dsp_sum,
-                )
         if plot:
             result.plot()
         return result
@@ -416,6 +376,7 @@ class MeasurementMixin(
         sweep_range: ArrayLike,
         repetitions: int = 1,
         frequencies: dict[str, float] | None = None,
+        initial_states: dict[str, str] | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int | None = None,
         interval: float | None = None,
@@ -471,6 +432,7 @@ class MeasurementMixin(
             for seq in sequences:
                 result = self.measure(
                     seq,
+                    initial_states=initial_states,
                     mode="avg",
                     shots=shots,
                     interval=interval,
@@ -586,6 +548,7 @@ class MeasurementMixin(
         self,
         sequence: TargetMap[Waveform] | PulseSchedule,
         *,
+        initial_states: dict[str, str] | None = None,
         repetitions: int = 20,
         shots: int | None = None,
         interval: float | None = None,
@@ -603,8 +566,9 @@ class MeasurementMixin(
             return ps
 
         result = self.sweep_parameter(
-            sweep_range=np.arange(repetitions + 1),
             sequence=repeated_sequence,
+            sweep_range=np.arange(repetitions + 1),
+            initial_states=initial_states,
             shots=shots,
             interval=interval,
             plot=plot,
