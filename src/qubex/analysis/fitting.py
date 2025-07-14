@@ -482,7 +482,7 @@ def fit_polynomial(
         fig.add_annotation(
             x=root,
             y=fun(root),
-            text=f"root: {root:.3g}",
+            text=f"root: {root:.6g}",
             showarrow=True,
             arrowhead=1,
         )

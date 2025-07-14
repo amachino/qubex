@@ -1809,7 +1809,9 @@ class CalibrationMixin(
             }
 
         if amplitude_range is None:
-            print(f"Estimating CR amplitude of {cr_label} (n_repetitions = 1)")
+            print(
+                f"Estimating CR amplitude of {cr_label} (n_repetitions = {n_repetitions})"
+            )
             rough_result = calibrate(
                 amplitude_range=np.linspace(0.0, cr_amplitude * 2, 20),
                 duration=duration,
