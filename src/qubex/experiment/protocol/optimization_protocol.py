@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Collection, Protocol
 
-from ...measurement.measurement import DEFAULT_INTERVAL
+from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import Waveform
 from ...typing import TargetMap
-from ..experiment_constants import CALIBRATION_SHOTS
 
 
 class OptimizationProtocol(Protocol):
@@ -48,13 +47,20 @@ class OptimizationProtocol(Protocol):
         control_qubit: str,
         target_qubit: str,
         *,
+        objective_type: str = "st",  # "st" or "rb"
+        optimize_method: str = "cma",  # "cma" or "nm"
+        update_cr_param: bool = True,
         opt_params: Collection[str] | None = None,
-        seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
+        seed: int | None = None,
+        ftarget: float | None = None,
+        timeout: int | None = None,
+        maxiter: int | None = None,
+        n_cliffords: int | None = None,
+        n_trials: int | None = None,
         duration: float | None = None,
         ramptime: float | None = None,
-        x180: TargetMap[Waveform] | Waveform | None = None,
-        shots: int = CALIBRATION_SHOTS,
+        x180: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
+        shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ): ...

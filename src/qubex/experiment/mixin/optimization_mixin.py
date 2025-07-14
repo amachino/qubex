@@ -151,16 +151,16 @@ class OptimizationMixin(
         control_qubit: str,
         target_qubit: str,
         *,
-        objective_type: str = "rb",  # "rb" or "st"
-        optimize_method: str = "cma",  # "nm" or "cma"
+        objective_type: str = "st",  # "st" or "rb"
+        optimize_method: str = "cma",  # "cma" or "nm"
         update_cr_param: bool = True,
         opt_params: Collection[str] | None = None,
-        seed: int = 42,
+        seed: int | None = None,
         ftarget: float | None = None,
         timeout: int | None = None,
         maxiter: int | None = None,
-        n_cliffords: int = 5,
-        n_trials: int = 5,
+        n_cliffords: int | None = None,
+        n_trials: int | None = None,
         duration: float | None = None,
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | None = None,
@@ -196,6 +196,12 @@ class OptimizationMixin(
             ramptime = cr_param["ramptime"]
         if x180_margin is None:
             x180_margin = 0.0
+        if seed is None:
+            seed = 42
+        if n_cliffords is None:
+            n_cliffords = 5
+        if n_trials is None:
+            n_trials = 5
 
         defaults = {
             "cr_amplitude": {
@@ -444,25 +450,25 @@ class OptimizationMixin(
         except KeyboardInterrupt:
             print("Optimization interrupted by user.")
             result = {}
-        finally:
-            print("Optimized parameters:")
-            opt_result = {}
-            if best_params is None:
-                raise RuntimeError("No best parameters found during optimization.")
-            for key, value in zip(opt_params, best_params):
-                old_value = cr_param.get(key, None)
-                opt_result[key] = value
-                print(f"  {key}:")
-                print(f"    {old_value:.6f} -> {value:.6f} ({value - old_value:+.6f})")
 
-            cr_param.update(opt_result)
-            if update_cr_param:
-                self.calib_note.update_cr_param(cr_label, cr_param)
+        print("Optimized parameters:")
+        opt_result = {}
+        if best_params is None:
+            raise RuntimeError("No best parameters found during optimization.")
+        for key, value in zip(opt_params, best_params):
+            old_value = cr_param.get(key, None)
+            opt_result[key] = value
+            print(f"  {key}:")
+            print(f"    {old_value:.6f} -> {value:.6f} ({value - old_value:+.6f})")
 
-            return {
-                "method": optimize_method,
-                "best_params": best_params,
-                "best_loss": best_loss,
-                "cr_param": cr_param,
-                "result": result,
-            }
+        cr_param.update(opt_result)
+        if update_cr_param:
+            self.calib_note.update_cr_param(cr_label, cr_param)
+
+        return {
+            "method": optimize_method,
+            "best_params": best_params,
+            "best_loss": best_loss,
+            "cr_param": cr_param,
+            "result": result,
+        }
