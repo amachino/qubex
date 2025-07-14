@@ -11,7 +11,6 @@ from ...pulse import (
     CrossResonance,
     Drag,
     Pulse,
-    PulseSchedule,
     Waveform,
 )
 from ...typing import TargetMap
@@ -311,29 +310,69 @@ class OptimizationMixin(
                     loss_list.append(loss)
                 loss = np.mean(loss_list)
             elif objective_type == "st":
-                ecr_0 = ecr
-                with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr_1:
-                    ecr_1.add(control_qubit, pi_pulse)
-                    ecr_1.barrier()
-                    ecr_1.call(ecr_0)
-
-                result_0 = self.state_tomography(
-                    ecr_0,
+                result_00 = self.state_tomography(
+                    ecr,
+                    initial_state={
+                        control_qubit: "0",
+                        target_qubit: "0",
+                    },
                     shots=shots,
                     interval=interval,
                 )
-                result_1 = self.state_tomography(
-                    ecr_1,
+                result_10 = self.state_tomography(
+                    ecr,
+                    initial_state={
+                        control_qubit: "1",
+                        target_qubit: "0",
+                    },
+                    shots=shots,
+                    interval=interval,
+                )
+                result_pp = self.state_tomography(
+                    ecr,
+                    initial_state={
+                        control_qubit: "+",
+                        target_qubit: "+",
+                    },
+                    shots=shots,
+                    interval=interval,
+                )
+                result_pm = self.state_tomography(
+                    ecr,
+                    initial_state={
+                        control_qubit: "+",
+                        target_qubit: "-",
+                    },
                     shots=shots,
                     interval=interval,
                 )
 
-                loss_c0 = np.linalg.norm(result_0[control_qubit] - np.array((0, 0, 1)))
-                loss_t0 = np.linalg.norm(result_0[target_qubit] - np.array((0, -1, 0)))
-                loss_c1 = np.linalg.norm(result_1[control_qubit] - np.array((0, 0, -1)))
-                loss_t1 = np.linalg.norm(result_1[target_qubit] - np.array((0, 1, 0)))
+                state_xp = np.array((1, 0, 0))
+                state_xm = np.array((-1, 0, 0))
+                state_yp = np.array((0, 1, 0))
+                state_ym = np.array((0, -1, 0))
+                state_zp = np.array((0, 0, 1))
+                state_zm = np.array((0, 0, -1))
 
-                loss = loss_c0 + loss_t0 + loss_c1 + loss_t1
+                loss_c_00 = np.linalg.norm(result_00[control_qubit] - state_zp)
+                loss_t_00 = np.linalg.norm(result_00[target_qubit] - state_ym)
+                loss_c_10 = np.linalg.norm(result_10[control_qubit] - state_zm)
+                loss_t_10 = np.linalg.norm(result_10[target_qubit] - state_yp)
+                loss_c_pp = np.linalg.norm(result_pp[control_qubit] - state_yp)
+                loss_t_pp = np.linalg.norm(result_pp[target_qubit] - state_xp)
+                loss_c_pm = np.linalg.norm(result_pm[control_qubit] - state_ym)
+                loss_t_pm = np.linalg.norm(result_pm[target_qubit] - state_xm)
+
+                loss = (
+                    loss_c_00
+                    + loss_t_00
+                    + loss_c_10
+                    + loss_t_10
+                    + loss_c_pp
+                    + loss_t_pp
+                    + loss_c_pm
+                    + loss_t_pm
+                ) / 8
             else:
                 raise ValueError(f"Unsupported objective type: {objective_type}")
 
