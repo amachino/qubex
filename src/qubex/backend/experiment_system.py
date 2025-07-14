@@ -31,6 +31,7 @@ DEFAULT_CONTROL_FSC: Final = 40527
 DEFAULT_READOUT_FSC: Final = 40527
 DEFAULT_PUMP_FSC: Final = 40527
 DEFAULT_CAPTURE_DELAY: Final = 7
+DEFAULT_CAPTURE_DELAY_WORD: Final = 0
 DEFAULT_PUMP_FREQUENCY: Final = 10.0
 DEFAULT_PUMP_AMPLITUDE: Final = 0.0
 DEFAULT_DC_VOLTAGE: Final = 0.0
@@ -77,6 +78,7 @@ class ControlParams(Model):
     readout_fsc: dict[int, int]
     pump_fsc: dict[int, int]
     capture_delay: dict[int, int]
+    capture_delay_word: dict[int, int]
     jpa_params: dict[int, Optional[JPAParam]]
 
     def get_control_amplitude(self, qubit: str) -> float:
@@ -105,6 +107,9 @@ class ControlParams(Model):
 
     def get_capture_delay(self, mux: int) -> int:
         return self.capture_delay.get(mux, DEFAULT_CAPTURE_DELAY)
+
+    def get_capture_delay_word(self, mux: int) -> int:
+        return self.capture_delay_word.get(mux, DEFAULT_CAPTURE_DELAY_WORD)
 
     def get_pump_frequency(self, mux: int) -> float:
         jpa_param = self.jpa_params.get(mux)

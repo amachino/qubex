@@ -33,7 +33,6 @@ from ..clifford import Clifford, CliffordGenerator
 from ..measurement import Measurement, MeasureResult, StateClassifier
 from ..measurement.measurement import (
     DEFAULT_CAPTURE_DURATION,
-    DEFAULT_CAPTURE_OFFSET,
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
@@ -130,8 +129,6 @@ class Experiment(
         Post-margin of the readout pulse.
     capture_duration : int, optional
         Capture duration for the readout signal.
-    capture_offset : float, optional
-        Offset for the capture in ns.
     classifier_dir : Path | str, optional
         Directory of the state classifiers.
     classifier_type : Literal["kmeans", "gmm"], optional
@@ -165,7 +162,6 @@ class Experiment(
         readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN,
         readout_post_margin: float = DEFAULT_READOUT_POST_MARGIN,
         capture_duration: float = DEFAULT_CAPTURE_DURATION,
-        capture_offset: float = DEFAULT_CAPTURE_OFFSET,
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
@@ -189,7 +185,6 @@ class Experiment(
         self._readout_pre_margin: Final = readout_pre_margin
         self._readout_post_margin: Final = readout_post_margin
         self._capture_duration: Final = capture_duration
-        self._capture_offset: Final = capture_offset
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
@@ -455,10 +450,6 @@ class Experiment(
     @property
     def capture_duration(self) -> float:
         return self._capture_duration
-
-    @property
-    def capture_offset(self) -> float:
-        return self._capture_offset
 
     @property
     def readout_duration(self) -> float:
@@ -1391,7 +1382,6 @@ class Experiment(
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> MeasureResult:
@@ -1416,8 +1406,6 @@ class Experiment(
             Post-margin of the readout pulse in ns.
         capture_duration : float, optional
             Capture duration for the readout signal in ns.
-        capture_offset : float, optional
-            Offset for the capture in ns.
         add_pump_pulses : bool, optional
             Whether to add pump pulses to the readout sequence. Defaults to False.
         plot : bool, optional
@@ -1453,7 +1441,6 @@ class Experiment(
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
             capture_duration=capture_duration,
-            capture_offset=capture_offset,
             add_pump_pulses=add_pump_pulses,
         )
         if plot:

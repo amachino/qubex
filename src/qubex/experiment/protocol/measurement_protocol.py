@@ -29,7 +29,6 @@ class MeasurementProtocol(Protocol):
         shots: int | None = None,
         interval: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -60,8 +59,6 @@ class MeasurementProtocol(Protocol):
             Frequencies of the qubits.
         capture_duration : float, optional
             Capture window in ns.
-        capture_offset : float, optional
-            Capture offset in ns.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
         readout_duration : float, optional
@@ -116,7 +113,6 @@ class MeasurementProtocol(Protocol):
         shots: int | None = None,
         interval: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -148,8 +144,6 @@ class MeasurementProtocol(Protocol):
             Interval between shots in ns.
         capture_duration : float, optional
             Capture window in ns.
-        capture_offset : float, optional
-            Capture offset in ns.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
         readout_duration : float, optional
@@ -200,7 +194,6 @@ class MeasurementProtocol(Protocol):
         shots: int | None = None,
         interval: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -223,8 +216,6 @@ class MeasurementProtocol(Protocol):
             Interval between shots in ns.
         capture_duration : float, optional
             Capture window in ns.
-        capture_offset : float, optional
-            Capture offset in ns.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
         readout_duration : float, optional
@@ -266,7 +257,6 @@ class MeasurementProtocol(Protocol):
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
     ) -> dict:
@@ -291,8 +281,6 @@ class MeasurementProtocol(Protocol):
             Readout post-margin in ns.
         capture_duration : float, optional
             Capture window in ns.
-        capture_offset : float, optional
-            Capture offset in ns.
         add_pump_pulses : bool, optional
             Whether to add pump pulses to the sequence. Defaults to False.
         plot : bool, optional
@@ -353,7 +341,6 @@ class MeasurementProtocol(Protocol):
         shots: int | None = None,
         interval: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -386,8 +373,6 @@ class MeasurementProtocol(Protocol):
             Interval between shots in ns.
         capture_duration : float, optional
             Capture window in ns.
-        capture_offset : float, optional
-            Capture offset in ns.
         readout_amplitudes : dict[str, float], optional
             Readout amplitude for each target.
         readout_duration : float, optional

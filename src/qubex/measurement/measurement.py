@@ -19,6 +19,7 @@ from ..backend import (
     ControlParams,
     DeviceController,
     ExperimentSystem,
+    Mux,
     RawResult,
     SystemManager,
     Target,
@@ -38,7 +39,6 @@ from .state_classifier import StateClassifier
 DEFAULT_SHOTS: Final = 1024
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
 DEFAULT_CAPTURE_DURATION: Final = 512  # ns
-DEFAULT_CAPTURE_OFFSET: Final = 0  # ns
 DEFAULT_READOUT_DURATION: Final = 384  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
@@ -162,6 +162,14 @@ class Measurement:
         """Get the list of box IDs."""
         boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
         return [box.id for box in boxes]
+
+    @cached_property
+    def mux_dict(self) -> dict[str, Mux]:
+        """Get a dictionary of Mux objects indexed by qubit labels."""
+        return {
+            qubit: self.experiment_system.get_mux_by_qubit(qubit)
+            for qubit in self._qubits
+        }
 
     @property
     def system_manager(self) -> SystemManager:
@@ -448,7 +456,6 @@ class Measurement:
         shots: int | None = None,
         interval: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -477,8 +484,6 @@ class Measurement:
             The interval in ns.
         capture_duration : float, optional
             The capture duration in ns.
-        capture_offset : float, optional
-            The capture offset in ns.
         readout_amplitudes : dict[str, float], optional
             The readout amplitude for each qubit.
         readout_duration : float, optional
@@ -524,7 +529,6 @@ class Measurement:
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
             capture_duration=capture_duration,
-            capture_offset=capture_offset,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -553,7 +557,6 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         enable_dsp_sum: bool = False,
@@ -590,8 +593,6 @@ class Measurement:
             The readout ramp type.
         capture_duration : float, optional
             The capture duration in ns.
-        capture_offset : float, optional
-            The capture offset in ns.
         add_last_measurement : bool, optional
             Whether to add the last measurement, by default False.
         add_pump_pulses : bool, optional
@@ -624,7 +625,6 @@ class Measurement:
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
             capture_duration=capture_duration,
-            capture_offset=capture_offset,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
@@ -696,7 +696,7 @@ class Measurement:
         type: RampType | None = None,
     ) -> FlatTop:
         qubit = Target.qubit_label(target)
-        mux = self.experiment_system.get_mux_by_qubit(qubit)
+        mux = self.mux_dict[qubit]
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
@@ -725,7 +725,7 @@ class Measurement:
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
+        capture_delays: dict[int, int] | None = None,
         add_pump_pulses: bool = False,
     ) -> Sequencer:
         if interval is None:
@@ -740,8 +740,8 @@ class Measurement:
             readout_post_margin = DEFAULT_READOUT_POST_MARGIN
         if capture_duration is None:
             capture_duration = DEFAULT_CAPTURE_DURATION
-        if capture_offset is None:
-            capture_offset = 0.0
+        if capture_delays is None:
+            capture_delays = self.control_params.capture_delay_word
 
         qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
@@ -754,12 +754,15 @@ class Measurement:
         total_length = math.ceil(total_length / BLOCK_LENGTH) * BLOCK_LENGTH
         readout_slice = slice(control_length, control_length + total_readout_length)
         capture_length = self._number_of_samples(capture_duration)
-        offset_length = self._number_of_samples(capture_offset, allow_negative=True)
-        capture_start = control_length + pre_margin_length + offset_length
-        if capture_start < 0 or capture_start % WORD_LENGTH != 0:
-            raise ValueError(
-                f"Invalid capture start: {capture_start} (must be a multiple of {WORD_LENGTH})"
-            )
+
+        capture_start = {}
+        for qubit in qubits:
+            mux = self.mux_dict[qubit]
+            capture_delay_word = capture_delays.get(mux.index)
+            if capture_delay_word is None:
+                capture_delay_word = 0
+            offset_length = capture_delay_word * WORD_LENGTH
+            capture_start[qubit] = control_length + pre_margin_length + offset_length
 
         # zero padding for user-defined waveforms
         user_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
@@ -792,7 +795,7 @@ class Measurement:
             )
             padded_waveform[readout_slice] = readout_pulse.values
             omega = 2 * np.pi * self.get_awg_frequency(readout_target)
-            offset = capture_start * SAMPLING_PERIOD
+            offset = capture_start[qubit] * SAMPLING_PERIOD
             padded_waveform *= np.exp(-1j * omega * offset)
             readout_waveforms[readout_target] = padded_waveform
 
@@ -801,7 +804,7 @@ class Measurement:
         pump_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         if add_pump_pulses:
             for qubit in qubits:
-                mux = self.experiment_system.get_mux_by_qubit(qubit)
+                mux = self.mux_dict[qubit]
                 pump_pulse = self.pump_pulse(
                     target=qubit,
                     duration=pump_duration,
@@ -855,6 +858,7 @@ class Measurement:
                 ],
             )
         for target, waveform in readout_waveforms.items():
+            qubit = Target.qubit_label(target)
             # add GenSampledSequence (readout)
             modulation_frequency = self.get_awg_frequency(target)
             gen_sequences[target] = pls.GenSampledSequence(
@@ -894,7 +898,7 @@ class Measurement:
                             )
                         ],
                         repeats=None,
-                        prev_blank=capture_start,
+                        prev_blank=capture_start[qubit],
                         post_blank=None,
                         original_prev_blank=None,  # type: ignore
                         original_post_blank=None,
@@ -935,7 +939,6 @@ class Measurement:
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         plot: bool = False,
@@ -950,8 +953,6 @@ class Measurement:
             readout_post_margin = DEFAULT_READOUT_POST_MARGIN
         if capture_duration is None:
             capture_duration = DEFAULT_CAPTURE_DURATION
-        if capture_offset is None:
-            capture_offset = 0.0
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -1028,9 +1029,7 @@ class Measurement:
                 for target, ranges in readout_ranges.items():
                     if not ranges:
                         continue
-                    mux = self.experiment_system.get_mux_by_qubit(
-                        Target.qubit_label(target)
-                    )
+                    mux = self.mux_dict[Target.qubit_label(target)]
                     # add pump pulses to overlap with the readout pulses
                     for i in range(len(ranges)):
                         current_range = ranges[i]
@@ -1211,7 +1210,6 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         capture_duration: float | None = None,
-        capture_offset: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         plot: bool = False,
@@ -1229,7 +1227,6 @@ class Measurement:
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
             capture_duration=capture_duration,
-            capture_offset=capture_offset,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
