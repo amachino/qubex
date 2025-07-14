@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 
-from ...analysis import fitting
+from ...analysis import fitting, util
 from ...analysis import visualization as viz
 from ...backend import SAMPLING_PERIOD, Target
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
@@ -1330,6 +1330,9 @@ class CalibrationMixin(
             print(f"  target  ({target_qubit}) : {f_target * 1e3:.3f} MHz")
             print(f"  Δ ({cr_label}) : {f_delta * 1e3:.3f} MHz")
 
+            print("CR drive:")
+            print(f"  Ω : {cr_rabi_rate * 1e3:.3f} MHz ({cr_amplitude:.4f})")
+
             print("Rotation rates:")
             for key, value in coeffs.items():
                 print(f"  {key} : {value * 1e3:+.4f} MHz")
@@ -1339,7 +1342,7 @@ class CalibrationMixin(
                 f"  rate  : {xt_rotation_amplitude * 1e3:.4f} MHz ({xt_rotation_amplitude_hw:.6f})"
             )
             print(
-                f"  phase : {xt_rotation_phase:.3f} rad ({xt_rotation_phase_deg:.1f} deg)"
+                f"  phase : {xt_rotation_phase:.4f} rad ({xt_rotation_phase_deg:.1f} deg)"
             )
 
             print("CR (cross-resonance) rotation:")
@@ -1347,12 +1350,10 @@ class CalibrationMixin(
                 f"  rate  : {cr_rotation_amplitude * 1e3:.4f} MHz ({cr_rotation_amplitude_hw:.6f})"
             )
             print(
-                f"  phase : {cr_rotation_phase:.3f} rad ({cr_rotation_phase_deg:.1f} deg)"
+                f"  phase : {cr_rotation_phase:.4f} rad ({cr_rotation_phase_deg:.1f} deg)"
             )
 
-            print("Estimated ZX90 gate:")
-            print(f"  drive    : {cr_rabi_rate * 1e3:.1f} MHz ({cr_amplitude:.3f})")
-            print(f"  duration : {zx90_duration:.1f} ns")
+            print(f"Estimated ZX90 gate length : {zx90_duration:.1f} ns")
 
         return {
             "Omega": Omega,
@@ -1719,9 +1720,13 @@ class CalibrationMixin(
             else:
                 duration = cr_param["duration"]
 
+        if duration % duration_unit != 0:
+            print(
+                f"Warning: Duration {duration} ns is not a multiple of duration_unit {duration_unit} ns."
+            )
+
         print(f"duration : {duration} ns")
         print(f"ramptime : {ramptime} ns")
-        # TODO: Check if duration is multiple of duration_unit
 
         def ecr_sequence(
             amplitude: float,
@@ -1919,6 +1924,22 @@ class CalibrationMixin(
         print(f"  Cancel beta      : {cancel_beta:.6f}")
         print(f"  Rotary amplitude : {rotary_amplitude:.6f}")
         print()
+
+        try:
+            coherence_limit = self.calc_zx90_coherence_limit(
+                control_qubit, target_qubit
+            )
+            print("ZX90 coherence limit:")
+            print(f"  Gate time       : {coherence_limit['gate_time']:.0f} ns")
+            print(f"  T1 (control)    : {coherence_limit['t1_control'] * 1e-3:.1f} μs")
+            print(f"  T1 (target)     : {coherence_limit['t1_target'] * 1e-3:.1f} μs")
+            print(f"  T2 (control)    : {coherence_limit['t2_control'] * 1e-3:.1f} μs")
+            print(f"  T2 (target)     : {coherence_limit['t2_target'] * 1e-3:.1f} μs")
+            print(f"  Coherence limit : {coherence_limit['fidelity'] * 100:.2f} %")
+            print()
+        except KeyError:
+            coherence_limit = {}
+
         if plot:
             zx90 = self.zx90(control_qubit, target_qubit, x180=x180)
             zx90.plot(
@@ -1938,6 +1959,37 @@ class CalibrationMixin(
                 "signal": signal_n3,
                 **fit_result_n3,
             },
+            "coherence_limit": coherence_limit,
+        }
+
+    def calc_zx90_coherence_limit(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+    ) -> dict:
+        zx90 = self.zx90(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+        )
+        gate_time = zx90.duration
+        props_dict = self.system_manager.config_loader._props_dict[self.chip_id]
+        t1_dict = props_dict["t1"]
+        t2_dict = props_dict["t2_echo"]
+        t1 = (t1_dict[control_qubit], t1_dict[target_qubit])
+        t2 = (t2_dict[control_qubit], t2_dict[target_qubit])
+        return {
+            "control_qubit": control_qubit,
+            "target_qubit": target_qubit,
+            "gate_time": gate_time,
+            "t1_control": t1[0],
+            "t1_target": t1[1],
+            "t2_control": t2[0],
+            "t2_target": t2[1],
+            **util.calc_2q_gate_coherence_limit(
+                gate_time=gate_time,
+                t1=t1,
+                t2=t2,
+            ),
         }
 
     def calibrate_1q(
