@@ -1239,7 +1239,8 @@ class Measurement:
             math.ceil((schedule.duration + interval) / BLOCK_DURATION) * BLOCK_DURATION
         )
 
-        resource_map = self.device_controller.get_resource_map(schedule.labels)
+        targets = list(gen_sequences.keys() | cap_sequences.keys())
+        resource_map = self.device_controller.get_resource_map(targets)
 
         return SequencerMod(
             gen_sampled_sequence=gen_sequences,
