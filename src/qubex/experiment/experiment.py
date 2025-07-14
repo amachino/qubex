@@ -1232,7 +1232,7 @@ class Experiment(
 
     def reload(self):
         try:
-            self._measurement.reload()
+            self._measurement.reload(configuration_mode=self.configuration_mode)
             print("Successfully reloaded.")
         except Exception as e:
             print(f"Failed to reload the devices: {e}")

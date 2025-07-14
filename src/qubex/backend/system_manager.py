@@ -204,7 +204,7 @@ class SystemManager:
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         targets_to_exclude: list[str] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ):
         """
         Load the experiment system and device controller.

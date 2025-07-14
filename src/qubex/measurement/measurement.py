@@ -108,7 +108,7 @@ class Measurement:
         self,
         config_dir: Path | str | None,
         params_dir: Path | str | None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ):
         """
         Load the measurement settings.
@@ -144,11 +144,16 @@ class Measurement:
         if sync_clocks:
             self.device_controller.resync_clocks(self.box_ids)
 
-    def reload(self):
+    def reload(
+        self,
+        *,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+    ):
         """Reload the measuremnt settings."""
         self.load(
             config_dir=self.config_loader.config_path,
             params_dir=self.config_loader.params_path,
+            configuration_mode=configuration_mode,
         )
         self.connect()
 

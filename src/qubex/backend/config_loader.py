@@ -35,7 +35,7 @@ class ConfigLoader:
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
         targets_to_exclude: list[str] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ):
         """
         Initializes the ConfigLoader object.
@@ -69,6 +69,8 @@ class ConfigLoader:
             config_dir = Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
         if params_dir is None:
             params_dir = Path(DEFAULT_CONFIG_DIR) / chip_id / "params"
+        if configuration_mode is None:
+            configuration_mode = "ge-cr-cr"
         self._chip_id = chip_id
         self._config_dir = config_dir
         self._params_dir = params_dir
