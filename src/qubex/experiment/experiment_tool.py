@@ -113,12 +113,12 @@ def reboot_fpga(box_id: str) -> None:
     subprocess.run(reboot_command.split())
 
 
-def relinkup_box(box_id: str) -> None:
+def relinkup_box(box_id: str, noise_threshold: int | None = None) -> None:
     """Relink up the box."""
-    relinkup_boxes([box_id])
+    relinkup_boxes([box_id], noise_threshold=noise_threshold)
 
 
-def relinkup_boxes(box_ids: list[str], noise_threshold: int = 500) -> None:
+def relinkup_boxes(box_ids: list[str], noise_threshold: int | None) -> None:
     """Relink up the boxes."""
     confirmed = Confirm.ask(
         f"""

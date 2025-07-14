@@ -631,7 +631,7 @@ class BaseProtocol(Protocol):
     def linkup(
         self,
         box_ids: list[str] | None = None,
-        noise_threshold: int = 500,
+        noise_threshold: int | None = None,
     ) -> None:
         """
         Link up the measurement system.

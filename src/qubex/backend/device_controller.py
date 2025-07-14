@@ -355,7 +355,7 @@ class DeviceController:
     def linkup(
         self,
         box_name: str,
-        noise_threshold: int = 500,
+        noise_threshold: int | None = None,
     ) -> Quel1Box:
         """
         Linkup a box and return the box object.
@@ -393,7 +393,7 @@ class DeviceController:
     def linkup_boxes(
         self,
         box_list: list[str],
-        noise_threshold: int = 500,
+        noise_threshold: int | None = None,
     ) -> dict[str, Quel1Box]:
         """
         Linkup all the boxes in the list.
@@ -412,7 +412,7 @@ class DeviceController:
                 print(f"{box_name:5}", ":", "Error", e)
         return boxes
 
-    def relinkup(self, box_name: str, noise_threshold: int = 500):
+    def relinkup(self, box_name: str, noise_threshold: int | None = None):
         """
         Relinkup a box.
 
@@ -421,11 +421,13 @@ class DeviceController:
         box_name : str
             Name of the box to relinkup.
         """
+        if noise_threshold is None:
+            noise_threshold = 10000
         box = self.qubecalib.create_box(box_name, reconnect=False)
         box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
         box.reconnect()
 
-    def relinkup_boxes(self, box_list: list[str], noise_threshold: int = 500):
+    def relinkup_boxes(self, box_list: list[str], noise_threshold: int | None = None):
         """
         Relinkup all the boxes in the list.
         """

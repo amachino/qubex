@@ -1193,7 +1193,7 @@ class Experiment(
     def linkup(
         self,
         box_ids: list[str] | None = None,
-        noise_threshold: int = 500,
+        noise_threshold: int | None = None,
     ) -> None:
         if box_ids is None:
             box_ids = self.box_ids
