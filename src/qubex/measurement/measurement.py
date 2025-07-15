@@ -990,10 +990,9 @@ class Measurement:
         # at least 4 words (16 samples) are required for DSP summation
         # at least 1 word (4 samples) is required for the post-blank
         extra_sum_section_length = WORD_LENGTH * 4
-        extra_sum_section_duration = extra_sum_section_length * SAMPLING_PERIOD
         extra_post_blank_length = WORD_LENGTH
-        extra_post_blank_duration = extra_post_blank_length * SAMPLING_PERIOD
-        extra_capture_duration = extra_sum_section_duration + extra_post_blank_duration
+        extra_capture_length = extra_sum_section_length + extra_post_blank_length
+        extra_capture_duration = extra_capture_length * SAMPLING_PERIOD
         schedule = schedule.padded(
             total_duration=schedule.duration + extra_capture_duration,
             pad_side="left",
@@ -1117,10 +1116,11 @@ class Measurement:
             )
 
             # WORKAROUND: add an extra capture to ensure the first capture begins at a multiple of 64 samples
+            post_blank_to_first_readout = ranges[0].start - extra_sum_section_length
             cap_sub_sequence.capture_slots.append(
                 pls.CaptureSlots(
                     duration=extra_sum_section_length,
-                    post_blank=extra_post_blank_length,
+                    post_blank=post_blank_to_first_readout,
                     original_duration=None,  # type: ignore
                     original_post_blank=None,  # type: ignore
                 )
