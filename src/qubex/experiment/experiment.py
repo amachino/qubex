@@ -602,10 +602,12 @@ class Experiment(
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
-        return {
-            target: self.get_rabi_param(target)
-            for target in self.ge_targets | self.ef_targets
-        }
+        params = {}
+        for target in self.ge_targets | self.ef_targets:
+            param = self.get_rabi_param(target)
+            if param is not None:
+                params[target] = param
+        return params
 
     @property
     def ge_rabi_params(self) -> dict[str, RabiParam]:
@@ -771,7 +773,7 @@ class Experiment(
         self,
         target: str,
         valid_days: int | None = None,
-    ) -> RabiParam:
+    ) -> RabiParam | None:
         """
         Get the Rabi parameters for the given target.
         """
@@ -799,7 +801,7 @@ class Experiment(
             except TypeError:
                 raise ValueError(f"Invalid Rabi parameters for {target}: {param}")
         else:
-            raise ValueError(f"Rabi parameters for {target} are not stored.")
+            return None
 
     def store_rabi_params(
         self,
