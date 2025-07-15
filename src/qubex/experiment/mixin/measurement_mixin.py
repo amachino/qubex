@@ -86,9 +86,12 @@ class MeasurementMixin(
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MultipleMeasureResult:
-        readout_duration = readout_duration or self.readout_duration
-        readout_pre_margin = readout_pre_margin or self.readout_pre_margin
-        readout_post_margin = readout_post_margin or self.readout_post_margin
+        if readout_duration is None:
+            readout_duration = self.readout_duration
+        if readout_pre_margin is None:
+            readout_pre_margin = self.readout_pre_margin
+        if readout_post_margin is None:
+            readout_post_margin = self.readout_post_margin
 
         if enable_dsp_sum is None:
             enable_dsp_sum = True if mode == "single" else False
@@ -140,9 +143,13 @@ class MeasurementMixin(
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MeasureResult:
-        readout_duration = readout_duration or self.readout_duration
-        readout_pre_margin = readout_pre_margin or self.readout_pre_margin
-        readout_post_margin = readout_post_margin or self.readout_post_margin
+        if readout_duration is None:
+            readout_duration = self.readout_duration
+        if readout_pre_margin is None:
+            readout_pre_margin = self.readout_pre_margin
+        if readout_post_margin is None:
+            readout_post_margin = self.readout_post_margin
+
         waveforms: dict[str, NDArray[np.complex128]] = {}
 
         if enable_dsp_sum is None:
