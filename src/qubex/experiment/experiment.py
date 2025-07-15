@@ -30,9 +30,13 @@ from ..backend import (
     TargetType,
 )
 from ..clifford import Clifford, CliffordGenerator
-from ..measurement import Measurement, MeasureResult, StateClassifier
+from ..measurement import (
+    Measurement,
+    MeasureResult,
+    MultipleMeasureResult,
+    StateClassifier,
+)
 from ..measurement.measurement import (
-    DEFAULT_CAPTURE_DURATION,
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
@@ -127,8 +131,6 @@ class Experiment(
         Pre-margin of the readout pulse.
     readout_post_margin : int, optional
         Post-margin of the readout pulse.
-    capture_duration : int, optional
-        Capture duration for the readout signal.
     classifier_dir : Path | str, optional
         Directory of the state classifiers.
     classifier_type : Literal["kmeans", "gmm"], optional
@@ -161,7 +163,6 @@ class Experiment(
         readout_duration: float = DEFAULT_READOUT_DURATION,
         readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN,
         readout_post_margin: float = DEFAULT_READOUT_POST_MARGIN,
-        capture_duration: float = DEFAULT_CAPTURE_DURATION,
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
@@ -184,7 +185,6 @@ class Experiment(
         self._readout_duration: Final = readout_duration
         self._readout_pre_margin: Final = readout_pre_margin
         self._readout_post_margin: Final = readout_post_margin
-        self._capture_duration: Final = capture_duration
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
@@ -446,10 +446,6 @@ class Experiment(
     @property
     def note(self) -> ExperimentNote:
         return self._user_note
-
-    @property
-    def capture_duration(self) -> float:
-        return self._capture_duration
 
     @property
     def readout_duration(self) -> float:
@@ -1375,16 +1371,16 @@ class Experiment(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        method: Literal["measure", "execute"] = "measure",
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        capture_duration: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
-    ) -> MeasureResult:
+    ) -> MeasureResult | MultipleMeasureResult:
         """
         Checks the readout waveforms of the given targets.
 
@@ -1404,8 +1400,6 @@ class Experiment(
             Pre-margin of the readout pulse in ns.
         readout_post_margin : float, optional
             Post-margin of the readout pulse in ns.
-        capture_duration : float, optional
-            Capture duration for the readout signal in ns.
         add_pump_pulses : bool, optional
             Whether to add pump pulses to the readout sequence. Defaults to False.
         plot : bool, optional
@@ -1432,17 +1426,33 @@ class Experiment(
         else:
             readout_amplitudes = None
 
-        result = self.measure(
-            sequence={target: np.zeros(0) for target in targets},
-            shots=shots,
-            interval=interval,
-            readout_amplitudes=readout_amplitudes,
-            readout_duration=readout_duration,
-            readout_pre_margin=readout_pre_margin,
-            readout_post_margin=readout_post_margin,
-            capture_duration=capture_duration,
-            add_pump_pulses=add_pump_pulses,
-        )
+        with PulseSchedule() as ps:
+            for target in targets:
+                ps.add(target, Blank(0))
+
+        if method == "measure":
+            result = self.measure(
+                ps,
+                shots=shots,
+                interval=interval,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                add_pump_pulses=add_pump_pulses,
+            )
+        else:
+            result = self.execute(
+                ps,
+                shots=shots,
+                interval=interval,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                add_pump_pulses=add_pump_pulses,
+                add_last_measurement=True,
+            )
         if plot:
             result.plot()
         return result

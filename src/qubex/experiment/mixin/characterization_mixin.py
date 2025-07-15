@@ -72,7 +72,6 @@ class CharacterizationMixin(
         targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_duration: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -100,7 +99,6 @@ class CharacterizationMixin(
             mode="single",
             shots=shots,
             interval=interval,
-            capture_duration=capture_duration,
             readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
         )
@@ -128,7 +126,6 @@ class CharacterizationMixin(
         *,
         amplitude_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_duration: float | None = None,
         readout_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -154,7 +151,6 @@ class CharacterizationMixin(
             result = self.measure_readout_snr(
                 targets=targets,
                 initial_state=initial_state,
-                capture_duration=capture_duration,
                 readout_duration=readout_duration,
                 readout_amplitudes={target: amplitude for target in targets},
                 shots=shots,
@@ -255,7 +251,6 @@ class CharacterizationMixin(
             result = self.measure_readout_snr(
                 targets=targets,
                 initial_state=initial_state,
-                capture_duration=T + 512,
                 readout_duration=T,
                 readout_amplitudes=readout_amplitudes,
                 shots=shots,
@@ -1544,8 +1539,6 @@ class CharacterizationMixin(
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        capture_duration: float | None = None,
-        phase_shift: float | None = None,  # deprecated
         electrical_delay: float | None = None,
         subrange_width: float = 0.3,
         peak_height: float | None = None,
@@ -1573,25 +1566,17 @@ class CharacterizationMixin(
             readout_amplitude = self.params.readout_amplitude[qubit_label]
 
         if electrical_delay is None:
-            if phase_shift is not None:
-                print(
-                    "The `phase_shift` parameter is deprecated. Use `electrical_delay` instead.",
-                )
-                tau = -phase_shift / (2 * np.pi)
-            else:
-                # measure electrical delay if not provided
-                tau = self.measure_electrical_delay(
-                    target,
-                    f_start=frequency_range[0],
-                    shots=shots,
-                    plot=plot,
-                    confirm=False,
-                )
+            # measure electrical delay if not provided
+            tau = self.measure_electrical_delay(
+                target,
+                f_start=frequency_range[0],
+                shots=shots,
+                plot=plot,
+                confirm=False,
+            )
         else:
             tau = electrical_delay
 
-        if capture_duration is None:
-            capture_duration = 8192
         if readout_duration is None:
             readout_duration = 8192
         if readout_ramptime is None:
@@ -1665,7 +1650,6 @@ class CharacterizationMixin(
                             readout_ramptime=readout_ramptime,
                             readout_drag_coeff=readout_drag_coeff,
                             readout_ramp_type=readout_ramp_type,
-                            capture_duration=capture_duration,
                             shots=shots,
                             interval=interval,
                             reset_awg_and_capunits=False,
@@ -1923,7 +1907,6 @@ class CharacterizationMixin(
             phases_diff = self.scan_resonator_frequencies(
                 target,
                 frequency_range=frequency_range,
-                phase_shift=phase_shift,
                 electrical_delay=electrical_delay,
                 readout_amplitude=amplitude,
                 shots=shots,

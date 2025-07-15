@@ -38,7 +38,6 @@ from .state_classifier import StateClassifier
 
 DEFAULT_SHOTS: Final = 1024
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
-DEFAULT_CAPTURE_DURATION: Final = 512  # ns
 DEFAULT_READOUT_DURATION: Final = 384  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
@@ -449,7 +448,6 @@ class Measurement:
             waveforms={target: np.zeros(0) for target in targets},
             mode="avg",
             shots=1,
-            capture_duration=duration,
             readout_amplitudes={target: 0 for target in targets},
         )
 
@@ -460,7 +458,6 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        capture_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -487,8 +484,6 @@ class Measurement:
             The number of shots.
         interval : float, optional
             The interval in ns.
-        capture_duration : float, optional
-            The capture duration in ns.
         readout_amplitudes : dict[str, float], optional
             The readout amplitude for each qubit.
         readout_duration : float, optional
@@ -533,7 +528,6 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            capture_duration=capture_duration,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
@@ -561,7 +555,6 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        capture_duration: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         enable_dsp_sum: bool = False,
@@ -596,8 +589,6 @@ class Measurement:
             The readout drag coefficient.
         readout_ramp_type : RampType, optional
             The readout ramp type.
-        capture_duration : float, optional
-            The capture duration in ns.
         add_last_measurement : bool, optional
             Whether to add the last measurement, by default False.
         add_pump_pulses : bool, optional
@@ -629,7 +620,6 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            capture_duration=capture_duration,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
@@ -729,7 +719,6 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        capture_duration: float | None = None,
         capture_delays: dict[int, int] | None = None,
         add_pump_pulses: bool = False,
     ) -> Sequencer:
@@ -743,8 +732,6 @@ class Measurement:
             readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
         if readout_post_margin is None:
             readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-        if capture_duration is None:
-            capture_duration = DEFAULT_CAPTURE_DURATION
         if capture_delays is None:
             capture_delays = self.control_params.capture_delay_word
 
@@ -758,8 +745,8 @@ class Measurement:
         total_length = control_length + total_readout_length
         total_length = math.ceil(total_length / BLOCK_LENGTH) * BLOCK_LENGTH
         readout_slice = slice(control_length, control_length + total_readout_length)
-        capture_length = self._number_of_samples(capture_duration)
 
+        capture_length = readout_length + post_margin_length
         capture_start = {}
         for qubit in qubits:
             mux = self.mux_dict[qubit]
@@ -943,7 +930,6 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        capture_duration: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         plot: bool = False,
@@ -956,8 +942,6 @@ class Measurement:
             readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
         if readout_post_margin is None:
             readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-        if capture_duration is None:
-            capture_duration = DEFAULT_CAPTURE_DURATION
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -1214,7 +1198,6 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        capture_duration: float | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         plot: bool = False,
@@ -1231,7 +1214,6 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            capture_duration=capture_duration,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
             plot=plot,

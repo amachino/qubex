@@ -160,11 +160,6 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def capture_duration(self) -> float:
-        """Get the capture duration."""
-        ...
-
-    @property
     def readout_duration(self) -> float:
         """Get the readout duration."""
         ...
