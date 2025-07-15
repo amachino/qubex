@@ -737,7 +737,7 @@ class Measurement:
 
         qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
-        control_length = math.ceil(control_length / BLOCK_LENGTH) * BLOCK_LENGTH
+        control_length = math.ceil(control_length / BLOCK_LENGTH + 1) * BLOCK_LENGTH
         pre_margin_length = self._number_of_samples(readout_pre_margin)
         readout_length = self._number_of_samples(readout_duration)
         post_margin_length = self._number_of_samples(readout_post_margin)
@@ -930,6 +930,7 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
+        capture_delays: dict[int, int] | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         plot: bool = False,
@@ -942,6 +943,8 @@ class Measurement:
             readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
         if readout_post_margin is None:
             readout_post_margin = DEFAULT_READOUT_POST_MARGIN
+        if capture_delays is None:
+            capture_delays = self.control_params.capture_delay_word
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -1000,7 +1003,7 @@ class Measurement:
 
         # ensure the schedule duration is a multiple of MIN_DURATION by right padding
         sequence_duration = (
-            math.ceil(schedule.duration / BLOCK_DURATION) * BLOCK_DURATION
+            math.ceil(schedule.duration / BLOCK_DURATION + 1) * BLOCK_DURATION
         )
         schedule = schedule.padded(
             total_duration=sequence_duration,
@@ -1009,6 +1012,14 @@ class Measurement:
 
         # get readout ranges
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
+
+        capture_delay_sample = {}
+        for target in readout_targets:
+            mux = self.mux_dict[Target.qubit_label(target)]
+            capture_delay_word = capture_delays.get(mux.index)
+            if capture_delay_word is None:
+                capture_delay_word = 0
+            capture_delay_sample[target] = capture_delay_word * WORD_LENGTH
 
         # add pump pulses if necessary
         if add_pump_pulses:
@@ -1075,8 +1086,9 @@ class Measurement:
                 continue
             seq = sampled_sequences[target]
             omega = 2 * np.pi * self.get_awg_frequency(target)
+            delay = capture_delay_sample[target]
             for rng in ranges:
-                offset = rng.start * SAMPLING_PERIOD
+                offset = (rng.start + delay) * SAMPLING_PERIOD
                 seq[rng] *= np.exp(-1j * omega * offset)
 
         # create GenSampledSequence
@@ -1106,10 +1118,13 @@ class Measurement:
         for target, ranges in readout_ranges.items():
             if not ranges:
                 continue
+
+            delay = capture_delay_sample[target]
+
             cap_sub_sequence = pls.CapSampledSubSequence(
                 capture_slots=[],
                 repeats=None,
-                prev_blank=0,
+                prev_blank=delay,
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
