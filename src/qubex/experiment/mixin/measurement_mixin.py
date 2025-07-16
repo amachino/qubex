@@ -465,6 +465,7 @@ class MeasurementMixin(
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
+        add_last_measurement: bool = True,
         plot: bool = True,
         title: str = "Sweep result",
         xlabel: str = "Sweep value",
@@ -496,6 +497,7 @@ class MeasurementMixin(
                     readout_pre_margin=readout_pre_margin,
                     readout_post_margin=readout_post_margin,
                     reset_awg_and_capunits=False,
+                    add_last_measurement=add_last_measurement,
                 )
                 for target, data in result.data.items():
                     signals[target].append(data[-1].kerneled)
