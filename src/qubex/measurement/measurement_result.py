@@ -565,9 +565,12 @@ class MultipleMeasureResult:
         if targets is None:
             targets = [(target, -1) for target in self.data.keys()]
         labels = [target for target, _ in targets]
-        raw = self.get_counts(targets)
+        basis_labels = self.get_basis_labels(labels)
+        raw_counts = self.get_counts(targets)
+        # Ensure the order of raw matches basis_labels
+        raw = np.array([raw_counts.get(label, 0) for label in basis_labels])
         cm_inv = self.get_inverse_confusion_matrix(labels)
-        mitigated = np.array(list(raw.values())) @ cm_inv
+        mitigated = raw @ cm_inv
         basis_labels = self.get_basis_labels(labels)
         mitigated_counts = {
             basis_label: int(mitigated[i]) for i, basis_label in enumerate(basis_labels)
