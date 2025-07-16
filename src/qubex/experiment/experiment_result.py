@@ -9,11 +9,11 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 
-from ..analysis import fitting
+from ..analysis import fitting, util
 from ..analysis import visualization as viz
-from ..analysis.fitting import RabiParam
 from ..typing import TargetMap
 from .experiment_record import ExperimentRecord
+from .rabi_param import RabiParam
 
 
 @dataclass
@@ -117,12 +117,11 @@ class RabiData(TargetData):
     @property
     def rotated(self) -> NDArray[np.complex128]:
         angle = self.rabi_param.angle
-        return fitting.rotate(self.data, -angle)
+        return util.rotate(self.data, -angle)
 
     @property
     def normalized(self) -> NDArray[np.float64]:
-        param = self.rabi_param
-        return fitting.normalize(self.data, param)
+        return self.rabi_param.normalize(self.data)
 
     @property
     def zvalues(self) -> NDArray[np.float64]:
@@ -287,7 +286,7 @@ class SweepData(TargetData):
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
-        return fitting.normalize(self.data, param)
+        return param.normalize(self.data)
 
     @property
     def zvalues(self) -> NDArray[np.float64]:
@@ -783,10 +782,12 @@ class AmplRabiData(TargetData):
     def fit(self) -> dict:
         return fitting.fit_linear(
             self.sweep_range,
-            self.data,
+            self.data * 1e3,  # Convert to MHz
             title=f"Rabi rate vs drive amplitude : {self.target}",
             xlabel="Drive amplitude (arb. units)",
             ylabel="Rabi rate (MHz)",
+            xmin=0.0,
+            ymin=0.0,
         )
 
 

@@ -4,7 +4,7 @@ import logging
 import math
 from collections import defaultdict
 from contextlib import contextmanager
-from functools import reduce
+from functools import cache, cached_property, reduce
 from pathlib import Path
 from typing import Collection, Final, Literal
 
@@ -14,14 +14,14 @@ from qubecalib import Sequencer
 from qubecalib import neopulse as pls
 
 from ..backend import (
-    DEFAULT_CONFIG_DIR,
-    DEFAULT_PARAMS_DIR,
     SAMPLING_PERIOD,
+    ConfigLoader,
     ControlParams,
     DeviceController,
     ExperimentSystem,
+    Mux,
     RawResult,
-    StateManager,
+    SystemManager,
     Target,
 )
 from ..backend.dc_voltage_controller import dc_voltage
@@ -38,17 +38,19 @@ from .state_classifier import StateClassifier
 
 DEFAULT_SHOTS: Final = 1024
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
-DEFAULT_CONTROL_WINDOW: Final = 1024  # ns
-DEFAULT_CAPTURE_WINDOW: Final = 1024  # ns
-DEFAULT_CAPTURE_MARGIN: Final = 128  # ns
-DEFAULT_CAPTURE_DELAY: Final = 896  # ns
-DEFAULT_READOUT_DURATION: Final = 512  # ns
+DEFAULT_READOUT_DURATION: Final = 384  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
-INTERVAL_STEP: Final = 10240  # ns
+DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
+DEFAULT_READOUT_POST_MARGIN: Final = 128  # ns
 WORD_LENGTH: Final = 4  # samples
 WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
 BLOCK_LENGTH: Final = WORD_LENGTH * 16  # samples
 BLOCK_DURATION: Final = BLOCK_LENGTH * SAMPLING_PERIOD  # ns
+
+EXTRA_SUM_SECTION_LENGTH = WORD_LENGTH * 4  # samples
+EXTRA_POST_BLANK_LENGTH = WORD_LENGTH  # samples
+EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # samples
+EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
 
 logger = logging.getLogger(__name__)
 
@@ -58,12 +60,12 @@ class Measurement:
         self,
         *,
         chip_id: str,
-        qubits: Collection[str] | None = None,
-        config_dir: str = DEFAULT_CONFIG_DIR,
-        params_dir: str = DEFAULT_PARAMS_DIR,
+        qubits: Collection[str],
+        config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
+        load_configs: bool = True,
         connect_devices: bool = True,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        skew_file_path: Path | str | None = None,
     ):
         """
         Initialize the Measurement.
@@ -72,18 +74,18 @@ class Measurement:
         ----------
         chip_id : str
             The quantum chip ID (e.g., "64Q").
-        qubits : Sequence[str], optional
-            The list of qubit labels, by default None.
+        qubits : Sequence[str]
+            The list of qubit labels.
         config_dir : str, optional
-            The configuration directory, by default DEFAULT_CONFIG_DIR.
+            The configuration directory.
         params_dir : str, optional
-            The parameters directory, by default DEFAULT_PARAMS_DIR.
+            The parameters directory.
+        load_configs : bool, optional
+            Whether to load the configurations, by default True.
         connect_devices : bool, optional
             Whether to connect the devices, by default True.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
-        skew_file_path : Path | str | None, optional
-            The skew file path, by default None.
 
         Examples
         --------
@@ -93,72 +95,110 @@ class Measurement:
         ...     qubits=["Q00", "Q01"],
         ... )
         """
-        self._chip_id = chip_id
-        self._qubits = qubits
-        self._config_dir = config_dir
-        self._params_dir = params_dir
+        self._chip_id: Final = chip_id
+        self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
-        self._initialize(
-            connect_devices=connect_devices,
-            configuration_mode=configuration_mode,
-            skew_file_path=skew_file_path,
-        )
-
-    def _initialize(
-        self,
-        connect_devices: bool,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        skew_file_path: Path | str | None = None,
-    ):
-        self._state_manager = StateManager.shared()
-        self.state_manager.load(
-            chip_id=self._chip_id,
-            config_dir=self._config_dir,
-            params_dir=self._params_dir,
-            configuration_mode=configuration_mode,
-        )
-        box_ids = []
-        if self._qubits is not None:
-            boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
-            box_ids = [box.id for box in boxes]
-        if len(box_ids) == 0:
-            return
-
-        if skew_file_path is None:
-            skew_file_path = f"{self._config_dir}/skew.yaml"
-        if not Path(skew_file_path).exists():
-            print(f"Skew file not found: {skew_file_path}")
-        else:
-            try:
-                self.device_controller.load_skew_file(box_ids, skew_file_path)
-            except Exception as e:
-                print(f"Failed to load the skew file: {e}")
-
+        self._system_manager = SystemManager.shared()
+        if load_configs:
+            self.load(
+                config_dir=config_dir,
+                params_dir=params_dir,
+                configuration_mode=configuration_mode,
+            )
         if connect_devices:
-            try:
-                self.device_controller.connect(box_ids)
-                self.state_manager.pull(box_ids)
-            except Exception as e:
-                print(f"Failed to connect to devices: {e}")
+            self.connect()
 
-    def reload(self):
+    def load(
+        self,
+        config_dir: Path | str | None,
+        params_dir: Path | str | None,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+    ):
+        """
+        Load the measurement settings.
+
+        Parameters
+        ----------
+        config_dir : Path | str | None
+            The configuration directory.
+        params_dir : Path | str | None
+            The parameters directory.
+        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+            The configuration mode, by default "ge-cr-cr".
+        """
+        self.system_manager.load(
+            chip_id=self._chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+            configuration_mode=configuration_mode,
+        )
+        self.system_manager.load_skew_file(self.box_ids)
+
+    def connect(
+        self,
+        *,
+        sync_clocks: bool = True,
+    ):
+        """Connect to the devices."""
+        if len(self.box_ids) == 0:
+            print("No boxes are selected. Please check the configuration.")
+            return
+        self.device_controller.connect(self.box_ids)
+        self.system_manager.pull(self.box_ids)
+        if sync_clocks:
+            self.device_controller.resync_clocks(self.box_ids)
+
+    def reload(
+        self,
+        *,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+    ):
         """Reload the measuremnt settings."""
-        self._initialize(connect_devices=True)
+        self.load(
+            config_dir=self.config_loader.config_path,
+            params_dir=self.config_loader.params_path,
+            configuration_mode=configuration_mode,
+        )
+        self.connect()
 
     @property
-    def state_manager(self) -> StateManager:
+    def qubits(self) -> list[str]:
+        """Get the list of qubit labels."""
+        return self._qubits
+
+    @cached_property
+    def box_ids(self) -> list[str]:
+        """Get the list of box IDs."""
+        boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
+        return [box.id for box in boxes]
+
+    @cached_property
+    def mux_dict(self) -> dict[str, Mux]:
+        """Get a dictionary of Mux objects indexed by qubit labels."""
+        return {
+            qubit: self.experiment_system.get_mux_by_qubit(qubit)
+            for qubit in self._qubits
+        }
+
+    @property
+    def system_manager(self) -> SystemManager:
         """Get the state manager."""
-        return self._state_manager
+        return self._system_manager
+
+    @property
+    def config_loader(self) -> ConfigLoader:
+        """Get the configuration loader."""
+        return self._system_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
         """Get the experiment system."""
-        return self._state_manager.experiment_system
+        return self._system_manager.experiment_system
 
     @property
     def device_controller(self) -> DeviceController:
         """Get the device controller."""
-        return self._state_manager.device_controller
+        return self._system_manager.device_controller
 
     @property
     def control_params(self) -> ControlParams:
@@ -237,6 +277,17 @@ class Measurement:
         confusion_matrix = self.get_confusion_matrix(targets)
         return np.linalg.inv(confusion_matrix)
 
+    def is_connected(self) -> bool:
+        """
+        Check if the measurement system is connected to the devices.
+
+        Returns
+        -------
+        bool
+            True if connected, False otherwise.
+        """
+        return self.device_controller._quel1system is not None
+
     def check_link_status(self, box_list: list[str]) -> dict:
         """
         Check the link status of the boxes.
@@ -290,7 +341,7 @@ class Measurement:
             "clocks": clock_statuses,
         }
 
-    def linkup(self, box_list: list[str], noise_threshold: int = 500):
+    def linkup(self, box_list: list[str], noise_threshold: int | None = None):
         """
         Link up the boxes and synchronize the clocks.
 
@@ -343,7 +394,7 @@ class Measurement:
         if target_frequencies is None:
             yield
         else:
-            with self.state_manager.modified_frequencies(target_frequencies):
+            with self.system_manager.modified_frequencies(target_frequencies):
                 yield
 
     @contextmanager
@@ -402,24 +453,7 @@ class Measurement:
             waveforms={target: np.zeros(0) for target in targets},
             mode="avg",
             shots=1,
-            capture_window=duration,
             readout_amplitudes={target: 0 for target in targets},
-        )
-
-    def _calc_backend_interval(
-        self,
-        waveforms: TargetMap[IQArray],
-        interval: float,
-        control_window: float | None,
-        capture_window: float,
-    ) -> int:
-        control_length = max(len(waveform) for waveform in waveforms.values())
-        control_duration = int(control_length * SAMPLING_PERIOD)
-        if control_window is not None:
-            control_duration = max(control_duration, control_window)
-        return (
-            math.ceil((control_duration + capture_window + interval) / INTERVAL_STEP)
-            * INTERVAL_STEP
         )
 
     def measure(
@@ -429,15 +463,15 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        add_pump_pulses: bool = False,
-        control_window: float | None = None,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        add_pump_pulses: bool = False,
+        enable_dsp_sum: bool = False,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -452,19 +486,25 @@ class Measurement:
             - "single": Measure once.
             - "avg": Measure multiple times and average the results.
         shots : int, optional
-            The number of shots, by default DEFAULT_SHOTS.
+            The number of shots.
         interval : float, optional
-            The interval in ns, by default DEFAULT_INTERVAL.
-        control_window : float, optional
-            The control window in ns, by default None.
-        capture_window : float, optional
-            The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
-        capture_margin : float, optional
-            The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
-        readout_duration : float, optional
-            The readout duration in ns, by default DEFAULT_READOUT_DURATION.
+            The interval in ns.
         readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit, by default None.
+            The readout amplitude for each qubit.
+        readout_duration : float, optional
+            The readout duration in ns.
+        readout_pre_margin : float, optional
+            The readout pre-margin in ns.
+        readout_post_margin : float, optional
+            The readout post-margin in ns.
+        readout_ramptime : float, optional
+            The readout ramp time in ns.
+        readout_drag_coeff : float, optional
+            The readout drag coefficient.
+        readout_ramp_type : RampType, optional
+            The readout ramp type.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses, by default False.
 
         Returns
         -------
@@ -480,25 +520,15 @@ class Measurement:
         """
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-        if capture_window is None:
-            capture_window = DEFAULT_CAPTURE_WINDOW
 
-        backend_interval = self._calc_backend_interval(
-            waveforms=waveforms,
-            interval=interval,
-            control_window=control_window,
-            capture_window=capture_window,
-        )
         measure_mode = MeasureMode(mode)
         sequencer = self._create_sequencer(
             waveforms=waveforms,
-            interval=backend_interval,
+            interval=interval,
             add_pump_pulses=add_pump_pulses,
-            capture_window=capture_window,
-            capture_margin=capture_margin,
             readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
             readout_amplitudes=readout_amplitudes,
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
@@ -508,6 +538,7 @@ class Measurement:
             sequencer=sequencer,
             repeats=shots,
             integral_mode=measure_mode.integral_mode,
+            enable_sum=enable_dsp_sum,
         )
         return self._create_measure_result(
             backend_result=backend_result,
@@ -522,15 +553,16 @@ class Measurement:
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
+        enable_dsp_sum: bool = False,
         plot: bool = False,
     ) -> MultipleMeasureResult:
         """
@@ -545,19 +577,31 @@ class Measurement:
             - "single": Measure once.
             - "avg": Measure multiple times and average the results.
         shots : int, optional
-            The number of shots, by default DEFAULT_SHOTS.
+            The number of shots.
         interval : float, optional
-            The interval in ns, by default DEFAULT_INTERVAL.
+            The interval in ns.
+        readout_amplitudes : dict[str, float], optional
+            The readout amplitude for each qubit.
+        readout_duration : float, optional
+            The readout duration in ns.
+        readout_pre_margin : float, optional
+            The readout pre-margin in ns.
+        readout_post_margin : float, optional
+            The readout post-margin in ns.
+        readout_ramptime : float, optional
+            The readout ramp time in ns.
+        readout_drag_coeff : float, optional
+            The readout drag coefficient.
+        readout_ramp_type : RampType, optional
+            The readout ramp type.
         add_last_measurement : bool, optional
             Whether to add the last measurement, by default False.
-        capture_window : float, optional
-            The capture window in ns, by default DEFAULT_CAPTURE_WINDOW.
-        capture_margin : float, optional
-            The capture margin in ns, by default DEFAULT_CAPTURE_MARGIN.
-        readout_duration : float, optional
-            The readout duration in ns, by default DEFAULT_READOUT_DURATION.
-        readout_amplitudes : dict[str, float], optional
-            The readout amplitude for each qubit, by default None.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses, by default False.
+        enable_dsp_sum : bool, optional
+            Whether to enable DSP summation, by default False.
+        plot : bool, optional
+            Whether to plot the results, by default False.
 
         Returns
         -------
@@ -569,28 +613,27 @@ class Measurement:
 
         if shots is None:
             shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
 
         measure_mode = MeasureMode(mode)
         sequencer = self._create_sequencer_from_schedule(
             schedule=schedule,
             interval=interval,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
-            capture_window=capture_window,
-            capture_margin=capture_margin,
-            readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
+            add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
             repeats=shots,
             integral_mode=measure_mode.integral_mode,
+            enable_sum=enable_dsp_sum,
         )
         return self._create_multiple_measure_result(
             backend_result=backend_result,
@@ -598,60 +641,74 @@ class Measurement:
             shots=shots,
         )
 
+    @cache
     def readout_pulse(
         self,
         target: str,
+        *,
         duration: float | None = None,
         amplitude: float | None = None,
-        tau: float | None = None,
-        beta: float | None = None,
+        ramptime: float | None = None,
         type: RampType | None = None,
-    ) -> FlatTop:
+        drag_coeff: float | None = None,
+        pre_margin: float | None = None,
+        post_margin: float | None = None,
+    ) -> PulseArray:
         qubit = Target.qubit_label(target)
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
             amplitude = self.control_params.get_readout_amplitude(qubit)
-        if tau is None:
-            tau = DEFAULT_READOUT_RAMPTIME
-        if beta is None:
-            beta = 0.0
+        if ramptime is None:
+            ramptime = DEFAULT_READOUT_RAMPTIME
         if type is None:
             type = "RaisedCosine"
-        return FlatTop(
+        if drag_coeff is None:
+            drag_coeff = 0.0
+        if pre_margin is None:
+            pre_margin = DEFAULT_READOUT_PRE_MARGIN
+        if post_margin is None:
+            post_margin = DEFAULT_READOUT_POST_MARGIN
+        pulse = FlatTop(
             duration=duration,
             amplitude=amplitude,
-            tau=tau,
-            beta=beta,
+            tau=ramptime,
+            beta=drag_coeff,
             type=type,
         )
+        return PulseArray(
+            [
+                Blank(pre_margin),
+                pulse.padded(
+                    total_duration=duration + post_margin,
+                    pad_side="right",
+                ),
+            ]
+        )
 
+    @cache
     def pump_pulse(
         self,
         target: str,
         duration: float | None = None,
         amplitude: float | None = None,
-        tau: float | None = None,
-        beta: float | None = None,
+        ramptime: float | None = None,
         type: RampType | None = None,
     ) -> FlatTop:
         qubit = Target.qubit_label(target)
-        mux = self.experiment_system.get_mux_by_qubit(qubit)
+        mux = self.mux_dict[qubit]
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
             amplitude = self.control_params.get_pump_amplitude(mux.index)
-        if tau is None:
-            tau = DEFAULT_READOUT_RAMPTIME
-        if beta is None:
-            beta = 0.0
+        if ramptime is None:
+            ramptime = DEFAULT_READOUT_RAMPTIME
         if type is None:
             type = "RaisedCosine"
         return FlatTop(
             duration=duration,
             amplitude=amplitude,
-            tau=tau,
-            beta=beta,
+            tau=ramptime,
             type=type,
         )
 
@@ -659,45 +716,58 @@ class Measurement:
         self,
         *,
         waveforms: TargetMap[IQArray],
-        interval: float,
-        control_window: float | None = None,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
+        interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
         readout_ramptime: float | None = None,
-        readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        capture_delays: dict[int, int] | None = None,
         add_pump_pulses: bool = False,
     ) -> Sequencer:
-        if capture_window is None:
-            capture_window = DEFAULT_CAPTURE_WINDOW
-        if capture_margin is None:
-            capture_margin = DEFAULT_CAPTURE_MARGIN
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
+        if interval is None:
+            interval = DEFAULT_INTERVAL
         if readout_amplitudes is None:
             readout_amplitudes = self.control_params.readout_amplitude
+        if readout_duration is None:
+            readout_duration = DEFAULT_READOUT_DURATION
+        if readout_pre_margin is None:
+            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
+        if readout_post_margin is None:
+            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
+        if capture_delays is None:
+            capture_delays = self.control_params.capture_delay_word
 
         qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
+        pre_margin_length = self._number_of_samples(readout_pre_margin)
         control_length = math.ceil(control_length / BLOCK_LENGTH) * BLOCK_LENGTH
-        if control_window is not None:
-            control_length = max(
-                control_length,
-                self._number_of_samples(control_window),
-            )
-        margin_length = self._number_of_samples(capture_margin)
-        capture_length = self._number_of_samples(capture_window)
+        # ensure first capture starts at a multiple of BLOCK_LENGTH
+        control_length = (
+            control_length + BLOCK_LENGTH - (pre_margin_length % BLOCK_LENGTH)
+        )
         readout_length = self._number_of_samples(readout_duration)
-        total_length = control_length + margin_length + capture_length
-        readout_start = control_length + margin_length
-        readout_slice = slice(readout_start, readout_start + readout_length)
+        post_margin_length = self._number_of_samples(readout_post_margin)
+        total_readout_length = pre_margin_length + readout_length + post_margin_length
+        total_length = control_length + total_readout_length
+        total_length = math.ceil(total_length / BLOCK_LENGTH) * BLOCK_LENGTH
+        readout_slice = slice(control_length, control_length + total_readout_length)
 
-        # zero padding (control)
-        # [0, .., 0, 0, control, 0, 0, .., 0, 0, 0, 0, 0, .., 0, 0, 0]
-        # |<- control_length -><- margin_length -><- capture_length ->|
-        control_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
+        # post margin to wait photon emission of resonator
+        capture_length = readout_length + post_margin_length
+        capture_start = {}
+        for qubit in qubits:
+            mux = self.mux_dict[qubit]
+            capture_delay_word = capture_delays.get(mux.index)
+            if capture_delay_word is None:
+                capture_delay_word = 0
+            offset_length = capture_delay_word * WORD_LENGTH
+            capture_start[qubit] = control_length + pre_margin_length + offset_length
+
+        # zero padding for user-defined waveforms
+        user_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for target, waveform in waveforms.items():
             if waveform is None or len(waveform) == 0:
                 continue
@@ -705,55 +775,53 @@ class Measurement:
             left_padding = control_length - len(waveform)
             control_slice = slice(left_padding, control_length)
             padded_waveform[control_slice] = waveform
-            control_waveforms[target] = padded_waveform
+            user_waveforms[target] = padded_waveform
 
-        # zero padding (readout)
-        # [0, .., 0, 0, 0, 0, 0, 0, 0, .., 0, 0, 0, readout, 0, ..., 0]
-        # |<- control_length -><- margin_length -><- capture_length ->|
+        # add system-defined readout waveforms
         readout_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         for qubit in qubits:
             readout_target = Target.read_label(qubit)
-            if readout_target in control_waveforms:
-                padded_waveform = control_waveforms[readout_target]
+            if readout_target in user_waveforms:
+                padded_waveform = user_waveforms[readout_target]
             else:
                 padded_waveform = np.zeros(total_length, dtype=np.complex128)
             readout_pulse = self.readout_pulse(
                 target=qubit,
                 duration=readout_duration,
                 amplitude=readout_amplitudes.get(qubit),
-                tau=readout_ramptime,
-                beta=readout_drag_coeff,
+                ramptime=readout_ramptime,
                 type=readout_ramp_type,
+                drag_coeff=readout_drag_coeff,
+                pre_margin=readout_pre_margin,
+                post_margin=readout_post_margin,
             )
             padded_waveform[readout_slice] = readout_pulse.values
             omega = 2 * np.pi * self.get_awg_frequency(readout_target)
-            offset = readout_start * SAMPLING_PERIOD
+            offset = capture_start[qubit] * SAMPLING_PERIOD
             padded_waveform *= np.exp(-1j * omega * offset)
             readout_waveforms[readout_target] = padded_waveform
 
         # zero padding (pump)
-        # [0, .., 0, 0, 0, 0, 0, 0, 0, .., 0, 0, 0, pump, 0, ..., 0]
-        # |<- control_length -><- margin_length -><- capture_length ->|
+        pump_duration = readout_pre_margin + readout_duration + readout_post_margin
         pump_waveforms: dict[str, npt.NDArray[np.complex128]] = {}
         if add_pump_pulses:
             for qubit in qubits:
-                mux = self.experiment_system.get_mux_by_qubit(qubit)
+                mux = self.mux_dict[qubit]
                 pump_pulse = self.pump_pulse(
                     target=qubit,
-                    duration=readout_duration,
+                    duration=pump_duration,
                     amplitude=self.control_params.get_pump_amplitude(mux.index),
-                    tau=readout_ramptime,
-                    beta=0.0,
+                    ramptime=readout_ramptime,
                     type=readout_ramp_type,
                 )
-                padded_pump_waveform = np.zeros(total_length, dtype=np.complex128)
-                padded_pump_waveform[readout_slice] = pump_pulse.values
-                pump_waveforms[mux.label] = padded_pump_waveform
+                padded_waveform = np.zeros(total_length, dtype=np.complex128)
+                padded_waveform[readout_slice] = pump_pulse.values
+                pump_waveforms[mux.label] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
         gen_sequences: dict[str, pls.GenSampledSequence] = {}
         cap_sequences: dict[str, pls.CapSampledSequence] = {}
-        for target, waveform in control_waveforms.items():
+        for target, waveform in user_waveforms.items():
             # add GenSampledSequence (control)
             gen_sequences[target] = pls.GenSampledSequence(
                 target_name=target,
@@ -792,6 +860,7 @@ class Measurement:
                 ],
             )
         for target, waveform in readout_waveforms.items():
+            qubit = Target.qubit_label(target)
             # add GenSampledSequence (readout)
             modulation_frequency = self.get_awg_frequency(target)
             gen_sequences[target] = pls.GenSampledSequence(
@@ -828,10 +897,10 @@ class Measurement:
                                 post_blank=None,
                                 original_duration=None,  # type: ignore
                                 original_post_blank=None,
-                            )
+                            ),
                         ],
                         repeats=None,
-                        prev_blank=readout_start,
+                        prev_blank=capture_start[qubit],
                         post_blank=None,
                         original_prev_blank=None,  # type: ignore
                         original_post_blank=None,
@@ -841,43 +910,51 @@ class Measurement:
 
         # create resource map
         all_targets = (
-            list(control_waveforms.keys())
+            list(user_waveforms.keys())
             + list(readout_waveforms.keys())
             + list(pump_waveforms.keys())
         )
         resource_map = self.device_controller.get_resource_map(all_targets)
+
+        # calculate the backend interval
+        backend_interval = total_length * SAMPLING_PERIOD + interval
+        backend_interval = math.ceil(backend_interval / BLOCK_DURATION) * BLOCK_DURATION
+        backend_interval += BLOCK_DURATION  # TODO: remove this hack
 
         # return Sequencer
         return SequencerMod(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
             resource_map=resource_map,  # type: ignore
-            interval=interval,
+            interval=backend_interval,
             sysdb=self.device_controller.qubecalib.sysdb,
         )
 
     def _create_sampled_sequences_from_schedule(
         self,
         schedule: PulseSchedule,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        capture_delays: dict[int, int] | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-        readout_ramptime: float | None = None,
-        readout_drag_coeff: float | None = None,
-        readout_ramp_type: RampType | None = None,
         plot: bool = False,
     ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
-        if capture_window is None:
-            capture_window = DEFAULT_CAPTURE_WINDOW
-        if capture_margin is None:
-            capture_margin = DEFAULT_CAPTURE_MARGIN
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
         if readout_amplitudes is None:
             readout_amplitudes = self.control_params.readout_amplitude
+        if readout_duration is None:
+            readout_duration = DEFAULT_READOUT_DURATION
+        if readout_pre_margin is None:
+            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
+        if readout_post_margin is None:
+            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
+        if capture_delays is None:
+            capture_delays = self.control_params.capture_delay_word
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -899,21 +976,15 @@ class Measurement:
                 for target in readout_targets:
                     ps.add(
                         target,
-                        PulseArray(
-                            [
-                                Blank(capture_margin),
-                                self.readout_pulse(
-                                    target=target,
-                                    duration=readout_duration,
-                                    amplitude=readout_amplitudes.get(target),
-                                    tau=readout_ramptime,
-                                    beta=readout_drag_coeff,
-                                    type=readout_ramp_type,
-                                ).padded(
-                                    total_duration=capture_window,
-                                    pad_side="right",
-                                ),
-                            ]
+                        self.readout_pulse(
+                            target=target,
+                            duration=readout_duration,
+                            amplitude=readout_amplitudes.get(target),
+                            ramptime=readout_ramptime,
+                            type=readout_ramp_type,
+                            drag_coeff=readout_drag_coeff,
+                            pre_margin=readout_pre_margin,
+                            post_margin=readout_post_margin,
                         ),
                     )
             # update the schedule
@@ -928,18 +999,15 @@ class Measurement:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
-        # WORKAROUND: add 2 words (8 samples) blank for the first extra capture by left padding
-        extra_sum_section_duration = WORD_DURATION
-        extra_post_blank_duration = WORD_DURATION
-        extra_capture_duration = extra_sum_section_duration + extra_post_blank_duration
+        # WORKAROUND: add some blank for the first extra capture by left padding
         schedule = schedule.padded(
-            total_duration=schedule.duration + extra_capture_duration,
+            total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
             pad_side="left",
         )
 
         # ensure the schedule duration is a multiple of MIN_DURATION by right padding
         sequence_duration = (
-            math.ceil(schedule.duration / BLOCK_DURATION) * BLOCK_DURATION
+            math.ceil(schedule.duration / BLOCK_DURATION + 1) * BLOCK_DURATION
         )
         schedule = schedule.padded(
             total_duration=sequence_duration,
@@ -949,6 +1017,14 @@ class Measurement:
         # get readout ranges
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
 
+        capture_delay_sample = {}
+        for target in readout_targets:
+            mux = self.mux_dict[Target.qubit_label(target)]
+            capture_delay_word = capture_delays.get(mux.index)
+            if capture_delay_word is None:
+                capture_delay_word = 0
+            capture_delay_sample[target] = capture_delay_word * WORD_LENGTH
+
         # add pump pulses if necessary
         if add_pump_pulses:
             with PulseSchedule() as ps_with_pumps:
@@ -956,9 +1032,7 @@ class Measurement:
                 for target, ranges in readout_ranges.items():
                     if not ranges:
                         continue
-                    mux = self.experiment_system.get_mux_by_qubit(
-                        Target.qubit_label(target)
-                    )
+                    mux = self.mux_dict[Target.qubit_label(target)]
                     # add pump pulses to overlap with the readout pulses
                     for i in range(len(ranges)):
                         current_range = ranges[i]
@@ -971,9 +1045,12 @@ class Measurement:
                                 current_range.start - prev_range.stop
                             ) * SAMPLING_PERIOD
 
+                        # start the pump pulse before the readout pulse if there is a pre-margin
+                        blank_duration -= readout_pre_margin
+
                         pump_duration = (
                             current_range.stop - current_range.start
-                        ) * SAMPLING_PERIOD
+                        ) * SAMPLING_PERIOD + readout_pre_margin
 
                         pump_amplitude = self.control_params.get_pump_amplitude(
                             mux.index
@@ -988,12 +1065,8 @@ class Measurement:
                                         target=target,
                                         duration=pump_duration,
                                         amplitude=pump_amplitude,
-                                        tau=readout_ramptime,
-                                        beta=0.0,
+                                        ramptime=readout_ramptime,
                                         type=readout_ramp_type,
-                                    ).padded(
-                                        total_duration=capture_window,
-                                        pad_side="right",
                                     ),
                                 ]
                             ),
@@ -1017,8 +1090,9 @@ class Measurement:
                 continue
             seq = sampled_sequences[target]
             omega = 2 * np.pi * self.get_awg_frequency(target)
+            delay = capture_delay_sample[target]
             for rng in ranges:
-                offset = rng.start * SAMPLING_PERIOD
+                offset = (rng.start + delay) * SAMPLING_PERIOD
                 seq[rng] *= np.exp(-1j * omega * offset)
 
         # create GenSampledSequence
@@ -1048,23 +1122,31 @@ class Measurement:
         for target, ranges in readout_ranges.items():
             if not ranges:
                 continue
+
+            if ranges[0].start % WORD_LENGTH != 0:
+                raise ValueError(
+                    f"Capture range should start at a multiple of 4 samples ({WORD_DURATION} ns)."
+                )
+
+            delay = capture_delay_sample[target]
+
             cap_sub_sequence = pls.CapSampledSubSequence(
                 capture_slots=[],
                 repeats=None,
-                prev_blank=0,
+                prev_blank=delay,
                 post_blank=None,
                 original_prev_blank=0,
                 original_post_blank=None,
             )
 
             # WORKAROUND: add an extra capture to ensure the first capture begins at a multiple of 64 samples
-            post_blank_to_first_readout = ranges[0].start - extra_sum_section_duration
+            post_blank_to_first_readout = ranges[0].start - EXTRA_SUM_SECTION_LENGTH
             cap_sub_sequence.capture_slots.append(
                 pls.CaptureSlots(
-                    duration=extra_sum_section_duration,  # type: ignore
-                    post_blank=post_blank_to_first_readout,  # type: ignore
-                    original_duration=extra_sum_section_duration,  # type: ignore
-                    original_post_blank=post_blank_to_first_readout,  # type: ignore
+                    duration=EXTRA_SUM_SECTION_LENGTH,
+                    post_blank=post_blank_to_first_readout,
+                    original_duration=None,  # type: ignore
+                    original_post_blank=None,  # type: ignore
                 )
             )
 
@@ -1132,37 +1214,41 @@ class Measurement:
     def _create_sequencer_from_schedule(
         self,
         schedule: PulseSchedule,
-        interval: float,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
+        interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
         plot: bool = False,
     ) -> Sequencer:
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         gen_sequences, cap_sequences = self._create_sampled_sequences_from_schedule(
             schedule=schedule,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
-            capture_window=capture_window,
-            capture_margin=capture_margin,
-            readout_duration=readout_duration,
             readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
+            add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
 
         backend_interval = (
-            math.ceil((schedule.duration + interval) / INTERVAL_STEP) * INTERVAL_STEP
+            math.ceil((schedule.duration + interval) / BLOCK_DURATION) * BLOCK_DURATION
         )
 
-        resource_map = self.device_controller.get_resource_map(schedule.labels)
+        targets = list(gen_sequences.keys() | cap_sequences.keys())
+        resource_map = self.device_controller.get_resource_map(targets)
 
         return SequencerMod(
             gen_sampled_sequence=gen_sequences,
@@ -1180,7 +1266,7 @@ class Measurement:
     ) -> MeasureResult:
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-        capture_index = 0  # the first capture index
+        capture_index = -1
 
         iq_data = {}
         for target, iqs in sorted(backend_result.data.items()):
@@ -1192,8 +1278,8 @@ class Measurement:
 
         if measure_mode == MeasureMode.SINGLE:
             backend_data = {
-                # iqs[capture_index]: ndarray[duration, shots]
-                target[label_slice]: iqs[capture_index].T * norm_factor
+                # iqs[capture_index]: ndarray[shots, duration]
+                target[label_slice]: iqs[capture_index] * norm_factor
                 for target, iqs in iq_data.items()
             }
             measure_data = {
@@ -1207,7 +1293,7 @@ class Measurement:
             }
         elif measure_mode == MeasureMode.AVG:
             backend_data = {
-                # iqs[capture_index]: ndarray[duration, 1]
+                # iqs[capture_index]: ndarray[1, duration]
                 target[label_slice]: iqs[capture_index].squeeze() * norm_factor / shots
                 for target, iqs in iq_data.items()
             }
@@ -1257,7 +1343,7 @@ class Measurement:
                         MeasureData(
                             target=qubit,
                             mode=measure_mode,
-                            raw=iq.T * norm_factor,
+                            raw=iq * norm_factor,
                             classifier=self.classifiers.get(qubit),
                         )
                     )
@@ -1287,6 +1373,7 @@ class Measurement:
     @staticmethod
     def _number_of_samples(
         duration: float,
+        allow_negative: bool = False,
     ) -> int:
         """
         Returns the number of samples in the waveform.
@@ -1297,7 +1384,7 @@ class Measurement:
             Duration of the waveform in ns.
         """
         dt = SAMPLING_PERIOD
-        if duration < 0:
+        if duration < 0 and not allow_negative:
             raise ValueError("Duration must be positive.")
 
         # Tolerance for floating point comparison

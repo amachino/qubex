@@ -3,6 +3,7 @@ from .benchmarking_protocol import BenchmarkingProtocol
 from .calibration_protocol import CalibrationProtocol
 from .characterization_protocol import CharacterizationProtocol
 from .measurement_protocol import MeasurementProtocol
+from .optimization_protocol import OptimizationProtocol
 
 
 class ExperimentProtocol(
@@ -11,6 +12,7 @@ class ExperimentProtocol(
     CalibrationProtocol,
     CharacterizationProtocol,
     MeasurementProtocol,
+    OptimizationProtocol,
 ):
     pass
 
@@ -22,4 +24,5 @@ __all__ = [
     "CharacterizationProtocol",
     "ExperimentProtocol",
     "MeasurementProtocol",
+    "OptimizationProtocol",
 ]

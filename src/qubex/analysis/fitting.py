@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import plotly.graph_objects as go
@@ -36,75 +35,12 @@ def _plotly_config(filename: str) -> dict:
     }
 
 
-@dataclass
-class RabiParam:
-    """
-    Data class representing the parameters of Rabi oscillation.
-
-    ```
-    rabi = amplitude * cos(2π * frequency * time + phase) + offset) + noise
-    ```
-
-    Attributes
-    ----------
-    target : str
-        Identifier of the target.
-    amplitude : float
-        Amplitude of the Rabi oscillation.
-    frequency : float
-        Frequency of the Rabi oscillation.
-    phase : float
-        Initial phase of the Rabi oscillation.
-    offset : float
-        Vertical offset of the Rabi oscillation.
-    noise : float
-        Fluctuation of the Rabi oscillation.
-    angle : float
-        Angle of the Rabi oscillation.
-    r2 : float
-        Coefficient of determination.
-    """
-
-    target: str
-    amplitude: float
-    frequency: float
-    phase: float
-    offset: float
-    noise: float
-    angle: float
-    r2: float
-
-
-def normalize(
-    values: NDArray,
-    param: RabiParam,
-) -> NDArray:
-    """
-    Normalizes the measured I/Q values.
-
-    Parameters
-    ----------
-    values : NDArray
-        Measured I/Q values.
-    param : RabiParam
-        Parameters of the Rabi oscillation.
-
-    Returns
-    -------
-    NDArray
-        Normalized I/Q values.
-    """
-    rotated = values * np.exp(-1j * param.angle)
-    normalized = (np.imag(rotated) - param.offset) / param.amplitude
-    return normalized
-
-
 def func_cos(
     t: NDArray,
     A: complex,
     omega: float,
     phi: float,
-    C: float,
+    C: complex,
 ) -> NDArray:
     """
     Calculate a cosine function with given parameters.
@@ -119,7 +55,7 @@ def func_cos(
         Angular frequency of the cosine function.
     phi : float
         Phase offset of the cosine function.
-    C : float
+    C : complex
         Vertical offset of the cosine function.
     """
     return A * np.cos(omega * t + phi) + C
@@ -130,7 +66,7 @@ def func_damped_cos(
     A: complex,
     omega: float,
     phi: float,
-    C: float,
+    C: complex,
     tau: float,
 ) -> NDArray:
     """
@@ -353,6 +289,8 @@ def fit_linear(
     ylabel: str = "y",
     xaxis_type: Literal["linear", "log"] = "linear",
     yaxis_type: Literal["linear", "log"] = "linear",
+    xmin: float | None = None,
+    ymin: float | None = None,
 ) -> dict:
     """
     Fit data to a linear function y = a * x.
@@ -371,6 +309,10 @@ def fit_linear(
     """
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
 
     def func_linear(x, a):
         return a * x
@@ -422,6 +364,8 @@ def fit_linear(
         yaxis_title=ylabel,
         xaxis_type=xaxis_type,
         yaxis_type=yaxis_type,
+        xaxis=dict(range=[xmin, np.max(x)] if xmin is not None else None),
+        yaxis=dict(range=[ymin, np.max(y)] if ymin is not None else None),
     )
 
     if plot:
@@ -499,6 +443,10 @@ def fit_polynomial(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+
     popt = np.polyfit(x, y, degree)
     fun = np.poly1d(popt)
     y_fit = fun(x)
@@ -534,7 +482,7 @@ def fit_polynomial(
         fig.add_annotation(
             x=root,
             y=fun(root),
-            text=f"root: {root:.3g}",
+            text=f"root: {root:.6g}",
             showarrow=True,
             arrowhead=1,
         )
@@ -563,7 +511,7 @@ def fit_cosine(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    tau_est: float = 10_000,
+    tau_est: float | None = None,
     is_damped: bool = False,
     target: str | None = None,
     title: str = "Cosine fit",
@@ -580,11 +528,11 @@ def fit_cosine(
         x values for the data.
     y : ArrayLike
         y values for the data.
-    tau_est : float, optional
+    tau_est : float | None, optional
         Initial guess for the damping time constant.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
-    target : str, optional
+    target : str | None, optional
         Identifier of the target.
     title : str, optional
         Title of the plot.
@@ -603,6 +551,10 @@ def fit_cosine(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+
     dt = x[1] - x[0]
     N = len(x)
     f = np.fft.fftfreq(N, dt)[1 : N // 2]
@@ -615,9 +567,15 @@ def fit_cosine(
     phase_est = np.angle(F[i])
     offset_est = (np.max(y) + np.min(y)) / 2
 
+    if tau_est is None:
+        tau_est = 10_000.0
+
     logger.debug(
         f"Initial guess: A = {amplitude_est:.3g}, ω = {omega_est:.3g}, φ = {phase_est:.3g}, C = {offset_est:.3g}"
     )
+
+    p0: tuple[Any, ...]
+    bounds: tuple[tuple[Any, ...], tuple[Any, ...]]
 
     if is_damped:
         p0 = (amplitude_est, omega_est, phase_est, offset_est, tau_est)
@@ -696,13 +654,13 @@ def fit_cosine(
         if target:
             print(f"Target: {target}")
         print("Fit: A * cos(2πft + φ) + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f = {f:.3g} ± {f_err:.1g}")
-        print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  f = {f:.6g} ± {f_err:.1g}")
+        print(f"  φ = {phi:.6g} ± {phi_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
         if is_damped:
-            print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
-        print(f"  R² = {r2:.3f}")
+            print(f"  τ = {tau:.6g} ± {tau_err:.1g}")
+        print(f"  R² = {r2:.6g}")
         print("")
 
     return {
@@ -775,6 +733,10 @@ def fit_delayed_cosine(
     """
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
 
     dt = x[1] - x[0]
     N = len(x)
@@ -869,11 +831,11 @@ def fit_delayed_cosine(
         if target:
             print(f"Target: {target}")
         print("Fit: A * cos(2πft + φ) + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f = {f:.3g} ± {f_err:.1g}")
-        print(f"  t0 = {t0:.3g} ± {t0_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.3f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  f = {f:.6g} ± {f_err:.1g}")
+        print(f"  t0 = {t0:.6g} ± {t0_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.6g}")
         print("")
 
     return {
@@ -923,7 +885,7 @@ def fit_exp_decay(
         Whether to plot the data and the fit.
     target : str, optional
         Identifier of the target.
-    title : str, optional
+    title : str | None, optional
         Title of the plot.
     xlabel : str, optional
         Label for the x-axis.
@@ -941,6 +903,10 @@ def fit_exp_decay(
     """
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
 
     if p0 is None:
         tau_guess = 20_000
@@ -1014,10 +980,10 @@ def fit_exp_decay(
         if target:
             print(f"Target: {target}")
         print("Fit: A * exp(-t/τ) + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  τ = {tau * 1e-3:.3g} ± {tau_err * 1e-3:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.3f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  τ = {tau * 1e-3:.6g} ± {tau_err * 1e-3:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.6g}")
         print("")
 
     result = {
@@ -1087,6 +1053,10 @@ def fit_lorentzian(
     """
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
+
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
 
     if p0 is None:
         y_med = np.median(y)  # background level
@@ -1240,6 +1210,10 @@ def fit_sqrt_lorentzian(
     x = np.array(x, dtype=np.float64)
     y = np.array(y, dtype=np.float64)
 
+    mask = ~np.isnan(y)
+    x = x[mask]
+    y = y[mask]
+
     if p0 is None:
         y_med = np.median(y)  # background level
         idx_ext = np.argmax(np.abs(y - y_med))  # index of the extreme point
@@ -1353,7 +1327,8 @@ def fit_rabi(
     target: str,
     times: NDArray,
     data: NDArray,
-    tau_est: float = 10_000,
+    tau_est: float | None = None,
+    reference_point: complex | None = None,
     plot: bool = True,
     is_damped: bool = False,
     ylabel: str | None = None,
@@ -1370,15 +1345,17 @@ def fit_rabi(
         Array of time points for the Rabi oscillations.
     data : NDArray[np.complex64]
         Complex signal data corresponding to the Rabi oscillations.
-    tau_est : float, optional
+    tau_est : float | None, optional
         Initial guess for the damping time constant.
+    reference_point : complex | None, optional
+        Reference point for the I/Q values.
     plot : bool, optional
         Whether to plot the data and the fit.
     is_damped : bool, optional
         Whether to fit the data to a damped cosine function.
-    ylabel : str, optional
+    ylabel : str | None, optional
         Label for the y-axis.
-    yaxis_range : tuple[float, float], optional
+    yaxis_range : tuple[float, float] | None, optional
         Range for the y-axis.
 
     Returns
@@ -1386,25 +1363,34 @@ def fit_rabi(
     dict
         Fitted parameters and the figure.
     """
+    if tau_est is None:
+        tau_est = 10_000.0
+
     times = np.asarray(times, dtype=np.float64)
     data = np.asarray(data, dtype=np.complex64)
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
-    if len(data) < 2:
-        angle = 0.0
+    data_vec = np.column_stack([data.real, data.imag])
+    pca = PCA(n_components=2).fit(data_vec)
+
+    if reference_point is not None:
+        # If a reference point is provided, use it to determine the initial point
+        initial_point = np.array([reference_point.real, reference_point.imag])
     else:
-        data_vec = np.column_stack([data.real, data.imag])
-        pca = PCA(n_components=2).fit(data_vec)
-        start_point = data_vec[0]
-        mean_point = pca.mean_
-        data_direction = mean_point - start_point
-        principal_component = pca.components_[0]
-        dot_product = np.dot(data_direction, principal_component)
-        ge_vector = principal_component if dot_product > 0 else -principal_component
-        angle_ge = np.arctan2(ge_vector[1], ge_vector[0])
-        angle = angle_ge + np.pi / 2
+        initial_point = data_vec[0]
+
+    reference_phase = float(np.arctan2(initial_point[1], initial_point[0]))
+
+    mean_point = pca.mean_
+    data_direction = mean_point - initial_point
+    principal_component = pca.components_[0]
+    dot_product = np.dot(data_direction, principal_component)
+    ge_vector = principal_component if dot_product > 0 else -principal_component
+    angle_ge = np.arctan2(ge_vector[1], ge_vector[0])
+    angle = angle_ge + np.pi / 2
 
     rotated = data * np.exp(-1j * angle)
+    distance = float(np.mean(rotated.real))
     noise = float(np.std(rotated.real))
 
     x = times
@@ -1444,16 +1430,6 @@ def fit_rabi(
         return {
             "status": "error",
             "message": "Failed to fit the data.",
-            "rabi_param": RabiParam(
-                target=target,
-                amplitude=np.nan,
-                frequency=np.nan,
-                phase=np.nan,
-                offset=np.nan,
-                noise=noise,
-                angle=angle,
-                r2=np.nan,
-            ),
         }
 
     if is_damped:
@@ -1475,6 +1451,11 @@ def fit_rabi(
         )
     else:
         r2 = 1 - np.sum((y - func_cos(x, *popt)) ** 2) / np.sum((y - np.mean(y)) ** 2)
+
+    rotated_0 = complex(distance, offset + amplitude)
+    rotated_1 = complex(distance, offset - amplitude)
+    iq_0 = rotated_0 * np.exp(1j * angle)
+    iq_1 = rotated_1 * np.exp(1j * angle)
 
     x_fine = np.linspace(np.min(x), np.max(x), 1000)
     y_fine = (
@@ -1519,19 +1500,9 @@ def fit_rabi(
         fig.show(config=_plotly_config(f"rabi_{target}"))
 
         print(f"Target: {target}")
-        print(f"Rabi frequency: {frequency * 1e3:.3g} ± {frequency_err * 1e3:.1g} MHz")
+        print(f"Rabi frequency: {frequency * 1e3:.6g} ± {frequency_err * 1e3:.1g} MHz")
 
     result = {
-        "rabi_param": RabiParam(
-            target=target,
-            amplitude=amplitude,
-            frequency=frequency,
-            phase=phase,
-            offset=offset,
-            noise=noise,
-            angle=angle,
-            r2=r2,
-        ),
         "amplitude": amplitude,
         "frequency": frequency,
         "phase": phase,
@@ -1543,8 +1514,14 @@ def fit_rabi(
         "offset_err": offset_err,
         "tau_err": tau_err,
         "angle": angle,
+        "distance": distance,
         "noise": noise,
         "r2": r2,
+        "rotated_0": rotated_0,
+        "rotated_1": rotated_1,
+        "iq_0": iq_0,
+        "iq_1": iq_1,
+        "reference_phase": reference_phase,
         "popt": popt,
         "pcov": pcov,
         "fig": fig,
@@ -1811,12 +1788,12 @@ def fit_ramsey(
 
         print(f"Target: {target}")
         print("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  f = {f:.3g} ± {f_err:.1g}")
-        print(f"  φ = {phi:.3g} ± {phi_err:.1g}")
-        print(f"  τ = {tau:.3g} ± {tau_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.3f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  f = {f:.6g} ± {f_err:.1g}")
+        print(f"  φ = {phi:.6g} ± {phi_err:.1g}")
+        print(f"  τ = {tau:.6g} ± {tau_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.6g}")
         print("")
 
     result = {
@@ -1968,13 +1945,13 @@ def fit_rb(
 
         print(f"Target: {target}")
         print("Fit: A * p^n + C")
-        print(f"  A = {A:.3g} ± {A_err:.1g}")
-        print(f"  p = {p:.3g} ± {p_err:.1g}")
-        print(f"  C = {C:.3g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.3f}")
-        print(f"Depolarizing rate: {depolarizing_rate:.6f}")
-        print(f"Average gate error: {avg_gate_error:.6f}")
-        print(f"Average gate fidelity: {avg_gate_fidelity:.6f}")
+        print(f"  A = {A:.6g} ± {A_err:.1g}")
+        print(f"  p = {p:.6g} ± {p_err:.1g}")
+        print(f"  C = {C:.6g} ± {C_err:.1g}")
+        print(f"  R² = {r2:.6g}")
+        print(f"Depolarizing rate: {depolarizing_rate:.6g}")
+        print(f"Average gate error: {avg_gate_error:.6g}")
+        print(f"Average gate fidelity: {avg_gate_fidelity:.6g}")
         print("")
 
     return {
@@ -2714,12 +2691,12 @@ def fit_reflection_coefficient_double(
         fig.show()
 
     print(f"{target}\n--------------------")
-    print(f"Resonance frequency #0:\n  {f_r0:.6f} GHz")
-    print(f"Resonance frequency #1:\n  {f_r1:.6f} GHz")
-    print(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6f} MHz")
-    print(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6f} MHz")
-    print(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6f} MHz")
-    print(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6f} MHz")
+    print(f"Resonance frequency #0:\n  {f_r0:.6g} GHz")
+    print(f"Resonance frequency #1:\n  {f_r1:.6g} GHz")
+    print(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6g} MHz")
+    print(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6g} MHz")
+    print(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6g} MHz")
+    print(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6g} MHz")
     print("--------------------\n")
 
     return {
@@ -2993,7 +2970,7 @@ def fit_rotation(
             y=data[:, 1],
             z=data[:, 2],
             mode="markers",
-            marker=dict(size=3),
+            marker=dict(size=3, color=COLORS[0]),
             hoverinfo="skip",
         )
     )
@@ -3006,7 +2983,7 @@ def fit_rotation(
             y=fit[:, 1],
             z=fit[:, 2],
             mode="lines",
-            line=dict(width=4),
+            line=dict(width=4, color=COLORS[1]),
             hoverinfo="skip",
         )
     )
@@ -3057,27 +3034,3 @@ def fit_rotation(
         "fig": fig,
         "fig3d": fig3d,
     }
-
-
-def rotate(
-    data: ArrayLike,
-    angle: float,
-) -> NDArray[np.complex128]:
-    """
-    Rotate complex data points by a specified angle.
-
-    Parameters
-    ----------
-    data : ArrayLike
-        Array of complex data points to be rotated.
-    angle : float
-        Angle in radians by which to rotate the data points.
-
-    Returns
-    -------
-    NDArray[np.complex128]
-        Rotated complex data points.
-    """
-    points = np.array(data)
-    rotated_points = points * np.exp(1j * angle)
-    return rotated_points

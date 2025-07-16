@@ -13,8 +13,7 @@ from .quantum_system import Chip, QuantumSystem
 
 logger = getLogger(__name__)
 
-DEFAULT_CONFIG_DIR: Final = "/home/shared/config"
-DEFAULT_PARAMS_DIR: Final = "/home/shared/config"
+DEFAULT_CONFIG_DIR: Final = "/home/shared/qubex-config"
 
 CHIP_FILE: Final = "chip.yaml"
 BOX_FILE: Final = "box.yaml"
@@ -27,16 +26,16 @@ class ConfigLoader:
     def __init__(
         self,
         *,
-        chip_id: str | None = None,
-        config_dir: str | None = None,
-        params_dir: str | None = None,
+        chip_id: str,
+        config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
         chip_file: str = CHIP_FILE,
         box_file: str = BOX_FILE,
         wiring_file: str = WIRING_FILE,
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
         targets_to_exclude: list[str] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ):
         """
         Initializes the ConfigLoader object.
@@ -45,10 +44,10 @@ class ConfigLoader:
         ----------
         chip_id : str, optional
             The quantum chip ID (e.g., "64Q"). If provided, the configuration will be loaded for this specific chip.
-        config_dir : str, optional
-            The directory where the configuration files are stored, by default DEFAULT_CONFIG_DIR.
-        params_dir : str, optional
-            The directory where the parameter files are stored, by default DEFAULT_PARAMS_DIR.
+        config_dir : Path | str, optional
+            The directory where the configuration files are stored.
+        params_dir : Path | str, optional
+            The directory where the parameter files are stored.
         chip_file : str, optional
             The name of the chip configuration file, by default "chip.yaml".
         box_file : str, optional
@@ -67,9 +66,11 @@ class ConfigLoader:
         >>> config = ConfigLoader()
         """
         if config_dir is None:
-            config_dir = DEFAULT_CONFIG_DIR
+            config_dir = Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
         if params_dir is None:
-            params_dir = DEFAULT_PARAMS_DIR
+            params_dir = Path(DEFAULT_CONFIG_DIR) / chip_id / "params"
+        if configuration_mode is None:
+            configuration_mode = "ge-cr-cr"
         self._chip_id = chip_id
         self._config_dir = config_dir
         self._params_dir = params_dir
@@ -91,6 +92,11 @@ class ConfigLoader:
     def config_path(self) -> Path:
         """Returns the absolute path to the configuration directory."""
         return Path(self._config_dir).resolve()
+
+    @property
+    def params_path(self) -> Path:
+        """Returns the absolute path to the parameters directory."""
+        return Path(self._params_dir).resolve()
 
     def get_experiment_system(self, chip_id: str) -> ExperimentSystem:
         """
@@ -277,6 +283,7 @@ class ConfigLoader:
                 readout_fsc=params.get("readout_fsc", {}),
                 pump_fsc=params.get("pump_fsc", {}),
                 capture_delay=params.get("capture_delay", {}),
+                capture_delay_word=params.get("capture_delay_word", {}),
                 jpa_params=params.get("jpa_params", {}),
             )
             control_params_dict[chip_id] = control_params

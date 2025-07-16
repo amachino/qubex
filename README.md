@@ -1,4 +1,4 @@
-# Qubex: Quantum Experiment Framework
+# Qubex: Qubit experiment framework
 
 [![GitHub license](https://img.shields.io/github/license/amachino/qubex)](https://github.com/amachino/qubex/blob/main/LICENSE) 
 [![GitHub stars](https://img.shields.io/github/stars/amachino/qubex)](https://github.com/amachino/qubex/stargazers) 

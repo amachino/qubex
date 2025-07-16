@@ -31,6 +31,7 @@ DEFAULT_CONTROL_FSC: Final = 40527
 DEFAULT_READOUT_FSC: Final = 40527
 DEFAULT_PUMP_FSC: Final = 40527
 DEFAULT_CAPTURE_DELAY: Final = 7
+DEFAULT_CAPTURE_DELAY_WORD: Final = 0
 DEFAULT_PUMP_FREQUENCY: Final = 10.0
 DEFAULT_PUMP_AMPLITUDE: Final = 0.0
 DEFAULT_DC_VOLTAGE: Final = 0.0
@@ -77,6 +78,7 @@ class ControlParams(Model):
     readout_fsc: dict[int, int]
     pump_fsc: dict[int, int]
     capture_delay: dict[int, int]
+    capture_delay_word: dict[int, int]
     jpa_params: dict[int, Optional[JPAParam]]
 
     def get_control_amplitude(self, qubit: str) -> float:
@@ -105,6 +107,9 @@ class ControlParams(Model):
 
     def get_capture_delay(self, mux: int) -> int:
         return self.capture_delay.get(mux, DEFAULT_CAPTURE_DELAY)
+
+    def get_capture_delay_word(self, mux: int) -> int:
+        return self.capture_delay_word.get(mux, DEFAULT_CAPTURE_DELAY_WORD)
 
     def get_pump_frequency(self, mux: int) -> float:
         jpa_param = self.jpa_params.get(mux)
@@ -556,24 +561,12 @@ class ExperimentSystem:
                     )
                     self._gen_target_dict[cr_target.label] = cr_target
             elif mode == "ge-cr-cr":
-                ef_target = Target.new_ef_target(
-                    qubit=qubit,
-                    channel=port.channels[0],
-                )
-                self._gen_target_dict[ef_target.label] = ef_target
                 for i, ch in config["channels"].items():
                     for label in ch["targets"]:
                         if match := re.match(r"^(Q\d+)$", label):
                             qubit_label = match.group(1)
                             qubit = self.get_qubit(qubit_label)
                             target = Target.new_ge_target(
-                                qubit=qubit,
-                                channel=port.channels[i],
-                            )
-                        elif match := re.match(r"^(Q\d+)-ef$", label):
-                            qubit_label = match.group(1)
-                            qubit = self.get_qubit(qubit_label)
-                            target = Target.new_ef_target(
                                 qubit=qubit,
                                 channel=port.channels[i],
                             )

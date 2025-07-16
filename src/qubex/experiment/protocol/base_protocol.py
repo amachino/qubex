@@ -5,7 +5,6 @@ from typing import Collection, ContextManager, Literal, Protocol
 
 from numpy.typing import NDArray
 
-from ...analysis.fitting import RabiParam
 from ...backend import (
     Box,
     ControlParams,
@@ -15,23 +14,18 @@ from ...backend import (
     QuantumSystem,
     Qubit,
     Resonator,
-    StateManager,
+    SystemManager,
     Target,
 )
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
-from ...measurement.measurement import (
-    DEFAULT_CAPTURE_MARGIN,
-    DEFAULT_CAPTURE_WINDOW,
-    DEFAULT_READOUT_DURATION,
-)
-from ...pulse import PulseSchedule, VirtualZ, Waveform
+from ...pulse import PulseSchedule, RampType, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..calibration_note import CalibrationNote
-from ..experiment_constants import RABI_FREQUENCY
 from ..experiment_note import ExperimentNote
 from ..experiment_record import ExperimentRecord
 from ..experiment_util import ExperimentUtil
+from ..rabi_param import RabiParam
 
 
 class BaseProtocol(Protocol):
@@ -46,8 +40,8 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def state_manager(self) -> StateManager:
-        """Get the state manager."""
+    def system_manager(self) -> SystemManager:
+        """Get the system manager."""
         ...
 
     @property
@@ -126,6 +120,16 @@ class BaseProtocol(Protocol):
         ...
 
     @property
+    def cr_labels(self) -> list[str]:
+        """Get the list of CR labels."""
+        ...
+
+    @property
+    def cr_pairs(self) -> list[tuple[str, str]]:
+        """Get the list of CR pairs."""
+        ...
+
+    @property
     def boxes(self) -> dict[str, Box]:
         """Get the available box dict."""
         ...
@@ -151,42 +155,32 @@ class BaseProtocol(Protocol):
         ...
 
     @property
-    def system_note(self) -> ExperimentNote:
-        """Get the system note."""
-        ...
-
-    @property
     def note(self) -> ExperimentNote:
         """Get the user note."""
         ...
 
     @property
-    def control_window(self) -> int | None:
-        """Get the control window."""
-        ...
-
-    @property
-    def capture_window(self) -> int:
-        """Get the capture window."""
-        ...
-
-    @property
-    def capture_margin(self) -> int:
-        """Get the capture margin."""
-        ...
-
-    @property
-    def readout_duration(self) -> int:
+    def readout_duration(self) -> float:
         """Get the readout duration."""
         ...
 
     @property
-    def drag_hpi_duration(self) -> int:
+    def readout_pre_margin(self) -> float:
+        """Get the readout pre margin."""
+        ...
+
+    @property
+    def readout_post_margin(self) -> float:
+        """Get the readout post margin."""
+        ...
+
+    @property
+    def drag_hpi_duration(self) -> float:
         """Get the DRAG π/2 duration."""
         ...
 
     @property
-    def drag_pi_duration(self) -> int:
+    def drag_pi_duration(self) -> float:
         """Get the DRAG π duration."""
         ...
 
@@ -307,6 +301,30 @@ class BaseProtocol(Protocol):
         """Get the Clifford dict."""
         ...
 
+    @property
+    def reference_phases(self) -> dict[str, float]:
+        """Get the reference phases for each target."""
+        ...
+
+    def get_rabi_param(
+        self,
+        target: str,
+    ) -> RabiParam:
+        """
+        Get the Rabi parameters for the given target.
+
+        Parameters
+        ----------
+        target : str
+            Target label.
+
+        Returns
+        -------
+        RabiParam
+            Rabi parameters for the target.
+        """
+        ...
+
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
@@ -328,6 +346,87 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def correct_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        """
+        Correct the Rabi parameters for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Target labels to correct. If None, all targets are corrected.
+        reference_phases : dict[str, float] | None, optional
+            Reference phases for the targets. If None, uses the default reference phases.
+        save : bool, optional
+            Whether to save the corrected parameters. Defaults to True.
+        """
+        ...
+
+    def correct_classifiers(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        """
+        Correct the classifiers for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Target labels to correct. If None, all targets are corrected.
+        reference_phases : dict[str, float] | None, optional
+            Reference phases for the targets. If None, uses the default reference phases.
+        save : bool, optional
+            Whether to save the corrected parameters. Defaults to True.
+        """
+        ...
+
+    def correct_cr_params(
+        self,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ):
+        """
+        Correct the CR parameters for the given CRs.
+
+        Parameters
+        ----------
+        cr_labels : Collection[str] | str | None, optional
+            CR labels to correct. If None, all CRs are corrected.
+        save : bool, optional
+            Whether to save the corrected parameters. Defaults to True.
+        """
+        ...
+
+    def correct_calibration(
+        self,
+        qubit_labels: Collection[str] | str | None = None,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ):
+        """
+        Correct the calibration for the given qubits and CRs.
+
+        Parameters
+        ----------
+        qubit_labels : Collection[str] | str | None, optional
+            Qubit labels to correct. If None, all qubits are corrected.
+        cr_labels : Collection[str] | str | None, optional
+            CR labels to correct. If None, all CRs are corrected.
+        save : bool, optional
+            Whether to save the corrected parameters. Defaults to True.
+        """
+        ...
+
     def get_hpi_pulse(
         self,
         target: str,
@@ -342,7 +441,7 @@ class BaseProtocol(Protocol):
         target : str
             Target qubit.
         valid_days : int, optional
-            Number of days the pulse is valid. Defaults to None.
+            Number of days the pulse is valid.
 
         Returns
         -------
@@ -365,7 +464,7 @@ class BaseProtocol(Protocol):
         target : str
             Target qubit.
         valid_days : int, optional
-            Number of days the pulse is valid. Defaults to None.
+            Number of days the pulse is valid.
 
         Returns
         -------
@@ -388,7 +487,7 @@ class BaseProtocol(Protocol):
         target : str
             Target qubit.
         valid_days : int, optional
-            Number of days the pulse is valid. Defaults to None.
+            Number of days the pulse is valid.
 
         Returns
         -------
@@ -411,7 +510,7 @@ class BaseProtocol(Protocol):
         target : str
             Target qubit.
         valid_days : int, optional
-            Number of days the pulse is valid. Defaults to None.
+            Number of days the pulse is valid.
 
         Returns
         -------
@@ -512,14 +611,22 @@ class BaseProtocol(Protocol):
         """
         ...
 
-    def check_status(self):
+    def is_connected(self) -> bool:
+        """Check if the devices are connected."""
+        ...
+
+    def check_status(self) -> None:
         """Check the status of the measurement system."""
+        ...
+
+    def connect(self) -> None:
+        """Connect to the measurement system."""
         ...
 
     def linkup(
         self,
         box_ids: list[str] | None = None,
-        noise_threshold: int = 500,
+        noise_threshold: int | None = None,
     ) -> None:
         """
         Link up the measurement system.
@@ -527,7 +634,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         box_ids : list[str], optional
-            List of the box IDs to link up. Defaults to None.
+            List of the box IDs to link up.
 
         Examples
         --------
@@ -545,7 +652,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         box_ids : list[str], optional
-            List of the box IDs to resynchronize. Defaults to None.
+            List of the box IDs to resynchronize.
 
         Examples
         --------
@@ -564,7 +671,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         box_ids : list[str], optional
-            List of the box IDs to configure. Defaults to None.
+            List of the box IDs to configure.
 
         Examples
         --------
@@ -586,7 +693,7 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         box_ids : str | Collection[str] | None, optional
-            Box IDs to reset. Defaults to None.
+            Box IDs to reset.
 
         Examples
         --------
@@ -676,7 +783,7 @@ class BaseProtocol(Protocol):
         rabi_rate : float
             Target Rabi rate in GHz.
         rabi_amplitude_ratio : float, optional
-            Ratio of the Rabi amplitude. Defaults to None.
+            Ratio of the Rabi amplitude.
 
         Returns
         -------
@@ -688,7 +795,7 @@ class BaseProtocol(Protocol):
     def calc_control_amplitudes(
         self,
         *,
-        rabi_rate: float = RABI_FREQUENCY,
+        rabi_rate: float | None = None,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
@@ -699,11 +806,11 @@ class BaseProtocol(Protocol):
         Parameters
         ----------
         rabi_rate : float, optional
-            Target Rabi rate in GHz. Defaults to RABI_FREQUENCY.
+            Target Rabi rate in GHz.
         current_amplitudes : dict[str, float], optional
-            Current control amplitudes. Defaults to None.
+            Current control amplitudes.
         current_rabi_params : dict[str, RabiParam], optional
-            Current Rabi parameters. Defaults to None.
+            Current Rabi parameters.
         print_result : bool, optional
             Whether to print the result. Defaults to True.
 
@@ -764,10 +871,13 @@ class BaseProtocol(Protocol):
         target: str,
         /,
         *,
+        duration: float | None = None,
         amplitude: float | None = None,
-        duration: float = DEFAULT_READOUT_DURATION,
-        capture_window: float = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: float = DEFAULT_CAPTURE_MARGIN,
+        ramptime: float | None = None,
+        type: RampType | None = None,
+        drag_coeff: float | None = None,
+        pre_margin: float | None = None,
+        post_margin: float | None = None,
     ) -> Waveform:
         """
         Generate a readout pulse for the target qubit.
@@ -776,14 +886,20 @@ class BaseProtocol(Protocol):
         ----------
         target : str
             Target qubit.
-        amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to None.
         duration : float, optional
-            Duration of the readout pulse in ns. Defaults to DEFAULT_READOUT_DURATION.
-        capture_window : float, optional
-            Capture window in ns. Defaults to DEFAULT_CAPTURE_WINDOW.
-        capture_margin : float, optional
-            Capture margin in ns. Defaults to DEFAULT_CAPTURE_MARGIN.
+            Duration of the readout pulse in ns.
+        amplitude : float, optional
+            Amplitude of the readout pulse.
+        ramptime : float, optional
+            Rise and fall time of the readout pulse in ns.
+        type : RampType, optional
+            Type of the ramp for the readout pulse.
+        drag_coeff : float, optional
+            DRAG correction coefficient.
+        pre_margin : float, optional
+            Pre margin for the readout pulse in ns.
+        post_margin : float, optional
+            Post margin for the readout pulse in ns.
 
         Returns
         -------

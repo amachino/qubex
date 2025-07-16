@@ -13,10 +13,10 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
-from ..analysis.fitting import RabiParam
 from ..backend import (
     Box,
     Chip,
+    ConfigLoader,
     ControlParams,
     ControlSystem,
     DeviceController,
@@ -25,20 +25,22 @@ from ..backend import (
     QuantumSystem,
     Qubit,
     Resonator,
-    StateManager,
+    SystemManager,
     Target,
     TargetType,
 )
 from ..clifford import Clifford, CliffordGenerator
-from ..measurement import Measurement, MeasureResult, StateClassifier
+from ..measurement import (
+    Measurement,
+    MeasureResult,
+    MultipleMeasureResult,
+    StateClassifier,
+)
 from ..measurement.measurement import (
-    DEFAULT_CAPTURE_MARGIN,
-    DEFAULT_CAPTURE_WINDOW,
-    DEFAULT_CONFIG_DIR,
     DEFAULT_INTERVAL,
-    DEFAULT_PARAMS_DIR,
     DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_RAMPTIME,
+    DEFAULT_READOUT_POST_MARGIN,
+    DEFAULT_READOUT_PRE_MARGIN,
     DEFAULT_SHOTS,
 )
 from ..pulse import (
@@ -48,6 +50,7 @@ from ..pulse import (
     FlatTop,
     PulseArray,
     PulseSchedule,
+    RampType,
     VirtualZ,
     Waveform,
 )
@@ -58,12 +61,12 @@ from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
+    DEFAULT_RABI_FREQUENCY,
+    DEFAULT_RABI_TIME_RANGE,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     HPI_DURATION,
     HPI_RAMPTIME,
-    RABI_FREQUENCY,
-    RABI_TIME_RANGE,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
@@ -77,7 +80,9 @@ from .mixin import (
     CalibrationMixin,
     CharacterizationMixin,
     MeasurementMixin,
+    OptimizationMixin,
 )
+from .rabi_param import RabiParam
 
 console = Console()
 
@@ -87,6 +92,7 @@ class Experiment(
     CharacterizationMixin,
     CalibrationMixin,
     MeasurementMixin,
+    OptimizationMixin,
 ):
     """
     Class representing an experiment.
@@ -96,27 +102,37 @@ class Experiment(
     chip_id : str
         Identifier of the quantum chip.
     muxes : Collection[str | int], optional
-        Mux labels to use in the experiment. Defaults to None.
+        Mux labels to use in the experiment.
     qubits : Collection[str | int], optional
-        Qubit labels to use in the experiment. Defaults to None.
+        Qubit labels to use in the experiment.
     exclude_qubits : Collection[str | int], optional
-        Qubit labels to exclude in the experiment. Defaults to None.
+        Qubit labels to exclude in the experiment.
     config_dir : str, optional
-        Directory of the configuration files. Defaults to DEFAULT_CONFIG_DIR.
+        Path to the configuration directory containing:
+          - box.yaml
+          - chip.yaml
+          - wiring.yaml
+          - skew.yaml
     params_dir : str, optional
-        Directory of the parameter files. Defaults to DEFAULT_PARAMS_DIR.
-    connect_devices : bool, optional
-        Whether to connect the devices. Defaults to True.
+        Path to the parameters directory containing:
+          - params.yaml
+          - props.yaml
+    calib_note_path : Path | str, optional
+        Path to the calibration note file.
+    calibration_valid_days : int, optional
+        Number of days for which the calibration is valid.
     drag_hpi_duration : int, optional
-        Duration of the DRAG HPI pulse. Defaults to DRAG_HPI_DURATION.
+        Duration of the DRAG HPI pulse.
     drag_pi_duration : int, optional
-        Duration of the DRAG π pulse. Defaults to DRAG_PI_DURATION.
-    capture_window : int, optional
-        Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
+        Duration of the DRAG π pulse.
     readout_duration : int, optional
-        Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+        Duration of the readout pulse.
+    readout_pre_margin : int, optional
+        Pre-margin of the readout pulse.
+    readout_post_margin : int, optional
+        Post-margin of the readout pulse.
     classifier_dir : Path | str, optional
-        Directory of the state classifiers. Defaults to CLASSIFIER_DIR.
+        Directory of the state classifiers.
     classifier_type : Literal["kmeans", "gmm"], optional
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
@@ -138,20 +154,18 @@ class Experiment(
         muxes: Collection[str | int] | None = None,
         qubits: Collection[str | int] | None = None,
         exclude_qubits: Collection[str | int] | None = None,
-        config_dir: str = DEFAULT_CONFIG_DIR,
-        params_dir: str = DEFAULT_PARAMS_DIR,
+        config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
         calib_note_path: Path | str | None = None,
-        connect_devices: bool = True,
-        drag_hpi_duration: int = DRAG_HPI_DURATION,
-        drag_pi_duration: int = DRAG_PI_DURATION,
-        control_window: int | None = None,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: int = DEFAULT_CAPTURE_MARGIN,
-        readout_duration: int = DEFAULT_READOUT_DURATION,
+        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
+        drag_hpi_duration: float = DRAG_HPI_DURATION,
+        drag_pi_duration: float = DRAG_PI_DURATION,
+        readout_duration: float = DEFAULT_READOUT_DURATION,
+        readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN,
+        readout_post_margin: float = DEFAULT_READOUT_POST_MARGIN,
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
     ):
         self._load_config(
             chip_id=chip_id,
@@ -166,14 +180,11 @@ class Experiment(
         )
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
-        self._config_dir: Final = config_dir
-        self._params_dir: Final = params_dir
         self._drag_hpi_duration: Final = drag_hpi_duration
         self._drag_pi_duration: Final = drag_pi_duration
-        self._control_window: Final = control_window
-        self._capture_window: Final = capture_window
-        self._capture_margin: Final = capture_margin
         self._readout_duration: Final = readout_duration
+        self._readout_pre_margin: Final = readout_pre_margin
+        self._readout_post_margin: Final = readout_post_margin
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
@@ -181,10 +192,8 @@ class Experiment(
         self._measurement = Measurement(
             chip_id=chip_id,
             qubits=qubits,
-            config_dir=self._config_dir,
-            params_dir=self._params_dir,
-            connect_devices=connect_devices,
-            configuration_mode=configuration_mode,
+            load_configs=False,
+            connect_devices=False,
         )
         self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
@@ -193,6 +202,7 @@ class Experiment(
             chip_id=chip_id,
             file_path=calib_note_path,
         )
+        self.system_manager.load_skew_file(self.box_ids)
         self.print_environment(verbose=False)
         self._load_classifiers()
 
@@ -207,12 +217,12 @@ class Experiment(
     def _load_config(
         self,
         chip_id: str,
-        config_dir: str,
-        params_dir: str,
+        config_dir: Path | str | None,
+        params_dir: Path | str | None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
     ):
         """Load the configuration files."""
-        self.state_manager.load(
+        self.system_manager.load(
             chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
@@ -302,12 +312,16 @@ class Experiment(
         return self._measurement
 
     @property
-    def state_manager(self) -> StateManager:
-        return StateManager.shared()
+    def system_manager(self) -> SystemManager:
+        return SystemManager.shared()
+
+    @property
+    def config_loader(self) -> ConfigLoader:
+        return self.system_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
-        return self.state_manager.experiment_system
+        return self.system_manager.experiment_system
 
     @property
     def quantum_system(self) -> QuantumSystem:
@@ -319,7 +333,7 @@ class Experiment(
 
     @property
     def device_controller(self) -> DeviceController:
-        return self.state_manager.device_controller
+        return self.system_manager.device_controller
 
     @property
     def params(self) -> ControlParams:
@@ -402,6 +416,14 @@ class Experiment(
         }
 
     @property
+    def cr_labels(self) -> list[str]:
+        return self.get_cr_labels()
+
+    @property
+    def cr_pairs(self) -> list[tuple[str, str]]:
+        return self.get_cr_pairs()
+
+    @property
     def boxes(self) -> dict[str, Box]:
         boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
         return {box.id: box for box in boxes}
@@ -412,47 +434,38 @@ class Experiment(
 
     @property
     def config_path(self) -> str:
-        return str(Path(self._config_dir).resolve())
+        return str(Path(self.config_loader.config_path).resolve())
 
     @property
     def params_path(self) -> str:
-        return str(Path(self._params_dir).resolve())
+        return str(Path(self.config_loader.params_path).resolve())
 
     @property
     def calib_note(self) -> CalibrationNote:
         return self._calib_note
 
     @property
-    @deprecated("This property is deprecated. Use `calib_note` instead.")
-    def system_note(self) -> ExperimentNote:
-        return self._system_note
-
-    @property
-    def control_window(self) -> int | None:
-        return self._control_window
-
-    @property
-    def capture_window(self) -> int:
-        return self._capture_window
-
-    @property
-    def capture_margin(self) -> int:
-        return self._capture_margin
-
-    @property
-    def readout_duration(self) -> int:
-        return self._readout_duration
-
-    @property
     def note(self) -> ExperimentNote:
         return self._user_note
 
     @property
-    def drag_hpi_duration(self) -> int:
+    def readout_duration(self) -> float:
+        return self._readout_duration
+
+    @property
+    def readout_pre_margin(self) -> float:
+        return self._readout_pre_margin
+
+    @property
+    def readout_post_margin(self) -> float:
+        return self._readout_post_margin
+
+    @property
+    def drag_hpi_duration(self) -> float:
         return self._drag_hpi_duration
 
     @property
-    def drag_pi_duration(self) -> int:
+    def drag_pi_duration(self) -> float:
         return self._drag_pi_duration
 
     @property
@@ -558,25 +571,44 @@ class Experiment(
         return result
 
     @property
-    def rabi_params(self) -> dict[str, RabiParam]:
+    def cr_pulse(self) -> dict[str, PulseSchedule]:
         result = {}
-        for target in self.ge_targets | self.ef_targets:
-            param = self.calib_note.get_rabi_param(
-                target,
-                valid_days=self._calibration_valid_days,
-            )
-            if param is not None and None not in param.values():
-                result[target] = RabiParam(
-                    target=param.get("target"),
-                    frequency=param.get("frequency"),
-                    amplitude=param.get("amplitude"),
-                    phase=param.get("phase"),
-                    offset=param.get("offset"),
-                    noise=param.get("noise"),
-                    angle=param.get("angle"),
-                    r2=param.get("r2"),
+        for cr_label in self.cr_targets:
+            control_qubit, target_qubit = Target.cr_qubit_pair(cr_label)
+            cr_param = self.calib_note.get_cr_param(cr_label)
+            if cr_param is not None and None not in cr_param.values():
+                cancel_amplitude = cr_param["cancel_amplitude"]
+                cancel_phase = cr_param["cancel_phase"]
+                rotary_amplitude = cr_param["rotary_amplitude"]
+                cancel_pulse = (
+                    cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
                 )
+                result[cr_label] = CrossResonance(
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
+                    cr_amplitude=cr_param["cr_amplitude"],
+                    cr_duration=cr_param["duration"],
+                    cr_ramptime=cr_param["ramptime"],
+                    cr_phase=cr_param["cr_phase"],
+                    cr_beta=cr_param["cr_beta"],
+                    cancel_amplitude=np.abs(cancel_pulse),
+                    cancel_phase=np.angle(cancel_pulse),
+                    cancel_beta=cr_param["cancel_beta"],
+                    echo=True,
+                    pi_pulse=self.x180(control_qubit),
+                    pi_margin=0.0,
+                )
+
         return result
+
+    @property
+    def rabi_params(self) -> dict[str, RabiParam]:
+        params = {}
+        for target in self.ge_targets | self.ef_targets:
+            param = self.get_rabi_param(target)
+            if param is not None:
+                params[target] = param
+        return params
 
     @property
     def ge_rabi_params(self) -> dict[str, RabiParam]:
@@ -635,6 +667,94 @@ class Experiment(
     def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
         return self._configuration_mode
 
+    @property
+    def reference_phases(self) -> dict[str, float]:
+        return self.calib_note._reference_phases
+
+    def load_calibration_data(self, path: Path | str | None = None):
+        """
+        Load the calibration data from the given path or from the default calibration note file.
+        """
+        if path is None:
+            # TODO: Make this path configurable
+            path = (
+                f"/home/shared/qubex-config/{self.chip_id}/calibration/calib_note.json"
+            )
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Calibration file '{path}' does not exist.")
+        try:
+            self._calib_note.load(path)
+            print(f"Calibration data loaded from {path}")
+        except Exception as e:
+            raise CalibrationMissingError(
+                f"Failed to load calibration data from {path}: {e}"
+            ) from e
+
+    def get_qubit_label(self, index: int) -> str:
+        """
+        Get the qubit label from the given qubit index.
+        """
+        return self.quantum_system.get_qubit(index).label
+
+    def get_resonator_label(self, index: int) -> str:
+        """
+        Get the resonator label from the given resonator index.
+        """
+        return self.quantum_system.get_resonator(index).label
+
+    def get_cr_label(
+        self,
+        control_index: int,
+        target_index: int,
+    ) -> str:
+        """
+        Get the cross-resonance label from the given control and target qubit indices.
+        """
+        control_qubit = self.quantum_system.get_qubit(control_index)
+        target_qubit = self.quantum_system.get_qubit(target_index)
+        label = Target.cr_label(control_qubit.label, target_qubit.label)
+        return label
+
+    def get_cr_pairs(
+        self,
+        low_to_high: bool = True,
+        high_to_low: bool = False,
+    ) -> list[tuple[str, str]]:
+        """
+        Get the cross-resonance pairs.
+        """
+        cr_pairs = []
+        for label in self.cr_targets:
+            pair = Target.cr_qubit_pair(label)
+            control_qubit = self.quantum_system.get_qubit(pair[0])
+            target_qubit = self.quantum_system.get_qubit(pair[1])
+            if target_qubit.label not in self.available_targets:
+                continue
+            if control_qubit.frequency < target_qubit.frequency:
+                if low_to_high:
+                    cr_pairs.append(pair)
+            else:
+                if high_to_low:
+                    cr_pairs.append(pair)
+        return cr_pairs
+
+    def get_cr_labels(
+        self,
+        low_to_high: bool = True,
+        high_to_low: bool = False,
+    ) -> list[str]:
+        """
+        Get the cross-resonance labels.
+        """
+        return [
+            Target.cr_label(*pair)
+            for pair in self.get_cr_pairs(low_to_high, high_to_low)
+        ]
+
+    @staticmethod
+    def cr_pair(cr_label: str) -> tuple[str, str]:
+        return Target.cr_qubit_pair(cr_label)
+
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
@@ -649,6 +769,40 @@ class Experiment(
             for target in targets:
                 if target not in self.rabi_params:
                     raise ValueError(f"Rabi parameters for {target} are not stored.")
+
+    def get_rabi_param(
+        self,
+        target: str,
+        valid_days: int | None = None,
+    ) -> RabiParam | None:
+        """
+        Get the Rabi parameters for the given target.
+        """
+        if valid_days is None:
+            valid_days = self._calibration_valid_days
+
+        param = self.calib_note.get_rabi_param(
+            target,
+            valid_days=valid_days,
+        )
+        if param is not None:
+            try:
+                return RabiParam(
+                    target=param.get("target"),
+                    frequency=param.get("frequency"),
+                    amplitude=param.get("amplitude"),
+                    phase=param.get("phase"),
+                    offset=param.get("offset"),
+                    noise=param.get("noise"),
+                    angle=param.get("angle"),
+                    distance=param.get("distance"),
+                    r2=param.get("r2"),
+                    reference_phase=param.get("reference_phase"),
+                )
+            except TypeError:
+                raise ValueError(f"Invalid Rabi parameters for {target}: {param}")
+        else:
+            return None
 
     def store_rabi_params(
         self,
@@ -670,12 +824,181 @@ class Experiment(
                         "offset": rabi_param.offset,
                         "noise": rabi_param.noise,
                         "angle": rabi_param.angle,
+                        "distance": rabi_param.distance,
                         "r2": rabi_param.r2,
+                        "reference_phase": rabi_param.reference_phase,
                     },
                 )
 
         if len(not_stored) > 0:
             print(f"Rabi parameters are not stored for qubits: {not_stored}")
+
+    def correct_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if reference_phases is None:
+            phases = self.obtain_reference_points(targets=targets)["phase"]
+        else:
+            phases = reference_phases
+
+        for target, phase in phases.items():
+            rabi_param = self.rabi_params.get(target)
+            if rabi_param is None:
+                print(f"Rabi parameters for {target} are not stored.")
+                continue
+            else:
+                rabi_param.correct(new_reference_phase=phase)
+
+            self.calib_note.update_rabi_param(
+                target,
+                {
+                    "target": rabi_param.target,
+                    "frequency": rabi_param.frequency,
+                    "amplitude": rabi_param.amplitude,
+                    "phase": rabi_param.phase,
+                    "offset": rabi_param.offset,
+                    "noise": rabi_param.noise,
+                    "angle": rabi_param.angle,
+                    "distance": rabi_param.distance,
+                    "r2": rabi_param.r2,
+                    "reference_phase": rabi_param.reference_phase,
+                },
+            )
+        if save:
+            self.save_calib_note()
+
+    def correct_classifiers(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if reference_phases is None:
+            phases = self.obtain_reference_points(targets=targets)["phase"]
+        else:
+            phases = reference_phases
+
+        for target, phase in phases.items():
+            classifier = self.classifiers.get(target)
+            if classifier is not None:
+                classifier.phase = phase
+                if save:
+                    classifier.save(
+                        path=self.classifier_dir / self.chip_id / f"{target}.pkl"
+                    )
+
+        for target, phase in phases.items():
+            state_param = self.calib_note.get_state_param(target)
+            if state_param is not None:
+                reference_phase = state_param.get("reference_phase")
+                if reference_phase is None:
+                    state_param["reference_phase"] = phase
+                    continue
+                else:
+                    centers = state_param["centers"]
+                    phase_diff = phase - reference_phase
+                    for state, points in centers.items():
+                        iq = complex(points[0], points[1])
+                        iq *= np.exp(1j * phase_diff)
+                        centers[str(state)] = [iq.real, iq.imag]
+                    state_param["reference_phase"] = phase
+                self.calib_note.update_state_param(
+                    target,
+                    state_param,
+                )
+        if save:
+            self.save_calib_note()
+
+    def correct_cr_params(
+        self,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        shots: int = 10000,
+        save: bool = True,
+    ):
+        if cr_labels is None:
+            cr_labels = self.cr_labels
+        elif isinstance(cr_labels, str):
+            cr_labels = [cr_labels]
+        else:
+            cr_labels = list(cr_labels)
+
+        for label in cr_labels:
+            control_qubit, target_qubit = self.cr_pair(label)
+            if label not in self.calib_note.cr_params:
+                continue
+            result = self.state_tomography(
+                self.zx90(control_qubit, target_qubit),
+                shots=shots,
+            )
+            x, y, _ = result[target_qubit]
+            phase = np.arctan2(y, x)
+            current_param = self.calib_note.get_cr_param(label)
+            self.calib_note.update_cr_param(
+                label,
+                {
+                    "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
+                },
+            )
+        if save:
+            self.save_calib_note()
+
+    def correct_calibration(
+        self,
+        qubit_labels: Collection[str] | str | None = None,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = True,
+    ):
+        if qubit_labels is None:
+            qubit_labels = self.qubit_labels
+        elif isinstance(qubit_labels, str):
+            qubit_labels = [qubit_labels]
+        else:
+            qubit_labels = list(qubit_labels)
+
+        if cr_labels is None:
+            cr_labels = self.cr_labels
+        elif isinstance(cr_labels, str):
+            cr_labels = [cr_labels]
+        else:
+            cr_labels = list(cr_labels)
+
+        reference_phases = self.obtain_reference_points(qubit_labels)["phase"]
+
+        self.correct_rabi_params(
+            qubit_labels,
+            reference_phases=reference_phases,
+            save=save,
+        )
+        self.correct_classifiers(
+            qubit_labels,
+            reference_phases=reference_phases,
+            save=save,
+        )
+        self.correct_cr_params(
+            cr_labels,
+            save=save,
+        )
 
     def get_hpi_pulse(
         self,
@@ -818,7 +1141,18 @@ class Experiment(
     ) -> NDArray:
         return self.measurement.get_inverse_confusion_matrix(targets)
 
+    def is_connected(self) -> bool:
+        return self._measurement.is_connected()
+
     def check_status(self):
+        if not self.is_connected():
+            print("Not connected to the devices. Call `connect()` method first.")
+            return
+
+        if len(self.box_ids) == 0:
+            print("No boxes are selected.")
+            return
+
         # link status
         link_status = self._measurement.check_link_status(self.box_ids)
         if link_status["status"]:
@@ -836,17 +1170,29 @@ class Experiment(
         print(clock_status["clocks"])
 
         # config status
-        config_status = self.state_manager.is_synced(box_ids=self.box_ids)
+        config_status = self.system_manager.is_synced(box_ids=self.box_ids)
         if config_status:
             print("Config status: OK")
         else:
             print("Config status: NG")
-        print(self.state_manager.device_settings)
+        print(self.system_manager.device_settings)
+
+    def connect(
+        self,
+        *,
+        sync_clocks: bool = True,
+    ) -> None:
+        try:
+            self._measurement.connect(sync_clocks=sync_clocks)
+            print("Successfully connected.")
+        except Exception as e:
+            print(f"Failed to connect to the devices: {e}")
+            raise
 
     def linkup(
         self,
         box_ids: list[str] | None = None,
-        noise_threshold: int = 500,
+        noise_threshold: int | None = None,
     ) -> None:
         if box_ids is None:
             box_ids = self.box_ids
@@ -872,19 +1218,24 @@ class Experiment(
             exclude = [exclude]
         if mode is None:
             mode = self.configuration_mode
-        self.state_manager.load(
+        self.system_manager.load(
             chip_id=self.chip_id,
             config_dir=self.config_path,
             params_dir=self.params_path,
             targets_to_exclude=exclude,
             configuration_mode=mode,
         )
-        self.state_manager.push(
+        self.system_manager.push(
             box_ids=box_ids or self.box_ids,
         )
 
     def reload(self):
-        self._measurement.reload()
+        try:
+            self._measurement.reload(configuration_mode=self.configuration_mode)
+            print("Successfully reloaded.")
+        except Exception as e:
+            print(f"Failed to reload the devices: {e}")
+            raise
 
     def reset_awg_and_capunits(
         self,
@@ -935,7 +1286,7 @@ class Experiment(
                 cnco=port.cnco_freq,
             )
             port.channels[channel_number].fnco_freq = fnco
-            self.state_manager.push(box_ids=[box_id])
+            self.system_manager.push(box_ids=[box_id])
 
     @contextmanager
     def modified_frequencies(
@@ -945,7 +1296,7 @@ class Experiment(
         if frequencies is None:
             yield
         else:
-            with self.state_manager.modified_frequencies(frequencies):
+            with self.system_manager.modified_frequencies(frequencies):
                 yield
 
     def save_calib_note(
@@ -991,7 +1342,7 @@ class Experiment(
         Parameters
         ----------
         targets : Collection[str] | str, optional
-            Target labels to check the noise. Defaults to None.
+            Target labels to check the noise.
         duration : int, optional
             Duration of the noise measurement. Defaults to 2048.
         plot : bool, optional
@@ -1023,14 +1374,16 @@ class Experiment(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        capture_window: int = DEFAULT_CAPTURE_WINDOW,
-        readout_duration: int = DEFAULT_READOUT_DURATION,
+        method: Literal["measure", "execute"] = "measure",
+        shots: int | None = None,
+        interval: float | None = None,
         readout_amplitude: float | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
         add_pump_pulses: bool = False,
         plot: bool = True,
-    ) -> MeasureResult:
+    ) -> MeasureResult | MultipleMeasureResult:
         """
         Checks the readout waveforms of the given targets.
 
@@ -1039,15 +1392,19 @@ class Experiment(
         targets : Collection[str] | str, optional
             Target labels to check the waveforms.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots.
         interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        capture_window : int, optional
-            Capture window. Defaults to DEFAULT_CAPTURE_WINDOW.
-        readout_duration : int, optional
-            Readout duration. Defaults to DEFAULT_READOUT_DURATION.
+            Interval between shots.
         readout_amplitude : float, optional
-            Readout amplitude. Defaults to None.
+            Amplitude of the readout pulse.
+        readout_duration : float, optional
+            Duration of the readout pulse in ns.
+        readout_pre_margin : float, optional
+            Pre-margin of the readout pulse in ns.
+        readout_post_margin : float, optional
+            Post-margin of the readout pulse in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the readout sequence. Defaults to False.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -1067,17 +1424,38 @@ class Experiment(
         else:
             targets = list(targets)
 
-        result = self.measure(
-            sequence={target: np.zeros(0) for target in targets},
-            shots=shots,
-            interval=interval,
-            capture_window=capture_window,
-            readout_duration=readout_duration,
-            readout_amplitudes={target: readout_amplitude for target in targets}
-            if readout_amplitude is not None
-            else None,
-            add_pump_pulses=add_pump_pulses,
-        )
+        if readout_amplitude is not None:
+            readout_amplitudes = {target: readout_amplitude for target in targets}
+        else:
+            readout_amplitudes = None
+
+        with PulseSchedule() as ps:
+            for target in targets:
+                ps.add(target, Blank(0))
+
+        if method == "measure":
+            result = self.measure(
+                ps,
+                shots=shots,
+                interval=interval,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                add_pump_pulses=add_pump_pulses,
+            )
+        else:
+            result = self.execute(
+                ps,
+                shots=shots,
+                interval=interval,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                add_pump_pulses=add_pump_pulses,
+                add_last_measurement=True,
+            )
         if plot:
             result.plot()
         return result
@@ -1086,10 +1464,11 @@ class Experiment(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         shots: int = DEFAULT_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         store_params: bool = False,
+        rabi_level: Literal["ge", "ef"] = "ge",
         plot: bool = True,
     ) -> ExperimentResult[RabiData]:
         """
@@ -1126,16 +1505,27 @@ class Experiment(
         else:
             targets = list(targets)
         time_range = np.asarray(time_range)
-        ampl = self.params.control_amplitude
-        amplitudes = {target: ampl[target] for target in targets}
-        result = self.rabi_experiment(
-            amplitudes=amplitudes,
-            time_range=time_range,
-            shots=shots,
-            interval=interval,
-            store_params=store_params,
-            plot=plot,
-        )
+        amplitudes = {
+            target: self.params.get_control_amplitude(target) for target in targets
+        }
+        if rabi_level == "ge":
+            result = self.rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=store_params,
+                plot=plot,
+            )
+        elif rabi_level == "ef":
+            result = self.ef_rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=store_params,
+                plot=plot,
+            )
         return result
 
     def calc_control_amplitude(
@@ -1145,14 +1535,15 @@ class Experiment(
         *,
         rabi_amplitude_ratio: float | None = None,
     ) -> float:
+        qubit = Target.qubit_label(target)
         if rabi_amplitude_ratio is None:
             rabi_param = self.rabi_params.get(target)
-            default_amplitude = self.params.control_amplitude.get(target)
+            default_amplitude = self.params.get_control_amplitude(qubit)
 
             if rabi_param is None:
                 raise ValueError(f"Rabi parameters for {target} are not stored.")
             if default_amplitude is None:
-                raise ValueError(f"Control amplitude for {target} is not defined.")
+                raise ValueError(f"Control amplitude for {qubit} is not defined.")
 
             rabi_amplitude_ratio = rabi_param.frequency / default_amplitude
 
@@ -1160,12 +1551,15 @@ class Experiment(
 
     def calc_control_amplitudes(
         self,
-        rabi_rate: float = RABI_FREQUENCY,
+        rabi_rate: float | None = None,
         *,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool = True,
     ) -> dict[str, float]:
+        if rabi_rate is None:
+            rabi_rate = DEFAULT_RABI_FREQUENCY
+
         current_rabi_params = current_rabi_params or self.rabi_params
 
         if current_rabi_params is None:
@@ -1173,15 +1567,9 @@ class Experiment(
 
         if current_amplitudes is None:
             current_amplitudes = {}
-            default_ampl = self.params.control_amplitude
             for target in current_rabi_params:
-                if self.targets[target].is_ge:
-                    current_amplitudes[target] = default_ampl[target]
-                elif self.targets[target].is_ef:
-                    qubit = Target.qubit_label(target)
-                    current_amplitudes[target] = default_ampl[qubit] / np.sqrt(2)
-                else:
-                    raise ValueError("Invalid target.")
+                qubit = Target.qubit_label(target)
+                current_amplitudes[target] = self.params.get_control_amplitude(qubit)
 
         amplitudes = {
             target: current_amplitudes[target]
@@ -1238,25 +1626,30 @@ class Experiment(
         target: str,
         /,
         *,
+        duration: float | None = None,
         amplitude: float | None = None,
-        duration: float = DEFAULT_READOUT_DURATION,
-        ramptime: float = DEFAULT_READOUT_RAMPTIME,
-        capture_window: float = DEFAULT_CAPTURE_WINDOW,
-        capture_margin: float = DEFAULT_CAPTURE_MARGIN,
+        ramptime: float | None = None,
+        type: RampType | None = None,
+        drag_coeff: float | None = None,
+        pre_margin: float | None = None,
+        post_margin: float | None = None,
     ) -> Waveform:
-        return PulseArray(
-            [
-                Blank(capture_margin),
-                self.measurement.readout_pulse(
-                    target=target,
-                    duration=duration,
-                    amplitude=amplitude,
-                    tau=ramptime,
-                ).padded(
-                    total_duration=capture_window,
-                    pad_side="right",
-                ),
-            ]
+        if duration is None:
+            duration = self.readout_duration
+        if pre_margin is None:
+            pre_margin = self.readout_pre_margin
+        if post_margin is None:
+            post_margin = self.readout_post_margin
+
+        return self.measurement.readout_pulse(
+            target=target,
+            duration=duration,
+            amplitude=amplitude,
+            ramptime=ramptime,
+            type=type,
+            drag_coeff=drag_coeff,
+            pre_margin=pre_margin,
+            post_margin=post_margin,
         )
 
     def x90(

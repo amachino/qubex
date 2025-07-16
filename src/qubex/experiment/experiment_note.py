@@ -27,6 +27,7 @@ class ExperimentNote:
 
         self._dict: dict[str, Any] = {}
         self._file_path = file_path
+        self._changed_keys: set[str] = set()
         self.load()
 
     @property
@@ -69,6 +70,9 @@ class ExperimentNote:
                 value = None
             self._dict[key] = value
 
+        # Track that this key has been modified
+        self._changed_keys.add(key)
+
         if old_value is not None:
             print(f"'{key}' updated: {value}")
         else:
@@ -103,6 +107,8 @@ class ExperimentNote:
         """
         removed_value = self._dict.pop(key, None)
         if removed_value is not None:
+            # Track that this key has been modified (removed)
+            self._changed_keys.add(key)
             print(f"Key '{key}' removed, which had value '{removed_value}'.")
         else:
             print(f"Key '{key}' not found, no removal performed.")
@@ -111,12 +117,17 @@ class ExperimentNote:
         """
         Clears the dictionary.
         """
+        # Track all existing keys as removed
+        for key in self._dict.keys():
+            self._changed_keys.add(key)
         self._dict.clear()
         print("All entries have been cleared from the ExperimentNote.")
 
     def save(self, file_path: Path | str | None = None):
         """
         Saves the ExperimentNote to a JSON file.
+        Only saves the keys that have been modified since the last load,
+        preserving any changes made by other processes.
 
         Parameters
         ----------
@@ -124,12 +135,54 @@ class ExperimentNote:
             The path to save the JSON file. Defaults to the path specified in the constructor.
         """
         try:
-            file_path = file_path or self._file_path
-            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(file_path, "w") as file:
-                sorted_dict = self._sort_dict_recursively(self._dict, depth=2)
+            target_path = file_path or self._file_path
+            is_default_file = file_path is None
+
+            Path(target_path).parent.mkdir(parents=True, exist_ok=True)
+
+            # Load the latest file content to preserve changes made by other processes
+            latest_dict = {}
+            if Path(target_path).exists():
+                try:
+                    with open(target_path, "r") as file:
+                        latest_dict = json.load(file)
+                except (json.JSONDecodeError, Exception):
+                    # If we can't read the file, start with empty dict
+                    latest_dict = {}
+
+            # If no changes tracked, save all current data
+            if not self._changed_keys:
+                latest_dict.update(self._dict)
+            else:
+                # Merge only the changed keys into the latest data
+                for key in self._changed_keys:
+                    if key in self._dict:
+                        # Key was added or updated
+                        if isinstance(self._dict[key], dict) and isinstance(
+                            latest_dict.get(key), dict
+                        ):
+                            # For nested dictionaries, do a deep merge
+                            if key not in latest_dict:
+                                latest_dict[key] = {}
+                            self._update_dict_recursively(
+                                latest_dict[key], self._dict[key]
+                            )
+                        else:
+                            latest_dict[key] = self._dict[key]
+                    else:
+                        # Key was removed
+                        latest_dict.pop(key, None)
+
+            # Save the merged data
+            with open(target_path, "w") as file:
+                sorted_dict = self._sort_dict_recursively(latest_dict, depth=2)
                 json.dump(sorted_dict, file, indent=4)
-            print(f"ExperimentNote saved to '{file_path}'.")
+
+            # Update our internal dict with the latest merged data (only for default file)
+            if is_default_file:
+                self._dict = latest_dict
+
+            print(f"ExperimentNote saved to '{target_path}'.")
         except Exception as e:
             print(f"Failed to save ExperimentNote: {e}")
 
@@ -149,6 +202,7 @@ class ExperimentNote:
         try:
             with open(file_path, "r") as file:
                 self._dict = json.load(file)
+            # Note: We keep changed_keys to allow multiple saves to different files
         except FileNotFoundError:
             pass
         except json.JSONDecodeError:
@@ -257,7 +311,7 @@ class ExperimentNote:
         d : dict
             The dictionary to sort.
         depth : int, optional
-            The depth to sort to. Defaults to None.
+            The depth to sort to.
 
         Returns
         -------

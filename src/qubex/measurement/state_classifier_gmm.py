@@ -38,6 +38,7 @@ class StateClassifierGMM(StateClassifier):
     label_map: dict[int, int]
     confusion_matrix: NDArray
     scale: float
+    phase: float
     created_at: str
 
     @property
@@ -69,7 +70,7 @@ class StateClassifierGMM(StateClassifier):
     def centers(self) -> dict[int, complex]:
         """The center of each state."""
         return {
-            state: complex(mean[0], mean[1]) / self.scale
+            state: complex(mean[0], mean[1]) * np.exp(1j * self.phase) / self.scale
             for state, mean in enumerate(self.means)
         }
 
@@ -91,6 +92,7 @@ class StateClassifierGMM(StateClassifier):
     def fit(
         cls,
         data: dict[int, NDArray],
+        phase: float = 0.0,
         n_init: int = 10,
         random_state: int = 42,
     ) -> StateClassifierGMM:
@@ -101,6 +103,8 @@ class StateClassifierGMM(StateClassifier):
         ----------
         data : dict[int, NDArray]
             A dictionary of state labels and complex data.
+        phase : float, optional
+            The phase offset to apply to the data, by default 0.0.
         n_init : int, optional
             Number of initializations to perform, by default 10.
         random_state : int, optional
@@ -118,6 +122,9 @@ class StateClassifierGMM(StateClassifier):
             raise ValueError(
                 "Input data must be a dictionary with integer keys and numpy array values."
             )
+
+        # Adjust data phase
+        data = {state: np.exp(-1j * phase) * data[state] for state in data}
 
         # Convert complex data to real-valued features
         dataset = {
@@ -168,6 +175,7 @@ class StateClassifierGMM(StateClassifier):
             label_map=label_map,
             confusion_matrix=confusion_matrix,
             scale=scale,
+            phase=phase,
             created_at=datetime.now().isoformat(),
         )
 
@@ -250,10 +258,10 @@ class StateClassifierGMM(StateClassifier):
         NDArray
             An array of predicted state labels based on the fitted model.
         """
-        # Scale data
-        scaled_data = data * self.scale
+        # Normalize data
+        norm_data = data * self.scale * np.exp(-1j * self.phase)
         # Convert complex data to real-valued features
-        real_imag_data = np.column_stack([np.real(scaled_data), np.imag(scaled_data)])
+        real_imag_data = np.column_stack([np.real(norm_data), np.imag(norm_data)])
         # Predict GMM component labels
         component_labels = self.model.predict(real_imag_data)
         # Convert GMM component labels to state labels
@@ -278,10 +286,10 @@ class StateClassifierGMM(StateClassifier):
         NDArray
             An array of predicted state probabilities based on the fitted model.
         """
-        # Scale data
-        scaled_data = data * self.scale
+        # Normalize data
+        norm_data = data * self.scale * np.exp(-1j * self.phase)
         # Convert complex data to real-valued features
-        real_imag_data = np.column_stack([np.real(scaled_data), np.imag(scaled_data)])
+        real_imag_data = np.column_stack([np.real(norm_data), np.imag(norm_data)])
         # Predict GMM component probabilities
         component_label_proba = self.model.predict_proba(real_imag_data)
         # Convert GMM component probabilities to state probabilities
@@ -452,15 +460,15 @@ class StateClassifierGMM(StateClassifier):
             The estimated weights of the mixed gaussian data.
         """
         N = self.n_states
-        scaled_data = np.column_stack([np.real(data), np.imag(data)]) * self.scale
+        norm_data = np.column_stack([np.real(data), np.imag(data)]) * self.scale
         weights = np.ones(N) / N
 
         # Expectation-Maximization (EM) algorithm
         for _ in range(max_iter):
-            responsibilities = np.zeros((scaled_data.shape[0], N))
+            responsibilities = np.zeros((norm_data.shape[0], N))
             for k in range(N):
                 responsibilities[:, k] = weights[k] * multivariate_normal.pdf(
-                    scaled_data,
+                    norm_data,
                     mean=self.means[k],
                     cov=self.covariances[k],
                 )

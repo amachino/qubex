@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from typing import Literal
 
 from ..backend.config_loader import ConfigLoader
@@ -28,8 +29,8 @@ class ChipInspector:
     def __init__(
         self,
         chip_id: str,
-        config_dir: str | None = None,
-        props_dir: str | None = None,
+        config_dir: Path | str | None = None,
+        props_dir: Path | str | None = None,
     ):
         self._init_graph(
             chip_id=chip_id,
@@ -40,8 +41,8 @@ class ChipInspector:
     def _init_graph(
         self,
         chip_id: str,
-        config_dir: str | None = None,
-        props_dir: str | None = None,
+        config_dir: Path | str | None = None,
+        props_dir: Path | str | None = None,
     ):
         config_loader = ConfigLoader(
             chip_id=chip_id,

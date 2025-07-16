@@ -38,9 +38,9 @@ class CalibrationProtocol(Protocol):
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -82,9 +82,9 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -126,9 +126,9 @@ class CalibrationProtocol(Protocol):
         targes : Collection[str] | str, optional
             Target qubits to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -173,9 +173,9 @@ class CalibrationProtocol(Protocol):
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -217,9 +217,9 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -261,9 +261,9 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         ramptime : float, optional
-            Ramp time of the pulse. Defaults to None.
+            Ramp time of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -288,7 +288,7 @@ class CalibrationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         n_points: int = 20,
@@ -309,11 +309,11 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
-            Spectator state. Defaults to "0".
+            Spectator state.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -344,7 +344,7 @@ class CalibrationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"] = "hpi",
         beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
         duration: float | None = None,
@@ -362,13 +362,13 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
-            Spectator state. Defaults to "0".
+            Spectator state.
         pulse_type : Literal["pi", "hpi"]
             Type of the pulse to calibrate.
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         n_turns : int, optional
             Number of turns to |0> state. Defaults to 1.
         degree : int, optional
@@ -391,7 +391,7 @@ class CalibrationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
@@ -414,7 +414,7 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
-            Spectator state. Defaults to "0".
+            Spectator state.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -432,7 +432,7 @@ class CalibrationProtocol(Protocol):
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         plot : bool, optional
@@ -453,7 +453,7 @@ class CalibrationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        spectator_state: str = "0",
+        spectator_state: str | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
         n_turns: int = 1,
@@ -476,7 +476,7 @@ class CalibrationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target qubits to calibrate.
         spectator_state : str, optional
-            Spectator state. Defaults to "0".
+            Spectator state.
         n_points : int, optional
             Number of points to sweep. Defaults to 20.
         n_rotations : int, optional
@@ -494,7 +494,7 @@ class CalibrationProtocol(Protocol):
         beta_range : ArrayLike, optional
             Range of the beta to sweep. Defaults to np.linspace(-2.0, 2.0, 20).
         duration : float, optional
-            Duration of the pulse. Defaults to None.
+            Duration of the pulse.
         drag_coeff : float, optional
             DRAG coefficient. Defaults to DRAG_COEFF.
         plot : bool, optional
@@ -517,17 +517,26 @@ class CalibrationProtocol(Protocol):
         control_qubit: str,
         target_qubit: str,
         time_range: ArrayLike | None = None,
-        ramptime: float = 0.0,
-        cr_amplitude: float = 1.0,
-        cr_phase: float = 0.0,
-        cancel_amplitude: float = 0.0,
-        cancel_phase: float = 0.0,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
         echo: bool = False,
         control_state: str = "0",
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
+        ramp_type: Literal[
+            "Gaussian",
+            "RaisedCosine",
+            "Sintegral",
+            "Bump",
+        ] = "RaisedCosine",
+        x180_margin: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = True,
     ) -> dict: ...
 
     def cr_hamiltonian_tomography(
@@ -542,8 +551,10 @@ class CalibrationProtocol(Protocol):
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
         x90: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> dict: ...
 
@@ -561,8 +572,10 @@ class CalibrationProtocol(Protocol):
         update_cr_phase: bool = True,
         update_cancel_pulse: bool = True,
         x90: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> dict: ...
 
@@ -572,18 +585,21 @@ class CalibrationProtocol(Protocol):
         target_qubit: str,
         *,
         time_range: ArrayLike | None = None,
-        ramptime: float = 16,
+        ramptime: float | None = None,
         cr_amplitude: float | None = None,
         n_iterations: int = 4,
         n_cycles: int = 2,
-        n_points_per_cycle: int = 10,
+        n_points_per_cycle: int = 6,
         use_stored_params: bool = False,
-        tolerance: float = 10e-6,
-        adiabatic_safe_factor: float = 0.75,
+        tolerance: float = 0.005e-3,
+        adiabatic_safe_factor: float | None = None,
         max_amplitude: float = 1.0,
+        max_time_range: float = 4096.0,
         x90: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
         plot: bool = True,
     ) -> dict: ...
 
@@ -592,12 +608,12 @@ class CalibrationProtocol(Protocol):
         control_qubit: str,
         target_qubit: str,
         *,
-        ramptime: float = 16.0,
+        ramptime: float | None = None,
         duration: float | None = None,
         amplitude_range: ArrayLike | None = None,
         initial_state: str = "0",
         degree: int = 3,
-        adiabatic_safe_factor: float = 0.75,
+        adiabatic_safe_factor: float | None = None,
         max_amplitude: float = 1.0,
         rotary_multiple: float = 9.0,
         use_drag: bool = True,
@@ -612,53 +628,3 @@ class CalibrationProtocol(Protocol):
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> dict: ...
-
-    def optimize_x90(
-        self,
-        qubit: str,
-        *,
-        sigma0: float = 0.001,
-        seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
-    ) -> Waveform: ...
-
-    def optimize_drag_x90(
-        self,
-        qubit: str,
-        *,
-        duration: float = 16,
-        sigma0: float = 0.001,
-        seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
-    ) -> Waveform: ...
-
-    def optimize_pulse(
-        self,
-        qubit: str,
-        *,
-        pulse: Waveform,
-        x90: Waveform,
-        target_state: tuple[float, float, float],
-        sigma0: float = 0.001,
-        seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
-    ) -> Waveform: ...
-
-    def optimize_zx90(
-        self,
-        control_qubit: str,
-        target_qubit: str,
-        *,
-        opt_params: Collection[str] | None = None,
-        seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
-        duration: float | None = None,
-        ramptime: float | None = None,
-        x180: TargetMap[Waveform] | Waveform | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-    ): ...

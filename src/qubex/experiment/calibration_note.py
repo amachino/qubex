@@ -32,12 +32,15 @@ class RabiParam(Parameter):
     offset: float
     noise: float
     angle: float
+    distance: float
     r2: float
+    reference_phase: float
 
 
 class StateParam(Parameter):
     target: str
     centers: dict[str, list[float]]
+    reference_phase: float
 
 
 class FlatTopParam(Parameter):
@@ -76,6 +79,7 @@ class CalibrationNote(ExperimentNote):
         file_path: Path | str | None = None,
     ):
         self._chip_id = chip_id
+        self._reference_phases = {}
         if file_path is None:
             file_path = Path(calibration_dir) / f"{chip_id}.json"
         else:
@@ -298,7 +302,7 @@ class CalibrationNote(ExperimentNote):
         time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
         days_passed = (datetime.now() - time).days
         if days_passed >= valid_days:
-            logger.warning(
+            logger.info(
                 f"{key}['{target}'] is outdated and ignored ({days_passed} days passed)."
             )
             return None

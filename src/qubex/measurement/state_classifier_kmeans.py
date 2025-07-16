@@ -36,6 +36,7 @@ class StateClassifierKMeans(StateClassifier):
     model: KMeans
     label_map: dict[int, int]
     confusion_matrix: NDArray
+    phase: float
     created_at: str
 
     @property
@@ -50,7 +51,7 @@ class StateClassifierKMeans(StateClassifier):
         centers_arr = np.asarray(self.model.cluster_centers_)
         for idx, center in enumerate(centers_arr):
             state = self.label_map[idx]
-            centers[state] = complex(center[0], center[1])
+            centers[state] = complex(center[0], center[1]) * np.exp(1j * self.phase)
         centers = dict(sorted(centers.items()))
         return centers
 
@@ -78,6 +79,7 @@ class StateClassifierKMeans(StateClassifier):
     def fit(
         cls,
         data: dict[int, NDArray],
+        phase: float = 0.0,
         n_init: int = 10,
         random_state: int = 42,
     ) -> StateClassifierKMeans:
@@ -88,6 +90,8 @@ class StateClassifierKMeans(StateClassifier):
         ----------
         data : dict[int, NDArray[np.complexfloating[Any, Any]]]
             A dictionary of state labels and complex data.
+        phase : float, optional
+            The phase to apply to the data, by default 0.0.
         n_init : int, optional
             Number of time the k-means algorithm will be run with different center seeds, by default 10.
         random_state : int, optional
@@ -105,6 +109,9 @@ class StateClassifierKMeans(StateClassifier):
             raise ValueError(
                 "Input data must be a dictionary with integer keys and numpy array values."
             )
+
+        # Adjust data phase
+        data = {state: np.exp(-1j * phase) * data[state] for state in data}
 
         # Convert complex data to real-valued features
         dataset = {
@@ -135,6 +142,7 @@ class StateClassifierKMeans(StateClassifier):
             label_map=label_map,
             confusion_matrix=confusion_matrix,
             scale=1.0,
+            phase=phase,
             created_at=datetime.now().isoformat(),
         )
 
@@ -217,6 +225,8 @@ class StateClassifierKMeans(StateClassifier):
         NDArray
             An array of predicted state labels based on the fitted model.
         """
+        # Normalize data
+        data = data * self.scale * np.exp(-1j * self.phase)
         # Convert complex data to real-valued features
         real_imag_data = np.column_stack([np.real(data), np.imag(data)])
         # Predict k-means cluster labels

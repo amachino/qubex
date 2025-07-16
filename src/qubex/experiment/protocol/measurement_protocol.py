@@ -15,7 +15,7 @@ from ...typing import (
     ParametricWaveformDict,
     TargetMap,
 )
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_TIME_RANGE
+from ..experiment_constants import CALIBRATION_SHOTS, DEFAULT_RABI_TIME_RANGE
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 
 
@@ -24,14 +24,20 @@ class MeasurementProtocol(Protocol):
         self,
         schedule: PulseSchedule,
         *,
+        frequencies: Optional[dict[str, float]] = None,
         mode: Literal["single", "avg"] = "avg",
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        add_last_measurement: bool = False,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
+        enable_dsp_sum: bool | None = None,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MultipleMeasureResult:
@@ -45,19 +51,33 @@ class MeasurementProtocol(Protocol):
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots
         interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        add_last_measurement : bool, optional
-            Whether to add the last measurement. Defaults to False.
-        capture_window : float, optional
-            Capture window. Defaults to None.
-        capture_margin : float, optional
-            Capture margin. Defaults to None.
-        readout_duration : float, optional
-            Readout duration. Defaults to None.
+            Interval between shots in ns.
+        frequencies : Optional[dict[str, float]], optional
+            Frequencies of the qubits.
         readout_amplitudes : dict[str, float], optional
-            Readout amplitude for each target. Defaults to None.
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        readout_ramptime : float, optional
+            Readout ramp time in ns.
+        readout_drag_coeff : float, optional
+            Readout DRAG coefficient.
+        readout_ramp_type : RampType, optional
+            Readout ramp type. Defaults to "RaisedCosine".
+        add_last_measurement : bool, optional
+            Whether to add the last measurement to the result. Defaults to False.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
+        reset_awg_and_capunits : bool, optional
+            Whether to reset the AWG and capture units before the experiment. Defaults to True.
+        enable_dsp_sum : bool | None, optional
+            Whether to enable DSP summation. Defaults to None.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -87,16 +107,17 @@ class MeasurementProtocol(Protocol):
         frequencies: Optional[dict[str, float]] = None,
         initial_states: dict[str, str] | None = None,
         mode: Literal["single", "avg"] = "avg",
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        control_window: float | None = None,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
+        add_pump_pulses: bool = False,
+        enable_dsp_sum: bool | None = None,
         reset_awg_and_capunits: bool = True,
         plot: bool = False,
     ) -> MeasureResult:
@@ -110,23 +131,33 @@ class MeasurementProtocol(Protocol):
         frequencies : Optional[dict[str, float]]
             Frequencies of the qubits.
         initial_states : dict[str, str], optional
-            Initial states of the qubits. Defaults to None.
+            Initial states of the qubits.
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots.
         interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : float, optional
-            Control window. Defaults to None.
-        capture_window : float, optional
-            Capture window. Defaults to None.
-        capture_margin : float, optional
-            Capture margin. Defaults to None.
-        readout_duration : float, optional
-            Readout duration. Defaults to None.
+            Interval between shots in ns.
         readout_amplitudes : dict[str, float], optional
-            Readout amplitude for each target. Defaults to None.
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        readout_ramptime : float, optional
+            Readout ramp time in ns.
+        readout_drag_coeff : float, optional
+            Readout DRAG coefficient.
+        readout_ramp_type : RampType, optional
+            Readout ramp type. Defaults to "RaisedCosine".
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
+        enable_dsp_sum : bool | None, optional
+            Whether to enable DSP summation. Defaults to None.
+        reset_awg_and_capunits : bool, optional
+            Whether to reset the AWG and capture units before the experiment. Defaults to True.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -154,13 +185,13 @@ class MeasurementProtocol(Protocol):
         ],
         *,
         mode: Literal["single", "avg"] = "single",
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        control_window: float | None = None,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
-        readout_duration: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        add_pump_pulses: bool = False,
         plot: bool = False,
     ) -> MeasureResult:
         """
@@ -173,17 +204,19 @@ class MeasurementProtocol(Protocol):
         mode : Literal["single", "avg"], optional
             Measurement mode. Defaults to "single".
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots.
         interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : float, optional
-            Control window. Defaults to None.
-        capture_window : float, optional
-            Capture window. Defaults to None.
-        capture_margin : float, optional
-            Capture margin. Defaults to None.
+            Interval between shots in ns.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
         readout_duration : float, optional
-            Readout duration. Defaults to None.
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to False.
 
@@ -204,6 +237,87 @@ class MeasurementProtocol(Protocol):
         """
         ...
 
+    def measure_idle_states(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        add_pump_pulses: bool = False,
+        plot: bool = True,
+    ) -> dict:
+        """
+        Measures the idle states of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Targets to measure. Defaults to None (all targets).
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the idle states for each target.
+
+        Examples
+        --------
+        >>> idle_states = ex.measure_idle_states(targets=["Q00", "Q01"])
+        """
+        ...
+
+    def obtain_reference_points(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        store_reference_points: bool = True,
+    ) -> dict:
+        """
+        Obtains the reference points for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Targets to obtain reference points for. Defaults to None (all targets).
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        store_reference_points : bool, optional
+            Whether to store the reference points. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the reference points for each target.
+
+        Examples
+        --------
+        >>> ref_points = ex.obtain_reference_points(targets=["Q00", "Q01"])
+        """
+        ...
+
     def sweep_parameter(
         self,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
@@ -212,11 +326,12 @@ class MeasurementProtocol(Protocol):
         repetitions: int = 1,
         frequencies: dict[str, float] | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        control_window: float | None = None,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
         plot: bool = True,
         title: str = "Sweep result",
         xlabel: str = "Sweep value",
@@ -236,25 +351,29 @@ class MeasurementProtocol(Protocol):
         repetitions : int, optional
             Number of repetitions. Defaults to 1.
         frequencies : dict[str, float], optional
-            Frequencies of the qubits. Defaults to None.
+            Frequencies of the qubits.
+        rabi_level : Literal["ge", "ef"], optional
+            Rabi level to use. Defaults to "ge".
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots.
         interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        control_window : float, optional
-            Control window. Defaults to None.
-        capture_window : float, optional
-            Capture window. Defaults to None.
-        capture_margin : float, optional
-            Capture margin. Defaults to None.
+            Interval between shots in ns.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
         title : str, optional
             Title of the plot. Defaults to "Sweep result".
         xlabel : str, optional
-            Title of the x-axis. Defaults to "Sweep value".
+            Label of the x-axis. Defaults to "Sweep value".
         ylabel : str, optional
-            Title of the y-axis. Defaults to "Measured value".
+            Label of the y-axis. Defaults to "Measured value".
         xaxis_type : Literal["linear", "log"], optional
             Type of the x-axis. Defaults to "linear".
         yaxis_type : Literal["linear", "log"], optional
@@ -282,8 +401,8 @@ class MeasurementProtocol(Protocol):
         sequence: TargetMap[Waveform] | PulseSchedule,
         *,
         repetitions: int = 20,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
         plot: bool = True,
     ) -> ExperimentResult[SweepData]:
         """
@@ -296,9 +415,9 @@ class MeasurementProtocol(Protocol):
         repetitions : int, optional
             Number of repetitions. Defaults to 20.
         shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
+            Number of shots.
         interval : float, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
+            Interval between shots in ns.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -320,7 +439,7 @@ class MeasurementProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
         is_damped: bool = False,
@@ -335,7 +454,7 @@ class MeasurementProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         is_damped: bool = False,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -346,10 +465,11 @@ class MeasurementProtocol(Protocol):
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
-        is_damped: bool = False,
+        is_damped: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -377,9 +497,6 @@ class MeasurementProtocol(Protocol):
         n_states: Literal[2, 3] = 2,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
-        control_window: float | None = None,
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool = True,
@@ -387,13 +504,19 @@ class MeasurementProtocol(Protocol):
 
     def build_classifier(
         self,
-        targets: str | Collection[str] | str | None = None,
+        targets: Collection[str] | str | None = None,
         *,
-        n_states: Literal[2, 3] = 2,
+        n_states: Literal[2, 3] | None = None,
         save_classifier: bool = True,
         save_dir: Path | str | None = None,
-        shots: int = 8192,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        add_pump_pulses: bool = False,
+        simultaneous: bool = False,
         plot: bool = True,
     ) -> dict: ...
 
@@ -416,9 +539,9 @@ class MeasurementProtocol(Protocol):
         sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Sequence to measure for each target.
         x90 : TargetMap[Waveform], optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse.
         initial_state : TargetMap[str], optional
-            Initial state of each target. Defaults to None.
+            Initial state of each target.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -455,9 +578,9 @@ class MeasurementProtocol(Protocol):
         sequences : Sequence[TargetMap[IQArray]] | Sequence[TargetMap[Waveform]] | Sequence[PulseSchedule]
             Sequences to measure for each target.
         x90 : TargetMap[Waveform], optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse.
         initial_state : TargetMap[str], optional
-            Initial state of each target. Defaults to None.
+            Initial state of each target.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -491,9 +614,9 @@ class MeasurementProtocol(Protocol):
         waveforms : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
             Waveforms to measure for each target.
         x90 : TargetMap[Waveform], optional
-            π/2 pulse. Defaults to None.
+            π/2 pulse.
         initial_state : TargetMap[str], optional
-            Initial state of each target. Defaults to None.
+            Initial state of each target.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional

@@ -5,11 +5,14 @@ from typing import Collection, Literal, Protocol
 import numpy as np
 from numpy.typing import ArrayLike
 
-from ...analysis.fitting import RabiParam
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import Waveform
 from ...typing import TargetMap
-from ..experiment_constants import CALIBRATION_SHOTS, RABI_FREQUENCY, RABI_TIME_RANGE
+from ..experiment_constants import (
+    CALIBRATION_SHOTS,
+    DEFAULT_RABI_FREQUENCY,
+    DEFAULT_RABI_TIME_RANGE,
+)
 from ..experiment_result import (
     AmplRabiData,
     ExperimentResult,
@@ -18,6 +21,7 @@ from ..experiment_result import (
     T1Data,
     T2Data,
 )
+from ..rabi_param import RabiParam
 
 
 class CharacterizationProtocol(Protocol):
@@ -26,8 +30,6 @@ class CharacterizationProtocol(Protocol):
         targets: Collection[str] | str | None = None,
         *,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -43,13 +45,9 @@ class CharacterizationProtocol(Protocol):
         targets : Collection[str] | str, optional
             Target labels to measure the readout SNR.
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_window : float, optional
-            Capture window. Defaults to None.
-        capture_margin : float, optional
-            Capture margin. Defaults to None.
+            Initial state of the qubits.
         readout_duration : float, optional
-            Readout duration. Defaults to None.
+            Readout duration.
         readout_amplitudes : dict[str, float], optional
             Readout amplitudes for each target.
         shots : int, optional
@@ -76,8 +74,6 @@ class CharacterizationProtocol(Protocol):
         *,
         amplitude_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_window: float | None = None,
-        capture_margin: float | None = None,
         readout_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -89,17 +85,13 @@ class CharacterizationProtocol(Protocol):
         Parameters
         ----------
         targets : Collection[str] | str, optional
-            Target labels to sweep the readout amplitude. Defaults to None.
+            Target labels to sweep the readout amplitude.
         amplitude_range : ArrayLike, optional
-            Range of the readout amplitude to sweep. Defaults to None.
+            Range of the readout amplitude to sweep.
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_window : float, optional
-            Capture window. Defaults to None.
-        capture_margin : float, optional
-            Capture margin. Defaults to None.
+            Initial state of the qubits.
         readout_duration : float, optional
-            Readout duration. Defaults to None.
+            Readout duration.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -120,7 +112,6 @@ class CharacterizationProtocol(Protocol):
         *,
         time_range: ArrayLike = np.arange(128, 2048, 128),
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        capture_margin: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -132,15 +123,13 @@ class CharacterizationProtocol(Protocol):
         Parameters
         ----------
         targets : Collection[str] | str, optional
-            Target labels to sweep the readout duration. Defaults to None.
+            Target labels to sweep the readout duration.
         time_range : ArrayLike, optional
             Time range of the readout duration to sweep. Defaults to np.arange(0, 2048, 128).
         initial_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
-            Initial state of the qubits. Defaults to None.
-        capture_margin : float, optional
-            Capture margin. Defaults to None.
+            Initial state of the qubits.
         readout_amplitudes : dict[str, float], optional
-            Readout amplitudes for each target. Defaults to None.
+            Readout amplitudes for each target.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -160,7 +149,7 @@ class CharacterizationProtocol(Protocol):
         targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
@@ -225,7 +214,7 @@ class CharacterizationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = RABI_TIME_RANGE,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -373,7 +362,7 @@ class CharacterizationProtocol(Protocol):
         n_cpmg : int, optional
             Number of CPMG pulses. Defaults to 1.
         pi_cpmg : Waveform, optional
-            π pulse for the CPMG sequence. Defaults to None.
+            π pulse for the CPMG sequence.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -402,8 +391,9 @@ class CharacterizationProtocol(Protocol):
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 10_001, 100),
-        detuning: float = 0.001,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -421,6 +411,8 @@ class CharacterizationProtocol(Protocol):
             Time range of the experiment in ns. Defaults to np.arange(0, 10001, 100).
         detuning : float, optional
             Detuning of the control frequency. Defaults to 0.001 GHz.
+        second_rotation_axis : Literal["X", "Y"], optional
+            Axis of the second rotation pulse. Defaults to "Y".
         spectator_state : Literal["0", "1", "+", "-", "+i", "-i"], optional
             Spectator state. Defaults to "0".
         shots : int, optional
@@ -599,11 +591,11 @@ class CharacterizationProtocol(Protocol):
         target : str
             Target qubit to measure the electrical delay.
         df : float, optional
-            Frequency step for the measurement in GHz. Defaults to None.
+            Frequency step for the measurement in GHz.
         n_samples : int, optional
-            Number of samples for the measurement. Defaults to None.
+            Number of samples for the measurement.
         amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to None.
+            Amplitude of the readout pulse.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -638,9 +630,9 @@ class CharacterizationProtocol(Protocol):
         frequency_range : ArrayLike, optional
             Frequency range of the scan in GHz.
         readout_amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to None.
+            Amplitude of the readout pulse.
         electrical_delay : float, optional
-            Electrical delay in ns. Defaults to None.
+            Electrical delay in ns.
         subrange_width : float, optional
             Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
@@ -679,11 +671,11 @@ class CharacterizationProtocol(Protocol):
         target : str
             Target qubit connected to the resonator of interest.
         frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz. Defaults to None.
+            Frequency range of the scan in GHz.
         power_range : ArrayLike, optional
             Power range in dB. Defaults to np.arange(-60, 5, 5).
         electrical_delay : float, optional
-            Electrical delay in ns. Defaults to None.
+            Electrical delay in ns.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional
@@ -725,7 +717,7 @@ class CharacterizationProtocol(Protocol):
         frequency_range : ArrayLike
             Frequency range of the scan in GHz.
         amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to None.
+            Amplitude of the readout pulse.
         phase_shift : float
             Phase shift in rad/GHz.
         shots : int, optional
@@ -769,9 +761,9 @@ class CharacterizationProtocol(Protocol):
         frequency_range : ArrayLike, optional
             Frequency range of the scan in GHz.
         control_amplitude : float, optional
-            Amplitude of the control pulse. Defaults to None.
+            Amplitude of the control pulse.
         readout_amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to None.
+            Amplitude of the readout pulse.
         subrange_width : float, optional
             Width of the frequency subrange in GHz. Defaults to 0.3.
         shots : int, optional
@@ -797,7 +789,7 @@ class CharacterizationProtocol(Protocol):
         frequency_range: ArrayLike,
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
-        target_rabi_rate: float = RABI_FREQUENCY,
+        target_rabi_rate: float = DEFAULT_RABI_FREQUENCY,
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -824,13 +816,13 @@ class CharacterizationProtocol(Protocol):
         target : str
             Target qubit.
         frequency_range : ArrayLike, optional
-            Frequency range of the scan in GHz. Defaults to None.
+            Frequency range of the scan in GHz.
         power_range : ArrayLike, optional
             Power range in dB. Defaults to np.arange(-60, 0, 5).
         readout_amplitude : float, optional
-            Amplitude of the readout pulse. Defaults to None.
+            Amplitude of the readout pulse.
         readout_frequency : float, optional
-            Readout frequency. Defaults to None.
+            Readout frequency.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
         interval : float, optional

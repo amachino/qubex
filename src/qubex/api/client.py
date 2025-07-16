@@ -101,9 +101,7 @@ class PulseAPI:
         mode: Literal["single", "avg"] = "avg",
         shots: int = 1024,
         interval: int = 100 * 1024,
-        control_window: int | None = None,
-        capture_window: int | None = None,
-        capture_margin: int | None = None,
+        capture_duration: int | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_frequencies: dict[str, float] | None = None,
@@ -124,12 +122,8 @@ class PulseAPI:
             The number of shots.
         interval: int, optional
             The interval between measurements in ns.
-        control_window : int, optional
-            The control window in ns, by default None.
-        capture_window : int, optional
-            The capture window in ns, by default None.
-        capture_margin : int, optional
-            The capture margin in ns, by default None.
+        capture_duration : int, optional
+            The capture duration in ns, by default None.
         readout_duration : int, optional
             The readout duration in ns, by default None.
         readout_amplitudes : dict[str, float], optional
@@ -183,9 +177,7 @@ class PulseAPI:
                 "mode": mode,
                 "shots": shots,
                 "interval": interval,
-                "control_window": control_window,
-                "capture_window": capture_window,
-                "capture_margin": capture_margin,
+                "capture_duration": capture_duration,
                 "readout_duration": readout_duration,
                 "readout_amplitudes": readout_amplitudes,
                 "readout_frequencies": readout_frequencies,
@@ -201,8 +193,6 @@ class PulseAPI:
                 target=qubit,
                 mode=MeasureMode(response["mode"]),
                 raw=to_ndarray(data["raw"]),
-                kerneled=to_ndarray(data["kerneled"]),
-                classified=data["classified"],
             )
             for qubit, data in response["data"].items()
         }

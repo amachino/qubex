@@ -182,7 +182,7 @@ class Target(Model):
     ) -> Target:
         if target_qubit is not None:
             return cls(
-                label=f"{control_qubit.label}-{target_qubit.label}",
+                label=Target.cr_label(control_qubit.label, target_qubit.label),
                 frequency=target_qubit.ge_frequency,
                 object=control_qubit,
                 channel=channel,
@@ -260,18 +260,21 @@ class Target(Model):
         return f"{qubit}-ef"
 
     @classmethod
-    def cr_label(cls, label: str) -> str:
-        qubit = cls.qubit_label(label)
-        return f"{qubit}-CR"
+    def cr_label(cls, control_label: str, target_label: str | None = None) -> str:
+        control_qubit = cls.qubit_label(control_label)
+        if target_label is None:
+            target_label = "CR"
+        else:
+            target_label = cls.qubit_label(target_label)
+        return f"{control_qubit}-{target_label}"
 
     @classmethod
     def read_label(cls, label: str) -> str:
         qubit = cls.qubit_label(label)
         return f"R{qubit}"
 
-    @classmethod
+    @staticmethod
     def cr_qubit_pair(
-        cls,
         label: str,
     ) -> tuple[str, str]:
         if match := re.match(r"^(Q\d+)-(Q\d+)$", label):

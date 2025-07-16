@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+from ..blank import Blank
+from ..pulse_array import PulseArray
 from ..pulse_schedule import PulseSchedule
 from ..waveform import Waveform
 from .flat_top import FlatTop
@@ -116,8 +118,8 @@ class CrossResonance(PulseSchedule):
             if pi_pulse is None:
                 raise ValueError("The pi pulse waveform must be provided.")
             if pi_margin > 0:
-                pi_pulse = pi_pulse.padded(pi_pulse.duration + pi_margin, "left")
-                pi_pulse = pi_pulse.padded(pi_pulse.duration + pi_margin, "right")
+                margin = Blank(duration=pi_margin)
+                pi_pulse = PulseArray([margin, pi_pulse, margin])
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as ecr:
                 ecr.call(cr)
                 ecr.barrier()

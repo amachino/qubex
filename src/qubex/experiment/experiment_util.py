@@ -8,7 +8,7 @@ from typing import Collection
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ..backend import SAMPLING_PERIOD, StateManager
+from ..backend import SAMPLING_PERIOD, SystemManager
 
 
 class ExperimentUtil:
@@ -95,7 +95,7 @@ class ExperimentUtil:
         """
         # TODO: Implement a more general method
         qubit_labels = list(qubits)
-        system = StateManager.shared().experiment_system
+        system = SystemManager.shared().experiment_system
         qubit_objects = [system.get_qubit(qubit) for qubit in qubit_labels]
         group03 = [qubit.label for qubit in qubit_objects if qubit.index % 4 in [0, 3]]
         group12 = [qubit.label for qubit in qubit_objects if qubit.index % 4 in [1, 2]]

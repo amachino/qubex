@@ -1,6 +1,130 @@
 from __future__ import annotations
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
+
+
+def hamiltonian(
+    qubit_frequency: float,
+    qubit_anharmonicity: float,
+    drive_frequency: float,
+    drive_amplitude: complex,
+    dimension: int,
+) -> NDArray[np.complex128]:
+    """
+    Generate a Hamiltonian for a single qubit with a drive.
+
+    Parameters
+    ----------
+    qubit_frequency : float
+        The frequency of the qubit.
+    qubit_anharmonicity : float
+        The anharmonicity of the qubit.
+    drive_frequency : float
+        The frequency of the drive.
+    drive_amplitude : complex
+        The complex amplitude of the drive.
+    dimension : int
+        The dimension of the Hilbert space.
+
+    Returns
+    -------
+    NDArray[np.complex128]
+        The Hamiltonian matrix.
+    """
+    H0 = np.diag(
+        [
+            ((qubit_frequency - drive_frequency) - 0.5 * qubit_anharmonicity) * n
+            + 0.5 * qubit_anharmonicity * n**2
+            for n in range(dimension)
+        ]
+    )
+    H1 = np.zeros((dimension, dimension), dtype=np.complex128)
+
+    for i in range(dimension - 1):
+        H1[i, i + 1] = 0.5 * np.conj(drive_amplitude) * np.sqrt(i + 1)
+        H1[i + 1, i] = 0.5 * drive_amplitude * np.sqrt(i + 1)
+
+    return H0 + H1
+
+
+def adiabatic_coefficients(
+    qubit_frequency: float,
+    qubit_anharmonicity: float,
+    drive_frequency: float,
+    drive_waveform: NDArray[np.complex128],
+    sampling_period: float,
+    dimension: int,
+) -> NDArray[np.float64]:
+    """
+    Calculate the adiabatic coefficients for a single qubit with a drive.
+
+    Parameters
+    ----------
+    qubit_frequency : float
+        The frequency of the qubit.
+    qubit_anharmonicity : float
+        The anharmonicity of the qubit.
+    drive_frequency : float
+        The frequency of the drive.
+    drive_waveform : NDArray[np.complex128]
+        The complex amplitude of the drive at each time step.
+    sampling_period : float
+        The time interval between samples in the drive waveform.
+    dimension : int
+        The dimension of the Hilbert space.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        The adiabatic coefficients for the drive waveform.
+    """
+    H = np.array(
+        [
+            hamiltonian(
+                dimension=dimension,
+                qubit_frequency=qubit_frequency,
+                qubit_anharmonicity=qubit_anharmonicity,
+                drive_frequency=drive_frequency,
+                drive_amplitude=amp,
+            )
+            for amp in drive_waveform
+        ]
+    )
+    dHdt = np.gradient(H, sampling_period, axis=0, edge_order=2)
+    E, V = np.linalg.eigh(H)
+    V_dag = np.swapaxes(V.conj(), -2, -1)
+    M = V_dag @ dHdt @ V
+    dE = E[..., :, None] - E[..., None, :]
+    zero_mask = np.isclose(dE, 0, atol=1e-10)
+    dE = np.where(zero_mask, np.inf, dE)
+    A = np.abs(M) / dE**2
+    A_total = np.sum(A, axis=(-2, -1))
+    return A_total
+
+
+def rotate(
+    data: ArrayLike,
+    angle: float,
+) -> NDArray[np.complex128]:
+    """
+    Rotate complex data points by a specified angle.
+
+    Parameters
+    ----------
+    data : ArrayLike
+        Array of complex data points to be rotated.
+    angle : float
+        Angle in radians by which to rotate the data points.
+
+    Returns
+    -------
+    NDArray[np.complex128]
+        Rotated complex data points.
+    """
+    points = np.array(data)
+    rotated_points = points * np.exp(1j * angle)
+    return rotated_points
 
 
 def calc_1q_gate_coherence_limit(

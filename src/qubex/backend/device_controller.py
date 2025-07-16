@@ -253,6 +253,8 @@ class DeviceController:
             self._boxpool._box_config_cache.clear()
 
     def load_skew_file(self, box_list: list[str], file_path: str | Path):
+        if len(box_list) == 0:
+            return
         clockmaster_setting = self.qubecalib.sysdb._clockmaster_setting
         if clockmaster_setting is None:
             raise ValueError("Clockmaster setting not found in system configuration.")
@@ -353,7 +355,7 @@ class DeviceController:
     def linkup(
         self,
         box_name: str,
-        noise_threshold: int = 500,
+        noise_threshold: int | None = None,
     ) -> Quel1Box:
         """
         Linkup a box and return the box object.
@@ -380,7 +382,8 @@ class DeviceController:
         # relinkup the box if any of the links are down
         if not all(box.link_status().values()):
             box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
-        box.reconnect()
+        # TODO: use appropriate noise threshold
+        box.reconnect(background_noise_threshold=10000)
         # check if all links are up
         status = box.link_status()
         if not all(status.values()):
@@ -391,7 +394,7 @@ class DeviceController:
     def linkup_boxes(
         self,
         box_list: list[str],
-        noise_threshold: int = 500,
+        noise_threshold: int | None = None,
     ) -> dict[str, Quel1Box]:
         """
         Linkup all the boxes in the list.
@@ -410,7 +413,7 @@ class DeviceController:
                 print(f"{box_name:5}", ":", "Error", e)
         return boxes
 
-    def relinkup(self, box_name: str, noise_threshold: int = 500):
+    def relinkup(self, box_name: str, noise_threshold: int | None = None):
         """
         Relinkup a box.
 
@@ -419,11 +422,14 @@ class DeviceController:
         box_name : str
             Name of the box to relinkup.
         """
+        if noise_threshold is None:
+            noise_threshold = 10000
         box = self.qubecalib.create_box(box_name, reconnect=False)
         box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
-        box.reconnect()
+        # TODO: use appropriate noise threshold
+        box.reconnect(background_noise_threshold=10000)
 
-    def relinkup_boxes(self, box_list: list[str], noise_threshold: int = 500):
+    def relinkup_boxes(self, box_list: list[str], noise_threshold: int | None = None):
         """
         Relinkup all the boxes in the list.
         """
@@ -481,6 +487,9 @@ class DeviceController:
         box_list : list[str]
             List of box names.
         """
+        if len(box_list) < 2:
+            # NOTE: clockmaster will crash if there is only one box
+            return True
         self.qubecalib.resync(*box_list)
         return self.check_clocks(box_list)
 
@@ -747,58 +756,6 @@ class DeviceController:
             )
             yield result
 
-    @deprecated("Use execute_sequencer instead.")
-    def execute_sequence(
-        self,
-        sequence: Sequence,
-        *,
-        repeats: int,
-        interval: int,
-        integral_mode: str = "integral",
-        dsp_demodulation: bool = True,
-        software_demodulation: bool = False,
-        time_offset: dict[str, int] = {},  # {box_name: time_offset}
-        time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
-    ) -> RawResult:
-        """
-        Execute a single sequence and return the measurement result.
-
-        Parameters
-        ----------
-        sequence : Sequence
-            The sequence to execute.
-        repeats : int
-            Number of repeats of the sequence.
-        interval : int
-            Interval between sequences.
-        integral_mode : {"integral", "single"}, optional
-            Integral mode.
-        dsp_demodulation : bool, optional
-            Enable DSP demodulation.
-        software_demodulation : bool, optional
-            Enable software demodulation.
-
-        Returns
-        -------
-        RawResult
-            Measurement result.
-        """
-        self.clear_command_queue()
-        self.add_sequence(
-            sequence,
-            interval=interval,
-            time_offset=time_offset,
-            time_to_start=time_to_start,
-        )
-        return next(
-            self.execute(
-                repeats=repeats,
-                integral_mode=integral_mode,
-                dsp_demodulation=dsp_demodulation,
-                software_demodulation=software_demodulation,
-            )
-        )
-
     def execute_sequencer(
         self,
         sequencer: Sequencer,
@@ -807,6 +764,7 @@ class DeviceController:
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
+        enable_sum: bool = False,
     ) -> RawResult:
         """
         Execute a single sequence and return the measurement result.
@@ -829,32 +787,20 @@ class DeviceController:
         RawResult
             Measurement result.
         """
-        if self._boxpool is None:
-            # deprecated
-            self.clear_command_queue()
-            self.add_sequencer(sequencer)
-            return next(
-                self.execute(
-                    repeats=repeats,
-                    integral_mode=integral_mode,
-                    dsp_demodulation=dsp_demodulation,
-                    software_demodulation=software_demodulation,
-                )
-            )
-        else:
-            sequencer.set_measurement_option(
-                repeats=repeats,
-                interval=sequencer.interval,  # type: ignore
-                integral_mode=integral_mode,
-                dsp_demodulation=dsp_demodulation,
-                software_demodulation=software_demodulation,
-            )
-            status, data, config = sequencer.execute(self.boxpool)
-            return RawResult(
-                status=status,
-                data=data,
-                config=config,
-            )
+        sequencer.set_measurement_option(
+            repeats=repeats,
+            interval=sequencer.interval,  # type: ignore
+            integral_mode=integral_mode,
+            dsp_demodulation=dsp_demodulation,
+            software_demodulation=software_demodulation,
+            enable_sum=enable_sum,
+        )
+        status, data, config = sequencer.execute(self.boxpool)
+        return RawResult(
+            status=status,
+            data=data,
+            config=config,
+        )
 
     def _execute_sequencer(
         self,
