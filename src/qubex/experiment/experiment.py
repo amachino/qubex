@@ -202,6 +202,7 @@ class Experiment(
             chip_id=chip_id,
             file_path=calib_note_path,
         )
+        self.system_manager.load_skew_file(self.box_ids)
         self.print_environment(verbose=False)
         self._load_classifiers()
 
