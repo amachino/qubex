@@ -742,9 +742,12 @@ class Measurement:
 
         qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
-        control_length += EXTRA_CAPTURE_LENGTH
-        control_length = math.ceil(control_length / BLOCK_LENGTH) * BLOCK_LENGTH
         pre_margin_length = self._number_of_samples(readout_pre_margin)
+        control_length = math.ceil(control_length / BLOCK_LENGTH) * BLOCK_LENGTH
+        # ensure first capture starts at a multiple of BLOCK_LENGTH
+        control_length = (
+            control_length + BLOCK_LENGTH - (pre_margin_length % BLOCK_LENGTH)
+        )
         readout_length = self._number_of_samples(readout_duration)
         post_margin_length = self._number_of_samples(readout_post_margin)
         total_readout_length = pre_margin_length + readout_length + post_margin_length
@@ -889,13 +892,6 @@ class Measurement:
                 sub_sequences=[
                     pls.CapSampledSubSequence(
                         capture_slots=[
-                            pls.CaptureSlots(  # extra capture section
-                                duration=EXTRA_SUM_SECTION_LENGTH,
-                                post_blank=capture_start[qubit]
-                                - EXTRA_SUM_SECTION_LENGTH,
-                                original_duration=None,  # type: ignore
-                                original_post_blank=None,
-                            ),
                             pls.CaptureSlots(
                                 duration=capture_length,
                                 post_blank=None,
@@ -904,7 +900,7 @@ class Measurement:
                             ),
                         ],
                         repeats=None,
-                        prev_blank=0,
+                        prev_blank=capture_start[qubit],
                         post_blank=None,
                         original_prev_blank=None,  # type: ignore
                         original_post_blank=None,
@@ -1270,7 +1266,7 @@ class Measurement:
     ) -> MeasureResult:
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-        capture_index = -1  # NOTE: index=0 is the extra capture
+        capture_index = -1
 
         iq_data = {}
         for target, iqs in sorted(backend_result.data.items()):
