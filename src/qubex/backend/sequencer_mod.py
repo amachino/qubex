@@ -111,12 +111,12 @@ class SequencerMod(Sequencer):
         # )
         # first_padding = ((first_blank - 1) // 64 + 1) * 64 - first_blank  # Sa
         # ref_sequence = next(iter(csseq.values()))
-        first_padding = self.calc_first_padding()
+        # first_padding = self.calc_first_padding()
 
-        for target_name, cseq in self.cap_sampled_sequence.items():
-            cseq.padding += first_padding
-        for target_name, gseq in self.gen_sampled_sequence.items():
-            gseq.padding += first_padding
+        # for target_name, cseq in self.cap_sampled_sequence.items():
+        #     cseq.padding += first_padding
+        # for target_name, gseq in self.gen_sampled_sequence.items():
+        #     gseq.padding += first_padding
 
         interval = self.interval if self.interval is not None else 10240
         cap_e7_settings: dict[tuple[str, int, int], CaptureParam] = (

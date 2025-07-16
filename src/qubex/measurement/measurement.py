@@ -47,6 +47,11 @@ WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
 BLOCK_LENGTH: Final = WORD_LENGTH * 16  # samples
 BLOCK_DURATION: Final = BLOCK_LENGTH * SAMPLING_PERIOD  # ns
 
+EXTRA_SUM_SECTION_LENGTH = WORD_LENGTH * 4  # samples
+EXTRA_POST_BLANK_LENGTH = WORD_LENGTH  # samples
+EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # samples
+EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
+
 logger = logging.getLogger(__name__)
 
 
@@ -737,7 +742,8 @@ class Measurement:
 
         qubits = [Target.qubit_label(target) for target in waveforms]
         control_length = max(len(waveform) for waveform in waveforms.values())
-        control_length = math.ceil(control_length / BLOCK_LENGTH + 1) * BLOCK_LENGTH
+        control_length += EXTRA_CAPTURE_LENGTH
+        control_length = math.ceil(control_length / BLOCK_LENGTH) * BLOCK_LENGTH
         pre_margin_length = self._number_of_samples(readout_pre_margin)
         readout_length = self._number_of_samples(readout_duration)
         post_margin_length = self._number_of_samples(readout_post_margin)
@@ -746,6 +752,7 @@ class Measurement:
         total_length = math.ceil(total_length / BLOCK_LENGTH) * BLOCK_LENGTH
         readout_slice = slice(control_length, control_length + total_readout_length)
 
+        # post margin to wait photon emission of resonator
         capture_length = readout_length + post_margin_length
         capture_start = {}
         for qubit in qubits:
@@ -882,15 +889,22 @@ class Measurement:
                 sub_sequences=[
                     pls.CapSampledSubSequence(
                         capture_slots=[
+                            pls.CaptureSlots(  # extra capture section
+                                duration=EXTRA_SUM_SECTION_LENGTH,
+                                post_blank=capture_start[qubit]
+                                - EXTRA_SUM_SECTION_LENGTH,
+                                original_duration=None,  # type: ignore
+                                original_post_blank=None,
+                            ),
                             pls.CaptureSlots(
                                 duration=capture_length,
                                 post_blank=None,
                                 original_duration=None,  # type: ignore
                                 original_post_blank=None,
-                            )
+                            ),
                         ],
                         repeats=None,
-                        prev_blank=capture_start[qubit],
+                        prev_blank=0,
                         post_blank=None,
                         original_prev_blank=None,  # type: ignore
                         original_post_blank=None,
@@ -990,14 +1004,8 @@ class Measurement:
             raise ValueError("No readout targets in the pulse schedule.")
 
         # WORKAROUND: add some blank for the first extra capture by left padding
-        # at least 4 words (16 samples) are required for DSP summation
-        # at least 1 word (4 samples) is required for the post-blank
-        extra_sum_section_length = WORD_LENGTH * 4
-        extra_post_blank_length = WORD_LENGTH
-        extra_capture_length = extra_sum_section_length + extra_post_blank_length
-        extra_capture_duration = extra_capture_length * SAMPLING_PERIOD
         schedule = schedule.padded(
-            total_duration=schedule.duration + extra_capture_duration,
+            total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
             pad_side="left",
         )
 
@@ -1119,6 +1127,11 @@ class Measurement:
             if not ranges:
                 continue
 
+            if ranges[0].start % WORD_LENGTH != 0:
+                raise ValueError(
+                    f"Capture range should start at a multiple of 4 samples ({WORD_DURATION} ns)."
+                )
+
             delay = capture_delay_sample[target]
 
             cap_sub_sequence = pls.CapSampledSubSequence(
@@ -1131,10 +1144,10 @@ class Measurement:
             )
 
             # WORKAROUND: add an extra capture to ensure the first capture begins at a multiple of 64 samples
-            post_blank_to_first_readout = ranges[0].start - extra_sum_section_length
+            post_blank_to_first_readout = ranges[0].start - EXTRA_SUM_SECTION_LENGTH
             cap_sub_sequence.capture_slots.append(
                 pls.CaptureSlots(
-                    duration=extra_sum_section_length,
+                    duration=EXTRA_SUM_SECTION_LENGTH,
                     post_blank=post_blank_to_first_readout,
                     original_duration=None,  # type: ignore
                     original_post_blank=None,  # type: ignore
@@ -1257,7 +1270,7 @@ class Measurement:
     ) -> MeasureResult:
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-        capture_index = 0  # the first capture index
+        capture_index = -1  # NOTE: index=0 is the extra capture
 
         iq_data = {}
         for target, iqs in sorted(backend_result.data.items()):
