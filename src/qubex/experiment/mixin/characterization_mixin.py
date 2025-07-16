@@ -985,8 +985,8 @@ class CharacterizationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 10_001, 100),
-        detuning: float = 0.001,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
         second_rotation_axis: Literal["X", "Y"] = "Y",
         spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         shots: int = CALIBRATION_SHOTS,
@@ -1001,7 +1001,14 @@ class CharacterizationMixin(
         else:
             targets = list(targets)
 
-        time_range = self.util.discretize_time_range(time_range)
+        if time_range is None:
+            time_range = np.arange(0, 10001, 100)
+        else:
+            time_range = self.util.discretize_time_range(time_range)
+
+        if detuning is None:
+            detuning = 0.001
+
         self.validate_rabi_params(targets)
 
         target_groups = self.util.create_qubit_subgroups(targets)
@@ -1071,7 +1078,15 @@ class CharacterizationMixin(
                         f = self.qubits[target].frequency
                         t2 = fit_result["tau"]
                         ramsey_freq = fit_result["f"]
-                        bare_freq = f + detuning - ramsey_freq
+                        phi = fit_result["phi"]
+                        if second_rotation_axis == "Y":
+                            if phi > 0:
+                                bare_freq = f + detuning + ramsey_freq
+                            else:
+                                bare_freq = f + detuning - ramsey_freq
+                        else:
+                            # NOTE: For X rotation, we cannot guarantee the sign of frequency
+                            bare_freq = f + detuning - ramsey_freq
                         r2 = fit_result["r2"]
                         ramsey_data = RamseyData.new(
                             sweep_data=sweep_data,
