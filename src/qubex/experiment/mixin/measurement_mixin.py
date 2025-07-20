@@ -29,6 +29,7 @@ from ...measurement.measurement import (
     SAMPLING_PERIOD,
 )
 from ...pulse import (
+    CPMG,
     Blank,
     FlatTop,
     PhaseShift,
@@ -1692,6 +1693,9 @@ class MeasurementMixin(
             yaxis_range=[0, 1],
         )
         if plot:
+            ps.plot(
+                title=f"Bell state measurement: {control_basis}{target_basis} basis"
+            )
             fig.show()
 
             for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
@@ -1878,38 +1882,74 @@ class MeasurementMixin(
             "fidelity": fidelity,
         }
 
+    def create_ghz_sequence(
+        self,
+        entangle_steps: list[tuple[str, str]],
+        *,
+        dynamical_decoupling: bool = False,
+    ) -> PulseSchedule:
+        def add_dd(seq: PulseSchedule, qubit: str):
+            dd_duration = seq._max_offset() - seq._offsets[qubit]
+            n_pi = 2 * int(dd_duration // 400)
+            if n_pi > 0:
+                pi = self.x180(qubit)
+                tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
+                tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
+                seq.add(qubit, CPMG(tau=tau, pi=pi, n=n_pi))
+
+        source_qubit = entangle_steps[0][0]
+        qubits = [source_qubit]
+        for parent, child in entangle_steps:
+            if parent not in qubits:
+                raise ValueError(f"Qubit {parent} is not in the sequence.")
+            qubits.append(child)
+
+        with PulseSchedule() as seq:
+            seq.add(source_qubit, self.y90(source_qubit))
+            seq.barrier()
+            for parent, child in entangle_steps:
+                seq.call(self.cnot(parent, child))
+            if dynamical_decoupling:
+                for qubit in qubits:
+                    if qubits.index(qubit) % 4 in [0, 3]:
+                        add_dd(seq, qubit)
+
+        return seq
+
     def measure_ghz_state(
         self,
-        qubit1: str,
-        qubit2: str,
-        qubit3: str,
+        entangle_steps: list[tuple[str, str]],
         *,
-        basis1: str = "Z",
-        basis2: str = "Z",
-        basis3: str = "Z",
+        measurement_bases: Collection[str] | None = None,
+        dynamical_decoupling: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = True,
     ) -> dict:
         """
-        Measure the 3-qubit GHZ state in the specified bases.
+        Measure the n-qubit GHZ state in the specified bases.
         Returns dict with 'raw', 'mitigated', 'result', 'figure'.
         """
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
-        qubits = [qubit1, qubit2, qubit3]
+        qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
+        n_qubits = len(qubits)
 
-        with PulseSchedule(qubits) as ps:
-            # Prepare |+> on qubit1
-            ps.add(qubit1, self.y90(qubit1))
-            # CNOT: qubit1 -> qubit2
-            ps.call(self.cnot(qubit1, qubit2))
-            # CNOT: qubit1 -> qubit3
-            ps.call(self.cnot(qubit1, qubit3))
-            # Basis transformation
-            for qb, basis in zip([qubit1, qubit2, qubit3], [basis1, basis2, basis3]):
+        if measurement_bases is None:
+            measurement_bases = ["Z"] * n_qubits
+        else:
+            measurement_bases = list(measurement_bases)
+
+        seq = self.create_ghz_sequence(
+            entangle_steps=entangle_steps,
+            dynamical_decoupling=dynamical_decoupling,
+        )
+
+        with PulseSchedule() as ps:
+            ps.call(seq)
+            for qb, basis in zip(qubits, measurement_bases):
                 if basis == "X":
                     ps.add(qb, self.y90m(qb))
                 elif basis == "Y":
@@ -1947,20 +1987,21 @@ class MeasurementMixin(
             )
         )
         fig.update_layout(
-            title=f"GHZ state measurement: {qubit1}-{qubit2}-{qubit3}",
-            xaxis_title=f"State ({basis1}{basis2}{basis3} basis)",
+            title=f"GHZ state measurement: {'-'.join(qubits)}",
+            xaxis_title=f"State ({''.join(measurement_bases)} basis)",
             yaxis_title="Probability",
             barmode="group",
             yaxis_range=[0, 1],
         )
         if plot:
+            ps.plot(title=f"GHZ state measurement: {''.join(measurement_bases)} basis")
             fig.show()
             for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
                 print(f"{label} : {p:.2%} -> {mp:.2%}")
         if save_image:
             viz.save_figure_image(
                 fig,
-                f"ghz_state_measurement_{qubit1}-{qubit2}-{qubit3}",
+                f"ghz_state_measurement_{'-'.join(qubits)}",
             )
 
         return {
@@ -1972,8 +2013,9 @@ class MeasurementMixin(
 
     def ghz_state_tomography(
         self,
-        qubits: Collection[str],
+        entangle_steps: list[tuple[str, str]],
         *,
+        dynamical_decoupling: bool = False,
         readout_mitigation: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -1981,64 +2023,75 @@ class MeasurementMixin(
         save_image: bool = True,
         mle_fit: bool = True,
     ) -> dict:
-        """Performs full state tomography on a 3-qubit GHZ state.
+        """
+        Performs full state tomography on a n-qubit GHZ state.
 
         This involves:
-        1. Measuring the GHZ state in all 27 Pauli bases (XXX, XXY, ..., ZZZ).
-        2. Calculating the expectation values for all 64 Pauli strings (III, IIX, ..., ZZZ).
-        3. Reconstructing the 8x8 density matrix using linear inversion or MLE.
+        1. Measuring the GHZ state in all 3^n Pauli bases.
+        2. Calculating the expectation values for all 4^n Pauli strings.
+        3. Reconstructing the 2^n x 2^n density matrix using linear inversion or MLE.
         4. Calculating the fidelity with the ideal GHZ state.
         5. Plotting the resulting density matrix.
 
-        Args:
-            qubits: A collection of three qubit labels to form the GHZ state.
+        Parameters
+        ----------
+        entangle_steps : list[tuple[str, str]]
+            List of tuples representing the entanglement steps, e.g., [("Q00", "Q01"), ("Q01", "Q02")].
+        dynamical_decoupling : bool
+            Whether to apply dynamical decoupling pulses during the GHZ state preparation.
+        readout_mitigation : bool
+            Whether to apply readout error mitigation.
+        shots : int
+            Number of shots for each measurement.
+        interval : float
+            Time interval between measurements.
+        plot : bool
+            Whether to plot the resulting density matrix.
+        save_image : bool
+            Whether to save the plot as an image.
+        mle_fit : bool
+            Whether to use Maximum Likelihood Estimation (MLE) for density matrix reconstruction.
 
-        Returns:
-            A dictionary containing probabilities, expectation values, the density
-            matrix, and the calculated fidelity.
+        Returns
+        -------
+        dict
+            A dictionary containing:
+            - "probabilities": Measured probabilities in all bases.
+            - "expected_values": Calculated expectation values for all Pauli strings.
+            - "density_matrix": Reconstructed density matrix.
+            - "fidelity": Fidelity with the ideal GHZ state.
+            - "figure": Plotly figure of the density matrix.
         """
-        # --- Argument Handling ---
-        qubits = list(qubits)
+
+        qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
         n_qubits = len(qubits)
-
-        # The current GHZ state preparation and measurement logic is specific to 3 qubits.
-        if n_qubits != 3:
-            raise ValueError(
-                "This GHZ state tomography implementation currently supports exactly 3 qubits."
-            )
-
         dim = 2**n_qubits
 
-        # --- Step 1: Measure probabilities in all 27 measurement bases ---
+        # --- Step 1: Measure probabilities in all 3^2 measurement bases ---
         probabilities = {}
-        measurement_bases = ["X", "Y", "Z"]
-        for basis_tuple in tqdm(
-            product(measurement_bases, repeat=n_qubits),
-            total=len(measurement_bases) ** n_qubits,
+        for measurement_bases in tqdm(
+            product(["X", "Y", "Z"], repeat=n_qubits),
+            total=3**n_qubits,
             desc="Measuring GHZ state in all bases",
         ):
-            basis_str = "".join(basis_tuple)
+            basis_label = "".join(measurement_bases)
             result = self.measure_ghz_state(
-                qubit1=qubits[0],
-                qubit2=qubits[1],
-                qubit3=qubits[2],
-                basis1=basis_tuple[0],
-                basis2=basis_tuple[1],
-                basis3=basis_tuple[2],
+                entangle_steps=entangle_steps,
+                measurement_bases=measurement_bases,
+                dynamical_decoupling=dynamical_decoupling,
                 shots=shots,
                 interval=interval,
                 plot=False,
                 save_image=False,
             )
             if readout_mitigation:
-                probabilities[basis_str] = result["mitigated"]
+                probabilities[basis_label] = result["mitigated"]
             else:
-                probabilities[basis_str] = result["raw"]
+                probabilities[basis_label] = result["raw"]
 
-        # --- Step 2: Calculate all 64 Pauli expectation values ---
+        # --- Step 2: Calculate all 4^n Pauli expectation values ---
         expected_values = {}
-        pauli_bases = ["I", "X", "Y", "Z"]
-        for pauli_tuple in product(pauli_bases, repeat=n_qubits):
+        for pauli_tuple in product(["I", "X", "Y", "Z"], repeat=n_qubits):
             pauli_label = "".join(pauli_tuple)
 
             measurement_basis_list = [p if p != "I" else "Z" for p in pauli_tuple]
@@ -2080,10 +2133,10 @@ class MeasurementMixin(
             rho /= dim
 
         # --- Step 4: Calculate Fidelity ---
-        ideal_state = np.zeros(dim)
-        ideal_state[0] = 1 / np.sqrt(2)
-        ideal_state[-1] = 1 / np.sqrt(2)
-        fidelity = np.real(ideal_state.conj().T @ rho @ ideal_state)
+        ghz_state = np.zeros(dim)
+        ghz_state[0] = 1 / np.sqrt(2)
+        ghz_state[-1] = 1 / np.sqrt(2)
+        fidelity = np.real(ghz_state.conj().T @ rho @ ghz_state)
 
         # --- Step 5: Plotting ---
         fig = make_subplots(
@@ -2127,6 +2180,7 @@ class MeasurementMixin(
 
         if plot:
             fig.show()
+            print(f"State fidelity: {fidelity * 100:.3f}%")
         if save_image:
             viz.save_figure_image(
                 fig, f"ghz_state_tomography_{'-'.join(qubits)}", width=800, height=450
