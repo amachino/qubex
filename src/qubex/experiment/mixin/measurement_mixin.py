@@ -1577,17 +1577,22 @@ class MeasurementMixin(
             "Z": np.array([[1, 0], [0, -1]], dtype=complex),
         }
 
+        label = list(expected_values.keys())[0]
+        n = len(label)
+        dim = 2**n
+
         A_list: list[NDArray] = []
         b_list: list[float] = []
         for basis, val in expected_values.items():
-            p1, p2 = basis[0], basis[1]
-            pauli_op = np.kron(paulis[p1], paulis[p2])
-            A_list.append(pauli_op.reshape(1, -1).conj())
+            op = paulis[basis[0]]
+            for b in basis[1:]:
+                op = np.kron(op, paulis[b])
+            A_list.append(op.reshape(1, -1).conj())
             b_list.append(val)
         A = np.vstack(A_list)
         b = np.array(b_list)
 
-        rho = cp.Variable((4, 4), hermitian=True)
+        rho = cp.Variable((dim, dim), hermitian=True)
         constraints = [rho >> 0, cp.trace(rho) == 1]
         objective = cp.Minimize(cp.sum_squares(A @ cp.vec(rho, order="F") - b))
         problem = cp.Problem(objective, constraints)
@@ -1718,9 +1723,11 @@ class MeasurementMixin(
         save_image: bool = True,
         mle_fit: bool = True,
     ) -> dict:
+        n_qubits = 2
+        dim = 2**n_qubits
         probabilities = {}
         for control_basis, target_basis in tqdm(
-            product(["X", "Y", "Z"], repeat=2),
+            product(["X", "Y", "Z"], repeat=n_qubits),
             desc="Measuring Bell state",
         ):
             result = self.measure_bell_state(
@@ -1747,23 +1754,31 @@ class MeasurementMixin(
             "Y": np.array([[0, -1j], [1j, 0]]),
             "Z": np.array([[1, 0], [0, -1]]),
         }
-        rho = np.zeros((4, 4), dtype=np.complex128)
+        rho = np.zeros((dim, dim), dtype=np.complex128)
         for control_basis, control_pauli in paulis.items():
             for target_basis, target_pauli in paulis.items():
                 basis = f"{control_basis}{target_basis}"
                 # calculate the expectation values
-                if basis in ["IX", "IY", "IZ"]:
-                    p = probabilities[f"Z{target_basis}"]
-                    e = p[0] - p[1] + p[2] - p[3]
-                elif basis in ["XI", "YI", "ZI"]:
-                    p = probabilities[f"{control_basis}Z"]
-                    e = p[0] + p[1] - p[2] - p[3]
-                elif basis == "II":
+                if basis == "II":
+                    # II is always 1
+                    # 00: +1, 01: +1, 10: +1, 11: +1
                     p = probabilities["ZZ"]
-                    e = p[0] - p[1] - p[2] + p[3]
+                    e = p[0b00] + p[0b01] + p[0b10] + p[0b11]
+                elif basis in ["IX", "IY", "IZ"]:
+                    # ignore the first qubit
+                    # 00: +1, 01: -1, 10: +1, 11: -1
+                    p = probabilities[f"Z{target_basis}"]
+                    e = p[0b00] - p[0b01] + p[0b10] - p[0b11]
+                elif basis in ["XI", "YI", "ZI"]:
+                    # ignore the second qubit
+                    # 00: +1, 01: +1, 10: -1, 11: -1
+                    p = probabilities[f"{control_basis}Z"]
+                    e = p[0b00] + p[0b01] - p[0b10] - p[0b11]
                 else:
+                    # two-qubit basis
+                    # 00: +1, 01: -1, 10: -1, 11: +1
                     p = probabilities[basis]
-                    e = p[0] - p[1] - p[2] + p[3]
+                    e = p[0b00] - p[0b01] - p[0b10] + p[0b11]
                 pauli = np.kron(control_pauli, target_pauli)
                 rho += e * pauli
                 expected_values[basis] = e
@@ -1771,9 +1786,12 @@ class MeasurementMixin(
         if mle_fit:
             rho = self.mle_fit_density_matrix(expected_values)
         else:
-            rho = rho / 4
-        phi = np.array([1, 0, 0, 1]) / np.sqrt(2)
-        fidelity = np.real(phi @ rho @ phi.T.conj())
+            rho = rho / dim
+
+        ideal_state = np.zeros(dim)
+        ideal_state[0] = 1 / np.sqrt(2)
+        ideal_state[-1] = 1 / np.sqrt(2)
+        fidelity = np.real(ideal_state @ rho @ ideal_state.T.conj())
 
         fig = make_subplots(
             rows=1,
@@ -1805,33 +1823,36 @@ class MeasurementMixin(
             col=2,
         )
 
+        tickvals = np.arange(dim)
+        ticktext = [f"{i:02b}" for i in tickvals]
+
         fig.update_layout(
             title=f"Bell state tomography: {control_qubit}-{target_qubit}",
             xaxis1=dict(
                 tickmode="array",
-                tickvals=[0, 1, 2, 3],
-                ticktext=["00", "01", "10", "11"],
+                tickvals=tickvals,
+                ticktext=ticktext,
                 scaleanchor="y1",
                 tickangle=0,
             ),
             yaxis1=dict(
                 tickmode="array",
-                tickvals=[0, 1, 2, 3],
-                ticktext=["00", "01", "10", "11"],
+                tickvals=tickvals,
+                ticktext=ticktext,
                 scaleanchor="x1",
                 autorange="reversed",
             ),
             xaxis2=dict(
                 tickmode="array",
-                tickvals=[0, 1, 2, 3],
-                ticktext=["00", "01", "10", "11"],
+                tickvals=tickvals,
+                ticktext=ticktext,
                 scaleanchor="y2",
                 tickangle=0,
             ),
             yaxis2=dict(
                 tickmode="array",
-                tickvals=[0, 1, 2, 3],
-                ticktext=["00", "01", "10", "11"],
+                tickvals=tickvals,
+                ticktext=ticktext,
                 scaleanchor="x2",
                 autorange="reversed",
             ),
@@ -1855,4 +1876,266 @@ class MeasurementMixin(
             "expected_values": expected_values,
             "density_matrix": rho,
             "fidelity": fidelity,
+        }
+
+    def measure_ghz_state(
+        self,
+        qubit1: str,
+        qubit2: str,
+        qubit3: str,
+        *,
+        basis1: str = "Z",
+        basis2: str = "Z",
+        basis3: str = "Z",
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> dict:
+        """
+        Measure the 3-qubit GHZ state in the specified bases.
+        Returns dict with 'raw', 'mitigated', 'result', 'figure'.
+        """
+        if self.state_centers is None:
+            self.build_classifier(plot=False)
+
+        qubits = [qubit1, qubit2, qubit3]
+
+        with PulseSchedule(qubits) as ps:
+            # Prepare |+> on qubit1
+            ps.add(qubit1, self.y90(qubit1))
+            # CNOT: qubit1 -> qubit2
+            ps.call(self.cnot(qubit1, qubit2))
+            # CNOT: qubit1 -> qubit3
+            ps.call(self.cnot(qubit1, qubit3))
+            # Basis transformation
+            for qb, basis in zip([qubit1, qubit2, qubit3], [basis1, basis2, basis3]):
+                if basis == "X":
+                    ps.add(qb, self.y90m(qb))
+                elif basis == "Y":
+                    ps.add(qb, self.x90(qb))
+
+        result = self.measure(
+            ps,
+            mode="single",
+            shots=shots,
+            interval=interval,
+        )
+
+        basis_labels = result.get_basis_labels(qubits)
+        prob_dict_raw = result.get_probabilities(qubits)
+        prob_dict_raw = {label: prob_dict_raw.get(label, 0) for label in basis_labels}
+        prob_dict_mitigated = result.get_mitigated_probabilities(qubits)
+
+        labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
+        prob_arr_raw = np.array(list(prob_dict_raw.values()))
+        prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=prob_arr_raw,
+                name="Raw",
+            )
+        )
+        fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=prob_arr_mitigated,
+                name="Mitigated",
+            )
+        )
+        fig.update_layout(
+            title=f"GHZ state measurement: {qubit1}-{qubit2}-{qubit3}",
+            xaxis_title=f"State ({basis1}{basis2}{basis3} basis)",
+            yaxis_title="Probability",
+            barmode="group",
+            yaxis_range=[0, 1],
+        )
+        if plot:
+            fig.show()
+            for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
+                print(f"{label} : {p:.2%} -> {mp:.2%}")
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                f"ghz_state_measurement_{qubit1}-{qubit2}-{qubit3}",
+            )
+
+        return {
+            "raw": prob_arr_raw,
+            "mitigated": prob_arr_mitigated,
+            "result": result,
+            "figure": fig,
+        }
+
+    def ghz_state_tomography(
+        self,
+        qubits: Collection[str],
+        *,
+        readout_mitigation: bool = True,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+        mle_fit: bool = True,
+    ) -> dict:
+        """Performs full state tomography on a 3-qubit GHZ state.
+
+        This involves:
+        1. Measuring the GHZ state in all 27 Pauli bases (XXX, XXY, ..., ZZZ).
+        2. Calculating the expectation values for all 64 Pauli strings (III, IIX, ..., ZZZ).
+        3. Reconstructing the 8x8 density matrix using linear inversion or MLE.
+        4. Calculating the fidelity with the ideal GHZ state.
+        5. Plotting the resulting density matrix.
+
+        Args:
+            qubits: A collection of three qubit labels to form the GHZ state.
+
+        Returns:
+            A dictionary containing probabilities, expectation values, the density
+            matrix, and the calculated fidelity.
+        """
+        # --- Argument Handling ---
+        qubits = list(qubits)
+        n_qubits = len(qubits)
+
+        # The current GHZ state preparation and measurement logic is specific to 3 qubits.
+        if n_qubits != 3:
+            raise ValueError(
+                "This GHZ state tomography implementation currently supports exactly 3 qubits."
+            )
+
+        dim = 2**n_qubits
+
+        # --- Step 1: Measure probabilities in all 27 measurement bases ---
+        probabilities = {}
+        measurement_bases = ["X", "Y", "Z"]
+        for basis_tuple in tqdm(
+            product(measurement_bases, repeat=n_qubits),
+            total=len(measurement_bases) ** n_qubits,
+            desc="Measuring GHZ state in all bases",
+        ):
+            basis_str = "".join(basis_tuple)
+            result = self.measure_ghz_state(
+                qubit1=qubits[0],
+                qubit2=qubits[1],
+                qubit3=qubits[2],
+                basis1=basis_tuple[0],
+                basis2=basis_tuple[1],
+                basis3=basis_tuple[2],
+                shots=shots,
+                interval=interval,
+                plot=False,
+                save_image=False,
+            )
+            if readout_mitigation:
+                probabilities[basis_str] = result["mitigated"]
+            else:
+                probabilities[basis_str] = result["raw"]
+
+        # --- Step 2: Calculate all 64 Pauli expectation values ---
+        expected_values = {}
+        pauli_bases = ["I", "X", "Y", "Z"]
+        for pauli_tuple in product(pauli_bases, repeat=n_qubits):
+            pauli_label = "".join(pauli_tuple)
+
+            measurement_basis_list = [p if p != "I" else "Z" for p in pauli_tuple]
+            measurement_basis_label = "".join(measurement_basis_list)
+
+            probs = probabilities[measurement_basis_label]
+
+            total_exp = 0.0
+            for i in range(dim):
+                bit_array = [int(b) for b in f"{i:0{n_qubits}b}"]
+                # For example, i = 5 (0b101) gives bit_array = [1, 0, 1]
+                parity = 0
+                for k, bit in enumerate(bit_array):
+                    if pauli_tuple[k] != "I":
+                        # Only consider non-identity Pauli operators
+                        parity += bit
+
+                sign = (-1) ** parity
+                total_exp += sign * probs[i]
+
+            expected_values[pauli_label] = total_exp
+
+        # --- Step 3: Reconstruct the density matrix ---
+        if mle_fit:
+            rho = self.mle_fit_density_matrix(expected_values)
+        else:
+            paulis = {
+                "I": np.array([[1, 0], [0, 1]], dtype=complex),
+                "X": np.array([[0, 1], [1, 0]], dtype=complex),
+                "Y": np.array([[0, -1j], [1j, 0]], dtype=complex),
+                "Z": np.array([[1, 0], [0, -1]], dtype=complex),
+            }
+            rho = np.zeros((dim, dim), dtype=np.complex128)
+            for pauli_label, exp_val in expected_values.items():
+                op = paulis[pauli_label[0]]
+                for p_char in pauli_label[1:]:
+                    op = np.kron(op, paulis[p_char])
+                rho += exp_val * op
+            rho /= dim
+
+        # --- Step 4: Calculate Fidelity ---
+        ideal_state = np.zeros(dim)
+        ideal_state[0] = 1 / np.sqrt(2)
+        ideal_state[-1] = 1 / np.sqrt(2)
+        fidelity = np.real(ideal_state.conj().T @ rho @ ideal_state)
+
+        # --- Step 5: Plotting ---
+        fig = make_subplots(
+            rows=1,
+            cols=2,
+            subplot_titles=("Re", "Im"),
+            horizontal_spacing=0.1,
+        )
+        fig.add_trace(
+            go.Heatmap(z=rho.real, zmin=-1, zmax=1, colorscale="RdBu_r"),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Heatmap(z=rho.imag, zmin=-1, zmax=1, colorscale="RdBu_r"),
+            row=1,
+            col=2,
+        )
+
+        tickvals = np.arange(dim)
+        ticktext = [f"{i:03b}" for i in tickvals]
+        tick_style = dict(
+            tickmode="array", tickvals=tickvals, ticktext=ticktext, tickangle=0
+        )
+
+        fig.update_layout(
+            title_text=f"GHZ State Tomography: {'-'.join(qubits)}",
+            title_x=0.5,
+            width=800,
+            height=445,
+            margin=dict(l=70, r=70, t=90, b=70),
+        )
+        fig.update_xaxes(tick_style, row=1, col=1)
+        fig.update_yaxes(
+            dict(**tick_style, autorange="reversed", scaleanchor="x1"), row=1, col=1
+        )
+        fig.update_xaxes(tick_style, row=1, col=2)
+        fig.update_yaxes(
+            dict(**tick_style, autorange="reversed", scaleanchor="x2"), row=1, col=2
+        )
+
+        if plot:
+            fig.show()
+        if save_image:
+            viz.save_figure_image(
+                fig, f"ghz_state_tomography_{'-'.join(qubits)}", width=800, height=450
+            )
+
+        return {
+            "probabilities": probabilities,
+            "expected_values": expected_values,
+            "density_matrix": rho,
+            "fidelity": fidelity,
+            "figure": fig,
         }
