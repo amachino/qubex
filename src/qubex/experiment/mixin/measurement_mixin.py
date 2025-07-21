@@ -760,7 +760,7 @@ class MeasurementMixin(
                 plot=plot,
                 is_damped=is_damped,
             )
-            if fit_result["status"] != "success":
+            if fit_result["status"] == "error":
                 rabi_params[target] = RabiParam.nan(target=target)
             else:
                 rabi_params[target] = RabiParam(
