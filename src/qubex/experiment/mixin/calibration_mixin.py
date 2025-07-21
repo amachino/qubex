@@ -1326,8 +1326,8 @@ class CalibrationMixin(
             fig_t_3d.show()
 
             print("Qubit frequencies:")
-            print(f"  control ({control_qubit}) : {f_control * 1e3:.3f} MHz")
-            print(f"  target  ({target_qubit}) : {f_target * 1e3:.3f} MHz")
+            print(f"  ω_c ({control_qubit}) : {f_control * 1e3:.3f} MHz")
+            print(f"  ω_t ({target_qubit}) : {f_target * 1e3:.3f} MHz")
             print(f"  Δ ({cr_label}) : {f_delta * 1e3:.3f} MHz")
 
             print("CR drive:")
@@ -1454,16 +1454,16 @@ class CalibrationMixin(
         if plot:
             print("Updated CR params:")
             print(
-                f"  CR amplitude     : {cr_amplitude:+.4f} {cr_amplitude_diff:+.4f} -> {new_cr_amplitude:+.4f}"
+                f"  CR amplitude     : {cr_amplitude:+.4f} -> {new_cr_amplitude:+.4f} (diff: {cr_amplitude_diff:+.4f})"
             )
             print(
-                f"  CR phase         : {cr_phase:+.4f} {cr_phase_diff:+.4f} -> {new_cr_phase:+.4f}"
+                f"  CR phase         : {cr_phase:+.4f} -> {new_cr_phase:+.4f} (diff: {cr_phase_diff:+.4f})"
             )
             print(
-                f"  Cancel amplitude : {cancel_amplitude:+.4f} {cancel_amplitude_diff:+.4f} -> {new_cancel_amplitude:+.4f}"
+                f"  Cancel amplitude : {cancel_amplitude:+.4f} -> {new_cancel_amplitude:+.4f} (diff: {cancel_amplitude_diff:+.4f})"
             )
             print(
-                f"  Cancel phase     : {cancel_phase:+.4f} {cancel_phase_diff:+.4f} -> {new_cancel_phase:+.4f}"
+                f"  Cancel phase     : {cancel_phase:+.4f} -> {new_cancel_phase:+.4f} (diff: {cancel_phase_diff:+.4f})"
             )
 
         cr_label = f"{control_qubit}-{target_qubit}"
