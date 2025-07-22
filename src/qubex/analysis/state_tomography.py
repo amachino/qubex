@@ -122,6 +122,7 @@ def plot_ghz_state_tomography(
     fidelity: float,
     width: int,
     height: int,
+    title: str | None = None,
     plot: bool = True,
     save_image: bool = False,
     file_name: str | None = None,
@@ -169,9 +170,14 @@ def plot_ghz_state_tomography(
         tickangle=0,
     )
 
+    if n_qubits == 2:
+        title = f"Bell State Tomography: {'-'.join(qubits)}"
+    else:
+        title = f"GHZ State Tomography: {'-'.join(qubits)}"
+
     fig.update_layout(
         title=dict(
-            text=f"GHZ State Tomography: {'-'.join(qubits)}",
+            text=title,
             subtitle=dict(text=f"State fidelity: {fidelity * 100:.3f}%"),
         ),
         width=width,
