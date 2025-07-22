@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from datetime import datetime
 from itertools import product
 from pathlib import Path
 from typing import Collection, Literal, Optional, Sequence
@@ -41,6 +42,7 @@ from ...pulse import (
     PulseSchedule,
     RampType,
     Rect,
+    VirtualZ,
     Waveform,
 )
 from ...typing import (
@@ -1733,10 +1735,10 @@ class MeasurementMixin(
         else:
             rho = rho / dim
 
-        ideal_state = np.zeros(dim)
-        ideal_state[0] = 1 / np.sqrt(2)
-        ideal_state[-1] = 1 / np.sqrt(2)
-        fidelity = float(np.real(ideal_state @ rho @ ideal_state.T.conj()))
+        bell_state = np.zeros((dim, 1), dtype=np.complex128)
+        bell_state[0, 0] = 1 / np.sqrt(2)
+        bell_state[-1, 0] = 1 / np.sqrt(2)
+        fidelity = float(np.real(bell_state.T.conj() @ rho @ bell_state))
 
         fig = plot_ghz_state_tomography(
             rho=rho,
@@ -1942,6 +1944,13 @@ class MeasurementMixin(
         n_qubits = len(qubits)
         dim = 2**n_qubits
 
+        if plot:
+            seq = self.create_ghz_sequence(
+                entangle_steps=entangle_steps,
+                dynamical_decoupling=dynamical_decoupling,
+            )
+            seq.plot(title="GHZ state preparation sequence")
+
         # --- Step 1: Measure probabilities in all 3^n measurement bases ---
         probabilities = {}
         for measurement_bases in tqdm(
@@ -2008,10 +2017,10 @@ class MeasurementMixin(
             rho /= dim
 
         # --- Step 4: Calculate Fidelity ---
-        ghz_state = np.zeros(dim)
-        ghz_state[0] = 1 / np.sqrt(2)
-        ghz_state[-1] = 1 / np.sqrt(2)
-        fidelity = float(np.real(ghz_state.conj().T @ rho @ ghz_state))
+        ghz_state = np.zeros((dim, 1), dtype=np.complex128)
+        ghz_state[0, 0] = 1 / np.sqrt(2)
+        ghz_state[-1, 0] = 1 / np.sqrt(2)
+        fidelity = float(np.real(ghz_state.T.conj() @ rho @ ghz_state))
 
         # --- Step 5: Plotting ---
         fig = plot_ghz_state_tomography(
@@ -2032,3 +2041,159 @@ class MeasurementMixin(
             "fidelity": fidelity,
             "figure": fig,
         }
+
+    def create_mqc_sequence(
+        self,
+        entangle_steps: list[tuple[str, str]],
+        *,
+        phi: float = 0.0,
+        echo: bool = True,
+        dynamical_decoupling: bool = False,
+    ) -> PulseSchedule:
+        ghz_seq = self.create_ghz_sequence(
+            entangle_steps=entangle_steps,
+            dynamical_decoupling=dynamical_decoupling,
+        )
+
+        qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
+
+        with PulseSchedule() as seq:
+            seq.call(ghz_seq)
+            if echo:
+                for qubit in qubits:
+                    seq.add(qubit, self.x180(qubit))
+            seq.barrier()
+            for target in ghz_seq.get_targets():
+                seq.add(target, VirtualZ(phi))
+            seq.call(ghz_seq.reversed())
+        return seq
+
+    def mqc_experiment(
+        self,
+        entangle_steps: list[tuple[str, str]],
+        *,
+        phi_range: np.ndarray | None = None,
+        echo: bool = True,
+        dynamical_decoupling: bool = False,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[SweepData]:
+        qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
+        n_qubits = len(qubits)
+
+        if phi_range is None:
+            phi_range = np.linspace(0, 2 * np.pi, 6 * n_qubits + 1)
+
+        seq = self.create_mqc_sequence(
+            entangle_steps=entangle_steps,
+            phi=0.0,
+            echo=echo,
+            dynamical_decoupling=dynamical_decoupling,
+        )
+        seq.plot(title=f"{n_qubits}Q entanglement sequence")
+
+        result = self.sweep_parameter(
+            lambda phi: self.create_mqc_sequence(
+                entangle_steps=entangle_steps,
+                phi=phi,
+                echo=echo,
+                dynamical_decoupling=dynamical_decoupling,
+            ),
+            sweep_range=phi_range,
+            shots=shots,
+            interval=interval,
+        )
+
+        for qubit, data in result.data.items():
+            fig = data.plot(
+                normalize=True,
+                title=f"{n_qubits}Q : {qubit}",
+                xlabel="φ (rad)",
+                return_figure=True,
+            )
+            viz.save_figure_image(
+                fig,  # type: ignore
+                name=f"seq{n_qubits}_{qubit}",
+                format="png",
+            )
+            viz.save_figure_image(
+                fig,  # type: ignore
+                name=f"seq{n_qubits}_{qubit}",
+                format="svg",
+            )
+
+        root_qubit = qubits[0]
+
+        self.fourier_analysis(
+            result,
+            root_qubit,
+            title=f"Fourier analysis : {n_qubits}Q",
+        )
+
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
+
+        # create directory if it does not exist
+        import os
+
+        os.makedirs("./data", exist_ok=True)
+
+        np.savez(
+            f"./data/{timestamp}_seq{n_qubits}_raw.npz",
+            result.data[root_qubit].data,
+        )
+        np.savez(
+            f"./data/{timestamp}_seq{n_qubits}_normalized.npz",
+            result.data[root_qubit].normalized,
+        )
+
+        return result
+
+    @staticmethod
+    def fourier_analysis(result, qubit, *, title="Fourier analysis"):
+        data = result.data[qubit].normalized
+
+        S = (data + 1) / 2
+        N = len(S)
+        F = np.fft.fft(S)
+
+        q = np.arange(N // 2)[1:]
+        I = np.abs(F[1 : N // 2]) / N
+        C = 2 * np.sqrt(I)
+
+        fig = go.Figure()
+
+        fig.add_trace(
+            go.Bar(
+                x=q,
+                y=C,
+                name="Magnitude",
+            )
+        )
+
+        fig.update_layout(
+            title=title,
+            xaxis_title="Frequency",
+            yaxis_title="Magnitude",
+        )
+
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "scale": 3,
+                },
+            }
+        )
+
+        viz.save_figure_image(
+            fig,
+            name=f"fourier_analysis_{qubit}",
+            format="png",
+        )
+
+        viz.save_figure_image(
+            fig,
+            name=f"fosurier_analysis_{qubit}",
+            format="svg",
+        )
