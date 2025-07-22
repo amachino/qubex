@@ -9,13 +9,15 @@ from typing import Collection, Literal, Optional, Sequence
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
-from plotly.subplots import make_subplots
 from rich.console import Console
 from tqdm import tqdm
 
 from ...analysis import IQPlotter, fitting
 from ...analysis import visualization as viz
-from ...analysis.state_tomography import mle_fit_density_matrix
+from ...analysis.state_tomography import (
+    mle_fit_density_matrix,
+    plot_ghz_state_tomography,
+)
 from ...backend import Target
 from ...measurement import (
     MeasureResult,
@@ -1734,91 +1736,25 @@ class MeasurementMixin(
         ideal_state = np.zeros(dim)
         ideal_state[0] = 1 / np.sqrt(2)
         ideal_state[-1] = 1 / np.sqrt(2)
-        fidelity = np.real(ideal_state @ rho @ ideal_state.T.conj())
+        fidelity = float(np.real(ideal_state @ rho @ ideal_state.T.conj()))
 
-        fig = make_subplots(
-            rows=1,
-            cols=2,
-            subplot_titles=("Re", "Im"),
-        )
-
-        # Real part
-        fig.add_trace(
-            go.Heatmap(
-                z=rho.real,
-                zmin=-1,
-                zmax=1,
-                colorscale="RdBu_r",
-            ),
-            row=1,
-            col=1,
-        )
-
-        # Imaginary part
-        fig.add_trace(
-            go.Heatmap(
-                z=rho.imag,
-                zmin=-1,
-                zmax=1,
-                colorscale="RdBu_r",
-            ),
-            row=1,
-            col=2,
-        )
-
-        tickvals = np.arange(dim)
-        ticktext = [f"{i:02b}" for i in tickvals]
-
-        fig.update_layout(
-            title=f"Bell state tomography: {control_qubit}-{target_qubit}",
-            xaxis1=dict(
-                tickmode="array",
-                tickvals=tickvals,
-                ticktext=ticktext,
-                scaleanchor="y1",
-                tickangle=0,
-            ),
-            yaxis1=dict(
-                tickmode="array",
-                tickvals=tickvals,
-                ticktext=ticktext,
-                scaleanchor="x1",
-                autorange="reversed",
-            ),
-            xaxis2=dict(
-                tickmode="array",
-                tickvals=tickvals,
-                ticktext=ticktext,
-                scaleanchor="y2",
-                tickangle=0,
-            ),
-            yaxis2=dict(
-                tickmode="array",
-                tickvals=tickvals,
-                ticktext=ticktext,
-                scaleanchor="x2",
-                autorange="reversed",
-            ),
+        fig = plot_ghz_state_tomography(
+            rho=rho,
+            qubits=[control_qubit, target_qubit],
+            fidelity=fidelity,
+            plot=plot,
+            save_image=save_image,
             width=600,
-            height=356,
-            margin=dict(l=70, r=70, t=90, b=70),
-        )
-        if plot:
-            fig.show()
-            print(f"State fidelity: {fidelity * 100:.3f}%")
-        if save_image:
-            viz.save_figure_image(
-                fig,
-                f"bell_state_tomography_{control_qubit}-{target_qubit}",
-                width=600,
-                height=356,
-            )
+            height=366,
+            file_name=f"bell_state_tomography_{control_qubit}-{target_qubit}",
+        )["figure"]
 
         return {
             "probabilities": probabilities,
             "expected_values": expected_values,
             "density_matrix": rho,
             "fidelity": fidelity,
+            "figure": fig,
         }
 
     def create_ghz_sequence(
@@ -2075,55 +2011,19 @@ class MeasurementMixin(
         ghz_state = np.zeros(dim)
         ghz_state[0] = 1 / np.sqrt(2)
         ghz_state[-1] = 1 / np.sqrt(2)
-        fidelity = np.real(ghz_state.conj().T @ rho @ ghz_state)
+        fidelity = float(np.real(ghz_state.conj().T @ rho @ ghz_state))
 
         # --- Step 5: Plotting ---
-        fig = make_subplots(
-            rows=1,
-            cols=2,
-            subplot_titles=("Re", "Im"),
-            horizontal_spacing=0.1,
-        )
-        fig.add_trace(
-            go.Heatmap(z=rho.real, zmin=-1, zmax=1, colorscale="RdBu_r"),
-            row=1,
-            col=1,
-        )
-        fig.add_trace(
-            go.Heatmap(z=rho.imag, zmin=-1, zmax=1, colorscale="RdBu_r"),
-            row=1,
-            col=2,
-        )
-
-        tickvals = np.arange(dim)
-        ticktext = [f"{i:03b}" for i in tickvals]
-        tick_style = dict(
-            tickmode="array", tickvals=tickvals, ticktext=ticktext, tickangle=0
-        )
-
-        fig.update_layout(
-            title_text=f"GHZ State Tomography: {'-'.join(qubits)}",
-            title_x=0.5,
+        fig = plot_ghz_state_tomography(
+            rho=rho,
+            qubits=qubits,
+            fidelity=fidelity,
+            plot=plot,
+            save_image=save_image,
             width=800,
-            height=445,
-            margin=dict(l=70, r=70, t=90, b=70),
-        )
-        fig.update_xaxes(tick_style, row=1, col=1)
-        fig.update_yaxes(
-            dict(**tick_style, autorange="reversed", scaleanchor="x1"), row=1, col=1
-        )
-        fig.update_xaxes(tick_style, row=1, col=2)
-        fig.update_yaxes(
-            dict(**tick_style, autorange="reversed", scaleanchor="x2"), row=1, col=2
-        )
-
-        if plot:
-            fig.show()
-            print(f"State fidelity: {fidelity * 100:.3f}%")
-        if save_image:
-            viz.save_figure_image(
-                fig, f"ghz_state_tomography_{'-'.join(qubits)}", width=800, height=450
-            )
+            height=455,
+            file_name=f"ghz_state_tomography_{'-'.join(qubits)}",
+        )["figure"]
 
         return {
             "probabilities": probabilities,

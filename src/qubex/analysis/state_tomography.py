@@ -118,14 +118,15 @@ def mle_fit_density_matrix(
 
 def plot_ghz_state_tomography(
     rho: NDArray,
-    qubits: list[str] | None = None,
-    fidelity: float | None = None,
+    qubits: list[str],
+    fidelity: float,
+    width: int,
+    height: int,
     plot: bool = True,
     save_image: bool = False,
+    file_name: str | None = None,
 ):
-    n_qubits = int(np.log2(rho.shape[0]))
-    if qubits is None:
-        qubits = [f"Q{i}" for i in range(n_qubits)]
+    n_qubits = len(qubits)
     dim = 2**n_qubits
 
     fig = make_subplots(
@@ -135,36 +136,59 @@ def plot_ghz_state_tomography(
         horizontal_spacing=0.1,
     )
     fig.add_trace(
-        go.Heatmap(z=rho.real, zmin=-1, zmax=1, colorscale="RdBu_r"),
+        go.Heatmap(
+            z=rho.real,
+            zmin=-0.6,
+            zmax=0.6,
+            colorscale="RdBu_r",
+        ),
         row=1,
         col=1,
     )
     fig.add_trace(
-        go.Heatmap(z=rho.imag, zmin=-1, zmax=1, colorscale="RdBu_r"),
+        go.Heatmap(
+            z=rho.imag,
+            zmin=-0.6,
+            zmax=0.6,
+            colorscale="RdBu_r",
+        ),
         row=1,
         col=2,
     )
 
-    tickvals = np.arange(dim)
-    ticktext = [f"{i:03b}" for i in tickvals]
+    if n_qubits < 4:
+        tickvals = np.arange(dim)
+        ticktext = [f"{i:0{n_qubits}b}" for i in tickvals]
+    else:
+        tickvals = [0, 2**n_qubits - 1]
+        ticktext = [f"{i:0{n_qubits}b}" for i in tickvals]
     tick_style = dict(
-        tickmode="array", tickvals=tickvals, ticktext=ticktext, tickangle=0
+        tickmode="array",
+        tickvals=tickvals,
+        ticktext=ticktext,
+        tickangle=0,
     )
 
     fig.update_layout(
-        title_text=f"GHZ State Tomography: {'-'.join(qubits)}",
-        title_x=0.5,
-        width=800,
-        height=445,
-        margin=dict(l=70, r=70, t=90, b=70),
+        title=dict(
+            text=f"GHZ State Tomography: {'-'.join(qubits)}",
+            subtitle=dict(text=f"State fidelity: {fidelity * 100:.3f}%"),
+        ),
+        width=width,
+        height=height,
+        margin=dict(l=70, r=70, t=100, b=70),
     )
     fig.update_xaxes(tick_style, row=1, col=1)
     fig.update_yaxes(
-        dict(**tick_style, autorange="reversed", scaleanchor="x1"), row=1, col=1
+        dict(**tick_style, autorange="reversed", scaleanchor="x1"),
+        row=1,
+        col=1,
     )
     fig.update_xaxes(tick_style, row=1, col=2)
     fig.update_yaxes(
-        dict(**tick_style, autorange="reversed", scaleanchor="x2"), row=1, col=2
+        dict(**tick_style, autorange="reversed", scaleanchor="x2"),
+        row=1,
+        col=2,
     )
 
     if plot:
@@ -172,9 +196,9 @@ def plot_ghz_state_tomography(
         if fidelity is not None:
             print(f"State fidelity: {fidelity * 100:.3f}%")
     if save_image:
-        save_figure_image(
-            fig, f"ghz_state_tomography_{'-'.join(qubits)}", width=800, height=450
-        )
+        if file_name is None:
+            file_name = f"ghz_state_tomography_{'-'.join(qubits)}"
+        save_figure_image(fig, file_name, width=width, height=height)
 
     return {
         "density_matrix": rho,
