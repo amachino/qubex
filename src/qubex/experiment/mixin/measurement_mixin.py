@@ -1949,7 +1949,7 @@ class MeasurementMixin(
                 entangle_steps=entangle_steps,
                 dynamical_decoupling=dynamical_decoupling,
             )
-            seq.plot(title="GHZ state preparation sequence")
+            seq.plot(title=f"GHZ state preparation sequence : {'-'.join(qubits)}")
 
         # --- Step 1: Measure probabilities in all 3^n measurement bases ---
         probabilities = {}
@@ -2065,7 +2065,7 @@ class MeasurementMixin(
             seq.barrier()
             for target in ghz_seq.get_targets():
                 seq.add(target, VirtualZ(phi))
-            seq.call(ghz_seq.reversed())
+            seq.call(ghz_seq.inverted())
         return seq
 
     def mqc_experiment(

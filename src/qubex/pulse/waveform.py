@@ -123,8 +123,8 @@ class Waveform(ABC):
         """Returns a copy of the waveform repeated n times."""
 
     @abstractmethod
-    def reversed(self) -> Waveform:
-        """Returns a copy of the waveform with the time reversed."""
+    def inverted(self) -> Waveform:
+        """Returns a copy of the waveform with the time inverted."""
 
     def _number_of_samples(
         self,

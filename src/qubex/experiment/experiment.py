@@ -671,7 +671,7 @@ class Experiment(
     def reference_phases(self) -> dict[str, float]:
         return self.calib_note._reference_phases
 
-    def load_calibration_data(self, path: Path | str | None = None):
+    def load_calib_note(self, path: Path | str | None = None):
         """
         Load the calibration data from the given path or from the default calibration note file.
         """

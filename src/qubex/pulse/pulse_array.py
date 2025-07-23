@@ -7,6 +7,7 @@ from typing import Literal, Sequence
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
+from typing_extensions import deprecated
 
 from ..style import COLORS
 from .blank import Blank
@@ -279,12 +280,16 @@ class PulseArray(Waveform):
         new_array._elements.append(obj)
         return new_array
 
+    @deprecated("The `reversed` method is deprecated, use `inverted` instead.")
     def reversed(self) -> PulseArray:
-        """Returns a copy of the pulse array with the time reversed."""
+        return self.inverted()
+
+    def inverted(self) -> PulseArray:
+        """Returns a copy of the pulse array with the time inverted."""
         new_array = PulseArray()
         for obj in reversed(self.flattened_elements):
             if isinstance(obj, Pulse):
-                new_array.add(obj.reversed())
+                new_array.add(obj.inverted())
             elif isinstance(obj, PhaseShift):
                 new_array.add(PhaseShift(-obj.theta))
             else:

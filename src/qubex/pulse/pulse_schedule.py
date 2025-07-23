@@ -9,6 +9,7 @@ import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from typing_extensions import deprecated
 
 from ..style import COLORS
 from .blank import Blank
@@ -298,11 +299,17 @@ class PulseSchedule:
             new_sched.add(label, channel.sequence.repeated(n))
         return new_sched
 
+    @deprecated(
+        "The `reversed` method is deprecated, use `inverted` instead.",
+    )
     def reversed(self) -> PulseSchedule:
-        """Returns a time-reversed pulse schedule."""
+        return self.inverted()
+
+    def inverted(self) -> PulseSchedule:
+        """Returns an inverted pulse schedule."""
         with PulseSchedule() as new_sched:
             for label, channel in self._channels.items():
-                new_sched.add(label, channel.sequence.reversed())
+                new_sched.add(label, channel.sequence.inverted())
         return new_sched
 
     def plot(
@@ -681,6 +688,36 @@ class PulseSchedule:
             ):
                 next_offset = current_offset + waveform.length
                 if not isinstance(waveform, Blank):
+                    ranges[label].append(range(current_offset, next_offset))
+                current_offset = next_offset
+        return ranges
+
+    def get_blank_ranges(
+        self,
+        labels: list[str] | None = None,
+    ) -> dict[str, list[range]]:
+        """
+        Returns the blank ranges.
+
+        Parameters
+        ----------
+        labels : list[str], optional
+            The channel labels.
+
+        Returns
+        -------
+        dict[str, list[range]]
+            The blank ranges.
+        """
+        labels = labels or self.labels
+        ranges: dict[str, list[range]] = {label: [] for label in labels}
+        for label in labels:
+            current_offset = 0
+            for waveform in self._channels[label].sequence.get_flattened_waveforms(
+                apply_frame_shifts=False
+            ):
+                next_offset = current_offset + waveform.length
+                if isinstance(waveform, Blank):
                     ranges[label].append(range(current_offset, next_offset))
                 current_offset = next_offset
         return ranges

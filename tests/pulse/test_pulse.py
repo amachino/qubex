@@ -109,10 +109,10 @@ def test_repeated():
     assert repeated.values == pytest.approx([1, 2, 3, 1, 2, 3, 1, 2, 3])
 
 
-def test_reversed():
-    """Pulse should be reversed."""
+def test_inverted():
+    """Pulse should be inverted."""
     pulse = Pulse([1, 2, 3])
-    reversed = pulse.reversed()
-    assert reversed != pulse
-    assert reversed.values == pytest.approx([-3, -2, -1])
-    assert reversed.reversed().values == pytest.approx(pulse.values)
+    inverted = pulse.inverted()
+    assert inverted != pulse
+    assert inverted.values == pytest.approx([-3, -2, -1])
+    assert inverted.inverted().values == pytest.approx(pulse.values)
