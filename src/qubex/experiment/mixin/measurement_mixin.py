@@ -16,6 +16,7 @@ from tqdm import tqdm
 from ...analysis import IQPlotter, fitting
 from ...analysis import visualization as viz
 from ...analysis.state_tomography import (
+    create_density_matrix,
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
 )
@@ -1764,8 +1765,11 @@ class MeasurementMixin(
         entangle_steps: list[tuple[str, str]],
         *,
         dynamical_decoupling: bool = False,
-        cpmg_unit_duration: float = 800,
+        cpmg_unit_duration: float | None = None,
     ) -> PulseSchedule:
+        if cpmg_unit_duration is None:
+            cpmg_unit_duration = 800
+
         source_qubit = entangle_steps[0][0]
         qubits = [source_qubit]
         for parent, child in entangle_steps:
@@ -1824,6 +1828,7 @@ class MeasurementMixin(
         *,
         measurement_bases: Collection[str] | None = None,
         dynamical_decoupling: bool = False,
+        cpmg_unit_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1847,6 +1852,7 @@ class MeasurementMixin(
         seq = self.create_ghz_sequence(
             entangle_steps=entangle_steps,
             dynamical_decoupling=dynamical_decoupling,
+            cpmg_unit_duration=cpmg_unit_duration,
         )
 
         with PulseSchedule() as ps:
@@ -1917,8 +1923,9 @@ class MeasurementMixin(
         self,
         entangle_steps: list[tuple[str, str]],
         *,
-        dynamical_decoupling: bool = False,
         readout_mitigation: bool = True,
+        dynamical_decoupling: bool = False,
+        cpmg_unit_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -1939,10 +1946,10 @@ class MeasurementMixin(
         ----------
         entangle_steps : list[tuple[str, str]]
             List of tuples representing the entanglement steps, e.g., [("Q00", "Q01"), ("Q01", "Q02")].
-        dynamical_decoupling : bool
-            Whether to apply dynamical decoupling pulses during the GHZ state preparation.
         readout_mitigation : bool
             Whether to apply readout error mitigation.
+        dynamical_decoupling : bool
+            Whether to apply dynamical decoupling pulses during the GHZ state preparation.
         shots : int
             Number of shots for each measurement.
         interval : float
@@ -1973,11 +1980,12 @@ class MeasurementMixin(
             seq = self.create_ghz_sequence(
                 entangle_steps=entangle_steps,
                 dynamical_decoupling=dynamical_decoupling,
+                cpmg_unit_duration=cpmg_unit_duration,
             )
             seq.plot(title=f"GHZ state preparation sequence : {'-'.join(qubits)}")
 
-        # --- Step 1: Measure probabilities in all 3^n measurement bases ---
-        probabilities = {}
+        probs_raw = {}
+        probs_mit = {}
         for measurement_bases in tqdm(
             product(["X", "Y", "Z"], repeat=n_qubits),
             total=3**n_qubits,
@@ -1988,84 +1996,100 @@ class MeasurementMixin(
                 entangle_steps=entangle_steps,
                 measurement_bases=measurement_bases,
                 dynamical_decoupling=dynamical_decoupling,
+                cpmg_unit_duration=cpmg_unit_duration,
                 shots=shots,
                 interval=interval,
                 plot=False,
                 save_image=False,
             )
+            probs_raw[basis_label] = result["raw"]
             if readout_mitigation:
-                probabilities[basis_label] = result["mitigated"]
-            else:
-                probabilities[basis_label] = result["raw"]
+                probs_mit[basis_label] = result["mitigated"]
 
-        # --- Step 2: Calculate all 4^n Pauli expectation values ---
-        expected_values = {}
-        for pauli_tuple in product(["I", "X", "Y", "Z"], repeat=n_qubits):
-            pauli_label = "".join(pauli_tuple)
-
-            measurement_basis_list = [p if p != "I" else "Z" for p in pauli_tuple]
-            measurement_basis_label = "".join(measurement_basis_list)
-
-            probs = probabilities[measurement_basis_label]
-
-            total_exp = 0.0
-            for i in range(dim):
-                bit_array = [int(b) for b in f"{i:0{n_qubits}b}"]
-                # For example, i = 5 (0b101) gives bit_array = [1, 0, 1]
-                parity = 0
-                for k, bit in enumerate(bit_array):
-                    if pauli_tuple[k] != "I":
-                        # Only consider non-identity Pauli operators
-                        parity += bit
-
-                sign = (-1) ** parity
-                total_exp += sign * probs[i]
-
-            expected_values[pauli_label] = total_exp
-
-        # --- Step 3: Reconstruct the density matrix ---
-        if mle_fit:
-            rho = mle_fit_density_matrix(expected_values)
-        else:
-            paulis = {
-                "I": np.array([[1, 0], [0, 1]], dtype=complex),
-                "X": np.array([[0, 1], [1, 0]], dtype=complex),
-                "Y": np.array([[0, -1j], [1j, 0]], dtype=complex),
-                "Z": np.array([[1, 0], [0, -1]], dtype=complex),
-            }
-            rho = np.zeros((dim, dim), dtype=np.complex128)
-            for pauli_label, exp_val in expected_values.items():
-                op = paulis[pauli_label[0]]
-                for p_char in pauli_label[1:]:
-                    op = np.kron(op, paulis[p_char])
-                rho += exp_val * op
-            rho /= dim
-
-        # --- Step 4: Calculate Fidelity ---
         ghz_state = np.zeros((dim, 1), dtype=np.complex128)
         ghz_state[0, 0] = 1 / np.sqrt(2)
         ghz_state[-1, 0] = 1 / np.sqrt(2)
-        fidelity = float(np.real(ghz_state.T.conj() @ rho @ ghz_state))
 
-        # --- Step 5: Plotting ---
-        fig = plot_ghz_state_tomography(
-            rho=rho,
+        rho_raw = create_density_matrix(probs_raw)
+        fidelity_raw = float(np.real(ghz_state.T.conj() @ rho_raw @ ghz_state))
+
+        if readout_mitigation:
+            rho_mit = create_density_matrix(probs_mit, mle_fit=False)
+            fidelity_mit = float(np.real(ghz_state.T.conj() @ rho_mit @ ghz_state))
+
+            if mle_fit:
+                rho_mle = create_density_matrix(probs_mit, mle_fit=True)
+                fidelity_mle = float(np.real(ghz_state.T.conj() @ rho_mle @ ghz_state))
+
+        width, height = 800, 455
+
+        fig_raw = plot_ghz_state_tomography(
+            rho=rho_raw,
             qubits=qubits,
-            fidelity=fidelity,
-            plot=plot,
+            fidelity=fidelity_raw,
+            plot=False,
             save_image=save_image,
-            width=800,
-            height=455,
-            file_name=f"ghz_state_tomography_{'-'.join(qubits)}",
+            width=width,
+            height=height,
+            file_name=f"ghz_state_tomography_raw_{'-'.join(qubits)}",
         )["figure"]
 
-        return {
-            "probabilities": probabilities,
-            "expected_values": expected_values,
-            "density_matrix": rho,
-            "fidelity": fidelity,
-            "figure": fig,
+        if readout_mitigation:
+            fig_mit = plot_ghz_state_tomography(
+                rho=rho_mit,
+                qubits=qubits,
+                fidelity=fidelity_mit,
+                plot=False,
+                save_image=save_image,
+                width=width,
+                height=height,
+                file_name=f"ghz_state_tomography_mit_{'-'.join(qubits)}",
+            )["figure"]
+
+            if mle_fit:
+                fig_mle = plot_ghz_state_tomography(
+                    rho=rho_mle,
+                    qubits=qubits,
+                    fidelity=fidelity_mle,
+                    plot=False,
+                    save_image=save_image,
+                    width=width,
+                    height=height,
+                    file_name=f"ghz_state_tomography_mle_{'-'.join(qubits)}",
+                )["figure"]
+
+        if plot:
+            if not readout_mitigation:
+                fig_raw.show()
+            elif mle_fit:
+                fig_mle.show()
+            else:
+                fig_mit.show()
+
+        result = {
+            "raw": {
+                "probabilities": probs_raw,
+                "density_matrix": rho_raw,
+                "fidelity": fidelity_raw,
+                "figure": fig_raw,
+            },
         }
+        if readout_mitigation:
+            result["mitigated"] = {
+                "probabilities": probs_mit,
+                "density_matrix": rho_mit,
+                "fidelity": fidelity_mit,
+                "figure": fig_mit,
+            }
+            if mle_fit:
+                result["mle"] = {
+                    "probabilities": probs_mit,
+                    "density_matrix": rho_mle,
+                    "fidelity": fidelity_mle,
+                    "figure": fig_mle,
+                }
+
+        return result
 
     def create_mqc_sequence(
         self,
@@ -2074,10 +2098,12 @@ class MeasurementMixin(
         phi: float = 0.0,
         echo: bool = True,
         dynamical_decoupling: bool = False,
+        cpmg_unit_duration: float | None = None,
     ) -> PulseSchedule:
         ghz_seq = self.create_ghz_sequence(
             entangle_steps=entangle_steps,
             dynamical_decoupling=dynamical_decoupling,
+            cpmg_unit_duration=cpmg_unit_duration,
         )
 
         qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
@@ -2100,6 +2126,7 @@ class MeasurementMixin(
         phi_range: np.ndarray | None = None,
         echo: bool = True,
         dynamical_decoupling: bool = False,
+        cpmg_unit_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[SweepData]:
@@ -2114,6 +2141,7 @@ class MeasurementMixin(
             phi=0.0,
             echo=echo,
             dynamical_decoupling=dynamical_decoupling,
+            cpmg_unit_duration=cpmg_unit_duration,
         )
         seq.plot(title=f"{n_qubits}Q entanglement sequence")
 
@@ -2123,6 +2151,7 @@ class MeasurementMixin(
                 phi=phi,
                 echo=echo,
                 dynamical_decoupling=dynamical_decoupling,
+                cpmg_unit_duration=cpmg_unit_duration,
             ),
             plot=False,
             sweep_range=phi_range,
