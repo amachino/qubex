@@ -1764,16 +1764,8 @@ class MeasurementMixin(
         entangle_steps: list[tuple[str, str]],
         *,
         dynamical_decoupling: bool = False,
+        cpmg_unit_duration: float = 800,
     ) -> PulseSchedule:
-        def add_dd(seq: PulseSchedule, qubit: str):
-            dd_duration = seq._max_offset() - seq._offsets[qubit]
-            n_pi = 2 * int(dd_duration // 400)
-            if n_pi > 0:
-                pi = self.x180(qubit)
-                tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
-                tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
-                seq.add(qubit, CPMG(tau=tau, pi=pi, n=n_pi))
-
         source_qubit = entangle_steps[0][0]
         qubits = [source_qubit]
         for parent, child in entangle_steps:
@@ -1781,15 +1773,48 @@ class MeasurementMixin(
                 raise ValueError(f"Qubit {parent} is not in the sequence.")
             qubits.append(child)
 
-        with PulseSchedule() as seq:
-            seq.add(source_qubit, self.y90(source_qubit))
-            seq.barrier()
+        with PulseSchedule() as ghz:
+            ghz.add(source_qubit, self.y90(source_qubit))
+            ghz.barrier()
             for parent, child in entangle_steps:
-                seq.call(self.cnot(parent, child))
-            if dynamical_decoupling:
-                for qubit in qubits:
-                    if qubits.index(qubit) % 4 in [0, 3]:
-                        add_dd(seq, qubit)
+                ghz.call(self.cnot(parent, child))
+
+            # if dynamical_decoupling:
+            #     # Apply CPMG to blanks after entanglement gates
+            #     for qubit in qubits:
+            #         if self.qubits[qubit].index % 4 in [0, 3]:
+            #             dd_duration = ghz._max_offset() - ghz._offsets[qubit]
+            #             pi = self.x180(qubit)
+            #             n_pi = 2 * int(dd_duration // cpmg_unit_duration)
+            #             if n_pi > 0:
+            #                 tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
+            #                 tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
+            #                 ghz.add(qubit, CPMG(tau=tau, pi=pi, n=n_pi))
+
+        if dynamical_decoupling:
+            # Apply CPMG to all blanks in the GHZ sequence
+            with PulseSchedule() as ghz_dd:
+                for target, pulse_array in ghz.get_sequences().items():
+                    for element in pulse_array.elements:
+                        if isinstance(element, Blank) and target in self.qubits:
+                            if self.qubits[target].index % 4 in [0, 3]:
+                                dd_duration = element.duration
+                                pi = self.x180(target)
+                                n_pi = 2 * int(dd_duration // cpmg_unit_duration)
+                                if n_pi > 0:
+                                    tau = (dd_duration - pi.duration * n_pi) // (
+                                        2 * n_pi
+                                    )
+                                    tau = (
+                                        tau // Pulse.SAMPLING_PERIOD
+                                    ) * Pulse.SAMPLING_PERIOD
+                                    ghz_dd.add(target, CPMG(tau=tau, pi=pi, n=n_pi))
+                                    continue
+                        ghz_dd.add(target, element)
+
+            seq = ghz_dd
+        else:
+            seq = ghz
 
         return seq
 
@@ -2099,6 +2124,7 @@ class MeasurementMixin(
                 echo=echo,
                 dynamical_decoupling=dynamical_decoupling,
             ),
+            plot=False,
             sweep_range=phi_range,
             shots=shots,
             interval=interval,
