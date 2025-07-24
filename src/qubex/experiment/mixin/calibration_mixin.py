@@ -929,7 +929,7 @@ class CalibrationMixin(
             }
 
         if reset_awg_and_capunits:
-            self.reset_awg_and_capunits()
+            self.reset_awg_and_capunits(qubits=[control_qubit, target_qubit])
 
         control_states = []
         target_states = []
@@ -1047,7 +1047,7 @@ class CalibrationMixin(
             ramptime = self._ramptime(control_qubit, target_qubit)
 
         if reset_awg_and_capunits:
-            self.reset_awg_and_capunits()
+            self.reset_awg_and_capunits(qubits=[control_qubit, target_qubit])
 
         result_0 = self.measure_cr_dynamics(
             time_range=time_range,

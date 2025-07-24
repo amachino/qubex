@@ -105,7 +105,8 @@ class MeasurementMixin(
             enable_dsp_sum = True if mode == "single" else False
 
         if reset_awg_and_capunits:
-            self.device_controller.initialize_awg_and_capunits(self.box_ids)
+            qubits = {Target.qubit_label(target) for target in schedule.labels}
+            self.reset_awg_and_capunits(qubits=qubits)
 
         with self.modified_frequencies(frequencies):
             result = self.measurement.execute(
@@ -204,7 +205,8 @@ class MeasurementMixin(
                         waveforms[target] = np.array(waveform, dtype=np.complex128)
 
         if reset_awg_and_capunits:
-            self.device_controller.initialize_awg_and_capunits(self.box_ids)
+            qubits = {Target.qubit_label(target) for target in waveforms}
+            self.reset_awg_and_capunits(qubits=qubits)
 
         with self.modified_frequencies(frequencies):
             result = self.measurement.measure(
@@ -405,6 +407,9 @@ class MeasurementMixin(
                     .get_sampled_sequences(copy=False)
                     for param in sweep_range
                 ]
+                qubits = {
+                    Target.qubit_label(target) for target in initial_sequence.labels
+                }
             elif isinstance(initial_sequence, dict):
                 sequences = [
                     {
@@ -413,6 +418,7 @@ class MeasurementMixin(
                     }
                     for param in sweep_range
                 ]
+                qubits = {Target.qubit_label(target) for target in initial_sequence}
         else:
             raise ValueError("Invalid sequence.")
 
@@ -420,7 +426,7 @@ class MeasurementMixin(
         plotter = IQPlotter(self.state_centers)
 
         # initialize awgs and capture units
-        self.device_controller.initialize_awg_and_capunits(self.box_ids)
+        self.reset_awg_and_capunits(qubits=qubits)
 
         with self.modified_frequencies(frequencies):
             for seq in tqdm(
@@ -496,7 +502,9 @@ class MeasurementMixin(
         plotter = IQPlotter(self.state_centers)
 
         # initialize awgs and capture units
-        self.device_controller.initialize_awg_and_capunits(self.box_ids)
+        initial_sequence = sequence(sweep_range[0])
+        qubits = {Target.qubit_label(target) for target in initial_sequence.labels}
+        self.reset_awg_and_capunits(qubits=qubits)
 
         with self.modified_frequencies(frequencies):
             for param in sweep_range:
@@ -1201,7 +1209,7 @@ class MeasurementMixin(
         targets = list(qubits | sequence.keys())
 
         if reset_awg_and_capunits:
-            self.reset_awg_and_capunits()
+            self.reset_awg_and_capunits(qubits=qubits)
 
         for basis in ["X", "Y", "Z"]:
             with PulseSchedule(targets) as ps:
@@ -1297,7 +1305,14 @@ class MeasurementMixin(
         buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
 
         if reset_awg_and_capunits:
-            self.reset_awg_and_capunits()
+            initial_sequence = sequences[0]
+            if isinstance(initial_sequence, PulseSchedule):
+                qubits = {
+                    Target.qubit_label(target) for target in initial_sequence.labels
+                }
+            else:
+                qubits = {Target.qubit_label(target) for target in initial_sequence}
+            self.reset_awg_and_capunits(qubits=qubits)
 
         for sequence in tqdm(sequences):
             state_vectors = self.state_tomography(

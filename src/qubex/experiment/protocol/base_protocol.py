@@ -686,6 +686,7 @@ class BaseProtocol(Protocol):
     def reset_awg_and_capunits(
         self,
         box_ids: str | Collection[str] | None = None,
+        qubits: Collection[str] | None = None,
     ):
         """
         Reset all awg and capture units.

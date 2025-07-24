@@ -1465,7 +1465,7 @@ class CharacterizationMixin(
         frequency_range = np.arange(f_start, f_start + df * n_samples, df)
 
         def _execute():
-            self.reset_awg_and_capunits()
+            self.reset_awg_and_capunits(qubits=[qubit_label])
             phases = []
             for freq in frequency_range:
                 with self.modified_frequencies({read_label: freq}):
@@ -1625,7 +1625,7 @@ class CharacterizationMixin(
             cnco_center = CNCO_CETNER_READ
 
         for subrange in subranges:
-            self.reset_awg_and_capunits()
+            self.reset_awg_and_capunits(qubits=[qubit_label])
 
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
@@ -2023,7 +2023,7 @@ class CharacterizationMixin(
             state=qubit_state,
         )
 
-        self.reset_awg_and_capunits()
+        self.reset_awg_and_capunits(qubits=[qubit_label])
 
         for freq in freq_range:
             with self.modified_frequencies({read_label: freq}):
@@ -2161,7 +2161,7 @@ class CharacterizationMixin(
                 cnco_freq=cnco,
                 fnco_freq=0,
             ):
-                self.reset_awg_and_capunits()
+                self.reset_awg_and_capunits(qubits=[qubit])
                 for control_frequency in subrange:
                     with self.modified_frequencies(
                         {
@@ -3028,7 +3028,7 @@ class CharacterizationMixin(
 
         result2d = []
         qubit_resonance_frequencies = []
-        self.reset_awg_and_capunits()
+        self.reset_awg_and_capunits(qubits=[qubit_label])
         for resonator_detuning in tqdm(resonator_detuning_range):
             result1d = []
             for qubit_detuning in qubit_detuning_range:

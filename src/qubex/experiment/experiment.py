@@ -1240,9 +1240,15 @@ class Experiment(
     def reset_awg_and_capunits(
         self,
         box_ids: str | Collection[str] | None = None,
+        qubits: Collection[str] | None = None,
     ):
-        if box_ids is None:
+        box_ids = []
+        if qubits is not None:
+            boxes = self.experiment_system.get_boxes_for_qubits(qubits)
+            box_ids += [box.id for box in boxes]
+        if len(box_ids) == 0:
             box_ids = self.box_ids
+
         self.device_controller.initialize_awg_and_capunits(box_ids)
 
     @deprecated("This method is tentative. It may be removed in the future.")
