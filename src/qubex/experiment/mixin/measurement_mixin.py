@@ -2193,7 +2193,7 @@ class MeasurementMixin(
             dynamical_decoupling=dynamical_decoupling,
             cpmg_unit_duration=cpmg_unit_duration,
         )
-        seq.plot(title=f"{n_qubits}Q entanglement sequence")
+        seq.plot(title=f"{n_qubits}-qubits entanglement sequence")
 
         result = self.sweep_parameter(
             lambda phi: self.create_mqc_sequence(
@@ -2211,10 +2211,13 @@ class MeasurementMixin(
         )
 
         for qubit, data in result.data.items():
+            title = f"Measured signal : {qubit}"
+            if qubit in source_qubits:
+                title += " (source qubit)"
             fig = data.plot(
                 normalize=True,
-                title=f"{n_qubits}Q : {qubit}",
-                xlabel="φ (rad)",
+                title=title,
+                xlabel="Z rotation : φ (rad)",
                 return_figure=True,
             )
             viz.save_figure_image(
@@ -2232,7 +2235,7 @@ class MeasurementMixin(
             self.fourier_analysis(
                 result,
                 source_qubit,
-                title=f"Fourier analysis : {n_qubits}Q",
+                title=f"Fourier analysis : {source_qubit}",
             )
 
             now = datetime.now()
@@ -2269,14 +2272,14 @@ class MeasurementMixin(
             go.Bar(
                 x=q,
                 y=C,
-                name="Magnitude",
+                name="Amplitude",
             )
         )
 
         fig.update_layout(
             title=title,
-            xaxis_title="Frequency",
-            yaxis_title="Coherence",
+            xaxis_title="Fourier modes",
+            yaxis_title="Amplitude",
         )
 
         fig.show(

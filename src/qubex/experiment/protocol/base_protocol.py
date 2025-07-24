@@ -19,7 +19,7 @@ from ...backend import (
 )
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
-from ...pulse import PulseSchedule, RampType, VirtualZ, Waveform
+from ...pulse import PulseArray, PulseSchedule, RampType, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..calibration_note import CalibrationNote
 from ..experiment_note import ExperimentNote
@@ -1066,6 +1066,13 @@ class BaseProtocol(Protocol):
             π virtual pulse along the z-axis.
         """
         ...
+
+    def hadamard(
+        self,
+        target: str,
+        *,
+        decomposition: Literal["Z180-Y90", "Y90-X180"] = "Z180-Y90",
+    ) -> PulseArray: ...
 
     def zx90(
         self,
