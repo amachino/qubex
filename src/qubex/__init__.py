@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import qubex.patches.quel_ic_config.abstract_nco_ftw_patch  # noqa: F401
+    import qubex.patches.quel_ic_config.linkup_fpga_mxfe_patch  # noqa: F401
 except ImportError:
     logger.info("Failed to import abstract_nco_ftw_patch.")
 
