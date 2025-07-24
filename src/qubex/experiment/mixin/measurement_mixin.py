@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections import defaultdict
 from datetime import datetime
 from itertools import product
@@ -379,6 +380,7 @@ class MeasurementMixin(
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
         plot: bool = True,
+        enable_tqdm: bool = False,
         title: str = "Sweep result",
         xlabel: str = "Sweep value",
         ylabel: str = "Measured value",
@@ -421,7 +423,11 @@ class MeasurementMixin(
         self.device_controller.initialize_awg_and_capunits(self.box_ids)
 
         with self.modified_frequencies(frequencies):
-            for seq in sequences:
+            for seq in tqdm(
+                sequences,
+                desc="Sweeping parameters",
+                disable=not enable_tqdm,
+            ):
                 result = self.measure(
                     seq,
                     initial_states=initial_states,
@@ -1770,15 +1776,18 @@ class MeasurementMixin(
         if cpmg_unit_duration is None:
             cpmg_unit_duration = 800
 
-        source_qubit = entangle_steps[0][0]
-        qubits = [source_qubit]
+        source_qubits = []
+        qubits = []
         for parent, child in entangle_steps:
             if parent not in qubits:
-                raise ValueError(f"Qubit {parent} is not in the sequence.")
-            qubits.append(child)
+                source_qubits.append(parent)
+                qubits.append(parent)
+            if child not in qubits:
+                qubits.append(child)
 
         with PulseSchedule() as ghz:
-            ghz.add(source_qubit, self.y90(source_qubit))
+            for source_qubit in source_qubits:
+                ghz.add(source_qubit, self.y90(source_qubit))
             ghz.barrier()
             for parent, child in entangle_steps:
                 ghz.call(self.cnot(parent, child))
@@ -1841,7 +1850,12 @@ class MeasurementMixin(
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
-        qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
+        qubits = []
+        for parent, child in entangle_steps:
+            if parent not in qubits:
+                qubits.append(parent)
+            if child not in qubits:
+                qubits.append(child)
         n_qubits = len(qubits)
 
         if measurement_bases is None:
@@ -1972,7 +1986,12 @@ class MeasurementMixin(
             - "figure": Plotly figure of the density matrix.
         """
 
-        qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
+        qubits = []
+        for parent, child in entangle_steps:
+            if parent not in qubits:
+                qubits.append(parent)
+            if child not in qubits:
+                qubits.append(child)
         n_qubits = len(qubits)
         dim = 2**n_qubits
 
@@ -2106,7 +2125,12 @@ class MeasurementMixin(
             cpmg_unit_duration=cpmg_unit_duration,
         )
 
-        qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
+        qubits = []
+        for parent, child in entangle_steps:
+            if parent not in qubits:
+                qubits.append(parent)
+            if child not in qubits:
+                qubits.append(child)
 
         with PulseSchedule() as seq:
             seq.call(ghz_seq)
@@ -2124,17 +2148,28 @@ class MeasurementMixin(
         entangle_steps: list[tuple[str, str]],
         *,
         phi_range: np.ndarray | None = None,
+        n_points_per_qubit: int | None = None,
         echo: bool = True,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[SweepData]:
-        qubits = [entangle_steps[0][0]] + [child for _, child in entangle_steps]
+        qubits = []
+        source_qubits = []
+        for parent, child in entangle_steps:
+            if parent not in qubits:
+                source_qubits.append(parent)
+                qubits.append(parent)
+            if child not in qubits:
+                qubits.append(child)
+
         n_qubits = len(qubits)
 
         if phi_range is None:
-            phi_range = np.linspace(0, 2 * np.pi, 6 * n_qubits + 1)
+            if n_points_per_qubit is None:
+                n_points_per_qubit = 6
+            phi_range = np.linspace(0, 2 * np.pi, n_points_per_qubit * n_qubits + 1)
 
         seq = self.create_mqc_sequence(
             entangle_steps=entangle_steps,
@@ -2154,6 +2189,7 @@ class MeasurementMixin(
                 cpmg_unit_duration=cpmg_unit_duration,
             ),
             plot=False,
+            enable_tqdm=True,
             sweep_range=phi_range,
             shots=shots,
             interval=interval,
@@ -2177,30 +2213,26 @@ class MeasurementMixin(
                 format="svg",
             )
 
-        root_qubit = qubits[0]
+        for source_qubit in source_qubits:
+            self.fourier_analysis(
+                result,
+                source_qubit,
+                title=f"Fourier analysis : {n_qubits}Q",
+            )
 
-        self.fourier_analysis(
-            result,
-            root_qubit,
-            title=f"Fourier analysis : {n_qubits}Q",
-        )
+            now = datetime.now()
+            timestamp = now.strftime("%Y%m%d_%H%M%S")
 
-        now = datetime.now()
-        timestamp = now.strftime("%Y%m%d_%H%M%S")
+            os.makedirs("./data", exist_ok=True)
 
-        # create directory if it does not exist
-        import os
-
-        os.makedirs("./data", exist_ok=True)
-
-        np.savez(
-            f"./data/{timestamp}_seq{n_qubits}_raw.npz",
-            result.data[root_qubit].data,
-        )
-        np.savez(
-            f"./data/{timestamp}_seq{n_qubits}_normalized.npz",
-            result.data[root_qubit].normalized,
-        )
+            np.savez(
+                f"./data/{timestamp}_seq{n_qubits}_raw.npz",
+                result.data[source_qubit].data,
+            )
+            np.savez(
+                f"./data/{timestamp}_seq{n_qubits}_normalized.npz",
+                result.data[source_qubit].normalized,
+            )
 
         return result
 
@@ -2229,7 +2261,7 @@ class MeasurementMixin(
         fig.update_layout(
             title=title,
             xaxis_title="Frequency",
-            yaxis_title="Magnitude",
+            yaxis_title="Coherence",
         )
 
         fig.show(
