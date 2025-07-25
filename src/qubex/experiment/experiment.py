@@ -853,28 +853,32 @@ class Experiment(
             phases = reference_phases
 
         for target, phase in phases.items():
-            rabi_param = self.rabi_params.get(target)
-            if rabi_param is None:
-                print(f"Rabi parameters for {target} are not stored.")
-                continue
-            else:
-                rabi_param.correct(new_reference_phase=phase)
+            try:
+                rabi_param = self.rabi_params.get(target)
+                if rabi_param is None:
+                    print(f"Rabi parameters for {target} are not stored.")
+                    continue
+                else:
+                    rabi_param.correct(new_reference_phase=phase)
 
-            self.calib_note.update_rabi_param(
-                target,
-                {
-                    "target": rabi_param.target,
-                    "frequency": rabi_param.frequency,
-                    "amplitude": rabi_param.amplitude,
-                    "phase": rabi_param.phase,
-                    "offset": rabi_param.offset,
-                    "noise": rabi_param.noise,
-                    "angle": rabi_param.angle,
-                    "distance": rabi_param.distance,
-                    "r2": rabi_param.r2,
-                    "reference_phase": rabi_param.reference_phase,
-                },
-            )
+                self.calib_note.update_rabi_param(
+                    target,
+                    {
+                        "target": rabi_param.target,
+                        "frequency": rabi_param.frequency,
+                        "amplitude": rabi_param.amplitude,
+                        "phase": rabi_param.phase,
+                        "offset": rabi_param.offset,
+                        "noise": rabi_param.noise,
+                        "angle": rabi_param.angle,
+                        "distance": rabi_param.distance,
+                        "r2": rabi_param.r2,
+                        "reference_phase": rabi_param.reference_phase,
+                    },
+                )
+            except Exception as e:
+                print(f"Failed to correct Rabi parameters for {target}: {e}")
+                continue
         if save:
             self.save_calib_note()
 
@@ -907,24 +911,28 @@ class Experiment(
                     )
 
         for target, phase in phases.items():
-            state_param = self.calib_note.get_state_param(target)
-            if state_param is not None:
-                reference_phase = state_param.get("reference_phase")
-                if reference_phase is None:
-                    state_param["reference_phase"] = phase
-                    continue
-                else:
-                    centers = state_param["centers"]
-                    phase_diff = phase - reference_phase
-                    for state, points in centers.items():
-                        iq = complex(points[0], points[1])
-                        iq *= np.exp(1j * phase_diff)
-                        centers[str(state)] = [iq.real, iq.imag]
-                    state_param["reference_phase"] = phase
-                self.calib_note.update_state_param(
-                    target,
-                    state_param,
-                )
+            try:
+                state_param = self.calib_note.get_state_param(target)
+                if state_param is not None:
+                    reference_phase = state_param.get("reference_phase")
+                    if reference_phase is None:
+                        state_param["reference_phase"] = phase
+                        continue
+                    else:
+                        centers = state_param["centers"]
+                        phase_diff = phase - reference_phase
+                        for state, points in centers.items():
+                            iq = complex(points[0], points[1])
+                            iq *= np.exp(1j * phase_diff)
+                            centers[str(state)] = [iq.real, iq.imag]
+                        state_param["reference_phase"] = phase
+                    self.calib_note.update_state_param(
+                        target,
+                        state_param,
+                    )
+            except Exception as e:
+                print(f"Failed to correct state parameters for {target}: {e}")
+                continue
         if save:
             self.save_calib_note()
 
@@ -943,22 +951,26 @@ class Experiment(
             cr_labels = list(cr_labels)
 
         for label in cr_labels:
-            control_qubit, target_qubit = self.cr_pair(label)
-            if label not in self.calib_note.cr_params:
+            try:
+                control_qubit, target_qubit = self.cr_pair(label)
+                if label not in self.calib_note.cr_params:
+                    continue
+                result = self.state_tomography(
+                    self.zx90(control_qubit, target_qubit),
+                    shots=shots,
+                )
+                x, y, _ = result[target_qubit]
+                phase = np.arctan2(y, x)
+                current_param = self.calib_note.get_cr_param(label)
+                self.calib_note.update_cr_param(
+                    label,
+                    {
+                        "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
+                    },
+                )
+            except Exception as e:
+                print(f"Failed to correct CR parameters for {label}: {e}")
                 continue
-            result = self.state_tomography(
-                self.zx90(control_qubit, target_qubit),
-                shots=shots,
-            )
-            x, y, _ = result[target_qubit]
-            phase = np.arctan2(y, x)
-            current_param = self.calib_note.get_cr_param(label)
-            self.calib_note.update_cr_param(
-                label,
-                {
-                    "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
-                },
-            )
         if save:
             self.save_calib_note()
 
@@ -967,7 +979,7 @@ class Experiment(
         qubit_labels: Collection[str] | str | None = None,
         cr_labels: Collection[str] | str | None = None,
         *,
-        save: bool = True,
+        save: bool = False,
     ):
         if qubit_labels is None:
             qubit_labels = self.qubit_labels

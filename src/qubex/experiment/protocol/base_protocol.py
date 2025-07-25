@@ -411,7 +411,7 @@ class BaseProtocol(Protocol):
         qubit_labels: Collection[str] | str | None = None,
         cr_labels: Collection[str] | str | None = None,
         *,
-        save: bool = True,
+        save: bool = False,
     ):
         """
         Correct the calibration for the given qubits and CRs.
@@ -423,7 +423,7 @@ class BaseProtocol(Protocol):
         cr_labels : Collection[str] | str | None, optional
             CR labels to correct. If None, all CRs are corrected.
         save : bool, optional
-            Whether to save the corrected parameters. Defaults to True.
+            Whether to save the corrected parameters. Defaults to False.
         """
         ...
 
