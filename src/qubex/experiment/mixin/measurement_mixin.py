@@ -2247,12 +2247,12 @@ class MeasurementMixin(
             )
             viz.save_figure_image(
                 fig,  # type: ignore
-                name=f"n{n_qubits}_mqc_{qubit}",
+                name=f"mqc_n{n_qubits}_{qubit}",
                 format="png",
             )
             viz.save_figure_image(
                 fig,  # type: ignore
-                name=f"n{n_qubits}_mqc_{qubit}",
+                name=f"mqc_n{n_qubits}_{qubit}",
                 format="svg",
             )
 
@@ -2269,11 +2269,11 @@ class MeasurementMixin(
             os.makedirs("./data", exist_ok=True)
 
             np.savez(
-                f"./data/{timestamp}_n{n_qubits}_mqc__raw.npz",
+                f"./data/{timestamp}_mqc_n{n_qubits}_raw.npz",
                 result.data[source_qubit].data,
             )
             np.savez(
-                f"./data/{timestamp}_n{n_qubits}_mqc_normalized.npz",
+                f"./data/{timestamp}_mqc_n{n_qubits}_normalized.npz",
                 result.data[source_qubit].normalized,
             )
 
@@ -2400,7 +2400,7 @@ class MeasurementMixin(
             )
 
         parity_list = []
-        for phi in tqdm(phi_range, desc="Measuring parity oscillation"):
+        for phi in tqdm(phi_range):
             res = self.measure(
                 sequence(phi),
                 mode="single",
@@ -2417,18 +2417,22 @@ class MeasurementMixin(
         fig = viz.plot(
             x=phi_range,
             y=parity_list,
+            mode="lines+markers",
+            ylim=(-1.1, 1.1),
+            xlabel="Z rotation : φ (rad)",
+            ylabel="Parity",
             title=f"Parity oscillation : {n_qubits}-qubit GHZ state",
             return_figure=True,
         )
         fig.show()  # type: ignore
         viz.save_figure_image(
             fig,  # type: ignore
-            name=f"n{n_qubits}_parity_oscillation",
+            name=f"parity_oscillation_n{n_qubits}",
             format="png",
         )
         viz.save_figure_image(
             fig,  # type: ignore
-            name=f"n{n_qubits}_parity_oscillation",
+            name=f"parity_oscillation_n{n_qubits}",
             format="svg",
         )
 
@@ -2443,7 +2447,7 @@ class MeasurementMixin(
         os.makedirs("./data", exist_ok=True)
 
         np.savez(
-            f"./data/{timestamp}_n{n_qubits}_parity_oscillation.npz",
+            f"./data/{timestamp}_parity_oscillation_n{n_qubits}.npz",
             parity_list,
         )
 
