@@ -1785,9 +1785,12 @@ class MeasurementMixin(
         self,
         entangle_steps: list[tuple[str, str]],
         *,
+        initialization_pulse: str | None = None,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
     ) -> PulseSchedule:
+        if initialization_pulse is None:
+            initialization_pulse = "Y90"
         if cpmg_unit_duration is None:
             cpmg_unit_duration = 800
 
@@ -1802,7 +1805,16 @@ class MeasurementMixin(
 
         with PulseSchedule() as ghz:
             for source_qubit in source_qubits:
-                ghz.add(source_qubit, self.y90(source_qubit))
+                if initialization_pulse == "Y90":
+                    ghz.add(source_qubit, self.y90(source_qubit))
+                elif initialization_pulse == "X90":
+                    ghz.add(source_qubit, self.x90(source_qubit))
+                elif initialization_pulse == "H":
+                    ghz.add(source_qubit, self.hadamard(source_qubit))
+                else:
+                    raise ValueError(
+                        f"Invalid initialize pulse: {initialization_pulse}"
+                    )
             ghz.barrier()
             for parent, child in entangle_steps:
                 ghz.call(self.cnot(parent, child))
@@ -1851,6 +1863,7 @@ class MeasurementMixin(
         entangle_steps: list[tuple[str, str]],
         *,
         measurement_bases: Collection[str] | None = None,
+        initialization_pulse: str | None = None,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -1880,6 +1893,7 @@ class MeasurementMixin(
 
         seq = self.create_ghz_sequence(
             entangle_steps=entangle_steps,
+            initialization_pulse=initialization_pulse,
             dynamical_decoupling=dynamical_decoupling,
             cpmg_unit_duration=cpmg_unit_duration,
         )
@@ -1953,11 +1967,13 @@ class MeasurementMixin(
         entangle_steps: list[tuple[str, str]],
         *,
         readout_mitigation: bool = True,
+        initialization_pulse: str | None = None,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
+        show_sequence: bool = True,
         save_image: bool = True,
         mle_fit: bool = True,
     ) -> dict:
@@ -2010,9 +2026,10 @@ class MeasurementMixin(
         n_qubits = len(qubits)
         dim = 2**n_qubits
 
-        if plot:
+        if show_sequence:
             seq = self.create_ghz_sequence(
                 entangle_steps=entangle_steps,
+                initialization_pulse=initialization_pulse,
                 dynamical_decoupling=dynamical_decoupling,
                 cpmg_unit_duration=cpmg_unit_duration,
             )
@@ -2029,6 +2046,7 @@ class MeasurementMixin(
             result = self.measure_ghz_state(
                 entangle_steps=entangle_steps,
                 measurement_bases=measurement_bases,
+                initialization_pulse=initialization_pulse,
                 dynamical_decoupling=dynamical_decoupling,
                 cpmg_unit_duration=cpmg_unit_duration,
                 shots=shots,
@@ -2131,11 +2149,13 @@ class MeasurementMixin(
         *,
         phi: float = 0.0,
         echo: bool = True,
+        initialization_pulse: str | None = None,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
     ) -> PulseSchedule:
         ghz_seq = self.create_ghz_sequence(
             entangle_steps=entangle_steps,
+            initialization_pulse=initialization_pulse,
             dynamical_decoupling=dynamical_decoupling,
             cpmg_unit_duration=cpmg_unit_duration,
         )
@@ -2164,7 +2184,9 @@ class MeasurementMixin(
         *,
         phi_range: np.ndarray | None = None,
         n_points_per_qubit: int | None = None,
+        show_sequence: bool = True,
         echo: bool = True,
+        initialization_pulse: str | None = None,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2186,20 +2208,23 @@ class MeasurementMixin(
                 n_points_per_qubit = 6
             phi_range = np.linspace(0, 2 * np.pi, n_points_per_qubit * n_qubits + 1)
 
-        seq = self.create_mqc_sequence(
-            entangle_steps=entangle_steps,
-            phi=0.0,
-            echo=echo,
-            dynamical_decoupling=dynamical_decoupling,
-            cpmg_unit_duration=cpmg_unit_duration,
-        )
-        seq.plot(title=f"{n_qubits}-qubits entanglement sequence")
+        if show_sequence:
+            seq = self.create_mqc_sequence(
+                entangle_steps=entangle_steps,
+                phi=0.0,
+                echo=echo,
+                initialization_pulse=initialization_pulse,
+                dynamical_decoupling=dynamical_decoupling,
+                cpmg_unit_duration=cpmg_unit_duration,
+            )
+            seq.plot(title=f"{n_qubits}-qubits entanglement sequence")
 
         result = self.sweep_parameter(
             lambda phi: self.create_mqc_sequence(
                 entangle_steps=entangle_steps,
                 phi=phi,
                 echo=echo,
+                initialization_pulse=initialization_pulse,
                 dynamical_decoupling=dynamical_decoupling,
                 cpmg_unit_duration=cpmg_unit_duration,
             ),
@@ -2222,19 +2247,19 @@ class MeasurementMixin(
             )
             viz.save_figure_image(
                 fig,  # type: ignore
-                name=f"seq{n_qubits}_{qubit}",
+                name=f"n{n_qubits}_mqc_{qubit}",
                 format="png",
             )
             viz.save_figure_image(
                 fig,  # type: ignore
-                name=f"seq{n_qubits}_{qubit}",
+                name=f"n{n_qubits}_mqc_{qubit}",
                 format="svg",
             )
 
         for source_qubit in source_qubits:
             self.fourier_analysis(
-                result,
-                source_qubit,
+                result.data[source_qubit].data,
+                qubit=source_qubit,
                 title=f"Fourier analysis : {source_qubit}",
             )
 
@@ -2244,19 +2269,24 @@ class MeasurementMixin(
             os.makedirs("./data", exist_ok=True)
 
             np.savez(
-                f"./data/{timestamp}_seq{n_qubits}_raw.npz",
+                f"./data/{timestamp}_n{n_qubits}_mqc__raw.npz",
                 result.data[source_qubit].data,
             )
             np.savez(
-                f"./data/{timestamp}_seq{n_qubits}_normalized.npz",
+                f"./data/{timestamp}_n{n_qubits}_mqc_normalized.npz",
                 result.data[source_qubit].normalized,
             )
 
         return result
 
     @staticmethod
-    def fourier_analysis(result, qubit, *, title="Fourier analysis"):
-        data = result.data[qubit].normalized
+    def fourier_analysis(
+        data: ArrayLike,
+        *,
+        qubit: str | None = None,
+        title="Fourier analysis",
+    ):
+        data = np.asarray(data)
 
         S = (data + 1) / 2
         N = len(S)
@@ -2291,14 +2321,133 @@ class MeasurementMixin(
             }
         )
 
+        file_name = f"fourier_analysis_{qubit}" if qubit else "fourier_analysis"
+
         viz.save_figure_image(
             fig,
-            name=f"fourier_analysis_{qubit}",
+            name=file_name,
             format="png",
         )
 
         viz.save_figure_image(
             fig,
-            name=f"fosurier_analysis_{qubit}",
+            name=file_name,
             format="svg",
         )
+
+    def parity_oscillation(
+        self,
+        entangle_steps: list[tuple[str, str]],
+        *,
+        phi_range: np.ndarray | None = None,
+        n_points_per_qubit: int | None = None,
+        show_sequence: bool = True,
+        initialization_pulse: str | None = None,
+        dynamical_decoupling: bool = False,
+        cpmg_unit_duration: float | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> dict:
+        if initialization_pulse is None:
+            initialization_pulse = "Y90"
+
+        qubits = []
+        source_qubits = []
+        for parent, child in entangle_steps:
+            if parent not in qubits:
+                source_qubits.append(parent)
+                qubits.append(parent)
+            if child not in qubits:
+                qubits.append(child)
+
+        n_qubits = len(qubits)
+
+        if phi_range is None:
+            if n_points_per_qubit is None:
+                n_points_per_qubit = 6
+            phi_range = np.linspace(0, 2 * np.pi, n_points_per_qubit * n_qubits + 1)
+
+        ghz_seq = self.create_ghz_sequence(
+            entangle_steps=entangle_steps,
+            initialization_pulse=initialization_pulse,
+            dynamical_decoupling=dynamical_decoupling,
+            cpmg_unit_duration=cpmg_unit_duration,
+        )
+
+        def sequence(phi: float) -> PulseSchedule:
+            with PulseSchedule() as seq:
+                seq.call(ghz_seq)
+                rz = VirtualZ(phi)
+                for label in seq.labels:
+                    if label in self.qubit_labels:
+                        seq.add(label, rz)
+                        if initialization_pulse == "Y90":
+                            seq.add(label, self.y90m(label))
+                        elif initialization_pulse == "X90":
+                            seq.add(label, self.x90m(label))
+                        elif initialization_pulse == "H":
+                            seq.add(label, self.hadamard(label))
+                        else:
+                            raise ValueError(
+                                f"Invalid initialize pulse: {initialization_pulse}"
+                            )
+            return seq
+
+        if show_sequence:
+            sequence(0).plot(
+                title=f"{n_qubits}-qubits entanglement sequence",
+                show_physical_pulse=True,
+            )
+
+        parity_list = []
+        for phi in tqdm(phi_range, desc="Measuring parity oscillation"):
+            res = self.measure(
+                sequence(phi),
+                mode="single",
+                shots=shots,
+                interval=interval,
+            )
+            probs = res.mitigated_probabilities
+            parity = 0
+            for label, prob in probs.items():
+                is_even = label.count("1") % 2 == 0
+                parity += prob * (1 if is_even else -1)
+            parity_list.append(parity)
+
+        fig = viz.plot(
+            x=phi_range,
+            y=parity_list,
+            title=f"Parity oscillation : {n_qubits}-qubit GHZ state",
+            return_figure=True,
+        )
+        fig.show()  # type: ignore
+        viz.save_figure_image(
+            fig,  # type: ignore
+            name=f"n{n_qubits}_parity_oscillation",
+            format="png",
+        )
+        viz.save_figure_image(
+            fig,  # type: ignore
+            name=f"n{n_qubits}_parity_oscillation",
+            format="svg",
+        )
+
+        self.fourier_analysis(
+            parity_list,
+            title=f"Fourier analysis of {n_qubits}-qubit parity oscillation",
+        )
+
+        now = datetime.now()
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
+
+        os.makedirs("./data", exist_ok=True)
+
+        np.savez(
+            f"./data/{timestamp}_n{n_qubits}_parity_oscillation.npz",
+            parity_list,
+        )
+
+        return {
+            "phi_range": phi_range,
+            "parity_list": parity_list,
+        }
