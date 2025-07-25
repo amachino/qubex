@@ -1840,6 +1840,78 @@ class Experiment(
             pi_margin=x180_margin,
         )
 
+    def rzx(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        angle: float,
+        *,
+        cr_duration: float | None = None,
+        cr_ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cr_beta: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        cancel_beta: float | None = None,
+        rotary_amplitude: float | None = None,
+        echo: bool = True,
+        x180: TargetMap[Waveform] | Waveform | None = None,
+        x180_margin: float = 0.0,
+    ) -> PulseSchedule:
+        coeff_value = angle/(np.pi/2)
+        cr_label = f"{control_qubit}-{target_qubit}"
+        cr_param = self.calib_note.get_cr_param(
+            cr_label,
+            valid_days=self._calibration_valid_days,
+        )
+        if cr_param is None:
+            raise ValueError(f"CR parameters for {cr_label} are not stored.")
+
+        if x180 is None:
+            pi_pulse = self.x180(control_qubit)
+        elif isinstance(x180, Waveform):
+            pi_pulse = x180
+        else:
+            pi_pulse = x180[control_qubit]
+
+        if cr_amplitude is None:
+            cr_amplitude = cr_param["cr_amplitude"]*coeff_value
+        if cr_duration is None:
+            cr_duration = cr_param["duration"]
+        if cr_ramptime is None:
+            cr_ramptime = cr_param["ramptime"]
+        if cr_phase is None:
+            cr_phase = cr_param["cr_phase"]
+        if cr_beta is None:
+            cr_beta = cr_param["cr_beta"]
+        if cancel_amplitude is None:
+            cancel_amplitude = cr_param["cancel_amplitude"]*coeff_value
+        if cancel_phase is None:
+            cancel_phase = cr_param["cancel_phase"]
+        if cancel_beta is None:
+            cancel_beta = cr_param["cancel_beta"]
+        if rotary_amplitude is None:
+            rotary_amplitude = cr_param["rotary_amplitude"]
+
+        cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
+
+        return CrossResonance(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            cr_amplitude=cr_amplitude,
+            cr_duration=cr_duration,
+            cr_ramptime=cr_ramptime,
+            cr_phase=cr_phase,
+            cr_beta=cr_beta,
+            cancel_amplitude=np.abs(cancel_pulse),
+            cancel_phase=np.angle(cancel_pulse),
+            cancel_beta=cancel_beta,
+            echo=echo,
+            pi_pulse=pi_pulse,
+            pi_margin=x180_margin,
+        )
+
     def cnot(
         self,
         control_qubit: str,
