@@ -1781,7 +1781,7 @@ class MeasurementMixin(
             "figure": fig,
         }
 
-    def create_ghz_sequence(
+    def create_entangle_sequence(
         self,
         entangle_steps: list[tuple[str, str]],
         *,
@@ -1803,38 +1803,38 @@ class MeasurementMixin(
             if child not in qubits:
                 qubits.append(child)
 
-        with PulseSchedule() as ghz:
+        with PulseSchedule() as ps:
             for source_qubit in source_qubits:
                 if initialization_pulse == "Y90":
-                    ghz.add(source_qubit, self.y90(source_qubit))
+                    ps.add(source_qubit, self.y90(source_qubit))
                 elif initialization_pulse == "X90":
-                    ghz.add(source_qubit, self.x90(source_qubit))
+                    ps.add(source_qubit, self.x90(source_qubit))
                 elif initialization_pulse == "H":
-                    ghz.add(source_qubit, self.hadamard(source_qubit))
+                    ps.add(source_qubit, self.hadamard(source_qubit))
                 else:
                     raise ValueError(
                         f"Invalid initialize pulse: {initialization_pulse}"
                     )
-            ghz.barrier()
+            ps.barrier()
             for parent, child in entangle_steps:
-                ghz.call(self.cnot(parent, child))
+                ps.call(self.cnot(parent, child))
 
             # if dynamical_decoupling:
             #     # Apply CPMG to blanks after entanglement gates
             #     for qubit in qubits:
             #         if self.qubits[qubit].index % 4 in [0, 3]:
-            #             dd_duration = ghz._max_offset() - ghz._offsets[qubit]
+            #             dd_duration = ps._max_offset() - ps._offsets[qubit]
             #             pi = self.x180(qubit)
             #             n_pi = 2 * int(dd_duration // cpmg_unit_duration)
             #             if n_pi > 0:
             #                 tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
             #                 tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
-            #                 ghz.add(qubit, CPMG(tau=tau, pi=pi, n=n_pi))
+            #                 ps.add(qubit, CPMG(tau=tau, pi=pi, n=n_pi))
 
         if dynamical_decoupling:
-            # Apply CPMG to all blanks in the GHZ sequence
-            with PulseSchedule() as ghz_dd:
-                for target, pulse_array in ghz.get_sequences().items():
+            # Apply CPMG to all blanks in the sequence
+            with PulseSchedule() as ps_dd:
+                for target, pulse_array in ps.get_sequences().items():
                     for element in pulse_array.elements:
                         if isinstance(element, Blank) and target in self.qubits:
                             if self.qubits[target].index % 4 in [0, 3]:
@@ -1848,15 +1848,43 @@ class MeasurementMixin(
                                     tau = (
                                         tau // Pulse.SAMPLING_PERIOD
                                     ) * Pulse.SAMPLING_PERIOD
-                                    ghz_dd.add(target, CPMG(tau=tau, pi=pi, n=n_pi))
+                                    ps_dd.add(target, CPMG(tau=tau, pi=pi, n=n_pi))
                                     continue
-                        ghz_dd.add(target, element)
+                        ps_dd.add(target, element)
 
-            seq = ghz_dd
+            seq = ps_dd
         else:
-            seq = ghz
+            seq = ps
 
         return seq
+
+    def create_ghz_sequence(
+        self,
+        entangle_steps: list[tuple[str, str]],
+        *,
+        initialization_pulse: str | None = None,
+        dynamical_decoupling: bool = False,
+        cpmg_unit_duration: float | None = None,
+    ) -> PulseSchedule:
+        """
+        Create a GHZ state preparation sequence based on the entanglement steps.
+        Returns a PulseSchedule object.
+        """
+        qubits = [entangle_steps[0][0]]
+        for parent, child in entangle_steps:
+            if parent not in qubits:
+                raise ValueError(
+                    f"All qubits for GHZ state must branch from the first qubit: {qubits[0]}"
+                )
+            if child not in qubits:
+                qubits.append(child)
+
+        return self.create_entangle_sequence(
+            entangle_steps=entangle_steps,
+            initialization_pulse=initialization_pulse,
+            dynamical_decoupling=dynamical_decoupling,
+            cpmg_unit_duration=cpmg_unit_duration,
+        )
 
     def measure_ghz_state(
         self,
@@ -2153,7 +2181,7 @@ class MeasurementMixin(
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
     ) -> PulseSchedule:
-        ghz_seq = self.create_ghz_sequence(
+        ghz_seq = self.create_entangle_sequence(
             entangle_steps=entangle_steps,
             initialization_pulse=initialization_pulse,
             dynamical_decoupling=dynamical_decoupling,
@@ -2367,7 +2395,7 @@ class MeasurementMixin(
                 n_points_per_qubit = 6
             phi_range = np.linspace(0, 2 * np.pi, n_points_per_qubit * n_qubits + 1)
 
-        ghz_seq = self.create_ghz_sequence(
+        ghz_seq = self.create_entangle_sequence(
             entangle_steps=entangle_steps,
             initialization_pulse=initialization_pulse,
             dynamical_decoupling=dynamical_decoupling,
