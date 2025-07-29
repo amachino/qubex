@@ -2001,7 +2001,7 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ):
+    ) -> dict:
         if targets is None:
             targets = self.qubit_labels
         elif isinstance(targets, str):
@@ -2009,42 +2009,68 @@ class CalibrationMixin(
         else:
             targets = list(targets)
 
+        data = {
+            "obtain_rabi_params": {},
+            "calibrate_hpi_pulse": {},
+            "calibrate_drag_hpi_pulse": {},
+            "calibrate_drag_pi_pulse": {},
+            "build_classifier": {},
+        }
+
         for target in targets:
             try:
-                self.obtain_rabi_params(
+                result = self.obtain_rabi_params(
                     target,
                     shots=shots,
                     interval=interval,
                     plot=plot,
                 )
-                self.calibrate_hpi_pulse(
+                rabi_param = result.data[target].rabi_param
+                if rabi_param.r2 < 0.9:
+                    print(f"Warning: R² for {target} is low ({rabi_param.r2:.2f}).")
+                elif rabi_param.r2 < 0.5:
+                    print(f"Error: R² for {target} is very low ({rabi_param.r2:.2f}).")
+                    continue
+                data["obtain_rabi_params"][target] = result.data[target]
+
+                result = self.calibrate_hpi_pulse(
                     target,
                     shots=shots,
                     interval=interval,
                     plot=plot,
                 )
-                self.calibrate_drag_hpi_pulse(
+                data["calibrate_hpi_pulse"][target] = result.data[target]
+
+                result = self.calibrate_drag_hpi_pulse(
                     target,
                     shots=shots,
                     interval=interval,
                     plot=plot,
                 )
-                self.calibrate_drag_pi_pulse(
+                data["calibrate_drag_hpi_pulse"][target] = result
+
+                result = self.calibrate_drag_pi_pulse(
                     target,
                     shots=shots,
                     interval=interval,
                     plot=plot,
                 )
-                self.build_classifier(
+                data["calibrate_drag_pi_pulse"][target] = result
+
+                result = self.build_classifier(
                     target,
                     shots=shots * 4,
                     interval=interval,
                     plot=plot,
                 )
+                data["build_classifier"][target] = result
                 self.save_calib_note()
+
             except Exception as e:
                 print(f"Error calibrating 1Q gates for {targets}: {e}")
                 continue
+
+        return data
 
     def calibrate_2q(
         self,
@@ -2053,7 +2079,7 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
-    ):
+    ) -> dict:
         if targets is None:
             targets = self.cr_labels
         elif isinstance(targets, str):
@@ -2063,9 +2089,15 @@ class CalibrationMixin(
 
         pairs = [Target.cr_qubit_pair(target) for target in targets]
 
+        data = {
+            "obtain_cr_params": {},
+            "calibrate_zx90": {},
+        }
+
         for control_qubit, target_qubit in pairs:
+            cr_label = f"{control_qubit}-{target_qubit}"
             try:
-                self.obtain_cr_params(
+                result = self.obtain_cr_params(
                     control_qubit=control_qubit,
                     target_qubit=target_qubit,
                     n_iterations=6,
@@ -2074,14 +2106,20 @@ class CalibrationMixin(
                     interval=interval,
                     plot=plot,
                 )
-                self.calibrate_zx90(
+                data["obtain_cr_params"][cr_label] = result
+
+                result = self.calibrate_zx90(
                     control_qubit=control_qubit,
                     target_qubit=target_qubit,
                     shots=shots,
                     interval=interval,
                     plot=plot,
                 )
+                data["calibrate_zx90"][cr_label] = result
+
                 self.save_calib_note()
             except Exception as e:
-                print(f"Error calibrating {control_qubit}-{target_qubit}: {e}")
+                print(f"Error calibrating {cr_label}: {e}")
                 continue
+
+        return data
