@@ -4,6 +4,7 @@ from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
 from functools import cached_property, reduce
+from pathlib import Path
 from typing import Collection
 
 import numpy as np
@@ -11,6 +12,7 @@ from numpy.typing import NDArray
 
 from ..analysis import visualization as viz
 from ..backend import SAMPLING_PERIOD
+from .measurement_record import MeasurementRecord
 from .state_classifier import StateClassifier
 
 SAMPLING_PERIOD_SINGLE = SAMPLING_PERIOD
@@ -441,6 +443,12 @@ class MeasureResult:
         if return_figure:
             return figures
 
+    def save(
+        self,
+        data_dir: Path | str | None = None,
+    ) -> MeasurementRecord[MeasureResult]:
+        return MeasurementRecord.create(data=self, data_dir=data_dir)
+
 
 @dataclass(frozen=True)
 class MultipleMeasureResult:
@@ -612,3 +620,9 @@ class MultipleMeasureResult:
             if return_figure:
                 return figures
         return None
+
+    def save(
+        self,
+        data_dir: Path | str | None = None,
+    ) -> MeasurementRecord[MultipleMeasureResult]:
+        return MeasurementRecord.create(data=self, data_dir=data_dir)

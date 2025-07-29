@@ -540,11 +540,15 @@ class Measurement:
             integral_mode=measure_mode.integral_mode,
             enable_sum=enable_dsp_sum,
         )
-        return self._create_measure_result(
+        result = self._create_measure_result(
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=shots,
         )
+        rawdata_dir = self.system_manager.rawdata_dir
+        if rawdata_dir is not None:
+            result.save(data_dir=rawdata_dir)
+        return result
 
     def execute(
         self,
@@ -635,11 +639,15 @@ class Measurement:
             integral_mode=measure_mode.integral_mode,
             enable_sum=enable_dsp_sum,
         )
-        return self._create_multiple_measure_result(
+        result = self._create_multiple_measure_result(
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=shots,
         )
+        rawdata_dir = self.system_manager.rawdata_dir
+        if rawdata_dir is not None:
+            result.save(data_dir=rawdata_dir)
+        return result
 
     @cache
     def readout_pulse(
