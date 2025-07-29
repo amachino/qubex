@@ -56,6 +56,15 @@ class DeviceController:
         self._quel1system: Quel1System | None = None
 
     @property
+    def box_config(self) -> dict[str, Any]:
+        """Get the box configuration."""
+        if self._boxpool is None:
+            box_config = {}
+        else:
+            box_config = self._boxpool._box_config_cache
+        return box_config
+
+    @property
     def system_config(self) -> dict[str, Any]:
         """Get the system configuration."""
         config = self.qubecalib.system_config_database.asdict()

@@ -1319,7 +1319,7 @@ class Measurement:
         return MeasureResult(
             mode=measure_mode,
             data=measure_data,
-            config=backend_result.config,
+            config=self.device_controller.box_config,
         )
 
     def _create_multiple_measure_result(
@@ -1375,7 +1375,7 @@ class Measurement:
         return MultipleMeasureResult(
             mode=measure_mode,
             data=dict(measure_data),
-            config=backend_result.config,
+            config=self.device_controller.box_config,
         )
 
     @staticmethod
