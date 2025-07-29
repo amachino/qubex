@@ -1179,6 +1179,66 @@ class MeasurementMixin(
             "classifiers": classifiers,
         }
 
+    def measure_1q_state_fidelity(
+        self,
+        target: str,
+        *,
+        target_state: str = "+",
+        waveform: Waveform | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = False,
+    ) -> dict:
+        if waveform is None:
+            measure_result = self.state_tomography(
+                sequence={target: []},
+                initial_state={target: target_state},
+                shots=shots,
+                interval=interval,
+                reset_awg_and_capunits=reset_awg_and_capunits,
+                plot=plot,
+            )
+        else:
+            measure_result = self.state_tomography(
+                sequence={target: waveform},
+                shots=shots,
+                interval=interval,
+                reset_awg_and_capunits=reset_awg_and_capunits,
+                plot=plot,
+            )
+
+        state_vector = measure_result.get(target)
+        if state_vector is None:
+            raise ValueError(f"No measurement data for target {target}.")
+
+        if target_state == "+":
+            target_state_vector = np.array([1.0, 0.0, 0.0])
+        elif target_state == "-":
+            target_state_vector = np.array([-1.0, 0.0, 0.0])
+        elif target_state == "+i":
+            target_state_vector = np.array([0.0, 1.0, 0.0])
+        elif target_state == "-i":
+            target_state_vector = np.array([0.0, -1.0, 0.0])
+        elif target_state == "0":
+            target_state_vector = np.array([0.0, 0.0, 1.0])
+        elif target_state == "1":
+            target_state_vector = np.array([0.0, 0.0, -1.0])
+        else:
+            raise ValueError(f"Invalid target state: {target_state}")
+
+        fidelity = np.abs(np.dot(state_vector, target_state_vector)) ** 2
+        return {
+            "fidelity": fidelity,
+            "absolute_infidelity": np.abs(1 - fidelity),
+            "state_vector": state_vector,
+            "target_state_vector": target_state_vector,
+            "target_state": target_state,
+            "target": target,
+            "shots": shots,
+            "interval": interval,
+        }
+
     def state_tomography(
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
