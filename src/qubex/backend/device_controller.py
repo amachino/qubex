@@ -389,10 +389,12 @@ class DeviceController:
         # connect to the box
         box = self.qubecalib.create_box(box_name, reconnect=False)
         # relinkup the box if any of the links are down
-        if not all(box.link_status().values()):
-            box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
+
         # TODO: use appropriate noise threshold
+        if not all(box.link_status().values()):
+            box.relinkup(use_204b=False, background_noise_threshold=10000)
         box.reconnect(background_noise_threshold=10000)
+
         # check if all links are up
         status = box.link_status()
         if not all(status.values()):
