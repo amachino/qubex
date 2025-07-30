@@ -2076,6 +2076,7 @@ class CalibrationMixin(
         self,
         targets: Collection[str] | str | None = None,
         *,
+        cr_calib_params: dict | None = None,
         shots: int = CALIBRATION_SHOTS,
         interval: int = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2094,14 +2095,25 @@ class CalibrationMixin(
             "calibrate_zx90": {},
         }
 
+        cr_calib_params = cr_calib_params or {}
+
         for control_qubit, target_qubit in pairs:
             cr_label = f"{control_qubit}-{target_qubit}"
             try:
+                param = cr_calib_params.get(cr_label, {})
                 result = self.obtain_cr_params(
                     control_qubit=control_qubit,
                     target_qubit=target_qubit,
-                    n_iterations=6,
-                    tolerance=10e-6,
+                    time_range=param.get("time_range"),
+                    ramptime=param.get("ramptime"),
+                    cr_amplitude=param.get("cr_amplitude"),
+                    n_iterations=param.get("n_iterations", 6),
+                    n_cycles=param.get("n_cycles", 2),
+                    use_stored_params=param.get("use_stored_params", False),
+                    tolerance=param.get("tolerance", 10e-6),
+                    adiabatic_safe_factor=param.get("adiabatic_safe_factor"),
+                    max_amplitude=param.get("max_amplitude", 1.0),
+                    max_time_range=param.get("max_time_range", 4096.0),
                     shots=shots,
                     interval=interval,
                     plot=plot,
@@ -2111,6 +2123,15 @@ class CalibrationMixin(
                 result = self.calibrate_zx90(
                     control_qubit=control_qubit,
                     target_qubit=target_qubit,
+                    ramptime=param.get("ramptime"),
+                    duration=param.get("duration"),
+                    amplitude_range=param.get("amplitude_range"),
+                    degree=param.get("degree", 3),
+                    adiabatic_safe_factor=param.get("adiabatic_safe_factor"),
+                    max_amplitude=param.get("max_amplitude", 1.0),
+                    rotary_multiple=param.get("rotary_multiple", 9.0),
+                    use_drag=param.get("use_drag", True),
+                    duration_unit=param.get("duration_unit", 16.0),
                     shots=shots,
                     interval=interval,
                     plot=plot,
