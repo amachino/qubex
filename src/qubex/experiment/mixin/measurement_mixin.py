@@ -2279,7 +2279,7 @@ class MeasurementMixin(
         cpmg_unit_duration: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[SweepData]:
+    ) -> dict:
         qubits = []
         source_qubits = []
         for parent, child in entangle_steps:
@@ -2344,12 +2344,14 @@ class MeasurementMixin(
                 format="svg",
             )
 
+        coherences = {}
         for source_qubit in source_qubits:
-            self.fourier_analysis(
+            fourier_result = self.fourier_analysis(
                 result.data[source_qubit].data,
                 qubit=source_qubit,
                 title=f"Fourier analysis : {source_qubit}",
             )
+            coherences[source_qubit] = fourier_result["C"]
 
             now = datetime.now()
             timestamp = now.strftime("%Y%m%d_%H%M%S")
@@ -2365,7 +2367,7 @@ class MeasurementMixin(
                 result.data[source_qubit].normalized,
             )
 
-        return result
+        return coherences
 
     @staticmethod
     def fourier_analysis(
@@ -2373,7 +2375,7 @@ class MeasurementMixin(
         *,
         qubit: str | None = None,
         title="Fourier analysis",
-    ):
+    ) -> dict:
         data = np.asarray(data)
 
         S = (data + 1) / 2
@@ -2423,6 +2425,12 @@ class MeasurementMixin(
             format="svg",
         )
 
+        return {
+            "figure": fig,
+            "I": I,
+            "C": C,
+        }
+
     def parity_oscillation(
         self,
         entangle_steps: list[tuple[str, str]],
@@ -2433,6 +2441,7 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
+        readout_mitigation: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ) -> dict:
@@ -2495,7 +2504,10 @@ class MeasurementMixin(
                 shots=shots,
                 interval=interval,
             )
-            probs = res.mitigated_probabilities
+            if readout_mitigation:
+                probs = res.mitigated_probabilities
+            else:
+                probs = res.probabilities
             parity = 0
             for label, prob in probs.items():
                 is_even = label.count("1") % 2 == 0
