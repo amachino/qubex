@@ -1188,6 +1188,7 @@ class MeasurementMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
+        use_zvalues: bool = False,
         plot: bool = False,
     ) -> dict:
         if waveform is None:
@@ -1197,6 +1198,7 @@ class MeasurementMixin(
                 shots=shots,
                 interval=interval,
                 reset_awg_and_capunits=reset_awg_and_capunits,
+                use_zvalues=use_zvalues,
                 plot=plot,
             )
         else:
@@ -1205,6 +1207,7 @@ class MeasurementMixin(
                 shots=shots,
                 interval=interval,
                 reset_awg_and_capunits=reset_awg_and_capunits,
+                use_zvalues=use_zvalues,
                 plot=plot,
             )
 
@@ -1228,6 +1231,15 @@ class MeasurementMixin(
             raise ValueError(f"Invalid target state: {target_state}")
 
         fidelity = np.abs(np.dot(state_vector, target_state_vector)) ** 2
+
+        print(f"{target}: |{target_state}〉")
+        print(f"  Fidelity: {fidelity:.4f}")
+        print(f"  Absolute infidelity: {np.abs(1 - fidelity):.4f}")
+        print(
+            f"  State vector: ({state_vector[0]:.4f}, {state_vector[1]:.4f}, {state_vector[2]:.4f})"
+        )
+        print(f"  Target state vector: {target_state_vector}")
+
         return {
             "fidelity": fidelity,
             "absolute_infidelity": np.abs(1 - fidelity),
@@ -1249,6 +1261,7 @@ class MeasurementMixin(
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
         method: Literal["measure", "execute"] = "measure",
+        use_zvalues: bool = False,
         plot: bool = False,
     ) -> dict[str, tuple[float, float, float]]:
         if isinstance(sequence, PulseSchedule):
@@ -1329,11 +1342,20 @@ class MeasurementMixin(
                     rabi_param = self.rabi_params[qubit]
                     if rabi_param is None:
                         raise ValueError("Rabi parameters are not stored.")
-                    values = data.kerneled
-                    values_rotated = values * np.exp(-1j * rabi_param.angle)
-                    values_normalized = (
-                        np.imag(values_rotated) - rabi_param.offset
-                    ) / rabi_param.amplitude
+
+                    if use_zvalues:
+                        p = data.kerneled
+                        g, e = (
+                            self.state_centers[qubit][0],
+                            self.state_centers[qubit][1],
+                        )
+                        v_ge = e - g
+                        v_gp = p - g
+                        v_gp_proj = np.real(v_gp * np.conj(v_ge)) / np.abs(v_ge)
+                        values_normalized = 1 - 2 * np.abs(v_gp_proj) / np.abs(v_ge)
+                    else:
+                        values_normalized = float(rabi_param.normalize(data.kerneled))
+
                     buffer[qubit] += [values_normalized]
 
         result = {
