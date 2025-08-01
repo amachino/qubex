@@ -1921,22 +1921,26 @@ class MeasurementMixin(
                             space_before_cr = cr_start - spec_end
                             if space_before_cr >= 0:
                                 ps.add(spec, Blank(space_before_cr))
-                                blank1 = (
-                                    cr_ranges[0].start
-                                    + cr_ranges[0].stop
-                                    - 0.5 * pi.duration
-                                )
+                                # blank1 = (
+                                #     cr_ranges[0].start
+                                #     + cr_ranges[0].stop
+                                #     - 0.5 * pi.duration
+                                # )
+                                blank1 = cr_ranges[0].stop * 2
                                 ps.add(
                                     spec,
                                     Blank(blank1),
                                 )
                                 ps.add(spec, pi)
+                                # blank2 = (
+                                #     cr_ranges[1].start * 2
+                                #     - (cr_ranges[0].start + cr_ranges[0].stop)
+                                #     - pi.duration
+                                #     + (cr_ranges[1].stop - cr_ranges[1].start)
+                                # )
                                 blank2 = (
-                                    cr_ranges[1].start * 2
-                                    - (cr_ranges[0].start + cr_ranges[0].stop)
-                                    - pi.duration
-                                    + (cr_ranges[1].stop - cr_ranges[1].start)
-                                )
+                                    cr_ranges[1].stop - cr_ranges[0].stop
+                                ) * 2 - pi.duration
                                 ps.add(
                                     spec,
                                     Blank(blank2),
