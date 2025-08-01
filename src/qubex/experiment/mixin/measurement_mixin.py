@@ -1874,7 +1874,7 @@ class MeasurementMixin(
         if initialization_pulse is None:
             initialization_pulse = "Y90"
         if cpmg_unit_duration is None:
-            cpmg_unit_duration = 800
+            cpmg_unit_duration = 200
 
         source_qubits = []
         qubits = []
@@ -1899,27 +1899,72 @@ class MeasurementMixin(
                     )
             ps.barrier()
             for parent, child in entangle_steps:
-                ps.call(self.cnot(parent, child))
+                cnot = self.cnot(parent, child)
+                ps.call(cnot)
+                if dynamical_decoupling:
+                    if self.qubits[parent].index % 4 in [0, 3]:
+                        control_qubit = parent
+                        target_qubit = child
+                    else:
+                        control_qubit = child
+                        target_qubit = parent
+                    cr_ranges = cnot.get_pulse_ranges()[
+                        f"{control_qubit}-{target_qubit}"
+                    ]
+                    spectators = self.get_spectators(control_qubit)
+                    for spectator in spectators:
+                        spec = spectator.label
+                        pi = self.x180(spec)
+                        if spec in ps.labels and spec != target_qubit:
+                            cr_start = ps.get_offset(target_qubit) - cnot.duration
+                            spec_end = ps.get_offset(spec)
+                            space_before_cr = cr_start - spec_end
+                            if space_before_cr >= 0:
+                                ps.add(spec, Blank(space_before_cr))
+                                blank1 = (
+                                    cr_ranges[0].start
+                                    + cr_ranges[0].stop
+                                    - 0.5 * pi.duration
+                                )
+                                ps.add(
+                                    spec,
+                                    Blank(blank1),
+                                )
+                                ps.add(spec, pi)
+                                blank2 = (
+                                    cr_ranges[1].start * 2
+                                    - (cr_ranges[0].start + cr_ranges[0].stop)
+                                    - pi.duration
+                                    + (cr_ranges[1].stop - cr_ranges[1].start)
+                                )
+                                ps.add(
+                                    spec,
+                                    Blank(blank2),
+                                )
+                                ps.add(spec, pi)
 
-            # if dynamical_decoupling:
-            #     # Apply CPMG to blanks after entanglement gates
-            #     for qubit in qubits:
-            #         if self.qubits[qubit].index % 4 in [0, 3]:
-            #             dd_duration = ps._max_offset() - ps._offsets[qubit]
-            #             pi = self.x180(qubit)
-            #             n_pi = 2 * int(dd_duration // cpmg_unit_duration)
-            #             if n_pi > 0:
-            #                 tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
-            #                 tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
-            #                 ps.add(qubit, CPMG(tau=tau, pi=pi, n=n_pi))
+            if dynamical_decoupling:
+                # Apply CPMG to blanks after entanglement gates
+                for qubit in qubits:
+                    if self.qubits[qubit].index % 4 in [0, 3]:
+                        dd_duration = ps._max_offset() - ps._offsets[qubit]
+                        pi = self.x180(qubit)
+                        if dd_duration > cpmg_unit_duration:
+                            n_pi = 2  # * int(dd_duration // cpmg_unit_duration)
+                            tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
+                            tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
+                            ps.add(
+                                qubit, CPMG(tau=tau, pi=pi, n=n_pi, alternating=False)
+                            )
 
-        if dynamical_decoupling:
+        if False and dynamical_decoupling:
             # Apply CPMG to all blanks in the sequence
             with PulseSchedule() as ps_dd:
                 for target, pulse_array in ps.get_sequences().items():
                     for element in pulse_array.elements:
                         if isinstance(element, Blank) and target in self.qubits:
-                            if self.qubits[target].index % 4 in [0, 3]:
+                            pass
+                            if self.qubits[target].index % 4 in [0, 1, 2, 3]:
                                 dd_duration = element.duration
                                 pi = self.x180(target)
                                 n_pi = 2 * int(dd_duration // cpmg_unit_duration)
@@ -2422,6 +2467,7 @@ class MeasurementMixin(
             title=title,
             xaxis_title="Fourier modes",
             yaxis_title="Amplitude",
+            yaxis_range=[0, 1.1],
         )
 
         fig.show(
@@ -2460,6 +2506,7 @@ class MeasurementMixin(
         phi_range: np.ndarray | None = None,
         n_points_per_qubit: int | None = None,
         show_sequence: bool = True,
+        show_only_qubit_channels: bool = False,
         initialization_pulse: str | None = None,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
@@ -2480,6 +2527,8 @@ class MeasurementMixin(
                 qubits.append(child)
 
         n_qubits = len(qubits)
+
+        print(f"qubits: {qubits}")
 
         if phi_range is None:
             if n_points_per_qubit is None:
@@ -2513,12 +2562,18 @@ class MeasurementMixin(
             return seq
 
         if show_sequence:
-            sequence(0).plot(
+            seq_plot = sequence(0.0)
+            if show_only_qubit_channels:
+                for label in seq_plot.labels:
+                    if label not in self.qubits:
+                        del seq_plot._channels[label]
+            seq_plot.plot(
                 title=f"{n_qubits}-qubits entanglement sequence",
-                show_physical_pulse=True,
+                show_physical_pulse=False,
             )
 
-        parity_list = []
+        parities_raw = []
+        parities_mit = []
         for phi in tqdm(phi_range):
             res = self.measure(
                 sequence(phi),
@@ -2526,27 +2581,45 @@ class MeasurementMixin(
                 shots=shots,
                 interval=interval,
             )
-            if readout_mitigation:
-                probs = res.mitigated_probabilities
-            else:
-                probs = res.probabilities
-            parity = 0
-            for label, prob in probs.items():
-                is_even = label.count("1") % 2 == 0
-                parity += prob * (1 if is_even else -1)
-            parity_list.append(parity)
+            probs_raw = res.probabilities
+            parity_raw = 0
+            for label, prob in probs_raw.items():
+                parity_raw += prob * (1 if label.count("1") % 2 == 0 else -1)
+            parities_raw.append(parity_raw)
 
-        fig = viz.plot(
-            x=phi_range,
-            y=parity_list,
-            mode="lines+markers",
-            ylim=(-1.1, 1.1),
-            xlabel="Z rotation : φ (rad)",
-            ylabel="Parity",
-            title=f"Parity oscillation : {n_qubits}-qubit GHZ state",
-            return_figure=True,
+            if readout_mitigation:
+                probs_mit = res.mitigated_probabilities
+                parity_mit = 0
+                for label, prob in probs_mit.items():
+                    parity_mit += prob * (1 if label.count("1") % 2 == 0 else -1)
+                parities_mit.append(parity_mit)
+
+        fig = go.Figure(
+            layout=go.Layout(
+                title=f"Parity oscillation : {n_qubits}-qubit GHZ state",
+                xaxis_title="Z rotation : φ (rad)",
+                yaxis_title="Parity",
+                yaxis_range=(-1.1, 1.1),
+            )
         )
-        fig.show()  # type: ignore
+
+        fig.add_scatter(
+            x=phi_range,
+            y=parities_raw,
+            mode="lines+markers",
+            name="Raw",
+            marker=dict(size=5),
+        )
+        if readout_mitigation:
+            fig.add_scatter(
+                x=phi_range,
+                y=parities_mit,
+                mode="lines+markers",
+                name="Mitigated",
+                marker=dict(size=5),
+            )
+        fig.show()
+
         viz.save_figure_image(
             fig,  # type: ignore
             name=f"parity_oscillation_n{n_qubits}",
@@ -2559,7 +2632,7 @@ class MeasurementMixin(
         )
 
         self.fourier_analysis(
-            parity_list,
+            parities_raw if not readout_mitigation else parities_mit,
             title=f"Fourier analysis of {n_qubits}-qubit parity oscillation",
         )
 
@@ -2570,10 +2643,11 @@ class MeasurementMixin(
 
         np.savez(
             f"./data/{timestamp}_parity_oscillation_n{n_qubits}.npz",
-            parity_list,
+            parities_raw,
         )
 
         return {
             "phi_range": phi_range,
-            "parity_list": parity_list,
+            "parities_raw": parities_raw,
+            "parities_mit": parities_mit,
         }

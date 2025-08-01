@@ -818,6 +818,25 @@ class PulseSchedule:
         """
         return {label: self.get_frame(label) for label in self.labels}
 
+    def get_offset(
+        self,
+        label: str,
+    ) -> float:
+        """
+        Returns the offset for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+
+        Returns
+        -------
+        float
+            The offset.
+        """
+        return self._offsets[label]
+
     def _add_channels_if_not_exist(self, labels: list[str]):
         for label in labels:
             if label not in self.labels:
