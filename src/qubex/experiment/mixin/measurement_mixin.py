@@ -8,6 +8,7 @@ from itertools import product
 from pathlib import Path
 from typing import Collection, Literal, Optional, Sequence
 
+import networkx as nx
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
@@ -1870,29 +1871,59 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         dynamical_decoupling: bool = False,
         cpmg_unit_duration: float | None = None,
+        optimize_steps: bool = True,
     ) -> PulseSchedule:
         if initialization_pulse is None:
             initialization_pulse = "Y90"
         if cpmg_unit_duration is None:
             cpmg_unit_duration = 200
 
-        source_qubits = []
+        G = nx.DiGraph()
         qubits = []
         for parent, child in entangle_steps:
             if parent not in qubits:
-                source_qubits.append(parent)
                 qubits.append(parent)
             if child not in qubits:
                 qubits.append(child)
 
+            weight = int(self.cnot(parent, child).duration)
+            G.add_edge(parent, child, weight=weight)
+
+        roots = [node for node, in_degree in G.in_degree() if in_degree == 0]
+        leaf_nodes = [node for node, out_degree in G.out_degree() if out_degree == 0]
+
+        path_lengths = {}
+        for leaf in leaf_nodes:
+            for root in roots:
+                if not nx.has_path(G, root, leaf):
+                    continue
+                path = tuple(nx.shortest_path(G, source=root, target=leaf))
+                length = sum(G[u][v]["weight"] for u, v in zip(path[:-1], path[1:]))
+                path_lengths[path] = length
+
+        sorted_paths = sorted(path_lengths.items(), key=lambda x: x[1], reverse=True)
+
+        optimized_steps = []
+        for path, length in sorted_paths:
+            print(f"{path}: {length}")
+            for i in range(len(path) - 1):
+                edge = (path[i], path[i + 1])
+                if edge not in optimized_steps:
+                    optimized_steps.append(edge)
+
+        if optimize_steps:
+            entangle_steps = optimized_steps
+
+        print(entangle_steps)
+
         with PulseSchedule() as ps:
-            for source_qubit in source_qubits:
+            for root in roots:
                 if initialization_pulse == "Y90":
-                    ps.add(source_qubit, self.y90(source_qubit))
+                    ps.add(root, self.y90(root))
                 elif initialization_pulse == "X90":
-                    ps.add(source_qubit, self.x90(source_qubit))
+                    ps.add(root, self.x90(root))
                 elif initialization_pulse == "H":
-                    ps.add(source_qubit, self.hadamard(source_qubit))
+                    ps.add(root, self.hadamard(root))
                 else:
                     raise ValueError(
                         f"Invalid initialize pulse: {initialization_pulse}"
@@ -1901,7 +1932,7 @@ class MeasurementMixin(
             for parent, child in entangle_steps:
                 cnot = self.cnot(parent, child)
                 ps.call(cnot)
-                if dynamical_decoupling:
+                if True:  # dynamical_decoupling:
                     if self.qubits[parent].index % 4 in [0, 3]:
                         control_qubit = parent
                         target_qubit = child
@@ -1986,6 +2017,8 @@ class MeasurementMixin(
             seq = ps_dd
         else:
             seq = ps
+
+        print(seq.duration)
 
         return seq
 
