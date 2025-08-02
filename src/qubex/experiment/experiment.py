@@ -730,7 +730,8 @@ class Experiment(
             target_qubit = self.quantum_system.get_qubit(pair[1])
             if target_qubit.label not in self.available_targets:
                 continue
-            if control_qubit.frequency < target_qubit.frequency:
+            # if control_qubit.frequency < target_qubit.frequency:
+            if control_qubit.index % 4 in [0, 3]:
                 if low_to_high:
                     cr_pairs.append(pair)
             else:
