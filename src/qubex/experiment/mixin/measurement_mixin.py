@@ -1869,10 +1869,11 @@ class MeasurementMixin(
         entangle_steps: list[tuple[str, str]],
         *,
         initialization_pulse: str | None = None,
-        decouple_residual_zz: bool = True,
-        decouple_cr_crosstalk: bool = True,
+        optimize_sequence: bool = False,
+        as_late_as_possible: bool = False,
+        decouple_residual_zz: bool = False,
+        decouple_cr_crosstalk: bool = False,
         cpmg_unit_duration: float | None = None,
-        optimize_sequence: bool = True,
     ) -> PulseSchedule:
         if initialization_pulse is None:
             initialization_pulse = "Y90"
@@ -1892,6 +1893,7 @@ class MeasurementMixin(
 
         roots = [node for node, in_degree in G.in_degree() if in_degree == 0]
         leaf_nodes = [node for node, out_degree in G.out_degree() if out_degree == 0]
+        leaf_edges = [step for step in entangle_steps if step[1] in leaf_nodes]
 
         if optimize_sequence:
             path_lengths = {}
@@ -1952,23 +1954,12 @@ class MeasurementMixin(
                             space_before_cr = cr_start - spec_end
                             if space_before_cr >= 0:
                                 ps.add(spec, Blank(space_before_cr))
-                                # blank1 = (
-                                #     cr_ranges[0].start
-                                #     + cr_ranges[0].stop
-                                #     - 0.5 * pi.duration
-                                # )
                                 blank1 = cr_ranges[0].stop * 2
                                 ps.add(
                                     spec,
                                     Blank(blank1),
                                 )
                                 ps.add(spec, pi)
-                                # blank2 = (
-                                #     cr_ranges[1].start * 2
-                                #     - (cr_ranges[0].start + cr_ranges[0].stop)
-                                #     - pi.duration
-                                #     + (cr_ranges[1].stop - cr_ranges[1].start)
-                                # )
                                 blank2 = (
                                     cr_ranges[1].stop - cr_ranges[0].stop
                                 ) * 2 - pi.duration
@@ -1977,6 +1968,31 @@ class MeasurementMixin(
                                     Blank(blank2),
                                 )
                                 ps.add(spec, pi)
+
+            if as_late_as_possible:
+                # Put final CNOT gates as late as possible
+                max_duration = ps._max_offset()
+                for label, channel in ps._channels.items():
+                    is_leaf = False
+                    target = self.targets[label]
+                    if target.is_cr:
+                        pair = Target.cr_qubit_pair(label)
+                        for edge in leaf_edges:
+                            if set(pair) == set(edge):
+                                is_leaf = True
+                                break
+                    else:
+                        for edge in leaf_edges:
+                            if target.label in edge:
+                                is_leaf = True
+                                break
+
+                    if is_leaf:
+                        offset = ps._offsets[label]
+                        if offset < max_duration:
+                            blank = max_duration - offset
+                            channel.sequence._elements.insert(-1, Blank(duration=blank))
+                            ps._offsets[label] += blank
 
             if decouple_residual_zz:
                 # Apply CPMG to blanks after entanglement gates
@@ -2025,6 +2041,8 @@ class MeasurementMixin(
         entangle_steps: list[tuple[str, str]],
         *,
         initialization_pulse: str | None = None,
+        optimize_sequence: bool = True,
+        as_late_as_possible: bool = True,
         decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = True,
         cpmg_unit_duration: float | None = None,
@@ -2045,6 +2063,8 @@ class MeasurementMixin(
         return self.create_entangle_sequence(
             entangle_steps=entangle_steps,
             initialization_pulse=initialization_pulse,
+            optimize_sequence=optimize_sequence,
+            as_late_as_possible=as_late_as_possible,
             decouple_residual_zz=decouple_residual_zz,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
             cpmg_unit_duration=cpmg_unit_duration,
@@ -2056,6 +2076,8 @@ class MeasurementMixin(
         *,
         measurement_bases: Collection[str] | None = None,
         initialization_pulse: str | None = None,
+        optimize_sequence: bool = True,
+        as_late_as_possible: bool = True,
         decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = True,
         cpmg_unit_duration: float | None = None,
@@ -2087,6 +2109,8 @@ class MeasurementMixin(
         seq = self.create_ghz_sequence(
             entangle_steps=entangle_steps,
             initialization_pulse=initialization_pulse,
+            optimize_sequence=optimize_sequence,
+            as_late_as_possible=as_late_as_possible,
             decouple_residual_zz=decouple_residual_zz,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
             cpmg_unit_duration=cpmg_unit_duration,
@@ -2162,6 +2186,8 @@ class MeasurementMixin(
         *,
         readout_mitigation: bool = True,
         initialization_pulse: str | None = None,
+        optimize_sequence: bool = True,
+        as_late_as_possible: bool = True,
         decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = True,
         cpmg_unit_duration: float | None = None,
@@ -2227,6 +2253,8 @@ class MeasurementMixin(
             seq = self.create_ghz_sequence(
                 entangle_steps=entangle_steps,
                 initialization_pulse=initialization_pulse,
+                optimize_sequence=optimize_sequence,
+                as_late_as_possible=as_late_as_possible,
                 decouple_residual_zz=decouple_residual_zz,
                 decouple_cr_crosstalk=decouple_cr_crosstalk,
                 cpmg_unit_duration=cpmg_unit_duration,
@@ -2245,7 +2273,10 @@ class MeasurementMixin(
                 entangle_steps=entangle_steps,
                 measurement_bases=measurement_bases,
                 initialization_pulse=initialization_pulse,
+                optimize_sequence=optimize_sequence,
+                as_late_as_possible=as_late_as_possible,
                 decouple_residual_zz=decouple_residual_zz,
+                decouple_cr_crosstalk=decouple_cr_crosstalk,
                 cpmg_unit_duration=cpmg_unit_duration,
                 shots=shots,
                 interval=interval,
@@ -2348,18 +2379,20 @@ class MeasurementMixin(
         phi: float = 0.0,
         echo: bool = True,
         initialization_pulse: str | None = None,
+        optimize_sequence: bool = True,
+        as_late_as_possible: bool = True,
         decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = False,
         cpmg_unit_duration: float | None = None,
-        optimize_sequence: bool = True,
     ) -> PulseSchedule:
         ghz_seq = self.create_entangle_sequence(
             entangle_steps=entangle_steps,
             initialization_pulse=initialization_pulse,
+            optimize_sequence=optimize_sequence,
+            as_late_as_possible=as_late_as_possible,
             decouple_residual_zz=decouple_residual_zz,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
             cpmg_unit_duration=cpmg_unit_duration,
-            optimize_sequence=optimize_sequence,
         )
 
         qubits = []
@@ -2389,10 +2422,11 @@ class MeasurementMixin(
         show_sequence: bool = True,
         echo: bool = True,
         initialization_pulse: str | None = None,
+        optimize_sequence: bool = True,
+        as_late_as_possible: bool = True,
         decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = False,
         cpmg_unit_duration: float | None = None,
-        optimize_sequence: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ) -> dict:
@@ -2418,10 +2452,11 @@ class MeasurementMixin(
                 phi=0.0,
                 echo=echo,
                 initialization_pulse=initialization_pulse,
+                optimize_sequence=optimize_sequence,
+                as_late_as_possible=as_late_as_possible,
                 decouple_residual_zz=decouple_residual_zz,
                 decouple_cr_crosstalk=decouple_cr_crosstalk,
                 cpmg_unit_duration=cpmg_unit_duration,
-                optimize_sequence=optimize_sequence,
             )
             seq.plot(title=f"{n_qubits}-qubits entanglement sequence")
 
@@ -2431,10 +2466,11 @@ class MeasurementMixin(
                 phi=phi,
                 echo=echo,
                 initialization_pulse=initialization_pulse,
+                optimize_sequence=optimize_sequence,
+                as_late_as_possible=as_late_as_possible,
                 decouple_residual_zz=decouple_residual_zz,
                 decouple_cr_crosstalk=decouple_cr_crosstalk,
                 cpmg_unit_duration=cpmg_unit_duration,
-                optimize_sequence=optimize_sequence,
             ),
             plot=False,
             enable_tqdm=True,
@@ -2561,8 +2597,10 @@ class MeasurementMixin(
         show_sequence: bool = True,
         show_only_qubit_channels: bool = False,
         initialization_pulse: str | None = None,
+        optimize_sequence: bool = True,
+        as_late_as_possible: bool = True,
         decouple_residual_zz: bool = True,
-        decouple_cr_crosstalk: bool = True,
+        decouple_cr_crosstalk: bool = False,
         cpmg_unit_duration: float | None = None,
         readout_mitigation: bool = False,
         shots: int = DEFAULT_SHOTS,
@@ -2592,6 +2630,8 @@ class MeasurementMixin(
         ghz_seq = self.create_entangle_sequence(
             entangle_steps=entangle_steps,
             initialization_pulse=initialization_pulse,
+            optimize_sequence=optimize_sequence,
+            as_late_as_possible=as_late_as_possible,
             decouple_residual_zz=decouple_residual_zz,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
             cpmg_unit_duration=cpmg_unit_duration,
