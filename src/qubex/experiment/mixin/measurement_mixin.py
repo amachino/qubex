@@ -1871,14 +1871,13 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         optimize_sequence: bool = False,
         as_late_as_possible: bool = False,
-        decouple_residual_zz: bool = False,
         decouple_cr_crosstalk: bool = False,
-        cpmg_unit_duration: float | None = None,
+        decouple_entangled_zz: bool = False,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
         if initialization_pulse is None:
             initialization_pulse = "Y90"
-        if cpmg_unit_duration is None:
-            cpmg_unit_duration = 200
 
         G = nx.DiGraph()
         qubits = []
@@ -1994,32 +1993,39 @@ class MeasurementMixin(
                             channel.sequence._elements.insert(-1, Blank(duration=blank))
                             ps._offsets[label] += blank
 
-            if decouple_residual_zz:
+            if decouple_entangled_zz:
                 # Apply CPMG to blanks after entanglement gates
                 for qubit in qubits:
                     if self.qubits[qubit].index % 4 in [0, 3]:
                         dd_duration = ps._max_offset() - ps._offsets[qubit]
                         pi = self.x180(qubit)
-                        if dd_duration > cpmg_unit_duration:
-                            n_pi = 2  # * int(dd_duration // cpmg_unit_duration)
+                        if cpmg_duration_unit is None:
+                            n_pi = 2
+                            cpmg_duration_unit = pi.duration * 10
+                        else:
+                            n_pi = 2 * int(dd_duration // cpmg_duration_unit)
+                        if dd_duration > cpmg_duration_unit:
                             tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
                             tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
                             ps.add(
                                 qubit, CPMG(tau=tau, pi=pi, n=n_pi, alternating=False)
                             )
 
-        if False and decouple_residual_zz:
+        if decouple_all_zz:
             # Apply CPMG to all blanks in the sequence
             with PulseSchedule() as ps_dd:
                 for target, pulse_array in ps.get_sequences().items():
                     for element in pulse_array.elements:
                         if isinstance(element, Blank) and target in self.qubits:
-                            pass
-                            if self.qubits[target].index % 4 in [0, 1, 2, 3]:
+                            if self.qubits[target].index % 4 in [0, 3]:
                                 dd_duration = element.duration
                                 pi = self.x180(target)
-                                n_pi = 2 * int(dd_duration // cpmg_unit_duration)
-                                if n_pi > 0:
+                                if cpmg_duration_unit is None:
+                                    n_pi = 2
+                                    cpmg_duration_unit = pi.duration * 10
+                                else:
+                                    n_pi = 2 * int(dd_duration // cpmg_duration_unit)
+                                if dd_duration > cpmg_duration_unit:
                                     tau = (dd_duration - pi.duration * n_pi) // (
                                         2 * n_pi
                                     )
@@ -2043,9 +2049,10 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         optimize_sequence: bool = True,
         as_late_as_possible: bool = True,
-        decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = True,
-        cpmg_unit_duration: float | None = None,
+        decouple_entangled_zz: bool = True,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
         """
         Create a GHZ state preparation sequence based on the entanglement steps.
@@ -2065,9 +2072,10 @@ class MeasurementMixin(
             initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
-            decouple_residual_zz=decouple_residual_zz,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
-            cpmg_unit_duration=cpmg_unit_duration,
+            decouple_entangled_zz=decouple_entangled_zz,
+            decouple_all_zz=decouple_all_zz,
+            cpmg_duration_unit=cpmg_duration_unit,
         )
 
     def measure_ghz_state(
@@ -2078,9 +2086,10 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         optimize_sequence: bool = True,
         as_late_as_possible: bool = True,
-        decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = True,
-        cpmg_unit_duration: float | None = None,
+        decouple_entangled_zz: bool = True,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2111,9 +2120,10 @@ class MeasurementMixin(
             initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
-            decouple_residual_zz=decouple_residual_zz,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
-            cpmg_unit_duration=cpmg_unit_duration,
+            decouple_entangled_zz=decouple_entangled_zz,
+            decouple_all_zz=decouple_all_zz,
+            cpmg_duration_unit=cpmg_duration_unit,
         )
 
         with PulseSchedule() as ps:
@@ -2188,9 +2198,10 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         optimize_sequence: bool = True,
         as_late_as_possible: bool = True,
-        decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = True,
-        cpmg_unit_duration: float | None = None,
+        decouple_entangled_zz: bool = True,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -2214,10 +2225,6 @@ class MeasurementMixin(
             List of tuples representing the entanglement steps, e.g., [("Q00", "Q01"), ("Q01", "Q02")].
         readout_mitigation : bool
             Whether to apply readout error mitigation.
-        decouple_residual_zz : bool
-            Whether to decouple residual ZZ interactions.
-        decouple_cr_crosstalk : bool
-            Whether to decouple crosstalk during CR gates.
         shots : int
             Number of shots for each measurement.
         interval : float
@@ -2255,9 +2262,10 @@ class MeasurementMixin(
                 initialization_pulse=initialization_pulse,
                 optimize_sequence=optimize_sequence,
                 as_late_as_possible=as_late_as_possible,
-                decouple_residual_zz=decouple_residual_zz,
                 decouple_cr_crosstalk=decouple_cr_crosstalk,
-                cpmg_unit_duration=cpmg_unit_duration,
+                decouple_entangled_zz=decouple_entangled_zz,
+                decouple_all_zz=decouple_all_zz,
+                cpmg_duration_unit=cpmg_duration_unit,
             )
             seq.plot(title=f"GHZ state preparation sequence : {'-'.join(qubits)}")
 
@@ -2275,9 +2283,10 @@ class MeasurementMixin(
                 initialization_pulse=initialization_pulse,
                 optimize_sequence=optimize_sequence,
                 as_late_as_possible=as_late_as_possible,
-                decouple_residual_zz=decouple_residual_zz,
                 decouple_cr_crosstalk=decouple_cr_crosstalk,
-                cpmg_unit_duration=cpmg_unit_duration,
+                decouple_entangled_zz=decouple_entangled_zz,
+                decouple_all_zz=decouple_all_zz,
+                cpmg_duration_unit=cpmg_duration_unit,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -2381,18 +2390,20 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         optimize_sequence: bool = True,
         as_late_as_possible: bool = True,
-        decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = False,
-        cpmg_unit_duration: float | None = None,
+        decouple_entangled_zz: bool = True,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
         ghz_seq = self.create_entangle_sequence(
             entangle_steps=entangle_steps,
             initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
-            decouple_residual_zz=decouple_residual_zz,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
-            cpmg_unit_duration=cpmg_unit_duration,
+            decouple_entangled_zz=decouple_entangled_zz,
+            decouple_all_zz=decouple_all_zz,
+            cpmg_duration_unit=cpmg_duration_unit,
         )
 
         qubits = []
@@ -2424,9 +2435,10 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         optimize_sequence: bool = True,
         as_late_as_possible: bool = True,
-        decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = False,
-        cpmg_unit_duration: float | None = None,
+        decouple_entangled_zz: bool = True,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ) -> dict:
@@ -2454,9 +2466,10 @@ class MeasurementMixin(
                 initialization_pulse=initialization_pulse,
                 optimize_sequence=optimize_sequence,
                 as_late_as_possible=as_late_as_possible,
-                decouple_residual_zz=decouple_residual_zz,
                 decouple_cr_crosstalk=decouple_cr_crosstalk,
-                cpmg_unit_duration=cpmg_unit_duration,
+                decouple_entangled_zz=decouple_entangled_zz,
+                decouple_all_zz=decouple_all_zz,
+                cpmg_duration_unit=cpmg_duration_unit,
             )
             seq.plot(title=f"{n_qubits}-qubits entanglement sequence")
 
@@ -2468,9 +2481,10 @@ class MeasurementMixin(
                 initialization_pulse=initialization_pulse,
                 optimize_sequence=optimize_sequence,
                 as_late_as_possible=as_late_as_possible,
-                decouple_residual_zz=decouple_residual_zz,
                 decouple_cr_crosstalk=decouple_cr_crosstalk,
-                cpmg_unit_duration=cpmg_unit_duration,
+                decouple_entangled_zz=decouple_entangled_zz,
+                decouple_all_zz=decouple_all_zz,
+                cpmg_duration_unit=cpmg_duration_unit,
             ),
             plot=False,
             enable_tqdm=True,
@@ -2599,9 +2613,10 @@ class MeasurementMixin(
         initialization_pulse: str | None = None,
         optimize_sequence: bool = True,
         as_late_as_possible: bool = True,
-        decouple_residual_zz: bool = True,
         decouple_cr_crosstalk: bool = False,
-        cpmg_unit_duration: float | None = None,
+        decouple_entangled_zz: bool = True,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
         readout_mitigation: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -2632,9 +2647,10 @@ class MeasurementMixin(
             initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
-            decouple_residual_zz=decouple_residual_zz,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
-            cpmg_unit_duration=cpmg_unit_duration,
+            decouple_entangled_zz=decouple_entangled_zz,
+            decouple_all_zz=decouple_all_zz,
+            cpmg_duration_unit=cpmg_duration_unit,
         )
 
         def sequence(phi: float) -> PulseSchedule:
