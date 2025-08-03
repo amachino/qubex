@@ -2001,10 +2001,11 @@ class MeasurementMixin(
                         pi = self.x180(qubit)
                         if cpmg_duration_unit is None:
                             n_pi = 2
-                            cpmg_duration_unit = pi.duration * 10
+                            duration_unit = pi.duration * 10
                         else:
                             n_pi = 2 * int(dd_duration // cpmg_duration_unit)
-                        if dd_duration > cpmg_duration_unit:
+                            duration_unit = cpmg_duration_unit
+                        if dd_duration > duration_unit:
                             tau = (dd_duration - pi.duration * n_pi) // (2 * n_pi)
                             tau = (tau // Pulse.SAMPLING_PERIOD) * Pulse.SAMPLING_PERIOD
                             ps.add(
@@ -2022,10 +2023,11 @@ class MeasurementMixin(
                                 pi = self.x180(target)
                                 if cpmg_duration_unit is None:
                                     n_pi = 2
-                                    cpmg_duration_unit = pi.duration * 10
+                                    duration_unit = pi.duration * 10
                                 else:
                                     n_pi = 2 * int(dd_duration // cpmg_duration_unit)
-                                if dd_duration > cpmg_duration_unit:
+                                    duration_unit = cpmg_duration_unit
+                                if dd_duration > duration_unit:
                                     tau = (dd_duration - pi.duration * n_pi) // (
                                         2 * n_pi
                                     )
@@ -2617,7 +2619,7 @@ class MeasurementMixin(
         decouple_entangled_zz: bool = True,
         decouple_all_zz: bool = False,
         cpmg_duration_unit: float | None = None,
-        readout_mitigation: bool = False,
+        readout_mitigation: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ) -> dict:
