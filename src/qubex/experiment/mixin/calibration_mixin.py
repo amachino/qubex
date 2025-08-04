@@ -1036,7 +1036,7 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
-        plot: bool = False,
+        plot: bool = True,
     ) -> dict:
         cr_label = f"{control_qubit}-{target_qubit}"
 
@@ -1391,7 +1391,7 @@ class CalibrationMixin(
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
-        plot: bool = False,
+        plot: bool = True,
     ) -> dict:
         if ramptime is None:
             ramptime = self._ramptime(control_qubit, target_qubit)

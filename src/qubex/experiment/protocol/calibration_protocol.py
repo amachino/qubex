@@ -555,7 +555,7 @@ class CalibrationProtocol(Protocol):
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
-        plot: bool = False,
+        plot: bool = True,
     ) -> dict: ...
 
     def update_cr_params(
@@ -576,7 +576,7 @@ class CalibrationProtocol(Protocol):
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
-        plot: bool = False,
+        plot: bool = True,
     ) -> dict: ...
 
     def obtain_cr_params(
