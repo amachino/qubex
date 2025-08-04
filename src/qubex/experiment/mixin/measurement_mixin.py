@@ -1971,27 +1971,23 @@ class MeasurementMixin(
             if as_late_as_possible:
                 # Put final CNOT gates as late as possible
                 max_duration = ps._max_offset()
-                for label, channel in ps._channels.items():
-                    is_leaf = False
-                    target = self.targets[label]
-                    if target.is_cr:
-                        pair = Target.cr_qubit_pair(label)
-                        for edge in leaf_edges:
-                            if set(pair) == set(edge):
-                                is_leaf = True
-                                break
+                for leaf_edge in leaf_edges:
+                    if self.qubits[leaf_edge[0]].index % 4 in [0, 3]:
+                        control_label = leaf_edge[0]
+                        target_label = leaf_edge[1]
                     else:
-                        for edge in leaf_edges:
-                            if target.label in edge:
-                                is_leaf = True
-                                break
-
-                    if is_leaf:
-                        offset = ps._offsets[label]
+                        control_label = leaf_edge[1]
+                        target_label = leaf_edge[0]
+                    cr_label = f"{control_label}-{target_label}"
+                    if ps._offsets[control_label] == ps._offsets[target_label]:
+                        offset = ps._offsets[control_label]
                         if offset < max_duration:
                             blank = max_duration - offset
-                            channel.sequence._elements.insert(-1, Blank(duration=blank))
-                            ps._offsets[label] += blank
+                            for label in [control_label, target_label, cr_label]:
+                                ps._channels[label].sequence._elements.insert(
+                                    -1, Blank(duration=blank)
+                                )
+                                ps._offsets[label] += blank
 
             if decouple_entangled_zz:
                 # Apply CPMG to blanks after entanglement gates
