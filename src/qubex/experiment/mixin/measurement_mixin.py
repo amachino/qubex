@@ -2517,7 +2517,7 @@ class MeasurementMixin(
             fourier_result = self.fourier_analysis(
                 result.data[source_qubit].data,
                 qubit=source_qubit,
-                title=f"Fourier analysis : {source_qubit}",
+                title=f"Fourier analysis of {n_qubits}-qubits entanglement : {source_qubit}",
             )
             coherences[source_qubit] = fourier_result["C"]
 
