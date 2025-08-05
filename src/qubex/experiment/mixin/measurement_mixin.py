@@ -1686,6 +1686,7 @@ class MeasurementMixin(
                     control_qubit,
                     target_qubit,
                     zx90=zx90,
+                    only_low_to_high=True,
                 )
             )
 
@@ -1895,7 +1896,7 @@ class MeasurementMixin(
             if child not in qubits:
                 qubits.append(child)
 
-            weight = int(self.cnot(parent, child).duration)
+            weight = int(self.cnot(parent, child, only_low_to_high=True).duration)
             G.add_edge(parent, child, weight=weight)
 
         roots = [node for node, in_degree in G.in_degree() if in_degree == 0]
