@@ -1866,7 +1866,7 @@ class MeasurementMixin(
 
     def create_entangle_sequence(
         self,
-        entangle_steps: list[tuple[str, str]],
+        entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         initialization_pulse: str | None = None,
         optimize_sequence: bool = False,
@@ -1879,9 +1879,17 @@ class MeasurementMixin(
         if initialization_pulse is None:
             initialization_pulse = "Y90"
 
+        steps: list[tuple[str, str]] = []
+        qubits: list[str] = []
         G = nx.DiGraph()
-        qubits = []
+
         for parent, child in entangle_steps:
+            if isinstance(parent, int):
+                parent = self.quantum_system.get_qubit(parent).label
+            if isinstance(child, int):
+                child = self.quantum_system.get_qubit(child).label
+            steps.append((parent, child))
+
             if parent not in qubits:
                 qubits.append(parent)
             if child not in qubits:
@@ -1892,7 +1900,7 @@ class MeasurementMixin(
 
         roots = [node for node, in_degree in G.in_degree() if in_degree == 0]
         leaf_nodes = [node for node, out_degree in G.out_degree() if out_degree == 0]
-        leaf_edges = [step for step in entangle_steps if step[1] in leaf_nodes]
+        leaf_edges = [step for step in steps if step[1] in leaf_nodes]
 
         if optimize_sequence:
             path_lengths = {}
@@ -1908,14 +1916,14 @@ class MeasurementMixin(
                 path_lengths.items(), key=lambda x: x[1], reverse=True
             )
 
-            optimized_steps = []
+            optimized_steps: list[tuple[str, str]] = []
             for path, length in sorted_paths:
                 for i in range(len(path) - 1):
                     edge = (path[i], path[i + 1])
                     if edge not in optimized_steps:
                         optimized_steps.append(edge)
 
-            entangle_steps = optimized_steps
+            steps = optimized_steps
 
         with PulseSchedule() as ps:
             for root in roots:
@@ -1930,7 +1938,7 @@ class MeasurementMixin(
                         f"Invalid initialize pulse: {initialization_pulse}"
                     )
             ps.barrier()
-            for parent, child in entangle_steps:
+            for parent, child in steps:
                 cnot = self.cnot(parent, child)
                 ps.call(cnot)
                 if decouple_cr_crosstalk:
@@ -2042,7 +2050,7 @@ class MeasurementMixin(
 
     def create_ghz_sequence(
         self,
-        entangle_steps: list[tuple[str, str]],
+        entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         initialization_pulse: str | None = None,
         optimize_sequence: bool = True,
@@ -2056,8 +2064,17 @@ class MeasurementMixin(
         Create a GHZ state preparation sequence based on the entanglement steps.
         Returns a PulseSchedule object.
         """
-        qubits = [entangle_steps[0][0]]
+        steps: list[tuple[str, str]] = []
+
         for parent, child in entangle_steps:
+            if isinstance(parent, int):
+                parent = self.quantum_system.get_qubit(parent).label
+            if isinstance(child, int):
+                child = self.quantum_system.get_qubit(child).label
+            steps.append((parent, child))
+
+        qubits: list[str] = [steps[0][0]]
+        for parent, child in steps:
             if parent not in qubits:
                 raise ValueError(
                     f"All qubits for GHZ state must branch from the first qubit: {qubits[0]}"
@@ -2066,7 +2083,7 @@ class MeasurementMixin(
                 qubits.append(child)
 
         return self.create_entangle_sequence(
-            entangle_steps=entangle_steps,
+            entangle_steps=steps,
             initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
@@ -2078,7 +2095,7 @@ class MeasurementMixin(
 
     def measure_ghz_state(
         self,
-        entangle_steps: list[tuple[str, str]],
+        entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         measurement_bases: Collection[str] | None = None,
         initialization_pulse: str | None = None,
@@ -2100,12 +2117,21 @@ class MeasurementMixin(
         if self.state_centers is None:
             self.build_classifier(plot=False)
 
-        qubits = []
+        steps: list[tuple[str, str]] = []
+        qubits: list[str] = []
+
         for parent, child in entangle_steps:
+            if isinstance(parent, int):
+                parent = self.quantum_system.get_qubit(parent).label
+            if isinstance(child, int):
+                child = self.quantum_system.get_qubit(child).label
+            steps.append((parent, child))
+
             if parent not in qubits:
                 qubits.append(parent)
             if child not in qubits:
                 qubits.append(child)
+
         n_qubits = len(qubits)
 
         if measurement_bases is None:
@@ -2114,7 +2140,7 @@ class MeasurementMixin(
             measurement_bases = list(measurement_bases)
 
         seq = self.create_ghz_sequence(
-            entangle_steps=entangle_steps,
+            entangle_steps=steps,
             initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
@@ -2190,7 +2216,7 @@ class MeasurementMixin(
 
     def ghz_state_tomography(
         self,
-        entangle_steps: list[tuple[str, str]],
+        entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         readout_mitigation: bool = True,
         initialization_pulse: str | None = None,
@@ -2245,18 +2271,27 @@ class MeasurementMixin(
             - "figure": Plotly figure of the density matrix.
         """
 
-        qubits = []
+        qubits: list[str] = []
+        steps: list[tuple[str, str]] = []
+
         for parent, child in entangle_steps:
+            if isinstance(parent, int):
+                parent = self.quantum_system.get_qubit(parent).label
+            if isinstance(child, int):
+                child = self.quantum_system.get_qubit(child).label
+            steps.append((parent, child))
+
             if parent not in qubits:
                 qubits.append(parent)
             if child not in qubits:
                 qubits.append(child)
+
         n_qubits = len(qubits)
         dim = 2**n_qubits
 
         if show_sequence:
             seq = self.create_ghz_sequence(
-                entangle_steps=entangle_steps,
+                entangle_steps=steps,
                 initialization_pulse=initialization_pulse,
                 optimize_sequence=optimize_sequence,
                 as_late_as_possible=as_late_as_possible,
@@ -2276,7 +2311,7 @@ class MeasurementMixin(
         ):
             basis_label = "".join(measurement_bases)
             result = self.measure_ghz_state(
-                entangle_steps=entangle_steps,
+                entangle_steps=steps,
                 measurement_bases=measurement_bases,
                 initialization_pulse=initialization_pulse,
                 optimize_sequence=optimize_sequence,
@@ -2381,7 +2416,7 @@ class MeasurementMixin(
 
     def create_mqc_sequence(
         self,
-        entangle_steps: list[tuple[str, str]],
+        entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         phi: float = 0.0,
         echo: bool = True,
@@ -2393,8 +2428,23 @@ class MeasurementMixin(
         decouple_all_zz: bool = False,
         cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
+        qubits: list[str] = []
+        steps: list[tuple[str, str]] = []
+
+        for parent, child in entangle_steps:
+            if isinstance(parent, int):
+                parent = self.quantum_system.get_qubit(parent).label
+            if isinstance(child, int):
+                child = self.quantum_system.get_qubit(child).label
+            steps.append((parent, child))
+
+            if parent not in qubits:
+                qubits.append(parent)
+            if child not in qubits:
+                qubits.append(child)
+
         ghz_seq = self.create_entangle_sequence(
-            entangle_steps=entangle_steps,
+            entangle_steps=steps,
             initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
@@ -2403,13 +2453,6 @@ class MeasurementMixin(
             decouple_all_zz=decouple_all_zz,
             cpmg_duration_unit=cpmg_duration_unit,
         )
-
-        qubits = []
-        for parent, child in entangle_steps:
-            if parent not in qubits:
-                qubits.append(parent)
-            if child not in qubits:
-                qubits.append(child)
 
         with PulseSchedule() as seq:
             seq.call(ghz_seq)
@@ -2424,7 +2467,7 @@ class MeasurementMixin(
 
     def mqc_experiment(
         self,
-        entangle_steps: list[tuple[str, str]],
+        entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         phi_range: np.ndarray | None = None,
         n_points_per_qubit: int | None = None,
@@ -2440,9 +2483,17 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ) -> dict:
-        qubits = []
-        source_qubits = []
+        qubits: list[str] = []
+        source_qubits: list[str] = []
+        steps: list[tuple[str, str]] = []
+
         for parent, child in entangle_steps:
+            if isinstance(parent, int):
+                parent = self.quantum_system.get_qubit(parent).label
+            if isinstance(child, int):
+                child = self.quantum_system.get_qubit(child).label
+            steps.append((parent, child))
+
             if parent not in qubits:
                 source_qubits.append(parent)
                 qubits.append(parent)
@@ -2458,7 +2509,7 @@ class MeasurementMixin(
 
         if show_sequence:
             seq = self.create_mqc_sequence(
-                entangle_steps=entangle_steps,
+                entangle_steps=steps,
                 phi=0.0,
                 echo=echo,
                 initialization_pulse=initialization_pulse,
@@ -2602,7 +2653,7 @@ class MeasurementMixin(
 
     def parity_oscillation(
         self,
-        entangle_steps: list[tuple[str, str]],
+        entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         phi_range: np.ndarray | None = None,
         n_points_per_qubit: int | None = None,
@@ -2622,9 +2673,17 @@ class MeasurementMixin(
         if initialization_pulse is None:
             initialization_pulse = "Y90"
 
-        qubits = []
-        source_qubits = []
+        qubits: list[str] = []
+        source_qubits: list[str] = []
+        steps: list[tuple[str, str]] = []
+
         for parent, child in entangle_steps:
+            if isinstance(parent, int):
+                parent = self.quantum_system.get_qubit(parent).label
+            if isinstance(child, int):
+                child = self.quantum_system.get_qubit(child).label
+            steps.append((parent, child))
+
             if parent not in qubits:
                 source_qubits.append(parent)
                 qubits.append(parent)
@@ -2641,7 +2700,7 @@ class MeasurementMixin(
             phi_range = np.linspace(0, 2 * np.pi, n_points_per_qubit * n_qubits + 1)
 
         ghz_seq = self.create_entangle_sequence(
-            entangle_steps=entangle_steps,
+            entangle_steps=steps,
             initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
