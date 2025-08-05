@@ -2593,7 +2593,11 @@ class MeasurementMixin(
                 result.data[source_qubit].normalized,
             )
 
-        return coherences
+        return {
+            "phi_range": phi_range,
+            "result": result,
+            "coherences": coherences,
+        }
 
     @staticmethod
     def fourier_analysis(
@@ -2749,6 +2753,7 @@ class MeasurementMixin(
 
         parities_raw = []
         parities_mit = []
+        result = []
         for phi in tqdm(phi_range):
             res = self.measure(
                 sequence(phi),
@@ -2756,6 +2761,7 @@ class MeasurementMixin(
                 shots=shots,
                 interval=interval,
             )
+            result.append(res)
             probs_raw = res.probabilities
             parity_raw = 0
             for label, prob in probs_raw.items():
@@ -2823,6 +2829,7 @@ class MeasurementMixin(
 
         return {
             "phi_range": phi_range,
+            "result": result,
             "parities_raw": parities_raw,
             "parities_mit": parities_mit,
         }
