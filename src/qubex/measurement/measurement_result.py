@@ -297,7 +297,7 @@ class MeasureResult:
         representing each shot's classified result.
         """
         classified_data = self.get_classified_data(targets, threshold=threshold)
-        return ["".join(map(str, row)) for row in classified_data]
+        return ["".join(map(str, row)) for row in classified_data if all(row >= 0)]
 
     def get_counts(
         self,
