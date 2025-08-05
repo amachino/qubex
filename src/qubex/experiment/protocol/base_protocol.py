@@ -1096,6 +1096,7 @@ class BaseProtocol(Protocol):
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule: ...
 
     def cx(

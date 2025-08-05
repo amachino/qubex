@@ -1946,7 +1946,7 @@ class MeasurementMixin(
             ps.barrier()
             for steps in substeps:
                 for parent, child in steps:
-                    cnot = self.cnot(parent, child)
+                    cnot = self.cnot(parent, child, only_low_to_high=True)
                     ps.call(cnot)
                     if decouple_cr_crosstalk:
                         if self.qubits[parent].index % 4 in [0, 3]:
