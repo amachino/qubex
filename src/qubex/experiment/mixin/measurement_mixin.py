@@ -1902,6 +1902,8 @@ class MeasurementMixin(
         leaf_nodes = [node for node, out_degree in G.out_degree() if out_degree == 0]
         leaf_edges = [step for step in steps if step[1] in leaf_nodes]
 
+        substeps: list[list[tuple[str, str]]] = []
+
         if optimize_sequence:
             path_lengths = {}
             for leaf in leaf_nodes:
@@ -1916,14 +1918,18 @@ class MeasurementMixin(
                 path_lengths.items(), key=lambda x: x[1], reverse=True
             )
 
-            optimized_steps: list[tuple[str, str]] = []
+            all_edges = []
             for path, length in sorted_paths:
+                substeps.append([])
                 for i in range(len(path) - 1):
                     edge = (path[i], path[i + 1])
-                    if edge not in optimized_steps:
-                        optimized_steps.append(edge)
+                    if edge not in all_edges:
+                        substeps[-1].append(edge)
+                    all_edges.append(edge)
+        else:
+            substeps = [steps]
 
-            steps = optimized_steps
+        # print(substeps)
 
         with PulseSchedule() as ps:
             for root in roots:
@@ -1938,43 +1944,44 @@ class MeasurementMixin(
                         f"Invalid initialize pulse: {initialization_pulse}"
                     )
             ps.barrier()
-            for parent, child in steps:
-                cnot = self.cnot(parent, child)
-                ps.call(cnot)
-                if decouple_cr_crosstalk:
-                    if self.qubits[parent].index % 4 in [0, 3]:
-                        control_qubit = parent
-                        target_qubit = child
-                    else:
-                        control_qubit = child
-                        target_qubit = parent
-                    cr_ranges = cnot.get_pulse_ranges()[
-                        f"{control_qubit}-{target_qubit}"
-                    ]
-                    spectators = self.get_spectators(control_qubit)
-                    for spectator in spectators:
-                        spec = spectator.label
-                        pi = self.x180(spec)
-                        if spec in ps.labels and spec != target_qubit:
-                            cr_start = ps.get_offset(target_qubit) - cnot.duration
-                            spec_end = ps.get_offset(spec)
-                            space_before_cr = cr_start - spec_end
-                            if space_before_cr >= 0:
-                                ps.add(spec, Blank(space_before_cr))
-                                blank1 = cr_ranges[0].stop * 2
-                                ps.add(
-                                    spec,
-                                    Blank(blank1),
-                                )
-                                ps.add(spec, pi)
-                                blank2 = (
-                                    cr_ranges[1].stop - cr_ranges[0].stop
-                                ) * 2 - pi.duration
-                                ps.add(
-                                    spec,
-                                    Blank(blank2),
-                                )
-                                ps.add(spec, pi)
+            for steps in substeps:
+                for parent, child in steps:
+                    cnot = self.cnot(parent, child)
+                    ps.call(cnot)
+                    if decouple_cr_crosstalk:
+                        if self.qubits[parent].index % 4 in [0, 3]:
+                            control_qubit = parent
+                            target_qubit = child
+                        else:
+                            control_qubit = child
+                            target_qubit = parent
+                        cr_ranges = cnot.get_pulse_ranges()[
+                            f"{control_qubit}-{target_qubit}"
+                        ]
+                        spectators = self.get_spectators(control_qubit)
+                        for spectator in spectators:
+                            spec = spectator.label
+                            pi = self.x180(spec)
+                            if spec in ps.labels and spec != target_qubit:
+                                cr_start = ps.get_offset(target_qubit) - cnot.duration
+                                spec_end = ps.get_offset(spec)
+                                space_before_cr = cr_start - spec_end
+                                if space_before_cr >= 0:
+                                    ps.add(spec, Blank(space_before_cr))
+                                    blank1 = cr_ranges[0].stop * 2
+                                    ps.add(
+                                        spec,
+                                        Blank(blank1),
+                                    )
+                                    ps.add(spec, pi)
+                                    blank2 = (
+                                        cr_ranges[1].stop - cr_ranges[0].stop
+                                    ) * 2 - pi.duration
+                                    ps.add(
+                                        spec,
+                                        Blank(blank2),
+                                    )
+                                    ps.add(spec, pi)
 
             if as_late_as_possible:
                 # Put final CNOT gates as late as possible
