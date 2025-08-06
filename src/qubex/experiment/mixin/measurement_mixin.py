@@ -2834,3 +2834,58 @@ class MeasurementMixin(
             "parities_raw": parities_raw,
             "parities_mit": parities_mit,
         }
+
+    def create_1d_cluster_sequence(
+        self,
+        targets: Collection[str | int],
+        bases: dict[int, str] | None = None,
+    ):
+        """
+        Create a 1D cluster state preparation sequence for the given targets.
+        Returns a PulseSchedule object.
+        """
+        targets = [
+            self.quantum_system.get_qubit(target).label
+            if isinstance(target, int)
+            else target
+            for target in targets
+        ]
+        if bases is None:
+            bases = {}
+
+        qubits = [
+            {
+                "index": i,
+                "label": label,
+                "type": "L" if self.qubits[label].index % 4 in [0, 3] else "H",
+                "basis": bases[i] if i in bases else "Z",
+            }
+            for i, label in enumerate(targets)
+        ]
+        n_qubits = len(qubits)
+
+        with PulseSchedule(targets) as ps:
+            for qubit in qubits:
+                if qubit["type"] == "L":
+                    ps.add(qubit["label"], self.hadamard(qubit["label"]))
+            for i in range(n_qubits - 1):
+                if qubits[i]["type"] == "L":
+                    ps.call(self.cnot(qubits[i]["label"], qubits[i + 1]["label"]))
+            for i in range(n_qubits - 1):
+                if qubits[i]["type"] == "H":
+                    ps.call(self.cnot(qubits[i + 1]["label"], qubits[i]["label"]))
+            for qubit in qubits:
+                if qubit["type"] == "H":
+                    ps.add(qubit["label"], self.hadamard(qubit["label"]))
+            ps.barrier()
+            for qubit in qubits:
+                basis = qubit["basis"]
+                if basis == "X":
+                    ps.add(qubit["label"], self.y90m(qubit["label"]))
+                elif basis == "Y":
+                    ps.add(qubit["label"], self.x90(qubit["label"]))
+                elif basis == "Z":
+                    pass
+                else:
+                    raise ValueError(f"Unknown basis: {basis}")
+        return ps
