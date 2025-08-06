@@ -2841,6 +2841,13 @@ class MeasurementMixin(
         targets: Collection[str | int],
         *,
         bases: dict[int, str] | None = None,
+        initialization_pulse: str | None = None,
+        optimize_sequence: bool = False,
+        as_late_as_possible: bool = True,
+        decouple_cr_crosstalk: bool = False,
+        decouple_entangled_zz: bool = False,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
     ):
         """
         Create a 1D cluster state preparation sequence for the given targets.
@@ -2866,20 +2873,30 @@ class MeasurementMixin(
         ]
         n_qubits = len(qubits)
 
+        entangle_steps = []
+        for i in range(n_qubits - 1):
+            if qubits[i]["type"] == "L":
+                entangle_steps.append((qubits[i]["label"], qubits[i + 1]["label"]))
+        for i in range(n_qubits - 1):
+            if qubits[i]["type"] == "H":
+                entangle_steps.append((qubits[i + 1]["label"], qubits[i]["label"]))
+
+        cluster_seq = self.create_entangle_sequence(
+            entangle_steps=entangle_steps,
+            initialization_pulse=initialization_pulse,
+            optimize_sequence=optimize_sequence,
+            as_late_as_possible=as_late_as_possible,
+            decouple_cr_crosstalk=decouple_cr_crosstalk,
+            decouple_entangled_zz=decouple_entangled_zz,
+            decouple_all_zz=decouple_all_zz,
+            cpmg_duration_unit=cpmg_duration_unit,
+        )
+
         with PulseSchedule(targets) as ps:
-            for qubit in qubits:
-                if qubit["type"] == "L":
-                    ps.add(qubit["label"], self.hadamard(qubit["label"]))
-            for i in range(n_qubits - 1):
-                if qubits[i]["type"] == "L":
-                    ps.call(self.cnot(qubits[i]["label"], qubits[i + 1]["label"]))
-            for i in range(n_qubits - 1):
-                if qubits[i]["type"] == "H":
-                    ps.call(self.cnot(qubits[i + 1]["label"], qubits[i]["label"]))
+            ps.call(cluster_seq)
             for qubit in qubits:
                 if qubit["type"] == "H":
                     ps.add(qubit["label"], self.hadamard(qubit["label"]))
-            ps.barrier()
             for qubit in qubits:
                 basis = qubit["basis"]
                 if basis == "X":
@@ -2898,6 +2915,13 @@ class MeasurementMixin(
         *,
         offset: int = 0,
         mle_fit: bool = True,
+        initialization_pulse: str | None = None,
+        optimize_sequence: bool = False,
+        as_late_as_possible: bool = True,
+        decouple_cr_crosstalk: bool = False,
+        decouple_entangled_zz: bool = False,
+        decouple_all_zz: bool = False,
+        cpmg_duration_unit: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ):
@@ -2913,6 +2937,7 @@ class MeasurementMixin(
             raise ValueError(
                 "Offset must be 0, 1, or 2 for 1D cluster state measurement."
             )
+
         edges: dict[tuple[str, str], list[str]] = {}
         n_edges = n_qubits // 3 + 1
         for i in range(n_edges):
@@ -2923,10 +2948,26 @@ class MeasurementMixin(
             for node in edge:
                 node_spectators = self.get_spectators(node)
                 for spectator in node_spectators:
-                    if spectator.label in targets and spectator.label not in edge:
-                        edge_spectators.append(spectator.label)
+                    node_index = targets.index(node)
+                    if spectator.label in targets:
+                        spectator_index = targets.index(spectator.label)
+                        is_adjacent = abs(node_index - spectator_index) == 1
+                        if is_adjacent and spectator.label not in edge:
+                            edge_spectators.append(spectator.label)
             edges[edge] = edge_spectators
             print(f"Edge: {edge}, Spectators: {edge_spectators}")
+
+        seq = self.create_1d_cluster_sequence(
+            targets,
+            initialization_pulse=initialization_pulse,
+            optimize_sequence=optimize_sequence,
+            as_late_as_possible=as_late_as_possible,
+            decouple_cr_crosstalk=decouple_cr_crosstalk,
+            decouple_entangled_zz=decouple_entangled_zz,
+            decouple_all_zz=decouple_all_zz,
+            cpmg_duration_unit=cpmg_duration_unit,
+        )
+        seq.plot()
 
         edge_result: dict[tuple[str, str], dict] = {edge: {} for edge in edges}
         edge_probabilities: dict[tuple[str, str], dict[str, dict]] = {
@@ -2955,6 +2996,13 @@ class MeasurementMixin(
                 self.create_1d_cluster_sequence(
                     targets,
                     bases=bases,
+                    initialization_pulse=initialization_pulse,
+                    optimize_sequence=optimize_sequence,
+                    as_late_as_possible=as_late_as_possible,
+                    decouple_cr_crosstalk=decouple_cr_crosstalk,
+                    decouple_entangled_zz=decouple_entangled_zz,
+                    decouple_all_zz=decouple_all_zz,
+                    cpmg_duration_unit=cpmg_duration_unit,
                 ),
                 mode="single",
                 shots=shots,
