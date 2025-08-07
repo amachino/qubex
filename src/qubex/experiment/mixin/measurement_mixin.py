@@ -2966,6 +2966,7 @@ class MeasurementMixin(
         cpmg_duration_unit: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
     ):
         targets = [
             self.quantum_system.get_qubit(target).label
@@ -2997,25 +2998,33 @@ class MeasurementMixin(
                         if is_adjacent and spectator.label not in edge:
                             edge_spectators.append(spectator.label)
             edges[edge] = edge_spectators
-            print(f"Edge: {edge}, Spectators: {edge_spectators}")
+            if plot:
+                print(f"Edge: {edge}, Spectators: {edge_spectators}")
 
-        seq = self.create_1d_cluster_sequence(
-            targets,
-            optimize_sequence=optimize_sequence,
-            as_late_as_possible=as_late_as_possible,
-            decouple_cr_crosstalk=decouple_cr_crosstalk,
-            decouple_entangled_zz=decouple_entangled_zz,
-            decouple_all_zz=decouple_all_zz,
-            cpmg_duration_unit=cpmg_duration_unit,
-        )
-        seq.plot()
+        if plot:
+            seq = self.create_1d_cluster_sequence(
+                targets,
+                optimize_sequence=optimize_sequence,
+                as_late_as_possible=as_late_as_possible,
+                decouple_cr_crosstalk=decouple_cr_crosstalk,
+                decouple_entangled_zz=decouple_entangled_zz,
+                decouple_all_zz=decouple_all_zz,
+                cpmg_duration_unit=cpmg_duration_unit,
+            )
+            seq.plot()
 
-        edge_result: dict[tuple[str, str], dict] = {edge: {} for edge in edges}
-        edge_probabilities: dict[tuple[str, str], dict[str, dict]] = {
+        edge_sbits_result: dict[tuple[str, str], dict[str, dict]] = {
+            edge: {} for edge in edges
+        }
+        edge_sbits_probabilities: dict[
+            tuple[str, str], dict[str, dict[str, dict[str, float]]]
+        ] = {
             # edge: {
-            #     pauli: {
-            #         bitstring: probability
-            #     }
+            #     sbits: {
+            #         pauli: {
+            #             ebits: probability,
+            #         }
+            #     },
             # }
             edge: {}
             for edge in edges
@@ -3024,7 +3033,7 @@ class MeasurementMixin(
         for pauli0, pauli1 in tqdm(
             product(["X", "Y", "Z"], repeat=2),
         ):
-            basis = f"{pauli0}{pauli1}"
+            pauli_basis = f"{pauli0}{pauli1}"
 
             bases = {}
             for node0, node1 in edges:
@@ -3050,32 +3059,30 @@ class MeasurementMixin(
             )
 
             for edge, spectators in edges.items():
-                counts: dict[str, int] = {}
-                prob_dict: dict[str, float] = {}
-                total_counts = 0
-                target_labels = list(edge) + spectators
-                mitigated_counts = result.get_mitigated_counts(target_labels)
-                for label, count in mitigated_counts.items():
-                    is_all_zero = True
-                    for i in range(len(spectators)):
-                        if label[i + 2] != "0":
-                            is_all_zero = False
-                            break
-                    if is_all_zero:
-                        edge_label = f"{label[0]}{label[1]}"
-                        counts[edge_label] = count
-                        total_counts += count
-                prob_dict = {
-                    label: count / total_counts if total_counts > 0 else 0
-                    for label, count in counts.items()
+                all_labels = list(edge) + spectators
+                mitigated_counts = result.get_mitigated_counts(all_labels)
+                spectators_bits = [
+                    "".join(bits) for bits in product("01", repeat=len(spectators))
+                ]
+                for sbits in spectators_bits:
+                    if sbits not in edge_sbits_probabilities[edge]:
+                        edge_sbits_probabilities[edge][sbits] = {}
+
+                sbits_ebits_counts: dict[str, dict[str, int]] = {
+                    sbits: {} for sbits in spectators_bits
                 }
-                # prob_array = np.array(
-                #     [prob_dict.get(f"{i:02b}", 0) * 1e2 for i in range(4)]
-                # )
-                # print(
-                #     f"{edge[0]}-{edge[1]} ({basis}): [{prob_array[0]:.2f}, {prob_array[1]:.2f}, {prob_array[2]:.2f}, {prob_array[3]:.2f}]"
-                # )
-                edge_probabilities[edge][basis] = prob_dict
+
+                for bits, count in mitigated_counts.items():
+                    ebits = bits[:2]
+                    sbits = bits[2:]
+                    sbits_ebits_counts[sbits][ebits] = count
+
+                for sbits, ebits_counts in sbits_ebits_counts.items():
+                    total_count = sum(ebits_counts.values())
+                    edge_sbits_probabilities[edge][sbits][pauli_basis] = {
+                        ebits: count / total_count if total_count > 0 else 0.0
+                        for ebits, count in ebits_counts.items()
+                    }
 
         paulis = {
             "I": np.array([[1, 0], [0, 1]]),
@@ -3084,133 +3091,160 @@ class MeasurementMixin(
             "Z": np.array([[1, 0], [0, -1]]),
         }
 
-        for edge, probabilities in edge_probabilities.items():
-            expected_values = {}
-            rho = np.zeros((4, 4), dtype=np.complex128)
-            for basis0, pauli0 in paulis.items():
-                for basis1, pauli1 in paulis.items():
-                    basis = f"{basis0}{basis1}"
-                    # calculate the expectation values
-                    if basis == "II":
-                        # II is always 1
-                        # 00: +1, 01: +1, 10: +1, 11: +1
-                        counts = probabilities["ZZ"]
-                        e = counts["00"] + counts["01"] + counts["10"] + counts["11"]
-                    elif basis in ["IX", "IY", "IZ"]:
-                        # ignore the first qubit
-                        # 00: +1, 01: -1, 10: +1, 11: -1
-                        counts = probabilities[f"Z{basis1}"]
-                        e = counts["00"] - counts["01"] + counts["10"] - counts["11"]
-                    elif basis in ["XI", "YI", "ZI"]:
-                        # ignore the second qubit
-                        # 00: +1, 01: +1, 10: -1, 11: -1
-                        counts = probabilities[f"{basis0}Z"]
-                        e = counts["00"] + counts["01"] - counts["10"] - counts["11"]
-                    else:
-                        # two-qubit basis
-                        # 00: +1, 01: -1, 10: -1, 11: +1
-                        counts = probabilities[basis]
-                        e = counts["00"] - counts["01"] - counts["10"] + counts["11"]
-                    pauli = np.kron(pauli0, pauli1)
-                    rho += e * pauli
-                    expected_values[basis] = e
+        for edge, sbits_probabilities in edge_sbits_probabilities.items():
+            for sbits, probabilities in sbits_probabilities.items():
+                if sbits not in edge_sbits_result[edge]:
+                    edge_sbits_result[edge][sbits] = {}
 
-            if mle_fit:
-                rho = mle_fit_density_matrix(expected_values)
-            else:
-                rho = rho / 4
+                expected_values = {}
+                rho = np.zeros((4, 4), dtype=np.complex128)
+                for basis0, pauli0 in paulis.items():
+                    for basis1, pauli1 in paulis.items():
+                        pauli_basis = f"{basis0}{basis1}"
+                        # calculate the expectation values
+                        if pauli_basis == "II":
+                            # II is always 1
+                            # 00: +1, 01: +1, 10: +1, 11: +1
+                            counts = probabilities["ZZ"]
+                            e = (
+                                counts["00"]
+                                + counts["01"]
+                                + counts["10"]
+                                + counts["11"]
+                            )
+                        elif pauli_basis in ["IX", "IY", "IZ"]:
+                            # ignore the first qubit
+                            # 00: +1, 01: -1, 10: +1, 11: -1
+                            counts = probabilities[f"Z{basis1}"]
+                            e = (
+                                counts["00"]
+                                - counts["01"]
+                                + counts["10"]
+                                - counts["11"]
+                            )
+                        elif pauli_basis in ["XI", "YI", "ZI"]:
+                            # ignore the second qubit
+                            # 00: +1, 01: +1, 10: -1, 11: -1
+                            counts = probabilities[f"{basis0}Z"]
+                            e = (
+                                counts["00"]
+                                + counts["01"]
+                                - counts["10"]
+                                - counts["11"]
+                            )
+                        else:
+                            # two-qubit basis
+                            # 00: +1, 01: -1, 10: -1, 11: +1
+                            counts = probabilities[pauli_basis]
+                            e = (
+                                counts["00"]
+                                - counts["01"]
+                                - counts["10"]
+                                + counts["11"]
+                            )
+                        pauli_matrix = np.kron(pauli0, pauli1)
+                        rho += e * pauli_matrix
+                        expected_values[pauli_basis] = e
 
-            rho_pt = self.partial_transpose(rho)
-            eigvals = np.linalg.eigvalsh(rho_pt)
-            negativity = np.sum(np.abs(eigvals[eigvals < 0]))
+                if mle_fit:
+                    rho = mle_fit_density_matrix(expected_values)
+                else:
+                    rho = rho / 4
 
-            edge_result[edge]["expected_values"] = expected_values
-            edge_result[edge]["density_matrix"] = rho
-            edge_result[edge]["partial_transpose"] = rho_pt
-            edge_result[edge]["negativity"] = negativity
-            edge_result[edge]["eigenvalues"] = eigvals
+                rho_pt = self.partial_transpose(rho)
+                eigvals = np.linalg.eigvalsh(rho_pt)
+                negativity = np.sum(np.abs(eigvals[eigvals < 0]))
 
-            print(f"{edge[0]}-{edge[1]} : Negativity = {negativity:.4f}")
+                if plot:
+                    print(f"{edge[0]}-{edge[1]} ({sbits}) : Negativity = {negativity}")
 
-            fig = make_subplots(
-                rows=1,
-                cols=2,
-                subplot_titles=("Abs", "Phase"),
-                horizontal_spacing=0.26,
-            )
-            fig.add_trace(
-                go.Heatmap(
-                    z=np.abs(rho),
-                    zmin=0,
-                    zmax=1,
-                    colorscale="Hot_r",
-                    colorbar=dict(
-                        title="Abs",
-                        x=0.37,
-                        y=0.5,
-                        thickness=15,
-                        tickvals=[0, 0.5, 1],
-                        ticktext=["0", "0.5", "1"],
+                fig = make_subplots(
+                    rows=1,
+                    cols=2,
+                    subplot_titles=("Abs", "Phase"),
+                    horizontal_spacing=0.26,
+                )
+                fig.add_trace(
+                    go.Heatmap(
+                        z=np.abs(rho),
+                        zmin=0,
+                        zmax=1,
+                        colorscale="Hot_r",
+                        colorbar=dict(
+                            title="Abs",
+                            x=0.37,
+                            y=0.5,
+                            thickness=15,
+                            tickvals=[0, 0.5, 1],
+                            ticktext=["0", "0.5", "1"],
+                        ),
                     ),
-                ),
-                row=1,
-                col=1,
-            )
-            fig.add_trace(
-                go.Heatmap(
-                    z=np.angle(rho),
-                    zmin=-np.pi,
-                    zmax=np.pi,
-                    colorscale="Edge",
-                    colorbar=dict(
-                        title="Phase (rad)",
-                        x=1.0,
-                        y=0.5,
-                        thickness=15,
-                        tickvals=[-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi],
-                        ticktext=["-π", "-π/2", "0", "π/2", "π"],
+                    row=1,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Heatmap(
+                        z=np.angle(rho),
+                        zmin=-np.pi,
+                        zmax=np.pi,
+                        colorscale="Edge",
+                        colorbar=dict(
+                            title="Phase (rad)",
+                            x=1.0,
+                            y=0.5,
+                            thickness=15,
+                            tickvals=[-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi],
+                            ticktext=["-π", "-π/2", "0", "π/2", "π"],
+                        ),
                     ),
-                ),
-                row=1,
-                col=2,
-            )
+                    row=1,
+                    col=2,
+                )
 
-            tickvals = np.arange(4)
-            ticktext = [f"{i:0{2}b}" for i in tickvals]
-            tick_style = dict(
-                tickmode="array",
-                tickvals=tickvals,
-                ticktext=ticktext,
-                tickangle=0,
-            )
+                tickvals = np.arange(4)
+                ticktext = [f"{i:0{2}b}" for i in tickvals]
+                tick_style = dict(
+                    tickmode="array",
+                    tickvals=tickvals,
+                    ticktext=ticktext,
+                    tickangle=0,
+                )
 
-            fig.update_xaxes(tick_style, row=1, col=1)
-            fig.update_yaxes(
-                dict(**tick_style, autorange="reversed", scaleanchor="x1"),
-                row=1,
-                col=1,
-            )
-            fig.update_xaxes(tick_style, row=1, col=2)
-            fig.update_yaxes(
-                dict(**tick_style, autorange="reversed", scaleanchor="x2"),
-                row=1,
-                col=2,
-            )
-            fig.update_layout(
-                title=dict(
-                    text=f"Density matrix of graph edge: {edge[0]}-{edge[1]}",
-                    subtitle=dict(
-                        text=f"with spectators ({', '.join(edges[edge])}) projected onto '0' state"
+                fig.update_xaxes(tick_style, row=1, col=1)
+                fig.update_yaxes(
+                    dict(**tick_style, autorange="reversed", scaleanchor="x1"),
+                    row=1,
+                    col=1,
+                )
+                fig.update_xaxes(tick_style, row=1, col=2)
+                fig.update_yaxes(
+                    dict(**tick_style, autorange="reversed", scaleanchor="x2"),
+                    row=1,
+                    col=2,
+                )
+                fig.update_layout(
+                    title=dict(
+                        text=f"Density matrix of graph edge: {edge[0]}-{edge[1]}",
+                        subtitle=dict(
+                            text=f"({', '.join(edges[edge])}) = '{sbits}'",
+                        ),
                     ),
-                ),
-                margin=dict(t=110),
-                width=600,
-                height=342,
-            )
+                    margin=dict(t=110),
+                    width=600,
+                    height=342,
+                )
 
-            fig.show()
+                if negativity > 0 and plot:
+                    fig.show()
 
-        return edge_result
+                edge_sbits_result[edge][sbits]["expected_values"] = expected_values
+                edge_sbits_result[edge][sbits]["density_matrix"] = rho
+                edge_sbits_result[edge][sbits]["partial_transpose"] = rho_pt
+                edge_sbits_result[edge][sbits]["negativity"] = negativity
+                edge_sbits_result[edge][sbits]["eigenvalues"] = eigvals
+                edge_sbits_result[edge][sbits]["figure"] = fig
+
+        return edge_sbits_result
 
     @staticmethod
     def partial_transpose(rho: NDArray, subsystem: int = 1) -> NDArray:
