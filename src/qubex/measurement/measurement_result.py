@@ -476,29 +476,38 @@ class MultipleMeasureResult:
 
     def get_classified_data(
         self,
-        targets: Collection[tuple[str, int]] | None = None,
+        targets: Collection[str | tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
     ) -> NDArray:
         if len(self.data) == 0:
             raise ValueError("No classification data available")
+
         if targets is None:
-            targets = [(target, -1) for target in self.data.keys()]
+            target_tuples = [(target, -1) for target in self.data.keys()]
+        else:
+            target_tuples: list[tuple[str, int]] = []
+            for target in targets:
+                if isinstance(target, str):
+                    target_tuples.append((target, -1))
+                elif isinstance(target, tuple) and len(target) == 2:
+                    target_tuples.append(target)
+                else:
+                    raise ValueError(f"Invalid target format: {target}")
+
         return np.column_stack(
             [
                 self.data[target][idx].get_classified_data(threshold=threshold)
-                for (target, idx) in targets
+                for (target, idx) in target_tuples
             ]
         )
 
     def get_counts(
         self,
-        targets: Collection[tuple[str, int]] | None = None,
+        targets: Collection[str | tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
     ) -> Counter:
-        if targets is None:
-            targets = [(target, -1) for target in self.data.keys()]
         classified_data = self.get_classified_data(targets, threshold=threshold)
         classified_labels = np.array(
             ["".join(map(str, row)) for row in classified_data]
@@ -507,7 +516,7 @@ class MultipleMeasureResult:
 
     def get_probabilities(
         self,
-        targets: Collection[tuple[str, int]] | None = None,
+        targets: Collection[str | tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
     ) -> dict[str, float]:
@@ -521,7 +530,7 @@ class MultipleMeasureResult:
 
     def get_standard_deviations(
         self,
-        targets: Collection[tuple[str, int]] | None = None,
+        targets: Collection[str | tuple[str, int]] | None = None,
         *,
         threshold: float | None = None,
     ) -> dict[str, float]:
@@ -568,11 +577,20 @@ class MultipleMeasureResult:
 
     def get_mitigated_counts(
         self,
-        targets: Collection[tuple[str, int]] | None = None,
+        targets: Collection[str | tuple[str, int]] | None = None,
     ) -> dict[str, int]:
         if targets is None:
-            targets = [(target, -1) for target in self.data.keys()]
-        labels = [target for target, _ in targets]
+            labels = list(self.data.keys())
+        else:
+            labels = []
+            for target in targets:
+                if isinstance(target, str):
+                    labels.append(target)
+                elif isinstance(target, tuple) and len(target) == 2:
+                    labels.append(target[0])
+                else:
+                    raise ValueError(f"Invalid target format: {target}")
+
         basis_labels = self.get_basis_labels(labels)
         raw_counts = self.get_counts(targets)
         # Ensure the order of raw matches basis_labels
@@ -587,11 +605,20 @@ class MultipleMeasureResult:
 
     def get_mitigated_probabilities(
         self,
-        targets: Collection[tuple[str, int]] | None = None,
+        targets: Collection[str | tuple[str, int]] | None = None,
     ) -> dict[str, float]:
         if targets is None:
-            targets = [(target, -1) for target in self.data.keys()]
-        labels = [target for target, _ in targets]
+            labels = list(self.data.keys())
+        else:
+            labels = []
+            for target in targets:
+                if isinstance(target, str):
+                    labels.append(target)
+                elif isinstance(target, tuple) and len(target) == 2:
+                    labels.append(target[0])
+                else:
+                    raise ValueError(f"Invalid target format: {target}")
+
         basis_labels = self.get_basis_labels(labels)
         raw_probs = self.get_probabilities(targets)
         # Ensure the order of raw matches basis_labels

@@ -2847,6 +2847,7 @@ class MeasurementMixin(
         decouple_entangled_zz: bool = False,
         decouple_all_zz: bool = False,
         cpmg_duration_unit: float | None = None,
+        with_readout_pulses: bool = True,
     ):
         """
         Create a 1D cluster state preparation sequence for the given targets.
@@ -2926,6 +2927,10 @@ class MeasurementMixin(
                     pass
                 else:
                     raise ValueError(f"Unknown basis: {basis}")
+
+            if with_readout_pulses:
+                for qubit in qubits:
+                    ps.add("R" + qubit["label"], self.readout(qubit["label"]))
         return ps
 
         # cluster_seq = self.create_entangle_sequence(
@@ -2971,6 +2976,7 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
+        method: str = "execute",
     ):
         targets = [
             self.quantum_system.get_qubit(target).label
@@ -3014,6 +3020,7 @@ class MeasurementMixin(
                 decouple_entangled_zz=decouple_entangled_zz,
                 decouple_all_zz=decouple_all_zz,
                 cpmg_duration_unit=cpmg_duration_unit,
+                with_readout_pulses=True if method == "execute" else False,
             )
             seq.plot()
 
@@ -3046,27 +3053,45 @@ class MeasurementMixin(
                 bases[idx0] = pauli0
                 bases[idx1] = pauli1
 
-            result = self.measure(
-                self.create_1d_cluster_sequence(
-                    targets,
-                    bases=bases,
-                    optimize_sequence=optimize_sequence,
-                    as_late_as_possible=as_late_as_possible,
-                    decouple_cr_crosstalk=decouple_cr_crosstalk,
-                    decouple_entangled_zz=decouple_entangled_zz,
-                    decouple_all_zz=decouple_all_zz,
-                    cpmg_duration_unit=cpmg_duration_unit,
-                ),
-                mode="single",
-                shots=shots,
-                interval=interval,
-            )
+            if method == "execute":
+                result = self.execute(
+                    self.create_1d_cluster_sequence(
+                        targets,
+                        bases=bases,
+                        optimize_sequence=optimize_sequence,
+                        as_late_as_possible=as_late_as_possible,
+                        decouple_cr_crosstalk=decouple_cr_crosstalk,
+                        decouple_entangled_zz=decouple_entangled_zz,
+                        decouple_all_zz=decouple_all_zz,
+                        cpmg_duration_unit=cpmg_duration_unit,
+                    ),
+                    mode="single",
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                result = self.measure(
+                    self.create_1d_cluster_sequence(
+                        targets,
+                        bases=bases,
+                        optimize_sequence=optimize_sequence,
+                        as_late_as_possible=as_late_as_possible,
+                        decouple_cr_crosstalk=decouple_cr_crosstalk,
+                        decouple_entangled_zz=decouple_entangled_zz,
+                        decouple_all_zz=decouple_all_zz,
+                        cpmg_duration_unit=cpmg_duration_unit,
+                    ),
+                    mode="single",
+                    shots=shots,
+                    interval=interval,
+                )
 
             for edge, spectators in edges.items():
-                all_labels = list(edge) + spectators
-                mitigated_counts = result.get_mitigated_counts(all_labels)
+                target_labels = list(edge) + spectators
+                mitigated_counts = result.get_mitigated_counts(target_labels)
+                n_spectators = len(spectators)
                 spectators_bits = [
-                    "".join(bits) for bits in product("01", repeat=len(spectators))
+                    "".join(bits) for bits in product("01", repeat=n_spectators)
                 ]
                 for sbits in spectators_bits:
                     if sbits not in edge_sbits_probabilities[edge]:
@@ -3269,7 +3294,17 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
+        method: str = "execute",
     ):
+        if plot:
+            seq = self.create_1d_cluster_sequence(
+                qubits,
+                with_readout_pulses=False,
+            )
+            seq.plot(
+                title=f"1D cluster state preparation sequence for {len(qubits)} qubits",
+            )
+
         negativities = {}
         figures = {}
         for offset in range(3):
@@ -3281,19 +3316,36 @@ class MeasurementMixin(
                 shots=shots,
                 interval=interval,
                 plot=False,
+                method=method,
             )
             for edge, data in result["best"].items():
                 negativities[edge] = data["negativity"]
                 figures[edge] = data["figure"]
 
+        negativities_max = max(negativities.values())
+        negativities_min = min(negativities.values())
+        negativities_avg = np.mean(list(negativities.values()))
+        negativities_std = np.std(list(negativities.values()))
+        negativities_med = np.median(list(negativities.values()))
         if plot:
             print("Negativities:")
+            print(f"  max: {negativities_max:.3f}")
+            print(f"  min: {negativities_min:.3f}")
+            print(f"  med: {negativities_med:.3f}")
+            print(f"  avg: {negativities_avg:.3f}")
+            print(f"  std: {negativities_std:.3f}")
+            print("  edges:")
             for edge, negativity in negativities.items():
-                print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
+                print(f"    {edge[0]}-{edge[1]}: {negativity:.3f}")
             for edge, fig in figures.items():
                 fig.show()
 
         return {
+            "negativities_max": negativities_max,
+            "negativities_min": negativities_min,
+            "negativities_med": negativities_med,
+            "negativities_avg": negativities_avg,
+            "negativities_std": negativities_std,
             "negativities": negativities,
             "figures": figures,
         }
