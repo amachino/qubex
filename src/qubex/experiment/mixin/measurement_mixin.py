@@ -2912,6 +2912,10 @@ class MeasurementMixin(
                 # ps.call(l2_padded)
                 ps.call(l2)
 
+            # debug: no entanglement, just Hadamard gates
+            # for target in targets:
+            #     ps.add(target, self.hadamard(target))
+
             for qubit in qubits:
                 basis = qubit["basis"]
                 if basis == "X":
@@ -3224,9 +3228,9 @@ class MeasurementMixin(
                 )
                 fig.update_layout(
                     title=dict(
-                        text=f"Density matrix of graph edge: {edge[0]}-{edge[1]}",
+                        text=f"Negativity of graph state: 𝒩 = {negativity:.3f}",
                         subtitle=dict(
-                            text=f"({', '.join(edges[edge])}) = '{sbits}'",
+                            text=f"edge: {edge}, spectators: ({', '.join(edges[edge])}) = '{sbits}'",
                         ),
                     ),
                     margin=dict(t=110),
@@ -3244,7 +3248,55 @@ class MeasurementMixin(
                 edge_sbits_result[edge][sbits]["eigenvalues"] = eigvals
                 edge_sbits_result[edge][sbits]["figure"] = fig
 
-        return edge_sbits_result
+        result = {"best": {edge: {} for edge in edges}}
+
+        for edge, sbits_results in edge_sbits_result.items():
+            best_result = max(
+                sbits_results.values(),
+                key=lambda x: x["negativity"] if "negativity" in x else 0,
+            )
+            result["best"][edge] = best_result
+
+        result["all"] = edge_sbits_result
+
+        return result
+
+    def measure_negativity_of_1d_cluster_state(
+        self,
+        qubits: Collection[str | int],
+        *,
+        mle_fit: bool = True,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        negativities = {}
+        figures = {}
+        for offset in range(3):
+            print(f"[{offset + 1}/3] Measuring edges with offset {offset}")
+            result = self.measure_1d_cluster_state(
+                qubits,
+                offset=offset,
+                mle_fit=mle_fit,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            )
+            for edge, data in result["best"].items():
+                negativities[edge] = data["negativity"]
+                figures[edge] = data["figure"]
+
+        if plot:
+            print("Negativities:")
+            for edge, negativity in negativities.items():
+                print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
+            for edge, fig in figures.items():
+                fig.show()
+
+        return {
+            "negativities": negativities,
+            "figures": figures,
+        }
 
     @staticmethod
     def partial_transpose(rho: NDArray, subsystem: int = 1) -> NDArray:
