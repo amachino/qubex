@@ -2841,7 +2841,6 @@ class MeasurementMixin(
         targets: Collection[str | int],
         *,
         bases: dict[int, str] | None = None,
-        initialization_pulse: str | None = None,
         optimize_sequence: bool = False,
         as_late_as_possible: bool = True,
         decouple_cr_crosstalk: bool = False,
@@ -2873,30 +2872,46 @@ class MeasurementMixin(
         ]
         n_qubits = len(qubits)
 
-        entangle_steps = []
+        l1_edges = []
+        l1_max_duration = 0
         for i in range(n_qubits - 1):
             if qubits[i]["type"] == "L":
-                entangle_steps.append((qubits[i]["label"], qubits[i + 1]["label"]))
+                edge = (qubits[i]["label"], qubits[i + 1]["label"])
+                l1_edges.append(edge)
+                l1_max_duration = max(l1_max_duration, self.cnot(*edge).duration)
+
+        l2_edges = []
+        l2_max_duration = 0
         for i in range(n_qubits - 1):
             if qubits[i]["type"] == "H":
-                entangle_steps.append((qubits[i + 1]["label"], qubits[i]["label"]))
-
-        cluster_seq = self.create_entangle_sequence(
-            entangle_steps=entangle_steps,
-            initialization_pulse=initialization_pulse,
-            optimize_sequence=optimize_sequence,
-            as_late_as_possible=as_late_as_possible,
-            decouple_cr_crosstalk=decouple_cr_crosstalk,
-            decouple_entangled_zz=decouple_entangled_zz,
-            decouple_all_zz=decouple_all_zz,
-            cpmg_duration_unit=cpmg_duration_unit,
-        )
+                edge = (qubits[i + 1]["label"], qubits[i]["label"])
+                l2_edges.append(edge)
+                l2_max_duration = max(l2_max_duration, self.cnot(*edge).duration)
 
         with PulseSchedule(targets) as ps:
-            ps.call(cluster_seq)
-            for qubit in qubits:
-                if qubit["type"] == "H":
-                    ps.add(qubit["label"], self.hadamard(qubit["label"]))
+            for edge in l1_edges:
+                with PulseSchedule() as l1:
+                    h = self.hadamard(edge[0])
+                    l1.add(edge[0], h)
+                    l1.call(self.cnot(*edge))
+                l1_padded = l1.padded(
+                    total_duration=l1_max_duration + h.duration,
+                    pad_side="left",
+                )
+                ps.call(l1_padded)
+
+            for edge in l2_edges:
+                with PulseSchedule() as l2:
+                    l2.call(self.cnot(*edge))
+                    h = self.hadamard(edge[1])
+                    l2.add(edge[1], h)
+                # l2_padded = l2.padded(
+                #     total_duration=l2_max_duration + h.duration,
+                #     pad_side="right",
+                # )
+                # ps.call(l2_padded)
+                ps.call(l2)
+
             for qubit in qubits:
                 basis = qubit["basis"]
                 if basis == "X":
@@ -2909,13 +2924,40 @@ class MeasurementMixin(
                     raise ValueError(f"Unknown basis: {basis}")
         return ps
 
+        # cluster_seq = self.create_entangle_sequence(
+        #     entangle_steps=entangle_steps,
+        #     initialization_pulse=initialization_pulse,
+        #     optimize_sequence=optimize_sequence,
+        #     as_late_as_possible=as_late_as_possible,
+        #     decouple_cr_crosstalk=decouple_cr_crosstalk,
+        #     decouple_entangled_zz=decouple_entangled_zz,
+        #     decouple_all_zz=decouple_all_zz,
+        #     cpmg_duration_unit=cpmg_duration_unit,
+        # )
+
+        # with PulseSchedule(targets) as ps:
+        #     ps.call(cluster_seq)
+        #     for qubit in qubits:
+        #         if qubit["type"] == "H":
+        #             ps.add(qubit["label"], self.hadamard(qubit["label"]))
+        #     for qubit in qubits:
+        #         basis = qubit["basis"]
+        #         if basis == "X":
+        #             ps.add(qubit["label"], self.y90m(qubit["label"]))
+        #         elif basis == "Y":
+        #             ps.add(qubit["label"], self.x90(qubit["label"]))
+        #         elif basis == "Z":
+        #             pass
+        #         else:
+        #             raise ValueError(f"Unknown basis: {basis}")
+        # return ps
+
     def measure_1d_cluster_state(
         self,
         targets: Collection[str | int],
         *,
         offset: int = 0,
         mle_fit: bool = True,
-        initialization_pulse: str | None = None,
         optimize_sequence: bool = False,
         as_late_as_possible: bool = True,
         decouple_cr_crosstalk: bool = False,
@@ -2959,7 +3001,6 @@ class MeasurementMixin(
 
         seq = self.create_1d_cluster_sequence(
             targets,
-            initialization_pulse=initialization_pulse,
             optimize_sequence=optimize_sequence,
             as_late_as_possible=as_late_as_possible,
             decouple_cr_crosstalk=decouple_cr_crosstalk,
@@ -2996,7 +3037,6 @@ class MeasurementMixin(
                 self.create_1d_cluster_sequence(
                     targets,
                     bases=bases,
-                    initialization_pulse=initialization_pulse,
                     optimize_sequence=optimize_sequence,
                     as_late_as_possible=as_late_as_possible,
                     decouple_cr_crosstalk=decouple_cr_crosstalk,
