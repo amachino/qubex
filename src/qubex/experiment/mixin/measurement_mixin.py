@@ -2930,7 +2930,9 @@ class MeasurementMixin(
 
             if with_readout_pulses:
                 for qubit in qubits:
-                    ps.add("R" + qubit["label"], self.readout(qubit["label"]))
+                    resonator = self.resonators[qubit["label"]].label
+                    ps.add(resonator, Blank(ps.get_offset(qubit["label"])))
+                    ps.add(resonator, self.readout(resonator))
         return ps
 
         # cluster_seq = self.create_entangle_sequence(
@@ -3064,6 +3066,7 @@ class MeasurementMixin(
                         decouple_entangled_zz=decouple_entangled_zz,
                         decouple_all_zz=decouple_all_zz,
                         cpmg_duration_unit=cpmg_duration_unit,
+                        with_readout_pulses=True,
                     ),
                     mode="single",
                     shots=shots,
@@ -3080,6 +3083,7 @@ class MeasurementMixin(
                         decouple_entangled_zz=decouple_entangled_zz,
                         decouple_all_zz=decouple_all_zz,
                         cpmg_duration_unit=cpmg_duration_unit,
+                        with_readout_pulses=False,
                     ),
                     mode="single",
                     shots=shots,
@@ -3263,7 +3267,7 @@ class MeasurementMixin(
                     height=342,
                 )
 
-                if negativity > 0 and plot:
+                if plot:
                     fig.show()
 
                 edge_sbits_result[edge][sbits]["expected_values"] = expected_values
@@ -3299,7 +3303,7 @@ class MeasurementMixin(
         if plot:
             seq = self.create_1d_cluster_sequence(
                 qubits,
-                with_readout_pulses=False,
+                with_readout_pulses=True if method == "execute" else False,
             )
             seq.plot(
                 title=f"1D cluster state preparation sequence for {len(qubits)} qubits",
@@ -3322,23 +3326,53 @@ class MeasurementMixin(
                 negativities[edge] = data["negativity"]
                 figures[edge] = data["figure"]
 
+        negativities = dict(
+            sorted(negativities.items(), key=lambda item: item[1], reverse=True)
+        )
+
         negativities_max = max(negativities.values())
         negativities_min = min(negativities.values())
         negativities_avg = np.mean(list(negativities.values()))
         negativities_std = np.std(list(negativities.values()))
         negativities_med = np.median(list(negativities.values()))
         if plot:
-            print("Negativities:")
+            for edge, fig in figures.items():
+                fig.show()
+            print(f"Negativities of {len(negativities)} edges:")
             print(f"  max: {negativities_max:.3f}")
             print(f"  min: {negativities_min:.3f}")
             print(f"  med: {negativities_med:.3f}")
             print(f"  avg: {negativities_avg:.3f}")
             print(f"  std: {negativities_std:.3f}")
-            print("  edges:")
+            print("Negativities per edge:")
             for edge, negativity in negativities.items():
-                print(f"    {edge[0]}-{edge[1]}: {negativity:.3f}")
-            for edge, fig in figures.items():
-                fig.show()
+                print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
+
+            x = [f"{edge[0]}-{edge[1]}" for edge in negativities]
+            y = [fidelity for fidelity in negativities.values()]
+            fig = go.Figure(
+                layout=go.Layout(
+                    title=f"Negativities of {len(qubits)}-qubit 1D cluster state",
+                    xaxis=dict(
+                        title="Edges",
+                        tickangle=45,
+                        tickmode="array",
+                        tickvals=list(range(len(x))),
+                        ticktext=x,
+                    ),
+                    yaxis=dict(
+                        title="Negativity",
+                        range=[0, 0.55],
+                        tickvals=[0, 0.1, 0.2, 0.3, 0.4, 0.5],
+                        ticktext=["0", "0.1", "0.2", "0.3", "0.4", "0.5"],
+                    ),
+                    width=800,
+                    height=400,
+                    margin=dict(l=70, r=70, t=90, b=100),
+                )
+            )
+            fig.add_bar(x=x, y=y)
+            fig.show()
 
         return {
             "negativities_max": negativities_max,
