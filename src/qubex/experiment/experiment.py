@@ -1854,9 +1854,9 @@ class Experiment(
 
         is_low_to_high = self.qubits[control_qubit].index % 4 in [0, 3]
 
-        if (
-            only_low_to_high and is_low_to_high
-        ) or cr_label in self.calib_note.cr_params:
+        if (only_low_to_high and is_low_to_high) or (
+            not only_low_to_high and cr_label in self.calib_note.cr_params
+        ):
             if x90 is None:
                 x90 = self.x90(target_qubit)
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
@@ -1894,12 +1894,14 @@ class Experiment(
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule:
         return self.cnot(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
             zx90=zx90,
             x90=x90,
+            only_low_to_high=only_low_to_high,
         )
 
     def cz(
@@ -1909,10 +1911,15 @@ class Experiment(
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if cr_label in self.calib_note.cr_params:
+        is_low_to_high = self.qubits[control_qubit].index % 4 in [0, 3]
+
+        if (only_low_to_high and is_low_to_high) or (
+            not only_low_to_high and cr_label in self.calib_note.cr_params
+        ):
             if x90 is None:
                 x90 = self.x90(target_qubit)
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
@@ -1933,6 +1940,7 @@ class Experiment(
             if x90 is None:
                 x90 = self.x90(control_qubit)
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
+            cr_label = f"{target_qubit}-{control_qubit}"
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
                 cnot_tc.call(zx90)
                 cnot_tc.add(target_qubit, VirtualZ(-np.pi / 2))
