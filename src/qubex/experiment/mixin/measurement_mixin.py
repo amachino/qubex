@@ -2879,7 +2879,8 @@ class MeasurementMixin(
             if qubits[i]["type"] == "L":
                 edge = (qubits[i]["label"], qubits[i + 1]["label"])
                 l1_edges.append(edge)
-                l1_max_duration = max(l1_max_duration, self.cnot(*edge).duration)
+                cnot = self.cnot(*edge, only_low_to_high=True)
+                l1_max_duration = max(l1_max_duration, cnot.duration)
 
         l2_edges = []
         l2_max_duration = 0
@@ -2887,14 +2888,15 @@ class MeasurementMixin(
             if qubits[i]["type"] == "H":
                 edge = (qubits[i + 1]["label"], qubits[i]["label"])
                 l2_edges.append(edge)
-                l2_max_duration = max(l2_max_duration, self.cnot(*edge).duration)
+                cnot = self.cnot(*edge, only_low_to_high=True)
+                l2_max_duration = max(l2_max_duration, cnot.duration)
 
         with PulseSchedule(targets) as ps:
             for edge in l1_edges:
                 with PulseSchedule() as l1:
                     h = self.hadamard(edge[0])
                     l1.add(edge[0], h)
-                    l1.call(self.cnot(*edge))
+                    l1.call(self.cnot(*edge, only_low_to_high=True))
                 l1_padded = l1.padded(
                     total_duration=l1_max_duration + h.duration,
                     pad_side="left",
@@ -2903,7 +2905,7 @@ class MeasurementMixin(
 
             for edge in l2_edges:
                 with PulseSchedule() as l2:
-                    l2.call(self.cnot(*edge))
+                    l2.call(self.cnot(*edge, only_low_to_high=True))
                     h = self.hadamard(edge[1])
                     l2.add(edge[1], h)
                 # l2_padded = l2.padded(
@@ -3413,3 +3415,344 @@ class MeasurementMixin(
             raise ValueError("subsystem must be 0 or 1")
 
         return rho_pt.reshape(4, 4)
+
+    def create_subgraphs(
+        self,
+        fidelities: dict[str, float],
+        threshold: float = 0.0,
+    ) -> list[dict]:
+        G = nx.DiGraph()
+        for cr_label, fidelity in fidelities.items():
+            if cr_label in self.cr_labels:
+                if fidelity > threshold:
+                    control, target = cr_label.split("-")
+                    G.add_edge(control, target)
+
+        subgraphs = []
+        for component in nx.weakly_connected_components(G):
+            subgraph = G.subgraph(component).copy()
+            n_nodes = subgraph.number_of_nodes()
+            nodes = list(subgraph.nodes())
+            edges = list(subgraph.edges())
+            subgraphs.append(
+                {
+                    "n_nodes": n_nodes,
+                    "nodes": nodes,
+                    "edges": edges,
+                    "graph": subgraph,
+                }
+            )
+        subgraphs.sort(key=lambda x: x["n_nodes"], reverse=True)
+
+        return subgraphs
+
+    def create_graph_sequence(
+        self,
+        nodes: list[str],
+        edges: list[tuple[str, str]],
+        *,
+        bases: dict[str, str] | None = None,
+        with_readout_pulses: bool = True,
+    ):
+        with PulseSchedule(nodes) as ps:
+            for node in nodes:
+                ps.add(node, self.hadamard(node))
+            for edge in edges:
+                ps.call(self.cz(*edge, only_low_to_high=True))
+
+            # debug: no entanglement, just Hadamard gates
+            # for target in targets:
+            #     ps.add(target, self.hadamard(target))
+
+            for node in nodes:
+                basis = bases[node] if bases and node in bases else "Z"
+                if basis == "X":
+                    ps.add(node, self.y90m(node))
+                elif basis == "Y":
+                    ps.add(node, self.x90(node))
+                elif basis == "Z":
+                    pass
+                else:
+                    raise ValueError(f"Unknown basis: {basis}")
+
+            if with_readout_pulses:
+                for node in nodes:
+                    resonator = self.resonators[node].label
+                    ps.add(resonator, Blank(ps.get_offset(node)))
+                    ps.add(resonator, self.readout(resonator))
+        return ps
+
+    def measure_graph_state(
+        self,
+        edge_fidelities: dict[str, float],
+        *,
+        # target_edges: list[tuple[str, str]],
+        threshold: float = 0.0,
+        mle_fit: bool = True,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        subgraphs = self.create_subgraphs(
+            edge_fidelities,
+            threshold=threshold,
+        )
+        graph = subgraphs[0]
+        DG = graph["graph"]
+        UG = DG.to_undirected()
+        all_edges = graph["edges"]
+        all_nodes = graph["nodes"]
+
+        target_edges = all_edges[1:2]
+
+        edge_and_spectators: dict[tuple[str, str], list[str]] = {}
+        for edge in target_edges:
+            edge_spectators: list[str] = []
+            for node in edge:
+                node_spectators = UG.neighbors(node)
+                for spectator in node_spectators:
+                    if spectator not in edge:
+                        edge_spectators.append(spectator)
+            edge_and_spectators[edge] = edge_spectators
+            if plot:
+                print(f"Edge: {edge}, Spectators: {edge_spectators}")
+
+        edge_sbits_result: dict[tuple[str, str], dict[str, dict]] = {
+            edge: {} for edge in target_edges
+        }
+        edge_sbits_probabilities: dict[
+            tuple[str, str], dict[str, dict[str, dict[str, float]]]
+        ] = {
+            # edge: {
+            #     sbits: {
+            #         pauli: {
+            #             ebits: probability,
+            #         }
+            #     },
+            # }
+            edge: {}
+            for edge in target_edges
+        }
+
+        for pauli0, pauli1 in tqdm(
+            product(["X", "Y", "Z"], repeat=2),
+        ):
+            pauli_basis = f"{pauli0}{pauli1}"
+
+            bases = {}
+            for target_edge in target_edges:
+                node0, node1 = target_edge
+                bases[node0] = pauli0
+                bases[node1] = pauli1
+
+            result = self.execute(
+                self.create_graph_sequence(
+                    nodes=all_nodes,
+                    edges=all_edges,
+                    bases=bases,
+                    with_readout_pulses=True,
+                ),
+                mode="single",
+                shots=shots,
+                interval=interval,
+            )
+
+            for edge, spectators in edge_and_spectators.items():
+                target_labels = list(edge) + spectators
+                mitigated_counts = result.get_mitigated_counts(target_labels)
+                n_spectators = len(spectators)
+                spectators_bits = [
+                    "".join(bits) for bits in product("01", repeat=n_spectators)
+                ]
+                for sbits in spectators_bits:
+                    if sbits not in edge_sbits_probabilities[edge]:
+                        edge_sbits_probabilities[edge][sbits] = {}
+
+                sbits_ebits_counts: dict[str, dict[str, int]] = {
+                    sbits: {} for sbits in spectators_bits
+                }
+
+                for bits, count in mitigated_counts.items():
+                    ebits = bits[:2]
+                    sbits = bits[2:]
+                    sbits_ebits_counts[sbits][ebits] = count
+
+                for sbits, ebits_counts in sbits_ebits_counts.items():
+                    total_count = sum(ebits_counts.values())
+                    edge_sbits_probabilities[edge][sbits][pauli_basis] = {
+                        ebits: count / total_count if total_count > 0 else 0.0
+                        for ebits, count in ebits_counts.items()
+                    }
+
+        paulis = {
+            "I": np.array([[1, 0], [0, 1]]),
+            "X": np.array([[0, 1], [1, 0]]),
+            "Y": np.array([[0, -1j], [1j, 0]]),
+            "Z": np.array([[1, 0], [0, -1]]),
+        }
+
+        for edge, sbits_probabilities in edge_sbits_probabilities.items():
+            for sbits, probabilities in sbits_probabilities.items():
+                if sbits not in edge_sbits_result[edge]:
+                    edge_sbits_result[edge][sbits] = {}
+
+                expected_values = {}
+                rho = np.zeros((4, 4), dtype=np.complex128)
+                for basis0, pauli0 in paulis.items():
+                    for basis1, pauli1 in paulis.items():
+                        pauli_basis = f"{basis0}{basis1}"
+                        # calculate the expectation values
+                        if pauli_basis == "II":
+                            # II is always 1
+                            # 00: +1, 01: +1, 10: +1, 11: +1
+                            counts = probabilities["ZZ"]
+                            e = (
+                                counts["00"]
+                                + counts["01"]
+                                + counts["10"]
+                                + counts["11"]
+                            )
+                        elif pauli_basis in ["IX", "IY", "IZ"]:
+                            # ignore the first qubit
+                            # 00: +1, 01: -1, 10: +1, 11: -1
+                            counts = probabilities[f"Z{basis1}"]
+                            e = (
+                                counts["00"]
+                                - counts["01"]
+                                + counts["10"]
+                                - counts["11"]
+                            )
+                        elif pauli_basis in ["XI", "YI", "ZI"]:
+                            # ignore the second qubit
+                            # 00: +1, 01: +1, 10: -1, 11: -1
+                            counts = probabilities[f"{basis0}Z"]
+                            e = (
+                                counts["00"]
+                                + counts["01"]
+                                - counts["10"]
+                                - counts["11"]
+                            )
+                        else:
+                            # two-qubit basis
+                            # 00: +1, 01: -1, 10: -1, 11: +1
+                            counts = probabilities[pauli_basis]
+                            e = (
+                                counts["00"]
+                                - counts["01"]
+                                - counts["10"]
+                                + counts["11"]
+                            )
+                        pauli_matrix = np.kron(pauli0, pauli1)
+                        rho += e * pauli_matrix
+                        expected_values[pauli_basis] = e
+
+                if mle_fit:
+                    rho = mle_fit_density_matrix(expected_values)
+                else:
+                    rho = rho / 4
+
+                rho_pt = self.partial_transpose(rho)
+                eigvals = np.linalg.eigvalsh(rho_pt)
+                negativity = np.sum(np.abs(eigvals[eigvals < 0]))
+
+                if plot:
+                    print(f"{edge[0]}-{edge[1]} ({sbits}) : Negativity = {negativity}")
+
+                fig = make_subplots(
+                    rows=1,
+                    cols=2,
+                    subplot_titles=("Abs", "Phase"),
+                    horizontal_spacing=0.26,
+                )
+                fig.add_trace(
+                    go.Heatmap(
+                        z=np.abs(rho),
+                        zmin=0,
+                        zmax=1,
+                        colorscale="Hot_r",
+                        colorbar=dict(
+                            title="Abs",
+                            x=0.37,
+                            y=0.5,
+                            thickness=15,
+                            tickvals=[0, 0.5, 1],
+                            ticktext=["0", "0.5", "1"],
+                        ),
+                    ),
+                    row=1,
+                    col=1,
+                )
+                fig.add_trace(
+                    go.Heatmap(
+                        z=np.angle(rho),
+                        zmin=-np.pi,
+                        zmax=np.pi,
+                        colorscale="Edge",
+                        colorbar=dict(
+                            title="Phase (rad)",
+                            x=1.0,
+                            y=0.5,
+                            thickness=15,
+                            tickvals=[-np.pi, -np.pi / 2, 0, np.pi / 2, np.pi],
+                            ticktext=["-π", "-π/2", "0", "π/2", "π"],
+                        ),
+                    ),
+                    row=1,
+                    col=2,
+                )
+
+                tickvals = np.arange(4)
+                ticktext = [f"{i:0{2}b}" for i in tickvals]
+                tick_style = dict(
+                    tickmode="array",
+                    tickvals=tickvals,
+                    ticktext=ticktext,
+                    tickangle=0,
+                )
+
+                fig.update_xaxes(tick_style, row=1, col=1)
+                fig.update_yaxes(
+                    dict(**tick_style, autorange="reversed", scaleanchor="x1"),
+                    row=1,
+                    col=1,
+                )
+                fig.update_xaxes(tick_style, row=1, col=2)
+                fig.update_yaxes(
+                    dict(**tick_style, autorange="reversed", scaleanchor="x2"),
+                    row=1,
+                    col=2,
+                )
+                fig.update_layout(
+                    title=dict(
+                        text=f"Negativity of graph state: 𝒩 = {negativity:.3f}",
+                        subtitle=dict(
+                            text=f"edge: {edge}, spectators: ({', '.join(edge_and_spectators[edge])}) = '{sbits}'",
+                        ),
+                    ),
+                    margin=dict(t=110),
+                    width=600,
+                    height=342,
+                )
+
+                if plot:
+                    fig.show()
+
+                edge_sbits_result[edge][sbits]["expected_values"] = expected_values
+                edge_sbits_result[edge][sbits]["density_matrix"] = rho
+                edge_sbits_result[edge][sbits]["partial_transpose"] = rho_pt
+                edge_sbits_result[edge][sbits]["negativity"] = negativity
+                edge_sbits_result[edge][sbits]["eigenvalues"] = eigvals
+                edge_sbits_result[edge][sbits]["figure"] = fig
+
+        result = {"best": {edge: {} for edge in target_edges}}
+
+        for edge, sbits_results in edge_sbits_result.items():
+            best_result = max(
+                sbits_results.values(),
+                key=lambda x: x["negativity"] if "negativity" in x else 0,
+            )
+            result["best"][edge] = best_result
+
+        result["all"] = edge_sbits_result
+
+        return result
