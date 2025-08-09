@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime
 from itertools import product
 from pathlib import Path
@@ -19,6 +19,7 @@ from tqdm import tqdm
 from qubex.experiment.library.graph import (
     find_longest_1d_chain,
     get_max_undirected_weight,
+    tree_center,
 )
 
 from ...analysis import IQPlotter, fitting
@@ -3434,7 +3435,12 @@ class MeasurementMixin(
             if cr_label in cr_labels:
                 if fidelity > threshold:
                     control, target = cr_label.split("-")
-                    G.add_edge(control, target, fidelity=fidelity)
+                    G.add_edge(
+                        control,
+                        target,
+                        fidelity=fidelity,
+                        cost=-np.log10(fidelity),
+                    )
 
         graphs = []
         for component in nx.weakly_connected_components(G):
@@ -3472,15 +3478,15 @@ class MeasurementMixin(
 
         return graphs
 
-    def create_longest_1d_chain(
+    def create_maximum_1d_chain(
         self,
         fidelities: dict[str, float],
         *,
         threshold: float = 0.0,
         plot: bool = False,
-    ) -> dict:
+    ) -> nx.Graph:
         """
-        Create the longest 1D chain in a 2D lattice graph.
+        Create the maximum 1D chain in a 2D lattice graph.
 
         Parameters
         ----------
@@ -3489,8 +3495,8 @@ class MeasurementMixin(
 
         Returns
         -------
-        tuple[list[str], list[tuple[str, str]]]
-            A tuple containing the list of nodes and list of edges.
+        nx.Graph
+            A graph representing the maximum 1D chain.
         """
         graphs = self.create_connected_graphs(
             fidelities,
@@ -3501,14 +3507,20 @@ class MeasurementMixin(
         G = graphs[0]
         path_nodes, path_edges, _ = find_longest_1d_chain(G)
 
+        chain = nx.Graph()
+        chain.add_nodes_from(path_nodes)
+        for edge in path_edges:
+            fidelity = get_max_undirected_weight(G, edge=edge, property="fidelity")
+            chain.add_edge(*edge, fidelity=fidelity)
+
         if plot:
             chip_graph = self.quantum_system.chip_graph
             edge_values = {}
             edge_texts = {}
-            for u, v in path_edges:
-                w = get_max_undirected_weight(G, edge=(u, v), property="fidelity")
+            for u, v, data in chain.edges(data=True):
+                fidelity = data.get("fidelity", 0.0)
                 label = f"{u}-{v}"
-                fidelity = float(w * 1e2)
+                fidelity = float(fidelity * 1e2)
                 edge_values[label] = fidelity
                 edge_texts[label] = f"{fidelity:.1f}"
 
@@ -3516,7 +3528,7 @@ class MeasurementMixin(
 
             chip_graph.plot_graph_data(
                 directed=False,
-                title=f"Longest 1D chain : N = {len(path_nodes)}",
+                title=f"Maximum 1D chain : N = {len(path_nodes)}",
                 edge_values=edge_values,
                 edge_texts=edge_texts,
                 node_color="white",
@@ -3529,10 +3541,116 @@ class MeasurementMixin(
                 node_overlay_textcolor="black",
             )
 
-        return {
-            "nodes": path_nodes,
-            "edges": path_edges,
-        }
+        return chain
+
+    def create_maximum_spanning_tree(
+        self,
+        fidelities: dict[str, float],
+        *,
+        threshold: float = 0.0,
+        plot: bool = False,
+    ):
+        graphs = self.create_connected_graphs(
+            fidelities,
+            threshold=threshold,
+            plot=False,
+        )
+        assert graphs, "No connected graphs found"
+
+        G = graphs[0]
+        UG = G.to_undirected()
+        mst = nx.minimum_spanning_tree(UG, weight="cost")
+
+        if plot:
+            chip_graph = self.quantum_system.chip_graph
+            edge_values = {}
+            edge_texts = {}
+            for u, v, data in mst.edges(data=True):
+                fidelity = data.get("fidelity", 0.0)
+                label = f"{u}-{v}"
+                fidelity = float(fidelity * 1e2)
+                edge_values[label] = fidelity
+                edge_texts[label] = f"{fidelity:.1f}"
+
+            node_overlay_values = {q: 1.0 for q in mst.nodes()}
+
+            chip_graph.plot_graph_data(
+                directed=False,
+                title=f"Maximum spanning tree : N = {len(mst.nodes())}",
+                edge_values=edge_values,
+                edge_texts=edge_texts,
+                node_color="white",
+                node_linecolor="ghostwhite",
+                node_textcolor="ghostwhite",
+                node_overlay=True,
+                node_overlay_values=node_overlay_values,
+                node_overlay_color="ghostwhite",
+                node_overlay_linecolor="black",
+                node_overlay_textcolor="black",
+            )
+
+        return mst
+
+    def create_maximum_directed_tree(
+        self,
+        fidelities: dict[str, float],
+        *,
+        threshold: float = 0.0,
+        plot: bool = False,
+    ):
+        mst = self.create_maximum_spanning_tree(
+            fidelities,
+            threshold=threshold,
+            plot=False,
+        )
+        root = tree_center(mst)[0]
+        parents = {root: None}
+        q = deque([root])
+
+        while q:
+            u = q.popleft()
+            for v in mst.neighbors(u):
+                if v in parents:
+                    continue
+                parents[v] = u
+                q.append(v)
+
+        DG = nx.DiGraph()
+        for child, parent in parents.items():
+            DG.add_node(child, **mst[child])
+            if parent is None:
+                continue
+            DG.add_edge(parent, child, **mst[parent][child])
+
+        if plot:
+            chip_graph = self.quantum_system.chip_graph
+            edge_values = {}
+            edge_texts = {}
+            for u, v, data in DG.edges(data=True):
+                fidelity = data.get("fidelity", 0.0)
+                label = f"{u}-{v}"
+                fidelity = float(fidelity * 1e2)
+                edge_values[label] = fidelity
+                edge_texts[label] = f"{fidelity:.1f}"
+
+            node_overlay_values = {q: 1.0 for q in DG.nodes()}
+
+            chip_graph.plot_graph_data(
+                directed=False,
+                title=f"Maximum tree : N = {len(DG.nodes())}, root = {root}",
+                edge_values=edge_values,
+                edge_texts=edge_texts,
+                node_color="white",
+                node_linecolor="ghostwhite",
+                node_textcolor="ghostwhite",
+                node_overlay=True,
+                node_overlay_values=node_overlay_values,
+                node_overlay_color="ghostwhite",
+                node_overlay_linecolor="black",
+                node_overlay_textcolor="black",
+            )
+
+        return DG
 
     def create_graph_sequence(
         self,

@@ -1,8 +1,24 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 
 import networkx as nx
+
+
+def tree_center(G):
+    u = max(
+        nx.single_source_shortest_path_length(G, list(G.nodes)[0]).items(),
+        key=lambda x: x[1],
+    )[0]
+    lengths = nx.single_source_shortest_path_length(G, u)
+    v = max(lengths.items(), key=lambda x: x[1])[0]
+    path = nx.shortest_path(G, u, v)
+    L = len(path)
+    if L % 2 == 1:
+        return [path[L // 2]]
+    else:
+        return [path[L // 2 - 1], path[L // 2]]
 
 
 def get_max_undirected_weight(
@@ -205,7 +221,6 @@ def find_longest_1d_chain(
         return a_cost < b_cost
 
     # Reachability-based pruning: can we tie or exceed current best length from u?
-    from collections import deque
 
     def can_tie_or_exceed(u, visited: set, cur_len: int, best_len: int) -> bool:
         # To tie the incumbent, we need (best_len - cur_len) more edges from u,
@@ -323,4 +338,4 @@ def find_longest_1d_chain(
     return best_path, edges_in_path_order, best_score
 
 
-__all__ = ["find_longest_1d_chain", "get_max_undirected_weight"]
+__all__ = ["find_longest_1d_chain", "get_max_undirected_weight", "tree_center"]
