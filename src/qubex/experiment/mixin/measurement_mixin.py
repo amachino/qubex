@@ -16,6 +16,11 @@ from plotly.subplots import make_subplots
 from rich.console import Console
 from tqdm import tqdm
 
+from qubex.experiment.library.graph import (
+    find_longest_1d_chain,
+    get_max_undirected_weight,
+)
+
 from ...analysis import IQPlotter, fitting
 from ...analysis import visualization as viz
 from ...analysis.state_tomography import (
@@ -3416,35 +3421,118 @@ class MeasurementMixin(
 
         return rho_pt.reshape(4, 4)
 
-    def create_subgraphs(
+    def create_connected_graphs(
         self,
         fidelities: dict[str, float],
+        *,
         threshold: float = 0.0,
-    ) -> list[dict]:
+        plot: bool = False,
+    ) -> list[nx.DiGraph]:
         G = nx.DiGraph()
+        cr_labels = self.cr_labels
         for cr_label, fidelity in fidelities.items():
-            if cr_label in self.cr_labels:
+            if cr_label in cr_labels:
                 if fidelity > threshold:
                     control, target = cr_label.split("-")
                     G.add_edge(control, target, fidelity=fidelity)
 
-        subgraphs = []
+        graphs = []
         for component in nx.weakly_connected_components(G):
-            subgraph = G.subgraph(component).copy()
-            n_nodes = subgraph.number_of_nodes()
-            nodes = list(subgraph.nodes())
-            edges = list(subgraph.edges())
-            subgraphs.append(
-                {
-                    "n_nodes": n_nodes,
-                    "nodes": nodes,
-                    "edges": edges,
-                    "graph": subgraph,
-                }
-            )
-        subgraphs.sort(key=lambda x: x["n_nodes"], reverse=True)
+            graph = G.subgraph(component)
+            graphs.append(graph)
+        graphs.sort(key=lambda x: x.number_of_nodes(), reverse=True)
 
-        return subgraphs
+        if plot:
+            node_values = {}
+            edge_values = {}
+            edge_texts = {}
+            for graph in graphs:
+                for node in graph.nodes():
+                    node_values[node] = 1.0
+                for edge in graph.edges():
+                    fidelity = graph.edges[edge]["fidelity"] * 1e2
+                    edge_values[f"{edge[0]}-{edge[1]}"] = fidelity
+                    edge_texts[f"{edge[0]}-{edge[1]}"] = f"{fidelity:.1f}"
+
+            chip_graph = self.quantum_system.chip_graph
+            chip_graph.plot_graph_data(
+                directed=False,
+                title="Connected graphs",
+                edge_values=edge_values,
+                edge_texts=edge_texts,
+                node_color="white",
+                node_linecolor="ghostwhite",
+                node_textcolor="ghostwhite",
+                node_overlay=True,
+                node_overlay_values=node_values,
+                node_overlay_color="ghostwhite",
+                node_overlay_linecolor="black",
+                node_overlay_textcolor="black",
+            )
+
+        return graphs
+
+    def create_longest_1d_chain(
+        self,
+        fidelities: dict[str, float],
+        *,
+        threshold: float = 0.0,
+        plot: bool = False,
+    ) -> dict:
+        """
+        Create the longest 1D chain in a 2D lattice graph.
+
+        Parameters
+        ----------
+        fidelities : dict[str, float]
+            A dictionary mapping edge labels to their fidelities.
+
+        Returns
+        -------
+        tuple[list[str], list[tuple[str, str]]]
+            A tuple containing the list of nodes and list of edges.
+        """
+        graphs = self.create_connected_graphs(
+            fidelities,
+            threshold=threshold,
+            plot=False,
+        )
+        assert graphs, "No connected graphs found"
+        G = graphs[0]
+        path_nodes, path_edges, _ = find_longest_1d_chain(G)
+
+        if plot:
+            chip_graph = self.quantum_system.chip_graph
+            edge_values = {}
+            edge_texts = {}
+            for u, v in path_edges:
+                w = get_max_undirected_weight(G, edge=(u, v), property="fidelity")
+                label = f"{u}-{v}"
+                fidelity = float(w * 1e2)
+                edge_values[label] = fidelity
+                edge_texts[label] = f"{fidelity:.1f}"
+
+            node_overlay_values = {q: 1.0 for q in path_nodes}
+
+            chip_graph.plot_graph_data(
+                directed=False,
+                title=f"Longest 1D chain : N = {len(path_nodes)}",
+                edge_values=edge_values,
+                edge_texts=edge_texts,
+                node_color="white",
+                node_linecolor="ghostwhite",
+                node_textcolor="ghostwhite",
+                node_overlay=True,
+                node_overlay_values=node_overlay_values,
+                node_overlay_color="ghostwhite",
+                node_overlay_linecolor="black",
+                node_overlay_textcolor="black",
+            )
+
+        return {
+            "nodes": path_nodes,
+            "edges": path_edges,
+        }
 
     def create_graph_sequence(
         self,
@@ -3493,15 +3581,15 @@ class MeasurementMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
-        subgraphs = self.create_subgraphs(
+        subgraphs = self.create_connected_graphs(
             edge_fidelities,
             threshold=threshold,
         )
         graph = subgraphs[0]
-        DG = graph["graph"]
+        DG = graph
         UG = DG.to_undirected()
-        all_edges = graph["edges"]
-        all_nodes = graph["nodes"]
+        all_edges = graph.edges()
+        all_nodes = graph.nodes()
 
         target_edges = all_edges[1:2]
 

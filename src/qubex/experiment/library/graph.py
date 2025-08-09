@@ -5,13 +5,35 @@ import time
 import networkx as nx
 
 
+def get_max_undirected_weight(
+    G: nx.Graph,
+    edge: tuple[str, str],
+    property: str = "fidelity",
+) -> float:
+    u, v = edge
+    if G.is_multigraph():
+        vals = []
+        if G.has_edge(u, v):
+            vals.extend([data.get(property, 0.0) for _, data in G[u][v].items()])
+        if G.has_edge(v, u):
+            vals.extend([data.get(property, 0.0) for _, data in G[v][u].items()])
+        return float(max(vals)) if vals else 0.0
+    else:
+        vals = []
+        if G.has_edge(u, v):
+            vals.append(G[u][v].get(property, 0.0))
+        if isinstance(G, (nx.DiGraph, nx.MultiDiGraph)) and G.has_edge(v, u):
+            vals.append(G[v][u].get(property, 0.0))
+        return float(max(vals)) if vals else 0.0
+
+
 def find_longest_1d_chain(
     G: nx.Graph,
     *,
     weight_attr: str = "fidelity",
     time_limit: float | None = 5.0,
     eps: float = 1e-12,
-) -> tuple[list, list, int, float]:
+) -> tuple[list, list, float]:
     """
     Find the longest simple path in a 1D chain graph, maximizing fidelity
 
@@ -41,8 +63,6 @@ def find_longest_1d_chain(
         Node sequence of the best path found.
     path_edges : list of tuple
         Oriented edges in path order ``(u, v)`` corresponding to ``path_nodes``.
-    length_edges : int
-        Path length measured in number of edges.
     score : float
         Tie-break cost (lower is better): for fidelity it's ``sum(-log f)``; for duration it's
         ``sum(duration)``.
@@ -296,11 +316,11 @@ def find_longest_1d_chain(
         dfs(s, visited, 0.0, [s])
 
     if not best_path:
-        return [], [], 0, 0.0
+        return [], [], 0.0
 
     # Oriented edge sequence along the undirected path (for convenience).
     edges_in_path_order = list(zip(best_path[:-1], best_path[1:]))
-    return best_path, edges_in_path_order, best_len, best_score
+    return best_path, edges_in_path_order, best_score
 
 
-__all__ = ["find_longest_1d_chain"]
+__all__ = ["find_longest_1d_chain", "get_max_undirected_weight"]
