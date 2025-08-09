@@ -3426,7 +3426,7 @@ class MeasurementMixin(
             if cr_label in self.cr_labels:
                 if fidelity > threshold:
                     control, target = cr_label.split("-")
-                    G.add_edge(control, target)
+                    G.add_edge(control, target, fidelity=fidelity)
 
         subgraphs = []
         for component in nx.weakly_connected_components(G):
