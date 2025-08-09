@@ -713,11 +713,13 @@ class LatticeGraph:
         node_color: str | None = None,
         node_linecolor: str | None = None,
         node_textcolor: str | None = None,
+        node_colorscale: str | None = None,
         edge_values: dict | None = None,
         edge_texts: dict | None = None,
         edge_hovertexts: dict | None = None,
         edge_color: str | None = None,
         edge_textcolor: str | None = None,
+        edge_colorscale: str | None = None,
         node_overlay: bool = False,
         edge_overlay: bool = False,
         node_overlay_values: dict | None = None,
@@ -726,11 +728,13 @@ class LatticeGraph:
         node_overlay_color: str | None = None,
         node_overlay_linecolor: str | None = None,
         node_overlay_textcolor: str | None = None,
+        node_overlay_colorscale: str | None = None,
         edge_overlay_values: dict | None = None,
         edge_overlay_texts: dict | None = None,
         edge_overlay_hovertexts: dict | None = None,
         edge_overlay_color: str | None = None,
         edge_overlay_textcolor: str | None = None,
+        edge_overlay_colorscale: str | None = None,
         colorscale: str = "Viridis",
         image_name: str = "graph_data",
         images_dir: str = "./images",
@@ -786,7 +790,7 @@ class LatticeGraph:
             hovertexts=edge_hovertexts,
             color=edge_color,
             textcolor=edge_textcolor,
-            colorscale=colorscale,
+            colorscale=edge_colorscale or colorscale,
         )
         data += qubit_edge_trace
 
@@ -798,7 +802,7 @@ class LatticeGraph:
                 hovertexts=edge_overlay_hovertexts,
                 color=edge_overlay_color,
                 textcolor=edge_overlay_textcolor,
-                colorscale=colorscale,
+                colorscale=edge_overlay_colorscale or colorscale,
             )
             data += qubit_edge_overlay_trace
 
@@ -809,6 +813,7 @@ class LatticeGraph:
             color=node_color,
             linecolor=node_linecolor,
             textcolor=node_textcolor,
+            colorscale=node_colorscale or colorscale,
         )
         data += qubit_node_trace
 
@@ -820,6 +825,7 @@ class LatticeGraph:
                 color=node_overlay_color,
                 linecolor=node_overlay_linecolor,
                 textcolor=node_overlay_textcolor,
+                colorscale=node_overlay_colorscale or colorscale,
             )
             data += qubit_node_overlay_trace
 

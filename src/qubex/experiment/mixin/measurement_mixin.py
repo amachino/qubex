@@ -3604,7 +3604,10 @@ class MeasurementMixin(
             plot=False,
         )
         root = tree_center(mst)[0]
-        parents = {root: None}
+
+        # BFS to determine parents and depth from the root
+        parents: dict[str, str | None] = {root: None}
+        depths: dict[str, int] = {root: 0}
         q = deque([root])
 
         while q:
@@ -3613,14 +3616,20 @@ class MeasurementMixin(
                 if v in parents:
                     continue
                 parents[v] = u
+                depths[v] = depths[u] + 1
                 q.append(v)
 
         DG = nx.DiGraph()
         for child, parent in parents.items():
-            DG.add_node(child, **mst[child])
+            # Carry over existing node attributes (if any) and store depth
+            node_attrs = dict(mst.nodes[child]) if child in mst.nodes else {}
+            node_attrs["depth"] = depths.get(child, 0)
+            DG.add_node(child, **node_attrs)
             if parent is None:
                 continue
             DG.add_edge(parent, child, **mst[parent][child])
+
+        max_depth = max(depths.values(), default=0)
 
         if plot:
             chip_graph = self.quantum_system.chip_graph
@@ -3633,11 +3642,13 @@ class MeasurementMixin(
                 edge_values[label] = fidelity
                 edge_texts[label] = f"{fidelity:.1f}"
 
-            node_overlay_values = {q: 1.0 for q in DG.nodes()}
+            node_overlay_values = {
+                node: float(DG.nodes[node].get("depth", 0)) for node in DG.nodes()
+            }
 
             chip_graph.plot_graph_data(
                 directed=False,
-                title=f"Maximum tree : N = {len(DG.nodes())}, root = {root}",
+                title=f"Maximum tree : N = {len(DG.nodes())}, root = {root}, depth = {max_depth}",
                 edge_values=edge_values,
                 edge_texts=edge_texts,
                 node_color="white",
