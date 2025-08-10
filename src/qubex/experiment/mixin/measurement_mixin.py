@@ -2971,7 +2971,7 @@ class MeasurementMixin(
         #             raise ValueError(f"Unknown basis: {basis}")
         # return ps
 
-    def measure_1d_cluster_state(
+    def _measure_1d_cluster_state(
         self,
         targets: Collection[str | int],
         *,
@@ -3298,7 +3298,7 @@ class MeasurementMixin(
 
         return result
 
-    def measure_negativity_of_1d_cluster_state(
+    def measure_1d_cluster_state(
         self,
         qubits: Collection[str | int],
         *,
@@ -3321,7 +3321,7 @@ class MeasurementMixin(
         figures = {}
         for offset in range(3):
             print(f"[{offset + 1}/3] Measuring edges with offset {offset}")
-            result = self.measure_1d_cluster_state(
+            result = self._measure_1d_cluster_state(
                 qubits,
                 offset=offset,
                 mle_fit=mle_fit,
@@ -3503,7 +3503,10 @@ class MeasurementMixin(
             threshold=threshold,
             plot=False,
         )
-        assert graphs, "No connected graphs found"
+
+        if not graphs:
+            raise ValueError("No connected graphs found")
+
         G = graphs[0]
         path_nodes, path_edges, _ = find_longest_1d_chain(G)
 
@@ -3555,7 +3558,9 @@ class MeasurementMixin(
             threshold=threshold,
             plot=False,
         )
-        assert graphs, "No connected graphs found"
+
+        if not graphs:
+            raise ValueError("No connected graphs found")
 
         G = graphs[0]
         UG = G.to_undirected()
