@@ -3671,12 +3671,14 @@ class MeasurementMixin(
 
     def create_graph_sequence(
         self,
-        nodes: list[str],
-        edges: list[tuple[str, str]],
+        graph: nx.Graph,
         *,
         bases: dict[str, str] | None = None,
         with_readout_pulses: bool = True,
     ):
+        nodes = list(graph.nodes())
+        edges = list(graph.edges())
+
         with PulseSchedule(nodes) as ps:
             for node in nodes:
                 ps.add(node, self.hadamard(node))
@@ -3708,7 +3710,7 @@ class MeasurementMixin(
     def create_measurement_rounds(
         self,
         G: nx.Graph,
-        plot=True,
+        plot=False,
     ):
         chip_graph = self.quantum_system.chip_graph
         colored_edges = strong_edge_coloring(G)
@@ -3752,10 +3754,16 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
+        method: str = "execute",
     ):
         graph = graph.to_undirected()
-        all_edges = graph.edges()
-        all_nodes = graph.nodes()
+
+        if plot:
+            seq = self.create_graph_sequence(
+                graph=graph,
+                with_readout_pulses=True if method == "execute" else False,
+            )
+            seq.plot()
 
         edge_and_spectators: dict[tuple[str, str], list[str]] = {}
         for edge in target_edges:
@@ -3796,17 +3804,28 @@ class MeasurementMixin(
                 bases[node0] = pauli0
                 bases[node1] = pauli1
 
-            result = self.execute(
-                self.create_graph_sequence(
-                    nodes=all_nodes,
-                    edges=all_edges,
-                    bases=bases,
-                    with_readout_pulses=True,
-                ),
-                mode="single",
-                shots=shots,
-                interval=interval,
-            )
+            if method == "execute":
+                result = self.execute(
+                    self.create_graph_sequence(
+                        graph=graph,
+                        bases=bases,
+                        with_readout_pulses=True,
+                    ),
+                    mode="single",
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                result = self.measure(
+                    self.create_graph_sequence(
+                        graph=graph,
+                        bases=bases,
+                        with_readout_pulses=False,
+                    ),
+                    mode="single",
+                    shots=shots,
+                    interval=interval,
+                )
 
             for edge, spectators in edge_and_spectators.items():
                 target_labels = list(edge) + spectators
@@ -4027,3 +4046,99 @@ class MeasurementMixin(
             node_overlay_linecolor="black",
             node_overlay_textcolor="black",
         )
+
+    def measure_graph_state(
+        self,
+        graph: nx.Graph,
+        *,
+        mle_fit: bool = True,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        method: str = "execute",
+    ):
+        if plot:
+            seq = self.create_graph_sequence(
+                graph=graph,
+                with_readout_pulses=True if method == "execute" else False,
+            )
+            seq.plot(
+                title=f"Graph state preparation sequence for {len(graph.nodes())} qubits",
+            )
+
+        negativities = {}
+        figures = {}
+        rounds = self.create_measurement_rounds(graph, plot=False)
+        for round, target_edges in rounds.items():
+            print(f"[{round + 1}/{len(rounds)}] Measuring edges in round {round}")
+            result = self._measure_graph_state(
+                graph=graph,
+                target_edges=target_edges,
+                mle_fit=mle_fit,
+                shots=shots,
+                interval=interval,
+                plot=False,
+                method=method,
+            )
+            for edge, data in result["best"].items():
+                negativities[edge] = data["negativity"]
+                figures[edge] = data["figure"]
+                data["figure"].show()
+
+        negativities = dict(
+            sorted(negativities.items(), key=lambda item: item[1], reverse=True)
+        )
+
+        negativities_max = max(negativities.values())
+        negativities_min = min(negativities.values())
+        negativities_avg = np.mean(list(negativities.values()))
+        negativities_std = np.std(list(negativities.values()))
+        negativities_med = np.median(list(negativities.values()))
+        if plot:
+            for edge, fig in figures.items():
+                fig.show()
+            print(f"Negativities of {len(negativities)} edges:")
+            print(f"  max: {negativities_max:.3f}")
+            print(f"  min: {negativities_min:.3f}")
+            print(f"  med: {negativities_med:.3f}")
+            print(f"  avg: {negativities_avg:.3f}")
+            print(f"  std: {negativities_std:.3f}")
+            print("Negativities per edge:")
+            for edge, negativity in negativities.items():
+                print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
+
+            x = [f"{edge[0]}-{edge[1]}" for edge in negativities]
+            y = [fidelity for fidelity in negativities.values()]
+            fig = go.Figure(
+                layout=go.Layout(
+                    title=f"Negativities of {len(graph.nodes())}-qubit graph state",
+                    xaxis=dict(
+                        title="Edges",
+                        tickangle=45,
+                        tickmode="array",
+                        tickvals=list(range(len(x))),
+                        ticktext=x,
+                    ),
+                    yaxis=dict(
+                        title="Negativity",
+                        range=[0, 0.55],
+                        tickvals=[0, 0.1, 0.2, 0.3, 0.4, 0.5],
+                        ticktext=["0", "0.1", "0.2", "0.3", "0.4", "0.5"],
+                    ),
+                    width=800,
+                    height=400,
+                    margin=dict(l=70, r=70, t=90, b=100),
+                )
+            )
+            fig.add_bar(x=x, y=y)
+            fig.show()
+
+        return {
+            "negativities_max": negativities_max,
+            "negativities_min": negativities_min,
+            "negativities_med": negativities_med,
+            "negativities_avg": negativities_avg,
+            "negativities_std": negativities_std,
+            "negativities": negativities,
+            "figures": figures,
+        }
