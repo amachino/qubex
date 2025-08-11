@@ -3705,66 +3705,63 @@ class MeasurementMixin(
                     ps.add(resonator, self.readout(resonator))
         return ps
 
-    def create_measurement_rounds(self, G: nx.Graph):
+    def create_measurement_rounds(
+        self,
+        G: nx.Graph,
+        plot=True,
+    ):
         chip_graph = self.quantum_system.chip_graph
         colored_edges = strong_edge_coloring(G)
-        for color, edges in colored_edges.items():
-            graph = nx.Graph()
-            for u, v in edges:
-                graph.add_node(u)
-                graph.add_node(v)
-                graph.add_edge(u, v, color=color)
+        if plot:
+            for color, edges in colored_edges.items():
+                graph = nx.Graph()
+                for u, v in edges:
+                    graph.add_node(u)
+                    graph.add_node(v)
+                    graph.add_edge(u, v, color=color)
 
-            node_values = {node: 1.0 for node in G.nodes()}
-            edge_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
-            edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
+                node_values = {node: 1.0 for node in G.nodes()}
+                edge_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
+                edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
 
-            chip_graph.plot_graph_data(
-                directed=False,
-                title=f"Measurement round : {color}",
-                edge_values=edge_values,
-                edge_color="#eef",
-                edge_overlay=True,
-                edge_overlay_values=edge_overlay_values,
-                edge_overlay_color="turquoise",
-                node_color="white",
-                node_linecolor="ghostwhite",
-                node_textcolor="ghostwhite",
-                node_overlay=True,
-                node_overlay_values=node_values,
-                node_overlay_color="ghostwhite",
-                node_overlay_linecolor="black",
-                node_overlay_textcolor="black",
-            )
+                chip_graph.plot_graph_data(
+                    directed=False,
+                    title=f"Measurement round : {color}",
+                    edge_values=edge_values,
+                    edge_color="#eef",
+                    edge_overlay=True,
+                    edge_overlay_values=edge_overlay_values,
+                    edge_overlay_color="turquoise",
+                    node_color="white",
+                    node_linecolor="ghostwhite",
+                    node_textcolor="ghostwhite",
+                    node_overlay=True,
+                    node_overlay_values=node_values,
+                    node_overlay_color="ghostwhite",
+                    node_overlay_linecolor="black",
+                    node_overlay_textcolor="black",
+                )
+        return colored_edges
 
-    def measure_graph_state(
+    def _measure_graph_state(
         self,
-        edge_fidelities: dict[str, float],
+        graph: nx.Graph,
         *,
-        # target_edges: list[tuple[str, str]],
-        threshold: float = 0.0,
+        target_edges: list[tuple[str, str]],
         mle_fit: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ):
-        subgraphs = self.create_connected_graphs(
-            edge_fidelities,
-            threshold=threshold,
-        )
-        graph = subgraphs[0]
-        DG = graph
-        UG = DG.to_undirected()
+        graph = graph.to_undirected()
         all_edges = graph.edges()
         all_nodes = graph.nodes()
-
-        target_edges = all_edges[1:2]
 
         edge_and_spectators: dict[tuple[str, str], list[str]] = {}
         for edge in target_edges:
             edge_spectators: list[str] = []
             for node in edge:
-                node_spectators = UG.neighbors(node)
+                node_spectators = graph.neighbors(node)
                 for spectator in node_spectators:
                     if spectator not in edge:
                         edge_spectators.append(spectator)
@@ -3795,8 +3792,7 @@ class MeasurementMixin(
             pauli_basis = f"{pauli0}{pauli1}"
 
             bases = {}
-            for target_edge in target_edges:
-                node0, node1 = target_edge
+            for node0, node1 in target_edges:
                 bases[node0] = pauli0
                 bases[node1] = pauli1
 
