@@ -3743,8 +3743,8 @@ class MeasurementMixin(
                     ps.call(self.cz(u, v, only_low_to_high=True))
 
             # debug: no entanglement, just Hadamard gates
-            # for target in targets:
-            #     ps.add(target, self.hadamard(target))
+            # for node in nodes:
+            #     ps.add(node, self.hadamard(node))
 
             # Basis rotations prior to readout
             for node in nodes:
