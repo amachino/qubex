@@ -3669,6 +3669,59 @@ class MeasurementMixin(
 
         return DG
 
+    def create_cz_rounds(
+        self,
+        graph: nx.Graph,
+        *,
+        plot: bool = False,
+    ):
+        edges = list(graph.edges())
+        edges_remaining = edges.copy()
+        rounds: list[list[tuple[str, str]]] = []
+        while edges_remaining:
+            used: set[str] = set()
+            batch: list[tuple[str, str]] = []
+            for u, v in edges_remaining:
+                if u not in used and v not in used:
+                    batch.append((u, v))
+                    used.add(u)
+                    used.add(v)
+            # Remove scheduled edges and append this round
+            edges_remaining = [e for e in edges_remaining if e not in batch]
+            rounds.append(batch)
+
+        chip_graph = self.quantum_system.chip_graph
+        if plot:
+            for round_idx, round in enumerate(rounds):
+                graph = nx.Graph()
+                for u, v in round:
+                    graph.add_node(u)
+                    graph.add_node(v)
+                    graph.add_edge(u, v)
+
+                node_values = {node: 1.0 for node in graph.nodes()}
+                edge_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
+                edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
+
+                chip_graph.plot_graph_data(
+                    directed=False,
+                    title=f"CZ round : {round_idx}",
+                    edge_values=edge_values,
+                    edge_color="#eef",
+                    edge_overlay=True,
+                    edge_overlay_values=edge_overlay_values,
+                    edge_overlay_color="turquoise",
+                    node_color="white",
+                    node_linecolor="ghostwhite",
+                    node_textcolor="ghostwhite",
+                    node_overlay=True,
+                    node_overlay_values=node_values,
+                    node_overlay_color="ghostwhite",
+                    node_overlay_linecolor="black",
+                    node_overlay_textcolor="black",
+                )
+        return rounds
+
     def create_graph_sequence(
         self,
         graph: nx.Graph,
@@ -3677,18 +3730,23 @@ class MeasurementMixin(
         with_readout_pulses: bool = True,
     ):
         nodes = list(graph.nodes())
-        edges = list(graph.edges())
+        rounds = self.create_cz_rounds(graph, plot=False)
 
         with PulseSchedule(nodes) as ps:
+            # Prepare qubits in |+> with Hadamards (can run in parallel)
             for node in nodes:
                 ps.add(node, self.hadamard(node))
-            for edge in edges:
-                ps.call(self.cz(*edge, only_low_to_high=True))
+
+            # Apply CZ gates round by round so edges within a round run in parallel
+            for batch in rounds:
+                for u, v in batch:
+                    ps.call(self.cz(u, v, only_low_to_high=True))
 
             # debug: no entanglement, just Hadamard gates
             # for target in targets:
             #     ps.add(target, self.hadamard(target))
 
+            # Basis rotations prior to readout
             for node in nodes:
                 basis = bases[node] if bases and node in bases else "Z"
                 if basis == "X":
