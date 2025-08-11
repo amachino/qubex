@@ -19,6 +19,7 @@ from tqdm import tqdm
 from qubex.experiment.library.graph import (
     find_longest_1d_chain,
     get_max_undirected_weight,
+    strong_edge_coloring,
     tree_center,
 )
 
@@ -3704,6 +3705,38 @@ class MeasurementMixin(
                     ps.add(resonator, self.readout(resonator))
         return ps
 
+    def create_measurement_rounds(self, G: nx.Graph):
+        chip_graph = self.quantum_system.chip_graph
+        colored_edges = strong_edge_coloring(G)
+        for color, edges in colored_edges.items():
+            graph = nx.Graph()
+            for u, v in edges:
+                graph.add_node(u)
+                graph.add_node(v)
+                graph.add_edge(u, v, color=color)
+
+            node_values = {node: 1.0 for node in G.nodes()}
+            edge_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
+            edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
+
+            chip_graph.plot_graph_data(
+                directed=False,
+                title=f"Measurement round : {color}",
+                edge_values=edge_values,
+                edge_color="#eef",
+                edge_overlay=True,
+                edge_overlay_values=edge_overlay_values,
+                edge_overlay_color="turquoise",
+                node_color="white",
+                node_linecolor="ghostwhite",
+                node_textcolor="ghostwhite",
+                node_overlay=True,
+                node_overlay_values=node_values,
+                node_overlay_color="ghostwhite",
+                node_overlay_linecolor="black",
+                node_overlay_textcolor="black",
+            )
+
     def measure_graph_state(
         self,
         edge_fidelities: dict[str, float],
@@ -3978,3 +4011,23 @@ class MeasurementMixin(
         result["all"] = edge_sbits_result
 
         return result
+
+    def visualize_graph(self, G: nx.Graph) -> None:
+        node_values = {node: 1 for node in G.nodes()}
+        edge_values = {f"{edge[0]}-{edge[1]}": 1 for edge in G.edges()}
+
+        chip_graph = self.quantum_system.chip_graph
+        chip_graph.plot_graph_data(
+            directed=False,
+            title="Connected graphs",
+            edge_values=edge_values,
+            edge_color="turquoise",
+            node_color="white",
+            node_linecolor="ghostwhite",
+            node_textcolor="ghostwhite",
+            node_overlay=True,
+            node_overlay_values=node_values,
+            node_overlay_color="ghostwhite",
+            node_overlay_linecolor="black",
+            node_overlay_textcolor="black",
+        )

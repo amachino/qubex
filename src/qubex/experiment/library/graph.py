@@ -4,6 +4,159 @@ import time
 from collections import deque
 
 import networkx as nx
+from networkx.algorithms.coloring import greedy_color
+
+Edge = tuple
+
+
+def _simple_undirected(
+    G: nx.Graph,
+) -> nx.Graph:
+    """
+    Convert a graph to a simple undirected graph.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Input graph, possibly directed, with self-loops or multiedges.
+
+    Returns
+    -------
+    nx.Graph
+        Simple undirected copy of `G` without self-loops.
+    """
+    H = G.to_undirected() if G.is_directed() else G.copy()
+    H = nx.Graph(H)  # drop multiedges
+    H.remove_edges_from(nx.selfloop_edges(H))
+    return H
+
+
+def _graph_power_by_distance(
+    G: nx.Graph,
+    p: int,
+) -> nx.Graph:
+    """
+    Return the p-th power of a graph based on shortest-path distance.
+
+    In the p-th power of a graph, two nodes are adjacent if their shortest
+    path distance in G is at most p.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Input graph.
+    p : int
+        Distance threshold.
+
+    Returns
+    -------
+    nx.Graph
+        Graph where edges connect nodes of G with distance <= p.
+    """
+    if p < 1:
+        raise ValueError("p must be >= 1")
+    H = nx.Graph()
+    H.add_nodes_from(G.nodes())
+    for s in G.nodes():
+        # Bounded BFS up to depth p
+        q = deque([(s, 0)])
+        seen = {s}
+        while q:
+            u, d = q.popleft()
+            if 0 < d <= p:
+                H.add_edge(s, u)
+            if d == p:
+                continue
+            for w in G.neighbors(u):
+                if w not in seen:
+                    seen.add(w)
+                    q.append((w, d + 1))
+    return H
+
+
+def verify_strong_matching(
+    G: nx.Graph,
+    colored_edges: dict[int, list[Edge]],
+) -> bool:
+    """
+    Verify that each edge set is a strong matching.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Original graph.
+    colored_edges : dict[int, list[Edge]]
+        Dictionary mapping color indices to lists of edges.
+
+    Returns
+    -------
+    bool
+        True if all sets are valid strong matchings, False otherwise.
+    """
+    H = _simple_undirected(G)
+    L = nx.line_graph(H)
+
+    # Precompute distance-1 and distance-2 neighbors in L(G)
+    d1 = {n: set(L.neighbors(n)) for n in L.nodes()}
+    d2 = {n: set() for n in L.nodes()}
+    for n in L.nodes():
+        for a in d1[n]:
+            d2[n].update(L.neighbors(a))
+        d2[n].discard(n)
+
+    for color, edges in colored_edges.items():
+        if not verify_strong_matching(G, {color: edges}):
+            return False
+    return True
+
+
+def strong_edge_coloring(
+    G: nx.Graph,
+) -> dict[int, list[Edge]]:
+    """
+    Heuristic strong edge coloring for general graphs.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        Input graph.
+
+    Returns
+    -------
+    dict[int, list[Edge]]
+        Dict of colored edges with no two edges within distance 2 in L(G).
+    """
+    H = _simple_undirected(G)
+    if H.number_of_edges() == 0:
+        return {}
+    L = nx.line_graph(H)
+    L2 = _graph_power_by_distance(L, p=2)
+
+    strategies = [
+        "saturation_largest_first",
+        "largest_first",
+        "smallest_last",
+        "independent_set",
+        "connected_sequential_bfs",
+        "connected_sequential_dfs",
+    ]
+
+    best_colors = {}
+    best_k = float("inf")
+
+    for strat in strategies:
+        edge_color_map = greedy_color(L2, strategy=strat)
+        k = (max(edge_color_map.values()) + 1) if edge_color_map else 0
+        if k < best_k:
+            best_k, best_colors = k, edge_color_map
+
+    n_colors = int(best_k)
+
+    colored_edges = {color: [] for color in range(n_colors)}
+    for e, c in best_colors.items():
+        # L(G) nodes are original edges (tuples)
+        colored_edges[c].append(e)
+    return colored_edges
 
 
 def tree_center(G):
@@ -338,4 +491,9 @@ def find_longest_1d_chain(
     return best_path, edges_in_path_order, best_score
 
 
-__all__ = ["find_longest_1d_chain", "get_max_undirected_weight", "tree_center"]
+__all__ = [
+    "strong_edge_coloring",
+    "find_longest_1d_chain",
+    "get_max_undirected_weight",
+    "tree_center",
+]
