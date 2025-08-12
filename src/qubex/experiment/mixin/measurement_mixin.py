@@ -3836,6 +3836,8 @@ class MeasurementMixin(
         plot: bool = True,
         method: str = "execute",
         reset_awg_and_capunits: bool = True,
+        bootstrap_B: int | None = None,
+        bootstrap_use_mle: bool = False,
     ):
         graph = graph.to_undirected()
 
@@ -3956,49 +3958,116 @@ class MeasurementMixin(
             "Z": np.array([[1, 0], [0, -1]]),
         }
 
+        def _compute_expected_values_and_rho_from_probs(
+            probabilities: dict[str, dict[str, float]], use_mle: bool
+        ) -> tuple[dict[str, float], np.ndarray]:
+            expected_values: dict[str, float] = {}
+            rho_local = np.zeros((4, 4), dtype=np.complex128)
+            for basis0, pauli0 in paulis.items():
+                for basis1, pauli1 in paulis.items():
+                    pauli_basis = f"{basis0}{basis1}"
+                    if pauli_basis == "II":
+                        p = probabilities["ZZ"]
+                        e = p["00"] + p["01"] + p["10"] + p["11"]
+                    elif pauli_basis in ["IX", "IY", "IZ"]:
+                        p = probabilities[f"Z{basis1}"]
+                        e = p["00"] - p["01"] + p["10"] - p["11"]
+                    elif pauli_basis in ["XI", "YI", "ZI"]:
+                        p = probabilities[f"{basis0}Z"]
+                        e = p["00"] + p["01"] - p["10"] - p["11"]
+                    else:
+                        p = probabilities[pauli_basis]
+                        e = p["00"] - p["01"] - p["10"] + p["11"]
+                    pauli_matrix = np.kron(paulis[basis0], paulis[basis1])
+                    rho_local += e * pauli_matrix
+                    expected_values[pauli_basis] = e
+            if use_mle:
+                rho_local = mle_fit_density_matrix(expected_values)
+            else:
+                rho_local = rho_local / 4
+            return expected_values, rho_local
+
+        def _compute_negativity_from_probs(
+            probabilities: dict[str, dict[str, float]], use_mle: bool
+        ) -> tuple[float, np.ndarray, np.ndarray]:
+            _, rho_local = _compute_expected_values_and_rho_from_probs(
+                probabilities, use_mle
+            )
+            rho_pt_local = self.partial_transpose(rho_local)
+            eigvals_local = np.linalg.eigvalsh(rho_pt_local)
+            negativity_local = float(np.sum(np.abs(eigvals_local[eigvals_local < 0])))
+            return negativity_local, rho_local, eigvals_local
+
+        def _bootstrap_negativity(
+            probabilities: dict[str, dict[str, float]],
+            B: int,
+            shots_eff: int,
+            use_mle: bool,
+        ) -> tuple[float, float, tuple[float, float]]:
+            # Dirichlet bootstrap on the 4-outcome distributions for each Pauli basis
+            rng = np.random.default_rng()
+            samples: list[float] = []
+            bases_keys = list(probabilities.keys())
+            for _ in range(B):
+                probs_b: dict[str, dict[str, float]] = {}
+                for pb in bases_keys:
+                    p = probabilities[pb]
+                    # Order the 2-qubit outcome as 00,01,10,11
+                    vec = np.array(
+                        [
+                            max(p.get("00", 0.0), 0.0),
+                            max(p.get("01", 0.0), 0.0),
+                            max(p.get("10", 0.0), 0.0),
+                            max(p.get("11", 0.0), 0.0),
+                        ],
+                        dtype=float,
+                    )
+                    total = vec.sum()
+                    if total <= 0:
+                        vec = np.array([0.25, 0.25, 0.25, 0.25], dtype=float)
+                    else:
+                        vec = vec / total
+                    # Dirichlet concentration ~ shots_eff * p
+                    alpha = vec * max(int(shots_eff), 1) + 1e-3
+                    vec_b = rng.dirichlet(alpha)
+                    probs_b[pb] = {
+                        "00": float(vec_b[0]),
+                        "01": float(vec_b[1]),
+                        "10": float(vec_b[2]),
+                        "11": float(vec_b[3]),
+                    }
+                neg_b, _, _ = _compute_negativity_from_probs(probs_b, use_mle)
+                samples.append(neg_b)
+            samples_arr = np.asarray(samples)
+            mean_b = float(np.mean(samples_arr))
+            std_b = float(np.std(samples_arr, ddof=1))
+            lo, hi = np.percentile(samples_arr, [16.0, 84.0])
+            return mean_b, std_b, (float(lo), float(hi))
+
         for edge, sbits_probabilities in edge_sbits_probabilities.items():
             for sbits, probabilities in sbits_probabilities.items():
                 if sbits not in edge_sbits_result[edge]:
                     edge_sbits_result[edge][sbits] = {}
 
-                expected_values = {}
-                rho = np.zeros((4, 4), dtype=np.complex128)
-                for basis0, pauli0 in paulis.items():
-                    for basis1, pauli1 in paulis.items():
-                        pauli_basis = f"{basis0}{basis1}"
-                        # calculate the expectation values
-                        if pauli_basis == "II":
-                            # II is always 1
-                            # 00: +1, 01: +1, 10: +1, 11: +1
-                            p = probabilities["ZZ"]
-                            e = p["00"] + p["01"] + p["10"] + p["11"]
-                        elif pauli_basis in ["IX", "IY", "IZ"]:
-                            # ignore the first qubit
-                            # 00: +1, 01: -1, 10: +1, 11: -1
-                            p = probabilities[f"Z{basis1}"]
-                            e = p["00"] - p["01"] + p["10"] - p["11"]
-                        elif pauli_basis in ["XI", "YI", "ZI"]:
-                            # ignore the second qubit
-                            # 00: +1, 01: +1, 10: -1, 11: -1
-                            p = probabilities[f"{basis0}Z"]
-                            e = p["00"] + p["01"] - p["10"] - p["11"]
-                        else:
-                            # two-qubit basis
-                            # 00: +1, 01: -1, 10: -1, 11: +1
-                            p = probabilities[pauli_basis]
-                            e = p["00"] - p["01"] - p["10"] + p["11"]
-                        pauli_matrix = np.kron(pauli0, pauli1)
-                        rho += e * pauli_matrix
-                        expected_values[pauli_basis] = e
-
-                if mle_fit:
-                    rho = mle_fit_density_matrix(expected_values)
-                else:
-                    rho = rho / 4
+                # Compute expected values and density matrix
+                expected_values, rho = _compute_expected_values_and_rho_from_probs(
+                    probabilities, mle_fit
+                )
 
                 rho_pt = self.partial_transpose(rho)
                 eigvals = np.linalg.eigvalsh(rho_pt)
                 negativity = np.sum(np.abs(eigvals[eigvals < 0]))
+
+                # Optional bootstrap error estimation
+                if bootstrap_B is not None and bootstrap_B > 0:
+                    _, neg_std, (neg_lo, neg_hi) = _bootstrap_negativity(
+                        probabilities,
+                        bootstrap_B,
+                        shots,
+                        bootstrap_use_mle if mle_fit else False,
+                    )
+                else:
+                    neg_std, neg_lo, neg_hi = None, None, None
 
                 if plot:
                     print(f"{edge[0]}-{edge[1]} ({sbits}) : Negativity = {negativity}")
@@ -4088,6 +4157,9 @@ class MeasurementMixin(
                 edge_sbits_result[edge][sbits]["negativity"] = negativity
                 edge_sbits_result[edge][sbits]["eigenvalues"] = eigvals
                 edge_sbits_result[edge][sbits]["figure"] = fig
+                edge_sbits_result[edge][sbits]["negativity_std"] = neg_std
+                edge_sbits_result[edge][sbits]["negativity_ci"] = (neg_lo, neg_hi)
+                # Note: CI is approximately 68% via 16–84th percentiles.
 
         result = {"best": {edge: {} for edge in target_edges}}
 
@@ -4133,6 +4205,8 @@ class MeasurementMixin(
         plot: bool = True,
         method: str = "execute",
         reset_awg_and_capunits: bool = True,
+        bootstrap_B: int | None = None,
+        bootstrap_use_mle: bool = False,
     ):
         if plot:
             seq = self.create_graph_sequence(
@@ -4145,6 +4219,7 @@ class MeasurementMixin(
 
         negativities = {}
         figures = {}
+        negativity_errors: dict[tuple[str, str], float] = {}
         rounds = self.create_measurement_rounds(graph, plot=False)
         for round, target_edges in rounds.items():
             print(f"[{round + 1}/{len(rounds)}] Measuring edges in round {round}")
@@ -4189,10 +4264,14 @@ class MeasurementMixin(
                 plot=False,
                 method=method,
                 reset_awg_and_capunits=reset_awg_and_capunits,
+                bootstrap_B=bootstrap_B,
+                bootstrap_use_mle=bootstrap_use_mle,
             )
             for edge, data in result["best"].items():
                 negativities[edge] = data["negativity"]
                 figures[edge] = data["figure"]
+                if "negativity_std" in data and data["negativity_std"] is not None:
+                    negativity_errors[edge] = float(data["negativity_std"]) * 2
                 data["figure"].show()
 
         negativities = dict(
@@ -4219,12 +4298,13 @@ class MeasurementMixin(
 
             x = [f"{edge[0]}-{edge[1]}" for edge in negativities]
             y = [fidelity for fidelity in negativities.values()]
+            y_err = [negativity_errors.get(edge, 0.0) for edge in negativities]
             fig = go.Figure(
                 layout=go.Layout(
                     title=f"Negativities of {len(graph.nodes())}-qubit graph state",
                     xaxis=dict(
                         title="Edges",
-                        tickangle=45,
+                        tickangle=90,
                         tickmode="array",
                         tickvals=list(range(len(x))),
                         ticktext=x,
@@ -4241,7 +4321,7 @@ class MeasurementMixin(
                     margin=dict(l=70, r=70, t=90, b=100),
                 )
             )
-            fig.add_bar(x=x, y=y)
+            fig.add_scatter(x=x, y=y, error_y=dict(type="data", array=y_err))
             fig.show()
 
         return {
@@ -4252,6 +4332,7 @@ class MeasurementMixin(
             "negativities_std": negativities_std,
             "negativities": negativities,
             "figures": figures,
+            "negativity_errors": negativity_errors,
         }
 
     def measure_bell_state_fidelities(
