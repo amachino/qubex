@@ -2639,7 +2639,6 @@ class MeasurementMixin(
             title=title,
             xaxis_title="Fourier modes",
             yaxis_title="Amplitude",
-            yaxis_range=[0, 1.1],
         )
 
         fig.show(
@@ -3431,15 +3430,36 @@ class MeasurementMixin(
         self,
         fidelities: dict[str, float],
         *,
+        t1: dict[str, float] | None = None,
+        t2_echo: dict[str, float] | None = None,
         threshold: float = 0.0,
         plot: bool = False,
     ) -> list[nx.DiGraph]:
+        if t1 is None:
+            t1 = {}
+        if t2_echo is None:
+            t2_echo = {}
+
         G = nx.DiGraph()
         cr_labels = self.cr_labels
         for cr_label, fidelity in fidelities.items():
             if cr_label in cr_labels:
                 if fidelity > threshold:
                     control, target = cr_label.split("-")
+
+                    if not G.has_node(control):
+                        G.add_node(
+                            control,
+                            t1=t1.get(control),
+                            t2_echo=t2_echo.get(control),
+                        )
+                    if not G.has_node(target):
+                        G.add_node(
+                            target,
+                            t1=t1.get(target),
+                            t2_echo=t2_echo.get(target),
+                        )
+
                     G.add_edge(
                         control,
                         target,
@@ -3558,11 +3578,15 @@ class MeasurementMixin(
         fidelities: dict[str, float],
         *,
         threshold: float = 0.0,
+        t1: dict[str, float] | None = None,
+        t2_echo: dict[str, float] | None = None,
         plot: bool = False,
     ):
         graphs = self.create_connected_graphs(
             fidelities,
             threshold=threshold,
+            t1=t1,
+            t2_echo=t2_echo,
             plot=False,
         )
 
@@ -3607,23 +3631,34 @@ class MeasurementMixin(
         self,
         fidelities: dict[str, float],
         *,
+        root: str | None = None,
+        max_depth: int | None = None,
         threshold: float = 0.0,
+        t1: dict[str, float] | None = None,
+        t2_echo: dict[str, float] | None = None,
         plot: bool = False,
     ):
         mst = self.create_maximum_spanning_tree(
             fidelities,
             threshold=threshold,
+            t1=t1,
+            t2_echo=t2_echo,
             plot=False,
         )
-        root = tree_center(mst)[0]
+        if root is None:
+            root_qubit = str(tree_center(mst)[0])
+        else:
+            root_qubit = root
 
         # BFS to determine parents and depth from the root
-        parents: dict[str, str | None] = {root: None}
-        depths: dict[str, int] = {root: 0}
-        q = deque([root])
+        parents: dict[str, str | None] = {root_qubit: None}
+        depths: dict[str, int] = {root_qubit: 0}
+        q = deque([root_qubit])
 
         while q:
             u = q.popleft()
+            if max_depth is not None and depths[u] >= max_depth:
+                continue
             for v in mst.neighbors(u):
                 if v in parents:
                     continue
