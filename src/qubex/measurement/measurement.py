@@ -1008,7 +1008,7 @@ class Measurement:
             raise ValueError("No readout targets in the pulse schedule.")
 
         # WORKAROUND: add some blank for the first extra capture by left padding
-        schedule = schedule.padded(
+        schedule.pad(
             total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
             pad_side="left",
         )
@@ -1017,7 +1017,7 @@ class Measurement:
         sequence_duration = (
             math.ceil(schedule.duration / BLOCK_DURATION + 1) * BLOCK_DURATION
         )
-        schedule = schedule.padded(
+        schedule.pad(
             total_duration=sequence_duration,
             pad_side="right",
         )
@@ -1090,7 +1090,7 @@ class Measurement:
             schedule.plot()
 
         # get sampled sequences
-        sampled_sequences = schedule.get_sampled_sequences()
+        sampled_sequences = schedule.get_sampled_sequences(copy=False)
 
         # adjust the phase of the readout pulses
         for target, ranges in readout_ranges.items():

@@ -2904,22 +2904,17 @@ class MeasurementMixin(
                     h = self.hadamard(edge[0])
                     l1.add(edge[0], h)
                     l1.call(self.cnot(*edge, only_low_to_high=True))
-                l1_padded = l1.padded(
+                l1.pad(
                     total_duration=l1_max_duration + h.duration,
                     pad_side="left",
                 )
-                ps.call(l1_padded)
+                ps.call(l1)
 
             for edge in l2_edges:
                 with PulseSchedule() as l2:
                     l2.call(self.cnot(*edge, only_low_to_high=True))
                     h = self.hadamard(edge[1])
                     l2.add(edge[1], h)
-                # l2_padded = l2.padded(
-                #     total_duration=l2_max_duration + h.duration,
-                #     pad_side="right",
-                # )
-                # ps.call(l2_padded)
                 ps.call(l2)
 
             # debug: no entanglement, just Hadamard gates
