@@ -86,9 +86,9 @@ class PulseArray(Waveform):
     @property
     def flattened_elements(self) -> list[Pulse | PhaseShift]:
         """Returns the flattened list of pulses and phase shifts in the pulse array."""
-        copied = copy.deepcopy(self)
         elements = []
-        for obj in copied.elements:
+        for obj in self.elements:
+            obj = copy.copy(obj)
             if isinstance(obj, (PulseArray, Pulse)):
                 obj._scale *= self.scale
                 obj._phase += self.phase
