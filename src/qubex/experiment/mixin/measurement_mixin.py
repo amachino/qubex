@@ -3850,6 +3850,7 @@ class MeasurementMixin(
         *,
         target_edges: list[tuple[str, str]],
         mle_fit: bool = True,
+        use_all_spectator_pattern: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -3937,9 +3938,13 @@ class MeasurementMixin(
                 target_labels = list(edge) + spectators
                 mitigated_counts = result.get_mitigated_counts(target_labels)
                 n_spectators = len(spectators)
-                spectators_bits = [
-                    "".join(bits) for bits in product("01", repeat=n_spectators)
-                ]
+                if use_all_spectator_pattern:
+                    spectators_bits = [
+                        "".join(bits) for bits in product("01", repeat=n_spectators)
+                    ]
+                else:
+                    spectators_bits = ["0" * n_spectators]
+
                 for sbits in spectators_bits:
                     if sbits not in edge_sbits_probabilities[edge]:
                         edge_sbits_probabilities[edge][sbits] = {}
@@ -3951,7 +3956,11 @@ class MeasurementMixin(
                 for bits, count in mitigated_counts.items():
                     ebits = bits[:2]
                     sbits = bits[2:]
-                    sbits_ebits_counts[sbits][ebits] = count
+                    if use_all_spectator_pattern:
+                        sbits_ebits_counts[sbits][ebits] = count
+                    else:
+                        if sbits == "0" * n_spectators:
+                            sbits_ebits_counts[sbits][ebits] = count
 
                 for sbits, ebits_counts in sbits_ebits_counts.items():
                     total_count = sum(ebits_counts.values())
@@ -4158,6 +4167,7 @@ class MeasurementMixin(
         graph: nx.Graph,
         *,
         mle_fit: bool = True,
+        use_all_spectator_pattern: bool = True,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -4213,6 +4223,7 @@ class MeasurementMixin(
                 graph=graph,
                 target_edges=target_edges,
                 mle_fit=mle_fit,
+                use_all_spectator_pattern=use_all_spectator_pattern,
                 shots=shots,
                 interval=interval,
                 plot=False,
