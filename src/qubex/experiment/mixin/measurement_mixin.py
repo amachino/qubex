@@ -3340,7 +3340,7 @@ class MeasurementMixin(
                 figures[edge] = data["figure"]
 
         negativities = dict(
-            sorted(negativities.items(), key=lambda item: item[1], reverse=True)
+            sorted(negativities.items(), key=lambda item: item[1], reverse=False)
         )
 
         negativities_max = max(negativities.values())
@@ -3457,7 +3457,9 @@ class MeasurementMixin(
             node_values = {}
             edge_values = {}
             edge_texts = {}
+            max_n = 0
             for graph in graphs:
+                max_n = max(max_n, graph.number_of_nodes())
                 for node in graph.nodes():
                     node_values[node] = 1.0
                 for edge in graph.edges():
@@ -3468,7 +3470,7 @@ class MeasurementMixin(
             chip_graph = self.quantum_system.chip_graph
             chip_graph.plot_graph_data(
                 directed=False,
-                title="Connected graphs",
+                title=f"Connected graphs : N (max) = {max_n}",
                 edge_values=edge_values,
                 edge_texts=edge_texts,
                 node_color="white",
@@ -4141,6 +4143,37 @@ class MeasurementMixin(
         rounds = self.create_measurement_rounds(graph, plot=False)
         for round, target_edges in rounds.items():
             print(f"[{round + 1}/{len(rounds)}] Measuring edges in round {round}")
+
+            if plot:
+                G = nx.Graph()
+                for u, v in target_edges:
+                    G.add_node(u)
+                    G.add_node(v)
+                    G.add_edge(u, v)
+
+                node_values = {node: 1.0 for node in graph.nodes()}
+                edge_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
+                edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
+
+                chip_graph = self.quantum_system.chip_graph
+                chip_graph.plot_graph_data(
+                    directed=False,
+                    title=f"Measurement round : {round}",
+                    edge_values=edge_values,
+                    edge_color="#eef",
+                    edge_overlay=True,
+                    edge_overlay_values=edge_overlay_values,
+                    edge_overlay_color="turquoise",
+                    node_color="white",
+                    node_linecolor="ghostwhite",
+                    node_textcolor="ghostwhite",
+                    node_overlay=True,
+                    node_overlay_values=node_values,
+                    node_overlay_color="ghostwhite",
+                    node_overlay_linecolor="black",
+                    node_overlay_textcolor="black",
+                )
+
             result = self._measure_graph_state(
                 graph=graph,
                 target_edges=target_edges,
@@ -4157,7 +4190,7 @@ class MeasurementMixin(
                 data["figure"].show()
 
         negativities = dict(
-            sorted(negativities.items(), key=lambda item: item[1], reverse=True)
+            sorted(negativities.items(), key=lambda item: item[1], reverse=False)
         )
 
         negativities_max = max(negativities.values())
