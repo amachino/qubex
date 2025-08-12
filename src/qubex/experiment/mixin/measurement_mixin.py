@@ -3148,43 +3148,23 @@ class MeasurementMixin(
                         if pauli_basis == "II":
                             # II is always 1
                             # 00: +1, 01: +1, 10: +1, 11: +1
-                            counts = probabilities["ZZ"]
-                            e = (
-                                counts["00"]
-                                + counts["01"]
-                                + counts["10"]
-                                + counts["11"]
-                            )
+                            p = probabilities["ZZ"]
+                            e = p["00"] + p["01"] + p["10"] + p["11"]
                         elif pauli_basis in ["IX", "IY", "IZ"]:
                             # ignore the first qubit
                             # 00: +1, 01: -1, 10: +1, 11: -1
-                            counts = probabilities[f"Z{basis1}"]
-                            e = (
-                                counts["00"]
-                                - counts["01"]
-                                + counts["10"]
-                                - counts["11"]
-                            )
+                            p = probabilities[f"Z{basis1}"]
+                            e = p["00"] - p["01"] + p["10"] - p["11"]
                         elif pauli_basis in ["XI", "YI", "ZI"]:
                             # ignore the second qubit
                             # 00: +1, 01: +1, 10: -1, 11: -1
-                            counts = probabilities[f"{basis0}Z"]
-                            e = (
-                                counts["00"]
-                                + counts["01"]
-                                - counts["10"]
-                                - counts["11"]
-                            )
+                            p = probabilities[f"{basis0}Z"]
+                            e = p["00"] + p["01"] - p["10"] - p["11"]
                         else:
                             # two-qubit basis
                             # 00: +1, 01: -1, 10: -1, 11: +1
-                            counts = probabilities[pauli_basis]
-                            e = (
-                                counts["00"]
-                                - counts["01"]
-                                - counts["10"]
-                                + counts["11"]
-                            )
+                            p = probabilities[pauli_basis]
+                            e = p["00"] - p["01"] - p["10"] + p["11"]
                         pauli_matrix = np.kron(pauli0, pauli1)
                         rho += e * pauli_matrix
                         expected_values[pauli_basis] = e
@@ -3990,43 +3970,23 @@ class MeasurementMixin(
                         if pauli_basis == "II":
                             # II is always 1
                             # 00: +1, 01: +1, 10: +1, 11: +1
-                            counts = probabilities["ZZ"]
-                            e = (
-                                counts["00"]
-                                + counts["01"]
-                                + counts["10"]
-                                + counts["11"]
-                            )
+                            p = probabilities["ZZ"]
+                            e = p["00"] + p["01"] + p["10"] + p["11"]
                         elif pauli_basis in ["IX", "IY", "IZ"]:
                             # ignore the first qubit
                             # 00: +1, 01: -1, 10: +1, 11: -1
-                            counts = probabilities[f"Z{basis1}"]
-                            e = (
-                                counts["00"]
-                                - counts["01"]
-                                + counts["10"]
-                                - counts["11"]
-                            )
+                            p = probabilities[f"Z{basis1}"]
+                            e = p["00"] - p["01"] + p["10"] - p["11"]
                         elif pauli_basis in ["XI", "YI", "ZI"]:
                             # ignore the second qubit
                             # 00: +1, 01: +1, 10: -1, 11: -1
-                            counts = probabilities[f"{basis0}Z"]
-                            e = (
-                                counts["00"]
-                                + counts["01"]
-                                - counts["10"]
-                                - counts["11"]
-                            )
+                            p = probabilities[f"{basis0}Z"]
+                            e = p["00"] + p["01"] - p["10"] - p["11"]
                         else:
                             # two-qubit basis
                             # 00: +1, 01: -1, 10: -1, 11: +1
-                            counts = probabilities[pauli_basis]
-                            e = (
-                                counts["00"]
-                                - counts["01"]
-                                - counts["10"]
-                                + counts["11"]
-                            )
+                            p = probabilities[pauli_basis]
+                            e = p["00"] - p["01"] - p["10"] + p["11"]
                         pauli_matrix = np.kron(pauli0, pauli1)
                         rho += e * pauli_matrix
                         expected_values[pauli_basis] = e
