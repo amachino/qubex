@@ -1049,12 +1049,12 @@ class MeasurementMixin(
                     add_pump_pulses=add_pump_pulses,
                     plot=plot,
                 )
-                fidelities[target] = result["readout_fidelties"][target]
+                fidelities[target] = result["readout_fidelities"][target]
                 average_fidelities[target] = result["average_readout_fidelity"][target]
                 data[target] = result["data"]
                 classifiers[target] = result["classifiers"][target]
             return {
-                "readout_fidelties": fidelities,
+                "readout_fidelities": fidelities,
                 "average_readout_fidelity": average_fidelities,
                 "data": data,
                 "classifiers": classifiers,
@@ -1182,7 +1182,7 @@ class MeasurementMixin(
         }
 
         return {
-            "readout_fidelties": fidelities,
+            "readout_fidelities": fidelities,
             "average_readout_fidelity": average_fidelities,
             "data": data,
             "classifiers": classifiers,
