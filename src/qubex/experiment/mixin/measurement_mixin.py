@@ -4176,6 +4176,7 @@ class MeasurementMixin(
                         tickmode="array",
                         tickvals=list(range(len(x))),
                         ticktext=x,
+                        tickfont=dict(size=10),
                     ),
                     yaxis=dict(
                         title="Negativity",
@@ -4200,3 +4201,110 @@ class MeasurementMixin(
             "negativities": negativities,
             "figures": figures,
         }
+
+    def measure_bell_state_fidelities(
+        self,
+        targets: Collection[str | tuple[int | str, int | str]] | None = None,
+        *,
+        unavailable_pairs: Collection[
+            str | tuple[int | str, int | str] | set[str] | set[int]
+        ]
+        | None = None,
+        plot: bool = False,
+        save_path: Path | str | None = None,
+    ) -> dict[str, float]:
+        # TODO: move this to an appropriate location
+        fidelities = {}
+
+        if targets is None:
+            target_pairs = self.cr_pairs
+        else:
+            target_pairs = []
+            for target in targets:
+                if isinstance(target, str):
+                    qubits = tuple(target.split("-"))
+                    pair = (qubits[0], qubits[1])
+                else:
+                    target = tuple(target)
+                    if isinstance(target[0], int):
+                        qubit0 = self.quantum_system.get_qubit(target[0]).label
+                    else:
+                        qubit0 = target[0]
+                    if isinstance(target[1], int):
+                        qubit1 = self.quantum_system.get_qubit(target[1]).label
+                    else:
+                        qubit1 = target[1]
+                    pair = (qubit0, qubit1)
+                target_pairs.append(pair)
+
+        if unavailable_pairs is None:
+            unavailable_pairs = []
+        else:
+            unavailable_pairs = []
+            for target in unavailable_pairs:
+                if isinstance(target, str):
+                    qubits = tuple(target.split("-"))
+                    pair = {qubits[0], qubits[1]}
+                else:
+                    target = tuple(target)
+                    if isinstance(target[0], int):
+                        qubit0 = self.quantum_system.get_qubit(target[0]).label
+                    else:
+                        qubit0 = target[0]
+                    if isinstance(target[1], int):
+                        qubit1 = self.quantum_system.get_qubit(target[1]).label
+                    else:
+                        qubit1 = target[1]
+                    pair = {qubit0, qubit1}
+                unavailable_pairs.append(pair)
+
+        for pair in target_pairs:
+            if set(pair) in unavailable_pairs:
+                print(f"Skipping unavailable pair: {pair}")
+                continue
+            try:
+                label = f"{pair[0]}-{pair[1]}"
+                result = self.bell_state_tomography(*pair)
+                fidelities[label] = result["fidelity"]
+            except Exception as e:
+                print(f"Failed for pair {label}: {e}")
+
+        sorted_fidelities = dict(sorted(fidelities.items(), key=lambda x: x[1]))
+
+        if plot:
+            n_pairs = len(sorted_fidelities)
+            x = [label for label in sorted_fidelities]
+            y = [fidelity for fidelity in sorted_fidelities.values()]
+            fig = go.Figure(
+                layout=go.Layout(
+                    title="Fidelities",
+                    xaxis=dict(
+                        title="Edges",
+                        tickangle=45,
+                        tickmode="array",
+                        tickvals=list(range(len(x))),
+                        ticktext=x,
+                        tickfont=dict(size=10),
+                    ),
+                    yaxis=dict(
+                        title="Fidelity",
+                        range=[0, 1],
+                        tickvals=[0, 0.2, 0.4, 0.6, 0.8, 1],
+                        ticktext=["0", "0.2", "0.4", "0.6", "0.8", "1"],
+                    ),
+                    width=n_pairs * 15 + 150,
+                    height=400,
+                    margin=dict(l=70, r=70, t=90, b=100),
+                )
+            )
+            fig.add_bar(x=x, y=y)
+            fig.show()
+
+        if save_path:
+            import json
+
+            with open(save_path, "w") as f:
+                json.dump(fidelities, f)
+            print(f"Fidelities saved to {save_path}")
+
+        return sorted_fidelities
