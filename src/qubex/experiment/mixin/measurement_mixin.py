@@ -2988,6 +2988,7 @@ class MeasurementMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         method: str = "execute",
+        reset_awg_and_capunits: bool = True,
     ):
         targets = [
             self.quantum_system.get_qubit(target).label
@@ -3022,18 +3023,22 @@ class MeasurementMixin(
             if plot:
                 print(f"Edge: {edge}, Spectators: {edge_spectators}")
 
+        seq = self.create_1d_cluster_sequence(
+            targets,
+            optimize_sequence=optimize_sequence,
+            as_late_as_possible=as_late_as_possible,
+            decouple_cr_crosstalk=decouple_cr_crosstalk,
+            decouple_entangled_zz=decouple_entangled_zz,
+            decouple_all_zz=decouple_all_zz,
+            cpmg_duration_unit=cpmg_duration_unit,
+            with_readout_pulses=True if method == "execute" else False,
+        )
         if plot:
-            seq = self.create_1d_cluster_sequence(
-                targets,
-                optimize_sequence=optimize_sequence,
-                as_late_as_possible=as_late_as_possible,
-                decouple_cr_crosstalk=decouple_cr_crosstalk,
-                decouple_entangled_zz=decouple_entangled_zz,
-                decouple_all_zz=decouple_all_zz,
-                cpmg_duration_unit=cpmg_duration_unit,
-                with_readout_pulses=True if method == "execute" else False,
-            )
             seq.plot()
+
+        if reset_awg_and_capunits:
+            qubits = {Target.qubit_label(target) for target in seq.labels}
+            self.reset_awg_and_capunits(qubits=qubits)
 
         edge_sbits_result: dict[tuple[str, str], dict[str, dict]] = {
             edge: {} for edge in edges
@@ -3080,6 +3085,7 @@ class MeasurementMixin(
                     mode="single",
                     shots=shots,
                     interval=interval,
+                    reset_awg_and_capunits=False,
                 )
             else:
                 result = self.measure(
@@ -3097,6 +3103,7 @@ class MeasurementMixin(
                     mode="single",
                     shots=shots,
                     interval=interval,
+                    reset_awg_and_capunits=False,
                 )
 
             for edge, spectators in edges.items():
@@ -3308,6 +3315,7 @@ class MeasurementMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         method: str = "execute",
+        reset_awg_and_capunits: bool = True,
     ):
         if plot:
             seq = self.create_1d_cluster_sequence(
@@ -3330,6 +3338,7 @@ class MeasurementMixin(
                 interval=interval,
                 plot=False,
                 method=method,
+                reset_awg_and_capunits=reset_awg_and_capunits,
             )
             for edge, data in result["best"].items():
                 negativities[edge] = data["negativity"]
@@ -3813,15 +3822,20 @@ class MeasurementMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         method: str = "execute",
+        reset_awg_and_capunits: bool = True,
     ):
         graph = graph.to_undirected()
 
+        seq = self.create_graph_sequence(
+            graph=graph,
+            with_readout_pulses=True if method == "execute" else False,
+        )
         if plot:
-            seq = self.create_graph_sequence(
-                graph=graph,
-                with_readout_pulses=True if method == "execute" else False,
-            )
             seq.plot()
+
+        if reset_awg_and_capunits:
+            qubits = {Target.qubit_label(target) for target in seq.labels}
+            self.reset_awg_and_capunits(qubits=qubits)
 
         edge_and_spectators: dict[tuple[str, str], list[str]] = {}
         for edge in target_edges:
@@ -3872,6 +3886,7 @@ class MeasurementMixin(
                     mode="single",
                     shots=shots,
                     interval=interval,
+                    reset_awg_and_capunits=False,
                 )
             else:
                 result = self.measure(
@@ -3883,6 +3898,7 @@ class MeasurementMixin(
                     mode="single",
                     shots=shots,
                     interval=interval,
+                    reset_awg_and_capunits=False,
                 )
 
             for edge, spectators in edge_and_spectators.items():
@@ -4114,6 +4130,7 @@ class MeasurementMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         method: str = "execute",
+        reset_awg_and_capunits: bool = True,
     ):
         if plot:
             seq = self.create_graph_sequence(
@@ -4137,6 +4154,7 @@ class MeasurementMixin(
                 interval=interval,
                 plot=False,
                 method=method,
+                reset_awg_and_capunits=reset_awg_and_capunits,
             )
             for edge, data in result["best"].items():
                 negativities[edge] = data["negativity"]
