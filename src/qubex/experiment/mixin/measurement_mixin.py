@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from collections import defaultdict, deque
@@ -1678,7 +1679,7 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
-        plot_sequence: bool = True,
+        plot_sequence: bool = False,
         plot_raw: bool = True,
         plot_mitigated: bool = True,
         save_image: bool = True,
@@ -4448,6 +4449,11 @@ class MeasurementMixin(
                 self._canonical_edge(target) for target in unavailable_pairs
             ]
 
+        if save_path is None:
+            save_path = Path(f".properties/{self.chip_id}/bell_state_fidelity.json")
+            if not save_path.parent.exists():
+                save_path.parent.mkdir(parents=True)
+
         for pair in target_pairs:
             if pair in unavailable_pairs:
                 print(f"Skipping unavailable pair: {pair}")
@@ -4464,7 +4470,9 @@ class MeasurementMixin(
             except Exception as e:
                 print(f"Failed for pair {label}: {e}")
 
-        sorted_fidelities = dict(sorted(fidelities.items(), key=lambda x: x[1]))
+        sorted_fidelities = dict(
+            sorted(fidelities.items(), key=lambda x: x[1], reverse=True)
+        )
 
         if plot:
             n_pairs = len(sorted_fidelities)
@@ -4499,7 +4507,7 @@ class MeasurementMixin(
             import json
 
             with open(save_path, "w") as f:
-                json.dump(fidelities, f)
+                json.dump(sorted_fidelities, f, indent=4)
             print(f"Fidelities saved to {save_path}")
 
         return sorted_fidelities
@@ -4513,14 +4521,33 @@ class MeasurementMixin(
         target_basis: str = "Z",
         readout_mitigation: bool = True,
         return_result: bool = False,
+        in_parallel: bool = True,
         n_cols: int = 6,
+        threshold: float = 0.0,
+        title: str | None = None,
         plot: bool = True,
         plot_round: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
     ):
         if targets is None:
-            target_pairs = self.cr_pairs
+            fidelities_path = Path(
+                f".properties/{self.chip_id}/bell_state_fidelity.json"
+            )
+            if fidelities_path.exists():
+                with open(fidelities_path, "r") as f:
+                    fidelities = json.load(f)
+                fidelities = dict(
+                    sorted(fidelities.items(), key=lambda x: x[0], reverse=False)
+                )
+                target_pairs = [
+                    self._canonical_edge(label)
+                    for label, fidelity in fidelities.items()
+                    if fidelity >= threshold
+                ]
+            else:
+                target_pairs = self.cr_pairs
+
         else:
             target_pairs = [self._canonical_edge(target) for target in targets]
 
@@ -4538,12 +4565,6 @@ class MeasurementMixin(
             and f"{pair[0]}-{pair[1]}" in self.calib_note.cr_params
         ]
 
-        graph = nx.Graph()
-        for edge in all_edges:
-            graph.add_edge(*edge)
-
-        rounds = strong_edge_coloring(graph)
-
         n_edges = len(all_edges)
         n_rows = int(np.ceil(n_edges / n_cols))
 
@@ -4553,103 +4574,162 @@ class MeasurementMixin(
             subplot_titles=[f"{edge[0]}-{edge[1]}" for edge in all_edges],
         )
 
-        i = 0
-
         results = {}
 
-        for round, edges in tqdm(rounds.items(), desc="Measuring Bell states"):
-            if plot_round:
-                G = nx.Graph()
-                for u, v in edges:
-                    G.add_node(u)
-                    G.add_node(v)
-                    G.add_edge(u, v)
+        if in_parallel:
+            graph = nx.Graph()
+            for edge in all_edges:
+                graph.add_edge(*edge)
 
-                node_values = {node: 1.0 for node in graph.nodes()}
-                edge_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
-                edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
+            rounds = strong_edge_coloring(graph)
 
-                chip_graph = self.quantum_system.chip_graph
-                chip_graph.plot_graph_data(
-                    directed=False,
-                    title=f"Measurement round : {round}",
-                    edge_values=edge_values,
-                    edge_color="#eef",
-                    edge_overlay=True,
-                    edge_overlay_values=edge_overlay_values,
-                    edge_overlay_color="turquoise",
-                    node_color="white",
-                    node_linecolor="ghostwhite",
-                    node_textcolor="ghostwhite",
-                    node_overlay=True,
-                    node_overlay_values=node_values,
-                    node_overlay_color="ghostwhite",
-                    node_overlay_linecolor="black",
-                    node_overlay_textcolor="black",
-                )
+            i = 0
+            for round, edges in tqdm(rounds.items(), desc="Measuring Bell states"):
+                if plot_round:
+                    G = nx.Graph()
+                    for u, v in edges:
+                        G.add_node(u)
+                        G.add_node(v)
+                        G.add_edge(u, v)
 
-            with PulseSchedule() as ps:
-                for edge in edges:
-                    control_qubit, target_qubit = edge
-                    # prepare |+⟩|0⟩
-                    ps.add(control_qubit, self.y90(control_qubit))
+                    node_values = {node: 1.0 for node in graph.nodes()}
+                    edge_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
+                    edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
 
-                    # create |0⟩|0⟩ + |1⟩|1⟩
-                    ps.call(
-                        self.cnot(
-                            control_qubit,
-                            target_qubit,
-                            only_low_to_high=True,
-                        )
+                    chip_graph = self.quantum_system.chip_graph
+                    chip_graph.plot_graph_data(
+                        directed=False,
+                        title=f"Measurement round : {round}",
+                        edge_values=edge_values,
+                        edge_color="#eef",
+                        edge_overlay=True,
+                        edge_overlay_values=edge_overlay_values,
+                        edge_overlay_color="turquoise",
+                        node_color="white",
+                        node_linecolor="ghostwhite",
+                        node_textcolor="ghostwhite",
+                        node_overlay=True,
+                        node_overlay_values=node_values,
+                        node_overlay_color="ghostwhite",
+                        node_overlay_linecolor="black",
+                        node_overlay_textcolor="black",
                     )
 
-                    # apply the control basis transformation
-                    if control_basis == "X":
-                        ps.add(control_qubit, self.y90m(control_qubit))
-                    elif control_basis == "Y":
-                        ps.add(control_qubit, self.x90(control_qubit))
+                with PulseSchedule() as ps:
+                    for edge in edges:
+                        control_qubit, target_qubit = edge
+                        # prepare |+⟩|0⟩
+                        ps.add(control_qubit, self.y90(control_qubit))
 
-                    # apply the target basis transformation
-                    if target_basis == "X":
-                        ps.add(target_qubit, self.y90m(target_qubit))
-                    elif target_basis == "Y":
-                        ps.add(target_qubit, self.x90(target_qubit))
+                        # create |0⟩|0⟩ + |1⟩|1⟩
+                        ps.call(
+                            self.cnot(
+                                control_qubit,
+                                target_qubit,
+                                only_low_to_high=True,
+                            )
+                        )
 
-            result = self.measure(
-                ps,
-                mode="single",
-                shots=shots,
-                interval=interval,
+                        # apply the control basis transformation
+                        if control_basis == "X":
+                            ps.add(control_qubit, self.y90m(control_qubit))
+                        elif control_basis == "Y":
+                            ps.add(control_qubit, self.x90(control_qubit))
+
+                        # apply the target basis transformation
+                        if target_basis == "X":
+                            ps.add(target_qubit, self.y90m(target_qubit))
+                        elif target_basis == "Y":
+                            ps.add(target_qubit, self.x90(target_qubit))
+
+                result = self.measure(
+                    ps,
+                    mode="single",
+                    shots=shots,
+                    interval=interval,
+                )
+
+                for edge in edges:
+                    row = i // n_cols + 1
+                    col = i % n_cols + 1
+                    i += 1
+
+                    control_qubit, target_qubit = edge
+                    basis_labels = result.get_basis_labels(edge)
+                    prob_dict_raw = result.get_probabilities(edge)
+                    # Ensure all basis labels are present in the raw probabilities
+                    prob_dict_raw = {
+                        label: prob_dict_raw.get(label, 0) for label in basis_labels
+                    }
+                    prob_dict_mitigated = result.get_mitigated_probabilities(edge)
+
+                    labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
+                    prob_arr_raw = np.array(list(prob_dict_raw.values()))
+                    prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
+
+                    if readout_mitigation:
+                        prob_arr = prob_arr_mitigated
+                    else:
+                        prob_arr = prob_arr_raw
+
+                    results[f"{edge[0]}-{edge[1]}"] = {
+                        "raw_probabilities": prob_arr_raw,
+                        "mitigated_probabilities": prob_arr_mitigated,
+                    }
+
+                    fig.add_bar(
+                        x=labels,
+                        y=prob_arr,
+                        row=row,
+                        col=col,
+                        marker_color=COLORS[0],
+                    )
+
+            fig.update_layout(
+                title=title or f"Bell state parallel measurement: {n_edges} pairs",
+                height=120 * n_rows + 160,
+                width=180 * n_cols + 80,
+                showlegend=False,
+                margin=dict(l=40, r=40, t=120, b=40),
             )
+            fig.update_yaxes(
+                range=[0, 0.6],
+                tickvals=[0, 0.25, 0.5],
+                ticktext=["0", "0.25", "0.5"],
+            )
+            fig.update_annotations(
+                font_size=15,
+                yshift=8,
+            )
+            if plot:
+                fig.show(
+                    config={
+                        "toImageButtonOptions": {
+                            "format": "png",
+                            "scale": 3,
+                        },
+                    }
+                )
 
-            for edge in edges:
+        else:
+            for i, edge in tqdm(enumerate(all_edges), total=len(all_edges)):
                 row = i // n_cols + 1
                 col = i % n_cols + 1
-                i += 1
-
-                control_qubit, target_qubit = edge
-                basis_labels = result.get_basis_labels(edge)
-                prob_dict_raw = result.get_probabilities(edge)
-                # Ensure all basis labels are present in the raw probabilities
-                prob_dict_raw = {
-                    label: prob_dict_raw.get(label, 0) for label in basis_labels
-                }
-                prob_dict_mitigated = result.get_mitigated_probabilities(edge)
-
-                labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
-                prob_arr_raw = np.array(list(prob_dict_raw.values()))
-                prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
-
+                labels = [f"|{i}⟩" for i in ["00", "01", "10", "11"]]
+                result = self.measure_bell_state(
+                    *edge,
+                    shots=shots,
+                    plot=False,
+                    save_image=False,
+                )
                 if readout_mitigation:
-                    prob_arr = prob_arr_mitigated
+                    prob_arr = result["mitigated"]
                 else:
-                    prob_arr = prob_arr_raw
-
+                    prob_arr = result["raw"]
                 results[f"{edge[0]}-{edge[1]}"] = {
-                    "raw_probabilities": prob_dict_raw,
-                    "mitigated_probabilities": prob_dict_mitigated,
+                    "raw_probabilities": result["raw"],
+                    "mitigated_probabilities": result["mitigated"],
                 }
-
                 fig.add_bar(
                     x=labels,
                     y=prob_arr,
@@ -4657,25 +4737,31 @@ class MeasurementMixin(
                     col=col,
                     marker_color=COLORS[0],
                 )
-
-        fig.update_layout(
-            title=f"Bell state measurement: {n_edges} pairs",
-            height=120 * n_rows + 160,
-            width=180 * n_cols + 80,
-            showlegend=False,
-            margin=dict(l=40, r=40, t=120, b=40),
-        )
-        fig.update_yaxes(
-            range=[0, 0.6],
-            tickvals=[0, 0.25, 0.5],
-            ticktext=["0", "0.25", "0.5"],
-        )
-        fig.update_annotations(
-            font_size=15,
-            yshift=8,
-        )
-        if plot:
-            fig.show()
+            fig.update_layout(
+                title=title or f"Bell state sequential measurement: {n_edges} pairs",
+                height=120 * n_rows + 160,
+                width=180 * n_cols + 80,
+                showlegend=False,
+                margin=dict(l=40, r=40, t=120, b=40),
+            )
+            fig.update_yaxes(
+                range=[0, 0.6],
+                tickvals=[0, 0.25, 0.5],
+                ticktext=["0", "0.25", "0.5"],
+            )
+            fig.update_annotations(
+                font_size=15,
+                yshift=8,
+            )
+            if plot:
+                fig.show(
+                    config={
+                        "toImageButtonOptions": {
+                            "format": "png",
+                            "scale": 3,
+                        },
+                    }
+                )
 
         if return_result:
             return {"data": results, "figure": fig}
