@@ -4577,14 +4577,21 @@ class MeasurementMixin(
         results = {}
 
         if in_parallel:
-            graph = nx.Graph()
-            for edge in all_edges:
-                graph.add_edge(*edge)
-
-            rounds = strong_edge_coloring(graph)
+            graph = self.quantum_system.chip_graph
+            rounds = []
+            for edges in graph.strong_edge_coloring():
+                batch = []
+                for edge in edges:
+                    if edge[0] % 4 in [0, 3]:
+                        e = self._canonical_edge((edge[0], edge[1]))
+                    else:
+                        e = self._canonical_edge((edge[1], edge[0]))
+                    if e in all_edges:
+                        batch.append(e)
+                rounds.append(batch)
 
             i = 0
-            for round, edges in tqdm(rounds.items(), desc="Measuring Bell states"):
+            for round, edges in tqdm(enumerate(rounds), desc="Measuring Bell states"):
                 if plot_round:
                     G = nx.Graph()
                     for u, v in edges:
@@ -4592,14 +4599,13 @@ class MeasurementMixin(
                         G.add_node(v)
                         G.add_edge(u, v)
 
-                    node_values = {node: 1.0 for node in graph.nodes()}
-                    edge_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
+                    edge_values = {f"{u}-{v}": 1.0 for u, v in all_edges}
                     edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
 
                     chip_graph = self.quantum_system.chip_graph
                     chip_graph.plot_graph_data(
                         directed=False,
-                        title=f"Measurement round : {round}",
+                        title=f"Measurement round : {round + 1}",
                         edge_values=edge_values,
                         edge_color="#eef",
                         edge_overlay=True,
@@ -4609,7 +4615,7 @@ class MeasurementMixin(
                         node_linecolor="ghostwhite",
                         node_textcolor="ghostwhite",
                         node_overlay=True,
-                        node_overlay_values=node_values,
+                        # node_overlay_values=node_values,
                         node_overlay_color="ghostwhite",
                         node_overlay_linecolor="black",
                         node_overlay_textcolor="black",
@@ -4686,11 +4692,20 @@ class MeasurementMixin(
                     )
 
             fig.update_layout(
-                title=title or f"Bell state parallel measurement: {n_edges} pairs",
-                height=120 * n_rows + 160,
+                title=dict(
+                    text=title or "Bell state measurement",
+                    subtitle=dict(
+                        text=f"{n_edges} pairs, {shots} shots, run in parallel",
+                        font_size=16,
+                    ),
+                    y=0.98,
+                    yanchor="top",
+                    font_size=22,
+                ),
+                height=120 * n_rows + 200,
                 width=180 * n_cols + 80,
                 showlegend=False,
-                margin=dict(l=40, r=40, t=120, b=40),
+                margin=dict(l=40, r=40, t=160, b=40),
             )
             fig.update_yaxes(
                 range=[0, 0.6],
@@ -4738,11 +4753,20 @@ class MeasurementMixin(
                     marker_color=COLORS[0],
                 )
             fig.update_layout(
-                title=title or f"Bell state sequential measurement: {n_edges} pairs",
-                height=120 * n_rows + 160,
+                title=dict(
+                    text=title or "Bell state measurement",
+                    subtitle=dict(
+                        text=f"{n_edges} pairs, {shots} shots, run sequentially",
+                        font_size=16,
+                    ),
+                    y=0.98,
+                    yanchor="top",
+                    font_size=22,
+                ),
+                height=120 * n_rows + 200,
                 width=180 * n_cols + 80,
                 showlegend=False,
-                margin=dict(l=40, r=40, t=120, b=40),
+                margin=dict(l=40, r=40, t=160, b=40),
             )
             fig.update_yaxes(
                 range=[0, 0.6],
