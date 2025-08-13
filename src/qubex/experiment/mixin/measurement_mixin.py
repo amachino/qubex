@@ -56,6 +56,7 @@ from ...pulse import (
     VirtualZ,
     Waveform,
 )
+from ...style import COLORS
 from ...typing import (
     IQArray,
     ParametricPulseSchedule,
@@ -1677,6 +1678,9 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
+        plot_sequence: bool = True,
+        plot_raw: bool = True,
+        plot_mitigated: bool = True,
         save_image: bool = True,
     ) -> dict:
         if self.state_centers is None:
@@ -1728,20 +1732,22 @@ class MeasurementMixin(
         prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
 
         fig = go.Figure()
-        fig.add_trace(
-            go.Bar(
-                x=labels,
-                y=prob_arr_raw,
-                name="Raw",
+        if plot_raw:
+            fig.add_trace(
+                go.Bar(
+                    x=labels,
+                    y=prob_arr_raw,
+                    name="Raw",
+                )
             )
-        )
-        fig.add_trace(
-            go.Bar(
-                x=labels,
-                y=prob_arr_mitigated,
-                name="Mitigated",
+        if plot_mitigated:
+            fig.add_trace(
+                go.Bar(
+                    x=labels,
+                    y=prob_arr_mitigated,
+                    name="Mitigated",
+                )
             )
-        )
         fig.update_layout(
             title=f"Bell state measurement: {control_qubit}-{target_qubit}",
             xaxis_title=f"State ({control_basis}{target_basis} basis)",
@@ -1750,9 +1756,10 @@ class MeasurementMixin(
             yaxis_range=[0, 1],
         )
         if plot:
-            ps.plot(
-                title=f"Bell state measurement: {control_basis}{target_basis} basis"
-            )
+            if plot_sequence:
+                ps.plot(
+                    title=f"Bell state measurement: {control_basis}{target_basis} basis"
+                )
             fig.show()
 
             for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
@@ -4335,14 +4342,32 @@ class MeasurementMixin(
             "negativity_errors": negativity_errors,
         }
 
+    def _canonical_edge(
+        self, edge: str | tuple[int | str, int | str]
+    ) -> tuple[str, str]:
+        if isinstance(edge, str):
+            qubits = tuple(edge.split("-"))
+            return (qubits[0], qubits[1])
+        else:
+            qubits = tuple(edge)
+            if isinstance(qubits[0], int):
+                qubit0 = self.quantum_system.get_qubit(qubits[0]).label
+            else:
+                qubit0 = qubits[0]
+            if isinstance(qubits[1], int):
+                qubit1 = self.quantum_system.get_qubit(qubits[1]).label
+            else:
+                qubit1 = qubits[1]
+            return (qubit0, qubit1)
+
     def measure_bell_state_fidelities(
         self,
         targets: Collection[str | tuple[int | str, int | str]] | None = None,
         *,
-        unavailable_pairs: Collection[
-            str | tuple[int | str, int | str] | set[str] | set[int]
-        ]
-        | None = None,
+        unavailable_pairs: Collection[str | tuple[int | str, int | str]] | None = None,
+        readout_mitigation: bool = True,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
         plot: bool = False,
         save_path: Path | str | None = None,
     ) -> dict[str, float]:
@@ -4352,52 +4377,27 @@ class MeasurementMixin(
         if targets is None:
             target_pairs = self.cr_pairs
         else:
-            target_pairs = []
-            for target in targets:
-                if isinstance(target, str):
-                    qubits = tuple(target.split("-"))
-                    pair = (qubits[0], qubits[1])
-                else:
-                    target = tuple(target)
-                    if isinstance(target[0], int):
-                        qubit0 = self.quantum_system.get_qubit(target[0]).label
-                    else:
-                        qubit0 = target[0]
-                    if isinstance(target[1], int):
-                        qubit1 = self.quantum_system.get_qubit(target[1]).label
-                    else:
-                        qubit1 = target[1]
-                    pair = (qubit0, qubit1)
-                target_pairs.append(pair)
+            target_pairs = [self._canonical_edge(target) for target in targets]
 
         if unavailable_pairs is None:
             unavailable_pairs = []
         else:
-            unavailable_pairs = []
-            for target in unavailable_pairs:
-                if isinstance(target, str):
-                    qubits = tuple(target.split("-"))
-                    pair = {qubits[0], qubits[1]}
-                else:
-                    target = tuple(target)
-                    if isinstance(target[0], int):
-                        qubit0 = self.quantum_system.get_qubit(target[0]).label
-                    else:
-                        qubit0 = target[0]
-                    if isinstance(target[1], int):
-                        qubit1 = self.quantum_system.get_qubit(target[1]).label
-                    else:
-                        qubit1 = target[1]
-                    pair = {qubit0, qubit1}
-                unavailable_pairs.append(pair)
+            unavailable_pairs = [
+                self._canonical_edge(target) for target in unavailable_pairs
+            ]
 
         for pair in target_pairs:
-            if set(pair) in unavailable_pairs:
+            if pair in unavailable_pairs:
                 print(f"Skipping unavailable pair: {pair}")
                 continue
             try:
                 label = f"{pair[0]}-{pair[1]}"
-                result = self.bell_state_tomography(*pair)
+                result = self.bell_state_tomography(
+                    *pair,
+                    readout_mitigation=readout_mitigation,
+                    shots=shots,
+                    interval=interval,
+                )
                 fidelities[label] = result["fidelity"]
             except Exception as e:
                 print(f"Failed for pair {label}: {e}")
@@ -4441,3 +4441,179 @@ class MeasurementMixin(
             print(f"Fidelities saved to {save_path}")
 
         return sorted_fidelities
+
+    def measure_bell_states(
+        self,
+        targets: Collection[str | tuple[int | str, int | str]] | None = None,
+        *,
+        unavailable_pairs: Collection[str | tuple[int | str, int | str]] | None = None,
+        control_basis: str = "Z",
+        target_basis: str = "Z",
+        readout_mitigation: bool = True,
+        return_result: bool = False,
+        n_cols: int = 6,
+        plot: bool = True,
+        plot_round: bool = False,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ):
+        if targets is None:
+            target_pairs = self.cr_pairs
+        else:
+            target_pairs = [self._canonical_edge(target) for target in targets]
+
+        if unavailable_pairs is None:
+            unavailable_pairs = []
+        else:
+            unavailable_pairs = [
+                self._canonical_edge(target) for target in unavailable_pairs
+            ]
+
+        all_edges = [
+            (pair[0], pair[1])
+            for pair in target_pairs
+            if pair not in unavailable_pairs
+            and f"{pair[0]}-{pair[1]}" in self.calib_note.cr_params
+        ]
+
+        graph = nx.Graph()
+        for edge in all_edges:
+            graph.add_edge(*edge)
+
+        rounds = strong_edge_coloring(graph)
+
+        n_edges = len(all_edges)
+        n_rows = int(np.ceil(n_edges / n_cols))
+
+        fig = make_subplots(
+            rows=n_rows,
+            cols=n_cols,
+            subplot_titles=[f"{edge[0]}-{edge[1]}" for edge in all_edges],
+        )
+
+        i = 0
+
+        results = {}
+
+        for round, edges in tqdm(rounds.items(), desc="Measuring Bell states"):
+            if plot_round:
+                G = nx.Graph()
+                for u, v in edges:
+                    G.add_node(u)
+                    G.add_node(v)
+                    G.add_edge(u, v)
+
+                node_values = {node: 1.0 for node in graph.nodes()}
+                edge_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
+                edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
+
+                chip_graph = self.quantum_system.chip_graph
+                chip_graph.plot_graph_data(
+                    directed=False,
+                    title=f"Measurement round : {round}",
+                    edge_values=edge_values,
+                    edge_color="#eef",
+                    edge_overlay=True,
+                    edge_overlay_values=edge_overlay_values,
+                    edge_overlay_color="turquoise",
+                    node_color="white",
+                    node_linecolor="ghostwhite",
+                    node_textcolor="ghostwhite",
+                    node_overlay=True,
+                    node_overlay_values=node_values,
+                    node_overlay_color="ghostwhite",
+                    node_overlay_linecolor="black",
+                    node_overlay_textcolor="black",
+                )
+
+            with PulseSchedule() as ps:
+                for edge in edges:
+                    control_qubit, target_qubit = edge
+                    # prepare |+⟩|0⟩
+                    ps.add(control_qubit, self.y90(control_qubit))
+
+                    # create |0⟩|0⟩ + |1⟩|1⟩
+                    ps.call(
+                        self.cnot(
+                            control_qubit,
+                            target_qubit,
+                            only_low_to_high=True,
+                        )
+                    )
+
+                    # apply the control basis transformation
+                    if control_basis == "X":
+                        ps.add(control_qubit, self.y90m(control_qubit))
+                    elif control_basis == "Y":
+                        ps.add(control_qubit, self.x90(control_qubit))
+
+                    # apply the target basis transformation
+                    if target_basis == "X":
+                        ps.add(target_qubit, self.y90m(target_qubit))
+                    elif target_basis == "Y":
+                        ps.add(target_qubit, self.x90(target_qubit))
+
+            result = self.measure(
+                ps,
+                mode="single",
+                shots=shots,
+                interval=interval,
+            )
+
+            for edge in edges:
+                row = i // n_cols + 1
+                col = i % n_cols + 1
+                i += 1
+
+                control_qubit, target_qubit = edge
+                basis_labels = result.get_basis_labels(edge)
+                prob_dict_raw = result.get_probabilities(edge)
+                # Ensure all basis labels are present in the raw probabilities
+                prob_dict_raw = {
+                    label: prob_dict_raw.get(label, 0) for label in basis_labels
+                }
+                prob_dict_mitigated = result.get_mitigated_probabilities(edge)
+
+                labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
+                prob_arr_raw = np.array(list(prob_dict_raw.values()))
+                prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
+
+                if readout_mitigation:
+                    prob_arr = prob_arr_mitigated
+                else:
+                    prob_arr = prob_arr_raw
+
+                results[f"{edge[0]}-{edge[1]}"] = {
+                    "raw_probabilities": prob_dict_raw,
+                    "mitigated_probabilities": prob_dict_mitigated,
+                }
+
+                fig.add_bar(
+                    x=labels,
+                    y=prob_arr,
+                    row=row,
+                    col=col,
+                    marker_color=COLORS[0],
+                )
+
+        fig.update_layout(
+            title=f"Bell state measurement: {n_edges} pairs",
+            height=120 * n_rows + 160,
+            width=180 * n_cols + 80,
+            showlegend=False,
+            margin=dict(l=40, r=40, t=120, b=40),
+        )
+        fig.update_yaxes(
+            range=[0, 0.6],
+            tickvals=[0, 0.25, 0.5],
+            ticktext=["0", "0.25", "0.5"],
+        )
+        fig.update_annotations(
+            font_size=15,
+            yshift=8,
+        )
+        if plot:
+            fig.show()
+
+        if return_result:
+            return {"data": results, "figure": fig}
