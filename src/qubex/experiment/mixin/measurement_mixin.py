@@ -1683,6 +1683,7 @@ class MeasurementMixin(
         plot_raw: bool = True,
         plot_mitigated: bool = True,
         save_image: bool = True,
+        reset_awg_and_capunits: bool = True,
     ) -> dict:
         if self.state_centers is None:
             self.build_classifier(plot=False)
@@ -1720,6 +1721,7 @@ class MeasurementMixin(
             mode="single",
             shots=shots,
             interval=interval,
+            reset_awg_and_capunits=reset_awg_and_capunits,
         )
 
         basis_labels = result.get_basis_labels(pair)
@@ -4529,6 +4531,7 @@ class MeasurementMixin(
         plot_round: bool = False,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
     ):
         if targets is None:
             fidelities_path = Path(
@@ -4564,6 +4567,13 @@ class MeasurementMixin(
             if pair not in unavailable_pairs
             and f"{pair[0]}-{pair[1]}" in self.calib_note.cr_params
         ]
+
+        if reset_awg_and_capunits:
+            qubits = set()
+            for edge in all_edges:
+                qubits.add(edge[0])
+                qubits.add(edge[1])
+            self.reset_awg_and_capunits(qubits=qubits)
 
         n_edges = len(all_edges)
         n_rows = int(np.ceil(n_edges / n_cols))
@@ -4653,6 +4663,7 @@ class MeasurementMixin(
                     mode="single",
                     shots=shots,
                     interval=interval,
+                    reset_awg_and_capunits=False,
                 )
 
                 for edge in edges:
@@ -4736,6 +4747,7 @@ class MeasurementMixin(
                     shots=shots,
                     plot=False,
                     save_image=False,
+                    reset_awg_and_capunits=False,
                 )
                 if readout_mitigation:
                     prob_arr = result["mitigated"]
