@@ -2528,7 +2528,8 @@ class MeasurementMixin(
         cpmg_duration_unit: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
-    ) -> dict:
+        return_result: bool = False,
+    ):
         qubits: list[str] = []
         source_qubits: list[str] = []
         steps: list[tuple[str, str]] = []
@@ -2632,11 +2633,12 @@ class MeasurementMixin(
                 result.data[source_qubit].normalized,
             )
 
-        return {
-            "phi_range": phi_range,
-            "result": result,
-            "coherences": coherences,
-        }
+        if return_result:
+            return {
+                "phi_range": phi_range,
+                "result": result,
+                "coherences": coherences,
+            }
 
     @staticmethod
     def fourier_analysis(
@@ -3654,6 +3656,7 @@ class MeasurementMixin(
         *,
         root: str | None = None,
         max_depth: int | None = None,
+        max_node: int | None = None,
         threshold: float = 0.0,
         t1: dict[str, float] | None = None,
         t2_echo: dict[str, float] | None = None,
@@ -3681,7 +3684,10 @@ class MeasurementMixin(
         depths: dict[str, int] = {root_qubit: 0}
         q = deque([root_qubit])
 
+        n_node = 1
         while q:
+            if max_node is not None and n_node >= max_node:
+                break
             u = q.popleft()
             if max_depth is not None and depths[u] >= max_depth:
                 continue
@@ -3691,6 +3697,9 @@ class MeasurementMixin(
                 parents[v] = u
                 depths[v] = depths[u] + 1
                 q.append(v)
+                n_node += 1
+                if max_node is not None and n_node >= max_node:
+                    break
 
         DG = nx.DiGraph()
         for child, parent in parents.items():
