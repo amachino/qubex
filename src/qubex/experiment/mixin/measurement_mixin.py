@@ -1663,7 +1663,14 @@ class MeasurementMixin(
                 yaxis_title="Probability",
                 yaxis_range=[-0.1, 1.1],
             )
-            fig.show()
+            fig.show(
+                config={
+                    "toImageButtonOptions": {
+                        "format": "png",
+                        "scale": 3,
+                    },
+                }
+            )
 
         return result_pops, result_errs
 
@@ -1762,7 +1769,14 @@ class MeasurementMixin(
                 ps.plot(
                     title=f"Bell state measurement: {control_basis}{target_basis} basis"
                 )
-            fig.show()
+            fig.show(
+                config={
+                    "toImageButtonOptions": {
+                        "format": "png",
+                        "scale": 3,
+                    },
+                }
+            )
 
             for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
                 print(f"{label} : {p:.2%} -> {mp:.2%}")
@@ -2223,7 +2237,14 @@ class MeasurementMixin(
         )
         if plot:
             ps.plot(title=f"GHZ state measurement: {''.join(measurement_bases)} basis")
-            fig.show()
+            fig.show(
+                config={
+                    "toImageButtonOptions": {
+                        "format": "png",
+                        "scale": 3,
+                    },
+                }
+            )
             for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
                 print(f"{label} : {p:.2%} -> {mp:.2%}")
         if save_image:
@@ -2816,7 +2837,14 @@ class MeasurementMixin(
                 name="Mitigated",
                 marker=dict(size=5),
             )
-        fig.show()
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "scale": 3,
+                },
+            }
+        )
 
         viz.save_figure_image(
             fig,  # type: ignore
@@ -3267,7 +3295,14 @@ class MeasurementMixin(
                 )
 
                 if plot:
-                    fig.show()
+                    fig.show(
+                        config={
+                            "toImageButtonOptions": {
+                                "format": "png",
+                                "scale": 3,
+                            },
+                        }
+                    )
 
                 edge_sbits_result[edge][sbits]["expected_values"] = expected_values
                 edge_sbits_result[edge][sbits]["density_matrix"] = rho
@@ -3338,7 +3373,14 @@ class MeasurementMixin(
         negativities_med = np.median(list(negativities.values()))
         if plot:
             for edge, fig in figures.items():
-                fig.show()
+                fig.show(
+                    config={
+                        "toImageButtonOptions": {
+                            "format": "png",
+                            "scale": 3,
+                        },
+                    }
+                )
             print(f"Negativities of {len(negativities)} edges:")
             print(f"  max: {negativities_max:.3f}")
             print(f"  min: {negativities_min:.3f}")
@@ -3373,7 +3415,14 @@ class MeasurementMixin(
                 )
             )
             fig.add_bar(x=x, y=y)
-            fig.show()
+            fig.show(
+                config={
+                    "toImageButtonOptions": {
+                        "format": "png",
+                        "scale": 3,
+                    },
+                }
+            )
 
         return {
             "negativities_max": negativities_max,
@@ -4151,7 +4200,14 @@ class MeasurementMixin(
                 )
 
                 if plot:
-                    fig.show()
+                    fig.show(
+                        config={
+                            "toImageButtonOptions": {
+                                "format": "png",
+                                "scale": 3,
+                            },
+                        }
+                    )
 
                 edge_sbits_result[edge][sbits]["expected_values"] = expected_values
                 edge_sbits_result[edge][sbits]["density_matrix"] = rho
@@ -4318,7 +4374,14 @@ class MeasurementMixin(
 
         if plot:
             for edge, fig in figures.items():
-                fig.show()
+                fig.show(
+                    config={
+                        "toImageButtonOptions": {
+                            "format": "png",
+                            "scale": 3,
+                        },
+                    }
+                )
             print(f"Statistics of {len(negativities)} edges:")
             print(f"  max: {negativities_max:.3f}")
             print(f"  min: {negativities_min:.3f}")
@@ -4390,7 +4453,14 @@ class MeasurementMixin(
                 if n_bootstrap
                 else None,
             )
-            fig.show()
+            fig.show(
+                config={
+                    "toImageButtonOptions": {
+                        "format": "png",
+                        "scale": 3,
+                    },
+                }
+            )
 
             nonzero_graph = nx.Graph()
             for edge, negativity in nonzero_edges.items():
@@ -4512,7 +4582,14 @@ class MeasurementMixin(
                 )
             )
             fig.add_bar(x=x, y=y)
-            fig.show()
+            fig.show(
+                config={
+                    "toImageButtonOptions": {
+                        "format": "png",
+                        "scale": 3,
+                    },
+                }
+            )
 
         if save_data:
             self.save_property(

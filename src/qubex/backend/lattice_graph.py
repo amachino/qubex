@@ -833,7 +833,14 @@ class LatticeGraph:
             data=data,
             layout=layout,
         )
-        fig.show()
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "scale": 3,
+                },
+            }
+        )
 
         if save_image:
             save_figure_image(
