@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 from collections import defaultdict, deque
@@ -4542,30 +4541,18 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
-        reset_awg_and_capunits_each_time: bool = False,
+        reset_awg_and_capunits_each_time: bool = True,
     ):
-        # NOTE: workaround
-        if shots > 3000:
-            reset_awg_and_capunits_each_time = True
-
         if targets is None:
-            fidelities_path = Path(
-                f".properties/{self.chip_id}/bell_state_fidelity.json"
-            )
-            if fidelities_path.exists():
-                with open(fidelities_path, "r") as f:
-                    fidelities = json.load(f)
-                fidelities = dict(
-                    sorted(fidelities.items(), key=lambda x: x[0], reverse=False)
-                )
+            try:
+                fidelities = self.load_property("bell_state_fidelity")
                 target_pairs = [
                     self._canonical_edge(label)
                     for label, fidelity in fidelities.items()
                     if fidelity >= threshold
                 ]
-            else:
+            except FileNotFoundError:
                 target_pairs = self.cr_pairs
-
         else:
             target_pairs = [self._canonical_edge(target) for target in targets]
 
@@ -4576,14 +4563,16 @@ class MeasurementMixin(
                 self._canonical_edge(target) for target in unavailable_pairs
             ]
 
-        all_edges = [
-            (pair[0], pair[1])
-            for pair in target_pairs
-            if pair not in unavailable_pairs
-            and f"{pair[0]}-{pair[1]}" in self.calib_note.cr_params
-        ]
+        all_edges = sorted(
+            [
+                (pair[0], pair[1])
+                for pair in target_pairs
+                if pair not in unavailable_pairs
+                and f"{pair[0]}-{pair[1]}" in self.calib_note.cr_params
+            ]
+        )
 
-        if reset_awg_and_capunits:
+        if reset_awg_and_capunits and not reset_awg_and_capunits_each_time:
             qubits = set()
             for edge in all_edges:
                 qubits.add(edge[0])
@@ -4592,6 +4581,10 @@ class MeasurementMixin(
 
         n_edges = len(all_edges)
         n_rows = int(np.ceil(n_edges / n_cols))
+
+        edge_indices = {
+            edge: (i // n_cols + 1, i % n_cols + 1) for i, edge in enumerate(all_edges)
+        }
 
         fig = make_subplots(
             rows=n_rows,
@@ -4615,7 +4608,6 @@ class MeasurementMixin(
                         batch.append(e)
                 rounds.append(batch)
 
-            i = 0
             for round, edges in tqdm(enumerate(rounds), desc="Measuring Bell states"):
                 if plot_round:
                     G = nx.Graph()
@@ -4682,9 +4674,7 @@ class MeasurementMixin(
                 )
 
                 for edge in edges:
-                    row = i // n_cols + 1
-                    col = i % n_cols + 1
-                    i += 1
+                    row, col = edge_indices[edge]
 
                     control_qubit, target_qubit = edge
                     basis_labels = result.get_basis_labels(edge)
@@ -4716,46 +4706,9 @@ class MeasurementMixin(
                         col=col,
                         marker_color=COLORS[0],
                     )
-
-            fig.update_layout(
-                title=dict(
-                    text=title or "Bell state measurement",
-                    subtitle=dict(
-                        text=f"{n_edges} pairs, {shots} shots, run in parallel",
-                        font_size=16,
-                    ),
-                    y=0.98,
-                    yanchor="top",
-                    font_size=22,
-                ),
-                height=120 * n_rows + 200,
-                width=180 * n_cols + 80,
-                showlegend=False,
-                margin=dict(l=40, r=40, t=160, b=40),
-            )
-            fig.update_yaxes(
-                range=[0, 0.6],
-                tickvals=[0, 0.25, 0.5],
-                ticktext=["0", "0.25", "0.5"],
-            )
-            fig.update_annotations(
-                font_size=15,
-                yshift=8,
-            )
-            if plot:
-                fig.show(
-                    config={
-                        "toImageButtonOptions": {
-                            "format": "png",
-                            "scale": 3,
-                        },
-                    }
-                )
-
         else:
-            for i, edge in tqdm(enumerate(all_edges), total=len(all_edges)):
-                row = i // n_cols + 1
-                col = i % n_cols + 1
+            for edge in tqdm(all_edges, total=len(all_edges)):
+                row, col = edge_indices[edge]
                 labels = [f"|{i}⟩" for i in ["00", "01", "10", "11"]]
                 result = self.measure_bell_state(
                     *edge,
@@ -4779,40 +4732,47 @@ class MeasurementMixin(
                     col=col,
                     marker_color=COLORS[0],
                 )
-            fig.update_layout(
-                title=dict(
-                    text=title or "Bell state measurement",
-                    subtitle=dict(
-                        text=f"{n_edges} pairs, {shots} shots, run sequentially",
-                        font_size=16,
-                    ),
-                    y=0.98,
-                    yanchor="top",
-                    font_size=22,
+
+        fig_subtitle = f"{n_edges} pairs, {shots} shots"
+        if in_parallel:
+            fig_subtitle += ", run in parallel"
+        else:
+            fig_subtitle += ", run sequentially"
+
+        fig.update_layout(
+            title=dict(
+                text=title or "Bell state measurement",
+                subtitle=dict(
+                    text=fig_subtitle,
+                    font_size=16,
                 ),
-                height=120 * n_rows + 200,
-                width=180 * n_cols + 80,
-                showlegend=False,
-                margin=dict(l=40, r=40, t=160, b=40),
+                y=0.98,
+                yanchor="top",
+                font_size=22,
+            ),
+            height=120 * n_rows + 200,
+            width=180 * n_cols + 80,
+            showlegend=False,
+            margin=dict(l=40, r=40, t=160, b=40),
+        )
+        fig.update_yaxes(
+            range=[0, 0.6],
+            tickvals=[0, 0.25, 0.5],
+            ticktext=["0", "0.25", "0.5"],
+        )
+        fig.update_annotations(
+            font_size=15,
+            yshift=8,
+        )
+        if plot:
+            fig.show(
+                config={
+                    "toImageButtonOptions": {
+                        "format": "png",
+                        "scale": 3,
+                    },
+                }
             )
-            fig.update_yaxes(
-                range=[0, 0.6],
-                tickvals=[0, 0.25, 0.5],
-                ticktext=["0", "0.25", "0.5"],
-            )
-            fig.update_annotations(
-                font_size=15,
-                yshift=8,
-            )
-            if plot:
-                fig.show(
-                    config={
-                        "toImageButtonOptions": {
-                            "format": "png",
-                            "scale": 3,
-                        },
-                    }
-                )
 
         if return_result:
             return {"data": results, "figure": fig}
