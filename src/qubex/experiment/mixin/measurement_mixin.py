@@ -3570,7 +3570,7 @@ class MeasurementMixin(
         t2_echo: dict[str, float] | None = None,
         plot: bool = False,
         show_labels: bool = False,
-        show_data: bool = True,
+        show_data: bool = False,
     ):
         if fidelities is None:
             fidelities = self.load_property("bell_state_fidelity")
