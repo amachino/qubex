@@ -4532,7 +4532,12 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         reset_awg_and_capunits: bool = True,
+        reset_awg_and_capunits_each_time: bool = False,
     ):
+        # NOTE: workaround
+        if shots > 3000:
+            reset_awg_and_capunits_each_time = True
+
         if targets is None:
             fidelities_path = Path(
                 f".properties/{self.chip_id}/bell_state_fidelity.json"
@@ -4663,7 +4668,7 @@ class MeasurementMixin(
                     mode="single",
                     shots=shots,
                     interval=interval,
-                    reset_awg_and_capunits=False,
+                    reset_awg_and_capunits=reset_awg_and_capunits_each_time,
                 )
 
                 for edge in edges:
@@ -4747,7 +4752,7 @@ class MeasurementMixin(
                     shots=shots,
                     plot=False,
                     save_image=False,
-                    reset_awg_and_capunits=False,
+                    reset_awg_and_capunits=reset_awg_and_capunits_each_time,
                 )
                 if readout_mitigation:
                     prob_arr = result["mitigated"]
