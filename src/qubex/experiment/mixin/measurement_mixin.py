@@ -3418,13 +3418,16 @@ class MeasurementMixin(
 
     def create_connected_graphs(
         self,
-        fidelities: dict[str, float],
+        fidelities: dict[str, float] | None = None,
         *,
         t1: dict[str, float] | None = None,
         t2_echo: dict[str, float] | None = None,
         threshold: float = 0.0,
         plot: bool = False,
     ) -> list[nx.DiGraph]:
+        if fidelities is None:
+            fidelities = self.load_property("bell_state_fidelity")
+
         if t1 is None:
             t1 = {}
         if t2_echo is None:
@@ -3497,11 +3500,16 @@ class MeasurementMixin(
 
     def create_maximum_graph(
         self,
-        fidelities: dict[str, float],
+        fidelities: dict[str, float] | None = None,
         *,
         threshold: float = 0.0,
         plot: bool = False,
+        show_labels: bool = False,
+        show_data: bool = True,
     ):
+        if fidelities is None:
+            fidelities = self.load_property("bell_state_fidelity")
+
         graphs = self.create_connected_graphs(
             fidelities=fidelities,
             threshold=threshold,
@@ -3512,16 +3520,23 @@ class MeasurementMixin(
 
         G = graphs[0]
         if plot:
-            self.visualize_graph(G, title="Maximum graph")
+            self.visualize_graph(
+                G,
+                title=f"Maximum graph : N = {G.number_of_nodes()}",
+                show_labels=show_labels,
+                show_data=show_data,
+            )
 
         return G
 
     def create_maximum_1d_chain(
         self,
-        fidelities: dict[str, float],
+        fidelities: dict[str, float] | None = None,
         *,
         threshold: float = 0.0,
         plot: bool = False,
+        show_labels: bool = False,
+        show_data: bool = True,
     ) -> nx.Graph:
         """
         Create the maximum 1D chain in a 2D lattice graph.
@@ -3536,6 +3551,9 @@ class MeasurementMixin(
         nx.Graph
             A graph representing the maximum 1D chain.
         """
+        if fidelities is None:
+            fidelities = self.load_property("bell_state_fidelity")
+
         graphs = self.create_connected_graphs(
             fidelities,
             threshold=threshold,
@@ -3555,44 +3573,29 @@ class MeasurementMixin(
             chain.add_edge(*edge, fidelity=fidelity)
 
         if plot:
-            chip_graph = self.quantum_system.chip_graph
-            edge_values = {}
-            edge_texts = {}
-            for u, v, data in chain.edges(data=True):
-                fidelity = data.get("fidelity", 0.0)
-                label = f"{u}-{v}"
-                fidelity = float(fidelity * 1e2)
-                edge_values[label] = fidelity
-                edge_texts[label] = f"{fidelity:.1f}"
-
-            node_overlay_values = {q: 1.0 for q in path_nodes}
-
-            chip_graph.plot_graph_data(
-                directed=False,
+            self.visualize_graph(
+                chain,
                 title=f"Maximum 1D chain : N = {len(path_nodes)}",
-                edge_values=edge_values,
-                edge_texts=edge_texts,
-                node_color="white",
-                node_linecolor="ghostwhite",
-                node_textcolor="ghostwhite",
-                node_overlay=True,
-                node_overlay_values=node_overlay_values,
-                node_overlay_color="ghostwhite",
-                node_overlay_linecolor="black",
-                node_overlay_textcolor="black",
+                show_labels=show_labels,
+                show_data=show_data,
             )
 
         return chain
 
     def create_maximum_spanning_tree(
         self,
-        fidelities: dict[str, float],
+        fidelities: dict[str, float] | None = None,
         *,
         threshold: float = 0.0,
         t1: dict[str, float] | None = None,
         t2_echo: dict[str, float] | None = None,
         plot: bool = False,
+        show_labels: bool = False,
+        show_data: bool = True,
     ):
+        if fidelities is None:
+            fidelities = self.load_property("bell_state_fidelity")
+
         graphs = self.create_connected_graphs(
             fidelities,
             threshold=threshold,
@@ -3609,38 +3612,17 @@ class MeasurementMixin(
         mst = nx.minimum_spanning_tree(UG, weight="cost")
 
         if plot:
-            chip_graph = self.quantum_system.chip_graph
-            edge_values = {}
-            edge_texts = {}
-            for u, v, data in mst.edges(data=True):
-                fidelity = data.get("fidelity", 0.0)
-                label = f"{u}-{v}"
-                fidelity = float(fidelity * 1e2)
-                edge_values[label] = fidelity
-                edge_texts[label] = f"{fidelity:.1f}"
-
-            node_overlay_values = {q: 1.0 for q in mst.nodes()}
-
-            chip_graph.plot_graph_data(
-                directed=False,
+            self.visualize_graph(
+                mst,
                 title=f"Maximum spanning tree : N = {len(mst.nodes())}",
-                edge_values=edge_values,
-                edge_texts=edge_texts,
-                node_color="white",
-                node_linecolor="ghostwhite",
-                node_textcolor="ghostwhite",
-                node_overlay=True,
-                node_overlay_values=node_overlay_values,
-                node_overlay_color="ghostwhite",
-                node_overlay_linecolor="black",
-                node_overlay_textcolor="black",
+                show_labels=show_labels,
+                show_data=show_data,
             )
-
         return mst
 
     def create_maximum_directed_tree(
         self,
-        fidelities: dict[str, float],
+        fidelities: dict[str, float] | None = None,
         *,
         root: str | None = None,
         max_depth: int | None = None,
@@ -3648,7 +3630,12 @@ class MeasurementMixin(
         t1: dict[str, float] | None = None,
         t2_echo: dict[str, float] | None = None,
         plot: bool = False,
+        show_labels: bool = False,
+        show_data: bool = True,
     ):
+        if fidelities is None:
+            fidelities = self.load_property("bell_state_fidelity")
+
         mst = self.create_maximum_spanning_tree(
             fidelities,
             threshold=threshold,
@@ -3690,33 +3677,11 @@ class MeasurementMixin(
         max_depth = max(depths.values(), default=0)
 
         if plot:
-            chip_graph = self.quantum_system.chip_graph
-            edge_values = {}
-            edge_texts = {}
-            for u, v, data in DG.edges(data=True):
-                fidelity = data.get("fidelity", 0.0)
-                label = f"{u}-{v}"
-                fidelity = float(fidelity * 1e2)
-                edge_values[label] = fidelity
-                edge_texts[label] = f"{fidelity:.1f}"
-
-            node_overlay_values = {
-                node: float(DG.nodes[node].get("depth", 0)) for node in DG.nodes()
-            }
-
-            chip_graph.plot_graph_data(
-                directed=False,
-                title=f"Maximum tree : N = {len(DG.nodes())}, root = {root}, depth = {max_depth}",
-                edge_values=edge_values,
-                edge_texts=edge_texts,
-                node_color="white",
-                node_linecolor="ghostwhite",
-                node_textcolor="ghostwhite",
-                node_overlay=True,
-                node_overlay_values=node_overlay_values,
-                node_overlay_color="ghostwhite",
-                node_overlay_linecolor="black",
-                node_overlay_textcolor="black",
+            self.visualize_graph(
+                DG,
+                title=f"Maximum directed tree : N = {len(DG.nodes())}, root = {root_qubit}, depth = {max_depth}",
+                show_labels=show_labels,
+                show_data=show_data,
             )
 
         return DG
@@ -4235,17 +4200,31 @@ class MeasurementMixin(
     def visualize_graph(
         self,
         G: nx.Graph,
+        *,
         title: str | None = None,
+        show_labels: bool = False,
+        show_data: bool = True,
     ) -> None:
         node_values = {node: 1 for node in G.nodes()}
-        edge_values = {f"{edge[0]}-{edge[1]}": 1 for edge in G.edges()}
+        edge_values = {}
+        edge_texts = {}
+        if show_data:
+            for u, v, data in G.edges(data=True):
+                value = data.get("fidelity")
+                text = f"{value * 1e2:.1f}" if value is not None else "N/A"
+                if value is not None:
+                    edge_values[f"{u}-{v}"] = value
+                    edge_texts[f"{u}-{v}"] = text
+        else:
+            edge_values = {f"{edge[0]}-{edge[1]}": 1 for edge in G.edges()}
 
         chip_graph = self.quantum_system.chip_graph
         chip_graph.plot_graph_data(
             directed=False,
             title=title or "Chip graph",
             edge_values=edge_values,
-            edge_color="turquoise",
+            edge_texts=edge_texts if show_labels else None,
+            edge_color="turquoise" if not show_data else None,
             node_color="white",
             node_linecolor="ghostwhite",
             node_textcolor="ghostwhite",
