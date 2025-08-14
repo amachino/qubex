@@ -3424,6 +3424,8 @@ class MeasurementMixin(
         t2_echo: dict[str, float] | None = None,
         threshold: float = 0.0,
         plot: bool = False,
+        show_labels: bool = False,
+        show_data: bool = True,
     ) -> list[nx.DiGraph]:
         if fidelities is None:
             fidelities = self.load_property("bell_state_fidelity")
@@ -3467,35 +3469,13 @@ class MeasurementMixin(
         graphs.sort(key=lambda x: x.number_of_nodes(), reverse=True)
 
         if plot:
-            node_values = {}
-            edge_values = {}
-            edge_texts = {}
-            max_n = 0
-            for graph in graphs:
-                max_n = max(max_n, graph.number_of_nodes())
-                for node in graph.nodes():
-                    node_values[node] = 1.0
-                for edge in graph.edges():
-                    fidelity = graph.edges[edge]["fidelity"] * 1e2
-                    edge_values[f"{edge[0]}-{edge[1]}"] = fidelity
-                    edge_texts[f"{edge[0]}-{edge[1]}"] = f"{fidelity:.1f}"
-
-            chip_graph = self.quantum_system.chip_graph
-            chip_graph.plot_graph_data(
-                directed=False,
+            max_n = max(graph.number_of_nodes() for graph in graphs)
+            self.visualize_graph(
+                G,
                 title=f"Connected graphs : N (max) = {max_n}",
-                edge_values=edge_values,
-                edge_texts=edge_texts,
-                node_color="white",
-                node_linecolor="ghostwhite",
-                node_textcolor="ghostwhite",
-                node_overlay=True,
-                node_overlay_values=node_values,
-                node_overlay_color="ghostwhite",
-                node_overlay_linecolor="black",
-                node_overlay_textcolor="black",
+                show_labels=show_labels,
+                show_data=show_data,
             )
-
         return graphs
 
     def create_maximum_graph(
@@ -4202,6 +4182,7 @@ class MeasurementMixin(
         G: nx.Graph,
         *,
         title: str | None = None,
+        property: str = "fidelity",
         show_labels: bool = False,
         show_data: bool = True,
     ) -> None:
@@ -4210,8 +4191,11 @@ class MeasurementMixin(
         edge_texts = {}
         if show_data:
             for u, v, data in G.edges(data=True):
-                value = data.get("fidelity")
-                text = f"{value * 1e2:.1f}" if value is not None else "N/A"
+                value = data.get(property)
+                if property == "fidelity":
+                    text = f"{value * 1e2:.1f}" if value is not None else "N/A"
+                else:
+                    text = f"{value:.1f}" if value is not None else "N/A"
                 if value is not None:
                     edge_values[f"{u}-{v}"] = value
                     edge_texts[f"{u}-{v}"] = text
@@ -4246,8 +4230,9 @@ class MeasurementMixin(
         plot: bool = True,
         method: str = "execute",
         reset_awg_and_capunits: bool = True,
-        bootstrap_B: int | None = 200,
-        bootstrap_use_mle: bool = False,
+        n_bootstrap: int | None = 200,
+        bootstrap_mle: bool = False,
+        return_result: bool = False,
     ):
         if plot:
             seq = self.create_graph_sequence(
@@ -4306,8 +4291,8 @@ class MeasurementMixin(
                 plot=False,
                 method=method,
                 reset_awg_and_capunits=reset_awg_and_capunits,
-                bootstrap_B=bootstrap_B,
-                bootstrap_use_mle=bootstrap_use_mle,
+                bootstrap_B=n_bootstrap,
+                bootstrap_use_mle=bootstrap_mle,
             )
             for edge, data in result["best"].items():
                 negativities[edge] = data["negativity"]
@@ -4325,18 +4310,30 @@ class MeasurementMixin(
         negativities_avg = np.mean(list(negativities.values()))
         negativities_std = np.std(list(negativities.values()))
         negativities_med = np.median(list(negativities.values()))
+
+        nonzero_edges = {
+            edge: negativity
+            for edge, negativity in negativities.items()
+            if negativity - negativity_errors.get(edge, 0.0) > 0
+        }
+
         if plot:
             for edge, fig in figures.items():
                 fig.show()
-            print(f"Negativities of {len(negativities)} edges:")
+            print(f"Statistics of {len(negativities)} edges:")
             print(f"  max: {negativities_max:.3f}")
             print(f"  min: {negativities_min:.3f}")
             print(f"  med: {negativities_med:.3f}")
             print(f"  avg: {negativities_avg:.3f}")
             print(f"  std: {negativities_std:.3f}")
-            print("Negativities per edge:")
+            print("Negativities:")
             for edge, negativity in negativities.items():
-                print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
+                if n_bootstrap:
+                    print(
+                        f"  {edge[0]}-{edge[1]}: {negativity:.3f} ± {negativity_errors.get(edge, 0.0):.3f}"
+                    )
+                else:
+                    print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
 
             x = [f"{edge[0]}-{edge[1]}" for edge in negativities]
             y = [fidelity for fidelity in negativities.values()]
@@ -4370,21 +4367,38 @@ class MeasurementMixin(
                     type="data",
                     array=y_err,
                 )
-                if bootstrap_B
+                if n_bootstrap
                 else None,
             )
             fig.show()
 
-        return {
-            "negativities_max": negativities_max,
-            "negativities_min": negativities_min,
-            "negativities_med": negativities_med,
-            "negativities_avg": negativities_avg,
-            "negativities_std": negativities_std,
-            "negativities": negativities,
-            "figures": figures,
-            "negativity_errors": negativity_errors,
-        }
+            nonzero_graph = nx.Graph()
+            for edge, negativity in nonzero_edges.items():
+                nonzero_graph.add_edge(edge[0], edge[1], negativity=negativity)
+
+            components = nx.connected_components(nonzero_graph)
+            n_max = max(len(c) for c in components)
+
+            self.visualize_graph(
+                nonzero_graph,
+                title=f"Entangled qubits : N (max) = {n_max}",
+                property="negativity",
+                show_labels=True,
+                show_data=True,
+            )
+
+        if return_result:
+            return {
+                "negativities": negativities,
+                "negativity_errors": negativity_errors,
+                "negativities_max": negativities_max,
+                "negativities_min": negativities_min,
+                "negativities_med": negativities_med,
+                "negativities_avg": negativities_avg,
+                "negativities_std": negativities_std,
+                "nonzero_edges": nonzero_edges,
+                "figures": figures,
+            }
 
     def _canonical_edge(
         self, edge: str | tuple[int | str, int | str]
