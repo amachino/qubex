@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from contextlib import contextmanager
 from datetime import datetime
@@ -67,6 +68,7 @@ from .experiment_constants import (
     DRAG_PI_DURATION,
     HPI_DURATION,
     HPI_RAMPTIME,
+    PROPERTY_DIR,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
@@ -163,6 +165,7 @@ class Experiment(
         readout_duration: float = DEFAULT_READOUT_DURATION,
         readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN,
         readout_post_margin: float = DEFAULT_READOUT_POST_MARGIN,
+        property_dir: Path | str = PROPERTY_DIR,
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
@@ -185,6 +188,7 @@ class Experiment(
         self._readout_duration: Final = readout_duration
         self._readout_pre_margin: Final = readout_pre_margin
         self._readout_post_margin: Final = readout_post_margin
+        self._property_dir: Final = property_dir
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
@@ -627,6 +631,10 @@ class Experiment(
         }
 
     @property
+    def property_dir(self) -> Path:
+        return Path(self._property_dir)
+
+    @property
     def classifier_dir(self) -> Path:
         return Path(self._classifier_dir)
 
@@ -670,6 +678,35 @@ class Experiment(
     @property
     def reference_phases(self) -> dict[str, float]:
         return self.calib_note._reference_phases
+
+    def load_property(self, property_name: str) -> dict:
+        property_path = self.property_dir / self.chip_id / f"{property_name}.json"
+        if property_path.exists():
+            with open(property_path, "r") as f:
+                property_data = json.load(f)
+                return property_data
+        else:
+            raise FileNotFoundError(f"Property file not found: {property_path}")
+
+    def save_property(
+        self,
+        property_name: str,
+        data: dict,
+        *,
+        save_path: Path | str | None = None,
+    ):
+        if save_path is not None:
+            property_path = Path(save_path)
+        else:
+            property_path = self.property_dir / self.chip_id / f"{property_name}.json"
+        if not property_path.parent.exists():
+            property_path.parent.mkdir(parents=True)
+        try:
+            with open(property_path, "w") as f:
+                json.dump(data, f, indent=4)
+            print(f"Property '{property_name}' saved to {property_path}")
+        except Exception as e:
+            raise IOError(f"Failed to save property '{property_name}': {e}")
 
     def load_calib_note(self, path: Path | str | None = None):
         """

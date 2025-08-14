@@ -4434,6 +4434,7 @@ class MeasurementMixin(
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = False,
+        save_data: bool = True,
         save_path: Path | str | None = None,
     ) -> dict[str, float]:
         # TODO: move this to an appropriate location
@@ -4450,11 +4451,6 @@ class MeasurementMixin(
             unavailable_pairs = [
                 self._canonical_edge(target) for target in unavailable_pairs
             ]
-
-        if save_path is None:
-            save_path = Path(f".properties/{self.chip_id}/bell_state_fidelity.json")
-            if not save_path.parent.exists():
-                save_path.parent.mkdir(parents=True)
 
         for pair in target_pairs:
             if pair in unavailable_pairs:
@@ -4505,12 +4501,12 @@ class MeasurementMixin(
             fig.add_bar(x=x, y=y)
             fig.show()
 
-        if save_path:
-            import json
-
-            with open(save_path, "w") as f:
-                json.dump(sorted_fidelities, f, indent=4)
-            print(f"Fidelities saved to {save_path}")
+        if save_data:
+            self.save_property(
+                "bell_state_fidelity",
+                sorted_fidelities,
+                save_path=save_path,
+            )
 
         return sorted_fidelities
 
