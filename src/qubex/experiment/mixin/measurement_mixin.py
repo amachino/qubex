@@ -3812,8 +3812,8 @@ class MeasurementMixin(
         plot: bool = True,
         method: str = "execute",
         reset_awg_and_capunits: bool = True,
-        bootstrap_B: int | None = None,
-        bootstrap_use_mle: bool = False,
+        n_bootstrap: int | None = None,
+        bootstrap_mle: bool = False,
     ):
         graph = graph.to_undirected()
 
@@ -4062,12 +4062,12 @@ class MeasurementMixin(
                 negativity = np.sum(np.abs(eigvals[eigvals < 0]))
 
                 # Optional bootstrap error estimation
-                if bootstrap_B is not None and bootstrap_B > 0:
+                if n_bootstrap is not None and n_bootstrap > 0:
                     pauli_counts = edge_sbits_pauli_counts[edge][sbits]
                     _, neg_std, (neg_lo, neg_hi) = _bootstrap_negativity(
                         counts=pauli_counts,
-                        B=bootstrap_B,
-                        use_mle=bootstrap_use_mle if mle_fit else False,
+                        B=n_bootstrap,
+                        use_mle=bootstrap_mle if mle_fit else False,
                     )
                 else:
                     neg_std, neg_lo, neg_hi = None, None, None
@@ -4195,7 +4195,7 @@ class MeasurementMixin(
                 if property == "fidelity":
                     text = f"{value * 1e2:.1f}" if value is not None else "N/A"
                 else:
-                    text = f"{value:.1f}" if value is not None else "N/A"
+                    text = f"{value:.2f}" if value is not None else "N/A"
                 if value is not None:
                     edge_values[f"{u}-{v}"] = value
                     edge_texts[f"{u}-{v}"] = text
@@ -4291,8 +4291,8 @@ class MeasurementMixin(
                 plot=False,
                 method=method,
                 reset_awg_and_capunits=reset_awg_and_capunits,
-                bootstrap_B=n_bootstrap,
-                bootstrap_use_mle=bootstrap_mle,
+                n_bootstrap=n_bootstrap,
+                bootstrap_mle=bootstrap_mle,
             )
             for edge, data in result["best"].items():
                 negativities[edge] = data["negativity"]
@@ -4326,7 +4326,7 @@ class MeasurementMixin(
             print(f"  med: {negativities_med:.3f}")
             print(f"  avg: {negativities_avg:.3f}")
             print(f"  std: {negativities_std:.3f}")
-            print("Negativities:")
+            print("Negativities of edges:")
             for edge, negativity in negativities.items():
                 if n_bootstrap:
                     print(
@@ -4336,13 +4336,34 @@ class MeasurementMixin(
                     print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
 
             x = [f"{edge[0]}-{edge[1]}" for edge in negativities]
-            y = [fidelity for fidelity in negativities.values()]
+            y = [negativity for negativity in negativities.values()]
             y_err = [negativity_errors.get(edge, 0.0) for edge in negativities]
+
+            min_y = min(
+                0,
+                min(
+                    [
+                        negativity - negativity_errors.get(edge, 0.0)
+                        for edge, negativity in negativities.items()
+                    ]
+                ),
+            )
+            max_y = max(
+                0.55,
+                max(
+                    [
+                        negativity + negativity_errors.get(edge, 0.0)
+                        for edge, negativity in negativities.items()
+                    ]
+                ),
+            )
+
             fig = go.Figure(
                 layout=go.Layout(
                     title=f"Negativities of {len(graph.nodes())}-qubit graph state",
                     xaxis=dict(
                         title="Edges",
+                        title_standoff=25,
                         tickangle=90,
                         tickmode="array",
                         tickvals=list(range(len(x))),
@@ -4351,7 +4372,7 @@ class MeasurementMixin(
                     ),
                     yaxis=dict(
                         title="Negativity",
-                        range=[0, 0.6],
+                        range=[min_y, max_y],
                         tickvals=[0, 0.1, 0.2, 0.3, 0.4, 0.5],
                         ticktext=["0", "0.1", "0.2", "0.3", "0.4", "0.5"],
                     ),
