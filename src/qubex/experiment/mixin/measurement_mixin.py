@@ -4363,7 +4363,14 @@ class MeasurementMixin(
                 figures[edge] = data["figure"]
                 if "negativity_std" in data and data["negativity_std"] is not None:
                     negativity_errors[edge] = float(data["negativity_std"]) * 2
-                data["figure"].show()
+                data["figure"].show(
+                    config={
+                        "toImageButtonOptions": {
+                            "format": "png",
+                            "scale": 3,
+                        },
+                    }
+                )
 
         negativities = dict(
             sorted(negativities.items(), key=lambda item: item[1], reverse=False)
@@ -4382,15 +4389,6 @@ class MeasurementMixin(
         }
 
         if plot:
-            for edge, fig in figures.items():
-                fig.show(
-                    config={
-                        "toImageButtonOptions": {
-                            "format": "png",
-                            "scale": 3,
-                        },
-                    }
-                )
             print(f"Statistics of {len(negativities)} edges:")
             print(f"  max: {negativities_max:.3f}")
             print(f"  min: {negativities_min:.3f}")
