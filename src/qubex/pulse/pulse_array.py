@@ -30,7 +30,7 @@ class PulseArray(Waveform):
         Scaling factor of the pulse array.
     detuning : float, optional
         Detuning of the pulse array in GHz.
-    phase_shift : float, optional
+    phase : float, optional
         Phase shift of the pulse array in rad.
 
     Examples
@@ -51,7 +51,7 @@ class PulseArray(Waveform):
 
     def __init__(
         self,
-        elements: Sequence = [],
+        elements: Sequence | None = None,
         *,
         scale: float | None = None,
         detuning: float | None = None,
@@ -62,7 +62,9 @@ class PulseArray(Waveform):
             detuning=detuning,
             phase=phase,
         )
-        self._elements: list[Waveform | PhaseShift] = list(elements)
+        self._elements: list[Waveform | PhaseShift] = (
+            list(elements) if elements is not None else []
+        )
 
     def __repr__(self) -> str:
         elements = []
