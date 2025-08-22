@@ -209,12 +209,19 @@ class SystemManager:
             Whether the state is synced.
         """
         if self.state != self.cached_state:
-            warnings.warn("The current state is different from the cached state. ")
+            # Provide explicit category and stacklevel so users can trace call site.
+            warnings.warn(
+                "The current state is different from the cached state. ",
+                category=UserWarning,
+                stacklevel=2,
+            )
             return False
         device_settings = self._fetch_device_settings(box_ids=box_ids)
         if self.device_settings != device_settings:
             warnings.warn(
-                "The current device settings are different from the fetched device settings. "
+                "The current device settings are different from the fetched device settings. ",
+                category=UserWarning,
+                stacklevel=2,
             )
             return False
         return True
