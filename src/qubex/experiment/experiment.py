@@ -1859,7 +1859,9 @@ class Experiment(
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float = 0.0,
     ) -> PulseSchedule:
-        coeff_value = angle/(np.pi/2)
+        # Reference angle for RZX gate normalization (half pi)
+        REFERENCE_ANGLE = np.pi / 2
+        coeff_value = angle / REFERENCE_ANGLE
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self.calib_note.get_cr_param(
             cr_label,
