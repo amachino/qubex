@@ -453,6 +453,7 @@ class Measurement:
             waveforms={target: np.zeros(0) for target in targets},
             mode="avg",
             shots=1,
+            readout_duration=duration,
             readout_amplitudes={target: 0 for target in targets},
         )
 

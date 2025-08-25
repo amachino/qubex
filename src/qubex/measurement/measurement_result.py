@@ -215,13 +215,14 @@ class MeasureData:
 
     def plot_fft(
         self,
+        title: str | None = None,
         return_figure: bool = False,
         save_image: bool = False,
     ):
         return viz.plot_fft(
             x=self.times,
             y=self.raw,
-            title=f"Fourier transform : {self.target}",
+            title=title or f"Fourier transform : {self.target}",
             xlabel="Frequency (GHz)",
             ylabel="Signal (arb. units)",
             return_figure=return_figure,
@@ -878,6 +879,24 @@ class MultipleMeasureResult:
             figures = []
             for capture_index, data in enumerate(data_list):
                 fig = data.plot(
+                    title=f"{qubit} : data[{capture_index}]",
+                    return_figure=return_figure,
+                    save_image=save_image,
+                )
+                figures.append(fig)
+            if return_figure:
+                return figures
+        return None
+
+    def plot_fft(
+        self,
+        return_figure: bool = False,
+        save_image: bool = False,
+    ):
+        for qubit, data_list in self.data.items():
+            figures = []
+            for capture_index, data in enumerate(data_list):
+                fig = data.plot_fft(
                     title=f"{qubit} : data[{capture_index}]",
                     return_figure=return_figure,
                     save_image=save_image,

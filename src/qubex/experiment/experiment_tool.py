@@ -723,7 +723,11 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
         tfreq = target.frequency
         ffreq = target.fine_frequency
         diff = tfreq - ffreq
-        lo = target.channel.lo_freq
+
+        if target.channel.port.lo_freq is None:
+            lo = None
+        else:
+            lo = target.channel.lo_freq
         nco = target.channel.nco_freq
         cnco = target.channel.cnco_freq
         fnco = target.channel.fnco_freq
@@ -732,7 +736,7 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
                 qubit,
                 [
                     target.label,
-                    f"{lo * 1e-6:.0f}",
+                    f"{lo * 1e-6:.0f}" if lo is not None else "",
                     f"{nco * 1e-6:.3f}",
                     f"{cnco * 1e-6:.3f}",
                     f"{fnco * 1e-6:+.3f}",
