@@ -51,7 +51,6 @@ class PulseSchedule:
         ...     ps.add("RQ02", FlatTop(duration=200, amplitude=1, tau=10))
         >>> ps.plot()
         """
-        self._init_channels: list[str] | list[PulseChannel] = channels
         self._channels: dict[str, PulseChannel] = {}
 
         if channels is not None:
@@ -294,7 +293,7 @@ class PulseSchedule:
         """
         if n == 1:
             return self
-        new_sched = PulseSchedule(self._init_channels)
+        new_sched = deepcopy(self)
         for label, channel in self._channels.items():
             new_sched.add(label, channel.sequence.repeated(n))
         return new_sched
