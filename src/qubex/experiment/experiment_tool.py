@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 from typing import Collection, Literal
 
@@ -837,3 +838,75 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
             style=style,
         )
     console.print(table)
+
+
+def enable_loopback(*, mux: str | int):
+    qubits = system_manager.experiment_system.quantum_system.get_qubits_in_mux(mux)
+
+    boxes: dict[str, Quel1Box] = {}
+    box_confs: dict[str, dict] = defaultdict(dict)
+
+    for qubit in qubits:
+        port_set = system_manager.experiment_system.get_qubit_port_set(qubit.label)
+        if port_set is None:
+            raise ValueError("Qubit port set not found")
+
+        read_in_port = port_set.read_in_port
+        ctrl_port = port_set.ctrl_port
+        read_out_port = port_set.read_out_port
+
+        if read_in_port.box_id not in boxes:
+            boxes[read_in_port.box_id] = get_quel1_box(read_in_port.box_id)
+        if read_out_port.box_id not in boxes:
+            boxes[read_out_port.box_id] = get_quel1_box(read_out_port.box_id)
+        if ctrl_port.box_id not in boxes:
+            boxes[ctrl_port.box_id] = get_quel1_box(ctrl_port.box_id)
+
+        box_confs[read_in_port.box_id][read_in_port.number] = "loop"
+        box_confs[read_out_port.box_id][read_out_port.number] = "block"
+        box_confs[ctrl_port.box_id][ctrl_port.number] = "block"
+
+    try:
+        for box_id, confs in box_confs.items():
+            box = boxes[box_id]
+            box.config_rfswitches(confs)
+        print(f"Loopback enabled for MUX#{mux} {[q.label for q in qubits]}.")
+        print(dict(box_confs))
+    except Exception as e:
+        console.print(f"Error enabling loopback: {e}")
+
+
+def disable_loopback(*, mux: str | int):
+    qubits = system_manager.experiment_system.quantum_system.get_qubits_in_mux(mux)
+
+    boxes: dict[str, Quel1Box] = {}
+    box_confs: dict[str, dict] = defaultdict(dict)
+
+    for qubit in qubits:
+        port_set = system_manager.experiment_system.get_qubit_port_set(qubit.label)
+        if port_set is None:
+            raise ValueError("Qubit port set not found")
+
+        read_in_port = port_set.read_in_port
+        ctrl_port = port_set.ctrl_port
+        read_out_port = port_set.read_out_port
+
+        if read_in_port.box_id not in boxes:
+            boxes[read_in_port.box_id] = get_quel1_box(read_in_port.box_id)
+        if read_out_port.box_id not in boxes:
+            boxes[read_out_port.box_id] = get_quel1_box(read_out_port.box_id)
+        if ctrl_port.box_id not in boxes:
+            boxes[ctrl_port.box_id] = get_quel1_box(ctrl_port.box_id)
+
+        box_confs[read_in_port.box_id][read_in_port.number] = "open"
+        box_confs[read_out_port.box_id][read_out_port.number] = "pass"
+        box_confs[ctrl_port.box_id][ctrl_port.number] = "pass"
+
+    try:
+        for box_id, confs in box_confs.items():
+            box = boxes[box_id]
+            box.config_rfswitches(confs)
+        print(f"Loopback disabled for MUX#{mux} {[q.label for q in qubits]}.")
+        print(dict(box_confs))
+    except Exception as e:
+        console.print(f"Error disabling loopback: {e}")
