@@ -840,11 +840,30 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
     console.print(table)
 
 
-def enable_loopback(*, mux: str | int):
+def _configure_loopback(mux: str | int, *, enable: bool) -> None:
+    """
+    Internal helper: configure RF switches for all qubits in the given MUX.
+
+    Mapping when enable is True:
+        read_in  -> loop
+        read_out -> block
+        ctrl     -> block
+
+    Mapping when enable is False:
+        read_in  -> open
+        read_out -> pass
+        ctrl     -> pass
+    """
     qubits = system_manager.experiment_system.quantum_system.get_qubits_in_mux(mux)
 
     boxes: dict[str, Quel1Box] = {}
     box_confs: dict[str, dict] = defaultdict(dict)
+
+    # Switch configuration pattern
+    if enable:
+        read_in_conf, read_out_conf, ctrl_conf = "loop", "block", "block"
+    else:
+        read_in_conf, read_out_conf, ctrl_conf = "open", "pass", "pass"
 
     for qubit in qubits:
         port_set = system_manager.experiment_system.get_qubit_port_set(qubit.label)
@@ -855,6 +874,7 @@ def enable_loopback(*, mux: str | int):
         ctrl_port = port_set.ctrl_port
         read_out_port = port_set.read_out_port
 
+        # Fetch / cache boxes
         if read_in_port.box_id not in boxes:
             boxes[read_in_port.box_id] = get_quel1_box(read_in_port.box_id)
         if read_out_port.box_id not in boxes:
@@ -862,51 +882,26 @@ def enable_loopback(*, mux: str | int):
         if ctrl_port.box_id not in boxes:
             boxes[ctrl_port.box_id] = get_quel1_box(ctrl_port.box_id)
 
-        box_confs[read_in_port.box_id][read_in_port.number] = "loop"
-        box_confs[read_out_port.box_id][read_out_port.number] = "block"
-        box_confs[ctrl_port.box_id][ctrl_port.number] = "block"
+        # Store configuration entries
+        box_confs[read_in_port.box_id][read_in_port.number] = read_in_conf
+        box_confs[read_out_port.box_id][read_out_port.number] = read_out_conf
+        box_confs[ctrl_port.box_id][ctrl_port.number] = ctrl_conf
 
+    action = "enabled" if enable else "disabled"
     try:
         for box_id, confs in box_confs.items():
-            box = boxes[box_id]
-            box.config_rfswitches(confs)
-        print(f"Loopback enabled for MUX#{mux} {[q.label for q in qubits]}.")
+            boxes[box_id].config_rfswitches(confs)
+        print(f"Loopback {action} for MUX#{mux} {[q.label for q in qubits]}.")
         print(dict(box_confs))
     except Exception as e:
-        console.print(f"Error enabling loopback: {e}")
+        console.print(f"Error {action} loopback: {e}")
+
+
+def enable_loopback(*, mux: str | int):
+    """Enable loopback for the specified MUX (backward-compatible API)."""
+    _configure_loopback(mux, enable=True)
 
 
 def disable_loopback(*, mux: str | int):
-    qubits = system_manager.experiment_system.quantum_system.get_qubits_in_mux(mux)
-
-    boxes: dict[str, Quel1Box] = {}
-    box_confs: dict[str, dict] = defaultdict(dict)
-
-    for qubit in qubits:
-        port_set = system_manager.experiment_system.get_qubit_port_set(qubit.label)
-        if port_set is None:
-            raise ValueError("Qubit port set not found")
-
-        read_in_port = port_set.read_in_port
-        ctrl_port = port_set.ctrl_port
-        read_out_port = port_set.read_out_port
-
-        if read_in_port.box_id not in boxes:
-            boxes[read_in_port.box_id] = get_quel1_box(read_in_port.box_id)
-        if read_out_port.box_id not in boxes:
-            boxes[read_out_port.box_id] = get_quel1_box(read_out_port.box_id)
-        if ctrl_port.box_id not in boxes:
-            boxes[ctrl_port.box_id] = get_quel1_box(ctrl_port.box_id)
-
-        box_confs[read_in_port.box_id][read_in_port.number] = "open"
-        box_confs[read_out_port.box_id][read_out_port.number] = "pass"
-        box_confs[ctrl_port.box_id][ctrl_port.number] = "pass"
-
-    try:
-        for box_id, confs in box_confs.items():
-            box = boxes[box_id]
-            box.config_rfswitches(confs)
-        print(f"Loopback disabled for MUX#{mux} {[q.label for q in qubits]}.")
-        print(dict(box_confs))
-    except Exception as e:
-        console.print(f"Error disabling loopback: {e}")
+    """Disable loopback for the specified MUX (backward-compatible API)."""
+    _configure_loopback(mux, enable=False)

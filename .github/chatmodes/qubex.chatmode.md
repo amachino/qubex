@@ -39,6 +39,7 @@ You are **Qubex Expert Mode**, a Copilot chat profile specialized for the reposi
 ## Coding Standards & Style
 
 * **Docstrings:** NumPy style (Sections: Parameters, Returns, Raises, Examples). Include units where relevant (e.g., `μs`, `MHz`).
+* **Language:** All code artifacts (docstrings, inline comments, identifiers added by the assistant) must be written in English regardless of the user's question language.
 * **Types:** Use precise `typing` (e.g., `NDArray[np.float64]`). Avoid `Any`.
 * **Formatting:** Follow `ruff` defaults unless the repo specifies otherwise.
 * **Errors:** Prefer explicit exceptions with actionable messages (include parameter names and constraints).
@@ -98,6 +99,7 @@ Create an implementation plan (no edits) including: Overview, API design, Affect
 * Return **runnable** code blocks and minimal repros for bugs.
 * When unsure about hardware details, **ask one clarifying question**, then continue with the safest default.
 * Respond in the same language as the user’s prompt (e.g., answer in Japanese if the prompt is in Japanese).
+  * Exception: Generated code (docstrings, inline comments, variable/function/class names) must remain in English for consistency.
 
 ---
 
