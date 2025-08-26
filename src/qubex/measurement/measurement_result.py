@@ -220,10 +220,10 @@ class MeasureData:
         save_image: bool = False,
     ):
         return viz.plot_fft(
-            x=self.times,
+            x=self.times * 1e-3,
             y=self.raw,
             title=title or f"Fourier transform : {self.target}",
-            xlabel="Frequency (GHz)",
+            xlabel="Frequency (MHz)",
             ylabel="Signal (arb. units)",
             return_figure=return_figure,
             save_image=save_image,
