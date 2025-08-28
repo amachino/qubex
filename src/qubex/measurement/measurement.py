@@ -10,8 +10,6 @@ from typing import Collection, Final, Literal
 
 import numpy as np
 import numpy.typing as npt
-from qubecalib import Sequencer
-from qubecalib import neopulse as pls
 
 from ..backend import (
     SAMPLING_PERIOD,
@@ -25,7 +23,6 @@ from ..backend import (
     Target,
 )
 from ..backend.dc_voltage_controller import dc_voltage
-from ..backend.sequencer_mod import SequencerMod
 from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from ..typing import IQArray, TargetMap
 from .measurement_result import (
@@ -35,6 +32,16 @@ from .measurement_result import (
     MultipleMeasureResult,
 )
 from .state_classifier import StateClassifier
+
+logger = logging.getLogger(__name__)
+
+try:
+    from qubecalib import Sequencer
+    from qubecalib import neopulse as pls
+
+    from ..backend.sequencer_mod import SequencerMod
+except ImportError as e:
+    logger.info(e)
 
 DEFAULT_SHOTS: Final = 1024
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
@@ -51,8 +58,6 @@ EXTRA_SUM_SECTION_LENGTH = WORD_LENGTH * 4  # samples
 EXTRA_POST_BLANK_LENGTH = WORD_LENGTH  # samples
 EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # samples
 EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
-
-logger = logging.getLogger(__name__)
 
 
 class Measurement:
