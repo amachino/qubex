@@ -6,28 +6,29 @@ from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache, cached_property, reduce
 from pathlib import Path
-from typing import Collection, Final, Literal
+from typing import TYPE_CHECKING, Any, Collection, Final, Literal
 
 import numpy as np
 import numpy.typing as npt
-from qubecalib import Sequencer
-from qubecalib import neopulse as pls
 
-from ..backend import (
-    SAMPLING_PERIOD,
-    ConfigLoader,
-    ControlParams,
-    DeviceController,
-    ExperimentSystem,
-    Mux,
-    RawResult,
-    SystemManager,
-    Target,
-)
-from ..backend.dc_voltage_controller import dc_voltage
-from ..backend.sequencer_mod import SequencerMod
+# NOTE: Avoid importing backend/qubecalib at module import time.
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..backend import (
+        ConfigLoader,
+        ControlParams,
+        DeviceController,
+        ExperimentSystem,
+        Mux,
+        RawResult,
+        SystemManager,
+        Target,
+    )
+    from qubecalib import Sequencer
+    from qubecalib import neopulse as pls
+
 from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from ..typing import IQArray, TargetMap
+from ..errors import BackendUnavailableError
 from .measurement_result import (
     MeasureData,
     MeasureMode,
@@ -43,6 +44,8 @@ DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
 DEFAULT_READOUT_POST_MARGIN: Final = 128  # ns
 WORD_LENGTH: Final = 4  # samples
+# Local fallback sampling period (ns). Backend uses 2.0 ns as well.
+SAMPLING_PERIOD: Final[float] = 2.0
 WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
 BLOCK_LENGTH: Final = WORD_LENGTH * 16  # samples
 BLOCK_DURATION: Final = BLOCK_LENGTH * SAMPLING_PERIOD  # ns
@@ -53,6 +56,23 @@ EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # sam
 EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
 
 logger = logging.getLogger(__name__)
+
+
+def _is_backend_available() -> bool:
+    try:
+        import importlib
+
+        importlib.import_module("qubecalib")
+        importlib.import_module("quel_ic_config")
+        importlib.import_module("quel_clock_master")
+        return True
+    except Exception:
+        return False
+
+
+def _require_backend():
+    if not _is_backend_available():
+        raise BackendUnavailableError()
 
 
 class Measurement:
@@ -98,7 +118,7 @@ class Measurement:
         self._chip_id: Final = chip_id
         self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
-        self._system_manager = SystemManager.shared()
+        self._system_manager = None  # lazy
         if load_configs:
             self.load(
                 config_dir=config_dir,
@@ -126,6 +146,7 @@ class Measurement:
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
         """
+        _require_backend()
         self.system_manager.load(
             chip_id=self._chip_id,
             config_dir=config_dir,
@@ -140,6 +161,7 @@ class Measurement:
         sync_clocks: bool = True,
     ):
         """Connect to the devices."""
+        _require_backend()
         if len(self.box_ids) == 0:
             print("No boxes are selected. Please check the configuration.")
             return
@@ -181,27 +203,32 @@ class Measurement:
         }
 
     @property
-    def system_manager(self) -> SystemManager:
+    def system_manager(self) -> "SystemManager":
         """Get the state manager."""
+        if self._system_manager is None:
+            _require_backend()
+            from ..backend import SystemManager  # lazy import
+
+            self._system_manager = SystemManager.shared()
         return self._system_manager
 
     @property
-    def config_loader(self) -> ConfigLoader:
+    def config_loader(self) -> "ConfigLoader":
         """Get the configuration loader."""
-        return self._system_manager.config_loader
+        return self.system_manager.config_loader
 
     @property
-    def experiment_system(self) -> ExperimentSystem:
+    def experiment_system(self) -> "ExperimentSystem":
         """Get the experiment system."""
-        return self._system_manager.experiment_system
+        return self.system_manager.experiment_system
 
     @property
-    def device_controller(self) -> DeviceController:
+    def device_controller(self) -> "DeviceController":
         """Get the device controller."""
-        return self._system_manager.device_controller
+        return self.system_manager.device_controller
 
     @property
-    def control_params(self) -> ControlParams:
+    def control_params(self) -> "ControlParams":
         """Get the control parameters."""
         return self.experiment_system.control_params
 
@@ -211,7 +238,7 @@ class Measurement:
         return self.experiment_system.chip.id
 
     @property
-    def targets(self) -> dict[str, Target]:
+    def targets(self) -> dict[str, "Target"]:
         """Get the targets."""
         return {target.label: target for target in self.experiment_system.targets}
 
@@ -415,13 +442,19 @@ class Measurement:
         ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ...     })
         """
+        _require_backend()
         if isinstance(targets, str):
             targets = [targets]
+        from ..backend import Target  # lazy import
+
         qubits = [Target.qubit_label(target) for target in targets]
         muxes = {
             self.experiment_system.get_mux_by_qubit(qubit).index for qubit in qubits
         }
         voltages = {mux + 1: self.control_params.get_dc_voltage(mux) for mux in muxes}
+        # Lazy import to avoid backend dependency at module import
+        from ..backend.dc_voltage_controller import dc_voltage
+
         with dc_voltage(voltages):
             yield
 
@@ -663,6 +696,8 @@ class Measurement:
         pre_margin: float | None = None,
         post_margin: float | None = None,
     ) -> PulseArray:
+        from ..backend import Target  # lazy import
+
         qubit = Target.qubit_label(target)
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
@@ -704,6 +739,8 @@ class Measurement:
         ramptime: float | None = None,
         type: RampType | None = None,
     ) -> FlatTop:
+        from ..backend import Target  # lazy import
+
         qubit = Target.qubit_label(target)
         mux = self.mux_dict[qubit]
         if duration is None:
@@ -735,7 +772,11 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         capture_delays: dict[int, int] | None = None,
         add_pump_pulses: bool = False,
-    ) -> Sequencer:
+    ) -> Any:
+        _require_backend()
+        from qubecalib import neopulse as pls  # lazy
+        from ..backend.sequencer_mod import SequencerMod  # lazy
+        from ..backend import Target  # lazy
         if interval is None:
             interval = DEFAULT_INTERVAL
         if readout_amplitudes is None:
@@ -953,7 +994,12 @@ class Measurement:
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         plot: bool = False,
-    ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        from ..backend import Target  # lazy import
+        from qubecalib import neopulse as pls  # lazy
+        _require_backend()
+        from qubecalib import neopulse as pls  # lazy
+        from ..backend import Target  # lazy
         if readout_amplitudes is None:
             readout_amplitudes = self.control_params.readout_amplitude
         if readout_duration is None:
@@ -1234,7 +1280,9 @@ class Measurement:
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         plot: bool = False,
-    ) -> Sequencer:
+    ) -> Any:
+        _require_backend()
+        from ..backend.sequencer_mod import SequencerMod  # lazy
         if interval is None:
             interval = DEFAULT_INTERVAL
 

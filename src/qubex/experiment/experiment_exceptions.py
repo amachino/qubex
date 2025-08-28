@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+"""Deprecated: use `qubex.errors` instead.
 
-class CalibrationMissingError(Exception):
-    """Exception raised when calibration data is missing."""
+This module re-exports exceptions for backward compatibility.
+"""
 
-    def __init__(
-        self,
-        message="Calibration data is missing.",
-        *,
-        target: str | None = None,
-    ):
-        if target:
-            message += f" ({target})"
-        super().__init__(message)
+from ..errors import BackendUnavailableError, CalibrationMissingError
+
+__all__ = [
+    "CalibrationMissingError",
+    "BackendUnavailableError",
+]

@@ -4,8 +4,9 @@ import json
 import sys
 from contextlib import contextmanager
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
-from typing import Collection, Final, Literal
+from typing import TYPE_CHECKING, Collection, Final, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -14,36 +15,47 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
-from ..backend import (
-    Box,
-    Chip,
-    ConfigLoader,
-    ControlParams,
-    ControlSystem,
-    DeviceController,
-    ExperimentSystem,
-    MixingUtil,
-    QuantumSystem,
-    Qubit,
-    Resonator,
-    SystemManager,
-    Target,
-    TargetType,
-)
+# NOTE: Avoid importing backend and measurement at module import time.
+# Use TYPE_CHECKING for type hints and import lazily inside methods.
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ..backend import (
+        Box,
+        Chip,
+        ConfigLoader,
+        ControlParams,
+        ControlSystem,
+        DeviceController,
+        ExperimentSystem,
+        MixingUtil,
+        QuantumSystem,
+        Qubit,
+        Resonator,
+        SystemManager,
+        Target,
+        TargetType,
+    )
+    from ..measurement import (
+        Measurement,
+        MeasureResult,
+        MultipleMeasureResult,
+        StateClassifier,
+    )
+    from ..measurement.measurement import (
+        DEFAULT_INTERVAL,
+        DEFAULT_READOUT_DURATION,
+        DEFAULT_READOUT_POST_MARGIN,
+        DEFAULT_READOUT_PRE_MARGIN,
+        DEFAULT_SHOTS,
+    )
+else:
+    # Provide minimal fallbacks for constants to allow import without backend
+    DEFAULT_SHOTS = 1024
+    DEFAULT_INTERVAL = 150 * 1024.0
+    DEFAULT_READOUT_DURATION = 384.0
+    DEFAULT_READOUT_PRE_MARGIN = 32.0
+    DEFAULT_READOUT_POST_MARGIN = 128.0
+
 from ..clifford import Clifford, CliffordGenerator
-from ..measurement import (
-    Measurement,
-    MeasureResult,
-    MultipleMeasureResult,
-    StateClassifier,
-)
-from ..measurement.measurement import (
-    DEFAULT_INTERVAL,
-    DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_POST_MARGIN,
-    DEFAULT_READOUT_PRE_MARGIN,
-    DEFAULT_SHOTS,
-)
 from ..pulse import (
     Blank,
     CrossResonance,
@@ -72,7 +84,7 @@ from .experiment_constants import (
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
-from .experiment_exceptions import CalibrationMissingError
+from ..errors import BackendUnavailableError, CalibrationMissingError
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import ExperimentResult, RabiData
@@ -169,13 +181,29 @@ class Experiment(
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        eager_backend: bool | None = None,
     ):
-        self._load_config(
-            chip_id=chip_id,
-            config_dir=config_dir,
-            params_dir=params_dir,
-            configuration_mode=configuration_mode,
-        )
+        # Decide backend eagerness automatically: enable if backend available
+        if eager_backend is None:
+            eager_backend = self._is_backend_available()
+
+        self._backend_enabled: Final = eager_backend
+
+        if self._backend_enabled:
+            # Import backend symbols only when backend is available, and expose
+            # them to this module's global namespace for methods that reference
+            # them by name (e.g., `Target.cr_qubit_pair`).
+            from ..backend import Box as _Box
+            from ..backend import Target as _Target  # type: ignore
+
+            globals()["Target"] = _Target  # type: ignore
+            globals()["Box"] = _Box  # type: ignore
+            self._load_config(
+                chip_id=chip_id,
+                config_dir=config_dir,
+                params_dir=params_dir,
+                configuration_mode=configuration_mode,
+            )
         qubits = self._create_qubit_labels(
             muxes=muxes,
             qubits=qubits,
@@ -193,12 +221,7 @@ class Experiment(
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
         self._calibration_valid_days: Final = calibration_valid_days
-        self._measurement = Measurement(
-            chip_id=chip_id,
-            qubits=qubits,
-            load_configs=False,
-            connect_devices=False,
-        )
+        self._measurement = None  # Lazy initialization
         self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
         self._system_note: Final = ExperimentNote(file_path=SYSTEM_NOTE_PATH)
@@ -206,15 +229,31 @@ class Experiment(
             chip_id=chip_id,
             file_path=calib_note_path,
         )
-        self.system_manager.load_skew_file(self.box_ids)
-        self.print_environment(verbose=False)
-        self._load_classifiers()
+        if self._backend_enabled:
+            self.system_manager.load_skew_file(self.box_ids)
+            self.print_environment(verbose=False)
+            self._load_classifiers()
+
+    @staticmethod
+    def _is_backend_available() -> bool:
+        try:
+            import_module("qubecalib")
+            import_module("quel_ic_config")
+            import_module("quel_clock_master")
+            return True
+        except Exception:
+            return False
 
     def _load_classifiers(self):
+        # Lazy import to avoid importing measurement/backends at module import
+        if not self._backend_enabled:
+            return
+        from ..measurement import StateClassifier  # type: ignore
+
         for qubit in self.qubit_labels:
             classifier_path = self.classifier_dir / self.chip_id / f"{qubit}.pkl"
             if classifier_path.exists():
-                self._measurement.classifiers[qubit] = StateClassifier.load(  # type: ignore
+                self.measurement.classifiers[qubit] = StateClassifier.load(  # type: ignore
                     classifier_path
                 )
 
@@ -226,6 +265,9 @@ class Experiment(
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
     ):
         """Load the configuration files."""
+        # Import here to avoid backend dependency at module import
+        if not self._backend_enabled:
+            raise BackendUnavailableError()
         self.system_manager.load(
             chip_id=chip_id,
             config_dir=config_dir,
@@ -312,19 +354,36 @@ class Experiment(
         return ExperimentUtil
 
     @property
-    def measurement(self) -> Measurement:
+    def measurement(self) -> "Measurement":
+        if self._measurement is None:
+            if not self._backend_enabled:
+                raise BackendUnavailableError()
+            from ..measurement import Measurement  # lazy import
+
+            self._measurement = Measurement(
+                chip_id=self._chip_id,
+                qubits=self._qubits,
+                load_configs=False,
+                connect_devices=False,
+            )
         return self._measurement
 
     @property
-    def system_manager(self) -> SystemManager:
+    def system_manager(self) -> "SystemManager":
+        if not self._backend_enabled:
+            raise BackendUnavailableError()
+        from ..backend import SystemManager  # lazy import
+
         return SystemManager.shared()
 
     @property
-    def config_loader(self) -> ConfigLoader:
+    def config_loader(self) -> "ConfigLoader":
+        if not self._backend_enabled:
+            raise BackendUnavailableError()
         return self.system_manager.config_loader
 
     @property
-    def experiment_system(self) -> ExperimentSystem:
+    def experiment_system(self) -> "ExperimentSystem":
         return self.system_manager.experiment_system
 
     @property
@@ -428,7 +487,7 @@ class Experiment(
         return self.get_cr_pairs()
 
     @property
-    def boxes(self) -> dict[str, Box]:
+    def boxes(self) -> dict[str, "Box"]:
         boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
         return {box.id: box for box in boxes}
 
