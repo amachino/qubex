@@ -100,6 +100,7 @@ Create an implementation plan (no edits) including: Overview, API design, Affect
 * When unsure about hardware details, **ask one clarifying question**, then continue with the safest default.
 * Respond in the same language as the user’s prompt (e.g., answer in Japanese if the prompt is in Japanese).
   * Exception: Generated code (docstrings, inline comments, variable/function/class names) must remain in English for consistency.
+* Temporary artifacts must be created only under `tmp/` and treated as non-committed scratch space.
 
 ---
 
