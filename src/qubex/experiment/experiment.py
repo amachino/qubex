@@ -59,6 +59,7 @@ from ..version import get_package_version
 from . import experiment_tool
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
+    CALIBRATION_DIR,
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
     DEFAULT_RABI_FREQUENCY,
@@ -85,6 +86,10 @@ from .mixin import (
 from .rabi_param import RabiParam
 
 console = Console()
+
+# Constants for calibration note paths
+CALIB_NOTE_DIR = Path(CALIBRATION_DIR)
+CALIB_NOTE_FILE = "calib_note.json"
 
 
 class Experiment(
@@ -166,20 +171,22 @@ class Experiment(
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        eager_backend: bool = False,  # Changed default to be non-eager for imports
     ):
-        self._load_config(
-            chip_id=chip_id,
-            config_dir=config_dir,
-            params_dir=params_dir,
-            configuration_mode=configuration_mode,
-        )
-        qubits = self._create_qubit_labels(
-            muxes=muxes,
-            qubits=qubits,
-            exclude_qubits=exclude_qubits,
-        )
+        # Store parameters for potential lazy loading
+        self._init_params = {
+            'chip_id': chip_id,
+            'config_dir': config_dir,
+            'params_dir': params_dir,
+            'configuration_mode': configuration_mode,
+            'muxes': muxes,
+            'qubits': qubits,
+            'exclude_qubits': exclude_qubits,
+        }
+        self._backend_loaded = False
+
+        # Always initialize basic attributes
         self._chip_id: Final = chip_id
-        self._qubits: Final = qubits
         self._drag_hpi_duration: Final = drag_hpi_duration
         self._drag_pi_duration: Final = drag_pi_duration
         self._readout_duration: Final = readout_duration
@@ -189,22 +196,62 @@ class Experiment(
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
         self._calibration_valid_days: Final = calibration_valid_days
-        self._measurement = Measurement(
-            chip_id=chip_id,
-            qubits=qubits,
-            load_configs=False,
-            connect_devices=False,
-        )
+        
+        # Initialize non-backend components
         self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
         self._system_note: Final = ExperimentNote(file_path=SYSTEM_NOTE_PATH)
+        
+        if calib_note_path is None:
+            calib_note_path = CALIB_NOTE_DIR / chip_id / CALIB_NOTE_FILE
         self._calib_note: Final = CalibrationNote(
             chip_id=chip_id,
             file_path=calib_note_path,
         )
-        self.system_manager.load_skew_file(self.box_ids)
-        self.print_environment(verbose=False)
-        self._load_classifiers()
+
+        if eager_backend:
+            self._load_backend()
+
+    def _ensure_backend_loaded(self):
+        """Ensure backend is loaded before accessing backend-dependent properties."""
+        if not self._backend_loaded:
+            self._load_backend()
+
+    def _load_backend(self):
+        """Load backend configuration and dependencies."""
+        if self._backend_loaded:
+            return
+            
+        # Set the flag early to prevent recursion
+        self._backend_loaded = True
+        
+        try:
+            params = self._init_params
+            self._load_config(
+                chip_id=params['chip_id'],
+                config_dir=params['config_dir'],
+                params_dir=params['params_dir'],
+                configuration_mode=params['configuration_mode'],
+            )
+            qubits = self._create_qubit_labels(
+                muxes=params['muxes'],
+                qubits=params['qubits'],
+                exclude_qubits=params['exclude_qubits'],
+            )
+            self._qubits: Final = qubits
+            self._measurement = Measurement(
+                chip_id=params['chip_id'],
+                qubits=qubits,
+                load_configs=False,
+                connect_devices=False,
+            )
+            
+            self.print_environment(verbose=False)
+            self._load_classifiers()
+        except Exception:
+            # If anything fails, reset the flag
+            self._backend_loaded = False
+            raise
 
     def _load_classifiers(self):
         for qubit in self.qubit_labels:
@@ -313,26 +360,32 @@ class Experiment(
 
     @property
     def system_manager(self) -> SystemManager:
+        self._ensure_backend_loaded()
         return SystemManager.shared()
 
     @property
     def config_loader(self) -> ConfigLoader:
+        self._ensure_backend_loaded()
         return self.system_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
+        self._ensure_backend_loaded()
         return self.system_manager.experiment_system
 
     @property
     def quantum_system(self) -> QuantumSystem:
+        self._ensure_backend_loaded()
         return self.experiment_system.quantum_system
 
     @property
     def control_system(self) -> ControlSystem:
+        self._ensure_backend_loaded()
         return self.experiment_system.control_system
 
     @property
     def device_controller(self) -> DeviceController:
+        self._ensure_backend_loaded()
         return self.system_manager.device_controller
 
     @property
@@ -349,6 +402,8 @@ class Experiment(
 
     @property
     def qubit_labels(self) -> list[str]:
+        if not hasattr(self, '_qubits') or self._qubits is None:
+            self._ensure_backend_loaded()
         return self._qubits
 
     @property
@@ -361,6 +416,7 @@ class Experiment(
 
     @property
     def qubits(self) -> dict[str, Qubit]:
+        self._ensure_backend_loaded()
         return {
             qubit.label: qubit
             for qubit in self.experiment_system.qubits

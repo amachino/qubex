@@ -3,31 +3,80 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Collection, Final, Literal
+from typing import TYPE_CHECKING, Any, Collection, Final, Literal
 
-from qubecalib import QubeCalib, Sequencer
-from qubecalib.instrument.quel.quel1 import Quel1System
-from qubecalib.instrument.quel.quel1.driver import (
-    Action,
-    AwgId,
-    AwgSetting,
-    RunitId,
-    RunitSetting,
-    TriggerSetting,
-)
-from qubecalib.instrument.quel.quel1.tool import Skew
-from qubecalib.neopulse import (
-    DEFAULT_SAMPLING_PERIOD,
-    CapSampledSequence,
-    GenSampledSequence,
-    Sequence,
-)
-from qubecalib.qubecalib import BoxPool, CaptureParamTools, Converter, WaveSequenceTools
-from quel_clock_master import QuBEMasterClient
-from quel_ic_config import Quel1Box
 from typing_extensions import deprecated
 
+from ..experiment.experiment_exceptions import BackendUnavailableError
+
+if TYPE_CHECKING:
+    from qubecalib import QubeCalib, Sequencer
+    from qubecalib.instrument.quel.quel1 import Quel1System
+    from qubecalib.instrument.quel.quel1.driver import (
+        Action,
+        AwgId,
+        AwgSetting,
+        RunitId,
+        RunitSetting,
+        TriggerSetting,
+    )
+    from qubecalib.instrument.quel.quel1.tool import Skew
+    from qubecalib.neopulse import (
+        DEFAULT_SAMPLING_PERIOD,
+        CapSampledSequence,
+        GenSampledSequence,
+        Sequence,
+    )
+    from qubecalib.qubecalib import BoxPool, CaptureParamTools, Converter, WaveSequenceTools
+    from quel_clock_master import QuBEMasterClient
+    from quel_ic_config import Quel1Box
+
+
+def _ensure_qubecalib():
+    """Import qubecalib with error handling."""
+    try:
+        import qubecalib
+        return qubecalib
+    except ImportError as e:
+        raise BackendUnavailableError(
+            "qubecalib is required for device controller functionality."
+        ) from e
+
+
+def _ensure_quel_ic_config():
+    """Import quel_ic_config with error handling."""
+    try:
+        import quel_ic_config
+        return quel_ic_config
+    except ImportError as e:
+        raise BackendUnavailableError(
+            "quel_ic_config is required for device controller functionality."
+        ) from e
+
+
+def _ensure_quel_clock_master():
+    """Import quel_clock_master with error handling."""
+    try:
+        import quel_clock_master
+        return quel_clock_master
+    except ImportError as e:
+        raise BackendUnavailableError(
+            "quel_clock_master is required for device controller functionality."
+        ) from e
+
+
+def _get_default_sampling_period():
+    """Get DEFAULT_SAMPLING_PERIOD from qubecalib, with fallback."""
+    try:
+        qubecalib = _ensure_qubecalib()
+        return qubecalib.neopulse.DEFAULT_SAMPLING_PERIOD
+    except BackendUnavailableError:
+        return DEFAULT_SAMPLING_PERIOD
+
+
+# Constants that can be defined without imports
 SAMPLING_PERIOD: Final[float] = 2.0  # ns
+DEFAULT_SAMPLING_PERIOD: Final[float] = 2.0  # ns - fallback value
 
 
 @dataclass
@@ -42,18 +91,27 @@ class DeviceController:
         self,
         config_path: str | Path | None = None,
     ):
-        if config_path is None:
-            self.qubecalib = QubeCalib()
-        else:
-            try:
-                self.qubecalib = QubeCalib(str(config_path))
-            except FileNotFoundError:
-                print(f"Configuration file {config_path} not found.")
-                raise
+        self._config_path = config_path
+        self._qubecalib: Any = None  # Lazy initialization
         self._cap_resource_map: dict | None = None
         self._gen_resource_map: dict | None = None
-        self._boxpool: BoxPool | None = None
-        self._quel1system: Quel1System | None = None
+        self._boxpool: Any = None  # BoxPool type annotation in TYPE_CHECKING
+        self._quel1system: Any = None  # Quel1System type annotation in TYPE_CHECKING
+
+    @property
+    def qubecalib(self):
+        """Lazy initialization of qubecalib."""
+        if self._qubecalib is None:
+            qubecalib_module = _ensure_qubecalib()
+            if self._config_path is None:
+                self._qubecalib = qubecalib_module.QubeCalib()
+            else:
+                try:
+                    self._qubecalib = qubecalib_module.QubeCalib(str(self._config_path))
+                except FileNotFoundError:
+                    print(f"Configuration file {self._config_path} not found.")
+                    raise
+        return self._qubecalib
 
     @property
     def system_config(self) -> dict[str, Any]:
@@ -95,7 +153,7 @@ class DeviceController:
         return list(self.box_settings.keys())
 
     @property
-    def boxpool(self) -> BoxPool:
+    def boxpool(self):  # Return type: BoxPool
         """
         Get the boxpool.
 
@@ -109,7 +167,7 @@ class DeviceController:
         return self._boxpool
 
     @property
-    def quel1system(self) -> Quel1System:
+    def quel1system(self):  # Return type: Quel1System
         """
         Get the Quel1 system.
 
@@ -821,11 +879,12 @@ class DeviceController:
             if sequencer.interval is None:
                 raise ValueError("Interval is not set.")
             else:
-                if sequencer.interval % DEFAULT_SAMPLING_PERIOD != 0:
+                default_period = _get_default_sampling_period()
+                if sequencer.interval % default_period != 0:
                     raise ValueError(
-                        f"Interval {sequencer.interval} is not a multiple of {DEFAULT_SAMPLING_PERIOD}"
+                        f"Interval {sequencer.interval} is not a multiple of {default_period}"
                     )
-                interval_samples = int(sequencer.interval / DEFAULT_SAMPLING_PERIOD)
+                interval_samples = int(sequencer.interval / default_period)
 
         if capture_delay_words is None:
             capture_delay_words = 7 * 16

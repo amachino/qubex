@@ -6,12 +6,10 @@ from collections import defaultdict
 from contextlib import contextmanager
 from functools import cache, cached_property, reduce
 from pathlib import Path
-from typing import Collection, Final, Literal
+from typing import TYPE_CHECKING, Any, Collection, Final, Literal
 
 import numpy as np
 import numpy.typing as npt
-from qubecalib import Sequencer
-from qubecalib import neopulse as pls
 
 from ..backend import (
     SAMPLING_PERIOD,
@@ -19,13 +17,52 @@ from ..backend import (
     ControlParams,
     DeviceController,
     ExperimentSystem,
-    Mux,
-    RawResult,
     SystemManager,
     Target,
+    TargetType,
 )
+from ..experiment.experiment_exceptions import BackendUnavailableError
+
+if TYPE_CHECKING:
+    from qubecalib import Sequencer
+    from qubecalib import neopulse as pls
+
+
+def _ensure_qubecalib_sequencer():
+    """Import qubecalib.Sequencer with error handling."""
+    try:
+        from qubecalib import Sequencer
+        return Sequencer
+    except ImportError as e:
+        raise BackendUnavailableError(
+            "qubecalib is required for measurement functionality."
+        ) from e
+
+
+def _ensure_qubecalib_neopulse():
+    """Import qubecalib.neopulse with error handling."""
+    try:
+        import qubecalib.neopulse as pls
+        return pls
+    except ImportError as e:
+        raise BackendUnavailableError(
+            "qubecalib is required for measurement functionality."
+        ) from e
+
+
+def _ensure_sequencer_mod():
+    """Import SequencerMod with error handling."""
+    try:
+        from ..backend.sequencer_mod import SequencerMod
+        return SequencerMod
+    except ImportError as e:
+        raise BackendUnavailableError(
+            "qubecalib is required for sequencer functionality."
+        ) from e
+
+
 from ..backend.dc_voltage_controller import dc_voltage
-from ..backend.sequencer_mod import SequencerMod
+# from ..backend.sequencer_mod import SequencerMod  # Lazy import
 from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from ..typing import IQArray, TargetMap
 from .measurement_result import (
@@ -726,7 +763,7 @@ class Measurement:
         readout_drag_coeff: float | None = None,
         capture_delays: dict[int, int] | None = None,
         add_pump_pulses: bool = False,
-    ) -> Sequencer:
+    ) -> Any:  # Returns Sequencer
         if interval is None:
             interval = DEFAULT_INTERVAL
         if readout_amplitudes is None:
@@ -819,8 +856,9 @@ class Measurement:
                 pump_waveforms[mux.label] = padded_waveform
 
         # create dict of GenSampledSequence and CapSampledSequence
-        gen_sequences: dict[str, pls.GenSampledSequence] = {}
-        cap_sequences: dict[str, pls.CapSampledSequence] = {}
+        pls = _ensure_qubecalib_neopulse()
+        gen_sequences: dict[str, Any] = {}  # Dict[str, pls.GenSampledSequence]
+        cap_sequences: dict[str, Any] = {}  # Dict[str, pls.CapSampledSequence]
         for target, waveform in user_waveforms.items():
             # add GenSampledSequence (control)
             gen_sequences[target] = pls.GenSampledSequence(
@@ -922,6 +960,7 @@ class Measurement:
         backend_interval += BLOCK_DURATION  # TODO: remove this hack
 
         # return Sequencer
+        SequencerMod = _ensure_sequencer_mod()
         return SequencerMod(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
@@ -1250,6 +1289,7 @@ class Measurement:
         targets = list(gen_sequences.keys() | cap_sequences.keys())
         resource_map = self.device_controller.get_resource_map(targets)
 
+        SequencerMod = _ensure_sequencer_mod()
         return SequencerMod(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
