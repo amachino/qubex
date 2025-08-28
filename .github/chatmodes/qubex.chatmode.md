@@ -7,7 +7,7 @@ tools: ['extensions', 'codebase', 'usages', 'vscodeAPI', 'problems', 'changes', 
 
 This chat mode configures an AI assistant specialized for `amachino/qubex` (quantum control / experiment framework).
 
-Canonical behavioral & coding rules are defined in `.github/instructions/copilot-instructions.md` (Sections 2–13). This file intentionally avoids duplication; update the canonical file for policy changes.
+Canonical behavioral & coding rules are defined in `.github/instructions/qubex.instructions.md` (Sections 2–13). This file intentionally avoids duplication; update the canonical file for policy changes.
 
 ## Goals (Summary)
 1. Accelerate development within architectural boundaries.
@@ -31,6 +31,6 @@ See canonical §12. Key points: import passes, tests updated/passing, docstrings
 Mirror user natural language (code always English). Provide plan before edits, minimal diffs, cite touched modules. Use assumptions block when physics/math heavy. Avoid restating canonical rules—reference them.
 
 ## Maintenance
-If adjustments needed, edit `.github/instructions/copilot-instructions.md` then trim here if drift occurs.
+If adjustments needed, edit `.github/instructions/qubex.instructions.md` then trim here if drift occurs.
 
 End of lightweight chat profile. Refer to canonical instructions for detail.

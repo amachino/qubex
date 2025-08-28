@@ -1,4 +1,4 @@
-# Qubex Copilot Instructions (Canonical)
+# Qubex Instructions (Canonical)
 
 ---
 
@@ -130,7 +130,7 @@ For any merged change the assistant should verify:
 ## 14. How Other Prompt Artifacts Should Refer Here
 Any `.chatmode.md` or future instruction file must:
 * Contain only: description, tool list, and a brief pointer to these canonical instructions.
-* Avoid inlining sections 2–13; instead: "See .github/instructions/copilot-instructions.md".
+* Avoid inlining sections 2–13; instead: "See .github/instructions/qubex.instructions.md".
 
 ---
 
