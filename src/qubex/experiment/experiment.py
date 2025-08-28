@@ -59,6 +59,7 @@ else:
     Box = Any  # type: ignore
 
 from ..clifford import Clifford, CliffordGenerator
+from ..errors import BackendUnavailableError, CalibrationMissingError
 from ..pulse import (
     Blank,
     CrossResonance,
@@ -87,7 +88,6 @@ from .experiment_constants import (
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
-from ..errors import BackendUnavailableError, CalibrationMissingError
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import ExperimentResult, RabiData
@@ -390,23 +390,23 @@ class Experiment(
         return self.system_manager.experiment_system
 
     @property
-    def quantum_system(self) -> QuantumSystem:
+    def quantum_system(self) -> "QuantumSystem":
         return self.experiment_system.quantum_system
 
     @property
-    def control_system(self) -> ControlSystem:
+    def control_system(self) -> "ControlSystem":
         return self.experiment_system.control_system
 
     @property
-    def device_controller(self) -> DeviceController:
+    def device_controller(self) -> "DeviceController":
         return self.system_manager.device_controller
 
     @property
-    def params(self) -> ControlParams:
+    def params(self) -> "ControlParams":
         return self.experiment_system.control_params
 
     @property
-    def chip(self) -> Chip:
+    def chip(self) -> "Chip":
         return self.experiment_system.chip
 
     @property
@@ -426,7 +426,7 @@ class Experiment(
         return sorted(list(mux_set))
 
     @property
-    def qubits(self) -> dict[str, Qubit]:
+    def qubits(self) -> dict[str, "Qubit"]:
         return {
             qubit.label: qubit
             for qubit in self.experiment_system.qubits
@@ -434,7 +434,7 @@ class Experiment(
         }
 
     @property
-    def resonators(self) -> dict[str, Resonator]:
+    def resonators(self) -> dict[str, "Resonator"]:
         return {
             resonator.qubit: resonator
             for resonator in self.experiment_system.resonators
@@ -1238,7 +1238,7 @@ class Experiment(
         self,
         qubit: str,
         in_same_mux: bool = False,
-    ) -> list[Qubit]:
+    ) -> list["Qubit"]:
         return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
 
     def get_confusion_matrix(
@@ -1372,7 +1372,7 @@ class Experiment(
         box_id: str,
         port_number: int,
         channel_number: int,
-        target_type: TargetType = TargetType.CTRL_GE,
+        target_type: "TargetType" = TargetType.CTRL_GE,
         update_lsi: bool = False,
     ):
         try:

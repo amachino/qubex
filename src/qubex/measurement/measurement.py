@@ -13,6 +13,8 @@ import numpy.typing as npt
 
 # NOTE: Avoid importing backend/qubecalib at module import time.
 if TYPE_CHECKING:  # pragma: no cover - typing only
+    from qubecalib import neopulse as pls
+
     from ..backend import (
         ConfigLoader,
         ControlParams,
@@ -23,12 +25,10 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
         SystemManager,
         Target,
     )
-    from qubecalib import Sequencer
-    from qubecalib import neopulse as pls
 
+from ..errors import BackendUnavailableError
 from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from ..typing import IQArray, TargetMap
-from ..errors import BackendUnavailableError
 from .measurement_result import (
     MeasureData,
     MeasureMode,
@@ -775,8 +775,10 @@ class Measurement:
     ) -> Any:
         _require_backend()
         from qubecalib import neopulse as pls  # type: ignore  # lazy
-        from ..backend.sequencer_mod import SequencerMod  # type: ignore  # lazy
+
         from ..backend import Target  # type: ignore  # lazy
+        from ..backend.sequencer_mod import SequencerMod  # type: ignore  # lazy
+
         if interval is None:
             interval = DEFAULT_INTERVAL
         if readout_amplitudes is None:
@@ -996,8 +998,10 @@ class Measurement:
         plot: bool = False,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         _require_backend()
-        from ..backend import Target  # type: ignore  # lazy import
         from qubecalib import neopulse as pls  # type: ignore  # lazy
+
+        from ..backend import Target  # type: ignore  # lazy import
+
         if readout_amplitudes is None:
             readout_amplitudes = self.control_params.readout_amplitude
         if readout_duration is None:
@@ -1281,6 +1285,7 @@ class Measurement:
     ) -> Any:
         _require_backend()
         from ..backend.sequencer_mod import SequencerMod  # type: ignore  # lazy
+
         if interval is None:
             interval = DEFAULT_INTERVAL
 
