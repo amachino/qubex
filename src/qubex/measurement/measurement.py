@@ -445,7 +445,7 @@ class Measurement:
         _require_backend()
         if isinstance(targets, str):
             targets = [targets]
-        from ..backend import Target  # lazy import
+        from ..backend import Target  # type: ignore  # lazy import
 
         qubits = [Target.qubit_label(target) for target in targets]
         muxes = {
@@ -453,7 +453,7 @@ class Measurement:
         }
         voltages = {mux + 1: self.control_params.get_dc_voltage(mux) for mux in muxes}
         # Lazy import to avoid backend dependency at module import
-        from ..backend.dc_voltage_controller import dc_voltage
+        from ..backend.dc_voltage_controller import dc_voltage  # type: ignore
 
         with dc_voltage(voltages):
             yield
@@ -696,7 +696,7 @@ class Measurement:
         pre_margin: float | None = None,
         post_margin: float | None = None,
     ) -> PulseArray:
-        from ..backend import Target  # lazy import
+        from ..backend import Target  # type: ignore  # lazy import
 
         qubit = Target.qubit_label(target)
         if duration is None:
@@ -739,7 +739,7 @@ class Measurement:
         ramptime: float | None = None,
         type: RampType | None = None,
     ) -> FlatTop:
-        from ..backend import Target  # lazy import
+        from ..backend import Target  # type: ignore  # lazy import
 
         qubit = Target.qubit_label(target)
         mux = self.mux_dict[qubit]
@@ -774,9 +774,9 @@ class Measurement:
         add_pump_pulses: bool = False,
     ) -> Any:
         _require_backend()
-        from qubecalib import neopulse as pls  # lazy
-        from ..backend.sequencer_mod import SequencerMod  # lazy
-        from ..backend import Target  # lazy
+        from qubecalib import neopulse as pls  # type: ignore  # lazy
+        from ..backend.sequencer_mod import SequencerMod  # type: ignore  # lazy
+        from ..backend import Target  # type: ignore  # lazy
         if interval is None:
             interval = DEFAULT_INTERVAL
         if readout_amplitudes is None:
@@ -995,11 +995,9 @@ class Measurement:
         add_pump_pulses: bool = False,
         plot: bool = False,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        from ..backend import Target  # lazy import
-        from qubecalib import neopulse as pls  # lazy
         _require_backend()
-        from qubecalib import neopulse as pls  # lazy
-        from ..backend import Target  # lazy
+        from ..backend import Target  # type: ignore  # lazy import
+        from qubecalib import neopulse as pls  # type: ignore  # lazy
         if readout_amplitudes is None:
             readout_amplitudes = self.control_params.readout_amplitude
         if readout_duration is None:
@@ -1282,7 +1280,7 @@ class Measurement:
         plot: bool = False,
     ) -> Any:
         _require_backend()
-        from ..backend.sequencer_mod import SequencerMod  # lazy
+        from ..backend.sequencer_mod import SequencerMod  # type: ignore  # lazy
         if interval is None:
             interval = DEFAULT_INTERVAL
 

@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Collection, Final, Literal
+from typing import TYPE_CHECKING, Any, Collection, Final, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -54,6 +54,9 @@ else:
     DEFAULT_READOUT_DURATION = 384.0
     DEFAULT_READOUT_PRE_MARGIN = 32.0
     DEFAULT_READOUT_POST_MARGIN = 128.0
+    # Provide placeholder types to satisfy type checkers without importing backend
+    Target = Any  # type: ignore
+    Box = Any  # type: ignore
 
 from ..clifford import Clifford, CliffordGenerator
 from ..pulse import (
@@ -193,7 +196,7 @@ class Experiment(
             # Import backend symbols only when backend is available, and expose
             # them to this module's global namespace for methods that reference
             # them by name (e.g., `Target.cr_qubit_pair`).
-            from ..backend import Box as _Box
+            from ..backend import Box as _Box  # type: ignore
             from ..backend import Target as _Target  # type: ignore
 
             globals()["Target"] = _Target  # type: ignore
@@ -439,7 +442,7 @@ class Experiment(
         }
 
     @property
-    def targets(self) -> dict[str, Target]:
+    def targets(self) -> dict[str, "Target"]:
         return {
             target.label: target
             for target in self.experiment_system.targets
@@ -447,7 +450,7 @@ class Experiment(
         }
 
     @property
-    def available_targets(self) -> dict[str, Target]:
+    def available_targets(self) -> dict[str, "Target"]:
         return {
             label: target
             for label, target in self.targets.items()
@@ -455,7 +458,7 @@ class Experiment(
         }
 
     @property
-    def ge_targets(self) -> dict[str, Target]:
+    def ge_targets(self) -> dict[str, "Target"]:
         return {
             label: target
             for label, target in self.available_targets.items()
@@ -463,7 +466,7 @@ class Experiment(
         }
 
     @property
-    def ef_targets(self) -> dict[str, Target]:
+    def ef_targets(self) -> dict[str, "Target"]:
         return {
             label: target
             for label, target in self.available_targets.items()
@@ -471,7 +474,7 @@ class Experiment(
         }
 
     @property
-    def cr_targets(self) -> dict[str, Target]:
+    def cr_targets(self) -> dict[str, "Target"]:
         return {
             label: target
             for label, target in self.available_targets.items()
