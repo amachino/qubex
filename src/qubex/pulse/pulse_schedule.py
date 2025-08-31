@@ -321,6 +321,8 @@ class PulseSchedule:
         new_sched = PulseSchedule()
         for label, channel in self._channels.items():
             new_sched.add(label, channel.sequence.repeated(n))
+            new_sched._channels[label].frequency = channel.frequency
+            new_sched._channels[label].target = channel.target
         return new_sched
 
     @deprecated(
