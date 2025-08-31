@@ -293,7 +293,7 @@ class PulseSchedule:
         """
         if n == 1:
             return self
-        new_sched = PulseSchedule([])
+        new_sched = PulseSchedule()
         for label, channel in self._channels.items():
             new_sched.add(label, channel.sequence.repeated(n))
             new_sched._channels[label].frequency = channel.frequency
