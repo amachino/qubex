@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from contextlib import contextmanager
 from datetime import datetime
@@ -67,6 +68,7 @@ from .experiment_constants import (
     DRAG_PI_DURATION,
     HPI_DURATION,
     HPI_RAMPTIME,
+    PROPERTY_DIR,
     SYSTEM_NOTE_PATH,
     USER_NOTE_PATH,
 )
@@ -163,6 +165,7 @@ class Experiment(
         readout_duration: float = DEFAULT_READOUT_DURATION,
         readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN,
         readout_post_margin: float = DEFAULT_READOUT_POST_MARGIN,
+        property_dir: Path | str = PROPERTY_DIR,
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
@@ -185,6 +188,7 @@ class Experiment(
         self._readout_duration: Final = readout_duration
         self._readout_pre_margin: Final = readout_pre_margin
         self._readout_post_margin: Final = readout_post_margin
+        self._property_dir: Final = property_dir
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
@@ -627,6 +631,10 @@ class Experiment(
         }
 
     @property
+    def property_dir(self) -> Path:
+        return Path(self._property_dir)
+
+    @property
     def classifier_dir(self) -> Path:
         return Path(self._classifier_dir)
 
@@ -671,7 +679,36 @@ class Experiment(
     def reference_phases(self) -> dict[str, float]:
         return self.calib_note._reference_phases
 
-    def load_calibration_data(self, path: Path | str | None = None):
+    def load_property(self, property_name: str) -> dict:
+        property_path = self.property_dir / self.chip_id / f"{property_name}.json"
+        if property_path.exists():
+            with open(property_path, "r") as f:
+                property_data = json.load(f)
+                return property_data
+        else:
+            raise FileNotFoundError(f"Property file not found: {property_path}")
+
+    def save_property(
+        self,
+        property_name: str,
+        data: dict,
+        *,
+        save_path: Path | str | None = None,
+    ):
+        if save_path is not None:
+            property_path = Path(save_path)
+        else:
+            property_path = self.property_dir / self.chip_id / f"{property_name}.json"
+        if not property_path.parent.exists():
+            property_path.parent.mkdir(parents=True)
+        try:
+            with open(property_path, "w") as f:
+                json.dump(data, f, indent=4)
+            print(f"Property '{property_name}' saved to {property_path}")
+        except Exception as e:
+            raise IOError(f"Failed to save property '{property_name}': {e}")
+
+    def load_calib_note(self, path: Path | str | None = None):
         """
         Load the calibration data from the given path or from the default calibration note file.
         """
@@ -730,7 +767,8 @@ class Experiment(
             target_qubit = self.quantum_system.get_qubit(pair[1])
             if target_qubit.label not in self.available_targets:
                 continue
-            if control_qubit.frequency < target_qubit.frequency:
+            # if control_qubit.frequency < target_qubit.frequency:
+            if control_qubit.index % 4 in [0, 3]:
                 if low_to_high:
                     cr_pairs.append(pair)
             else:
@@ -853,28 +891,32 @@ class Experiment(
             phases = reference_phases
 
         for target, phase in phases.items():
-            rabi_param = self.rabi_params.get(target)
-            if rabi_param is None:
-                print(f"Rabi parameters for {target} are not stored.")
-                continue
-            else:
-                rabi_param.correct(new_reference_phase=phase)
+            try:
+                rabi_param = self.rabi_params.get(target)
+                if rabi_param is None:
+                    print(f"Rabi parameters for {target} are not stored.")
+                    continue
+                else:
+                    rabi_param.correct(new_reference_phase=phase)
 
-            self.calib_note.update_rabi_param(
-                target,
-                {
-                    "target": rabi_param.target,
-                    "frequency": rabi_param.frequency,
-                    "amplitude": rabi_param.amplitude,
-                    "phase": rabi_param.phase,
-                    "offset": rabi_param.offset,
-                    "noise": rabi_param.noise,
-                    "angle": rabi_param.angle,
-                    "distance": rabi_param.distance,
-                    "r2": rabi_param.r2,
-                    "reference_phase": rabi_param.reference_phase,
-                },
-            )
+                self.calib_note.update_rabi_param(
+                    target,
+                    {
+                        "target": rabi_param.target,
+                        "frequency": rabi_param.frequency,
+                        "amplitude": rabi_param.amplitude,
+                        "phase": rabi_param.phase,
+                        "offset": rabi_param.offset,
+                        "noise": rabi_param.noise,
+                        "angle": rabi_param.angle,
+                        "distance": rabi_param.distance,
+                        "r2": rabi_param.r2,
+                        "reference_phase": rabi_param.reference_phase,
+                    },
+                )
+            except Exception as e:
+                print(f"Failed to correct Rabi parameters for {target}: {e}")
+                continue
         if save:
             self.save_calib_note()
 
@@ -907,24 +949,28 @@ class Experiment(
                     )
 
         for target, phase in phases.items():
-            state_param = self.calib_note.get_state_param(target)
-            if state_param is not None:
-                reference_phase = state_param.get("reference_phase")
-                if reference_phase is None:
-                    state_param["reference_phase"] = phase
-                    continue
-                else:
-                    centers = state_param["centers"]
-                    phase_diff = phase - reference_phase
-                    for state, points in centers.items():
-                        iq = complex(points[0], points[1])
-                        iq *= np.exp(1j * phase_diff)
-                        centers[str(state)] = [iq.real, iq.imag]
-                    state_param["reference_phase"] = phase
-                self.calib_note.update_state_param(
-                    target,
-                    state_param,
-                )
+            try:
+                state_param = self.calib_note.get_state_param(target)
+                if state_param is not None:
+                    reference_phase = state_param.get("reference_phase")
+                    if reference_phase is None:
+                        state_param["reference_phase"] = phase
+                        continue
+                    else:
+                        centers = state_param["centers"]
+                        phase_diff = phase - reference_phase
+                        for state, points in centers.items():
+                            iq = complex(points[0], points[1])
+                            iq *= np.exp(1j * phase_diff)
+                            centers[str(state)] = [iq.real, iq.imag]
+                        state_param["reference_phase"] = phase
+                    self.calib_note.update_state_param(
+                        target,
+                        state_param,
+                    )
+            except Exception as e:
+                print(f"Failed to correct state parameters for {target}: {e}")
+                continue
         if save:
             self.save_calib_note()
 
@@ -943,22 +989,26 @@ class Experiment(
             cr_labels = list(cr_labels)
 
         for label in cr_labels:
-            control_qubit, target_qubit = self.cr_pair(label)
-            if label not in self.calib_note.cr_params:
+            try:
+                control_qubit, target_qubit = self.cr_pair(label)
+                if label not in self.calib_note.cr_params:
+                    continue
+                result = self.state_tomography(
+                    self.zx90(control_qubit, target_qubit),
+                    shots=shots,
+                )
+                x, y, _ = result[target_qubit]
+                phase = np.arctan2(y, x)
+                current_param = self.calib_note.get_cr_param(label)
+                self.calib_note.update_cr_param(
+                    label,
+                    {
+                        "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
+                    },
+                )
+            except Exception as e:
+                print(f"Failed to correct CR parameters for {label}: {e}")
                 continue
-            result = self.state_tomography(
-                self.zx90(control_qubit, target_qubit),
-                shots=shots,
-            )
-            x, y, _ = result[target_qubit]
-            phase = np.arctan2(y, x)
-            current_param = self.calib_note.get_cr_param(label)
-            self.calib_note.update_cr_param(
-                label,
-                {
-                    "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
-                },
-            )
         if save:
             self.save_calib_note()
 
@@ -967,7 +1017,7 @@ class Experiment(
         qubit_labels: Collection[str] | str | None = None,
         cr_labels: Collection[str] | str | None = None,
         *,
-        save: bool = True,
+        save: bool = False,
     ):
         if qubit_labels is None:
             qubit_labels = self.qubit_labels
@@ -1240,9 +1290,15 @@ class Experiment(
     def reset_awg_and_capunits(
         self,
         box_ids: str | Collection[str] | None = None,
+        qubits: Collection[str] | None = None,
     ):
-        if box_ids is None:
+        box_ids = []
+        if qubits is not None:
+            boxes = self.experiment_system.get_boxes_for_qubits(qubits)
+            box_ids += [box.id for box in boxes]
+        if len(box_ids) == 0:
             box_ids = self.box_ids
+
         self.device_controller.initialize_awg_and_capunits(box_ids)
 
     @deprecated("This method is tentative. It may be removed in the future.")
@@ -1829,10 +1885,15 @@ class Experiment(
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if cr_label in self.calib_note.cr_params:
+        is_low_to_high = self.qubits[control_qubit].index % 4 in [0, 3]
+
+        if (only_low_to_high and is_low_to_high) or (
+            not only_low_to_high and cr_label in self.calib_note.cr_params
+        ):
             if x90 is None:
                 x90 = self.x90(target_qubit)
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
@@ -1870,12 +1931,14 @@ class Experiment(
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule:
         return self.cnot(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
             zx90=zx90,
             x90=x90,
+            only_low_to_high=only_low_to_high,
         )
 
     def cz(
@@ -1885,10 +1948,15 @@ class Experiment(
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        if cr_label in self.calib_note.cr_params:
+        is_low_to_high = self.qubits[control_qubit].index % 4 in [0, 3]
+
+        if (only_low_to_high and is_low_to_high) or (
+            not only_low_to_high and cr_label in self.calib_note.cr_params
+        ):
             if x90 is None:
                 x90 = self.x90(target_qubit)
             zx90 = zx90 or self.zx90(control_qubit, target_qubit)
@@ -1909,6 +1977,7 @@ class Experiment(
             if x90 is None:
                 x90 = self.x90(control_qubit)
             zx90 = zx90 or self.zx90(target_qubit, control_qubit)
+            cr_label = f"{target_qubit}-{control_qubit}"
             with PulseSchedule([control_qubit, cr_label, target_qubit]) as cnot_tc:
                 cnot_tc.call(zx90)
                 cnot_tc.add(target_qubit, VirtualZ(-np.pi / 2))

@@ -1,31 +1,44 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Collection, Final, Literal
 
-from qubecalib import QubeCalib, Sequencer
-from qubecalib.instrument.quel.quel1 import Quel1System
-from qubecalib.instrument.quel.quel1.driver import (
-    Action,
-    AwgId,
-    AwgSetting,
-    RunitId,
-    RunitSetting,
-    TriggerSetting,
-)
-from qubecalib.instrument.quel.quel1.tool import Skew
-from qubecalib.neopulse import (
-    DEFAULT_SAMPLING_PERIOD,
-    CapSampledSequence,
-    GenSampledSequence,
-    Sequence,
-)
-from qubecalib.qubecalib import BoxPool, CaptureParamTools, Converter, WaveSequenceTools
-from quel_clock_master import QuBEMasterClient
-from quel_ic_config import Quel1Box
 from typing_extensions import deprecated
+
+logger = logging.getLogger(__name__)
+
+try:
+    from qubecalib import QubeCalib, Sequencer
+    from qubecalib.instrument.quel.quel1 import Quel1System
+    from qubecalib.instrument.quel.quel1.driver import (
+        Action,
+        AwgId,
+        AwgSetting,
+        RunitId,
+        RunitSetting,
+        TriggerSetting,
+    )
+    from qubecalib.instrument.quel.quel1.tool import Skew
+    from qubecalib.neopulse import (
+        DEFAULT_SAMPLING_PERIOD,
+        CapSampledSequence,
+        GenSampledSequence,
+        Sequence,
+    )
+    from qubecalib.qubecalib import (
+        BoxPool,
+        CaptureParamTools,
+        Converter,
+        WaveSequenceTools,
+    )
+    from quel_clock_master import QuBEMasterClient
+    from quel_ic_config import Quel1Box
+except ImportError as e:
+    logger.info(e)
+
 
 SAMPLING_PERIOD: Final[float] = 2.0  # ns
 
@@ -42,18 +55,36 @@ class DeviceController:
         self,
         config_path: str | Path | None = None,
     ):
-        if config_path is None:
-            self.qubecalib = QubeCalib()
-        else:
-            try:
-                self.qubecalib = QubeCalib(str(config_path))
-            except FileNotFoundError:
-                print(f"Configuration file {config_path} not found.")
-                raise
+        try:
+            if config_path is None:
+                self._qubecalib = QubeCalib()
+            else:
+                try:
+                    self._qubecalib = QubeCalib(str(config_path))
+                except FileNotFoundError:
+                    print(f"Configuration file {config_path} not found.")
+                    raise
+        except Exception:
+            self._qubecalib = None
         self._cap_resource_map: dict | None = None
         self._gen_resource_map: dict | None = None
         self._boxpool: BoxPool | None = None
         self._quel1system: Quel1System | None = None
+
+    @property
+    def qubecalib(self) -> QubeCalib:
+        if self._qubecalib is None:
+            raise ModuleNotFoundError(name="qubecalib")
+        return self._qubecalib
+
+    @property
+    def box_config(self) -> dict[str, Any]:
+        """Get the box configuration."""
+        if self._boxpool is None:
+            box_config = {}
+        else:
+            box_config = self._boxpool._box_config_cache
+        return box_config
 
     @property
     def system_config(self) -> dict[str, Any]:
@@ -380,10 +411,12 @@ class DeviceController:
         # connect to the box
         box = self.qubecalib.create_box(box_name, reconnect=False)
         # relinkup the box if any of the links are down
-        if not all(box.link_status().values()):
-            box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
+
         # TODO: use appropriate noise threshold
+        if not all(box.link_status().values()):
+            box.relinkup(use_204b=False, background_noise_threshold=10000)
         box.reconnect(background_noise_threshold=10000)
+
         # check if all links are up
         status = box.link_status()
         if not all(status.values()):

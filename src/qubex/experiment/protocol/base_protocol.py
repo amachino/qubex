@@ -19,7 +19,7 @@ from ...backend import (
 )
 from ...clifford import Clifford, CliffordGenerator
 from ...measurement import Measurement, StateClassifier
-from ...pulse import PulseSchedule, RampType, VirtualZ, Waveform
+from ...pulse import PulseArray, PulseSchedule, RampType, VirtualZ, Waveform
 from ...typing import TargetMap
 from ..calibration_note import CalibrationNote
 from ..experiment_note import ExperimentNote
@@ -306,6 +306,16 @@ class BaseProtocol(Protocol):
         """Get the reference phases for each target."""
         ...
 
+    def load_property(self, property_name: str) -> dict: ...
+
+    def save_property(
+        self,
+        property_name: str,
+        data: dict,
+        *,
+        save_path: Path | str | None = None,
+    ): ...
+
     def get_rabi_param(
         self,
         target: str,
@@ -411,7 +421,7 @@ class BaseProtocol(Protocol):
         qubit_labels: Collection[str] | str | None = None,
         cr_labels: Collection[str] | str | None = None,
         *,
-        save: bool = True,
+        save: bool = False,
     ):
         """
         Correct the calibration for the given qubits and CRs.
@@ -423,7 +433,7 @@ class BaseProtocol(Protocol):
         cr_labels : Collection[str] | str | None, optional
             CR labels to correct. If None, all CRs are corrected.
         save : bool, optional
-            Whether to save the corrected parameters. Defaults to True.
+            Whether to save the corrected parameters. Defaults to False.
         """
         ...
 
@@ -686,6 +696,7 @@ class BaseProtocol(Protocol):
     def reset_awg_and_capunits(
         self,
         box_ids: str | Collection[str] | None = None,
+        qubits: Collection[str] | None = None,
     ):
         """
         Reset all awg and capture units.
@@ -1066,6 +1077,13 @@ class BaseProtocol(Protocol):
         """
         ...
 
+    def hadamard(
+        self,
+        target: str,
+        *,
+        decomposition: Literal["Z180-Y90", "Y90-X180"] = "Z180-Y90",
+    ) -> PulseArray: ...
+
     def zx90(
         self,
         control_qubit: str,
@@ -1088,6 +1106,7 @@ class BaseProtocol(Protocol):
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule: ...
 
     def cx(
@@ -1106,4 +1125,5 @@ class BaseProtocol(Protocol):
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule: ...

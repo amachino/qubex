@@ -5,6 +5,7 @@ from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
+from typing_extensions import deprecated
 
 from .waveform import Waveform
 
@@ -143,8 +144,14 @@ class Pulse(Waveform):
         new_pulse._values = np.tile(self._values, n)
         return new_pulse
 
+    @deprecated(
+        "The `reversed` method is deprecated, use `inverted` instead.",
+    )
     def reversed(self) -> Pulse:
-        """Returns a copy of the pulse with the time reversed."""
+        return self.inverted()
+
+    def inverted(self) -> Pulse:
+        """Returns a copy of the pulse with the time inverted."""
         new_pulse = deepcopy(self)
         new_pulse._values = np.flip(-1 * self._values)
         return new_pulse

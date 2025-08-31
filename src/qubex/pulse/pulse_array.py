@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import copy
 import logging
-from copy import deepcopy
 from typing import Literal, Sequence
 
 import numpy as np
 import numpy.typing as npt
 import plotly.graph_objects as go
+from typing_extensions import deprecated
 
 from ..style import COLORS
 from .blank import Blank
@@ -29,7 +30,7 @@ class PulseArray(Waveform):
         Scaling factor of the pulse array.
     detuning : float, optional
         Detuning of the pulse array in GHz.
-    phase_shift : float, optional
+    phase : float, optional
         Phase shift of the pulse array in rad.
 
     Examples
@@ -50,7 +51,7 @@ class PulseArray(Waveform):
 
     def __init__(
         self,
-        elements: Sequence = [],
+        elements: Sequence | None = None,
         *,
         scale: float | None = None,
         detuning: float | None = None,
@@ -61,7 +62,9 @@ class PulseArray(Waveform):
             detuning=detuning,
             phase=phase,
         )
-        self._elements: list[Waveform | PhaseShift] = list(elements)
+        self._elements: list[Waveform | PhaseShift] = (
+            list(elements) if elements is not None else []
+        )
 
     def __repr__(self) -> str:
         elements = []
@@ -85,9 +88,9 @@ class PulseArray(Waveform):
     @property
     def flattened_elements(self) -> list[Pulse | PhaseShift]:
         """Returns the flattened list of pulses and phase shifts in the pulse array."""
-        copy = deepcopy(self)
         elements = []
-        for obj in copy.elements:
+        for obj in self.elements:
+            obj = copy.copy(obj)
             if isinstance(obj, (PulseArray, Pulse)):
                 obj._scale *= self.scale
                 obj._phase += self.phase
@@ -208,12 +211,13 @@ class PulseArray(Waveform):
 
     def copy(self) -> PulseArray:
         """Returns a copy of the pulse array."""
-        return deepcopy(self)
+        return copy.deepcopy(self)
 
     def padded(
         self,
         total_duration: float,
         pad_side: Literal["right", "left"] = "right",
+        deepcopy: bool = True,
     ) -> PulseArray:
         """
         Returns a copy of the pulse array with zero padding.
@@ -230,7 +234,10 @@ class PulseArray(Waveform):
             raise ValueError(
                 f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
             )
-        new_array = deepcopy(self)
+        if deepcopy:
+            new_array = copy.deepcopy(self)
+        else:
+            new_array = copy.copy(self)
         blank = Blank(duration=duration)
         if pad_side == "right":
             new_elements = new_array._elements + [blank]
@@ -245,7 +252,7 @@ class PulseArray(Waveform):
         """Returns a copy of the pulse array scaled by the given factor."""
         if scale == 1:
             return self
-        new_array = deepcopy(self)
+        new_array = copy.deepcopy(self)
         new_array._scale *= scale
         return new_array
 
@@ -253,7 +260,7 @@ class PulseArray(Waveform):
         """Returns a copy of the pulse array detuned by the given frequency."""
         if detuning == 0:
             return self
-        new_array = deepcopy(self)
+        new_array = copy.deepcopy(self)
         new_array._detuning += detuning
         return new_array
 
@@ -261,7 +268,7 @@ class PulseArray(Waveform):
         """Returns a copy of the pulse array shifted by the given phase."""
         if phase == 0:
             return self
-        new_array = deepcopy(self)
+        new_array = copy.deepcopy(self)
         new_array._phase += phase
         return new_array
 
@@ -269,22 +276,26 @@ class PulseArray(Waveform):
         """Returns a copy of the pulse array repeated n times."""
         if n == 1:
             return self
-        new_array = deepcopy(self)
+        new_array = copy.deepcopy(self)
         new_array._elements = list(new_array._elements) * n
         return new_array
 
     def added(self, obj: Waveform | PhaseShift) -> PulseArray:
         """Returns a copy of the pulse array with the given waveform or phase shift added."""
-        new_array = deepcopy(self)
+        new_array = copy.deepcopy(self)
         new_array._elements.append(obj)
         return new_array
 
+    @deprecated("The `reversed` method is deprecated, use `inverted` instead.")
     def reversed(self) -> PulseArray:
-        """Returns a copy of the pulse array with the time reversed."""
+        return self.inverted()
+
+    def inverted(self) -> PulseArray:
+        """Returns a copy of the pulse array with the time inverted."""
         new_array = PulseArray()
         for obj in reversed(self.flattened_elements):
             if isinstance(obj, Pulse):
-                new_array.add(obj.reversed())
+                new_array.add(obj.inverted())
             elif isinstance(obj, PhaseShift):
                 new_array.add(PhaseShift(-obj.theta))
             else:

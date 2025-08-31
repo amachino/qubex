@@ -150,6 +150,10 @@ class QuantumSystem:
         return self._chip
 
     @property
+    def chip_graph(self) -> LatticeGraph:
+        return self._graph
+
+    @property
     def hash(self) -> int:
         return self.chip.hash
 

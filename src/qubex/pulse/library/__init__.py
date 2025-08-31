@@ -7,6 +7,7 @@ from .gaussian import Gaussian
 from .raised_cosine import RaisedCosine
 from .rect import Rect
 from .sintegral import Sintegral
+from .xy4 import XY4
 
 __all__ = [
     "Bump",
@@ -19,4 +20,5 @@ __all__ = [
     "RampType",
     "Rect",
     "Sintegral",
+    "XY4",
 ]

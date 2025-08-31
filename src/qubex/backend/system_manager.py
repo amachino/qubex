@@ -85,7 +85,29 @@ class SystemManager:
         self._device_controller = DeviceController()
         self._device_settings = {}
         self._cached_state = StateHash(0, 0, 0)
+        self._rawdata_dir = None
         self._initialized = True
+
+    @property
+    def rawdata_dir(self) -> Path | None:
+        """Get the directory for raw data."""
+        return self._rawdata_dir
+
+    @rawdata_dir.setter
+    def rawdata_dir(self, value: Path | str | None):
+        """
+        Set the directory for raw data.
+
+        Parameters
+        ----------
+        value : Path | str | None
+            The directory path for raw data.
+        """
+        if value is None:
+            self._rawdata_dir = None
+        else:
+            self._rawdata_dir = Path(value)
+            self._rawdata_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def config_loader(self) -> ConfigLoader:
@@ -187,12 +209,19 @@ class SystemManager:
             Whether the state is synced.
         """
         if self.state != self.cached_state:
-            warnings.warn("The current state is different from the cached state. ")
+            # Provide explicit category and stacklevel so users can trace call site.
+            warnings.warn(
+                "The current state is different from the cached state. ",
+                category=UserWarning,
+                stacklevel=2,
+            )
             return False
         device_settings = self._fetch_device_settings(box_ids=box_ids)
         if self.device_settings != device_settings:
             warnings.warn(
-                "The current device settings are different from the fetched device settings. "
+                "The current device settings are different from the fetched device settings. ",
+                category=UserWarning,
+                stacklevel=2,
             )
             return False
         return True
@@ -717,3 +746,30 @@ This operation will overwrite the existing device settings. Do you want to conti
 
             # restore the original box config
             self.device_controller.boxpool._box_config_cache = original_box_cache
+
+    @contextmanager
+    def save_rawdata(
+        self,
+        *,
+        rawdata_dir: Path | str = ".rawdata",
+        tag: str | None = None,
+    ):
+        """
+        Context manager to save raw data to a specified directory.
+
+        Parameters
+        ----------
+        rawdata_dir : Path | str | None, optional
+            Directory to save raw data.
+        tag : str | None, optional
+            Tag to append to the raw data file name, by default None.
+        """
+        original_rawdata_dir = self.rawdata_dir
+        rawdata_dir = Path(rawdata_dir)
+        if tag is not None:
+            rawdata_dir = rawdata_dir / tag
+        self.rawdata_dir = rawdata_dir
+        try:
+            yield
+        finally:
+            self.rawdata_dir = original_rawdata_dir

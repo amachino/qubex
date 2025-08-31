@@ -162,16 +162,16 @@ def test_repeated():
     assert repeated.values["Q01"] == pytest.approx([])
 
 
-def test_reversed():
-    """PulseSchedule should be time-reversed."""
+def test_inverted():
+    """PulseSchedule should be inverted."""
     with PulseSchedule() as ps:
         ps.add("Q00", Pulse([1, 2, 3]))
         ps.add("Q01", Pulse([1j, 2j, 3j]))
 
-    reversed = ps.reversed()
-    assert reversed != ps
-    assert reversed.values["Q00"] == pytest.approx([-3, -2, -1])
-    assert reversed.values["Q01"] == pytest.approx([-3j, -2j, -1j])
+    inverted = ps.inverted()
+    assert inverted != ps
+    assert inverted.values["Q00"] == pytest.approx([-3, -2, -1])
+    assert inverted.values["Q01"] == pytest.approx([-3j, -2j, -1j])
 
 
 def test_get_sequences():
@@ -257,7 +257,7 @@ def test_usecase():
 
     with qx.PulseSchedule(["Q00"]) as ps2:
         ps2.call(ps1)
-        ps2.call(ps1.reversed())
+        ps2.call(ps1.inverted())
 
     seq2 = ps2.get_sampled_sequence("Q00")
     phase2 = ps2.get_final_frame_shift("Q00")
