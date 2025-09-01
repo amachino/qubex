@@ -1,7 +1,6 @@
 """Tests for RabiParam class."""
 
 import numpy as np
-import pytest
 from numpy.testing import assert_allclose
 
 from qubex.experiment.rabi_param import RabiParam

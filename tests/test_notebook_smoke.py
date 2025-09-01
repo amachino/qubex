@@ -2,7 +2,6 @@
 
 import pytest
 import subprocess
-import os
 from pathlib import Path
 
 
@@ -125,7 +124,7 @@ class TestNotebookSmoke:
                 if found_qubex_import:
                     break
                     
-            except Exception as e:
+            except Exception:
                 # Don't fail the test for individual notebook read errors
                 continue
         

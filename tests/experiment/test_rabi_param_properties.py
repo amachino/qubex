@@ -1,6 +1,5 @@
 """Property-based tests for calibration parameter validation."""
 
-import pytest
 import numpy as np
 from hypothesis import given, strategies as st, assume
 

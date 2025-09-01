@@ -1,7 +1,7 @@
 """Integration tests with fake backend for testing experiment workflows."""
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 import numpy as np
 
 from qubex.experiment.rabi_param import RabiParam
@@ -32,7 +32,7 @@ class FakeDeviceController:
     
     def execute_sequencer(self, sequencer, **kwargs):
         """Simulate sequencer execution with fake measurement data."""
-        self.call_log.append(f"execute_sequencer")
+        self.call_log.append("execute_sequencer")
         
         # Generate fake measurement data based on sequencer
         fake_data = self._generate_fake_measurement_data(sequencer)
@@ -130,9 +130,6 @@ class TestExperimentIntegration:
         }
         
         # Execute correction workflow
-        original_q00_angle = rabi_param_q00.angle
-        original_q01_angle = rabi_param_q01.angle
-        
         Experiment.correct_rabi_params(mock_experiment, save=False)
         
         # Verify corrections were applied

@@ -1,8 +1,7 @@
 """Tests for Experiment calibration correction methods."""
 
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 import pytest
-import numpy as np
 
 from qubex.experiment.rabi_param import RabiParam
 
