@@ -40,7 +40,7 @@ dependencies = [
 backend = [
     "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.14",
 ]
-dev = ["pyinstrument", "pytest", "pytest-cov", "ruff"]
+dev = ["pyinstrument", "pytest", "pytest-cov", "ruff", "hypothesis"]
 
 [tool.setuptools.dynamic]
 version = { attr = "qubex.version.get_version" }
@@ -50,6 +50,35 @@ qubex = ["py.typed", "clifford/**/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+source = ["src/qubex"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/__pycache__/*",
+    "*/third_party/*",
+    "*/patches/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+fail_under = 70
+show_missing = true
 
 [tool.ruff.lint]
 ignore = ["E731", "E741"]
