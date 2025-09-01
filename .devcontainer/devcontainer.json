@@ -11,24 +11,17 @@
     "customizations": {
         "vscode": {
             "settings": {
-                "python.defaultInterpreterPath": "/usr/local/bin/python",
-                "python.testing.pytestEnabled": true,
-                "python.testing.pytestArgs": [
-                    "tests"
-                ],
-                "python.analysis.typeCheckingMode": "basic",
-                "terminal.integrated.defaultProfile.linux": "bash"
+                "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python"
             },
             "extensions": [
                 "ms-python.python",
                 "ms-python.vscode-pylance",
-                "charliermarsh.ruff",
                 "ms-toolsai.jupyter",
+                "charliermarsh.ruff",
                 "tamasfe.even-better-toml"
             ]
         }
     },
-    "updateContentCommand": "pip install --upgrade pip==24.0",
     "postCreateCommand": "/bin/bash .devcontainer/postCreate.sh",
     "forwardPorts": [],
     "remoteEnv": {
