@@ -1,0 +1,30 @@
+{
+    "name": "qubex-dev",
+    "image": "mcr.microsoft.com/devcontainers/python:3.12-bookworm",
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/python:1": {
+            "version": "3.12"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python"
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-toolsai.jupyter",
+                "charliermarsh.ruff",
+                "tamasfe.even-better-toml"
+            ]
+        }
+    },
+    "postCreateCommand": "/bin/bash .devcontainer/postCreate.sh",
+    "forwardPorts": [],
+    "remoteEnv": {
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        "PYTHONUNBUFFERED": "1"
+    }
+}

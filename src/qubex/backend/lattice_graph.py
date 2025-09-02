@@ -713,11 +713,13 @@ class LatticeGraph:
         node_color: str | None = None,
         node_linecolor: str | None = None,
         node_textcolor: str | None = None,
+        node_colorscale: str | None = None,
         edge_values: dict | None = None,
         edge_texts: dict | None = None,
         edge_hovertexts: dict | None = None,
         edge_color: str | None = None,
         edge_textcolor: str | None = None,
+        edge_colorscale: str | None = None,
         node_overlay: bool = False,
         edge_overlay: bool = False,
         node_overlay_values: dict | None = None,
@@ -726,11 +728,13 @@ class LatticeGraph:
         node_overlay_color: str | None = None,
         node_overlay_linecolor: str | None = None,
         node_overlay_textcolor: str | None = None,
+        node_overlay_colorscale: str | None = None,
         edge_overlay_values: dict | None = None,
         edge_overlay_texts: dict | None = None,
         edge_overlay_hovertexts: dict | None = None,
         edge_overlay_color: str | None = None,
         edge_overlay_textcolor: str | None = None,
+        edge_overlay_colorscale: str | None = None,
         colorscale: str = "Viridis",
         image_name: str = "graph_data",
         images_dir: str = "./images",
@@ -786,7 +790,7 @@ class LatticeGraph:
             hovertexts=edge_hovertexts,
             color=edge_color,
             textcolor=edge_textcolor,
-            colorscale=colorscale,
+            colorscale=edge_colorscale or colorscale,
         )
         data += qubit_edge_trace
 
@@ -798,7 +802,7 @@ class LatticeGraph:
                 hovertexts=edge_overlay_hovertexts,
                 color=edge_overlay_color,
                 textcolor=edge_overlay_textcolor,
-                colorscale=colorscale,
+                colorscale=edge_overlay_colorscale or colorscale,
             )
             data += qubit_edge_overlay_trace
 
@@ -809,6 +813,7 @@ class LatticeGraph:
             color=node_color,
             linecolor=node_linecolor,
             textcolor=node_textcolor,
+            colorscale=node_colorscale or colorscale,
         )
         data += qubit_node_trace
 
@@ -820,6 +825,7 @@ class LatticeGraph:
                 color=node_overlay_color,
                 linecolor=node_overlay_linecolor,
                 textcolor=node_overlay_textcolor,
+                colorscale=node_overlay_colorscale or colorscale,
             )
             data += qubit_node_overlay_trace
 
@@ -827,7 +833,14 @@ class LatticeGraph:
             data=data,
             layout=layout,
         )
-        fig.show()
+        fig.show(
+            config={
+                "toImageButtonOptions": {
+                    "format": "png",
+                    "scale": 3,
+                },
+            }
+        )
 
         if save_image:
             save_figure_image(
@@ -1142,3 +1155,55 @@ class LatticeGraph:
             data_matrix[row].append(data)
 
         return data_matrix
+
+    def strong_edge_coloring(self) -> list[list[tuple[int, int]]]:
+        """
+        Partition undirected qubit edges into 8 non-adjacent sets (strong edge coloring).
+
+        For a square lattice, the strong chromatic index is 8. We construct
+        8 buckets (0..3 for horizontal edges, 4..7 for vertical edges) such that
+        within each bucket no two edges share a vertex and no two edges are at
+        graph-distance 2 in the line graph (i.e., they do not form a length-2 path).
+
+        Construction
+        ------------
+        Let each node have integer coordinates (x, y).
+        - For a horizontal edge, choose the left endpoint (x, y) as canonical and set
+              bucket = (x + 2 * (y & 1)) % 4
+          (buckets 0..3)
+        - For a vertical edge, choose the lower endpoint (x, y) as canonical and set
+              bucket = 4 + ((y + 2 * (x & 1)) % 4)
+          (buckets 4..7)
+
+        Returns
+        -------
+        list[list[tuple[int, int]]]
+            A list of 8 lists of undirected edges (u, v) with u < v. Each list is a
+            strong matching.
+        """
+        buckets: list[list[tuple[int, int]]] = [[] for _ in range(8)]
+
+        for u, v in self.qubit_undirected_graph.edges():
+            x0, y0 = self.qubit_nodes[u]["coordinates"]
+            x1, y1 = self.qubit_nodes[v]["coordinates"]
+
+            if y0 == y1:  # horizontal edge
+                # choose left endpoint as canonical
+                if x1 < x0:
+                    u, v = v, u
+                    x0, y0, x1, y1 = x1, y1, x0, y0
+                b = (x0 + 2 * (y0 & 1)) % 4  # 0..3
+            elif x0 == x1:  # vertical edge
+                # choose lower endpoint as canonical
+                if y1 < y0:
+                    u, v = v, u
+                    x0, y0, x1, y1 = x1, y1, x0, y0
+                b = 4 + ((y0 + 2 * (x0 & 1)) % 4)  # 4..7
+            else:
+                # Should not occur for grid_2d_graph, but guard anyway
+                continue
+
+            edge = (u, v) if u < v else (v, u)
+            buckets[b].append(edge)
+
+        return buckets

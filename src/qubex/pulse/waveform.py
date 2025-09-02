@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from functools import cached_property
 from typing import Literal
 
 import numpy as np
@@ -70,6 +71,11 @@ class Waveform(ABC):
     def duration(self) -> float:
         """Returns the duration of the waveform in ns."""
         return self.length * self.SAMPLING_PERIOD
+
+    @cached_property
+    def cached_duration(self) -> float:
+        """Returns the cached duration of the waveform."""
+        return self.duration
 
     @property
     def times(self) -> npt.NDArray[np.float64]:

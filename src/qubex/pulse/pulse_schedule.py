@@ -120,14 +120,15 @@ class PulseSchedule:
             return 0
         if not self.is_valid():
             raise ValueError("Inconsistent sequence lengths.")
-        return len(next(iter(self.values.values())))
+        # return len(next(iter(self.values.values())))
+        return int(self.duration // Waveform.SAMPLING_PERIOD)
 
     @property
     def duration(self) -> float:
         """
         Returns the duration of the pulse schedule in ns.
         """
-        return self.length * Waveform.SAMPLING_PERIOD
+        return self._max_offset()
 
     def add(
         self,
@@ -155,7 +156,7 @@ class PulseSchedule:
         self._channels[label].sequence.add(obj)
 
         if isinstance(obj, Waveform):
-            self._offsets[label] += obj.duration
+            self._offsets[label] += obj.cached_duration
 
     def barrier(
         self,
@@ -255,6 +256,29 @@ class PulseSchedule:
                 new_sched.add(label, channel.sequence.padded(total_duration, pad_side))
         return new_sched
 
+    def pad(
+        self,
+        total_duration: float,
+        pad_side: Literal["right", "left"] = "right",
+    ) -> None:
+        """
+        Pads the pulse schedule with blank pulses.
+
+        Parameters
+        ----------
+        total_duration : float
+            Total duration of the pulse schedule in ns.
+        pad_side : {"right", "left"}, optional
+            Side of the zero padding.
+        """
+        duration = total_duration - self.duration
+        if duration < 0:
+            raise ValueError(
+                f"Total duration ({total_duration}) must be greater than the current duration ({self.duration})."
+            )
+        for channel in self._channels.values():
+            channel.sequence.pad(total_duration, pad_side)
+
     def scaled(self, scale: float) -> PulseSchedule:
         """
         Returns a scaled pulse schedule.
@@ -297,6 +321,8 @@ class PulseSchedule:
         new_sched = PulseSchedule()
         for label, channel in self._channels.items():
             new_sched.add(label, channel.sequence.repeated(n))
+            new_sched._channels[label].frequency = channel.frequency
+            new_sched._channels[label].target = channel.target
         return new_sched
 
     @deprecated(
@@ -817,6 +843,25 @@ class PulseSchedule:
             The frames.
         """
         return {label: self.get_frame(label) for label in self.labels}
+
+    def get_offset(
+        self,
+        label: str,
+    ) -> float:
+        """
+        Returns the offset for a specific channel.
+
+        Parameters
+        ----------
+        label : str
+            The channel label.
+
+        Returns
+        -------
+        float
+            The offset.
+        """
+        return self._offsets[label]
 
     def _add_channels_if_not_exist(self, labels: list[str]):
         for label in labels:

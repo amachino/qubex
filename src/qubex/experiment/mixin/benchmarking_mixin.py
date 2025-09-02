@@ -966,7 +966,7 @@ class BenchmarkingMixin(
                         plot=plot,
                         save_image=save_image,
                     )
-                except ValueError as e:
+                except Exception as e:
                     print(f"Failed to benchmark {target}: {e}")
                     continue
 
@@ -1012,6 +1012,6 @@ class BenchmarkingMixin(
                         plot=plot,
                         save_image=save_image,
                     )
-                except ValueError as e:
+                except Exception as e:
                     print(f"Failed to benchmark {target}: {e}")
                     continue

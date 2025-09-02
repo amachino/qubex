@@ -306,6 +306,16 @@ class BaseProtocol(Protocol):
         """Get the reference phases for each target."""
         ...
 
+    def load_property(self, property_name: str) -> dict: ...
+
+    def save_property(
+        self,
+        property_name: str,
+        data: dict,
+        *,
+        save_path: Path | str | None = None,
+    ): ...
+
     def get_rabi_param(
         self,
         target: str,
@@ -1096,6 +1106,7 @@ class BaseProtocol(Protocol):
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule: ...
 
     def cx(
@@ -1114,4 +1125,5 @@ class BaseProtocol(Protocol):
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
+        only_low_to_high: bool = False,
     ) -> PulseSchedule: ...

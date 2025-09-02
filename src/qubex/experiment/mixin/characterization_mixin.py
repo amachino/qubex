@@ -1830,7 +1830,7 @@ class CharacterizationMixin(
                 bgcolor="rgba(255, 255, 255, 0.8)",
             )
         fig2.update_xaxes(title_text="Readout frequency (GHz)", row=2, col=1)
-        fig2.update_yaxes(title_text="Unwraped phase (rad)", row=1, col=1)
+        fig2.update_yaxes(title_text="Unwrapped phase (rad)", row=1, col=1)
         fig2.update_yaxes(title_text="Phase diff (rad)", row=2, col=1)
         fig2.update_layout(
             title=dict(

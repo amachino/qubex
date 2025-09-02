@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 from typing import Collection, Literal
 
@@ -722,7 +723,11 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
         tfreq = target.frequency
         ffreq = target.fine_frequency
         diff = tfreq - ffreq
-        lo = target.channel.lo_freq
+
+        if target.channel.port.lo_freq is None:
+            lo = None
+        else:
+            lo = target.channel.lo_freq
         nco = target.channel.nco_freq
         cnco = target.channel.cnco_freq
         fnco = target.channel.fnco_freq
@@ -731,7 +736,7 @@ def print_target_frequencies(qubits: Collection[str] | str | None = None) -> Non
                 qubit,
                 [
                     target.label,
-                    f"{lo * 1e-6:.0f}",
+                    f"{lo * 1e-6:.0f}" if lo is not None else "",
                     f"{nco * 1e-6:.3f}",
                     f"{cnco * 1e-6:.3f}",
                     f"{fnco * 1e-6:+.3f}",
@@ -837,3 +842,70 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
             style=style,
         )
     console.print(table)
+
+
+def _configure_loopback(mux: str | int, *, enable: bool) -> None:
+    """
+    Internal helper: configure RF switches for all qubits in the given MUX.
+
+    Mapping when enable is True:
+        read_in  -> loop
+        read_out -> block
+        ctrl     -> block
+
+    Mapping when enable is False:
+        read_in  -> open
+        read_out -> pass
+        ctrl     -> pass
+    """
+    qubits = system_manager.experiment_system.quantum_system.get_qubits_in_mux(mux)
+
+    boxes: dict[str, Quel1Box] = {}
+    box_confs: dict[str, dict] = defaultdict(dict)
+
+    # Switch configuration pattern
+    if enable:
+        read_in_conf, read_out_conf, ctrl_conf = "loop", "block", "block"
+    else:
+        read_in_conf, read_out_conf, ctrl_conf = "open", "pass", "pass"
+
+    for qubit in qubits:
+        port_set = system_manager.experiment_system.get_qubit_port_set(qubit.label)
+        if port_set is None:
+            raise ValueError("Qubit port set not found")
+
+        read_in_port = port_set.read_in_port
+        ctrl_port = port_set.ctrl_port
+        read_out_port = port_set.read_out_port
+
+        # Fetch / cache boxes
+        if read_in_port.box_id not in boxes:
+            boxes[read_in_port.box_id] = get_quel1_box(read_in_port.box_id)
+        if read_out_port.box_id not in boxes:
+            boxes[read_out_port.box_id] = get_quel1_box(read_out_port.box_id)
+        if ctrl_port.box_id not in boxes:
+            boxes[ctrl_port.box_id] = get_quel1_box(ctrl_port.box_id)
+
+        # Store configuration entries
+        box_confs[read_in_port.box_id][read_in_port.number] = read_in_conf
+        box_confs[read_out_port.box_id][read_out_port.number] = read_out_conf
+        box_confs[ctrl_port.box_id][ctrl_port.number] = ctrl_conf
+
+    action = "enabled" if enable else "disabled"
+    try:
+        for box_id, confs in box_confs.items():
+            boxes[box_id].config_rfswitches(confs)
+        print(f"Loopback {action} for MUX#{mux} {[q.label for q in qubits]}.")
+        print(dict(box_confs))
+    except Exception as e:
+        console.print(f"Error {action} loopback: {e}")
+
+
+def enable_loopback(*, mux: str | int):
+    """Enable loopback for the specified MUX (backward-compatible API)."""
+    _configure_loopback(mux, enable=True)
+
+
+def disable_loopback(*, mux: str | int):
+    """Disable loopback for the specified MUX (backward-compatible API)."""
+    _configure_loopback(mux, enable=False)

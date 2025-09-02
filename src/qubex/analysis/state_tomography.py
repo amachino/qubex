@@ -171,9 +171,9 @@ def plot_ghz_state_tomography(
     )
 
     if n_qubits == 2:
-        title = f"Bell State Tomography: {'-'.join(qubits)}"
+        title = f"Bell state tomography: {'-'.join(qubits)}"
     else:
-        title = f"GHZ State Tomography: {'-'.join(qubits)}"
+        title = f"GHZ state tomography: {'-'.join(qubits)}"
 
     fig.update_layout(
         title=dict(

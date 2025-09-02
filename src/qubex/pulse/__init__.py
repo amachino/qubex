@@ -1,6 +1,7 @@
 from .blank import Blank
 from .library import (
     CPMG,
+    XY4,
     Bump,
     CrossResonance,
     Drag,
@@ -36,6 +37,7 @@ __all__ = [
     "Sintegral",
     "VirtualZ",
     "Waveform",
+    "XY4",
 ]
 
 

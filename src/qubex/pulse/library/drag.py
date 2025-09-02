@@ -25,7 +25,7 @@ class Drag(Pulse):
     beta : float
         DRAG correction coefficient.
     type : Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"], optional
-        Type of the pulse. Default is "gaussian".
+        Type of the pulse. Default is "Gaussian".
 
     Examples
     --------

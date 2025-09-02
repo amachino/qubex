@@ -10,8 +10,6 @@ from typing import Collection, Final, Literal
 
 import numpy as np
 import numpy.typing as npt
-from qubecalib import Sequencer
-from qubecalib import neopulse as pls
 
 from ..backend import (
     SAMPLING_PERIOD,
@@ -25,7 +23,6 @@ from ..backend import (
     Target,
 )
 from ..backend.dc_voltage_controller import dc_voltage
-from ..backend.sequencer_mod import SequencerMod
 from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from ..typing import IQArray, TargetMap
 from .measurement_result import (
@@ -35,6 +32,16 @@ from .measurement_result import (
     MultipleMeasureResult,
 )
 from .state_classifier import StateClassifier
+
+logger = logging.getLogger(__name__)
+
+try:
+    from qubecalib import Sequencer
+    from qubecalib import neopulse as pls
+
+    from ..backend.sequencer_mod import SequencerMod
+except ImportError as e:
+    logger.info(e)
 
 DEFAULT_SHOTS: Final = 1024
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
@@ -51,8 +58,6 @@ EXTRA_SUM_SECTION_LENGTH = WORD_LENGTH * 4  # samples
 EXTRA_POST_BLANK_LENGTH = WORD_LENGTH  # samples
 EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # samples
 EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
-
-logger = logging.getLogger(__name__)
 
 
 class Measurement:
@@ -453,6 +458,7 @@ class Measurement:
             waveforms={target: np.zeros(0) for target in targets},
             mode="avg",
             shots=1,
+            readout_duration=duration,
             readout_amplitudes={target: 0 for target in targets},
         )
 
@@ -540,11 +546,15 @@ class Measurement:
             integral_mode=measure_mode.integral_mode,
             enable_sum=enable_dsp_sum,
         )
-        return self._create_measure_result(
+        result = self._create_measure_result(
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=shots,
         )
+        rawdata_dir = self.system_manager.rawdata_dir
+        if rawdata_dir is not None:
+            result.save(data_dir=rawdata_dir)
+        return result
 
     def execute(
         self,
@@ -635,11 +645,15 @@ class Measurement:
             integral_mode=measure_mode.integral_mode,
             enable_sum=enable_dsp_sum,
         )
-        return self._create_multiple_measure_result(
+        result = self._create_multiple_measure_result(
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=shots,
         )
+        rawdata_dir = self.system_manager.rawdata_dir
+        if rawdata_dir is not None:
+            result.save(data_dir=rawdata_dir)
+        return result
 
     @cache
     def readout_pulse(
@@ -1000,7 +1014,7 @@ class Measurement:
             raise ValueError("No readout targets in the pulse schedule.")
 
         # WORKAROUND: add some blank for the first extra capture by left padding
-        schedule = schedule.padded(
+        schedule.pad(
             total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
             pad_side="left",
         )
@@ -1009,7 +1023,7 @@ class Measurement:
         sequence_duration = (
             math.ceil(schedule.duration / BLOCK_DURATION + 1) * BLOCK_DURATION
         )
-        schedule = schedule.padded(
+        schedule.pad(
             total_duration=sequence_duration,
             pad_side="right",
         )
@@ -1082,7 +1096,7 @@ class Measurement:
             schedule.plot()
 
         # get sampled sequences
-        sampled_sequences = schedule.get_sampled_sequences()
+        sampled_sequences = schedule.get_sampled_sequences(copy=False)
 
         # adjust the phase of the readout pulses
         for target, ranges in readout_ranges.items():
@@ -1311,7 +1325,7 @@ class Measurement:
         return MeasureResult(
             mode=measure_mode,
             data=measure_data,
-            config=backend_result.config,
+            config=self.device_controller.box_config,
         )
 
     def _create_multiple_measure_result(
@@ -1367,7 +1381,7 @@ class Measurement:
         return MultipleMeasureResult(
             mode=measure_mode,
             data=dict(measure_data),
-            config=backend_result.config,
+            config=self.device_controller.box_config,
         )
 
     @staticmethod
