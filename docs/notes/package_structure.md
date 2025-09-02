@@ -7,34 +7,55 @@
 ## トップレベルに `qubex` 以外を置く主なケース
 
 1. 複数パッケージ配布 (マルチパッケージ構成)
-	- 例: `qubex`, `qubex_labtools`, `qubex_plugins` を同一リポで同時にリリース。
-	- `pyproject.toml` の `packages` または自動発見で複数指定。
+
+- 例: `qubex`, `qubex_labtools`, `qubex_plugins` を同一リポで同時にリリース。
+- `pyproject.toml` の `packages` または自動発見で複数指定。
+
 2. 名前空間パッケージ (PEP 420) の一部
-	- 組織名や共通 prefix を共有する複数パッケージ群を増やすとき。
-	- 例: `company.physics`, `company.control`。`__init__.py` を置かず implicit namespace に。
+
+- 組織名や共通 prefix を共有する複数パッケージ群を増やすとき。
+- 例: `company.physics`, `company.control`。`__init__.py` を置かず implicit namespace に。
+
 3. プラグイン / オプション機能の分離
-	- コア依存を軽く保ち、追加依存を extras_require で切り替えたい。
-	- 例: `qubex_sim`, `qubex_cloud`, `qubex_extras`。
+
+- コア依存を軽く保ち、追加依存を extras_require で切り替えたい。
+- 例: `qubex_sim`, `qubex_cloud`, `qubex_extras`。
+
 4. 高速化ネイティブ拡張の分離
-	- C / Cython / Rust (maturin) 拡張をビルド要件ごと切り離し。
-	- 例: `qubex_core_ext` や `_qubex_native`。
+
+- C / Cython / Rust (maturin) 拡張をビルド要件ごと切り離し。
+- 例: `qubex_core_ext` や `_qubex_native`。
+
 5. 自動生成コード (API / プロトコル) の隔離
-	- gRPC / OpenAPI / protobuf / FlatBuffers など regen されるコードをまとめる。
-	- 例: `qubex_proto`。
+
+- gRPC / OpenAPI / protobuf / FlatBuffers など regen されるコードをまとめる。
+- 例: `qubex_proto`。
+
 6. データ専用パッケージ
-	- 大きくはない静的リソース (YAML, JSON, テンプレート) を importlib.resources で読む目的。
-	- 例: `qubex_data`。
+
+- 大きくはない静的リソース (YAML, JSON, テンプレート) を importlib.resources で読む目的。
+- 例: `qubex_data`。
+
 7. 旧 API / 互換レイヤ保持
-	- 段階的廃止を進める旧実装を `qubex_legacy` などに分離し DeprecationWarning を集中管理。
+
+- 段階的廃止を進める旧実装を `qubex_legacy` などに分離し DeprecationWarning を集中管理。
+
 8. CLI 集約
-	- 複数のエントリポイントを提供しコア依存方向を一方向にしたい。
-	- 例: `qubex_cli`。
+
+- 複数のエントリポイントを提供しコア依存方向を一方向にしたい。
+- 例: `qubex_cli`。
+
 9. 重い依存を持つシミュレータ / フェイクバックエンド
-	- コアインストールを軽量化したいケースで `qubex_simulator` など。
+
+- コアインストールを軽量化したいケースで `qubex_simulator` など。
+
 10. ベンダリング (例外的)
-	- 外部ライブラリをフォーク同梱。推奨: `qubex/_vendor/` にまとめトップ直下 `_vendor` は極力避ける。
+
+- 外部ライブラリをフォーク同梱。推奨: `qubex/_vendor/` にまとめトップ直下 `_vendor` は極力避ける。
+
 11. 実験的機能の隔離
-	- 安定 API と明確に境界。例: `qubex_experimental`。
+
+- 安定 API と明確に境界。例: `qubex_experimental`。
 
 ## まずは `qubex/` 配下に入れるべきもの
 
@@ -84,10 +105,10 @@ all = ["qubex[sim,cli]"]
 
 ```
 分離理由が明確? ── No ─→ qubex/ 内に配置
-			 │
-			 Yes
-			 │ (独立リリース or 重依存 or 生成物 or 旧API?)
-			 ▼
+    │
+    Yes
+    │ (独立リリース or 重依存 or 生成物 or 旧API?)
+    ▼
 トップレベル新パッケージ作成 → extras 設定 / ドキュメント整備
 ```
 
@@ -100,4 +121,3 @@ all = ["qubex[sim,cli]"]
 ---
 
 このドキュメントは `src/` レイアウト運用ガイドラインの基準点として維持する。更新が必要になった場合は日付と変更点を追記すること。
-
