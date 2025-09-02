@@ -19,5 +19,14 @@
     "notebook.codeActionsOnSave": {
         "notebook.source.fixAll": "explicit",
         "notebook.source.organizeImports": "explicit"
-    }
+    },
+    "markdownlint.config": {
+        "MD024": false,
+        "MD029": false,
+        "MD033": false,
+        "MD040": false,
+        "MD041": false,
+        "MD047": false
+    },
+    "markdown.validate.referenceLinks.enabled": "ignore"
 }
