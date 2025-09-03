@@ -1,0 +1,36 @@
+# Default template configuration for paperx
+documentclass: "article"
+documentclass_options:
+  - "11pt"
+  - "a4paper"
+  - "twocolumn"
+
+# Document structure guidance
+structure:
+  sections:
+    - "Introduction"
+    - "Methods" 
+    - "Results"
+    - "Discussion"
+    - "Conclusion"
+  
+  include_abstract: true
+  include_keywords: true
+  include_acknowledgments: true
+
+# Template-specific preamble additions
+preamble_additions:
+  - "% Default template for academic papers"
+  - "\\setcounter{secnumdepth}{3}"
+  - "\\setcounter{tocdepth}{3}"
+
+# Style preferences
+style:
+  line_spacing: "single"
+  paragraph_spacing: "6pt"
+  section_numbering: true
+  
+# Bibliography style
+bibliography:
+  style: "plain"
+  title: "References"

@@ -1,0 +1,43 @@
+# Example macros configuration for paperx
+commands:
+  # Simple command definitions
+  qubex: "\\texttt{qubex}"
+  python: "\\texttt{Python}"
+  latex: "\\LaTeX"
+  
+  # Commands with arguments
+  code:
+    args: 1
+    definition: "\\texttt{#1}"
+  
+  emphasis:
+    args: 1
+    definition: "\\textbf{\\textit{#1}}"
+    
+  qubit:
+    args: 1
+    definition: "\\ket{#1}"
+
+# Environment definitions
+environments:
+  theorem:
+    begin: "\\textbf{Theorem.} \\itshape"
+    end: "\\upshape"
+  
+  proof:
+    begin: "\\textbf{Proof.} "
+    end: " \\qed"
+
+# Direct LaTeX code for complex macros
+direct_latex:
+  - "\\newcommand{\\ket}[1]{|#1\\rangle}"
+  - "\\newcommand{\\bra}[1]{\\langle#1|}"
+  - "\\newcommand{\\braket}[2]{\\langle#1|#2\\rangle}"
+  - "\\newcommand{\\expect}[1]{\\langle#1\\rangle}"
+  
+# Mathematical shortcuts
+math_commands:
+  real: "\\mathbb{R}"
+  complex: "\\mathbb{C}"
+  naturals: "\\mathbb{N}"
+  integers: "\\mathbb{Z}"

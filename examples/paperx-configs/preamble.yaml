@@ -1,0 +1,29 @@
+# Example preamble configuration for paperx
+packages:
+  - amsmath
+  - amsfonts
+  - amssymb
+  - graphicx
+  - hyperref
+  - cite
+  - name: geometry
+    options:
+      - margin=1in
+  - name: babel
+    options:
+      - english
+
+# Font and encoding
+fonts:
+  main: "Times New Roman"
+  encoding: "utf8"
+
+# Page layout
+layout:
+  margin: "1in"
+  spacing: "1.5"
+  
+# Additional custom preamble
+custom_additions:
+  - "\\setlength{\\parindent}{0pt}"
+  - "\\setlength{\\parskip}{6pt}"

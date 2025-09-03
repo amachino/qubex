@@ -13,6 +13,7 @@ except ImportError:
 
 try:
     from . import pulse
+    from . import paperx
     from .analysis import fitting as fit
     from .analysis import visualization as viz
     from .experiment import Experiment
@@ -27,6 +28,7 @@ __all__ = [
     "fit",
     "viz",
     "pulse",
+    "paperx",
     "Experiment",
     "Blank",
     "Pulse",

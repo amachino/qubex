@@ -1,0 +1,38 @@
+# IEEE conference template for paperx
+documentclass: "IEEEtran"
+documentclass_options:
+  - "conference"
+  - "10pt"
+  - "a4paper"
+
+# Document structure for IEEE format
+structure:
+  sections:
+    - "Introduction"
+    - "Related Work"
+    - "Methodology" 
+    - "Experimental Results"
+    - "Conclusion"
+  
+  include_abstract: true
+  include_keywords: true
+  include_acknowledgments: false  # IEEE handles this differently
+
+# Template-specific preamble additions
+preamble_additions:
+  - "% IEEE Conference template"
+  - "\\IEEEoverridecommandlockouts"
+  - "\\textwidth=178mm"
+  - "\\columnsep=5.8mm"
+
+# Style preferences for IEEE
+style:
+  line_spacing: "single"
+  paragraph_spacing: "0pt"
+  section_numbering: true
+  figure_placement: "top"
+  
+# Bibliography style for IEEE
+bibliography:
+  style: "IEEEtran"
+  title: "References"
