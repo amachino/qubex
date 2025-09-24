@@ -23,7 +23,7 @@ dependencies = [
     "networkx ~= 3.0",
     "numpy ~= 1.0",
     "optax ~= 0.0",
-    "pip == 24.0",
+    "pip == 25.2",
     "plotly ~= 5.23",
     "pydantic ~= 2.0",
     "pyserial ~= 3.5",
