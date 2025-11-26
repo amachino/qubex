@@ -1626,7 +1626,7 @@ class Experiment(
     ) -> float:
         qubit = Target.qubit_label(target)
         if rabi_amplitude_ratio is None:
-            rabi_param = self.rabi_params.get(target)
+            rabi_param = self.get_rabi_param(target)
             if self.targets[target].type == TargetType.CTRL_EF:
                 default_amplitude = self.params.get_ef_control_amplitude(qubit)
             else:
@@ -1687,7 +1687,7 @@ class Experiment(
         if default_amplitude is None:
             raise ValueError(f"Control amplitude for {target} is not defined.")
 
-        rabi_param = self.rabi_params.get(target)
+        rabi_param = self.get_rabi_param(target)
         if rabi_param is None:
             raise ValueError(f"Rabi parameters for {target} are not stored.")
 
