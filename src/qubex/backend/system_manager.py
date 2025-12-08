@@ -265,6 +265,9 @@ class SystemManager:
         self,
         box_ids: list[str],  # deprecated
     ):
+        if self.device_controller.qubecalib is None:
+            print("qubecalib is not available. Skipping skew file loading.")
+            return
         skew_file_path = self.config_loader.config_path / "skew.yaml"
         if not Path(skew_file_path).exists():
             print(f"Skew file not found: {skew_file_path}")
@@ -510,6 +513,9 @@ This operation will overwrite the existing device settings. Do you want to conti
         control_params = experiment_system.control_params
 
         qc = self.device_controller.qubecalib
+        if qc is None:
+            print("qubecalib is not available. Skipping device controller update.")
+            return
 
         qc.define_clockmaster(
             ipaddr=control_system.clock_master_address,

@@ -72,9 +72,7 @@ class DeviceController:
         self._quel1system: Quel1System | None = None
 
     @property
-    def qubecalib(self) -> QubeCalib:
-        if self._qubecalib is None:
-            raise ModuleNotFoundError(name="qubecalib")
+    def qubecalib(self) -> QubeCalib | None:
         return self._qubecalib
 
     @property
@@ -89,12 +87,16 @@ class DeviceController:
     @property
     def system_config(self) -> dict[str, Any]:
         """Get the system configuration."""
+        if self.qubecalib is None:
+            return {}
         config = self.qubecalib.system_config_database.asdict()
         return config
 
     @property
     def system_config_json(self) -> str:
         """Get the system configuration as JSON."""
+        if self.qubecalib is None:
+            return "{}"
         config = self.qubecalib.system_config_database.asjson()
         return config
 
@@ -191,6 +193,8 @@ class DeviceController:
         int
             Hash of the system configuration.
         """
+        if self.qubecalib is None:
+            return 0
         return hash(self.qubecalib.system_config_database.asjson())
 
     def _check_box_availabilty(self, box_name: str):
@@ -200,6 +204,8 @@ class DeviceController:
             )
 
     def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
+        if self.qubecalib is None:
+            return {}
         db = self.qubecalib.system_config_database
         result = {}
         for target in targets:
@@ -255,6 +261,8 @@ class DeviceController:
     ) -> dict[str, dict]:
         if self._boxpool is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
+        if self.qubecalib is None:
+            return {}
         db = self.qubecalib.system_config_database
         result = {}
         for target in db._target_settings:
@@ -329,6 +337,9 @@ class DeviceController:
         box_names : str | list[str], optional
             List of box names to connect to. If None, connect to all available boxes.
         """
+        if self.qubecalib is None:
+            logger.warning("qubecalib is not available. Skipping connection.")
+            return
         if box_names is None:
             box_names = self.available_boxes
         if isinstance(box_names, str):
@@ -338,7 +349,7 @@ class DeviceController:
         self._cap_resource_map = self.create_resource_map("cap")
         self._gen_resource_map = self.create_resource_map("gen")
 
-    def get_box(self, box_name: str, reconnect: bool = True) -> Quel1Box:
+    def get_box(self, box_name: str, reconnect: bool = True) -> Quel1Box | None:
         """
         Get the box object.
 
@@ -349,14 +360,17 @@ class DeviceController:
 
         Returns
         -------
-        Quel1Box
-            The box object.
+        Quel1Box | None
+            The box object, or None if qubecalib is not available.
 
         Raises
         ------
         ValueError
             If the box is not in the available boxes.
         """
+        if self.qubecalib is None:
+            logger.warning("qubecalib is not available. Cannot get box.")
+            return None
         self._check_box_availabilty(box_name)
         if self._boxpool is None or box_name not in self._boxpool._boxes:
             box = self.qubecalib.create_box(box_name, reconnect=reconnect)
