@@ -152,15 +152,18 @@ class DeviceController:
         return list(self.box_settings.keys())
 
     @property
-    def boxpool(self) -> BoxPool:
+    def boxpool(self) -> BoxPool | None:
         """
         Get the boxpool.
 
         Returns
         -------
-        BoxPool
-            The boxpool.
+        BoxPool | None
+            The boxpool, or None if in mock mode.
         """
+        if self._mock_mode:
+            logger.info("Running in mock mode. Boxpool is not available.")
+            return None
         if self._boxpool is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
         return self._boxpool
@@ -610,8 +613,14 @@ class DeviceController:
         ValueError
             If the box is not in the available boxes.
         """
+        if self._mock_mode:
+            logger.info(f"Running in mock mode. Cannot dump box {box_name}.")
+            return {}
+            
         try:
             box = self.get_box(box_name)
+            if box is None:
+                return {}
             box_config = box.dump_box()
         except Exception as e:
             print(f"Failed to dump box {box_name}. Error: {e}")

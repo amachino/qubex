@@ -1273,6 +1273,10 @@ class Experiment(
         *,
         sync_clocks: bool = True,
     ) -> None:
+        if self.device_controller.mock_mode:
+            print("Running in mock mode. Skipping hardware connection.")
+            return
+            
         try:
             self._measurement.connect(sync_clocks=sync_clocks)
             print("Successfully connected.")

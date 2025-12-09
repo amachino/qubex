@@ -498,12 +498,17 @@ This operation will overwrite the existing device settings. Do you want to conti
         self,
         box_ids: Sequence[str],
     ):
+        if self.device_controller.mock_mode:
+            # In mock mode, return empty settings
+            return {box_id: {"ports": {}} for box_id in box_ids}
+            
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         result: dict = {}
         for box in boxes:
             # TODO: run this in a separate thread
             box_config = self.device_controller.dump_box(box.id)
-            self.device_controller.boxpool._box_config_cache[box.id] = box_config
+            if self.device_controller.boxpool is not None:
+                self.device_controller.boxpool._box_config_cache[box.id] = box_config
             result[box.id] = {"ports": {}}
             for port in box.ports:
                 if port.type not in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
