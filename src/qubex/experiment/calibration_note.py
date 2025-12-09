@@ -359,3 +359,31 @@ class CalibrationNote(ExperimentNote):
             if v.get("timestamp") is None:
                 v["timestamp"] = timestamp
         super().put(key, value)
+
+    def load_from_dict(self, data: dict):
+        """Load calibration data directly from dictionary.
+        
+        Parameters
+        ----------
+        data : dict
+            Calibration data dictionary with the same structure as the calibration note file.
+        """
+        if not isinstance(data, dict):
+            raise ValueError("Input data must be a dictionary")
+        
+        # Clear existing data
+        self.clear()
+        
+        # Load each section of calibration data
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        for key, value in data.items():
+            if isinstance(value, dict):
+                # Add timestamp to each parameter if not present
+                for param_key, param_value in value.items():
+                    if isinstance(param_value, dict) and "timestamp" not in param_value:
+                        param_value["timestamp"] = timestamp
+                self.put(key, value)
+            else:
+                # Handle non-dict values directly
+                super().put(key, value)

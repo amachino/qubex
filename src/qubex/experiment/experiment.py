@@ -695,8 +695,33 @@ class Experiment(
     def reference_phases(self) -> dict[str, float]:
         return self.calib_note._reference_phases
 
-    def load_property(self, property_name: str) -> dict:
-        property_path = self.property_dir / self.chip_id / f"{property_name}.json"
+    def load_property(self, property_name: str, source: str | dict | None = None) -> dict:
+        """Load property from file path or dictionary.
+        
+        Parameters
+        ----------
+        property_name : str
+            Name of the property to load
+        source : str | dict | None
+            Source to load from:
+            - str: file path
+            - dict: property data directly  
+            - None: use default path
+            
+        Returns
+        -------
+        dict
+            Property data
+        """
+        if isinstance(source, dict):
+            return source
+        elif source is None:
+            # Existing behavior - load from default path
+            property_path = self.property_dir / self.chip_id / f"{property_name}.json"
+        else:
+            # Load from specified path
+            property_path = Path(source)
+        
         if property_path.exists():
             with open(property_path, "r") as f:
                 property_data = json.load(f)
@@ -724,23 +749,41 @@ class Experiment(
         except Exception as e:
             raise IOError(f"Failed to save property '{property_name}': {e}")
 
-    def load_calib_note(self, path: Path | str | None = None):
+    def load_calib_note(self, source: Path | str | dict | None = None):
+        """Load calibration data from path or dictionary.
+        
+        Parameters
+        ----------
+        source : Path | str | dict | None
+            Source to load from:
+            - Path/str: file path to calibration note
+            - dict: calibration data directly
+            - None: use default path
         """
-        Load the calibration data from the given path or from the default calibration note file.
-        """
-        if path is None:
+        if isinstance(source, dict):
+            try:
+                self._calib_note.load_from_dict(source)
+                print("Calibration data loaded from dictionary")
+            except Exception as e:
+                raise CalibrationMissingError(f"Failed to load calibration data from dict: {e}") from e
+            return
+        
+        # Existing file-based loading logic
+        if source is None:
             # TODO: Make this path configurable
-            path = (
+            source = (
                 f"/home/shared/qubex-config/{self.chip_id}/calibration/calib_note.json"
             )
-        if not Path(path).exists():
-            raise FileNotFoundError(f"Calibration file '{path}' does not exist.")
+        
+        if not Path(source).exists():
+            raise FileNotFoundError(f"Calibration file '{source}' does not exist.")
+        
         try:
-            self._calib_note.load(path)
-            print(f"Calibration data loaded from {path}")
+            self._calib_note.load(source)
+            print(f"Calibration data loaded from {source}")
         except Exception as e:
             raise CalibrationMissingError(
-                f"Failed to load calibration data from {path}: {e}"
+                f"Failed to load calibration data from {source}: {e}"
             ) from e
 
     def get_qubit_label(self, index: int) -> str:
