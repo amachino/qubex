@@ -141,7 +141,7 @@ class Experiment(
         Configuration mode of the experiment. Defaults to "ge-cr-cr".
     mock_mode : bool, optional
         Enable mock mode to disable qubecalib functionality. If None, determined by
-        environment variable QUBEX_MOCK_MODE or auto-detected when qubecalib is unavailable.
+        environment variable MOCK_MODE or auto-detected when qubecalib is unavailable.
 
     Examples
     --------
@@ -1276,7 +1276,7 @@ class Experiment(
         if self.device_controller.mock_mode:
             print("Running in mock mode. Skipping hardware connection.")
             return
-            
+
         try:
             self._measurement.connect(sync_clocks=sync_clocks)
             print("Successfully connected.")

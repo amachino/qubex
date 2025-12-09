@@ -59,10 +59,10 @@ class DeviceController:
     ):
         # Determine mock mode: explicit arg > environment variable > auto-detect
         if mock_mode is None:
-            mock_mode = os.getenv("QUBEX_MOCK_MODE", "false").lower() == "true"
-        
+            mock_mode = os.getenv("MOCK_MODE", "false").lower() == "true"
+
         self._mock_mode = mock_mode
-        
+
         if mock_mode:
             logger.info("Running in mock mode. qubecalib functionality is disabled.")
             self._qubecalib = None
@@ -77,10 +77,12 @@ class DeviceController:
                         print(f"Configuration file {config_path} not found.")
                         raise
             except Exception:
-                logger.warning("qubecalib is not available. Enabling mock mode automatically.")
+                logger.warning(
+                    "qubecalib is not available. Enabling mock mode automatically."
+                )
                 self._mock_mode = True
                 self._qubecalib = None
-        
+
         self._cap_resource_map: dict | None = None
         self._gen_resource_map: dict | None = None
         self._boxpool: BoxPool | None = None
@@ -367,11 +369,11 @@ class DeviceController:
         if self._mock_mode:
             logger.info("Running in mock mode. Skipping hardware connection.")
             return
-        
+
         if self.qubecalib is None:
             logger.warning("qubecalib is not available. Skipping connection.")
             return
-            
+
         if box_names is None:
             box_names = self.available_boxes
         if isinstance(box_names, str):
@@ -403,11 +405,11 @@ class DeviceController:
         if self._mock_mode:
             logger.info("Running in mock mode. Cannot get box.")
             return None
-            
+
         if self.qubecalib is None:
             logger.warning("qubecalib is not available. Cannot get box.")
             return None
-            
+
         self._check_box_availabilty(box_name)
         if self._boxpool is None or box_name not in self._boxpool._boxes:
             box = self.qubecalib.create_box(box_name, reconnect=reconnect)
@@ -616,7 +618,7 @@ class DeviceController:
         if self._mock_mode:
             logger.info(f"Running in mock mode. Cannot dump box {box_name}.")
             return {}
-            
+
         try:
             box = self.get_box(box_name)
             if box is None:
