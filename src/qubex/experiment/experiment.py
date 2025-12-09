@@ -139,6 +139,9 @@ class Experiment(
         Type of the state classifier. Defaults to "gmm".
     configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
         Configuration mode of the experiment. Defaults to "ge-cr-cr".
+    mock_mode : bool, optional
+        Enable mock mode to disable qubecalib functionality. If None, determined by
+        environment variable QUBEX_MOCK_MODE or auto-detected when qubecalib is unavailable.
 
     Examples
     --------
@@ -169,12 +172,14 @@ class Experiment(
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        mock_mode: bool | None = None,
     ):
         self._load_config(
             chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            mock_mode=mock_mode,
         )
         qubits = self._create_qubit_labels(
             muxes=muxes,
@@ -224,6 +229,7 @@ class Experiment(
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
+        mock_mode: bool | None = None,
     ):
         """Load the configuration files."""
         self.system_manager.load(
@@ -231,6 +237,7 @@ class Experiment(
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            mock_mode=mock_mode,
         )
 
     def _create_qubit_labels(
@@ -287,6 +294,7 @@ class Experiment(
         print("config:", self.config_path)
         print("params:", self.params_path)
         print("chip:", self.chip_id, f"({self.chip.name})")
+        print("mock_mode:", self.device_controller.mock_mode)
         print("qubits:", self.qubit_labels)
         print("muxes:", self.mux_labels)
         print("boxes:", self.box_ids)

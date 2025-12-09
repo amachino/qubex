@@ -234,6 +234,7 @@ class SystemManager:
         params_dir: Path | str | None,
         targets_to_exclude: list[str] | None = None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        mock_mode: bool | None = None,
     ):
         """
         Load the experiment system and device controller.
@@ -250,6 +251,8 @@ class SystemManager:
             List of target labels to exclude, by default None.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             Configuration mode, by default "ge-cr-cr".
+        mock_mode : bool, optional
+            Enable mock mode to disable qubecalib functionality, by default None.
         """
         self._config_loader = ConfigLoader(
             chip_id=chip_id,
@@ -260,6 +263,13 @@ class SystemManager:
         )
         experiment_system = self.config_loader.get_experiment_system(chip_id)
         self.set_experiment_system(experiment_system)
+        
+        # Initialize device controller with mock_mode
+        if not hasattr(self, '_device_controller') or self._device_controller is None:
+            self._device_controller = DeviceController(mock_mode=mock_mode)
+        elif mock_mode is not None and hasattr(self._device_controller, '_mock_mode'):
+            # Update mock mode if needed
+            self._device_controller._mock_mode = mock_mode
 
     def load_skew_file(
         self,

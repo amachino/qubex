@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,18 +55,32 @@ class DeviceController:
     def __init__(
         self,
         config_path: str | Path | None = None,
+        mock_mode: bool | None = None,
     ):
-        try:
-            if config_path is None:
-                self._qubecalib = QubeCalib()
-            else:
-                try:
-                    self._qubecalib = QubeCalib(str(config_path))
-                except FileNotFoundError:
-                    print(f"Configuration file {config_path} not found.")
-                    raise
-        except Exception:
+        # Determine mock mode: explicit arg > environment variable > auto-detect
+        if mock_mode is None:
+            mock_mode = os.getenv("QUBEX_MOCK_MODE", "false").lower() == "true"
+        
+        self._mock_mode = mock_mode
+        
+        if mock_mode:
+            logger.info("Running in mock mode. qubecalib functionality is disabled.")
             self._qubecalib = None
+        else:
+            try:
+                if config_path is None:
+                    self._qubecalib = QubeCalib()
+                else:
+                    try:
+                        self._qubecalib = QubeCalib(str(config_path))
+                    except FileNotFoundError:
+                        print(f"Configuration file {config_path} not found.")
+                        raise
+            except Exception:
+                logger.warning("qubecalib is not available. Enabling mock mode automatically.")
+                self._mock_mode = True
+                self._qubecalib = None
+        
         self._cap_resource_map: dict | None = None
         self._gen_resource_map: dict | None = None
         self._boxpool: BoxPool | None = None
@@ -74,6 +89,15 @@ class DeviceController:
     @property
     def qubecalib(self) -> QubeCalib | None:
         return self._qubecalib
+
+    @property
+    def mock_mode(self) -> bool:
+        """Check if running in mock mode."""
+        return self._mock_mode
+
+    def is_mock_mode(self) -> bool:
+        """Check if running in mock mode."""
+        return self._mock_mode
 
     @property
     def box_config(self) -> dict[str, Any]:
@@ -337,9 +361,14 @@ class DeviceController:
         box_names : str | list[str], optional
             List of box names to connect to. If None, connect to all available boxes.
         """
+        if self._mock_mode:
+            logger.info("Running in mock mode. Skipping hardware connection.")
+            return
+        
         if self.qubecalib is None:
             logger.warning("qubecalib is not available. Skipping connection.")
             return
+            
         if box_names is None:
             box_names = self.available_boxes
         if isinstance(box_names, str):
@@ -361,16 +390,21 @@ class DeviceController:
         Returns
         -------
         Quel1Box | None
-            The box object, or None if qubecalib is not available.
+            The box object, or None if in mock mode or qubecalib is not available.
 
         Raises
         ------
         ValueError
             If the box is not in the available boxes.
         """
+        if self._mock_mode:
+            logger.info("Running in mock mode. Cannot get box.")
+            return None
+            
         if self.qubecalib is None:
             logger.warning("qubecalib is not available. Cannot get box.")
             return None
+            
         self._check_box_availabilty(box_name)
         if self._boxpool is None or box_name not in self._boxpool._boxes:
             box = self.qubecalib.create_box(box_name, reconnect=reconnect)
