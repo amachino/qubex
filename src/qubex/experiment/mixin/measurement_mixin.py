@@ -5009,7 +5009,7 @@ class MeasurementMixin(
     def stark_rabi_experiment(
         self,
         *,
-        amplitudes: dict[str, float],
+        amplitude: tuple[str, float],
         stark_amplitude: float,
         time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         ramptime: float | None = None,
@@ -5024,8 +5024,9 @@ class MeasurementMixin(
         store_params: bool = False,
     ) -> ExperimentResult[RabiData]:
         # target labels
-        targets = list(amplitudes.keys())
-
+        target = next(iter(amplitude.keys()))
+        ins = self.insitu_target(target=target)
+        st = self.stark_target(target=target)
         # drive time range
         time_range = np.array(time_range, dtype=np.float64)
 
@@ -5037,16 +5038,14 @@ class MeasurementMixin(
         effective_time_range = time_range + ramptime
 
         # measure ground states as reference points
-        reference_points = self.obtain_reference_points(targets)["iq"]
+        reference_points = self.obtain_reference_points(target)["iq"]
 
         # target frequencies
         if frequencies is None:
-            frequencies = {
-                target: self.targets[target].frequency for target in amplitudes
-            }
+            frequencies = {ins: self.targets[ins].frequency}
 
         stark_ampl = self.calc_control_amplitude(
-            target=targets[0], rabi_rate=stark_amplitude
+            target=target, rabi_rate=stark_amplitude
         )
         if stark_ampl > 1:
             raise ValueError("Drive amplitude of a stark tone must not exceed 1")
@@ -5058,24 +5057,22 @@ class MeasurementMixin(
                 amplitude=stark_ampl,
                 tau=stark_ramptime,
             )
-            with PulseSchedule(targets) as ps:
-                for target in targets:
-                    ps.add(target, Blank(stark_ramptime))
-                    ps.add(
-                        target,
-                        FlatTop(
-                            duration=T + 2 * ramptime,
-                            amplitude=amplitudes[target],
-                            tau=ramptime,
-                        ),
-                    )
+            with PulseSchedule([target, ins, st]) as ps:
+                ps.add(st, stark_pulse)
+                ps.add(ins, Blank(stark_ramptime))
+                ps.add(
+                    ins,
+                    FlatTop(
+                        duration=T + 2 * ramptime,
+                        amplitude=amplitude[target],
+                        tau=ramptime,
+                    ),
+                )
             return ps
 
         # detune target frequencies if necessary
         if detuning is not None:
-            frequencies = {
-                target: frequencies[target] + detuning for target in amplitudes
-            }
+            frequencies = {target: frequencies[target] + detuning}
 
         # run the Rabi experiment by sweeping the drive time
         sweep_result = self.sweep_parameter(

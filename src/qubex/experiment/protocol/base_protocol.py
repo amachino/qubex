@@ -1137,3 +1137,29 @@ class BaseProtocol(Protocol):
         x90: Waveform | None = None,
         only_low_to_high: bool = False,
     ) -> PulseSchedule: ...
+
+    def stark_target(
+        self,
+        target: str,
+    ) -> str: ...
+
+    def insitu_target(
+        self,
+        target: str,
+    ) -> str: ...
+
+    def make_stark_channel(
+        self,
+        target: str,
+        detuning: float,
+        lsi: bool,
+        channel: int,
+    ): ...
+
+    def make_insitu_channel(
+        self,
+        target: str,
+        detuning: float,
+        lsi: bool,
+        channel: int,
+    ): ...

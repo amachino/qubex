@@ -4028,3 +4028,146 @@ class CharacterizationMixin(
                     print(f"  {target}: null")
 
         return Result(data=data)
+
+    def stark_chevron_pattern(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        frequencies: dict[str, float] | None = None,
+        amplitude: tuple[str, float] | None = None,
+        rabi_params: dict[str, RabiParam] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        ins = self.insitu_target(target=target)
+
+        if frequencies is None:
+            frequencies = {ins: self.targets[ins].frequency}
+
+        detuning_range = np.array(detuning_range, dtype=np.float64)
+        time_range = np.array(time_range, dtype=np.float64)
+
+        stark_ampl = self.calc_control_amplitude(
+            target=target, rabi_rate=stark_amplitude
+        )
+        if stark_ampl > 1:
+            raise ValueError("Drive amplitude of a stark tone must not exceed 1")
+
+        if amplitude is None:
+            amplitude = {target: self.params.control_amplitude[target]}
+
+        shared_rabi_params: dict[str, RabiParam]
+        if rabi_params is None:
+            print("Obtaining Rabi parameters...")
+            shared_rabi_params = self.obtain_rabi_params(
+                targets=target,
+                amplitudes=amplitude,
+                time_range=time_range,
+                fit_threshold=0.0,
+                shots=shots,
+                interval=interval,
+                plot=False,
+                store_params=False,
+            ).rabi_params  # type: ignore
+        else:
+            shared_rabi_params = rabi_params
+
+        rabi_rates: dict[str, NDArray] = {}
+        chevron_data: dict[str, NDArray] = {}
+        resonant_frequencies: dict[str, float] = {}
+
+        rabi_rates_buffer: dict[str, list[float]] = defaultdict(list)
+        chevron_data_buffer: dict[str, list[NDArray]] = defaultdict(list)
+
+        for detuning in tqdm(detuning_range):
+            with self.util.no_output():
+                rabi_result = self.stark_rabi_experiment(
+                    amplitude=amplitude,
+                    stark_amplitude=stark_amplitude,
+                    stark_ramptime=stark_ramptime,
+                    frequencies={ins: frequencies[ins] + detuning},
+                    plot=False,
+                )
+
+                rabi_rates_buffer[target].append(
+                    rabi_result.rabi_params[target].frequency
+                )
+                rabi_result.data[target].rabi_param = shared_rabi_params[target]
+                chevron_data_buffer[target].append(rabi_result.data[target].normalized)
+
+        rabi_rates[target] = np.array(rabi_rates_buffer[target])
+        chevron_data[target] = np.array(chevron_data_buffer[target]).T
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Heatmap(
+                x=detuning_range + frequencies[ins],
+                y=time_range,
+                z=chevron_data[target],
+                colorscale="Viridis",
+            )
+        )
+        fig.update_layout(
+            title=dict(
+                text=f"Stark Chevron pattern : {target}",
+                subtitle=dict(
+                    text=f"control_amplitude={amplitude[target]:.6g}, stark_amplitude ={stark_ampl:.6g}",
+                    font=dict(
+                        size=13,
+                        family="monospace",
+                    ),
+                ),
+            ),
+            xaxis_title="Drive frequency (GHz)",
+            yaxis_title="Time (ns)",
+            width=600,
+            height=400,
+            margin=dict(t=80),
+        )
+        if plot:
+            fig.show()
+
+        fit_result = fitting.fit_detuned_rabi(
+            target=target,
+            control_frequencies=detuning_range + frequencies[ins],
+            rabi_frequencies=rabi_rates[target],
+            plot=plot,
+        )
+        resonant_frequencies[target] = fit_result["f_resonance"]
+
+        if save_image:
+            viz.save_figure_image(
+                fig,
+                name=f"stark_chevron_pattern_{target}",
+                width=600,
+                height=400,
+            )
+            fig_fit = fit_result["fig"]
+            if fig_fit is not None:
+                viz.save_figure_image(
+                    fig_fit,
+                    name=f"stark_chevron_pattern_fit_{target}",
+                    width=600,
+                    height=300,
+                )
+
+        rabi_rates = dict(sorted(rabi_rates.items()))
+        chevron_data = dict(sorted(chevron_data.items()))
+        resonant_frequencies = dict(sorted(resonant_frequencies.items()))
+
+        return Result(
+            data={
+                "time_range": time_range,
+                "detuning_range": detuning_range,
+                "frequencies": frequencies,
+                "chevron_data": chevron_data,
+                "rabi_rates": rabi_rates,
+                "resonant_frequencies": resonant_frequencies,
+            }
+        )
