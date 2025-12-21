@@ -1215,7 +1215,7 @@ class BenchmarkingMixin(
                 raise ValueError(f"Invalid Clifford: {interleaved_clifford}")
             interleaved_clifford = clifford
 
-        is_2q = self.experiment_system.get_target(target[0]).is_cr
+        is_2q = self.experiment_system.get_target(target).is_cr
 
         if is_2q:
             dimension = 4
@@ -1252,7 +1252,7 @@ class BenchmarkingMixin(
         else:
             dimension = 2
             rb_result = self.stark_rb_experiment_1q(
-                target,
+                target=target,
                 stark_amplitude=stark_amplitude,
                 stark_ramptime=stark_ramptime,
                 n_cliffords_range=n_cliffords_range,
@@ -1266,7 +1266,7 @@ class BenchmarkingMixin(
                 save_image=False,
             )
             irb_result = self.stark_rb_experiment_1q(
-                targets=target,
+                target=target,
                 stark_amplitude=stark_amplitude,
                 stark_ramptime=stark_ramptime,
                 n_cliffords_range=n_cliffords_range,
@@ -1412,7 +1412,7 @@ class BenchmarkingMixin(
     ) -> Result:
         results = {}
         result = self.stark_irb_experiment(
-            targets=target,
+            target=target,
             stark_amplitude=stark_amplitude,
             stark_ramptime=stark_ramptime,
             interleaved_clifford=interleaved_clifford,

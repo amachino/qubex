@@ -2372,6 +2372,66 @@ class CalibrationMixin(
 
         return ExperimentResult(data=data)
 
+    def calibrate_stark_hpi_pulse(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        return self.calibrate_stark_default_pulse(
+            target=target,
+            pulse_type="hpi",
+            stark_amplitude=stark_amplitude,
+            stark_ramptime=stark_ramptime,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_stark_pi_pulse(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        return self.calibrate_stark_default_pulse(
+            target=target,
+            pulse_type="pi",
+            stark_amplitude=stark_amplitude,
+            stark_ramptime=stark_ramptime,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
     def calibrate_stark_drag_amplitude(
         self,
         target: str,
@@ -2517,66 +2577,6 @@ class CalibrationMixin(
         result[target] = calibrate(target)
 
         return Result(data=result)
-
-    def calibrate_stark_hpi_pulse(
-        self,
-        target: str,
-        *,
-        stark_amplitude: float,
-        stark_ramptime: int,
-        duration: float | None = None,
-        ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
-        return self.calibrate_default_pulse(
-            target=target,
-            pulse_type="hpi",
-            stark_amplitude=stark_amplitude,
-            stark_ramptime=stark_ramptime,
-            duration=duration,
-            ramptime=ramptime,
-            n_points=n_points,
-            n_rotations=n_rotations,
-            r2_threshold=r2_threshold,
-            plot=plot,
-            shots=shots,
-            interval=interval,
-        )
-
-    def calibrate_stark_pi_pulse(
-        self,
-        target: str,
-        *,
-        stark_amplitude: float,
-        stark_ramptime: int,
-        duration: float | None = None,
-        ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-    ) -> ExperimentResult[AmplCalibData]:
-        return self.calibrate_default_pulse(
-            target=target,
-            pulse_type="pi",
-            stark_amplitude=stark_amplitude,
-            stark_ramptime=stark_ramptime,
-            duration=duration,
-            ramptime=ramptime,
-            n_points=n_points,
-            n_rotations=n_rotations,
-            r2_threshold=r2_threshold,
-            plot=plot,
-            shots=shots,
-            interval=interval,
-        )
 
     def calibrate_stark_drag_beta(
         self,

@@ -251,7 +251,10 @@ class Target(Model):
             qubit_label = match.group(1)
         elif match := re.match(r"^(Q\d+)-CR$", label):
             qubit_label = match.group(1)
-        elif match := re.match(r"^(Q\d+)-(Q\d+)$", label):
+        elif match := re.match(
+            r"^(Q\d+)(?:(-|_)[a-zA-Z0-9]+)?-(Q\d+)(?:(-|_)[a-zA-Z0-9]+)?$",
+            label,
+        ):
             qubit_label = match.group(1)
         elif match := re.match(r"^(Q\d+)(-|_)[a-zA-Z0-9]+$", label):
             qubit_label = match.group(1)
@@ -287,9 +290,12 @@ class Target(Model):
     def cr_qubit_pair(
         label: str,
     ) -> tuple[str, str]:
-        if match := re.match(r"^(Q\d+)-(Q\d+)$", label):
+        if match := re.match(
+            r"^(Q\d+)(?:(-|_)[a-zA-Z0-9]+)?-(Q\d+)(?:(-|_)[a-zA-Z0-9]+)?$",
+            label,
+        ):
             control_qubit = match.group(1)
-            target_qubit = match.group(2)
+            target_qubit = match.group(3)
         else:
             raise ValueError(f"Invalid target label `{label}`.")
         return control_qubit, target_qubit
