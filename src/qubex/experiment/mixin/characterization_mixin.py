@@ -1318,94 +1318,6 @@ class CharacterizationMixin(
 
         return ExperimentResult(data=data)
 
-    def t1_experiment_under_stark(
-        self,
-        target: str,
-        *,
-        stark_amplitude: float,
-        stark_ramptime: int,
-        time_range: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
-        xaxis_type: Literal["linear", "log"] = "log",
-    ) -> ExperimentResult[T1Data]:
-        st = self.stark_target(target=target)
-        ins = self.insitu_target(target=target)
-
-        x180 = self.get_hpi_pulse(target).repeated(2)
-        stark_ampl = self.calc_control_amplitude(
-            target=target, rabi_rate=stark_amplitude
-        )
-
-        if time_range is None:
-            time_range = np.logspace(
-                np.log10(100),
-                np.log10(200 * 1000),
-                51,
-            )
-        time_range = self.util.discretize_time_range(np.asarray(time_range))
-
-        def stark_t1_seq(T) -> PulseSchedule:
-            stark_pulse = FlatTop(
-                duration=T + stark_ramptime * 2 + x180.duration,
-                amplitude=stark_ampl,
-                tau=stark_ramptime,
-            )
-            with PulseSchedule() as ps:
-                ps.add(st, stark_pulse)
-                ps.add(ins, Blank(stark_ramptime))
-                ps.add(ins, x180)
-            return ps
-
-        data: dict[str, T1Data] = {}
-        sweep_result = self.sweep_parameter(
-            sequence=stark_t1_seq,
-            sweep_range=time_range,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-            title="AC stark shift T1 experiments",
-            xlabel="Time (s)",
-            ylabel="Measured value",
-        )
-
-        for qubit, sweep_data in sweep_result.data.items():
-            fit_result = fitting.fit_exp_decay(
-                target=qubit,
-                x=sweep_data.sweep_range,
-                y=0.5 * (1 - sweep_data.normalized),
-                plot=plot,
-                title="Stark-driven T1",
-                xlabel="Time (μs)",
-                ylabel="Normalized signal",
-                xaxis_type=xaxis_type,
-                yaxis_type="linear",
-            )
-            if fit_result["status"] == "success":
-                t1 = fit_result["tau"]
-                t1_err = fit_result["tau_err"]
-                r2 = fit_result["r2"]
-
-                t1_data = T1Data.new(
-                    sweep_data,
-                    t1=t1,
-                    t1_err=t1_err,
-                    r2=r2,
-                )
-                data[qubit] = t1_data
-
-                fig = fit_result["fig"]
-
-                if save_image:
-                    viz.save_figure_image(
-                        fig,
-                        name=f"t1_{qubit}",
-                    )
-
-        return ExperimentResult(data=data)
-
     def _stark_ramsey_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -1698,6 +1610,293 @@ class CharacterizationMixin(
             "amplitude_range": stark_amplitude_range,
             "p1": p1_list,
         }
+
+    def t1_experiment_under_stark(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        time_range: ArrayLike | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+        xaxis_type: Literal["linear", "log"] = "log",
+    ) -> ExperimentResult[T1Data]:
+        st = self.stark_target(target=target)
+        ins = self.insitu_target(target=target)
+
+        x180 = self.get_hpi_pulse(target).repeated(2)
+        stark_ampl = self.calc_control_amplitude(
+            target=target, rabi_rate=stark_amplitude
+        )
+
+        if time_range is None:
+            time_range = np.logspace(
+                np.log10(100),
+                np.log10(200 * 1000),
+                51,
+            )
+        time_range = self.util.discretize_time_range(np.asarray(time_range))
+
+        def t1_sequence(T) -> PulseSchedule:
+            stark_pulse = FlatTop(
+                duration=T + stark_ramptime * 2 + x180.duration,
+                amplitude=stark_ampl,
+                tau=stark_ramptime,
+            )
+            with PulseSchedule() as ps:
+                ps.add(st, stark_pulse)
+                ps.add(ins, Blank(stark_ramptime))
+                ps.add(ins, x180)
+            return ps
+
+        data: dict[str, T1Data] = {}
+        sweep_result = self.sweep_parameter(
+            sequence=t1_sequence,
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            title="AC stark shift T1 experiments",
+            xlabel="Time (s)",
+            ylabel="Measured value",
+        )
+
+        for qubit, sweep_data in sweep_result.data.items():
+            fit_result = fitting.fit_exp_decay(
+                target=qubit,
+                x=sweep_data.sweep_range,
+                y=0.5 * (1 - sweep_data.normalized),
+                plot=plot,
+                title="Stark-driven T1",
+                xlabel="Time (μs)",
+                ylabel="Normalized signal",
+                xaxis_type=xaxis_type,
+                yaxis_type="linear",
+            )
+            if fit_result["status"] == "success":
+                t1 = fit_result["tau"]
+                t1_err = fit_result["tau_err"]
+                r2 = fit_result["r2"]
+
+                t1_data = T1Data.new(
+                    sweep_data,
+                    t1=t1,
+                    t1_err=t1_err,
+                    r2=r2,
+                )
+                data[qubit] = t1_data
+
+                fig = fit_result["fig"]
+
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"t1_{qubit}",
+                    )
+
+        return ExperimentResult(data=data)
+
+    def t2_experiment_under_stark(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        time_range: ArrayLike | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> ExperimentResult[T2Data]:
+        st = self.stark_target(target=target)
+        ins = self.insitu_target(target=target)
+
+        x90 = self.get_hpi_pulse(target)
+        x180 = self.get_hpi_pulse(target).repeated(2)
+        stark_ampl = self.calc_control_amplitude(
+            target=target, rabi_rate=stark_amplitude
+        )
+
+        if time_range is None:
+            time_range = np.logspace(
+                np.log10(300),
+                np.log10(200 * 1000),
+                51,
+            )
+
+        time_range = self.util.discretize_time_range(
+            time_range=np.asarray(time_range),
+            sampling_period=2 * SAMPLING_PERIOD,
+        )
+
+        data: dict[str, T2Data] = {}
+
+        def t2_sequence(T: int) -> PulseSchedule:
+            stark_pulse = FlatTop(
+                duration=T + stark_ramptime * 2 + x180.duration + x90.duration * 2,
+                amplitude=stark_ampl,
+                tau=stark_ramptime,
+            )
+            with PulseSchedule() as ps:
+                h_T = T // 2
+                ps.add(st, stark_pulse)
+                ps.add(ins, Blank(stark_ramptime))
+                ps.add(ins, x90)
+                ps.add(ins, Blank(h_T))
+                ps.add(ins, x180)
+                ps.add(ins, Blank(h_T))
+                ps.add(ins, x90.scaled(-1))
+            return ps
+
+        sweep_result = self.sweep_parameter(
+            sequence=t2_sequence,
+            sweep_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        for target, sweep_data in sweep_result.data.items():
+            fit_result = fitting.fit_exp_decay(
+                target=target,
+                x=sweep_data.sweep_range,
+                y=0.5 * (1 + sweep_data.normalized),
+                plot=plot,
+                title="T2 echo",
+                xlabel="Time (μs)",
+                ylabel="Normalized signal",
+            )
+            if fit_result["status"] == "success":
+                t2 = fit_result["tau"]
+                t2_err = fit_result["tau_err"]
+                r2 = fit_result["r2"]
+
+                t2_data = T2Data.new(
+                    sweep_data,
+                    t2=t2,
+                    t2_err=t2_err,
+                    r2=r2,
+                )
+                data[target] = t2_data
+
+                fig = fit_result["fig"]
+
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"t2_echo_{target}",
+                    )
+
+        return ExperimentResult(data=data)
+
+    def ramsey_experiment_under_stark(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> ExperimentResult[RamseyData]:
+        st = self.stark_target(target=target)
+        ins = self.insitu_target(target=target)
+
+        x90 = self.get_hpi_pulse(target)
+        stark_ampl = self.calc_control_amplitude(
+            target=target, rabi_rate=stark_amplitude
+        )
+
+        if time_range is None:
+            time_range = np.arange(0, 10001, 100)
+        else:
+            time_range = self.util.discretize_time_range(time_range)
+
+        if detuning is None:
+            detuning = 0.001
+
+        data: dict[str, RamseyData] = {}
+
+        def ramsey_sequence(T: int) -> PulseSchedule:
+            stark_pulse = FlatTop(
+                duration=T + stark_ramptime * 2 + x90.duration * 2,
+                amplitude=stark_ampl,
+                tau=stark_ramptime,
+            )
+            with PulseSchedule() as ps:
+                ps.add(st, stark_pulse)
+                ps.add(ins, Blank(stark_ramptime))
+                ps.add(ins, x90)
+                ps.add(ins, Blank(T))
+                if second_rotation_axis == "X":
+                    ps.add(ins, x90.shifted(np.pi))
+                else:
+                    ps.add(ins, x90.shifted(-np.pi / 2))
+            return ps
+
+        detuned_frequencies = {ins: self.qubits[ins].frequency + detuning}
+
+        sweep_result = self.sweep_parameter(
+            sequence=ramsey_sequence,
+            sweep_range=time_range,
+            frequencies=detuned_frequencies,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        for target, sweep_data in sweep_result.data.items():
+            fit_result = fitting.fit_ramsey(
+                target=target,
+                times=sweep_data.sweep_range,
+                data=sweep_data.normalized,
+                amplitude_est=1.0,
+                offset_est=0.0,
+                plot=plot,
+            )
+            if fit_result["status"] == "success":
+                f = self.qubits[target].frequency
+                t2 = fit_result["tau"]
+                ramsey_freq = fit_result["f"]
+                phi = fit_result["phi"]
+                if second_rotation_axis == "Y":
+                    if phi > 0:
+                        bare_freq = f + detuning + ramsey_freq
+                    else:
+                        bare_freq = f + detuning - ramsey_freq
+                else:
+                    # NOTE: For X rotation, we cannot guarantee the sign of frequency
+                    bare_freq = f + detuning - ramsey_freq
+                r2 = fit_result["r2"]
+                ramsey_data = RamseyData.new(
+                    sweep_data=sweep_data,
+                    t2=t2,
+                    ramsey_freq=ramsey_freq,
+                    bare_freq=bare_freq,
+                    r2=r2,
+                )
+                data[target] = ramsey_data
+
+                print("Bare frequency under stark drive:")
+                print(f"  {target}: {ramsey_data.bare_freq:.6f}")
+                print("")
+
+                fig = fit_result["fig"]
+
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"ramsey_{target}",
+                    )
+
+        return ExperimentResult(data=data)
 
     def obtain_effective_control_frequency(
         self,
