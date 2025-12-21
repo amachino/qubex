@@ -13,6 +13,7 @@ from ...analysis import visualization as viz
 from ...backend import SAMPLING_PERIOD, Target
 from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from ...pulse import (
+    Blank,
     CrossResonance,
     Drag,
     FlatTop,
@@ -2229,3 +2230,653 @@ class CalibrationMixin(
                 continue
 
         return Result(data=return_data)
+
+    def calibrate_stark_default_pulse(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int | None = None,
+        pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        update_params: bool = True,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        rabi_params = self.rabi_params
+        if rabi_params is None:
+            raise ValueError("Rabi parameters are not stored.")
+
+        def calibrate(target: str) -> AmplCalibData:
+            st = self.stark_target(target=target)
+            ins = self.insitu_target(target=target)
+
+            stark_ampl = self.calc_control_amplitude(
+                target=target, rabi_rate=stark_amplitude
+            )
+
+            if pulse_type == "hpi":
+                pulse = FlatTop(
+                    duration=duration if duration is not None else HPI_DURATION,
+                    amplitude=1,
+                    tau=ramptime if ramptime is not None else HPI_RAMPTIME,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.25 / area
+
+            elif pulse_type == "pi":
+                pulse = FlatTop(
+                    duration=duration if duration is not None else PI_DURATION,
+                    amplitude=1,
+                    tau=ramptime if ramptime is not None else PI_RAMPTIME,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.5 / area
+            else:
+                raise ValueError("Invalid pulse type.")
+
+            n_per_rotation = 2 if pulse_type == "pi" else 4
+
+            stark_pulse = FlatTop(
+                duration=pulse.duration * n_per_rotation * n_rotations
+                + stark_ramptime * 2,
+                amplitude=stark_ampl,
+                tau=stark_ramptime,
+            )
+
+            def calibrate_seq(x: float) -> PulseSchedule:
+                with PulseSchedule() as ps:
+                    ps.add(st, stark_pulse)
+                    ps.add(ins, Blank(stark_ramptime))
+                    ps.add(ins, pulse.repeated(n_per_rotation * n_rotations).scaled(x))
+                return ps
+
+            # calculate the control amplitude for the target rabi rate
+            ampl = self.calc_control_amplitude(target, rabi_rate) * 1.0
+
+            # create a range of amplitudes around the estimated value
+            ampl_min = ampl * (1 - 0.5 / n_rotations)
+            ampl_max = ampl * (1 + 0.8 / n_rotations)
+            ampl_min = np.clip(ampl_min, 0, 1)
+            ampl_max = np.clip(ampl_max, 0, 1)
+            if ampl_min == ampl_max:
+                ampl_min = 0
+                ampl_max = 1
+            ampl_range = np.linspace(ampl_min, ampl_max, n_points)
+
+            sweep_data = self.sweep_parameter(
+                sequence=calibrate_seq,
+                sweep_range=ampl_range,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            ).data[target]
+
+            fit_result = fitting.fit_ampl_calib_data(
+                target=target,
+                amplitude_range=ampl_range,
+                data=sweep_data.normalized,
+                plot=plot,
+                title=f"{pulse_type} pulse calibration",
+                ylabel="Normalized signal",
+            )
+
+            r2 = fit_result["r2"]
+            if r2 > r2_threshold:
+                if update_params:
+                    if pulse_type == "hpi":
+                        self.calib_note.update_hpi_param(
+                            target,
+                            {
+                                "target": target,
+                                "duration": pulse.duration,
+                                "amplitude": fit_result["amplitude"],
+                                "tau": pulse.tau,
+                            },
+                        )
+                    elif pulse_type == "pi":
+                        self.calib_note.update_pi_param(
+                            target,
+                            {
+                                "target": target,
+                                "duration": pulse.duration,
+                                "amplitude": fit_result["amplitude"],
+                                "tau": pulse.tau,
+                            },
+                        )
+            else:
+                print(f"Error: R² value is too low ({r2:.3f})")
+                print(f"Calibration data not stored for {target}.")
+
+            return AmplCalibData.new(
+                sweep_data=sweep_data,
+                calib_value=fit_result["amplitude"],
+                r2=r2,
+            )
+
+        data: dict[str, AmplCalibData] = {}
+        if target not in self.calib_note.rabi_params:
+            print(f"Rabi parameters are not stored for {target}.")
+        print(f"Calibrating {pulse_type} pulse for {target}...")
+        data[target] = calibrate(target)
+
+        print("")
+        print(f"Calibration results for {pulse_type} pulse:")
+        for target, calib_data in data.items():
+            print(f"  {target}: {calib_data.calib_value:.6f}")
+
+        return ExperimentResult(data=data)
+
+    def calibrate_stark_drag_amplitude(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 4,
+        r2_threshold: float = 0.5,
+        drag_coeff: float = DRAG_COEFF,
+        use_stored_amplitude: bool = False,
+        use_stored_beta: bool = False,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> Result:
+        rabi_params = self.rabi_params
+        self.validate_rabi_params(rabi_params)
+
+        def calibrate(target: str) -> FitResult:
+            st = self.stark_target(target=target)
+            ins = self.insitu_target(target=target)
+
+            stark_ampl = self.calc_control_amplitude(
+                target=target, rabi_rate=stark_amplitude
+            )
+            # hpi
+            if pulse_type == "hpi":
+                hpi_param = self.calib_note.get_drag_hpi_param(target)
+                if hpi_param is not None and use_stored_beta:
+                    beta = hpi_param["beta"]
+                else:
+                    beta = -drag_coeff / self.qubits[target].alpha
+
+                pulse = Drag(
+                    duration=duration if duration is not None else DRAG_HPI_DURATION,
+                    amplitude=1,
+                    beta=beta,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.25 / area
+
+                if hpi_param is not None and use_stored_amplitude:
+                    ampl = hpi_param["amplitude"]
+                else:
+                    ampl = self.calc_control_amplitude(target, rabi_rate)
+            # pi
+            elif pulse_type == "pi":
+                pi_param = self.calib_note.get_drag_pi_param(target)
+                if pi_param is not None and use_stored_beta:
+                    beta = pi_param["beta"]
+                else:
+                    beta = -drag_coeff / self.qubits[target].alpha
+
+                pulse = Drag(
+                    duration=duration if duration is not None else DRAG_PI_DURATION,
+                    amplitude=1,
+                    beta=beta,
+                )
+                area = pulse.real.sum() * pulse.SAMPLING_PERIOD
+                rabi_rate = 0.5 / area
+
+                if pi_param is not None and use_stored_amplitude:
+                    ampl = pi_param["amplitude"]
+                else:
+                    ampl = self.calc_control_amplitude(target, rabi_rate)
+            else:
+                raise ValueError("Invalid pulse type.")
+
+            ampl_min = ampl * (1 - 0.5 / n_rotations)
+            ampl_max = ampl * (1 + 0.8 / n_rotations)
+            ampl_min = np.clip(ampl_min, 0, 1)
+            ampl_max = np.clip(ampl_max, 0, 1)
+            if ampl_min == ampl_max:
+                ampl_min = 0
+                ampl_max = 1
+            ampl_range = np.linspace(ampl_min, ampl_max, n_points)
+
+            n_per_rotation = 2 if pulse_type == "pi" else 4
+
+            stark_pulse = FlatTop(
+                duration=pulse.duration * n_per_rotation * n_rotations
+                + stark_ramptime * 2,
+                amplitude=stark_ampl,
+                tau=stark_ramptime,
+            )
+
+            def sequence(x: float) -> PulseSchedule:
+                with PulseSchedule() as ps:
+                    ps.add(st, stark_pulse)
+                    ps.add(ins, Blank(stark_ramptime))
+                    ps.add(ins, pulse.scaled(x).repeated(n_per_rotation * n_rotations))
+                return ps
+
+            sweep_data = self.sweep_parameter(
+                sequence=sequence,
+                sweep_range=ampl_range,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            ).data[target]
+
+            fit_result = fitting.fit_ampl_calib_data(
+                target=target,
+                amplitude_range=ampl_range,
+                data=sweep_data.normalized,
+                plot=plot,
+                title=f"DRAG {pulse_type} amplitude calibration",
+                ylabel="Normalized signal",
+            )
+
+            r2 = fit_result["r2"]
+            if r2 > r2_threshold:
+                if pulse_type == "hpi":
+                    self.calib_note.update_drag_hpi_param(
+                        target,
+                        {
+                            "target": target,
+                            "duration": pulse.duration,
+                            "amplitude": fit_result["amplitude"],
+                            "beta": beta,
+                        },
+                    )
+                elif pulse_type == "pi":
+                    self.calib_note.update_drag_pi_param(
+                        target,
+                        {
+                            "target": target,
+                            "duration": pulse.duration,
+                            "amplitude": fit_result["amplitude"],
+                            "beta": beta,
+                        },
+                    )
+            else:
+                print(f"Error: R² value is too low ({r2:.3f})")
+                print(f"Calibration data not stored for {target}.")
+
+            return fit_result
+
+        result: dict[str, FitResult] = {}
+        result[target] = calibrate(target)
+
+        return Result(data=result)
+
+    def calibrate_stark_hpi_pulse(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        return self.calibrate_default_pulse(
+            target=target,
+            pulse_type="hpi",
+            stark_amplitude=stark_amplitude,
+            stark_ramptime=stark_ramptime,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_stark_pi_pulse(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        return self.calibrate_default_pulse(
+            target=target,
+            pulse_type="pi",
+            stark_amplitude=stark_amplitude,
+            stark_ramptime=stark_ramptime,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_stark_drag_beta(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        pulse_type: Literal["pi", "hpi"] = "hpi",
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        duration: float | None = None,
+        n_turns: int = 1,
+        degree: int = 3,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> Result:
+        rabi_params = self.rabi_params
+        self.validate_rabi_params(rabi_params)
+
+        def calibrate(target: str) -> float:
+            st = self.stark_target(target=target)
+            ins = self.insitu_target(target=target)
+
+            stark_ampl = self.calc_control_amplitude(
+                target=target, rabi_rate=stark_amplitude
+            )
+
+            if pulse_type == "hpi":
+                param = self.calib_note.get_drag_hpi_param(target)
+            elif pulse_type == "pi":
+                param = self.calib_note.get_drag_pi_param(target)
+            if param is None:
+                raise ValueError("DRAG parameters are not stored.")
+
+            drag_duration = duration or param["duration"]
+            drag_amplitude = param["amplitude"]
+            drag_beta = param["beta"]
+
+            sweep_range = np.array(beta_range) + drag_beta
+
+            def sequence(beta: float) -> PulseSchedule:
+                with PulseSchedule() as ps:
+                    if pulse_type == "hpi":
+                        x90p = Drag(
+                            duration=drag_duration,
+                            amplitude=drag_amplitude,
+                            beta=beta,
+                        )
+                        x90m = x90p.scaled(-1)
+                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
+                        ps.add(
+                            ins,
+                            PulseArray(
+                                [
+                                    x90p,
+                                    PulseArray([x90m, x90p] * n_turns),
+                                    y90m,
+                                ]
+                            ),
+                        )
+                    elif pulse_type == "pi":
+                        x180p = Drag(
+                            duration=drag_duration,
+                            amplitude=drag_amplitude,
+                            beta=beta,
+                        )
+                        x180m = x180p.scaled(-1)
+                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
+                        ps.add(
+                            ins,
+                            PulseArray(
+                                [
+                                    PulseArray([x180p, x180m] * n_turns),
+                                    y90m,
+                                ]
+                            ),
+                        )
+                return ps
+
+            def calibrate_sequence(beta: float) -> PulseSchedule:
+                with PulseSchedule() as ps:
+                    pulse_seq = sequence(beta=beta)
+                    stark_pulse = FlatTop(
+                        duration=pulse_seq.duration + stark_ramptime * 2,
+                        amplitude=stark_ampl,
+                        tau=stark_ramptime,
+                    )
+                    ps.add(st, stark_pulse)
+                    ps.add(ins, Blank(stark_ramptime))
+                    ps.call(pulse_seq)
+                return ps
+
+            sweep_data = self.sweep_parameter(
+                sequence=calibrate_sequence,
+                sweep_range=sweep_range,
+                shots=shots,
+                interval=interval,
+                plot=False,
+            ).data[target]
+
+            values = sweep_data.normalized
+
+            fit_result = fitting.fit_polynomial(
+                target=target,
+                x=sweep_range,
+                y=values,
+                degree=degree,
+                plot=plot,
+                title=f"DRAG {pulse_type} beta calibration",
+                xlabel="Beta",
+                ylabel="Normalized signal",
+            )
+            beta = fit_result["root"]
+            if np.isnan(beta):
+                beta = 0.0
+
+            if pulse_type == "hpi":
+                self.calib_note.update_drag_hpi_param(
+                    target,
+                    {
+                        "target": target,
+                        "duration": drag_duration,
+                        "amplitude": drag_amplitude,
+                        "beta": beta,
+                    },
+                )
+            elif pulse_type == "pi":
+                self.calib_note.update_drag_pi_param(
+                    target,
+                    {
+                        "target": target,
+                        "duration": drag_duration,
+                        "amplitude": drag_amplitude,
+                        "beta": beta,
+                    },
+                )
+
+            return beta
+
+        result = {}
+        result[target] = calibrate(target)
+
+        return Result(data=result)
+
+    def calibrate_stark_drag_hpi_pulse(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        n_points: int = 20,
+        n_rotations: int = 4,
+        n_turns: int = 1,
+        n_iterations: int = 2,
+        degree: int = 3,
+        r2_threshold: float = 0.5,
+        calibrate_beta: bool = True,
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        duration: float | None = None,
+        drag_coeff: float = DRAG_COEFF,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> Result:
+        for i in range(n_iterations):
+            print(f"\nIteration {i + 1}/{n_iterations}")
+
+            if i == 0:
+                amplitude = self.calibrate_stark_drag_amplitude(
+                    target=target,
+                    stark_amplitude=stark_amplitude,
+                    stark_ramptime=stark_ramptime,
+                    pulse_type="hpi",
+                    n_points=n_points,
+                    n_rotations=1,
+                    r2_threshold=r2_threshold,
+                    duration=duration,
+                    use_stored_amplitude=False,
+                    use_stored_beta=False,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                amplitude = self.calibrate_stark_drag_amplitude(
+                    target=target,
+                    stark_amplitude=stark_amplitude,
+                    stark_ramptime=stark_ramptime,
+                    pulse_type="hpi",
+                    n_points=n_points,
+                    n_rotations=n_rotations,
+                    r2_threshold=r2_threshold,
+                    duration=duration,
+                    use_stored_amplitude=True,
+                    use_stored_beta=True,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
+
+            if calibrate_beta:
+                beta = self.calibrate_stark_drag_beta(
+                    target=target,
+                    stark_amplitude=stark_amplitude,
+                    stark_ramptime=stark_ramptime,
+                    pulse_type="hpi",
+                    beta_range=beta_range,
+                    n_turns=n_turns,
+                    duration=duration,
+                    degree=degree,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                beta = {target: -drag_coeff / self.qubits[target].alpha}
+
+        return Result(
+            data={
+                "amplitude": amplitude,
+                "beta": beta,
+            }
+        )
+
+    def calibrate_stark_drag_pi_pulse(
+        self,
+        target: str,
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        n_points: int = 20,
+        n_rotations: int = 4,
+        n_turns: int = 1,
+        n_iterations: int = 2,
+        degree: int = 3,
+        r2_threshold: float = 0.5,
+        calibrate_beta: bool = True,
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        duration: float | None = None,
+        drag_coeff: float = DRAG_COEFF,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> Result:
+        for i in range(n_iterations):
+            print(f"\nIteration {i + 1}/{n_iterations}")
+
+            if i == 0:
+                amplitude = self.calibrate_stark_drag_amplitude(
+                    target=target,
+                    stark_amplitude=stark_amplitude,
+                    stark_ramptime=stark_ramptime,
+                    pulse_type="pi",
+                    n_points=n_points,
+                    n_rotations=1,
+                    r2_threshold=r2_threshold,
+                    duration=duration,
+                    use_stored_amplitude=False,
+                    use_stored_beta=False,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                amplitude = self.calibrate_stark_drag_amplitude(
+                    target=target,
+                    stark_amplitude=stark_amplitude,
+                    stark_ramptime=stark_ramptime,
+                    pulse_type="pi",
+                    n_points=n_points,
+                    n_rotations=n_rotations,
+                    r2_threshold=r2_threshold,
+                    duration=duration,
+                    use_stored_amplitude=True,
+                    use_stored_beta=True,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
+
+            if calibrate_beta:
+                beta = self.calibrate_stark_drag_beta(
+                    target=target,
+                    stark_amplitude=stark_amplitude,
+                    stark_ramptime=stark_ramptime,
+                    pulse_type="pi",
+                    beta_range=beta_range,
+                    n_turns=n_turns,
+                    duration=duration,
+                    degree=degree,
+                    plot=plot,
+                    shots=shots,
+                    interval=interval,
+                )
+            else:
+                beta = {target: -drag_coeff / self.qubits[target].alpha}
+
+        return Result(
+            data={
+                "amplitude": amplitude,
+                "beta": beta,
+            }
+        )
