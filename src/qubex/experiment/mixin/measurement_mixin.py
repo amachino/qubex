@@ -618,6 +618,56 @@ class MeasurementMixin(
 
         return result
 
+    def stark_repeat_sequence(
+        self,
+        sequence: TargetMap[Waveform],
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        initial_states: dict[str, str] | None = None,
+        repetitions: int = 20,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+    ) -> ExperimentResult[SweepData]:
+        def repeated_sequence(N: int) -> PulseSchedule:
+            if isinstance(sequence, dict):
+                with PulseSchedule() as ps:
+                    for target, pulse in sequence.items():
+                        rep_pulse = pulse.repeated(N)
+                        st = self.stark_target(target=target)
+                        ins = self.insitu_target(target=target)
+                        stark_ampl = self.calc_control_amplitude(
+                            target=target, rabi_rate=stark_amplitude
+                        )
+                        ps.add(
+                            st,
+                            FlatTop(
+                                duration=rep_pulse.duration + stark_ramptime * 2,
+                                amplitude=stark_ampl,
+                                tau=stark_ramptime,
+                            ),
+                        )
+                        ps.add(ins, rep_pulse)
+            else:
+                raise ValueError("Invalid sequence.")
+            return ps
+
+        result = self.sweep_parameter(
+            sequence=repeated_sequence,
+            sweep_range=np.arange(repetitions + 1),
+            initial_states=initial_states,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            xlabel="Number of repetitions",
+        )
+
+        if plot:
+            result.plot(normalize=True)
+
+        return result
+
     def obtain_rabi_params(
         self,
         targets: Collection[str] | str | None = None,

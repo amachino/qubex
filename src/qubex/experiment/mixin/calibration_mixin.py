@@ -2301,7 +2301,7 @@ class CalibrationMixin(
 
             # create a range of amplitudes around the estimated value
             ampl_min = ampl * (1 - 0.5 / n_rotations)
-            ampl_max = ampl * (1 + 0.8 / n_rotations)
+            ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_min = np.clip(ampl_min, 0, 1)
             ampl_max = np.clip(ampl_max, 0, 1)
             if ampl_min == ampl_max:
@@ -2504,7 +2504,7 @@ class CalibrationMixin(
                 raise ValueError("Invalid pulse type.")
 
             ampl_min = ampl * (1 - 0.5 / n_rotations)
-            ampl_max = ampl * (1 + 0.8 / n_rotations)
+            ampl_max = ampl * (1 + 0.5 / n_rotations)
             ampl_min = np.clip(ampl_min, 0, 1)
             ampl_max = np.clip(ampl_max, 0, 1)
             if ampl_min == ampl_max:
