@@ -1708,6 +1708,7 @@ class CharacterizationMixin(
         time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        xaxis_type: Literal["linear", "log"] = "log",
         plot: bool = True,
         save_image: bool = False,
     ) -> ExperimentResult[T2Data]:
@@ -1715,7 +1716,7 @@ class CharacterizationMixin(
         ins = self.insitu_target(target=target)
 
         x90 = self.get_hpi_pulse(target)
-        x180 = self.get_hpi_pulse(target).repeated(2)
+        x180 = self.get_hpi_pulse(target).shifted(np.pi / 2).repeated(2)
         stark_ampl = self.calc_control_amplitude(
             target=target, rabi_rate=stark_amplitude
         )
@@ -1768,6 +1769,8 @@ class CharacterizationMixin(
                 title="T2 echo",
                 xlabel="Time (μs)",
                 ylabel="Normalized signal",
+                xaxis_type=xaxis_type,
+                yaxis_type="linear",
             )
             if fit_result["status"] == "success":
                 t2 = fit_result["tau"]
@@ -1841,7 +1844,7 @@ class CharacterizationMixin(
                     ps.add(ins, x90.shifted(-np.pi / 2))
             return ps
 
-        detuned_frequencies = {ins: self.qubits[ins].frequency + detuning}
+        detuned_frequencies = {ins: self.targets[ins].frequency + detuning}
 
         sweep_result = self.sweep_parameter(
             sequence=ramsey_sequence,
@@ -1862,7 +1865,7 @@ class CharacterizationMixin(
                 plot=plot,
             )
             if fit_result["status"] == "success":
-                f = self.qubits[target].frequency
+                f = self.targets[ins].frequency
                 t2 = fit_result["tau"]
                 ramsey_freq = fit_result["f"]
                 phi = fit_result["phi"]
