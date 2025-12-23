@@ -648,6 +648,7 @@ class MeasurementMixin(
                                 tau=stark_ramptime,
                             ),
                         )
+                        ps.add(ins, Blank(stark_ramptime))
                         ps.add(ins, rep_pulse)
             else:
                 raise ValueError("Invalid sequence.")
