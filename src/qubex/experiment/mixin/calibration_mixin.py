@@ -2236,12 +2236,13 @@ class CalibrationMixin(
         target: str,
         *,
         stark_amplitude: float,
-        stark_ramptime: int | None = None,
+        stark_ramptime: int,
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         ramptime: float | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
+        amplitude_range: ArrayLike | None = None,
         r2_threshold: float = 0.5,
         update_params: bool = True,
         plot: bool = True,
@@ -2296,18 +2297,21 @@ class CalibrationMixin(
                     ps.add(ins, pulse.repeated(n_per_rotation * n_rotations).scaled(x))
                 return ps
 
-            # calculate the control amplitude for the target rabi rate
-            ampl = self.calc_control_amplitude(target, rabi_rate) * 1.0
+            if amplitude_range is not None:
+                ampl_range = amplitude_range
+            else:
+                # calculate the control amplitude for the target rabi rate
+                ampl = self.calc_control_amplitude(target, rabi_rate) * 1.0
 
-            # create a range of amplitudes around the estimated value
-            ampl_min = ampl * (1 - 0.5 / n_rotations)
-            ampl_max = ampl * (1 + 0.5 / n_rotations)
-            ampl_min = np.clip(ampl_min, 0, 1)
-            ampl_max = np.clip(ampl_max, 0, 1)
-            if ampl_min == ampl_max:
-                ampl_min = 0
-                ampl_max = 1
-            ampl_range = np.linspace(ampl_min, ampl_max, n_points)
+                # create a range of amplitudes around the estimated value
+                ampl_min = ampl * (1 - 0.5 / n_rotations)
+                ampl_max = ampl * (1 + 0.5 / n_rotations)
+                ampl_min = np.clip(ampl_min, 0, 1)
+                ampl_max = np.clip(ampl_max, 0, 1)
+                if ampl_min == ampl_max:
+                    ampl_min = 0
+                    ampl_max = 1
+                ampl_range = np.linspace(ampl_min, ampl_max, n_points)
 
             sweep_data = self.sweep_parameter(
                 sequence=calibrate_seq,
@@ -2380,6 +2384,7 @@ class CalibrationMixin(
         stark_ramptime: int,
         duration: float | None = None,
         ramptime: float | None = None,
+        amplitude_range: ArrayLike | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -2394,6 +2399,7 @@ class CalibrationMixin(
             stark_ramptime=stark_ramptime,
             duration=duration,
             ramptime=ramptime,
+            amplitude_range=amplitude_range,
             n_points=n_points,
             n_rotations=n_rotations,
             r2_threshold=r2_threshold,
@@ -2410,6 +2416,7 @@ class CalibrationMixin(
         stark_ramptime: int,
         duration: float | None = None,
         ramptime: float | None = None,
+        amplitude_range: ArrayLike | None = None,
         n_points: int = 20,
         n_rotations: int = 1,
         r2_threshold: float = 0.5,
@@ -2426,6 +2433,7 @@ class CalibrationMixin(
             ramptime=ramptime,
             n_points=n_points,
             n_rotations=n_rotations,
+            amplitude_range=amplitude_range,
             r2_threshold=r2_threshold,
             plot=plot,
             shots=shots,
@@ -2442,6 +2450,7 @@ class CalibrationMixin(
         duration: float | None = None,
         n_points: int = 20,
         n_rotations: int = 4,
+        amplitude_range: ArrayLike | None = None,
         r2_threshold: float = 0.5,
         drag_coeff: float = DRAG_COEFF,
         use_stored_amplitude: bool = False,
@@ -2503,14 +2512,17 @@ class CalibrationMixin(
             else:
                 raise ValueError("Invalid pulse type.")
 
-            ampl_min = ampl * (1 - 0.5 / n_rotations)
-            ampl_max = ampl * (1 + 0.5 / n_rotations)
-            ampl_min = np.clip(ampl_min, 0, 1)
-            ampl_max = np.clip(ampl_max, 0, 1)
-            if ampl_min == ampl_max:
-                ampl_min = 0
-                ampl_max = 1
-            ampl_range = np.linspace(ampl_min, ampl_max, n_points)
+            if amplitude_range is not None:
+                ampl_range = amplitude_range
+            else:
+                ampl_min = ampl * (1 - 0.5 / n_rotations)
+                ampl_max = ampl * (1 + 0.5 / n_rotations)
+                ampl_min = np.clip(ampl_min, 0, 1)
+                ampl_max = np.clip(ampl_max, 0, 1)
+                if ampl_min == ampl_max:
+                    ampl_min = 0
+                    ampl_max = 1
+                ampl_range = np.linspace(ampl_min, ampl_max, n_points)
 
             n_per_rotation = 2 if pulse_type == "pi" else 4
 
@@ -2731,6 +2743,7 @@ class CalibrationMixin(
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        amplitude_range: ArrayLike | None = None,
         degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
@@ -2769,6 +2782,7 @@ class CalibrationMixin(
                     n_points=n_points,
                     n_rotations=n_rotations,
                     r2_threshold=r2_threshold,
+                    amplitude_range=amplitude_range,
                     duration=duration,
                     use_stored_amplitude=True,
                     use_stored_beta=True,
@@ -2811,6 +2825,7 @@ class CalibrationMixin(
         n_rotations: int = 4,
         n_turns: int = 1,
         n_iterations: int = 2,
+        amplitude_range: ArrayLike | None = None,
         degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
@@ -2832,6 +2847,7 @@ class CalibrationMixin(
                     pulse_type="pi",
                     n_points=n_points,
                     n_rotations=1,
+                    amplitude_range=amplitude_range,
                     r2_threshold=r2_threshold,
                     duration=duration,
                     use_stored_amplitude=False,
@@ -2848,6 +2864,7 @@ class CalibrationMixin(
                     pulse_type="pi",
                     n_points=n_points,
                     n_rotations=n_rotations,
+                    amplitude_range=amplitude_range,
                     r2_threshold=r2_threshold,
                     duration=duration,
                     use_stored_amplitude=True,
