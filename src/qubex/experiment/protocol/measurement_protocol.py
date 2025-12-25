@@ -743,3 +743,21 @@ class MeasurementProtocol(Protocol):
         plot: bool = True,
         save_image: bool = True,
     ) -> dict: ...
+
+    def stark_rabi_experiment(
+        self,
+        *,
+        amplitudes: dict[str, float],
+        stark_amplitude: float,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        ramptime: float | None = None,
+        stark_ramptime: float | None = None,
+        frequencies: dict[str, float] | None = None,
+        detuning: float | None = None,
+        is_damped: bool = True,
+        fit_threshold: float = 0.5,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        store_params: bool = False,
+    ) -> ExperimentResult[RabiData]: ...

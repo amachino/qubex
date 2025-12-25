@@ -618,6 +618,57 @@ class MeasurementMixin(
 
         return result
 
+    def stark_repeat_sequence(
+        self,
+        sequence: TargetMap[Waveform],
+        *,
+        stark_amplitude: float,
+        stark_ramptime: int,
+        initial_states: dict[str, str] | None = None,
+        repetitions: int = 20,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+    ) -> ExperimentResult[SweepData]:
+        def repeated_sequence(N: int) -> PulseSchedule:
+            if isinstance(sequence, dict):
+                with PulseSchedule() as ps:
+                    for target, pulse in sequence.items():
+                        rep_pulse = pulse.repeated(N)
+                        st = self.stark_target(target=target)
+                        ins = self.insitu_target(target=target)
+                        stark_ampl = self.calc_control_amplitude(
+                            target=target, rabi_rate=stark_amplitude
+                        )
+                        ps.add(
+                            st,
+                            FlatTop(
+                                duration=rep_pulse.duration + stark_ramptime * 2,
+                                amplitude=stark_ampl,
+                                tau=stark_ramptime,
+                            ),
+                        )
+                        ps.add(ins, Blank(stark_ramptime))
+                        ps.add(ins, rep_pulse)
+            else:
+                raise ValueError("Invalid sequence.")
+            return ps
+
+        result = self.sweep_parameter(
+            sequence=repeated_sequence,
+            sweep_range=np.arange(repetitions + 1),
+            initial_states=initial_states,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            xlabel="Number of repetitions",
+        )
+
+        if plot:
+            result.plot(normalize=True)
+
+        return result
+
     def obtain_rabi_params(
         self,
         targets: Collection[str] | str | None = None,
@@ -4922,81 +4973,81 @@ class MeasurementMixin(
         )
 
     def rzx_gate_property(
-            self,
-            control_qubit: str,
-            target_qubit: str,
-            *,
-            angle_arr: np.ndarray = np.linspace(np.pi/18,4*np.pi/9,8),
-            measurement_times: int = 10,
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        angle_arr: np.ndarray = np.linspace(np.pi / 18, 4 * np.pi / 9, 8),
+        measurement_times: int = 10,
     ) -> Result:
-        
         RAD_TO_DEG = 180 / np.pi
 
         def cartesian_to_spherical(x, y, z):
             r = np.sqrt(x**2 + y**2 + z**2)
-            theta = np.arctan2(y, x)*RAD_TO_DEG
-            phi = np.arccos(z / r)*RAD_TO_DEG if r != 0 else 0
+            theta = np.arctan2(y, x) * RAD_TO_DEG
+            phi = np.arccos(z / r) * RAD_TO_DEG if r != 0 else 0
             return r, theta, phi
-        
-        result_rzx_angle=[]
+
+        result_rzx_angle = []
         for angle in tqdm(angle_arr, leave=False):
-            results=[]
+            results = []
             for _ in tqdm(range(measurement_times), leave=False):
-                result = self.state_tomography(self.rzx(
-                    control_qubit=control_qubit,
-                    target_qubit=target_qubit,
-                    angle=angle))
+                result = self.state_tomography(
+                    self.rzx(
+                        control_qubit=control_qubit,
+                        target_qubit=target_qubit,
+                        angle=angle,
+                    )
+                )
                 x, y, z = result[target_qubit]
-                r,theta,phi = cartesian_to_spherical(x, y, z)
-                results.append([r,theta,phi])
+                r, theta, phi = cartesian_to_spherical(x, y, z)
+                results.append([r, theta, phi])
             result_array = np.array(results)
             mean = np.mean(result_array[:, 2])
             std = np.std(result_array[:, 2])
-            result_rzx_angle.append([angle,mean,std])
-        
+            result_rzx_angle.append([angle, mean, std])
+
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
-                x = np.array(result_rzx_angle).T[0]*RAD_TO_DEG,
-                y = np.array(result_rzx_angle).T[1],
+                x=np.array(result_rzx_angle).T[0] * RAD_TO_DEG,
+                y=np.array(result_rzx_angle).T[1],
                 marker=dict(color=COLORS[1]),
                 error_y=dict(
-                    type='data',
-                    array=np.array(result_rzx_angle).T[2],
-                    color = COLORS[1]
+                    type="data", array=np.array(result_rzx_angle).T[2], color=COLORS[1]
                 ),
-                name='Measured'
+                name="Measured",
             ),
         )
         fig.add_trace(
             go.Scatter(
-                x = [0,90],
-                y = [0,90],
-                mode='lines',
-                line=dict(color=COLORS[0], dash='dash'),
-                name='Ideal'
+                x=[0, 90],
+                y=[0, 90],
+                mode="lines",
+                line=dict(color=COLORS[0], dash="dash"),
+                name="Ideal",
             )
         )
         fig.update_layout(
-            title=f'Sweep result : {control_qubit}-{target_qubit}',
+            title=f"Sweep result : {control_qubit}-{target_qubit}",
             xaxis=dict(
-                title = "Angle (deg)",
-                range =(0,90),
-                tickvals=angle_arr*RAD_TO_DEG,
+                title="Angle (deg)",
+                range=(0, 90),
+                tickvals=angle_arr * RAD_TO_DEG,
                 dtick=5,
-                gridcolor='gray',
+                gridcolor="gray",
                 gridwidth=3,
-                griddash='dot'
+                griddash="dot",
             ),
             yaxis=dict(
-                title="Z Angle (deg)" ,
-                range=(0,90),
-                tickvals=angle_arr*RAD_TO_DEG,
+                title="Z Angle (deg)",
+                range=(0, 90),
+                tickvals=angle_arr * RAD_TO_DEG,
                 dtick=5,
-                gridcolor='gray',
+                gridcolor="gray",
                 gridwidth=3,
-                griddash='dot'
-            )
+                griddash="dot",
+            ),
         )
         fig.show()
         return Result(
@@ -5005,3 +5056,136 @@ class MeasurementMixin(
                 "figure": fig,
             }
         )
+
+    def stark_rabi_experiment(
+        self,
+        *,
+        amplitude: tuple[str, float],
+        stark_amplitude: float,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        ramptime: float | None = None,
+        stark_ramptime: float | None = None,
+        frequencies: dict[str, float] | None = None,
+        detuning: float | None = None,
+        is_damped: bool = True,
+        fit_threshold: float = 0.5,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        store_params: bool = False,
+    ) -> ExperimentResult[RabiData]:
+        # target labels
+        target = next(iter(amplitude.keys()))
+        ins = self.insitu_target(target=target)
+        st = self.stark_target(target=target)
+        # drive time range
+        time_range = np.array(time_range, dtype=np.float64)
+
+        if ramptime is None:
+            ramptime = 0
+        if stark_ramptime is None:
+            stark_ramptime = 50.0
+
+        effective_time_range = time_range + ramptime
+
+        # measure ground states as reference points
+        reference_points = self.obtain_reference_points(target)["iq"]
+
+        # target frequencies
+        if frequencies is None:
+            frequencies = {ins: self.targets[ins].frequency}
+
+        stark_ampl = self.calc_control_amplitude(
+            target=target, rabi_rate=stark_amplitude
+        )
+        if stark_ampl > 1:
+            raise ValueError("Drive amplitude of a stark tone must not exceed 1")
+
+        # rabi sequence with rect pulses of duration T
+        def stark_rabi_sequence(T: float) -> PulseSchedule:
+            stark_pulse = FlatTop(
+                duration=T + 2 * stark_ramptime + 2 * ramptime,
+                amplitude=stark_ampl,
+                tau=stark_ramptime,
+            )
+            with PulseSchedule([target, ins, st]) as ps:
+                ps.add(st, stark_pulse)
+                ps.add(ins, Blank(stark_ramptime))
+                ps.add(
+                    ins,
+                    FlatTop(
+                        duration=T + 2 * ramptime,
+                        amplitude=amplitude[target],
+                        tau=ramptime,
+                    ),
+                )
+            return ps
+
+        # detune target frequencies if necessary
+        if detuning is not None:
+            frequencies = {target: frequencies[target] + detuning}
+
+        # run the Rabi experiment by sweeping the drive time
+        sweep_result = self.sweep_parameter(
+            sequence=stark_rabi_sequence,
+            sweep_range=time_range,
+            frequencies=frequencies,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+        # sweep data with the target labels
+        sweep_data = sweep_result.data
+
+        # fit the Rabi oscillation
+        rabi_params = {}
+        for target, data in sweep_data.items():
+            fit_result = fitting.fit_rabi(
+                target=data.target,
+                times=effective_time_range,
+                data=data.data,
+                reference_point=reference_points.get(target),
+                plot=plot,
+                is_damped=is_damped,
+            )
+            if fit_result["status"] == "error" or fit_result["r2"] < fit_threshold:
+                rabi_params[target] = RabiParam.nan(target=target)
+            else:
+                rabi_params[target] = RabiParam(
+                    target=target,
+                    amplitude=fit_result["amplitude"],
+                    frequency=fit_result["frequency"],
+                    phase=fit_result["phase"],
+                    offset=fit_result["offset"],
+                    noise=fit_result["noise"],
+                    angle=fit_result["angle"],
+                    distance=fit_result["distance"],
+                    r2=fit_result["r2"],
+                    reference_phase=fit_result["reference_phase"],
+                )
+
+        # store the Rabi parameters if necessary
+        if store_params:
+            self.store_rabi_params(rabi_params)
+
+        # create the Rabi data for each target
+        rabi_data = {
+            target: RabiData(
+                target=target,
+                data=data.data,
+                time_range=effective_time_range,
+                rabi_param=rabi_params[target],
+                state_centers=self.state_centers.get(target),
+            )
+            for target, data in sweep_data.items()
+        }
+
+        # create the experiment result
+        result = ExperimentResult(
+            data=rabi_data,
+            rabi_params=rabi_params,
+        )
+
+        # return the result
+        return result
