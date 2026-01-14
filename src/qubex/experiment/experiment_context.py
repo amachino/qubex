@@ -40,10 +40,6 @@ from ..measurement.measurement import (
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
 )
-from ..pulse import (
-    RampType,
-    Waveform,
-)
 from ..typing import TargetMap
 from ..version import get_package_version
 from . import experiment_tool
@@ -1096,34 +1092,3 @@ class ExperimentContext:
                 print(f"{target}: {rabi_rate * 1e3:.3f} MHz")
 
         return rabi_rates
-
-    def readout(
-        self,
-        target: str,
-        /,
-        *,
-        duration: float | None = None,
-        amplitude: float | None = None,
-        ramptime: float | None = None,
-        type: RampType | None = None,
-        drag_coeff: float | None = None,
-        pre_margin: float | None = None,
-        post_margin: float | None = None,
-    ) -> Waveform:
-        if duration is None:
-            duration = self.readout_duration
-        if pre_margin is None:
-            pre_margin = self.readout_pre_margin
-        if post_margin is None:
-            post_margin = self.readout_post_margin
-
-        return self.measurement.readout_pulse(
-            target=target,
-            duration=duration,
-            amplitude=amplitude,
-            ramptime=ramptime,
-            type=type,
-            drag_coeff=drag_coeff,
-            pre_margin=pre_margin,
-            post_margin=post_margin,
-        )
