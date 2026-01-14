@@ -55,15 +55,58 @@ ex.gate.x90(...)
 
 定型的な測定手続きや、ユーザー定義の測定フローを統一的に扱うため、**Command** パターンを導入する。
 
-### 概念: ExperimentTask
-測定という行為を「実行可能なタスクオブジェクト」として定義する。
+### 設計の詳細検討: ExperimentTask の実装方針
+
+`ExperimentTask` の実装にあたり、ユーザー拡張の容易さとシンプルさを重視し、**標準ライブラリの dataclass + ABC (Abstract Base Class)** の組み合わせを採用し、戻り値には **Generic** を使用する方針とする。
+
+#### 1. データ構造: Standard dataclass
+*   **理由**: `ExperimentTask` はユーザーが継承して独自の測定タスクを作成することを想定しているため、学習コストが低く、Python 標準で扱いやすい `dataclass` を採用する。
+*   **メリット**:
+    *   追加の依存ライブラリが不要で、シンプル。
+    *   ユーザーにとって Pydantic よりも馴染み深い場合が多い。
+
+#### 2. インタフェース定義: ABC (抽象基底クラス)
+*   **理由**: 全てのタスクに対し、`run` メソッドの実装を強制するため。
+
+#### 3. 戻り値の型: Generic[ResultT]
+*   **理由**: 実験ごとに返すべき結果オブジェクト（`RabiResult`, `SpectroscopyResult` など）が異なるため。
+*   **メリット**: `task = RabiTask(...)` を実行した際、エディタや型チェッカーが「戻り値は `RabiResult` である」と推論できるようになる。
+
+#### 実装イメージ
 
 ```python
+from abc import ABC, abstractmethod
+from typing import Generic, TypeVar
+from dataclasses import dataclass, field
+
+# 戻り値の型変数
+T = TypeVar("T", covariant=True)
+
 @dataclass
-class ExperimentTask:
-    """全ての測定タスクの基底クラス (または Protocol)"""
-    def execute(self, ctx: ExperimentContext) -> Result:
+class ExperimentTask(Generic[T], ABC):
+    """
+    全ての実験タスクの基底クラス。
+    パラメータの保持(dataclass) と 実行インタフェース(ABC) を兼ねる。
+    """
+    # 共通パラメータ
+    shots: int = 1000
+    notes: str | None = None
+
+    @abstractmethod
+    def run(self, ctx: ExperimentContext) -> T:
+        """実験ロジックの実体。サブクラスで実装する。"""
+        pass
+
+# 実装例
+@dataclass
+class MyTask(ExperimentTask[MyResult]):
+    param1: float
+    param2: int
+
+    def run(self, ctx: ExperimentContext) -> MyResult:
+        # 具体的な測定ロジック
         ...
+        return MyResult(...)
 ```
 
 ### 実行フローの変更
@@ -77,7 +120,7 @@ class Experiment:
         return task.execute(self.ctx)
 
 # ユーザーコード
-task = RabiExperiment(...)
+task = MyTask(...)
 result = ex.run(task)
 ```
 
