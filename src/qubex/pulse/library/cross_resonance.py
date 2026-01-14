@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from ..blank import Blank
 from ..pulse_array import PulseArray
 from ..pulse_schedule import PulseSchedule
 from ..waveform import Waveform
 from .flat_top import FlatTop, MultiDerivativeFlatTop
+from .ramp_type import RampType
 
 
 class CrossResonance(PulseSchedule):
@@ -37,7 +36,7 @@ class CrossResonance(PulseSchedule):
         The DRAG correction coefficient for the cancel pulse.
     echo: bool = False
         If True, the echo pulse is added to the schedule.
-    ramp_type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "RaisedCosine",
+    ramp_type: RampType = "RaisedCosine"
         The type of the ramp function used in the pulse.
     """
 
@@ -56,12 +55,7 @@ class CrossResonance(PulseSchedule):
         echo: bool = False,
         pi_pulse: Waveform | None = None,
         pi_margin: float | None = None,
-        ramp_type: Literal[
-            "Gaussian",
-            "RaisedCosine",
-            "Sintegral",
-            "Bump",
-        ] = "RaisedCosine",
+        ramp_type: RampType = "RaisedCosine",
     ):
         cr_ramptime = cr_ramptime or 0.0
         cr_phase = cr_phase or 0.0

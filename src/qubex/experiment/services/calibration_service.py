@@ -19,6 +19,7 @@ from ...pulse import (
     MultiDerivativeCrossResonance,
     PulseArray,
     PulseSchedule,
+    RampType,
     Waveform,
 )
 from ...typing import TargetMap
@@ -2461,13 +2462,7 @@ class CalibrationService:
         control_state: str = "0",
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
-        ramp_type: Literal[
-            "Gaussian",
-            "RaisedCosine",
-            "Sintegral",
-            "Bump",
-            "MultiDerivativeSintegral",
-        ] = "RaisedCosine",
+        ramp_type: RampType = "RaisedCosine",
         x180_margin: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -2671,13 +2666,7 @@ class CalibrationService:
         cancel_phase: float | None = None,
         cancel_betas: dict[int, float] | None = None,
         cancel_power: int | None = None,
-        ramp_type: Literal[
-            "Gaussian",
-            "RaisedCosine",
-            "Sintegral",
-            "Bump",
-            "MultiDerivativeSintegral",
-        ] = "RaisedCosine",
+        ramp_type: RampType = "RaisedCosine",
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
         shots: int = CALIBRATION_SHOTS,
@@ -3012,7 +3001,7 @@ class CalibrationService:
                 vertical_spacing=0.1,
             )
 
-            for data in fig_s_0.data:
+            for data in fig_s_0.data:  # type: ignore
                 data: go.Scatter
                 fig_s.add_trace(
                     go.Scatter(
@@ -3028,7 +3017,7 @@ class CalibrationService:
                     col=1,
                 )
 
-            for data in fig_s_1.data:
+            for data in fig_s_1.data:  # type: ignore
                 data: go.Scatter
                 fig_s.add_trace(
                     go.Scatter(
@@ -3107,13 +3096,13 @@ class CalibrationService:
                         col=col,
                     )
                     if not isinstance(data, go.Surface):
-                        if data.mode == "markers":
-                            fig.data[-1].marker.color = viz.COLORS[ddx]
-                        if data.mode == "lines":
-                            fig.data[-1].line.color = viz.COLORS[ddx]
+                        if data.mode == "markers":  # type: ignore
+                            fig.data[-1].marker.color = viz.COLORS[ddx]  # type: ignore
+                        if data.mode == "lines":  # type: ignore
+                            fig.data[-1].line.color = viz.COLORS[ddx]  # type: ignore
                         if name is not None:
-                            fig.data[-1].name = f"{name_suffix} ({name})"
-                            fig.data[-1].showlegend = True
+                            fig.data[-1].name = f"{name_suffix} ({name})"  # type: ignore
+                            fig.data[-1].showlegend = True  # type: ignore
 
             add_trace_with_color(
                 fig=fig_s_3d,
