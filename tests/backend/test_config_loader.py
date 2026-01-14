@@ -106,6 +106,7 @@ def _make_minimal_files(tmp_path: Path) -> tuple[Path, Path, str]:
 
 
 def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
+    """ConfigLoader should build ExperimentSystem and convert units correctly."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
@@ -156,6 +157,7 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
 
 
 def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
+    """ConfigLoader should load control params and pass through JPA params."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     loader = ConfigLoader(
@@ -188,6 +190,7 @@ def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
 
 
 def test_get_experiment_system_deprecation_warning(tmp_path: Path):
+    """ConfigLoader should warn when deprecated arguments are used."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
     loader = ConfigLoader(
         chip_id=chip_id,
@@ -200,6 +203,7 @@ def test_get_experiment_system_deprecation_warning(tmp_path: Path):
 
 
 def test_merge_per_file_over_legacy(tmp_path: Path):
+    """ConfigLoader should merge per-file params over legacy params."""
     # Arrange: start from minimal files, then add per-file readout_amplitude only for Q1
     # and set legacy props.yaml to provide qubit_frequency for Q2.
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
@@ -251,6 +255,7 @@ def test_merge_per_file_over_legacy(tmp_path: Path):
 
 
 def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    """ConfigLoader should log a warning when legacy params are overridden."""
     config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
 
     # Per-file readout_amplitude overrides legacy value for Q0 (legacy is 0.02)

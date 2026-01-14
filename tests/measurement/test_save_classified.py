@@ -11,6 +11,7 @@ from qubex.measurement.measurement_result import MeasureResult
 
 
 def test_save_classified_json(measure_result: MeasureResult, tmp_path: Path):
+    """MeasureResult should save classified data as JSON."""
     out = tmp_path / "classified.json.gz"
     path = measure_result.save_classified(out, format="json", compress=True)
     assert path.exists()
