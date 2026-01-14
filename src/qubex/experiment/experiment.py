@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Collection, Literal
+from typing import Collection, Literal, Optional, Sequence
 
+import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from typing_extensions import deprecated
 
@@ -48,9 +49,10 @@ from ..pulse import (
     VirtualZ,
     Waveform,
 )
-from ..typing import TargetMap
+from ..typing import IQArray, ParametricPulseSchedule, ParametricWaveformDict, TargetMap
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
+    CALIBRATION_SHOTS,
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
     DEFAULT_RABI_TIME_RANGE,
@@ -61,7 +63,7 @@ from .experiment_constants import (
 from .experiment_context import ExperimentContext
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
-from .experiment_result import ExperimentResult, RabiData
+from .experiment_result import ExperimentResult, RabiData, SweepData
 from .mixin import (
     BenchmarkingMixin,
     CalibrationMixin,
@@ -70,6 +72,8 @@ from .mixin import (
     OptimizationMixin,
 )
 from .rabi_param import RabiParam
+from .result import Result
+from .services import MeasurementService
 
 
 class Experiment(
@@ -174,10 +178,15 @@ class Experiment(
             configuration_mode=configuration_mode,
             mock_mode=mock_mode,
         )
+        self._measurement_service = MeasurementService(self._ctx)
 
     @property
     def ctx(self) -> ExperimentContext:
         return self._ctx
+
+    @property
+    def measurement_service(self) -> MeasurementService:
+        return self._measurement_service
 
     @property
     def tool(self):
@@ -1156,4 +1165,991 @@ class Experiment(
             zx90=zx90,
             x90=x90,
             only_low_to_high=only_low_to_high,
+        )
+
+    # measurement_service methods
+
+    def execute(
+        self,
+        schedule: PulseSchedule,
+        *,
+        frequencies: Optional[dict[str, float]] = None,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
+        enable_dsp_demodulation: bool = True,
+        enable_dsp_sum: bool | None = None,
+        enable_dsp_classification: bool = False,
+        line_param0: tuple[float, float, float] | None = None,
+        line_param1: tuple[float, float, float] | None = None,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = False,
+    ) -> MultipleMeasureResult:
+        """
+        Execute the given schedule.
+
+        Parameters
+        ----------
+        schedule : PulseSchedule
+            Schedule to execute.
+        mode : Literal["single", "avg"], optional
+            Measurement mode. Defaults to "avg".
+        shots : int, optional
+            Number of shots
+        interval : float, optional
+            Interval between shots in ns.
+        frequencies : Optional[dict[str, float]], optional
+            Frequencies of the qubits.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        readout_ramptime : float, optional
+            Readout ramp time in ns.
+        readout_drag_coeff : float, optional
+            Readout DRAG coefficient.
+        readout_ramp_type : RampType, optional
+            Readout ramp type. Defaults to "RaisedCosine".
+        add_last_measurement : bool, optional
+            Whether to add the last measurement to the result. Defaults to False.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
+        reset_awg_and_capunits : bool, optional
+            Whether to reset the AWG and capture units before the experiment. Defaults to True.
+        enable_dsp_demodulation : bool, optional
+            Whether to enable DSP demodulation. Defaults to True.
+        enable_dsp_sum : bool | None, optional
+            Whether to enable DSP summation. Defaults to None.
+        enable_dsp_classification : bool, optional
+            Whether to enable DSP classification. Defaults to False
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        MultipleMeasureResult
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> with pulse.PulseSchedule(["Q00", "Q01"]) as ps:
+        ...     ps.add("Q00", pulse.Rect(...))
+        ...     ps.add("Q01", pulse.Gaussian(...))
+        >>> result = ex.execute(
+        ...     schedule=ps,
+        ...     mode="avg",
+        ...     shots=1024,
+        ...     interval=150 * 1024,
+        ... )
+        """
+        return self.measurement_service.execute(
+            schedule,
+            frequencies=frequencies,
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
+            add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+            plot=plot,
+        )
+
+    def measure(
+        self,
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
+        *,
+        frequencies: Optional[dict[str, float]] = None,
+        initial_states: dict[str, str] | None = None,
+        mode: Literal["single", "avg"] = "avg",
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        add_pump_pulses: bool = False,
+        enable_dsp_demodulation: bool = True,
+        enable_dsp_sum: bool | None = None,
+        enable_dsp_classification: bool = False,
+        line_param0: tuple[float, float, float] | None = None,
+        line_param1: tuple[float, float, float] | None = None,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = False,
+    ) -> MeasureResult:
+        """
+        Measures the signals using the given sequence.
+
+        Parameters
+        ----------
+        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
+            Sequence of the experiment.
+        frequencies : Optional[dict[str, float]]
+            Frequencies of the qubits.
+        initial_states : dict[str, str], optional
+            Initial states of the qubits.
+        mode : Literal["single", "avg"], optional
+            Measurement mode. Defaults to "avg".
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        readout_ramptime : float, optional
+            Readout ramp time in ns.
+        readout_drag_coeff : float, optional
+            Readout DRAG coefficient.
+        readout_ramp_type : RampType, optional
+            Readout ramp type. Defaults to "RaisedCosine".
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
+        enable_dsp_demodulation : bool, optional
+            Whether to enable DSP demodulation. Defaults to True.
+        enable_dsp_sum : bool | None, optional
+            Whether to enable DSP summation. Defaults to None.
+        enable_dsp_classification : bool, optional
+            Whether to enable DSP classification. Defaults to False.
+        reset_awg_and_capunits : bool, optional
+            Whether to reset the AWG and capture units before the experiment. Defaults to True.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.measure(
+        ...     sequence={"Q00": [0.1+0.0j, 0.3+0.0j, 0.1+0.0j]},
+        ...     mode="avg",
+        ...     shots=1024,
+        ...     interval=150 * 1024,
+        ...     plot=True,
+        ... )
+        """
+        return self.measurement_service.measure(
+            sequence=sequence,
+            frequencies=frequencies,
+            initial_states=initial_states,
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
+            add_pump_pulses=add_pump_pulses,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+            plot=plot,
+        )
+
+    def measure_state(
+        self,
+        states: dict[
+            str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]
+        ],
+        *,
+        mode: Literal["single", "avg"] = "single",
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        add_pump_pulses: bool = False,
+        plot: bool = False,
+    ) -> MeasureResult:
+        """
+        Measures the signals using the given states.
+
+        Parameters
+        ----------
+        states : dict[str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]]
+            States to prepare.
+        mode : Literal["single", "avg"], optional
+            Measurement mode. Defaults to "single".
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.measure_state(
+        ...     states={"Q00": "0", "Q01": "1"},
+        ...     mode="single",
+        ...     shots=1024,
+        ...     interval=150 * 1024,
+        ...     plot=True,
+        ... )
+        """
+        return self.measurement_service.measure_state(
+            states=states,
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            add_pump_pulses=add_pump_pulses,
+            plot=plot,
+        )
+
+    def measure_idle_states(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        add_pump_pulses: bool = False,
+        plot: bool = True,
+    ) -> Result:
+        """
+        Measures the idle states of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Targets to measure. Defaults to None (all targets).
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the sequence. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the idle states for each target.
+
+        Examples
+        --------
+        >>> idle_states = ex.measure_idle_states(targets=["Q00", "Q01"])
+        """
+        return self.measurement_service.measure_idle_states(
+            targets=targets,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            add_pump_pulses=add_pump_pulses,
+            plot=plot,
+        )
+
+    def obtain_reference_points(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        store_reference_points: bool = True,
+    ) -> Result:
+        """
+        Obtains the reference points for the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str | None, optional
+            Targets to obtain reference points for. Defaults to None (all targets).
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        store_reference_points : bool, optional
+            Whether to store the reference points. Defaults to True.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the reference points for each target.
+
+        Examples
+        --------
+        >>> ref_points = ex.obtain_reference_points(targets=["Q00", "Q01"])
+        """
+        return self.measurement_service.obtain_reference_points(
+            targets=targets,
+            shots=shots,
+            interval=interval,
+            store_reference_points=store_reference_points,
+        )
+
+    def sweep_parameter(
+        self,
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
+        *,
+        sweep_range: ArrayLike,
+        repetitions: int = 1,
+        frequencies: dict[str, float] | None = None,
+        rabi_level: Literal["ge", "ef"] = "ge",
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        plot: bool = True,
+        title: str = "Sweep result",
+        xlabel: str = "Sweep value",
+        ylabel: str = "Measured value",
+        xaxis_type: Literal["linear", "log"] = "linear",
+        yaxis_type: Literal["linear", "log"] = "linear",
+    ) -> ExperimentResult[SweepData]:
+        """
+        Sweeps a parameter and measures the signals.
+
+        Parameters
+        ----------
+        sequence : ParametricPulseSchedule | ParametricWaveformMap
+            Parametric sequence to sweep.
+        sweep_range : ArrayLike
+            Range of the parameter to sweep.
+        repetitions : int, optional
+            Number of repetitions. Defaults to 1.
+        frequencies : dict[str, float], optional
+            Frequencies of the qubits.
+        rabi_level : Literal["ge", "ef"], optional
+            Rabi level to use. Defaults to "ge".
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        readout_amplitudes : dict[str, float], optional
+            Readout amplitude for each target.
+        readout_duration : float, optional
+            Readout duration in ns.
+        readout_pre_margin : float, optional
+            Readout pre-margin in ns.
+        readout_post_margin : float, optional
+            Readout post-margin in ns.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        title : str, optional
+            Title of the plot. Defaults to "Sweep result".
+        xlabel : str, optional
+            Label of the x-axis. Defaults to "Sweep value".
+        ylabel : str, optional
+            Label of the y-axis. Defaults to "Measured value".
+        xaxis_type : Literal["linear", "log"], optional
+            Type of the x-axis. Defaults to "linear".
+        yaxis_type : Literal["linear", "log"], optional
+            Type of the y-axis. Defaults to "linear".
+
+        Returns
+        -------
+        ExperimentResult[SweepData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.sweep_parameter(
+        ...     sequence=lambda x: {"Q00": Rect(duration=30, amplitude=x)},
+        ...     sweep_range=np.arange(0, 101, 4),
+        ...     repetitions=4,
+        ...     shots=1024,
+        ...     plot=True,
+        ... )
+        """
+        return self.measurement_service.sweep_parameter(
+            sequence=sequence,
+            sweep_range=sweep_range,
+            repetitions=repetitions,
+            frequencies=frequencies,
+            rabi_level=rabi_level,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            plot=plot,
+            title=title,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            xaxis_type=xaxis_type,
+            yaxis_type=yaxis_type,
+        )
+
+    def repeat_sequence(
+        self,
+        sequence: TargetMap[Waveform] | PulseSchedule,
+        *,
+        repetitions: int = 20,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+    ) -> ExperimentResult[SweepData]:
+        """
+        Repeats the pulse sequence n times.
+
+        Parameters
+        ----------
+        sequence : TargetMap[Waveform] | PulseSchedule
+            Pulse sequence to repeat.
+        repetitions : int, optional
+            Number of repetitions. Defaults to 20.
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots in ns.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[SweepData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.repeat_sequence(
+        ...     sequence={"Q00": Rect(duration=64, amplitude=0.1)},
+        ...     repetitions=4,
+        ... )
+        """
+        return self.measurement_service.repeat_sequence(
+            sequence=sequence,
+            repetitions=repetitions,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def obtain_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        amplitudes: dict[str, float] | None = None,
+        frequencies: dict[str, float] | None = None,
+        is_damped: bool = False,
+        fit_threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        store_params: bool = True,
+        simultaneous: bool = False,
+    ) -> ExperimentResult[RabiData]:
+        return self.measurement_service.obtain_rabi_params(
+            targets=targets,
+            time_range=time_range,
+            amplitudes=amplitudes,
+            frequencies=frequencies,
+            is_damped=is_damped,
+            fit_threshold=fit_threshold,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            store_params=store_params,
+            simultaneous=simultaneous,
+        )
+
+    def obtain_ef_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        is_damped: bool = False,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[RabiData]:
+        return self.measurement_service.obtain_ef_rabi_params(
+            targets=targets,
+            time_range=time_range,
+            is_damped=is_damped,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def rabi_experiment(
+        self,
+        *,
+        amplitudes: dict[str, float],
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        ramptime: float | None = None,
+        frequencies: dict[str, float] | None = None,
+        detuning: float | None = None,
+        is_damped: bool = True,
+        fit_threshold: float = 0.5,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        store_params: bool = False,
+    ) -> ExperimentResult[RabiData]:
+        return self.measurement_service.rabi_experiment(
+            amplitudes=amplitudes,
+            time_range=time_range,
+            ramptime=ramptime,
+            frequencies=frequencies,
+            detuning=detuning,
+            is_damped=is_damped,
+            fit_threshold=fit_threshold,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            store_params=store_params,
+        )
+
+    def ef_rabi_experiment(
+        self,
+        *,
+        amplitudes: dict[str, float],
+        time_range: ArrayLike,
+        frequencies: dict[str, float] | None = None,
+        detuning: float | None = None,
+        is_damped: bool = False,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        store_params: bool = False,
+    ) -> ExperimentResult[RabiData]:
+        return self.measurement_service.ef_rabi_experiment(
+            amplitudes=amplitudes,
+            time_range=time_range,
+            frequencies=frequencies,
+            detuning=detuning,
+            is_damped=is_damped,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            store_params=store_params,
+        )
+
+    def measure_state_distribution(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        n_states: Literal[2, 3] = 2,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        plot: bool = True,
+    ) -> list[MeasureResult]:
+        return self.measurement_service.measure_state_distribution(
+            targets=targets,
+            n_states=n_states,
+            shots=shots,
+            interval=interval,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
+            plot=plot,
+        )
+
+    def build_classifier(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        n_states: Literal[2, 3] | None = None,
+        save_classifier: bool = True,
+        save_dir: Path | str | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        add_pump_pulses: bool = False,
+        simultaneous: bool = False,
+        plot: bool = True,
+    ) -> Result:
+        return self.measurement_service.build_classifier(
+            targets=targets,
+            n_states=n_states,
+            save_classifier=save_classifier,
+            save_dir=save_dir,
+            shots=shots,
+            interval=interval,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            add_pump_pulses=add_pump_pulses,
+            simultaneous=simultaneous,
+            plot=plot,
+        )
+
+    def state_tomography(
+        self,
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
+        *,
+        x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
+        method: Literal["measure", "execute"] = "measure",
+        use_zvalues: bool = False,
+        plot: bool = False,
+    ) -> Result:
+        """
+        Conducts a state tomography experiment.
+
+        Parameters
+        ----------
+        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
+            Sequence to measure for each target.
+        x90 : TargetMap[Waveform], optional
+            π/2 pulse.
+        initial_state : TargetMap[str], optional
+            Initial state of each target.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        reset_awg_and_capunits : bool, optional
+            Whether to reset the AWG and capture units before the experiment. Defaults to True.
+        method : Literal["measure", "execute"], optional
+            Measurement method. Defaults to "measure".
+        use_zvalues : bool, optional
+            Whether to use Z-values. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        Result
+            Results of the experiment.
+        """
+        return self.measurement_service.state_tomography(
+            sequence=sequence,
+            x90=x90,
+            initial_state=initial_state,
+            shots=shots,
+            interval=interval,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+            method=method,
+            use_zvalues=use_zvalues,
+            plot=plot,
+        )
+
+    def state_evolution_tomography(
+        self,
+        *,
+        sequences: (
+            Sequence[TargetMap[IQArray]]
+            | Sequence[TargetMap[Waveform]]
+            | Sequence[PulseSchedule]
+        ),
+        x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        """
+        Conducts a state evolution tomography experiment.
+
+        Parameters
+        ----------
+        sequences : Sequence[TargetMap[IQArray]] | Sequence[TargetMap[Waveform]] | Sequence[PulseSchedule]
+            Sequences to measure for each target.
+        x90 : TargetMap[Waveform], optional
+            π/2 pulse.
+        initial_state : TargetMap[str], optional
+            Initial state of each target.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to False.
+
+        Returns
+        -------
+        Result
+            Results of the experiment.
+        """
+        return self.measurement_service.state_evolution_tomography(
+            sequences=sequences,
+            x90=x90,
+            initial_state=initial_state,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def pulse_tomography(
+        self,
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
+        *,
+        x90: TargetMap[Waveform] | None = None,
+        initial_state: TargetMap[str] | None = None,
+        n_samples: int | None = 100,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        method: Literal["measure", "execute"] = "measure",
+        plot: bool = True,
+    ) -> Result:
+        """
+        Conducts a pulse tomography experiment.
+
+        Parameters
+        ----------
+        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
+            Waveforms to measure for each target.
+        x90 : TargetMap[Waveform], optional
+            π/2 pulse.
+        initial_state : TargetMap[str], optional
+            Initial state of each target.
+        n_samples : int, optional
+            Number of samples. Defaults to 100.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        method : Literal["measure", "execute"], optional
+            Measurement method. Defaults to "measure".
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        Result
+            Results of the experiment.
+        """
+        return self.measurement_service.pulse_tomography(
+            sequence=sequence,
+            x90=x90,
+            initial_state=initial_state,
+            n_samples=n_samples,
+            shots=shots,
+            interval=interval,
+            method=method,
+            plot=plot,
+        )
+
+    def measure_population(
+        self,
+        sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
+        *,
+        fit_gmm: bool = False,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
+        """
+        Measures the state populations of the target qubits.
+
+        Parameters
+        ----------
+        sequence : TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule
+            Sequence to measure for each target.
+        fit_gmm : bool, optional
+            Whether to fit the data with a Gaussian mixture model. Defaults to False
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]
+            State probabilities and standard deviations.
+
+        Examples
+        --------
+        >>> sequence = {
+        ...     "Q00": ex.hpi_pulse["Q00"],
+        ...     "Q01": ex.hpi_pulse["Q01"],
+        ... }
+        >>> result = ex.measure_population(sequence)
+        """
+        return self.measurement_service.measure_population(
+            sequence=sequence,
+            fit_gmm=fit_gmm,
+            shots=shots,
+            interval=interval,
+        )
+
+    def measure_population_dynamics(
+        self,
+        *,
+        sequence: ParametricPulseSchedule | ParametricWaveformDict,
+        params_list: Sequence | NDArray,
+        fit_gmm: bool = False,
+        xlabel: str = "Index",
+        scatter_mode: str = "lines+markers",
+        show_error: bool = True,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
+        """
+        Measures the population dynamics of the target qubits.
+
+        Parameters
+        ----------
+        sequence : ParametricPulseSchedule | ParametricWaveformDict
+            Parametric sequence to measure.
+        params_list : Sequence | NDArray
+            List of parameters.
+        fit_gmm : bool, optional
+            Whether to fit the data with a Gaussian mixture model. Defaults to False.
+        xlabel : str, optional
+            Label of the x-axis. Defaults to "Index".
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]
+            State probabilities and standard deviations.
+
+        Examples
+        --------
+        >>> sequence = lambda x: {
+        ...     "Q00": ex.hpi_pulse["Q00"].scaled(x),
+        ...     "Q01": ex.hpi_pulse["Q01"].scaled(x),
+        >>> params_list = np.linspace(0.5, 1.5, 100)
+        >>> result = ex.measure_population_dynamics(sequence, params_list)
+        """
+        return self.measurement_service.measure_population_dynamics(
+            sequence=sequence,
+            params_list=params_list,
+            fit_gmm=fit_gmm,
+            xlabel=xlabel,
+            scatter_mode=scatter_mode,
+            show_error=show_error,
+            shots=shots,
+            interval=interval,
+        )
+
+    def measure_bell_state(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        control_basis: str = "Z",
+        target_basis: str = "Z",
+        zx90: PulseSchedule | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        plot_sequence: bool = False,
+        plot_raw: bool = True,
+        plot_mitigated: bool = True,
+        save_image: bool = True,
+        reset_awg_and_capunits: bool = True,
+    ) -> Result:
+        return self.measurement_service.measure_bell_state(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            control_basis=control_basis,
+            target_basis=target_basis,
+            zx90=zx90,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            plot_sequence=plot_sequence,
+            plot_raw=plot_raw,
+            plot_mitigated=plot_mitigated,
+            save_image=save_image,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+        )
+
+    def bell_state_tomography(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        readout_mitigation: bool = True,
+        zx90: PulseSchedule | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+        mle_fit: bool = True,
+    ) -> Result:
+        return self.measurement_service.bell_state_tomography(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            readout_mitigation=readout_mitigation,
+            zx90=zx90,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+            mle_fit=mle_fit,
         )
