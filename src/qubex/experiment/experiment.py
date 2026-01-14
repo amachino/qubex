@@ -55,7 +55,9 @@ from .experiment_constants import (
     CALIBRATION_SHOTS,
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
+    DEFAULT_RABI_FREQUENCY,
     DEFAULT_RABI_TIME_RANGE,
+    DRAG_COEFF,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     PROPERTY_DIR,
@@ -63,7 +65,17 @@ from .experiment_constants import (
 from .experiment_context import ExperimentContext
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
-from .experiment_result import ExperimentResult, RabiData, SweepData
+from .experiment_result import (
+    AmplCalibData,
+    AmplRabiData,
+    ExperimentResult,
+    FreqRabiData,
+    RabiData,
+    RamseyData,
+    SweepData,
+    T1Data,
+    T2Data,
+)
 from .rabi_param import RabiParam
 from .result import Result
 from .services import (
@@ -2183,4 +2195,1734 @@ class Experiment:
             plot=plot,
             save_image=save_image,
             mle_fit=mle_fit,
+        )
+
+    # calibration_service methods
+
+    def calibrate_default_pulse(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        update_params: bool = True,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the default pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to calibrate.
+        pulse_type : Literal["pi", "hpi"]
+            Type of the pulse to calibrate.
+        duration : float, optional
+            Duration of the pulse.
+        ramptime : float, optional
+            Ramp time of the pulse.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        return self.calibration_service.calibrate_default_pulse(
+            targets=targets,
+            pulse_type=pulse_type,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            update_params=update_params,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_hpi_pulse(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the π/2 pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to calibrate.
+        duration : float, optional
+            Duration of the pulse.
+        ramptime : float, optional
+            Ramp time of the pulse.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        return self.calibration_service.calibrate_hpi_pulse(
+            targets=targets,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_pi_pulse(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the π pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to calibrate.
+        duration : float, optional
+            Duration of the pulse.
+        ramptime : float, optional
+            Ramp time of the pulse.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        return self.calibration_service.calibrate_pi_pulse(
+            targets=targets,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_ef_pulse(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the default pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to calibrate.
+        pulse_type : Literal["pi", "hpi"]
+            Type of the pulse to calibrate.
+        duration : float, optional
+            Duration of the pulse.
+        ramptime : float, optional
+            Ramp time of the pulse.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        return self.calibration_service.calibrate_ef_pulse(
+            targets=targets,
+            pulse_type=pulse_type,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_ef_hpi_pulse(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the ef π/2 pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to calibrate.
+        duration : float, optional
+            Duration of the pulse.
+        ramptime : float, optional
+            Ramp time of the pulse.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        return self.calibration_service.calibrate_ef_hpi_pulse(
+            targets=targets,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_ef_pi_pulse(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 1,
+        r2_threshold: float = 0.5,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> ExperimentResult[AmplCalibData]:
+        """
+        Calibrates the ef π pulse.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to calibrate.
+        duration : float, optional
+            Duration of the pulse.
+        ramptime : float, optional
+            Ramp time of the pulse.
+        n_points : int, optional
+            Number of points to sweep. Defaults to 20.
+        n_rotations : int, optional
+            Number of rotations. Defaults to 1.
+        r2_threshold : float, optional
+            Threshold for R² value. Defaults to 0.5.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+
+        Returns
+        -------
+        ExperimentResult[AmplCalibData]
+            Result of the experiment.
+        """
+        return self.calibration_service.calibrate_ef_pi_pulse(
+            targets=targets,
+            duration=duration,
+            ramptime=ramptime,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_drag_amplitude(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        spectator_state: str | None = None,
+        pulse_type: Literal["pi", "hpi"],
+        duration: float | None = None,
+        n_points: int = 20,
+        n_rotations: int = 4,
+        r2_threshold: float = 0.5,
+        drag_coeff: float = DRAG_COEFF,
+        use_stored_amplitude: bool = False,
+        use_stored_beta: bool = False,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> Result:
+        return self.calibration_service.calibrate_drag_amplitude(
+            targets=targets,
+            spectator_state=spectator_state,
+            pulse_type=pulse_type,
+            duration=duration,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            r2_threshold=r2_threshold,
+            drag_coeff=drag_coeff,
+            use_stored_amplitude=use_stored_amplitude,
+            use_stored_beta=use_stored_beta,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_drag_beta(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        spectator_state: str | None = None,
+        pulse_type: Literal["pi", "hpi"] = "hpi",
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        duration: float | None = None,
+        n_turns: int = 1,
+        degree: int = 3,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> Result:
+        return self.calibration_service.calibrate_drag_beta(
+            targets=targets,
+            spectator_state=spectator_state,
+            pulse_type=pulse_type,
+            beta_range=beta_range,
+            duration=duration,
+            n_turns=n_turns,
+            degree=degree,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_drag_hpi_pulse(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        spectator_state: str | None = None,
+        n_points: int = 20,
+        n_rotations: int = 4,
+        n_turns: int = 1,
+        n_iterations: int = 2,
+        degree: int = 3,
+        r2_threshold: float = 0.5,
+        calibrate_beta: bool = True,
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        duration: float | None = None,
+        drag_coeff: float = DRAG_COEFF,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> Result:
+        return self.calibration_service.calibrate_drag_hpi_pulse(
+            targets=targets,
+            spectator_state=spectator_state,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            n_turns=n_turns,
+            n_iterations=n_iterations,
+            degree=degree,
+            r2_threshold=r2_threshold,
+            calibrate_beta=calibrate_beta,
+            beta_range=beta_range,
+            duration=duration,
+            drag_coeff=drag_coeff,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def calibrate_drag_pi_pulse(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        spectator_state: str | None = None,
+        n_points: int = 20,
+        n_rotations: int = 4,
+        n_turns: int = 1,
+        n_iterations: int = 2,
+        degree: int = 3,
+        r2_threshold: float = 0.5,
+        calibrate_beta: bool = True,
+        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        duration: float | None = None,
+        drag_coeff: float = DRAG_COEFF,
+        plot: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> Result:
+        return self.calibration_service.calibrate_drag_pi_pulse(
+            targets=targets,
+            spectator_state=spectator_state,
+            n_points=n_points,
+            n_rotations=n_rotations,
+            n_turns=n_turns,
+            n_iterations=n_iterations,
+            degree=degree,
+            r2_threshold=r2_threshold,
+            calibrate_beta=calibrate_beta,
+            beta_range=beta_range,
+            duration=duration,
+            drag_coeff=drag_coeff,
+            plot=plot,
+            shots=shots,
+            interval=interval,
+        )
+
+    def measure_cr_dynamics(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        time_range: ArrayLike | None = None,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        echo: bool = False,
+        control_state: str = "0",
+        x90: TargetMap[Waveform] | None = None,
+        x180: TargetMap[Waveform] | None = None,
+        ramp_type: Literal[
+            "Gaussian",
+            "RaisedCosine",
+            "Sintegral",
+            "Bump",
+        ] = "RaisedCosine",
+        x180_margin: float | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = True,
+    ) -> Result:
+        return self.calibration_service.measure_cr_dynamics(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            time_range=time_range,
+            ramptime=ramptime,
+            cr_amplitude=cr_amplitude,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
+            echo=echo,
+            control_state=control_state,
+            x90=x90,
+            x180=x180,
+            ramp_type=ramp_type,
+            x180_margin=x180_margin,
+            shots=shots,
+            interval=interval,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+            plot=plot,
+        )
+
+    def cr_hamiltonian_tomography(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        time_range: ArrayLike | None = None,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = True,
+    ) -> Result:
+        return self.calibration_service.cr_hamiltonian_tomography(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            time_range=time_range,
+            ramptime=ramptime,
+            cr_amplitude=cr_amplitude,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
+            x90=x90,
+            x180_margin=x180_margin,
+            shots=shots,
+            interval=interval,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+            plot=plot,
+        )
+
+    def update_cr_params(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        time_range: ArrayLike | None = None,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        update_cr_phase: bool = True,
+        update_cancel_pulse: bool = True,
+        x90: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = True,
+    ) -> Result:
+        return self.calibration_service.update_cr_params(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            time_range=time_range,
+            ramptime=ramptime,
+            cr_amplitude=cr_amplitude,
+            cr_phase=cr_phase,
+            cancel_amplitude=cancel_amplitude,
+            cancel_phase=cancel_phase,
+            update_cr_phase=update_cr_phase,
+            update_cancel_pulse=update_cancel_pulse,
+            x90=x90,
+            x180_margin=x180_margin,
+            shots=shots,
+            interval=interval,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+            plot=plot,
+        )
+
+    def obtain_cr_params(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        time_range: ArrayLike | None = None,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        n_iterations: int = 4,
+        n_cycles: int = 2,
+        n_points_per_cycle: int = 6,
+        use_stored_params: bool = False,
+        tolerance: float = 0.005e-3,
+        adiabatic_safe_factor: float | None = None,
+        max_amplitude: float = 1.0,
+        max_time_range: float = 4096.0,
+        x90: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        reset_awg_and_capunits: bool = True,
+        plot: bool = True,
+    ) -> Result:
+        return self.calibration_service.obtain_cr_params(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            time_range=time_range,
+            ramptime=ramptime,
+            cr_amplitude=cr_amplitude,
+            n_iterations=n_iterations,
+            n_cycles=n_cycles,
+            n_points_per_cycle=n_points_per_cycle,
+            use_stored_params=use_stored_params,
+            tolerance=tolerance,
+            adiabatic_safe_factor=adiabatic_safe_factor,
+            max_amplitude=max_amplitude,
+            max_time_range=max_time_range,
+            x90=x90,
+            x180_margin=x180_margin,
+            shots=shots,
+            interval=interval,
+            reset_awg_and_capunits=reset_awg_and_capunits,
+            plot=plot,
+        )
+
+    def calibrate_zx90(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        ramptime: float | None = None,
+        duration: float | None = None,
+        amplitude_range: ArrayLike | None = None,
+        initial_state: str = "0",
+        degree: int = 3,
+        adiabatic_safe_factor: float | None = None,
+        max_amplitude: float = 1.0,
+        rotary_multiple: float = 9.0,
+        use_drag: bool = True,
+        duration_unit: float = 16.0,
+        duration_buffer: float = 1.05,
+        n_repetitions: int = 1,
+        x180: TargetMap[Waveform] | Waveform | None = None,
+        x180_margin: float = 0.0,
+        use_zvalues: bool = False,
+        store_params: bool = True,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        return self.calibration_service.calibrate_zx90(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            ramptime=ramptime,
+            duration=duration,
+            amplitude_range=amplitude_range,
+            initial_state=initial_state,
+            degree=degree,
+            adiabatic_safe_factor=adiabatic_safe_factor,
+            max_amplitude=max_amplitude,
+            rotary_multiple=rotary_multiple,
+            use_drag=use_drag,
+            duration_unit=duration_unit,
+            duration_buffer=duration_buffer,
+            n_repetitions=n_repetitions,
+            x180=x180,
+            x180_margin=x180_margin,
+            use_zvalues=use_zvalues,
+            store_params=store_params,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    # characterization_service methods
+
+    def measure_readout_snr(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        readout_duration: float | None = None,
+        readout_amplitudes: dict[str, float] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> Result:
+        return self.characterization_service.measure_readout_snr(
+            targets=targets,
+            initial_state=initial_state,
+            readout_duration=readout_duration,
+            readout_amplitudes=readout_amplitudes,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def sweep_readout_amplitude(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        amplitude_range: ArrayLike | None = None,
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        readout_duration: float | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        return self.characterization_service.sweep_readout_amplitude(
+            targets=targets,
+            amplitude_range=amplitude_range,
+            initial_state=initial_state,
+            readout_duration=readout_duration,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def sweep_readout_duration(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike = np.arange(128, 2048, 128),
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        readout_amplitudes: dict[str, float] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        return self.characterization_service.sweep_readout_duration(
+            targets=targets,
+            time_range=time_range,
+            initial_state=initial_state,
+            readout_amplitudes=readout_amplitudes,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def chevron_pattern(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        frequencies: dict[str, float] | None = None,
+        amplitudes: dict[str, float] | None = None,
+        rabi_params: dict[str, RabiParam] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.chevron_pattern(
+            targets=targets,
+            detuning_range=detuning_range,
+            time_range=time_range,
+            frequencies=frequencies,
+            amplitudes=amplitudes,
+            rabi_params=rabi_params,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def obtain_freq_rabi_relation(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
+        time_range: ArrayLike = np.arange(0, 101, 4),
+        rabi_level: Literal["ge", "ef"] = "ge",
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[FreqRabiData]:
+        return self.characterization_service.obtain_freq_rabi_relation(
+            targets=targets,
+            detuning_range=detuning_range,
+            time_range=time_range,
+            rabi_level=rabi_level,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def obtain_ampl_rabi_relation(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> ExperimentResult[AmplRabiData]:
+        return self.characterization_service.obtain_ampl_rabi_relation(
+            targets=targets,
+            time_range=time_range,
+            amplitude_range=amplitude_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def calibrate_control_frequency(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
+        time_range: ArrayLike = range(0, 101, 4),
+        frequencies: dict[str, float] | None = None,
+        amplitudes: dict[str, float] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        return self.characterization_service.calibrate_control_frequency(
+            targets=targets,
+            detuning_range=detuning_range,
+            time_range=time_range,
+            frequencies=frequencies,
+            amplitudes=amplitudes,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def calibrate_ef_control_frequency(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
+        time_range: ArrayLike = np.arange(0, 101, 4),
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        return self.characterization_service.calibrate_ef_control_frequency(
+            targets=targets,
+            detuning_range=detuning_range,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def calibrate_readout_frequency(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
+        time_range: ArrayLike = range(0, 101, 4),
+        readout_amplitudes: dict[str, float] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        return self.characterization_service.calibrate_readout_frequency(
+            targets=targets,
+            detuning_range=detuning_range,
+            time_range=time_range,
+            readout_amplitudes=readout_amplitudes,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def t1_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+        xaxis_type: Literal["linear", "log"] = "log",
+    ) -> ExperimentResult[T1Data]:
+        return self.characterization_service.t1_experiment(
+            targets=targets,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+            xaxis_type=xaxis_type,
+        )
+
+    def t2_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        n_cpmg: int = 1,
+        pi_cpmg: Waveform | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+        xaxis_type: Literal["linear", "log"] = "log",
+    ) -> ExperimentResult[T2Data]:
+        return self.characterization_service.t2_experiment(
+            targets=targets,
+            time_range=time_range,
+            n_cpmg=n_cpmg,
+            pi_cpmg=pi_cpmg,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+            xaxis_type=xaxis_type,
+        )
+
+    def ramsey_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> ExperimentResult[RamseyData]:
+        return self.characterization_service.ramsey_experiment(
+            targets=targets,
+            time_range=time_range,
+            detuning=detuning,
+            second_rotation_axis=second_rotation_axis,
+            spectator_state=spectator_state,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def _simultaneous_measurement_coherence(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> dict[str, ExperimentResult]:
+        return self.characterization_service._simultaneous_measurement_coherence(
+            targets=targets,
+            time_range=time_range,
+            detuning=detuning,
+            second_rotation_axis=second_rotation_axis,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def _stark_t1_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        stark_detuning: float | dict[str, float] | None = None,
+        stark_amplitude: float | dict[str, float] | None = None,
+        stark_ramptime: float | dict[str, float] | None = None,
+        time_range: ArrayLike | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+        xaxis_type: Literal["linear", "log"] = "log",
+    ) -> ExperimentResult[T1Data]:
+        return self.characterization_service._stark_t1_experiment(
+            targets=targets,
+            stark_detuning=stark_detuning,
+            stark_amplitude=stark_amplitude,
+            stark_ramptime=stark_ramptime,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+            xaxis_type=xaxis_type,
+        )
+
+    def _stark_ramsey_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        stark_detuning: float | dict[str, float] | None = None,
+        stark_amplitude: float | dict[str, float] | None = None,
+        stark_ramptime: float | dict[str, float] | None = None,
+        time_range: ArrayLike | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        envelope_region: Literal["full", "flat"] = "full",
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> ExperimentResult[RamseyData]:
+        return self.characterization_service._stark_ramsey_experiment(
+            targets=targets,
+            stark_detuning=stark_detuning,
+            stark_amplitude=stark_amplitude,
+            stark_ramptime=stark_ramptime,
+            time_range=time_range,
+            second_rotation_axis=second_rotation_axis,
+            shots=shots,
+            interval=interval,
+            envelope_region=envelope_region,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def obtain_effective_control_frequency(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike = np.arange(0, 10001, 100),
+        detuning: float = 0.001,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        return self.characterization_service.obtain_effective_control_frequency(
+            targets=targets,
+            time_range=time_range,
+            detuning=detuning,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def jazz_experiment(
+        self,
+        target_qubit: str,
+        spectator_qubit: str,
+        *,
+        time_range: ArrayLike = np.arange(0, 2001, 100),
+        x90: TargetMap[Waveform] | None = None,
+        x180: TargetMap[Waveform] | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ):
+        return self.characterization_service.jazz_experiment(
+            target_qubit=target_qubit,
+            spectator_qubit=spectator_qubit,
+            time_range=time_range,
+            x90=x90,
+            x180=x180,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def obtain_coupling_strength(
+        self,
+        target_qubit: str,
+        spectator_qubit: str,
+        *,
+        time_range: ArrayLike = np.arange(0, 5001, 200),
+        x90: TargetMap[Waveform] | None = None,
+        x180: TargetMap[Waveform] | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+    ) -> Result:
+        return self.characterization_service.obtain_coupling_strength(
+            target_qubit=target_qubit,
+            spectator_qubit=spectator_qubit,
+            time_range=time_range,
+            x90=x90,
+            x180=x180,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
+    def measure_electrical_delay(
+        self,
+        target: str,
+        *,
+        f_start: float | None = None,
+        df: float | None = None,
+        n_samples: int | None = None,
+        readout_amplitude: float | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = 0,
+        plot: bool = True,
+        confirm: bool = True,
+    ) -> float:
+        return self.characterization_service.measure_electrical_delay(
+            target=target,
+            f_start=f_start,
+            df=df,
+            n_samples=n_samples,
+            readout_amplitude=readout_amplitude,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            confirm=confirm,
+        )
+
+    def scan_resonator_frequencies(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        subrange_width: float = 0.3,
+        peak_height: float | None = None,
+        peak_distance: int | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = 0,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> Result:
+        return self.characterization_service.scan_resonator_frequencies(
+            target=target,
+            frequency_range=frequency_range,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            subrange_width=subrange_width,
+            peak_height=peak_height,
+            peak_distance=peak_distance,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def resonator_spectroscopy(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike | None = None,
+        power_range: ArrayLike = np.arange(-60, 5, 5),
+        electrical_delay: float | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = 0,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.resonator_spectroscopy(
+            target=target,
+            frequency_range=frequency_range,
+            power_range=power_range,
+            electrical_delay=electrical_delay,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def measure_reflection_coefficient(
+        self,
+        target: str,
+        *,
+        center_frequency: float | None = None,
+        df: float | None = None,
+        frequency_width: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        qubit_state: str = "0",
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.measure_reflection_coefficient(
+            target=target,
+            center_frequency=center_frequency,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            qubit_state=qubit_state,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def scan_qubit_frequencies(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike | None = None,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
+        readout_frequency: float | None = None,
+        subrange_width: float | None = None,
+        peak_height: float | None = None,
+        peak_distance: int | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> Result:
+        return self.characterization_service.scan_qubit_frequencies(
+            target=target,
+            frequency_range=frequency_range,
+            control_amplitude=control_amplitude,
+            readout_amplitude=readout_amplitude,
+            readout_frequency=readout_frequency,
+            subrange_width=subrange_width,
+            peak_height=peak_height,
+            peak_distance=peak_distance,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def estimate_control_amplitude(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
+        target_rabi_rate: float = DEFAULT_RABI_FREQUENCY,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ):
+        return self.characterization_service.estimate_control_amplitude(
+            target=target,
+            frequency_range=frequency_range,
+            control_amplitude=control_amplitude,
+            readout_amplitude=readout_amplitude,
+            target_rabi_rate=target_rabi_rate,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def qubit_spectroscopy(
+        self,
+        target: str,
+        frequency_range: ArrayLike | None = None,
+        power_range: ArrayLike = np.arange(-60, 0, 5),
+        readout_amplitude: float | None = None,
+        readout_frequency: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.qubit_spectroscopy(
+            target=target,
+            frequency_range=frequency_range,
+            power_range=power_range,
+            readout_amplitude=readout_amplitude,
+            readout_frequency=readout_frequency,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def measure_dispersive_shift(
+        self,
+        target: str,
+        *,
+        df: float | None = None,
+        frequency_width: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        threshold: float = 0.5,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.measure_dispersive_shift(
+            target=target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            threshold=threshold,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def find_optimal_readout_frequency(
+        self,
+        target: str,
+        *,
+        df: float | None = None,
+        frequency_width: float | None = None,
+        readout_amplitude: float | None = None,
+        electrical_delay: float | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.find_optimal_readout_frequency(
+            target=target,
+            df=df,
+            frequency_width=frequency_width,
+            readout_amplitude=readout_amplitude,
+            electrical_delay=electrical_delay,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def find_optimal_readout_amplitude(
+        self,
+        target: str,
+        *,
+        amplitude_range: ArrayLike | None = None,
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.find_optimal_readout_amplitude(
+            target=target,
+            amplitude_range=amplitude_range,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def ckp_sequence(
+        self,
+        target: str,
+        qubit_initial_state: str | None = None,
+        qubit_drive_detuning: float | None = None,
+        qubit_pi_pulse: Waveform | None = None,
+        qubit_drive_scale: float | None = None,
+        resonator_drive_detuning: float | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        resonator_drive_ramptime: float | None = None,
+    ) -> PulseSchedule:
+        return self.characterization_service.ckp_sequence(
+            target=target,
+            qubit_initial_state=qubit_initial_state,
+            qubit_drive_detuning=qubit_drive_detuning,
+            qubit_pi_pulse=qubit_pi_pulse,
+            qubit_drive_scale=qubit_drive_scale,
+            resonator_drive_detuning=resonator_drive_detuning,
+            resonator_drive_amplitude=resonator_drive_amplitude,
+            resonator_drive_duration=resonator_drive_duration,
+            resonator_drive_ramptime=resonator_drive_ramptime,
+        )
+
+    def ckp_measurement(
+        self,
+        target: str,
+        qubit_initial_state: str,
+        qubit_detuning_range: ArrayLike | None = None,
+        qubit_pi_pulse: Waveform | None = None,
+        qubit_drive_scale: float | None = None,
+        resonator_detuning_range: ArrayLike | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        plot: bool = True,
+        verbose: bool = False,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.ckp_measurement(
+            target=target,
+            qubit_initial_state=qubit_initial_state,
+            qubit_detuning_range=qubit_detuning_range,
+            qubit_pi_pulse=qubit_pi_pulse,
+            qubit_drive_scale=qubit_drive_scale,
+            resonator_detuning_range=resonator_detuning_range,
+            resonator_drive_amplitude=resonator_drive_amplitude,
+            resonator_drive_duration=resonator_drive_duration,
+            plot=plot,
+            verbose=verbose,
+            save_image=save_image,
+        )
+
+    def ckp_experiment(
+        self,
+        target: str,
+        qubit_detuning_range: ArrayLike | None = None,
+        qubit_pi_pulse: Waveform | None = None,
+        qubit_drive_scale: float | None = None,
+        resonator_detuning_range: ArrayLike | None = None,
+        resonator_drive_amplitude: float | None = None,
+        resonator_drive_duration: float | None = None,
+        plot: bool = True,
+        verbose: bool = False,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.ckp_experiment(
+            target=target,
+            qubit_detuning_range=qubit_detuning_range,
+            qubit_pi_pulse=qubit_pi_pulse,
+            qubit_drive_scale=qubit_drive_scale,
+            resonator_detuning_range=resonator_detuning_range,
+            resonator_drive_amplitude=resonator_drive_amplitude,
+            resonator_drive_duration=resonator_drive_duration,
+            plot=plot,
+            verbose=verbose,
+            save_image=save_image,
+        )
+
+    def characterize_1q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.characterize_1q(
+            targets=targets,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def characterize_2q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int = CALIBRATION_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.characterization_service.characterize_2q(
+            targets=targets,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def rb_sequence(
+        self,
+        target: str,
+        *,
+        n: int,
+        x90: Waveform | TargetMap[Waveform] | None = None,
+        zx90: PulseSchedule | None = None,
+        interleaved_waveform: Waveform | PulseSchedule | None = None,
+        interleaved_clifford: Clifford | None = None,
+        seed: int | None = None,
+    ) -> PulseSchedule:
+        return self.benchmarking_service.rb_sequence(
+            target=target,
+            n=n,
+            x90=x90,
+            zx90=zx90,
+            interleaved_waveform=interleaved_waveform,
+            interleaved_clifford=interleaved_clifford,
+            seed=seed,
+        )
+
+    def randomized_benchmarking(
+        self,
+        targets: Collection[str] | str,
+        *,
+        n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
+        in_parallel: bool = False,
+        xaxis_type: Literal["linear", "log"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.benchmarking_service.randomized_benchmarking(
+            targets=targets,
+            n_cliffords_range=n_cliffords_range,
+            n_trials=n_trials,
+            seeds=seeds,
+            max_n_cliffords=max_n_cliffords,
+            x90=x90,
+            zx90=zx90,
+            in_parallel=in_parallel,
+            xaxis_type=xaxis_type,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def interleaved_randomized_benchmarking(
+        self,
+        targets: Collection[str] | str,
+        *,
+        interleaved_clifford: str | Clifford,
+        interleaved_waveform: TargetMap[PulseSchedule]
+        | TargetMap[Waveform]
+        | None = None,
+        n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
+        in_parallel: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.benchmarking_service.interleaved_randomized_benchmarking(
+            targets=targets,
+            interleaved_clifford=interleaved_clifford,
+            interleaved_waveform=interleaved_waveform,
+            n_cliffords_range=n_cliffords_range,
+            n_trials=n_trials,
+            seeds=seeds,
+            max_n_cliffords=max_n_cliffords,
+            x90=x90,
+            zx90=zx90,
+            in_parallel=in_parallel,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def purity_benchmarking(
+        self,
+        targets: Collection[str] | str,
+        *,
+        n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
+        in_parallel: bool = False,
+        xaxis_type: Literal["linear", "log"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.benchmarking_service.purity_benchmarking(
+            targets=targets,
+            n_cliffords_range=n_cliffords_range,
+            n_trials=n_trials,
+            seeds=seeds,
+            max_n_cliffords=max_n_cliffords,
+            x90=x90,
+            zx90=zx90,
+            in_parallel=in_parallel,
+            xaxis_type=xaxis_type,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def interleaved_purity_benchmarking(
+        self,
+        targets: Collection[str] | str,
+        *,
+        interleaved_clifford: str | Clifford,
+        interleaved_waveform: TargetMap[PulseSchedule]
+        | TargetMap[Waveform]
+        | None = None,
+        n_cliffords_range: ArrayLike | None = None,
+        n_trials: int | None = None,
+        seeds: ArrayLike | None = None,
+        max_n_cliffords: int | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        zx90: TargetMap[PulseSchedule] | None = None,
+        in_parallel: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool = True,
+        save_image: bool = True,
+    ) -> Result:
+        return self.benchmarking_service.interleaved_purity_benchmarking(
+            targets=targets,
+            interleaved_clifford=interleaved_clifford,
+            interleaved_waveform=interleaved_waveform,
+            n_cliffords_range=n_cliffords_range,
+            n_trials=n_trials,
+            seeds=seeds,
+            max_n_cliffords=max_n_cliffords,
+            x90=x90,
+            zx90=zx90,
+            in_parallel=in_parallel,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def optimize_x90(
+        self,
+        qubit: str,
+        *,
+        sigma0: float = 0.001,
+        seed: int = 42,
+        ftarget: float = 1e-3,
+        timeout: int = 300,
+    ) -> Waveform:
+        return self.optimization_service.optimize_x90(
+            qubit=qubit,
+            sigma0=sigma0,
+            seed=seed,
+            ftarget=ftarget,
+            timeout=timeout,
+        )
+
+    def optimize_drag_x90(
+        self,
+        qubit: str,
+        *,
+        duration: float = 16,
+        sigma0: float = 0.001,
+        seed: int = 42,
+        ftarget: float = 1e-3,
+        timeout: int = 300,
+    ) -> Waveform:
+        return self.optimization_service.optimize_drag_x90(
+            qubit=qubit,
+            duration=duration,
+            sigma0=sigma0,
+            seed=seed,
+            ftarget=ftarget,
+            timeout=timeout,
+        )
+
+    def optimize_pulse(
+        self,
+        qubit: str,
+        *,
+        pulse: Waveform,
+        x90: Waveform,
+        target_state: tuple[float, float, float],
+        sigma0: float = 0.001,
+        seed: int = 42,
+        ftarget: float = 1e-3,
+        timeout: int = 300,
+    ) -> Waveform:
+        return self.optimization_service.optimize_pulse(
+            qubit=qubit,
+            pulse=pulse,
+            x90=x90,
+            target_state=target_state,
+            sigma0=sigma0,
+            seed=seed,
+            ftarget=ftarget,
+            timeout=timeout,
+        )
+
+    def optimize_zx90(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        objective_type: str = "st",
+        optimize_method: str = "cma",
+        update_cr_param: bool = True,
+        opt_params: Collection[str] | None = None,
+        seed: int | None = None,
+        ftarget: float | None = None,
+        timeout: int | None = None,
+        maxiter: int | None = None,
+        n_cliffords: int | None = None,
+        n_trials: int | None = None,
+        duration: float | None = None,
+        ramptime: float | None = None,
+        x180: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+    ) -> dict:
+        return self.optimization_service.optimize_zx90(
+            control_qubit=control_qubit,
+            target_qubit=target_qubit,
+            objective_type=objective_type,
+            optimize_method=optimize_method,
+            update_cr_param=update_cr_param,
+            opt_params=opt_params,
+            seed=seed,
+            ftarget=ftarget,
+            timeout=timeout,
+            maxiter=maxiter,
+            n_cliffords=n_cliffords,
+            n_trials=n_trials,
+            duration=duration,
+            ramptime=ramptime,
+            x180=x180,
+            x180_margin=x180_margin,
+            shots=shots,
+            interval=interval,
         )

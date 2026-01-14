@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Collection, Final, Literal
 
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
@@ -34,15 +34,12 @@ from ..clifford import Clifford, CliffordGenerator
 from ..measurement import (
     Measurement,
     MeasureResult,
-    MultipleMeasureResult,
     StateClassifier,
 )
 from ..measurement.measurement import (
-    DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
-    DEFAULT_SHOTS,
 )
 from ..pulse import (
     Blank,
@@ -63,7 +60,6 @@ from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
     DEFAULT_RABI_FREQUENCY,
-    DEFAULT_RABI_TIME_RANGE,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     HPI_DURATION,
@@ -75,7 +71,6 @@ from .experiment_constants import (
 from .experiment_exceptions import CalibrationMissingError
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
-from .experiment_result import ExperimentResult, RabiData
 from .experiment_util import ExperimentUtil
 from .rabi_param import RabiParam
 
