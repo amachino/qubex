@@ -37,6 +37,26 @@ class OptimizationService:
         self._characterization_service = characterization_service
         self._benchmarking_service = benchmarking_service
 
+    @property
+    def ctx(self) -> ExperimentContext:
+        return self._experiment_context
+
+    @property
+    def calibration_service(self) -> CalibrationService:
+        return self._calibration_service
+
+    @property
+    def measurement_service(self) -> MeasurementService:
+        return self._measurement_service
+
+    @property
+    def characterization_service(self) -> CharacterizationService:
+        return self._characterization_service
+
+    @property
+    def benchmarking_service(self) -> BenchmarkingService:
+        return self._benchmarking_service
+
     def optimize_x90(
         self,
         qubit: str,
@@ -46,7 +66,7 @@ class OptimizationService:
         ftarget: float = 1e-3,
         timeout: int = 300,
     ) -> Waveform:
-        pulse = self.get_drag_hpi_pulse(qubit)
+        pulse = self.ctx.get_drag_hpi_pulse(qubit)
         N = pulse.length
         initial_params = list(pulse.real) + list(pulse.imag)
         es = cma.CMAEvolutionStrategy(
@@ -62,7 +82,7 @@ class OptimizationService:
 
         def objective_func(params):
             pulse = Pulse(params[:N] + 1j * params[N:])
-            result = self.state_tomography(
+            result = self.measurement_service.state_tomography(
                 {qubit: pulse.repeated(2)},
                 x90={qubit: pulse},
             )
@@ -84,7 +104,7 @@ class OptimizationService:
         ftarget: float = 1e-3,
         timeout: int = 300,
     ) -> Waveform:
-        param = self.calib_note.get_drag_hpi_param(qubit)
+        param = self.ctx.calib_note.get_drag_hpi_param(qubit)
         if param is None:
             raise ValueError("DRAG HPI parameters are not stored.")
         initial_params = [param["amplitude"], param["beta"]]
@@ -105,7 +125,7 @@ class OptimizationService:
                 amplitude=params[0],
                 beta=params[1],
             )
-            result = self.state_tomography(
+            result = self.measurement_service.state_tomography(
                 {qubit: pulse.repeated(2)},
                 x90={qubit: pulse},
             )
@@ -144,7 +164,9 @@ class OptimizationService:
 
         def objective_func(params):
             pulse = Pulse(params[:N] + 1j * params[N:])
-            result = self.state_tomography({qubit: pulse}, x90={qubit: x90})
+            result = self.measurement_service.state_tomography(
+                {qubit: pulse}, x90={qubit: x90}
+            )
             loss = np.linalg.norm(result[qubit] - np.array(target_state))
             return loss
 
@@ -188,12 +210,12 @@ class OptimizationService:
 
         if x180 is None:
             x180 = {
-                control_qubit: self.x180(control_qubit),
-                target_qubit: self.x180(target_qubit),
+                control_qubit: self.ctx.x180(control_qubit),
+                target_qubit: self.ctx.x180(target_qubit),
             }
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_param = self.calib_note.get_cr_param(cr_label)
+        cr_param = self.ctx.calib_note.get_cr_param(cr_label)
         if cr_param is None:
             raise ValueError("CR parameters are not stored.")
 
@@ -283,7 +305,7 @@ class OptimizationService:
                 rotary_amplitude + 0j
             )
 
-            pi_pulse = x180.get(control_qubit, self.x180(control_qubit))
+            pi_pulse = x180.get(control_qubit, self.ctx.x180(control_qubit))
 
             ecr = CrossResonance(
                 control_qubit=control_qubit,
@@ -304,12 +326,12 @@ class OptimizationService:
             if objective_type == "rb":
                 loss_list = []
                 for _ in range(n_trials):
-                    rb_seq = self.rb_sequence_2q(
+                    rb_seq = self.benchmarking_service.rb_sequence_2q(
                         cr_label,
                         n=n_cliffords,
                         zx90=ecr,
                     )
-                    result = self.measure(
+                    result = self.measurement_service.measure(
                         rb_seq,
                         mode="single",
                         shots=shots,
@@ -323,7 +345,7 @@ class OptimizationService:
                     loss_list.append(loss)
                 loss = np.mean(loss_list)
             elif objective_type == "st":
-                result_00 = self.state_tomography(
+                result_00 = self.measurement_service.state_tomography(
                     ecr,
                     initial_state={
                         control_qubit: "0",
@@ -332,7 +354,7 @@ class OptimizationService:
                     shots=shots,
                     interval=interval,
                 )
-                result_10 = self.state_tomography(
+                result_10 = self.measurement_service.state_tomography(
                     ecr,
                     initial_state={
                         control_qubit: "1",
@@ -341,7 +363,7 @@ class OptimizationService:
                     shots=shots,
                     interval=interval,
                 )
-                result_pp = self.state_tomography(
+                result_pp = self.measurement_service.state_tomography(
                     ecr,
                     initial_state={
                         control_qubit: "+",
@@ -350,7 +372,7 @@ class OptimizationService:
                     shots=shots,
                     interval=interval,
                 )
-                result_pm = self.state_tomography(
+                result_pm = self.measurement_service.state_tomography(
                     ecr,
                     initial_state={
                         control_qubit: "+",
@@ -470,7 +492,7 @@ class OptimizationService:
 
         cr_param.update(opt_result)
         if update_cr_param:
-            self.calib_note.update_cr_param(cr_label, cr_param)
+            self.ctx.calib_note.update_cr_param(cr_label, cr_param)
 
         return {
             "method": optimize_method,

@@ -556,7 +556,7 @@ class Experiment:
         reference_phases: dict[str, float] | None = None,
         save: bool = True,
     ):
-        return self.ctx.correct_rabi_params(
+        return self.calibration_service.correct_rabi_params(
             targets=targets,
             reference_phases=reference_phases,
             save=save,
@@ -569,7 +569,7 @@ class Experiment:
         reference_phases: dict[str, float] | None = None,
         save: bool = True,
     ):
-        return self.ctx.correct_classifiers(
+        return self.calibration_service.correct_classifiers(
             targets=targets,
             reference_phases=reference_phases,
             save=save,
@@ -582,7 +582,7 @@ class Experiment:
         shots: int = 10000,
         save: bool = True,
     ):
-        return self.ctx.correct_cr_params(
+        return self.calibration_service.correct_cr_params(
             cr_labels=cr_labels,
             shots=shots,
             save=save,
@@ -595,7 +595,7 @@ class Experiment:
         *,
         save: bool = False,
     ):
-        return self.ctx.correct_calibration(
+        return self.calibration_service.correct_calibration(
             qubit_labels=qubit_labels,
             cr_labels=cr_labels,
             save=save,
@@ -872,7 +872,7 @@ class Experiment:
         --------
         >>> result = ex.check_waveform(["Q00", "Q01"])
         """
-        return self.ctx.check_waveform(
+        return self.measurement_service.check_waveform(
             targets=targets,
             method=method,
             shots=shots,
@@ -923,7 +923,7 @@ class Experiment:
         --------
         >>> result = ex.check_rabi(["Q00", "Q01"])
         """
-        return self.ctx.check_rabi(
+        return self.measurement_service.check_rabi(
             targets=targets,
             time_range=time_range,
             shots=shots,

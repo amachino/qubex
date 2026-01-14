@@ -382,13 +382,13 @@ class CharacterizationService:
 
         if amplitudes is None:
             amplitudes = {
-                target: self.params.control_amplitude[target] for target in targets
+                target: self.ctx.params.control_amplitude[target] for target in targets
             }
 
         shared_rabi_params: dict[str, RabiParam]
         if rabi_params is None:
             print("Obtaining Rabi parameters...")
-            shared_rabi_params = self.obtain_rabi_params(
+            shared_rabi_params = self.measurement_service.obtain_rabi_params(
                 targets=targets,
                 amplitudes=amplitudes,
                 time_range=time_range,
@@ -407,7 +407,7 @@ class CharacterizationService:
         resonant_frequencies: dict[str, float] = {}
 
         print(f"Targets : {targets}")
-        subgroups = self.util.create_qubit_subgroups(targets)
+        subgroups = self.ctx.util.create_qubit_subgroups(targets)
         figs = {}
         for idx, subgroup in enumerate(subgroups):
             if len(subgroup) == 0:
@@ -419,8 +419,8 @@ class CharacterizationService:
             chevron_data_buffer: dict[str, list[NDArray]] = defaultdict(list)
 
             for detuning in tqdm(detuning_range):
-                with self.util.no_output():
-                    sweep_result = self.sweep_parameter(
+                with self.ctx.util.no_output():
+                    sweep_result = self.measurement_service.sweep_parameter(
                         sequence=lambda t: {
                             label: Rect(duration=t, amplitude=amplitudes[label])
                             for label in subgroup
@@ -552,14 +552,14 @@ class CharacterizationService:
             time_range = np.asarray(time_range, dtype=np.float64)
 
         amplitudes = {
-            target: self.params.get_control_amplitude(target) for target in targets
+            target: self.ctx.params.get_control_amplitude(target) for target in targets
         }
         rabi_rates: dict[str, list[float]] = defaultdict(list)
         rabi_data: dict[str, list[RabiData]] = defaultdict(list)
 
         for detuning in tqdm(detuning_range):
             if rabi_level == "ge":
-                rabi_result = self.rabi_experiment(
+                rabi_result = self.measurement_service.rabi_experiment(
                     time_range=time_range,
                     amplitudes=amplitudes,
                     detuning=detuning,
@@ -568,7 +568,7 @@ class CharacterizationService:
                     plot=False,
                 )
             elif rabi_level == "ef":
-                rabi_result = self.ef_rabi_experiment(
+                rabi_result = self.measurement_service.ef_rabi_experiment(
                     time_range=time_range,
                     amplitudes=amplitudes,
                     detuning=detuning,
@@ -636,7 +636,7 @@ class CharacterizationService:
         rabi_data: dict[str, list[RabiData]] = defaultdict(list)
 
         for amplitude in tqdm(amplitude_range):
-            rabi_result = self.rabi_experiment(
+            rabi_result = self.measurement_service.rabi_experiment(
                 amplitudes={target: amplitude for target in targets},
                 time_range=time_range,
                 ramptime=ramptime,
@@ -784,21 +784,21 @@ class CharacterizationService:
         detuning_range = np.array(detuning_range, dtype=np.float64)
 
         # store the original readout amplitudes
-        original_readout_amplitudes = deepcopy(self.params.readout_amplitude)
+        original_readout_amplitudes = deepcopy(self.ctx.params.readout_amplitude)
 
         result = defaultdict(list)
         for detuning in tqdm(detuning_range):
-            with self.util.no_output():
+            with self.ctx.util.no_output():
                 if readout_amplitudes is not None:
                     # modify the readout amplitudes if necessary
                     for target, amplitude in readout_amplitudes.items():
                         label = Target.qubit_label(target)
-                        self.params.readout_amplitude[label] = amplitude
+                        self.ctx.params.readout_amplitude[label] = amplitude
 
-                rabi_result = self.rabi_experiment(
+                rabi_result = self.measurement_service.rabi_experiment(
                     time_range=time_range,
                     amplitudes={
-                        target: self.params.control_amplitude[target]
+                        target: self.ctx.params.control_amplitude[target]
                         for target in targets
                     },
                     frequencies={
@@ -814,7 +814,7 @@ class CharacterizationService:
                     result[qubit].append(rabi_amplitude)
 
         # restore the original readout amplitudes
-        self.params.readout_amplitude = original_readout_amplitudes
+        self.ctx.params.readout_amplitude = original_readout_amplitudes
 
         fit_data = {}
         figs = {}
@@ -868,7 +868,7 @@ class CharacterizationService:
         else:
             targets = list(targets)
 
-        self.validate_rabi_params(targets)
+        self.ctx.validate_rabi_params(targets)
 
         if time_range is None:
             time_range = np.logspace(
@@ -876,11 +876,11 @@ class CharacterizationService:
                 np.log10(200 * 1000),
                 51,
             )
-        time_range = self.util.discretize_time_range(np.asarray(time_range))
+        time_range = self.ctx.util.discretize_time_range(np.asarray(time_range))
 
         data: dict[str, T1Data] = {}
 
-        subgroups = self.util.create_qubit_subgroups(targets)
+        subgroups = self.ctx.util.create_qubit_subgroups(targets)
         print(f"Target qubits: {targets}")
         print(f"Subgroups: {subgroups}")
         for idx, subgroup in enumerate(subgroups):
@@ -898,7 +898,7 @@ class CharacterizationService:
                 f"({idx + 1}/{len(subgroups)}) Conducting T1 experiment for {subgroup}...\n"
             )
 
-            sweep_result = self.sweep_parameter(
+            sweep_result = self.measurement_service.sweep_parameter(
                 sequence=t1_sequence,
                 sweep_range=time_range,
                 shots=shots,
@@ -965,7 +965,7 @@ class CharacterizationService:
         else:
             targets = list(targets)
 
-        self.validate_rabi_params(targets)
+        self.ctx.validate_rabi_params(targets)
 
         if time_range is None:
             time_range = np.logspace(
@@ -975,19 +975,19 @@ class CharacterizationService:
             )
 
         if n_cpmg is not None:
-            time_range = self.util.discretize_time_range(
+            time_range = self.ctx.util.discretize_time_range(
                 time_range=np.asarray(time_range),
                 sampling_period=2 * SAMPLING_PERIOD * n_cpmg,
             )
         else:
-            time_range = self.util.discretize_time_range(
+            time_range = self.ctx.util.discretize_time_range(
                 time_range=np.asarray(time_range),
                 sampling_period=2 * SAMPLING_PERIOD,
             )
 
         data: dict[str, T2Data] = {}
 
-        subgroups = self.util.create_qubit_subgroups(targets)
+        subgroups = self.ctx.util.create_qubit_subgroups(targets)
 
         print(f"Target qubits: {targets}")
         print(f"Subgroups: {subgroups}")
@@ -1038,7 +1038,7 @@ class CharacterizationService:
             # if plot:
             #     t2_sequence(time_range[-1]).plot()
 
-            sweep_result = self.sweep_parameter(
+            sweep_result = self.measurement_service.sweep_parameter(
                 sequence=t2_sequence,
                 sweep_range=time_range,
                 shots=shots,
@@ -1105,14 +1105,14 @@ class CharacterizationService:
         if time_range is None:
             time_range = np.arange(0, 10001, 100)
         else:
-            time_range = self.util.discretize_time_range(time_range)
+            time_range = self.ctx.util.discretize_time_range(time_range)
 
         if detuning is None:
             detuning = 0.001
 
-        self.validate_rabi_params(targets)
+        self.ctx.validate_rabi_params(targets)
 
-        target_groups = self.util.create_qubit_subgroups(targets)
+        target_groups = self.ctx.util.create_qubit_subgroups(targets)
         spectator_groups = reversed(target_groups)  # TODO: make it more general
 
         data: dict[str, RamseyData] = {}
@@ -1154,11 +1154,11 @@ class CharacterizationService:
                 return ps
 
             detuned_frequencies = {
-                target: self.qubits[target].frequency + detuning
+                target: self.ctx.qubits[target].frequency + detuning
                 for target in target_qubits
             }
 
-            sweep_result = self.sweep_parameter(
+            sweep_result = self.measurement_service.sweep_parameter(
                 sequence=ramsey_sequence,
                 sweep_range=time_range,
                 frequencies=detuned_frequencies,
@@ -1178,7 +1178,7 @@ class CharacterizationService:
                         plot=plot,
                     )
                     if fit_result["status"] == "success":
-                        f = self.qubits[target].frequency
+                        f = self.ctx.qubits[target].frequency
                         t2 = fit_result["tau"]
                         ramsey_freq = fit_result["f"]
                         phi = fit_result["phi"]
@@ -1236,7 +1236,7 @@ class CharacterizationService:
         if time_range is None:
             time_range = np.arange(0, 50_001, 1000)
 
-        time_range = self.util.discretize_time_range(
+        time_range = self.ctx.util.discretize_time_range(
             time_range=np.asarray(time_range),
             sampling_period=2 * SAMPLING_PERIOD,
         )
@@ -1244,7 +1244,7 @@ class CharacterizationService:
         if detuning is None:
             detuning = 0.001
 
-        self.validate_rabi_params(targets)
+        self.ctx.validate_rabi_params(targets)
 
         modes = ("T1", "T2", "Ramsey")
 
@@ -1292,7 +1292,7 @@ class CharacterizationService:
                 ramsey_schedules = ramsey_sequence(target, T)
 
                 detuned_frequencies = {
-                    target: self.qubits[target].frequency + detuning
+                    target: self.ctx.qubits[target].frequency + detuning
                     for target in targets
                 }
                 measurements = {
@@ -1326,7 +1326,7 @@ class CharacterizationService:
                     target=target,
                     data=np.asarray(values),
                     sweep_range=time_range,
-                    rabi_param=self.rabi_params.get(target),
+                    rabi_param=self.ctx.rabi_params.get(target),
                     state_centers=self.ctx.state_centers.get(target),
                     title="Sweep result",
                     xlabel="Sweep value",
@@ -1413,7 +1413,7 @@ class CharacterizationService:
                 plot=plot,
             )
             if fit_result_ramsey["status"] == "success":
-                f = self.qubits[target].frequency
+                f = self.ctx.qubits[target].frequency
                 t2 = fit_result_ramsey["tau"]
                 ramsey_freq = fit_result_ramsey["f"]
                 phi = fit_result_ramsey["phi"]
@@ -1500,7 +1500,7 @@ class CharacterizationService:
         elif isinstance(stark_ramptime, float):
             stark_ramptime = {target: stark_ramptime for target in targets}
 
-        self.validate_rabi_params(targets)
+        self.ctx.validate_rabi_params(targets)
 
         if time_range is None:
             time_range = np.logspace(
@@ -1508,7 +1508,7 @@ class CharacterizationService:
                 np.log10(200 * 1000),
                 51,
             )
-        time_range = self.util.discretize_time_range(np.asarray(time_range))
+        time_range = self.ctx.util.discretize_time_range(np.asarray(time_range))
 
         data: dict[str, T1Data] = {}
 
@@ -1534,7 +1534,7 @@ class CharacterizationService:
                     )
                 return ps
 
-            sweep_result = self.sweep_parameter(
+            sweep_result = self.measurement_service.sweep_parameter(
                 sequence=stark_t1_sequence,
                 sweep_range=time_range,
                 shots=shots,
@@ -1633,9 +1633,9 @@ class CharacterizationService:
         if time_range is None:
             time_range = np.arange(0, 401, 4)
         else:
-            time_range = self.util.discretize_time_range(time_range)
+            time_range = self.ctx.util.discretize_time_range(time_range)
 
-        self.validate_rabi_params(targets)
+        self.ctx.validate_rabi_params(targets)
 
         data: dict[str, RamseyData] = {}
 
@@ -1691,7 +1691,7 @@ class CharacterizationService:
                             ps.add(target, x90)
                 return ps
 
-            sweep_result = self.sweep_parameter(
+            sweep_result = self.measurement_service.sweep_parameter(
                 sequence=stark_ramsey_sequence,
                 sweep_range=time_range,
                 shots=shots,
@@ -1710,7 +1710,7 @@ class CharacterizationService:
                     plot=plot,
                 )
                 if fit_result["status"] == "success":
-                    f = self.qubits[qubit].frequency
+                    f = self.ctx.qubits[qubit].frequency
                     t2 = fit_result["tau"]
                     ramsey_freq = fit_result["f"]
                     if stark_detuning[qubit] > 0:
@@ -1766,7 +1766,7 @@ class CharacterizationService:
             targets = list(targets)
 
         time_range = np.asarray(time_range)
-        self.validate_rabi_params(targets)
+        self.ctx.validate_rabi_params(targets)
 
         result_0 = self.ramsey_experiment(
             targets=targets,
@@ -1876,9 +1876,9 @@ class CharacterizationService:
             return ps
 
         time_range = np.asarray(time_range)
-        self.validate_rabi_params([target_qubit, spectator_qubit])
+        self.ctx.validate_rabi_params([target_qubit, spectator_qubit])
 
-        result = self.sweep_parameter(
+        result = self.measurement_service.sweep_parameter(
             sequence=jazz_sequence,
             sweep_range=time_range,
             shots=shots,
@@ -1950,11 +1950,11 @@ class CharacterizationService:
 
         xi = result["xi"]
 
-        f_1 = self.qubits[qubit_1].frequency
-        f_2 = self.qubits[qubit_2].frequency
+        f_1 = self.ctx.qubits[qubit_1].frequency
+        f_2 = self.ctx.qubits[qubit_2].frequency
 
-        a_1 = self.qubits[qubit_1].anharmonicity
-        a_2 = self.qubits[qubit_2].anharmonicity
+        a_1 = self.ctx.qubits[qubit_1].anharmonicity
+        a_2 = self.ctx.qubits[qubit_2].anharmonicity
 
         Delta_12 = f_1 - f_2
 
@@ -1988,8 +1988,8 @@ class CharacterizationService:
     ) -> float:
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
-        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
-        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+        mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
         ssb = self.ctx.targets[read_label].sideband
 
         if amplitude is None:
@@ -2029,7 +2029,7 @@ class CharacterizationService:
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.system_manager.modified_device_settings(
+            with self.ctx.system_manager.modified_device_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -2121,9 +2121,9 @@ class CharacterizationService:
     ) -> float:
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
-        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
+        mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
         ssb = self.ctx.targets[read_label].sideband
-        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
         f_nco = self.ctx.targets[read_label].fine_frequency
 
         if df is None:
@@ -2174,7 +2174,7 @@ class CharacterizationService:
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.system_manager.modified_device_settings(
+            with self.ctx.system_manager.modified_device_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -2241,8 +2241,8 @@ class CharacterizationService:
 
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
-        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
-        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+        mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
 
         if frequency_range is None:
             if read_box.type == BoxType.QUEL1SE_R8:
@@ -2253,7 +2253,7 @@ class CharacterizationService:
             frequency_range = np.array(frequency_range)
 
         if readout_amplitude is None:
-            readout_amplitude = self.params.readout_amplitude[qubit_label]
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
 
         if electrical_delay is None:
             # measure electrical delay if not provided
@@ -2308,7 +2308,7 @@ class CharacterizationService:
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.system_manager.modified_device_settings(
+            with self.ctx.system_manager.modified_device_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -2575,8 +2575,8 @@ class CharacterizationService:
 
         power_range = np.array(power_range)
         qubit_label = Target.qubit_label(target)
-        mux = self.experiment_system.get_mux_by_qubit(qubit_label)
-        read_box = self.experiment_system.get_readout_box_for_qubit(qubit_label)
+        mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
+        read_box = self.ctx.experiment_system.get_readout_box_for_qubit(qubit_label)
 
         if frequency_range is None:
             if read_box.type == BoxType.QUEL1SE_R8:
@@ -2679,7 +2679,7 @@ class CharacterizationService:
         if frequency_width is None:
             frequency_width = 0.05
         if readout_amplitude is None:
-            readout_amplitude = self.params.readout_amplitude[qubit_label]
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
         if electrical_delay is None:
             electrical_delay = self.measure_electrical_delay(
                 target,
@@ -2784,13 +2784,13 @@ class CharacterizationService:
         # control and readout pulses
         qubit = Target.qubit_label(target)
         resonator = Target.read_label(target)
-        ctrl_box = self.experiment_system.get_control_box_for_qubit(qubit)
+        ctrl_box = self.ctx.experiment_system.get_control_box_for_qubit(qubit)
 
         if control_amplitude is None:
-            control_amplitude = self.params.control_amplitude[qubit]
+            control_amplitude = self.ctx.params.control_amplitude[qubit]
 
         if readout_amplitude is None:
-            readout_amplitude = self.params.readout_amplitude[qubit]
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit]
 
         # split frequency range to avoid the frequency sweep range limit
         if frequency_range is None:
@@ -2839,7 +2839,7 @@ class CharacterizationService:
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.system_manager.modified_device_settings(
+            with self.ctx.system_manager.modified_device_settings(
                 label=qubit,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -2872,7 +2872,7 @@ class CharacterizationService:
                                     tau=128,
                                 ),
                             )
-                        result = self.execute(
+                        result = self.measurement_service.execute(
                             schedule=ps,
                             mode="avg",
                             shots=shots,
@@ -3041,9 +3041,9 @@ class CharacterizationService:
         frequency_range = np.asarray(frequency_range)
         qubit_label = Target.qubit_label(target)
         if control_amplitude is None:
-            control_amplitude = self.params.control_amplitude[qubit_label]
+            control_amplitude = self.ctx.params.control_amplitude[qubit_label]
         if readout_amplitude is None:
-            readout_amplitude = self.params.readout_amplitude[qubit_label]
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
 
         data = self.scan_qubit_frequencies(
             target,
@@ -3111,7 +3111,7 @@ class CharacterizationService:
         save_image: bool = True,
     ) -> Result:
         qubit_label = Target.qubit_label(target)
-        qubit_frequency = self.qubits[qubit_label].frequency
+        qubit_frequency = self.ctx.qubits[qubit_label].frequency
 
         if frequency_range is None:
             frequency_range = np.arange(
@@ -3123,9 +3123,9 @@ class CharacterizationService:
             frequency_range = np.asarray(frequency_range)
 
         if control_amplitude is None:
-            control_amplitude = self.params.control_amplitude[qubit_label]
+            control_amplitude = self.ctx.params.control_amplitude[qubit_label]
         if readout_amplitude is None:
-            readout_amplitude = self.params.readout_amplitude[qubit_label]
+            readout_amplitude = self.ctx.params.readout_amplitude[qubit_label]
 
         data = self.scan_qubit_frequencies(
             target,
@@ -3648,7 +3648,7 @@ class CharacterizationService:
         resonator_drive_duration: float | None = None,
         resonator_drive_ramptime: float | None = None,
     ) -> PulseSchedule:
-        qubit = self.qubits[target].label
+        qubit = self.ctx.qubits[target].label
         resonator = self.ctx.resonators[target].label
 
         if qubit_initial_state is None:
@@ -3681,7 +3681,7 @@ class CharacterizationService:
             .scaled(qubit_drive_scale)
             .detuned(qubit_drive_detuning)
         )
-        resonator_readout_pulse = self.readout(target)
+        resonator_readout_pulse = self.ctx.readout(target)
         with PulseSchedule() as seq:
             if qubit_initial_state == "1":
                 seq.add(qubit, qubit_pi_pulse)
@@ -3729,7 +3729,7 @@ class CharacterizationService:
         for resonator_detuning in tqdm(resonator_detuning_range):
             result1d = []
             for qubit_detuning in qubit_detuning_range:
-                result = self.execute(
+                result = self.measurement_service.execute(
                     self.ckp_sequence(
                         target=target,
                         qubit_initial_state=qubit_initial_state,
@@ -3745,7 +3745,7 @@ class CharacterizationService:
                 data = result.data[target][-1]
                 result1d.append(data.kerneled)
 
-            result1d = self.rabi_params[target].normalize(np.array(result1d))
+            result1d = self.ctx.rabi_params[target].normalize(np.array(result1d))
 
             f0 = fitting.fit_lorentzian(
                 x=qubit_frequency_range,
@@ -3833,14 +3833,14 @@ class CharacterizationService:
         save_image: bool = True,
     ) -> Result:
         if resonator_drive_amplitude is None:
-            resonator_drive_amplitude = self.params.get_readout_amplitude(
+            resonator_drive_amplitude = self.ctx.params.get_readout_amplitude(
                 Target.qubit_label(target)
             )
 
         if qubit_pi_pulse is None:
             duration = 128
             ramptime = 64
-            calib_result = self.calibrate_default_pulse(
+            calib_result = self.calibration_service.calibrate_default_pulse(
                 target,
                 pulse_type="pi",
                 duration=duration,
@@ -4118,7 +4118,7 @@ class CharacterizationService:
         save_image: bool = True,
     ) -> Result:
         if targets is None:
-            targets = self.edge_labels
+            targets = self.ctx.edge_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:

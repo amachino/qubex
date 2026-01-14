@@ -58,6 +58,193 @@ class CalibrationService:
     def measurement_service(self) -> MeasurementService:
         return self._measurement_service
 
+    def correct_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if reference_phases is None:
+            phases = self.measurement_service.obtain_reference_points(targets=targets)[
+                "phase"
+            ]
+        else:
+            phases = reference_phases
+
+        for target, phase in phases.items():
+            try:
+                rabi_param = self.ctx.rabi_params.get(target)
+                if rabi_param is None:
+                    print(f"Rabi parameters for {target} are not stored.")
+                    continue
+                else:
+                    rabi_param.correct(new_reference_phase=phase)
+
+                self.ctx.calib_note.update_rabi_param(
+                    target,
+                    {
+                        "target": rabi_param.target,
+                        "frequency": rabi_param.frequency,
+                        "amplitude": rabi_param.amplitude,
+                        "phase": rabi_param.phase,
+                        "offset": rabi_param.offset,
+                        "noise": rabi_param.noise,
+                        "angle": rabi_param.angle,
+                        "distance": rabi_param.distance,
+                        "r2": rabi_param.r2,
+                        "reference_phase": rabi_param.reference_phase,
+                    },
+                )
+            except Exception as e:
+                print(f"Failed to correct Rabi parameters for {target}: {e}")
+                continue
+        if save:
+            self.ctx.save_calib_note()
+
+    def correct_classifiers(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool = True,
+    ):
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if reference_phases is None:
+            phases = self.measurement_service.obtain_reference_points(targets=targets)[
+                "phase"
+            ]
+        else:
+            phases = reference_phases
+
+        for target, phase in phases.items():
+            classifier = self.ctx.classifiers.get(target)
+            if classifier is not None:
+                classifier.phase = phase
+                if save:
+                    classifier.save(
+                        path=self.ctx.classifier_dir
+                        / self.ctx.chip_id
+                        / f"{target}.pkl"
+                    )
+
+        for target, phase in phases.items():
+            try:
+                state_param = self.ctx.calib_note.get_state_param(target)
+                if state_param is not None:
+                    reference_phase = state_param.get("reference_phase")
+                    if reference_phase is None:
+                        state_param["reference_phase"] = phase
+                        continue
+                    else:
+                        centers = state_param["centers"]
+                        phase_diff = phase - reference_phase
+                        for state, points in centers.items():
+                            iq = complex(points[0], points[1])
+                            iq *= np.exp(1j * phase_diff)
+                            centers[str(state)] = [iq.real, iq.imag]
+                        state_param["reference_phase"] = phase
+                    self.ctx.calib_note.update_state_param(
+                        target,
+                        state_param,
+                    )
+            except Exception as e:
+                print(f"Failed to correct state parameters for {target}: {e}")
+                continue
+        if save:
+            self.ctx.save_calib_note()
+
+    def correct_cr_params(
+        self,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        shots: int = 10000,
+        save: bool = True,
+    ):
+        if cr_labels is None:
+            cr_labels = self.ctx.cr_labels
+        elif isinstance(cr_labels, str):
+            cr_labels = [cr_labels]
+        else:
+            cr_labels = list(cr_labels)
+
+        for label in cr_labels:
+            try:
+                control_qubit, target_qubit = self.ctx.cr_pair(label)
+                if label not in self.ctx.calib_note.cr_params:
+                    continue
+                result = self.measurement_service.state_tomography(
+                    self.ctx.zx90(control_qubit, target_qubit),
+                    shots=shots,
+                )
+                x, y, _ = result[target_qubit]
+                phase = np.arctan2(y, x)
+                current_param = self.ctx.calib_note.get_cr_param(label)
+                self.ctx.calib_note.update_cr_param(
+                    label,
+                    {
+                        "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
+                    },
+                )
+            except Exception as e:
+                print(f"Failed to correct CR parameters for {label}: {e}")
+                continue
+        if save:
+            self.ctx.save_calib_note()
+
+    def correct_calibration(
+        self,
+        qubit_labels: Collection[str] | str | None = None,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool = False,
+    ):
+        if qubit_labels is None:
+            qubit_labels = self.ctx.qubit_labels
+        elif isinstance(qubit_labels, str):
+            qubit_labels = [qubit_labels]
+        else:
+            qubit_labels = list(qubit_labels)
+
+        if cr_labels is None:
+            cr_labels = self.ctx.cr_labels
+        elif isinstance(cr_labels, str):
+            cr_labels = [cr_labels]
+        else:
+            cr_labels = list(cr_labels)
+
+        reference_phases = self.measurement_service.obtain_reference_points(
+            qubit_labels
+        )["phase"]
+
+        self.correct_rabi_params(
+            qubit_labels,
+            reference_phases=reference_phases,
+            save=save,
+        )
+        self.correct_classifiers(
+            qubit_labels,
+            reference_phases=reference_phases,
+            save=save,
+        )
+        self.correct_cr_params(
+            cr_labels,
+            save=save,
+        )
+
     def calibrate_default_pulse(
         self,
         targets: Collection[str] | str | None = None,
@@ -74,13 +261,13 @@ class CalibrationService:
         interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
 
-        rabi_params = self.rabi_params
+        rabi_params = self.ctx.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
@@ -105,7 +292,7 @@ class CalibrationService:
                 raise ValueError("Invalid pulse type.")
 
             # calculate the control amplitude for the target rabi rate
-            ampl = self.calc_control_amplitude(target, rabi_rate)
+            ampl = self.ctx.calc_control_amplitude(target, rabi_rate)
 
             # create a range of amplitudes around the estimated value
             ampl_min = ampl * (1 - 0.5 / n_rotations)
@@ -119,7 +306,7 @@ class CalibrationService:
 
             n_per_rotation = 2 if pulse_type == "pi" else 4
 
-            sweep_data = self.sweep_parameter(
+            sweep_data = self.measurement_service.sweep_parameter(
                 sequence=lambda x: {target: pulse.scaled(x)},
                 sweep_range=ampl_range,
                 repetitions=n_per_rotation * n_rotations,
@@ -141,7 +328,7 @@ class CalibrationService:
             if r2 > r2_threshold:
                 if update_params:
                     if pulse_type == "hpi":
-                        self.calib_note.update_hpi_param(
+                        self.ctx.calib_note.update_hpi_param(
                             target,
                             {
                                 "target": target,
@@ -151,7 +338,7 @@ class CalibrationService:
                             },
                         )
                     elif pulse_type == "pi":
-                        self.calib_note.update_pi_param(
+                        self.ctx.calib_note.update_pi_param(
                             target,
                             {
                                 "target": target,
@@ -172,7 +359,7 @@ class CalibrationService:
 
         data: dict[str, AmplCalibData] = {}
         for target in targets:
-            if target not in self.calib_note.rabi_params:
+            if target not in self.ctx.calib_note.rabi_params:
                 print(f"Rabi parameters are not stored for {target}.")
                 continue
             print(f"Calibrating {pulse_type} pulse for {target}...")
@@ -252,18 +439,20 @@ class CalibrationService:
         interval: float = DEFAULT_INTERVAL,
     ) -> ExperimentResult[AmplCalibData]:
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
 
-        rabi_params = self.rabi_params
+        rabi_params = self.ctx.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
         ef_labels = [
-            Target.ef_label(label) for label in targets if label in self.ef_rabi_params
+            Target.ef_label(label)
+            for label in targets
+            if label in self.ctx.ef_rabi_params
         ]
 
         def calibrate(target: str) -> AmplCalibData:
@@ -289,7 +478,7 @@ class CalibrationService:
             else:
                 raise ValueError("Invalid pulse type.")
 
-            ampl = self.calc_control_amplitude(ef_label, rabi_rate)
+            ampl = self.ctx.calc_control_amplitude(ef_label, rabi_rate)
 
             ampl_min = ampl * (1 - 0.5 / n_rotations)
             ampl_max = ampl * (1 + 0.5 / n_rotations)
@@ -305,12 +494,12 @@ class CalibrationService:
 
             def sequence(x: float) -> PulseSchedule:
                 with PulseSchedule() as ps:
-                    ps.add(ge_label, self.get_hpi_pulse(ge_label).repeated(2))
+                    ps.add(ge_label, self.ctx.get_hpi_pulse(ge_label).repeated(2))
                     ps.barrier()
                     ps.add(ef_label, pulse.scaled(x).repeated(repetitions))
                 return ps
 
-            sweep_data = self.sweep_parameter(
+            sweep_data = self.measurement_service.sweep_parameter(
                 sequence=sequence,
                 sweep_range=ampl_range,
                 repetitions=1,
@@ -333,7 +522,7 @@ class CalibrationService:
 
             if r2 > r2_threshold:
                 if pulse_type == "hpi":
-                    self.calib_note.update_hpi_param(
+                    self.ctx.calib_note.update_hpi_param(
                         ef_label,
                         {
                             "target": ef_label,
@@ -343,7 +532,7 @@ class CalibrationService:
                         },
                     )
                 elif pulse_type == "pi":
-                    self.calib_note.update_pi_param(
+                    self.ctx.calib_note.update_pi_param(
                         ef_label,
                         {
                             "target": ef_label,
@@ -442,23 +631,23 @@ class CalibrationService:
         interval: float = DEFAULT_INTERVAL,
     ) -> Result:
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
 
-        rabi_params = self.rabi_params
-        self.validate_rabi_params(rabi_params)
+        rabi_params = self.ctx.rabi_params
+        self.ctx.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> FitResult:
             # hpi
             if pulse_type == "hpi":
-                hpi_param = self.calib_note.get_drag_hpi_param(target)
+                hpi_param = self.ctx.calib_note.get_drag_hpi_param(target)
                 if hpi_param is not None and use_stored_beta:
                     beta = hpi_param["beta"]
                 else:
-                    beta = -drag_coeff / self.qubits[target].alpha
+                    beta = -drag_coeff / self.ctx.qubits[target].alpha
 
                 pulse = Drag(
                     duration=duration if duration is not None else DRAG_HPI_DURATION,
@@ -471,14 +660,14 @@ class CalibrationService:
                 if hpi_param is not None and use_stored_amplitude:
                     ampl = hpi_param["amplitude"]
                 else:
-                    ampl = self.calc_control_amplitude(target, rabi_rate)
+                    ampl = self.ctx.calc_control_amplitude(target, rabi_rate)
             # pi
             elif pulse_type == "pi":
-                pi_param = self.calib_note.get_drag_pi_param(target)
+                pi_param = self.ctx.calib_note.get_drag_pi_param(target)
                 if pi_param is not None and use_stored_beta:
                     beta = pi_param["beta"]
                 else:
-                    beta = -drag_coeff / self.qubits[target].alpha
+                    beta = -drag_coeff / self.ctx.qubits[target].alpha
 
                 pulse = Drag(
                     duration=duration if duration is not None else DRAG_PI_DURATION,
@@ -491,7 +680,7 @@ class CalibrationService:
                 if pi_param is not None and use_stored_amplitude:
                     ampl = pi_param["amplitude"]
                 else:
-                    ampl = self.calc_control_amplitude(target, rabi_rate)
+                    ampl = self.ctx.calc_control_amplitude(target, rabi_rate)
             else:
                 raise ValueError("Invalid pulse type.")
 
@@ -507,16 +696,16 @@ class CalibrationService:
             n_per_rotation = 2 if pulse_type == "pi" else 4
 
             if spectator_state is not None:
-                spectators = self.get_spectators(target)
+                spectators = self.ctx.get_spectators(target)
 
             def sequence(x: float) -> PulseSchedule:
                 with PulseSchedule() as ps:
                     if spectator_state is not None:
                         for spectator in spectators:
-                            if spectator.label in self.qubit_labels:
+                            if spectator.label in self.ctx.qubit_labels:
                                 ps.add(
                                     spectator.label,
-                                    self.get_pulse_for_state(
+                                    self.ctx.get_pulse_for_state(
                                         target=spectator.label,
                                         state=spectator_state,
                                     ),
@@ -527,7 +716,7 @@ class CalibrationService:
                     )
                 return ps
 
-            sweep_data = self.sweep_parameter(
+            sweep_data = self.measurement_service.sweep_parameter(
                 sequence=sequence,
                 sweep_range=ampl_range,
                 shots=shots,
@@ -547,7 +736,7 @@ class CalibrationService:
             r2 = fit_result["r2"]
             if r2 > r2_threshold:
                 if pulse_type == "hpi":
-                    self.calib_note.update_drag_hpi_param(
+                    self.ctx.calib_note.update_drag_hpi_param(
                         target,
                         {
                             "target": target,
@@ -557,7 +746,7 @@ class CalibrationService:
                         },
                     )
                 elif pulse_type == "pi":
-                    self.calib_note.update_drag_pi_param(
+                    self.ctx.calib_note.update_drag_pi_param(
                         target,
                         {
                             "target": target,
@@ -593,20 +782,20 @@ class CalibrationService:
         interval: float = DEFAULT_INTERVAL,
     ) -> Result:
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
 
-        rabi_params = self.rabi_params
-        self.validate_rabi_params(rabi_params)
+        rabi_params = self.ctx.rabi_params
+        self.ctx.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
-                param = self.calib_note.get_drag_hpi_param(target)
+                param = self.ctx.calib_note.get_drag_hpi_param(target)
             elif pulse_type == "pi":
-                param = self.calib_note.get_drag_pi_param(target)
+                param = self.ctx.calib_note.get_drag_pi_param(target)
             if param is None:
                 raise ValueError("DRAG parameters are not stored.")
 
@@ -617,16 +806,16 @@ class CalibrationService:
             sweep_range = np.array(beta_range) + drag_beta
 
             if spectator_state is not None:
-                spectators = self.get_spectators(target)
+                spectators = self.ctx.get_spectators(target)
 
             def sequence(beta: float) -> PulseSchedule:
                 with PulseSchedule() as ps:
                     if spectator_state is not None:
                         for spectator in spectators:
-                            if spectator.label in self.qubit_labels:
+                            if spectator.label in self.ctx.qubit_labels:
                                 ps.add(
                                     spectator.label,
-                                    self.get_pulse_for_state(
+                                    self.ctx.get_pulse_for_state(
                                         target=spectator.label,
                                         state=spectator_state,
                                     ),
@@ -639,7 +828,7 @@ class CalibrationService:
                             beta=beta,
                         )
                         x90m = x90p.scaled(-1)
-                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
+                        y90m = self.ctx.get_hpi_pulse(target).shifted(-np.pi / 2)
                         ps.add(
                             target,
                             PulseArray(
@@ -657,7 +846,7 @@ class CalibrationService:
                             beta=beta,
                         )
                         x180m = x180p.scaled(-1)
-                        y90m = self.get_hpi_pulse(target).shifted(-np.pi / 2)
+                        y90m = self.ctx.get_hpi_pulse(target).shifted(-np.pi / 2)
                         ps.add(
                             target,
                             PulseArray(
@@ -669,7 +858,7 @@ class CalibrationService:
                         )
                 return ps
 
-            sweep_data = self.sweep_parameter(
+            sweep_data = self.measurement_service.sweep_parameter(
                 sequence=sequence,
                 sweep_range=sweep_range,
                 shots=shots,
@@ -694,7 +883,7 @@ class CalibrationService:
                 beta = 0.0
 
             if pulse_type == "hpi":
-                self.calib_note.update_drag_hpi_param(
+                self.ctx.calib_note.update_drag_hpi_param(
                     target,
                     {
                         "target": target,
@@ -704,7 +893,7 @@ class CalibrationService:
                     },
                 )
             elif pulse_type == "pi":
-                self.calib_note.update_drag_pi_param(
+                self.ctx.calib_note.update_drag_pi_param(
                     target,
                     {
                         "target": target,
@@ -742,7 +931,7 @@ class CalibrationService:
         interval: float = DEFAULT_INTERVAL,
     ) -> Result:
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
@@ -797,7 +986,7 @@ class CalibrationService:
                 )
             else:
                 beta = {
-                    target: -drag_coeff / self.qubits[target].alpha
+                    target: -drag_coeff / self.ctx.qubits[target].alpha
                     for target in targets
                 }
 
@@ -828,7 +1017,7 @@ class CalibrationService:
         interval: float = DEFAULT_INTERVAL,
     ) -> Result:
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
@@ -883,7 +1072,7 @@ class CalibrationService:
                 )
             else:
                 beta = {
-                    target: -drag_coeff / self.qubits[target].alpha
+                    target: -drag_coeff / self.ctx.qubits[target].alpha
                     for target in targets
                 }
 
@@ -940,21 +1129,21 @@ class CalibrationService:
             x180_margin = 0.0
         if x90 is None:
             x90 = {
-                control_qubit: self.x90(control_qubit),
-                target_qubit: self.x90(target_qubit),
+                control_qubit: self.ctx.x90(control_qubit),
+                target_qubit: self.ctx.x90(target_qubit),
             }
         if x180 is None:
             x180 = {
-                control_qubit: self.x180(control_qubit),
+                control_qubit: self.ctx.x180(control_qubit),
             }
 
         if reset_awg_and_capunits:
-            self.reset_awg_and_capunits(qubits=[control_qubit, target_qubit])
+            self.ctx.reset_awg_and_capunits(qubits=[control_qubit, target_qubit])
 
         control_states = []
         target_states = []
         for T in time_range:
-            result = self.state_tomography(
+            result = self.measurement_service.state_tomography(
                 CrossResonance(
                     control_qubit=control_qubit,
                     target_qubit=target_qubit,
@@ -1020,8 +1209,8 @@ class CalibrationService:
         )
 
     def _ramptime(self, control_qubit: str, target_qubit: str) -> float:
-        f_ge_control = self.qubits[control_qubit].frequency
-        f_ef_target = self.qubits[target_qubit].control_frequency_ef
+        f_ge_control = self.ctx.qubits[control_qubit].frequency
+        f_ef_target = self.ctx.qubits[target_qubit].control_frequency_ef
 
         if f_ge_control < f_ef_target:
             return DEFAULT_CR_RAMPTIME
@@ -1033,8 +1222,8 @@ class CalibrationService:
         control_qubit: str,
         target_qubit: str,
     ) -> float:
-        # f_ge_control = self.qubits[control_qubit].frequency
-        # f_ef_target = self.qubits[target_qubit].ef_frequency
+        # f_ge_control = self.ctx.qubits[control_qubit].frequency
+        # f_ef_target = self.ctx.qubits[target_qubit].ef_frequency
 
         # if f_ge_control < f_ef_target:
         #     return 0.75
@@ -1069,7 +1258,7 @@ class CalibrationService:
             ramptime = self._ramptime(control_qubit, target_qubit)
 
         if reset_awg_and_capunits:
-            self.reset_awg_and_capunits(qubits=[control_qubit, target_qubit])
+            self.ctx.reset_awg_and_capunits(qubits=[control_qubit, target_qubit])
 
         result_0 = self.measure_cr_dynamics(
             time_range=time_range,
@@ -1126,14 +1315,14 @@ class CalibrationService:
             )
         )
 
-        f_control = self.qubits[control_qubit].frequency
-        f_target = self.qubits[target_qubit].frequency
+        f_control = self.ctx.qubits[control_qubit].frequency
+        f_target = self.ctx.qubits[target_qubit].frequency
         f_delta = f_control - f_target
 
         # xt (cross-talk) rotation
         xt_rotation = coeffs["IX"] + 1j * coeffs["IY"]
         xt_rotation_amplitude = np.abs(xt_rotation)
-        xt_rotation_amplitude_hw = self.calc_control_amplitude(
+        xt_rotation_amplitude_hw = self.ctx.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=xt_rotation_amplitude,
         )
@@ -1143,7 +1332,7 @@ class CalibrationService:
         # cr (cross-resonance) rotation
         cr_rotation = coeffs["ZX"] + 1j * coeffs["ZY"]
         cr_rotation_amplitude = np.abs(cr_rotation)
-        cr_rotation_amplitude_hw = self.calc_control_amplitude(
+        cr_rotation_amplitude_hw = self.ctx.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=cr_rotation_amplitude,
         )
@@ -1152,7 +1341,7 @@ class CalibrationService:
         zx90_duration = 1 / (4 * cr_rotation_amplitude)
 
         # ZX90 gate
-        cr_rabi_rate = self.calc_rabi_rate(control_qubit, cr_amplitude)
+        cr_rabi_rate = self.ctx.calc_rabi_rate(control_qubit, cr_amplitude)
 
         fig_c = make_subplots(
             rows=2,
@@ -1494,7 +1683,7 @@ class CalibrationService:
 
         zx_rotation_rate = result["coeffs"]["ZX"] / cr_amplitude
 
-        self.calib_note.update_cr_param(
+        self.ctx.calib_note.update_cr_param(
             cr_label,
             {
                 "target": cr_label,
@@ -1514,7 +1703,7 @@ class CalibrationService:
         return Result(
             data={
                 **result,
-                "cr_param": self.calib_note.cr_params[cr_label],
+                "cr_param": self.ctx.calib_note.cr_params[cr_label],
             }
         )
 
@@ -1558,14 +1747,14 @@ class CalibrationService:
 
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        f_control = self.qubits[control_qubit].frequency
-        f_target = self.qubits[target_qubit].frequency
+        f_control = self.ctx.qubits[control_qubit].frequency
+        f_target = self.ctx.qubits[target_qubit].frequency
         f_delta = np.abs(f_target - f_control)
         max_cr_rabi = adiabatic_safe_factor * f_delta
-        max_cr_amplitude = self.calc_control_amplitude(control_qubit, max_cr_rabi)
+        max_cr_amplitude = self.ctx.calc_control_amplitude(control_qubit, max_cr_rabi)
         max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
 
-        current_cr_param = self.calib_note.get_cr_param(cr_label)
+        current_cr_param = self.ctx.calib_note.get_cr_param(cr_label)
 
         if use_stored_params and current_cr_param is not None:
             cr_amplitude = current_cr_param["cr_amplitude"]
@@ -1711,12 +1900,12 @@ class CalibrationService:
                 control_qubit, target_qubit
             )
         if x180 is None:
-            x180 = self.x180(control_qubit)
+            x180 = self.ctx.x180(control_qubit)
         elif not isinstance(x180, Waveform):
             x180 = x180[control_qubit]
 
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_param = self.calib_note.get_cr_param(cr_label)
+        cr_param = self.ctx.calib_note.get_cr_param(cr_label)
 
         if cr_param is None:
             raise ValueError("CR parameters are not stored.")
@@ -1727,17 +1916,17 @@ class CalibrationService:
         cancel_phase = cr_param["cancel_phase"]
         zx_rotation_rate = cr_param["zx_rotation_rate"]
         zx_frequency = zx_rotation_rate * cr_amplitude
-        rotary_amplitude = self.calc_control_amplitude(
+        rotary_amplitude = self.ctx.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=zx_frequency * rotary_multiple,
         )
         cancel_pulse = cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
 
-        f_control = self.qubits[control_qubit].frequency
-        f_target = self.qubits[target_qubit].frequency
+        f_control = self.ctx.qubits[control_qubit].frequency
+        f_target = self.ctx.qubits[target_qubit].frequency
         f_delta = np.abs(f_target - f_control)
         max_cr_rabi = adiabatic_safe_factor * f_delta
-        max_cr_amplitude = self.calc_control_amplitude(control_qubit, max_cr_rabi)
+        max_cr_amplitude = self.ctx.calc_control_amplitude(control_qubit, max_cr_rabi)
         max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
 
         if duration is None:
@@ -1779,7 +1968,7 @@ class CalibrationService:
                 if initial_state != "0":
                     ps.add(
                         control_qubit,
-                        self.get_pulse_for_state(control_qubit, initial_state),
+                        self.ctx.get_pulse_for_state(control_qubit, initial_state),
                     )
                     ps.barrier()
                 ps.call(ecr)
@@ -1797,7 +1986,7 @@ class CalibrationService:
                 max_amplitude,
                 len(amplitude_range),
             )
-            sweep_result = self.sweep_parameter(
+            sweep_result = self.measurement_service.sweep_parameter(
                 lambda x: ecr_sequence(
                     amplitude=x,
                     duration=duration,
@@ -1917,16 +2106,16 @@ class CalibrationService:
 
         if calibrated_cr_amplitude is not None and store_params:
             if use_drag:
-                f_control = self.qubits[control_qubit].frequency
-                f_target = self.qubits[target_qubit].frequency
+                f_control = self.ctx.qubits[control_qubit].frequency
+                f_target = self.ctx.qubits[target_qubit].frequency
                 Delta_ct = 2 * np.pi * (f_control - f_target)
                 cr_beta = -1 / Delta_ct
-                # cancel_beta = -1 / self.qubits[target_qubit].alpha
+                # cancel_beta = -1 / self.ctx.qubits[target_qubit].alpha
                 cancel_beta = 0.0
             else:
                 cr_beta = 0.0
                 cancel_beta = 0.0
-            self.calib_note.cr_params = {
+            self.ctx.calib_note.cr_params = {
                 cr_label: {
                     "target": cr_label,
                     "duration": duration,
@@ -1971,7 +2160,7 @@ class CalibrationService:
             coherence_limit = {}
 
         if plot:
-            zx90 = self.zx90(control_qubit, target_qubit, x180=x180)
+            zx90 = self.ctx.zx90(control_qubit, target_qubit, x180=x180)
             zx90.plot(
                 title=f"ZX90 sequence : {cr_label}",
                 show_physical_pulse=True,
@@ -1999,13 +2188,13 @@ class CalibrationService:
         control_qubit: str,
         target_qubit: str,
     ) -> Result:
-        zx90 = self.zx90(
+        zx90 = self.ctx.zx90(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
         )
         gate_time = zx90.duration
-        t1_dict = self.system_manager.config_loader._load_param_data("t1")
-        t2_dict = self.system_manager.config_loader._load_param_data("t2_echo")
+        t1_dict = self.ctx.system_manager.config_loader._load_param_data("t1")
+        t2_dict = self.ctx.system_manager.config_loader._load_param_data("t2_echo")
         t1 = (t1_dict[control_qubit], t1_dict[target_qubit])
         t2 = (t2_dict[control_qubit], t2_dict[target_qubit])
         return Result(
@@ -2035,7 +2224,7 @@ class CalibrationService:
         coarse: bool = False,
     ) -> Result:
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
@@ -2051,7 +2240,7 @@ class CalibrationService:
 
         for target in targets:
             try:
-                result = self.obtain_rabi_params(
+                result = self.measurement_service.obtain_rabi_params(
                     target,
                     shots=shots,
                     interval=interval,
@@ -2090,14 +2279,14 @@ class CalibrationService:
                     )
                     data["calibrate_drag_pi_pulse"][target] = result
 
-                result = self.build_classifier(
+                result = self.measurement_service.build_classifier(
                     target,
                     shots=shots * 4,
                     interval=interval,
                     plot=plot,
                 )
                 data["build_classifier"][target] = result
-                self.save_calib_note()
+                self.ctx.save_calib_note()
 
             except Exception as e:
                 print(f"Error calibrating 1Q gates for {targets}: {e}")
@@ -2115,7 +2304,7 @@ class CalibrationService:
         plot: bool = True,
     ) -> Result:
         if targets is None:
-            targets = self.cr_labels
+            targets = self.ctx.cr_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
@@ -2171,7 +2360,7 @@ class CalibrationService:
                 )
                 data["calibrate_zx90"][cr_label] = result
 
-                self.save_calib_note()
+                self.ctx.save_calib_note()
             except Exception as e:
                 print(f"Error calibrating {cr_label}: {e}")
                 continue
@@ -2187,7 +2376,7 @@ class CalibrationService:
         plot: bool = True,
     ) -> Result:
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
@@ -2201,7 +2390,7 @@ class CalibrationService:
 
         for target in targets:
             try:
-                result = self.obtain_ef_rabi_params(
+                result = self.measurement_service.obtain_ef_rabi_params(
                     target,
                     shots=shots,
                     interval=interval,
@@ -2225,9 +2414,9 @@ class CalibrationService:
                 data = next(iter(result.data.values()))
                 return_data["calibrate_ef_hpi_pulse"][target] = data
 
-                self.save_calib_note()
+                self.ctx.save_calib_note()
 
-                result = self.build_classifier(
+                result = self.measurement_service.build_classifier(
                     target,
                     shots=shots * 4,
                     n_states=3,
@@ -2237,7 +2426,7 @@ class CalibrationService:
                 data = next(iter(result.values()))
                 return_data["build_classifier"][target] = data
 
-                self.save_calib_note()
+                self.ctx.save_calib_note()
 
             except Exception as e:
                 print(f"Error calibrating ef gates for {targets}: {e}")
@@ -2305,20 +2494,20 @@ class CalibrationService:
             x180_margin = 0.0
         if x90 is None:
             x90 = {
-                control_qubit: self.x90(control_qubit),
-                target_qubit: self.x90(target_qubit),
+                control_qubit: self.ctx.x90(control_qubit),
+                target_qubit: self.ctx.x90(target_qubit),
             }
             x90.update(
-                {spectator: self.x90(spectator) for spectator in spectator_qubits}
+                {spectator: self.ctx.x90(spectator) for spectator in spectator_qubits}
             )
 
         if x180 is None:
             x180 = {
-                control_qubit: self.x180(control_qubit),
+                control_qubit: self.ctx.x180(control_qubit),
             }
 
         if reset_awg_and_capunits:
-            self.reset_awg_and_capunits(
+            self.ctx.reset_awg_and_capunits(
                 qubits=[control_qubit, target_qubit] + spectator_qubits
             )
 
@@ -2372,14 +2561,14 @@ class CalibrationService:
         target_states = []
         spectators_states = defaultdict(list)
 
-        with self.modified_frequencies(
+        with self.ctx.modified_frequencies(
             frequencies={
-                spectator_qubit: self.targets[cr_label].frequency
+                spectator_qubit: self.ctx.targets[cr_label].frequency
                 for spectator_qubit in spectator_qubits
             }
         ):
             for T in time_range:
-                result = self.state_tomography(
+                result = self.measurement_service.state_tomography(
                     sequence=sequence_func(
                         targets=[control_qubit, target_qubit] + spectator_qubits, T=T
                     ),
@@ -2493,9 +2682,9 @@ class CalibrationService:
 
         if spectator_qubits is None:
             spectator_qubits = []
-            for spectator in self.get_spectators(control_qubit):
+            for spectator in self.ctx.get_spectators(control_qubit):
                 if (
-                    spectator.label in self.qubit_labels
+                    spectator.label in self.ctx.qubit_labels
                     and spectator.label != target_qubit
                 ):
                     spectator_qubits.append(spectator.label)
@@ -2507,7 +2696,7 @@ class CalibrationService:
             ramptime = self._ramptime(control_qubit, target_qubit)
 
         if reset_awg_and_capunits:
-            self.reset_awg_and_capunits(
+            self.ctx.reset_awg_and_capunits(
                 qubits=[control_qubit, target_qubit] + spectator_qubits
             )
 
@@ -2576,14 +2765,14 @@ class CalibrationService:
             )
         )
 
-        f_control = self.qubits[control_qubit].frequency
-        f_target = self.qubits[target_qubit].frequency
+        f_control = self.ctx.qubits[control_qubit].frequency
+        f_target = self.ctx.qubits[target_qubit].frequency
         f_delta = f_control - f_target
 
         # xt (cross-talk) rotation
         xt_rotation = coeffs["IX"] + 1j * coeffs["IY"]
         xt_rotation_amplitude = np.abs(xt_rotation)
-        xt_rotation_amplitude_hw = self.calc_control_amplitude(
+        xt_rotation_amplitude_hw = self.ctx.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=xt_rotation_amplitude,
         )
@@ -2593,7 +2782,7 @@ class CalibrationService:
         # cr (cross-resonance) rotation
         cr_rotation = coeffs["ZX"] + 1j * coeffs["ZY"]
         cr_rotation_amplitude = np.abs(cr_rotation)
-        cr_rotation_amplitude_hw = self.calc_control_amplitude(
+        cr_rotation_amplitude_hw = self.ctx.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=cr_rotation_amplitude,
         )
@@ -2602,7 +2791,7 @@ class CalibrationService:
         zx90_duration = 1 / (4 * cr_rotation_amplitude)
 
         # ZX90 gate
-        cr_rabi_rate = self.calc_rabi_rate(control_qubit, cr_amplitude)
+        cr_rabi_rate = self.ctx.calc_rabi_rate(control_qubit, cr_amplitude)
 
         fig_c = make_subplots(
             rows=2,
@@ -2798,11 +2987,12 @@ class CalibrationService:
         figs_s_3d = {}
         for label in spectators_fit_results_0.keys():
             f_delta = (
-                self.qubits[control_qubit].frequency
-                - self.qubits[target_qubit].frequency
+                self.ctx.qubits[control_qubit].frequency
+                - self.ctx.qubits[target_qubit].frequency
             )
             f_delta_st = (
-                self.qubits[label].frequency - self.qubits[target_qubit].frequency
+                self.ctx.qubits[label].frequency
+                - self.ctx.qubits[target_qubit].frequency
             )
 
             fig_s_0: go.Figure = spectators_fit_results_0[label]["fig"]
@@ -2991,7 +3181,7 @@ class CalibrationService:
         for spectator in spectator_qubits:
             print(f" Spectator qubit: {spectator}")
 
-            f_s = self.qubits[spectator].frequency
+            f_s = self.ctx.qubits[spectator].frequency
 
             print("")
             print(f"  ω_s ({spectator}) : {f_s * 1e3:.3f} MHz")

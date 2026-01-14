@@ -749,6 +749,164 @@ class MeasurementService:
         )
         return result
 
+    def check_waveform(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        method: Literal["measure", "execute"] = "measure",
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitude: float | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        add_pump_pulses: bool = False,
+        plot: bool = True,
+    ) -> MeasureResult | MultipleMeasureResult:
+        """
+        Checks the readout waveforms of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target labels to check the waveforms.
+        shots : int, optional
+            Number of shots.
+        interval : int, optional
+            Interval between shots.
+        readout_amplitude : float, optional
+            Amplitude of the readout pulse.
+        readout_duration : float, optional
+            Duration of the readout pulse in ns.
+        readout_pre_margin : float, optional
+            Pre-margin of the readout pulse in ns.
+        readout_post_margin : float, optional
+            Post-margin of the readout pulse in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the readout sequence. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.check_waveform(["Q00", "Q01"])
+        """
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if readout_amplitude is not None:
+            readout_amplitudes = {target: readout_amplitude for target in targets}
+        else:
+            readout_amplitudes = None
+
+        with PulseSchedule() as ps:
+            for target in targets:
+                ps.add(target, Blank(0))
+
+        if method == "measure":
+            result = self.measure(
+                ps,
+                shots=shots,
+                interval=interval,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                add_pump_pulses=add_pump_pulses,
+            )
+        else:
+            result = self.execute(
+                ps,
+                shots=shots,
+                interval=interval,
+                readout_amplitudes=readout_amplitudes,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+                add_pump_pulses=add_pump_pulses,
+                add_last_measurement=True,
+            )
+        if plot:
+            result.plot()
+        return result
+
+    def check_rabi(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        shots: int = DEFAULT_SHOTS,
+        interval: int = DEFAULT_INTERVAL,
+        store_params: bool = False,
+        rabi_level: Literal["ge", "ef"] = "ge",
+        plot: bool = True,
+    ) -> ExperimentResult[RabiData]:
+        """
+        Checks the Rabi oscillation of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target labels to check the Rabi oscillation.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        store_params : bool, optional
+            Whether to store the Rabi parameters. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[RabiData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.check_rabi(["Q00", "Q01"])
+        """
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+        time_range = np.asarray(time_range)
+        amplitudes = {
+            target: self.ctx.params.get_control_amplitude(target) for target in targets
+        }
+        if rabi_level == "ge":
+            result = self.rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=store_params,
+                plot=plot,
+            )
+        elif rabi_level == "ef":
+            result = self.ef_rabi_experiment(
+                amplitudes=amplitudes,
+                time_range=time_range,
+                shots=shots,
+                interval=interval,
+                store_params=store_params,
+                plot=plot,
+            )
+        return result
+
     def rabi_experiment(
         self,
         *,

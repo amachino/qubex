@@ -51,7 +51,7 @@ class BenchmarkingService:
         interleaved_clifford: Clifford | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
-        target_object = self.experiment_system.get_target(target)
+        target_object = self.ctx.experiment_system.get_target(target)
         if target_object.is_cr:
             if isinstance(x90, Waveform):
                 raise ValueError("x90 must be a dict for 2Q gates.")
@@ -96,13 +96,13 @@ class BenchmarkingService:
         interleaved_waveform: Waveform | None = None,
         seed: int | None = None,
     ) -> PulseArray:
-        x90 = x90 or self.x90(target)
+        x90 = x90 or self.ctx.x90(target)
         z90 = VirtualZ(np.pi / 2)
 
         sequence: list[Waveform | VirtualZ] = []
 
         if interleaved_clifford is None:
-            cliffords, inverse = self.clifford_generator.create_rb_sequences(
+            cliffords, inverse = self.ctx.clifford_generator.create_rb_sequences(
                 n=n,
                 type="1Q",
                 seed=seed,
@@ -110,12 +110,12 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "X90":
-                    interleaved_waveform = self.x90(target)
+                    interleaved_waveform = self.ctx.x90(target)
                 elif interleaved_clifford.name == "X180":
-                    interleaved_waveform = self.x180(target)
+                    interleaved_waveform = self.ctx.x180(target)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
-            cliffords, inverse = self.clifford_generator.create_irb_sequences(
+            cliffords, inverse = self.ctx.clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford,
                 type="1Q",
@@ -152,7 +152,7 @@ class BenchmarkingService:
         interleaved_waveform: PulseSchedule | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
-        target_object = self.experiment_system.get_target(target)
+        target_object = self.ctx.experiment_system.get_target(target)
         if not target_object.is_cr:
             raise ValueError(f"`{target}` is not a 2Q target.")
 
@@ -161,15 +161,15 @@ class BenchmarkingService:
 
         xi90 = x90.get(control_qubit) if x90 is not None else None
         ix90 = x90.get(target_qubit) if x90 is not None else None
-        xi90 = xi90 or self.x90(control_qubit)
-        ix90 = ix90 or self.x90(target_qubit)
+        xi90 = xi90 or self.ctx.x90(control_qubit)
+        ix90 = ix90 or self.ctx.x90(target_qubit)
         z90 = VirtualZ(np.pi / 2)
 
         if zx90 is None:
-            zx90 = self.zx90(control_qubit, target_qubit)
+            zx90 = self.ctx.zx90(control_qubit, target_qubit)
 
         if interleaved_clifford is None:
-            cliffords, inverse = self.clifford_generator.create_rb_sequences(
+            cliffords, inverse = self.ctx.clifford_generator.create_rb_sequences(
                 n=n,
                 type="2Q",
                 seed=seed,
@@ -177,10 +177,10 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "ZX90":
-                    interleaved_waveform = self.zx90(control_qubit, target_qubit)
+                    interleaved_waveform = self.ctx.zx90(control_qubit, target_qubit)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
-            cliffords, inverse = self.clifford_generator.create_irb_sequences(
+            cliffords, inverse = self.ctx.clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford,
                 type="2Q",
@@ -229,13 +229,13 @@ class BenchmarkingService:
         seed: int | None = None,
         basis: Literal["X", "Y", "Z"] = "Z",
     ) -> PulseArray:
-        x90 = x90 or self.x90(target)
+        x90 = x90 or self.ctx.x90(target)
         z90 = VirtualZ(np.pi / 2)
         y90m = x90.shifted(-np.pi / 2)
         sequence: list[Waveform | VirtualZ] = []
 
         if interleaved_clifford is None:
-            cliffords, inverse = self.clifford_generator.create_rb_sequences(
+            cliffords, inverse = self.ctx.clifford_generator.create_rb_sequences(
                 n=n,
                 type="1Q",
                 seed=seed,
@@ -243,12 +243,12 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "X90":
-                    interleaved_waveform = self.x90(target)
+                    interleaved_waveform = self.ctx.x90(target)
                 elif interleaved_clifford.name == "X180":
-                    interleaved_waveform = self.x180(target)
+                    interleaved_waveform = self.ctx.x180(target)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
-            cliffords, inverse = self.clifford_generator.create_irb_sequences(
+            cliffords, inverse = self.ctx.clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford,
                 type="1Q",
@@ -306,7 +306,7 @@ class BenchmarkingService:
             "ZZ",
         ] = "ZZ",
     ) -> PulseSchedule:
-        target_object = self.experiment_system.get_target(target)
+        target_object = self.ctx.experiment_system.get_target(target)
         if not target_object.is_cr:
             raise ValueError(f"`{target}` is not a 2Q target.")
 
@@ -315,15 +315,15 @@ class BenchmarkingService:
 
         xi90 = x90.get(control_qubit) if x90 is not None else None
         ix90 = x90.get(target_qubit) if x90 is not None else None
-        xi90 = xi90 or self.x90(control_qubit)
-        ix90 = ix90 or self.x90(target_qubit)
+        xi90 = xi90 or self.ctx.x90(control_qubit)
+        ix90 = ix90 or self.ctx.x90(target_qubit)
         z90 = VirtualZ(np.pi / 2)
 
         if zx90 is None:
-            zx90 = self.zx90(control_qubit, target_qubit)
+            zx90 = self.ctx.zx90(control_qubit, target_qubit)
 
         if interleaved_clifford is None:
-            cliffords, inverse = self.clifford_generator.create_rb_sequences(
+            cliffords, inverse = self.ctx.clifford_generator.create_rb_sequences(
                 n=n,
                 type="2Q",
                 seed=seed,
@@ -331,10 +331,10 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "ZX90":
-                    interleaved_waveform = self.zx90(control_qubit, target_qubit)
+                    interleaved_waveform = self.ctx.zx90(control_qubit, target_qubit)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
-            cliffords, inverse = self.clifford_generator.create_irb_sequences(
+            cliffords, inverse = self.ctx.clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford,
                 type="2Q",
@@ -456,7 +456,7 @@ class BenchmarkingService:
             xaxis_type = "linear"
 
         for target in targets:
-            target_object = self.experiment_system.get_target(target)
+            target_object = self.ctx.experiment_system.get_target(target)
             if target_object.is_cr:
                 raise ValueError(f"`{target}` is not a 1Q target.")
 
@@ -508,7 +508,7 @@ class BenchmarkingService:
                 trial_data = defaultdict(list)
                 for seed in seeds:
                     seed = int(seed)  # Ensure seed is an integer
-                    result = self.measure(
+                    result = self.measurement_service.measure(
                         sequence=rb_sequence(
                             n_clifford=n_clifford,
                             targets=target_group,
@@ -521,7 +521,7 @@ class BenchmarkingService:
                     )
                     for target, data in result.data.items():
                         iq = data.kerneled
-                        z = self.rabi_params[target].normalize(iq)
+                        z = self.ctx.rabi_params[target].normalize(iq)
                         trial_data[target].append((z + 1) / 2)
 
                 check_vals = {}
@@ -595,7 +595,7 @@ class BenchmarkingService:
         plot: bool = True,
         save_image: bool = True,
     ) -> Result:
-        if self.state_centers is None:
+        if self.ctx.state_centers is None:
             raise ValueError("State classifiers are not built.")
 
         if isinstance(targets, str):
@@ -606,8 +606,8 @@ class BenchmarkingService:
         targets = [
             target
             for target in targets
-            if self.experiment_system.get_target(target).is_cr
-            and target in self.calib_note.cr_params
+            if self.ctx.experiment_system.get_target(target).is_cr
+            and target in self.ctx.calib_note.cr_params
         ]
 
         if n_cliffords_range is not None:
@@ -649,7 +649,7 @@ class BenchmarkingService:
             target_groups = [[target] for target in targets]
 
         for target in targets:
-            target_object = self.experiment_system.get_target(target)
+            target_object = self.ctx.experiment_system.get_target(target)
             if not target_object.is_cr:
                 raise ValueError(f"`{target}` is not a 2Q target.")
 
@@ -705,7 +705,7 @@ class BenchmarkingService:
                 trial_data = defaultdict(list)
                 for seed in seeds:
                     seed = int(seed)  # Ensure seed is an integer
-                    result = self.measure(
+                    result = self.measurement_service.measure(
                         sequence=rb_sequence(
                             n_clifford=n_clifford,
                             targets=target_group,
@@ -831,7 +831,7 @@ class BenchmarkingService:
             xaxis_type = "linear"
 
         for target in targets:
-            target_object = self.experiment_system.get_target(target)
+            target_object = self.ctx.experiment_system.get_target(target)
             if target_object.is_cr:
                 raise ValueError(f"`{target}` is not a 1Q target.")
 
@@ -883,7 +883,7 @@ class BenchmarkingService:
                 trial_data = defaultdict(list)
                 for seed in seeds:
                     seed = int(seed)  # Ensure seed is an integer
-                    result = self.measure(
+                    result = self.measurement_service.measure(
                         sequence=pb_sequence(
                             n_clifford=n_clifford,
                             targets=target_group,
@@ -896,7 +896,7 @@ class BenchmarkingService:
                     )
                     for target, data in result.data.items():
                         iq = data.kerneled
-                        z = self.rabi_params[target].normalize(iq)
+                        z = self.ctx.rabi_params[target].normalize(iq)
                         trial_data[target].append((z + 1) / 2)
 
                 check_vals = {}
@@ -970,7 +970,7 @@ class BenchmarkingService:
         plot: bool = True,
         save_image: bool = True,
     ) -> Result:
-        if self.state_centers is None:
+        if self.ctx.state_centers is None:
             raise ValueError("State classifiers are not built.")
 
         if isinstance(targets, str):
@@ -981,8 +981,8 @@ class BenchmarkingService:
         targets = [
             target
             for target in targets
-            if self.experiment_system.get_target(target).is_cr
-            and target in self.calib_note.cr_params
+            if self.ctx.experiment_system.get_target(target).is_cr
+            and target in self.ctx.calib_note.cr_params
         ]
 
         if n_cliffords_range is not None:
@@ -1024,7 +1024,7 @@ class BenchmarkingService:
             target_groups = [[target] for target in targets]
 
         for target in targets:
-            target_object = self.experiment_system.get_target(target)
+            target_object = self.ctx.experiment_system.get_target(target)
             if not target_object.is_cr:
                 raise ValueError(f"`{target}` is not a 2Q target.")
 
@@ -1080,7 +1080,7 @@ class BenchmarkingService:
                 trial_data = defaultdict(list)
                 for seed in seeds:
                     seed = int(seed)  # Ensure seed is an integer
-                    result = self.measure(
+                    result = self.measurement_service.measure(
                         sequence=pb_sequence(
                             n_clifford=n_clifford,
                             targets=target_group,
@@ -1181,12 +1181,12 @@ class BenchmarkingService:
             targets = list(targets)
 
         if isinstance(interleaved_clifford, str):
-            clifford = self.clifford.get(interleaved_clifford)
+            clifford = self.ctx.clifford.get(interleaved_clifford)
             if clifford is None:
                 raise ValueError(f"Invalid Clifford: {interleaved_clifford}")
             interleaved_clifford = clifford
 
-        is_2q = self.experiment_system.get_target(targets[0]).is_cr
+        is_2q = self.ctx.experiment_system.get_target(targets[0]).is_cr
 
         if is_2q:
             dimension = 4
@@ -1385,12 +1385,12 @@ class BenchmarkingService:
             targets = list(targets)
 
         if isinstance(interleaved_clifford, str):
-            clifford = self.clifford.get(interleaved_clifford)
+            clifford = self.ctx.clifford.get(interleaved_clifford)
             if clifford is None:
                 raise ValueError(f"Invalid Clifford: {interleaved_clifford}")
             interleaved_clifford = clifford
 
-        is_2q = self.experiment_system.get_target(targets[0]).is_cr
+        is_2q = self.ctx.experiment_system.get_target(targets[0]).is_cr
 
         if is_2q:
             dimension = 4
@@ -1585,7 +1585,7 @@ class BenchmarkingService:
         else:
             targets = list(targets)
 
-        target_object = self.experiment_system.get_target(targets[0])
+        target_object = self.ctx.experiment_system.get_target(targets[0])
         is_2q = target_object.is_cr
 
         if is_2q:
@@ -1708,7 +1708,7 @@ class BenchmarkingService:
         else:
             targets = list(targets)
 
-        target_object = self.experiment_system.get_target(targets[0])
+        target_object = self.ctx.experiment_system.get_target(targets[0])
         is_2q = target_object.is_cr
 
         if is_2q:
@@ -1821,7 +1821,7 @@ class BenchmarkingService:
         save_image: bool = True,
     ):
         if targets is None:
-            targets = self.qubit_labels
+            targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
@@ -1887,7 +1887,7 @@ class BenchmarkingService:
         save_image: bool = True,
     ):
         if targets is None:
-            targets = self.cr_labels
+            targets = self.ctx.cr_labels
         elif isinstance(targets, str):
             targets = [targets]
         else:
