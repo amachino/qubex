@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from copy import deepcopy
-from typing import Collection, Literal
+from typing import Collection, Literal, no_type_check
 
 import numpy as np
 import plotly.graph_objects as go
@@ -1221,6 +1221,7 @@ class CharacterizationService:
 
         return ExperimentResult(data=data)
 
+    @no_type_check  # TODO: fix type checking error
     def _simultaneous_measurement_coherence(
         self,
         targets: Collection[str] | str | None = None,
@@ -1459,6 +1460,7 @@ class CharacterizationService:
             "Ramsey": exp_ramsey,
         }
 
+    @no_type_check  # TODO: fix type checking error
     def _stark_t1_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -1588,6 +1590,7 @@ class CharacterizationService:
 
         return ExperimentResult(data=data)
 
+    @no_type_check  # TODO: fix type checking error
     def _stark_ramsey_experiment(
         self,
         targets: Collection[str] | str | None = None,

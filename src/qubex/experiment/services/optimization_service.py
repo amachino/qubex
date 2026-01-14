@@ -98,6 +98,8 @@ class OptimizationService:
 
         es.optimize(objective_func)
         x = es.result.xbest
+        if x is None:
+            raise RuntimeError("Optimization failed to find best parameters.")
         opt_pulse = Pulse(x[:N] + 1j * x[N:])
         return opt_pulse
 
@@ -141,6 +143,8 @@ class OptimizationService:
 
         es.optimize(objective_func)
         x = es.result.xbest
+        if x is None:
+            raise RuntimeError("Optimization failed to find best parameters.")
         opt_pulse = Drag(duration=duration, amplitude=x[0], beta=x[1])
         return opt_pulse
 
@@ -179,6 +183,8 @@ class OptimizationService:
 
         es.optimize(objective_func)
         x = es.result.xbest
+        if x is None:
+            raise RuntimeError("Optimization failed to find best parameters.")
         opt_pulse = Pulse(x[:N] + 1j * x[N:])
         return opt_pulse
 
