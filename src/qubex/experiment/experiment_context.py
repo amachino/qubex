@@ -5,7 +5,15 @@ import sys
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Collection, Final, Literal
+from typing import TYPE_CHECKING, Collection, Final, Literal, Optional
+
+if TYPE_CHECKING:
+    from .services.benchmarking_service import BenchmarkingService
+    from .services.calibration_service import CalibrationService
+    from .services.characterization_service import CharacterizationService
+    from .services.measurement_service import MeasurementService
+    from .services.optimization_service import OptimizationService
+    from .services.pulse_service import PulseService
 
 from numpy.typing import NDArray
 from rich.console import Console
@@ -65,7 +73,7 @@ console = Console()
 
 class ExperimentContext:
     """
-    Class representing an experiment.
+    Class representing the context of an experiment.
 
     Parameters
     ----------
@@ -179,6 +187,66 @@ class ExperimentContext:
         self.system_manager.load_skew_file(self.box_ids)
         self.print_environment(verbose=False)
         self._load_classifiers()
+
+        self._benchmarking_service: Optional[BenchmarkingService] = None
+        self._calibration_service: Optional[CalibrationService] = None
+        self._characterization_service: Optional[CharacterizationService] = None
+        self._measurement_service: Optional[MeasurementService] = None
+        self._optimization_service: Optional[OptimizationService] = None
+        self._pulse_service: Optional[PulseService] = None
+
+    def register_services(
+        self,
+        *,
+        benchmarking_service: BenchmarkingService,
+        calibration_service: CalibrationService,
+        characterization_service: CharacterizationService,
+        measurement_service: MeasurementService,
+        optimization_service: OptimizationService,
+        pulse_service: PulseService,
+    ):
+        self._benchmarking_service = benchmarking_service
+        self._calibration_service = calibration_service
+        self._characterization_service = characterization_service
+        self._measurement_service = measurement_service
+        self._optimization_service = optimization_service
+        self._pulse_service = pulse_service
+
+    @property
+    def benchmarking_service(self) -> BenchmarkingService:
+        if self._benchmarking_service is None:
+            raise RuntimeError("BenchmarkingService has not been registered.")
+        return self._benchmarking_service
+
+    @property
+    def calibration_service(self) -> CalibrationService:
+        if self._calibration_service is None:
+            raise RuntimeError("CalibrationService has not been registered.")
+        return self._calibration_service
+
+    @property
+    def characterization_service(self) -> CharacterizationService:
+        if self._characterization_service is None:
+            raise RuntimeError("CharacterizationService has not been registered.")
+        return self._characterization_service
+
+    @property
+    def measurement_service(self) -> MeasurementService:
+        if self._measurement_service is None:
+            raise RuntimeError("MeasurementService has not been registered.")
+        return self._measurement_service
+
+    @property
+    def optimization_service(self) -> OptimizationService:
+        if self._optimization_service is None:
+            raise RuntimeError("OptimizationService has not been registered.")
+        return self._optimization_service
+
+    @property
+    def pulse_service(self) -> PulseService:
+        if self._pulse_service is None:
+            raise RuntimeError("PulseService has not been registered.")
+        return self._pulse_service
 
     def _load_classifiers(self):
         for qubit in self.qubit_labels:

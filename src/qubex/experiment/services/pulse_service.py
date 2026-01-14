@@ -31,13 +31,13 @@ logger = logging.getLogger(__name__)
 class PulseService:
     def __init__(
         self,
-        experiment_context: ExperimentContext,
+        context: ExperimentContext,
     ):
-        self._context = experiment_context
+        self._ctx = context
 
     @property
-    def context(self) -> ExperimentContext:
-        return self._context
+    def ctx(self) -> ExperimentContext:
+        return self._ctx
 
     def get_hpi_pulse(
         self,
@@ -48,9 +48,9 @@ class PulseService:
         """
         Get the π/2 pulse for the given target.
         """
-        param = self._context.calib_note.get_hpi_param(
+        param = self._ctx.calib_note.get_hpi_param(
             target,
-            valid_days=valid_days or self._context._calibration_valid_days,
+            valid_days=valid_days or self._ctx._calibration_valid_days,
         )
         if param is not None:
             return FlatTop(
@@ -61,7 +61,7 @@ class PulseService:
         else:
             return FlatTop(
                 duration=HPI_DURATION,
-                amplitude=self._context.params.get_control_amplitude(target),
+                amplitude=self._ctx.params.get_control_amplitude(target),
                 tau=HPI_RAMPTIME,
             )
 
@@ -74,9 +74,9 @@ class PulseService:
         """
         Get the π pulse for the given target.
         """
-        param = self._context.calib_note.get_pi_param(
+        param = self._ctx.calib_note.get_pi_param(
             target,
-            valid_days=valid_days or self._context._calibration_valid_days,
+            valid_days=valid_days or self._ctx._calibration_valid_days,
         )
         if param is not None:
             return FlatTop(
@@ -99,9 +99,9 @@ class PulseService:
         """
         Get the DRAG π/2 pulse for the given target.
         """
-        param = self._context.calib_note.get_drag_hpi_param(
+        param = self._ctx.calib_note.get_drag_hpi_param(
             target,
-            valid_days=valid_days or self._context._calibration_valid_days,
+            valid_days=valid_days or self._ctx._calibration_valid_days,
         )
         if param is not None:
             return Drag(
@@ -124,9 +124,9 @@ class PulseService:
         """
         Get the DRAG π pulse for the given target.
         """
-        param = self._context.calib_note.get_drag_pi_param(
+        param = self._ctx.calib_note.get_drag_pi_param(
             target,
-            valid_days=valid_days or self._context._calibration_valid_days,
+            valid_days=valid_days or self._ctx._calibration_valid_days,
         )
         if param is not None:
             return Drag(
@@ -275,13 +275,13 @@ class PulseService:
         post_margin: float | None = None,
     ) -> Waveform:
         if duration is None:
-            duration = self._context.readout_duration
+            duration = self._ctx.readout_duration
         if pre_margin is None:
-            pre_margin = self._context.readout_pre_margin
+            pre_margin = self._ctx.readout_pre_margin
         if post_margin is None:
-            post_margin = self._context.readout_post_margin
+            post_margin = self._ctx.readout_post_margin
 
-        return self._context.measurement.readout_pulse(
+        return self._ctx.measurement.readout_pulse(
             target=target,
             duration=duration,
             amplitude=amplitude,
@@ -311,9 +311,9 @@ class PulseService:
         x180_margin: float = 0.0,
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_param = self._context.calib_note.get_cr_param(
+        cr_param = self._ctx.calib_note.get_cr_param(
             cr_label,
-            valid_days=self._context._calibration_valid_days,
+            valid_days=self._ctx._calibration_valid_days,
         )
         if cr_param is None:
             raise ValueError(f"CR parameters for {cr_label} are not stored.")
@@ -385,9 +385,9 @@ class PulseService:
         REFERENCE_ANGLE = np.pi / 2
         coeff_value = angle / REFERENCE_ANGLE
         cr_label = f"{control_qubit}-{target_qubit}"
-        cr_param = self._context.calib_note.get_cr_param(
+        cr_param = self._ctx.calib_note.get_cr_param(
             cr_label,
-            valid_days=self._context._calibration_valid_days,
+            valid_days=self._ctx._calibration_valid_days,
         )
         if cr_param is None:
             raise ValueError(f"CR parameters for {cr_label} are not stored.")
@@ -447,10 +447,10 @@ class PulseService:
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        is_low_to_high = self._context.qubits[control_qubit].index % 4 in [0, 3]
+        is_low_to_high = self._ctx.qubits[control_qubit].index % 4 in [0, 3]
 
         if (only_low_to_high and is_low_to_high) or (
-            not only_low_to_high and cr_label in self._context.calib_note.cr_params
+            not only_low_to_high and cr_label in self._ctx.calib_note.cr_params
         ):
             if x90 is None:
                 x90 = self.x90(target_qubit)
@@ -510,10 +510,10 @@ class PulseService:
     ) -> PulseSchedule:
         cr_label = f"{control_qubit}-{target_qubit}"
 
-        is_low_to_high = self._context.qubits[control_qubit].index % 4 in [0, 3]
+        is_low_to_high = self._ctx.qubits[control_qubit].index % 4 in [0, 3]
 
         if (only_low_to_high and is_low_to_high) or (
-            not only_low_to_high and cr_label in self._context.calib_note.cr_params
+            not only_low_to_high and cr_label in self._ctx.calib_note.cr_params
         ):
             if x90 is None:
                 x90 = self.x90(target_qubit)
@@ -555,10 +555,10 @@ class PulseService:
     @property
     def ef_hpi_pulse(self) -> dict[str, Waveform]:
         result = {}
-        for target in self._context.ef_targets:
-            param = self._context.calib_note.get_hpi_param(
+        for target in self._ctx.ef_targets:
+            param = self._ctx.calib_note.get_hpi_param(
                 target,
-                valid_days=self._context._calibration_valid_days,
+                valid_days=self._ctx._calibration_valid_days,
             )
             if param is not None and None not in param.values():
                 result[target] = FlatTop(
@@ -571,10 +571,10 @@ class PulseService:
     @property
     def ef_pi_pulse(self) -> dict[str, Waveform]:
         result = {}
-        for target in self._context.ef_targets:
-            param = self._context.calib_note.get_pi_param(
+        for target in self._ctx.ef_targets:
+            param = self._ctx.calib_note.get_pi_param(
                 target,
-                valid_days=self._context._calibration_valid_days,
+                valid_days=self._ctx._calibration_valid_days,
             )
             if param is not None and None not in param.values():
                 result[target] = FlatTop(
@@ -587,9 +587,9 @@ class PulseService:
     @property
     def cr_pulse(self) -> dict[str, PulseSchedule]:
         result = {}
-        for cr_label in self._context.cr_targets:
+        for cr_label in self._ctx.cr_targets:
             control_qubit, target_qubit = Target.cr_qubit_pair(cr_label)
-            cr_param = self._context.calib_note.get_cr_param(cr_label)
+            cr_param = self._ctx.calib_note.get_cr_param(cr_label)
             if cr_param is not None and None not in cr_param.values():
                 cancel_amplitude = cr_param["cancel_amplitude"]
                 cancel_phase = cr_param["cancel_phase"]
@@ -618,10 +618,10 @@ class PulseService:
     @property
     def drag_hpi_pulse(self) -> dict[str, Waveform]:
         result = {}
-        for target in self._context.ge_targets:
-            param = self._context.calib_note.get_drag_hpi_param(
+        for target in self._ctx.ge_targets:
+            param = self._ctx.calib_note.get_drag_hpi_param(
                 target,
-                valid_days=self._context._calibration_valid_days,
+                valid_days=self._ctx._calibration_valid_days,
             )
             if param is not None and None not in param.values():
                 result[target] = Drag(
@@ -634,10 +634,10 @@ class PulseService:
     @property
     def drag_pi_pulse(self) -> dict[str, Waveform]:
         result = {}
-        for target in self._context.ge_targets:
-            param = self._context.calib_note.get_drag_pi_param(
+        for target in self._ctx.ge_targets:
+            param = self._ctx.calib_note.get_drag_pi_param(
                 target,
-                valid_days=self._context._calibration_valid_days,
+                valid_days=self._ctx._calibration_valid_days,
             )
             if param is not None and None not in param.values():
                 result[target] = Drag(
@@ -650,10 +650,10 @@ class PulseService:
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
         result = {}
-        for target in self._context.ge_targets:
-            param = self._context.calib_note.get_hpi_param(
+        for target in self._ctx.ge_targets:
+            param = self._ctx.calib_note.get_hpi_param(
                 target,
-                valid_days=self._context._calibration_valid_days,
+                valid_days=self._ctx._calibration_valid_days,
             )
             if param is not None and None not in param.values():
                 result[target] = FlatTop(
@@ -666,10 +666,10 @@ class PulseService:
     @property
     def pi_pulse(self) -> dict[str, Waveform]:
         result = {}
-        for target in self._context.ge_targets:
-            param = self._context.calib_note.get_pi_param(
+        for target in self._ctx.ge_targets:
+            param = self._ctx.calib_note.get_pi_param(
                 target,
-                valid_days=self._context._calibration_valid_days,
+                valid_days=self._ctx._calibration_valid_days,
             )
             if param is not None and None not in param.values():
                 result[target] = FlatTop(

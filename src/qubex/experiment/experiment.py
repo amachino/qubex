@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Collection, Literal, Optional, Sequence
+from typing import Collection, Literal, Optional, Sequence, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -76,6 +76,7 @@ from .experiment_result import (
     T1Data,
     T2Data,
 )
+from .experiment_task import ExperimentTask, ExperimentTaskResult
 from .rabi_param import RabiParam
 from .result import Result
 from .services import (
@@ -86,6 +87,8 @@ from .services import (
     OptimizationService,
     PulseService,
 )
+
+T = TypeVar("T", bound=ExperimentTaskResult)
 
 
 class Experiment:
@@ -164,7 +167,7 @@ class Experiment:
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         mock_mode: bool = False,
     ):
-        self._experiment_context = ExperimentContext(
+        context = ExperimentContext(
             chip_id=chip_id,
             muxes=muxes,
             qubits=qubits,
@@ -184,65 +187,90 @@ class Experiment:
             configuration_mode=configuration_mode,
             mock_mode=mock_mode,
         )
-        self._pulse_service = PulseService(
-            experiment_context=self._experiment_context,
+        pulse_service = PulseService(
+            context=context,
         )
-        self._measurement_service = MeasurementService(
-            experiment_context=self._experiment_context,
-            pulse_service=self._pulse_service,
+        measurement_service = MeasurementService(
+            context=context,
+            pulse_service=pulse_service,
         )
-        self._calibration_service = CalibrationService(
-            experiment_context=self._experiment_context,
-            measurement_service=self._measurement_service,
-            pulse_service=self._pulse_service,
+        calibration_service = CalibrationService(
+            context=context,
+            measurement_service=measurement_service,
+            pulse_service=pulse_service,
         )
-        self._characterization_service = CharacterizationService(
-            experiment_context=self._experiment_context,
-            measurement_service=self._measurement_service,
-            calibration_service=self._calibration_service,
-            pulse_service=self._pulse_service,
+        characterization_service = CharacterizationService(
+            context=context,
+            measurement_service=measurement_service,
+            calibration_service=calibration_service,
+            pulse_service=pulse_service,
         )
-        self._benchmarking_service = BenchmarkingService(
-            experiment_context=self._experiment_context,
-            measurement_service=self._measurement_service,
-            pulse_service=self._pulse_service,
+        benchmarking_service = BenchmarkingService(
+            context=context,
+            measurement_service=measurement_service,
+            pulse_service=pulse_service,
         )
-        self._optimization_service = OptimizationService(
-            experiment_context=self._experiment_context,
-            measurement_service=self._measurement_service,
-            calibration_service=self._calibration_service,
-            characterization_service=self._characterization_service,
-            benchmarking_service=self._benchmarking_service,
-            pulse_service=self._pulse_service,
+        optimization_service = OptimizationService(
+            context=context,
+            measurement_service=measurement_service,
+            calibration_service=calibration_service,
+            characterization_service=characterization_service,
+            benchmarking_service=benchmarking_service,
+            pulse_service=pulse_service,
         )
+        context.register_services(
+            benchmarking_service=benchmarking_service,
+            calibration_service=calibration_service,
+            characterization_service=characterization_service,
+            measurement_service=measurement_service,
+            optimization_service=optimization_service,
+            pulse_service=pulse_service,
+        )
+        self._ctx = context
 
     @property
     def ctx(self) -> ExperimentContext:
-        return self._experiment_context
+        return self._ctx
+
+    def run(self, task: ExperimentTask[T]) -> T:
+        """
+        Run an experiment task.
+
+        Parameters
+        ----------
+        task : ExperimentTask[R]
+            The experiment task to run.
+
+        Returns
+        -------
+        R
+            The experiment result.
+        """
+        return task.execute(self.ctx)
 
     @property
     def pulse(self) -> PulseService:
-        return self._pulse_service
+        return self.ctx.pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
-        return self._measurement_service
+        return self.ctx.measurement_service
 
     @property
     def calibration_service(self) -> CalibrationService:
-        return self._calibration_service
+        return self.ctx.calibration_service
 
     @property
     def characterization_service(self) -> CharacterizationService:
-        return self._characterization_service
+        return self.ctx.characterization_service
 
     @property
     def benchmarking_service(self) -> BenchmarkingService:
-        return self._benchmarking_service
+        return self.ctx.benchmarking_service
 
     @property
     def optimization_service(self) -> OptimizationService:
-        return self._optimization_service
+        return self.ctx.optimization_service
 
     @property
     def tool(self):
