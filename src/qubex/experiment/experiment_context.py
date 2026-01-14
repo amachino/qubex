@@ -77,25 +77,12 @@ from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import ExperimentResult, RabiData
 from .experiment_util import ExperimentUtil
-from .mixin import (
-    BenchmarkingMixin,
-    CalibrationMixin,
-    CharacterizationMixin,
-    MeasurementMixin,
-    OptimizationMixin,
-)
 from .rabi_param import RabiParam
 
 console = Console()
 
 
-class ExperimentContext(
-    BenchmarkingMixin,
-    CharacterizationMixin,
-    CalibrationMixin,
-    MeasurementMixin,
-    OptimizationMixin,
-):
+class ExperimentContext:
     """
     Class representing an experiment.
 

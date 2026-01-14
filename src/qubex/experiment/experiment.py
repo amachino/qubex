@@ -64,25 +64,18 @@ from .experiment_context import ExperimentContext
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_result import ExperimentResult, RabiData, SweepData
-from .mixin import (
-    BenchmarkingMixin,
-    CalibrationMixin,
-    CharacterizationMixin,
-    MeasurementMixin,
-    OptimizationMixin,
-)
 from .rabi_param import RabiParam
 from .result import Result
-from .services import MeasurementService
+from .services import (
+    BenchmarkingService,
+    CalibrationService,
+    CharacterizationService,
+    MeasurementService,
+    OptimizationService,
+)
 
 
-class Experiment(
-    BenchmarkingMixin,
-    CharacterizationMixin,
-    CalibrationMixin,
-    MeasurementMixin,
-    OptimizationMixin,
-):
+class Experiment:
     """
     Class representing an experiment.
 
@@ -158,7 +151,7 @@ class Experiment(
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         mock_mode: bool = False,
     ):
-        self._ctx = ExperimentContext(
+        self._experiment_context = ExperimentContext(
             chip_id=chip_id,
             muxes=muxes,
             qubits=qubits,
@@ -178,15 +171,53 @@ class Experiment(
             configuration_mode=configuration_mode,
             mock_mode=mock_mode,
         )
-        self._measurement_service = MeasurementService(self._ctx)
+        self._measurement_service = MeasurementService(
+            experiment_context=self._experiment_context,
+        )
+        self._calibration_service = CalibrationService(
+            experiment_context=self._experiment_context,
+            measurement_service=self._measurement_service,
+        )
+        self._characterization_service = CharacterizationService(
+            experiment_context=self._experiment_context,
+            measurement_service=self._measurement_service,
+            calibration_service=self._calibration_service,
+        )
+        self._benchmarking_service = BenchmarkingService(
+            experiment_context=self._experiment_context,
+            measurement_service=self._measurement_service,
+        )
+        self._optimization_service = OptimizationService(
+            experiment_context=self._experiment_context,
+            measurement_service=self._measurement_service,
+            calibration_service=self._calibration_service,
+            characterization_service=self._characterization_service,
+            benchmarking_service=self._benchmarking_service,
+        )
 
     @property
     def ctx(self) -> ExperimentContext:
-        return self._ctx
+        return self._experiment_context
 
     @property
     def measurement_service(self) -> MeasurementService:
         return self._measurement_service
+
+    @property
+    def calibration_service(self) -> CalibrationService:
+        return self._calibration_service
+
+    @property
+    def characterization_service(self) -> CharacterizationService:
+        return self._characterization_service
+
+    @property
+    def benchmarking_service(self) -> BenchmarkingService:
+        return self._benchmarking_service
+
+    @property
+    def optimization_service(self) -> OptimizationService:
+        return self._optimization_service
 
     @property
     def tool(self):

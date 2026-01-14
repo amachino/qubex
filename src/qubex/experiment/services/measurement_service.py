@@ -80,12 +80,16 @@ console = Console()
 
 
 class MeasurementService:
-    def __init__(self, ctx: ExperimentContext):
-        self._ctx = ctx
+    def __init__(
+        self,
+        *,
+        experiment_context: ExperimentContext,
+    ):
+        self._experiment_context = experiment_context
 
     @property
     def ctx(self) -> ExperimentContext:
-        return self._ctx
+        return self._experiment_context
 
     def execute(
         self,
