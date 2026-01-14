@@ -3,6 +3,7 @@ from .calibration_service import CalibrationService
 from .characterization_service import CharacterizationService
 from .measurement_service import MeasurementService
 from .optimization_service import OptimizationService
+from .pulse_service import PulseService
 
 __all__ = [
     "BenchmarkingService",
@@ -10,4 +11,5 @@ __all__ = [
     "CharacterizationService",
     "MeasurementService",
     "OptimizationService",
+    "PulseService",
 ]

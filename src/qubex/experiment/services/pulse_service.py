@@ -11,6 +11,7 @@ from ...pulse import (
     FlatTop,
     PulseArray,
     PulseSchedule,
+    RampType,
     VirtualZ,
     Waveform,
 )
@@ -233,6 +234,61 @@ class PulseService:
         self,
     ) -> VirtualZ:
         return VirtualZ(np.pi)
+
+    def hadamard(
+        self,
+        target: str,
+        *,
+        decomposition: str = "Z180-Y90",
+    ) -> PulseArray:
+        if decomposition == "Z180-Y90":
+            return PulseArray(
+                [
+                    # TODO: Need phase correction for CR targets
+                    self.z180(),
+                    self.y90(target),
+                ]
+            )
+        elif decomposition == "Y90-X180":
+            return PulseArray(
+                [
+                    self.y90(target),
+                    self.x180(target),
+                ]
+            )
+        else:
+            raise ValueError(f"Invalid decomposition: {decomposition}. ")
+
+    def readout(
+        self,
+        target: str,
+        /,
+        *,
+        duration: float | None = None,
+        amplitude: float | None = None,
+        ramptime: float | None = None,
+        type: RampType | None = None,
+        drag_coeff: float | None = None,
+        pre_margin: float | None = None,
+        post_margin: float | None = None,
+    ) -> Waveform:
+        if duration is None:
+            duration = self._context.readout_duration
+        if pre_margin is None:
+            pre_margin = self._context.readout_pre_margin
+        if post_margin is None:
+            post_margin = self._context.readout_post_margin
+
+        return self._context.measurement.readout_pulse(
+            target=target,
+            duration=duration,
+            amplitude=amplitude,
+            ramptime=ramptime,
+            type=type,
+            drag_coeff=drag_coeff,
+            pre_margin=pre_margin,
+            post_margin=post_margin,
+        )
 
     def zx90(
         self,

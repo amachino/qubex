@@ -84,6 +84,7 @@ from .services import (
     CharacterizationService,
     MeasurementService,
     OptimizationService,
+    PulseService,
 )
 
 
@@ -186,6 +187,9 @@ class Experiment:
         self._measurement_service = MeasurementService(
             experiment_context=self._experiment_context,
         )
+        self._pulse_service = PulseService(
+            experiment_context=self._experiment_context,
+        )
         self._calibration_service = CalibrationService(
             experiment_context=self._experiment_context,
             measurement_service=self._measurement_service,
@@ -210,6 +214,10 @@ class Experiment:
     @property
     def ctx(self) -> ExperimentContext:
         return self._experiment_context
+
+    @property
+    def pulse(self) -> PulseService:
+        return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
@@ -622,7 +630,7 @@ class Experiment:
         """
         Get the π/2 pulse for the given target.
         """
-        return self.ctx.get_hpi_pulse(
+        return self.pulse.get_hpi_pulse(
             target,
             valid_days=valid_days,
         )
@@ -636,7 +644,7 @@ class Experiment:
         """
         Get the π pulse for the given target.
         """
-        return self.ctx.get_pi_pulse(
+        return self.pulse.get_pi_pulse(
             target,
             valid_days=valid_days,
         )
@@ -650,7 +658,7 @@ class Experiment:
         """
         Get the DRAG π/2 pulse for the given target.
         """
-        return self.ctx.get_drag_hpi_pulse(
+        return self.pulse.get_drag_hpi_pulse(
             target,
             valid_days=valid_days,
         )
@@ -664,7 +672,7 @@ class Experiment:
         """
         Get the DRAG π pulse for the given target.
         """
-        return self.ctx.get_drag_pi_pulse(
+        return self.pulse.get_drag_pi_pulse(
             target,
             valid_days=valid_days,
         )
@@ -674,7 +682,7 @@ class Experiment:
         target: str,
         state: str,  # ["0", "1", "+", "-", "+i", "-i"],
     ) -> Waveform:
-        return self.ctx.get_pulse_for_state(target, state)
+        return self.pulse.get_pulse_for_state(target, state)
 
     def get_spectators(
         self,
@@ -1004,7 +1012,7 @@ class Experiment:
         pre_margin: float | None = None,
         post_margin: float | None = None,
     ) -> Waveform:
-        return self.ctx.readout(
+        return self.pulse.readout(
             target,
             duration=duration,
             amplitude=amplitude,
@@ -1022,7 +1030,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        return self.ctx.x90(target, valid_days=valid_days)
+        return self.pulse.x90(target, valid_days=valid_days)
 
     def x90m(
         self,
@@ -1031,7 +1039,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        return self.ctx.x90m(target, valid_days=valid_days)
+        return self.pulse.x90m(target, valid_days=valid_days)
 
     def x180(
         self,
@@ -1040,7 +1048,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        return self.ctx.x180(target, valid_days=valid_days)
+        return self.pulse.x180(target, valid_days=valid_days)
 
     def y90(
         self,
@@ -1049,7 +1057,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        return self.ctx.y90(target, valid_days=valid_days)
+        return self.pulse.y90(target, valid_days=valid_days)
 
     def y90m(
         self,
@@ -1058,7 +1066,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        return self.ctx.y90m(target, valid_days=valid_days)
+        return self.pulse.y90m(target, valid_days=valid_days)
 
     def y180(
         self,
@@ -1067,17 +1075,17 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        return self.ctx.y180(target, valid_days=valid_days)
+        return self.pulse.y180(target, valid_days=valid_days)
 
     def z90(
         self,
     ) -> VirtualZ:
-        return self.ctx.z90()
+        return self.pulse.z90()
 
     def z180(
         self,
     ) -> VirtualZ:
-        return self.ctx.z180()
+        return self.pulse.z180()
 
     def hadamard(
         self,
@@ -1085,7 +1093,7 @@ class Experiment:
         *,
         decomposition: Literal["Z180-Y90", "Y90-X180"] = "Z180-Y90",
     ) -> PulseArray:
-        return self.ctx.hadamard(target, decomposition=decomposition)
+        return self.pulse.hadamard(target, decomposition=decomposition)
 
     def zx90(
         self,
@@ -1105,7 +1113,7 @@ class Experiment:
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float = 0.0,
     ) -> PulseSchedule:
-        return self.ctx.zx90(
+        return self.pulse.zx90(
             control_qubit,
             target_qubit,
             cr_duration=cr_duration,
@@ -1141,7 +1149,7 @@ class Experiment:
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float = 0.0,
     ) -> PulseSchedule:
-        return self.ctx.rzx(
+        return self.pulse.rzx(
             control_qubit,
             target_qubit,
             angle,
@@ -1168,7 +1176,7 @@ class Experiment:
         x90: Waveform | None = None,
         only_low_to_high: bool = False,
     ) -> PulseSchedule:
-        return self.ctx.cnot(
+        return self.pulse.cnot(
             control_qubit,
             target_qubit,
             zx90=zx90,
@@ -1185,7 +1193,7 @@ class Experiment:
         x90: Waveform | None = None,
         only_low_to_high: bool = False,
     ) -> PulseSchedule:
-        return self.ctx.cx(
+        return self.pulse.cx(
             control_qubit,
             target_qubit,
             zx90=zx90,
@@ -1202,7 +1210,7 @@ class Experiment:
         x90: Waveform | None = None,
         only_low_to_high: bool = False,
     ) -> PulseSchedule:
-        return self.ctx.cz(
+        return self.pulse.cz(
             control_qubit,
             target_qubit,
             zx90=zx90,
