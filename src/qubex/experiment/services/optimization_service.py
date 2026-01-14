@@ -19,6 +19,7 @@ from .benchmarking_service import BenchmarkingService
 from .calibration_service import CalibrationService
 from .characterization_service import CharacterizationService
 from .measurement_service import MeasurementService
+from .pulse_service import PulseService
 
 
 class OptimizationService:
@@ -30,16 +31,22 @@ class OptimizationService:
         calibration_service: CalibrationService,
         characterization_service: CharacterizationService,
         benchmarking_service: BenchmarkingService,
+        pulse_service: PulseService,
     ):
         self._experiment_context = experiment_context
         self._calibration_service = calibration_service
         self._measurement_service = measurement_service
         self._characterization_service = characterization_service
         self._benchmarking_service = benchmarking_service
+        self._pulse_service = pulse_service
 
     @property
     def ctx(self) -> ExperimentContext:
         return self._experiment_context
+
+    @property
+    def pulse(self) -> PulseService:
+        return self._pulse_service
 
     @property
     def calibration_service(self) -> CalibrationService:
@@ -66,7 +73,7 @@ class OptimizationService:
         ftarget: float = 1e-3,
         timeout: int = 300,
     ) -> Waveform:
-        pulse = self.ctx.get_drag_hpi_pulse(qubit)
+        pulse = self.pulse.get_drag_hpi_pulse(qubit)
         N = pulse.length
         initial_params = list(pulse.real) + list(pulse.imag)
         es = cma.CMAEvolutionStrategy(
@@ -210,8 +217,8 @@ class OptimizationService:
 
         if x180 is None:
             x180 = {
-                control_qubit: self.ctx.x180(control_qubit),
-                target_qubit: self.ctx.x180(target_qubit),
+                control_qubit: self.pulse.x180(control_qubit),
+                target_qubit: self.pulse.x180(target_qubit),
             }
 
         cr_label = f"{control_qubit}-{target_qubit}"
@@ -305,7 +312,7 @@ class OptimizationService:
                 rotary_amplitude + 0j
             )
 
-            pi_pulse = x180.get(control_qubit, self.ctx.x180(control_qubit))
+            pi_pulse = x180.get(control_qubit, self.pulse.x180(control_qubit))
 
             ecr = CrossResonance(
                 control_qubit=control_qubit,

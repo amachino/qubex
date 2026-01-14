@@ -73,6 +73,7 @@ from ..experiment_context import ExperimentContext
 from ..experiment_result import ExperimentResult, RabiData, SweepData
 from ..rabi_param import RabiParam
 from ..result import Result
+from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +85,18 @@ class MeasurementService:
         self,
         *,
         experiment_context: ExperimentContext,
+        pulse_service: PulseService,
     ):
         self._experiment_context = experiment_context
+        self._pulse_service = pulse_service
 
     @property
     def ctx(self) -> ExperimentContext:
         return self._experiment_context
+
+    @property
+    def pulse(self) -> PulseService:
+        return self._pulse_service
 
     def execute(
         self,
@@ -202,7 +209,9 @@ class MeasurementService:
                 with PulseSchedule(labels) as ps:
                     for target, state in initial_states.items():
                         if target in self.ctx.qubit_labels:
-                            ps.add(target, self.ctx.get_pulse_for_state(target, state))
+                            ps.add(
+                                target, self.pulse.get_pulse_for_state(target, state)
+                            )
                         else:
                             raise ValueError(f"Invalid init target: {target}")
                     ps.barrier()
@@ -216,7 +225,9 @@ class MeasurementService:
                 with PulseSchedule(labels) as ps:
                     for target, state in initial_states.items():
                         if target in self.ctx.qubit_labels:
-                            ps.add(target, self.ctx.get_pulse_for_state(target, state))
+                            ps.add(
+                                target, self.pulse.get_pulse_for_state(target, state)
+                            )
                         else:
                             raise ValueError(f"Invalid init target: {target}")
                     ps.barrier()
@@ -287,16 +298,16 @@ class MeasurementService:
         with PulseSchedule(targets) as ps:
             for target, state in states.items():
                 if state in ["0", "1", "+", "-", "+i", "-i"]:
-                    ps.add(target, self.ctx.get_pulse_for_state(target, state))  # type: ignore
+                    ps.add(target, self.pulse.get_pulse_for_state(target, state))  # type: ignore
                 elif state == "g":
                     ps.add(target, Blank(0))
                 elif state == "e":
-                    ps.add(target, self.ctx.get_hpi_pulse(target).repeated(2))
+                    ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
                 elif state == "f":
-                    ps.add(target, self.ctx.get_hpi_pulse(target).repeated(2))
+                    ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
                     ps.barrier()
                     ef_label = Target.ef_label(target)
-                    ps.add(ef_label, self.ctx.get_hpi_pulse(ef_label).repeated(2))
+                    ps.add(ef_label, self.pulse.get_hpi_pulse(ef_label).repeated(2))
 
         return self.measure(
             sequence=ps,
@@ -1068,7 +1079,7 @@ class MeasurementService:
             with PulseSchedule() as ps:
                 # prepare qubits to the excited state
                 for ge in ge_labels:
-                    ps.add(ge, self.ctx.x180(ge))
+                    ps.add(ge, self.pulse.x180(ge))
                 ps.barrier()
                 # apply the ef drive to induce the ef Rabi oscillation
                 for ef in ef_labels:
@@ -1494,7 +1505,7 @@ class MeasurementService:
                 for target, waveform in sequence.items()
             }
 
-        x90 = x90 or self.ctx.hpi_pulse
+        x90 = x90 or self.pulse.hpi_pulse
 
         buffer: dict[str, list[float]] = defaultdict(list)
 
@@ -1510,7 +1521,7 @@ class MeasurementService:
                 if initial_state is not None:
                     for qubit in qubits:
                         if qubit in initial_state:
-                            init_pulse = self.ctx.get_pulse_for_state(
+                            init_pulse = self.pulse.get_pulse_for_state(
                                 target=qubit,
                                 state=initial_state[qubit],
                             )
@@ -1908,11 +1919,11 @@ class MeasurementService:
 
         with PulseSchedule(pair) as ps:
             # prepare |+⟩|0⟩
-            ps.add(control_qubit, self.ctx.y90(control_qubit))
+            ps.add(control_qubit, self.pulse.y90(control_qubit))
 
             # create |0⟩|0⟩ + |1⟩|1⟩
             ps.call(
-                self.ctx.cnot(
+                self.pulse.cnot(
                     control_qubit,
                     target_qubit,
                     zx90=zx90,
@@ -1922,15 +1933,15 @@ class MeasurementService:
 
             # apply the control basis transformation
             if control_basis == "X":
-                ps.add(control_qubit, self.ctx.y90m(control_qubit))
+                ps.add(control_qubit, self.pulse.y90m(control_qubit))
             elif control_basis == "Y":
-                ps.add(control_qubit, self.ctx.x90(control_qubit))
+                ps.add(control_qubit, self.pulse.x90(control_qubit))
 
             # apply the target basis transformation
             if target_basis == "X":
-                ps.add(target_qubit, self.ctx.y90m(target_qubit))
+                ps.add(target_qubit, self.pulse.y90m(target_qubit))
             elif target_basis == "Y":
-                ps.add(target_qubit, self.ctx.x90(target_qubit))
+                ps.add(target_qubit, self.pulse.x90(target_qubit))
 
         result = self.measure(
             ps,
@@ -2141,7 +2152,7 @@ class MeasurementService:
             if child not in qubits:
                 qubits.append(child)
 
-            weight = int(self.ctx.cnot(parent, child, only_low_to_high=True).duration)
+            weight = int(self.pulse.cnot(parent, child, only_low_to_high=True).duration)
             G.add_edge(parent, child, weight=weight)
 
         roots = [node for node, in_degree in G.in_degree() if in_degree == 0]
@@ -2180,11 +2191,11 @@ class MeasurementService:
         with PulseSchedule() as ps:
             for root in roots:
                 if initialization_pulse == "Y90":
-                    ps.add(root, self.ctx.y90(root))
+                    ps.add(root, self.pulse.y90(root))
                 elif initialization_pulse == "X90":
-                    ps.add(root, self.ctx.x90(root))
+                    ps.add(root, self.pulse.x90(root))
                 elif initialization_pulse == "H":
-                    ps.add(root, self.ctx.hadamard(root))
+                    ps.add(root, self.pulse.hadamard(root))
                 else:
                     raise ValueError(
                         f"Invalid initialize pulse: {initialization_pulse}"
@@ -2192,7 +2203,7 @@ class MeasurementService:
             ps.barrier()
             for steps in substeps:
                 for parent, child in steps:
-                    cnot = self.ctx.cnot(parent, child, only_low_to_high=True)
+                    cnot = self.pulse.cnot(parent, child, only_low_to_high=True)
                     ps.call(cnot)
                     if decouple_cr_crosstalk:
                         if self.ctx.qubits[parent].index % 4 in [0, 3]:
@@ -2207,7 +2218,7 @@ class MeasurementService:
                         spectators = self.ctx.get_spectators(control_qubit)
                         for spectator in spectators:
                             spec = spectator.label
-                            pi = self.ctx.x180(spec)
+                            pi = self.pulse.x180(spec)
                             if spec in ps.labels and spec != target_qubit:
                                 cr_start = ps.get_offset(target_qubit) - cnot.duration
                                 spec_end = ps.get_offset(spec)
@@ -2255,7 +2266,7 @@ class MeasurementService:
                 for qubit in qubits:
                     if self.ctx.qubits[qubit].index % 4 in [0, 3]:
                         dd_duration = ps._max_offset() - ps._offsets[qubit]
-                        pi = self.ctx.x180(qubit)
+                        pi = self.pulse.x180(qubit)
                         if cpmg_duration_unit is None:
                             n_pi = 2
                             duration_unit = pi.duration * 10
@@ -2277,7 +2288,7 @@ class MeasurementService:
                         if isinstance(element, Blank) and target in self.ctx.qubits:
                             if self.ctx.qubits[target].index % 4 in [0, 3]:
                                 dd_duration = element.duration
-                                pi = self.ctx.x180(target)
+                                pi = self.pulse.x180(target)
                                 if cpmg_duration_unit is None:
                                     n_pi = 2
                                     duration_unit = pi.duration * 10
@@ -2407,9 +2418,9 @@ class MeasurementService:
             ps.call(seq)
             for qb, basis in zip(qubits, measurement_bases):
                 if basis == "X":
-                    ps.add(qb, self.ctx.y90m(qb))
+                    ps.add(qb, self.pulse.y90m(qb))
                 elif basis == "Y":
-                    ps.add(qb, self.ctx.x90(qb))
+                    ps.add(qb, self.pulse.x90(qb))
 
         result = self.measure(
             ps,
@@ -2720,7 +2731,7 @@ class MeasurementService:
             seq.call(ghz_seq)
             if echo:
                 for qubit in qubits:
-                    seq.add(qubit, self.ctx.x180(qubit))
+                    seq.add(qubit, self.pulse.x180(qubit))
             seq.barrier()
             for target in ghz_seq.get_targets():
                 seq.add(target, VirtualZ(phi))
@@ -2987,11 +2998,11 @@ class MeasurementService:
                     if label in self.ctx.qubit_labels:
                         seq.add(label, rz)
                         if initialization_pulse == "Y90":
-                            seq.add(label, self.ctx.y90m(label))
+                            seq.add(label, self.pulse.y90m(label))
                         elif initialization_pulse == "X90":
-                            seq.add(label, self.ctx.x90m(label))
+                            seq.add(label, self.pulse.x90m(label))
                         elif initialization_pulse == "H":
-                            seq.add(label, self.ctx.hadamard(label))
+                            seq.add(label, self.pulse.hadamard(label))
                         else:
                             raise ValueError(
                                 f"Invalid initialize pulse: {initialization_pulse}"
@@ -3144,7 +3155,7 @@ class MeasurementService:
             if qubits[i]["type"] == "L":
                 edge = (qubits[i]["label"], qubits[i + 1]["label"])
                 l1_edges.append(edge)
-                cnot = self.ctx.cnot(*edge, only_low_to_high=True)
+                cnot = self.pulse.cnot(*edge, only_low_to_high=True)
                 l1_max_duration = max(l1_max_duration, cnot.duration)
 
         l2_edges = []
@@ -3153,15 +3164,15 @@ class MeasurementService:
             if qubits[i]["type"] == "H":
                 edge = (qubits[i + 1]["label"], qubits[i]["label"])
                 l2_edges.append(edge)
-                cnot = self.ctx.cnot(*edge, only_low_to_high=True)
+                cnot = self.pulse.cnot(*edge, only_low_to_high=True)
                 l2_max_duration = max(l2_max_duration, cnot.duration)
 
         with PulseSchedule(targets) as ps:
             for edge in l1_edges:
                 with PulseSchedule() as l1:
-                    h = self.ctx.hadamard(edge[0])
+                    h = self.pulse.hadamard(edge[0])
                     l1.add(edge[0], h)
-                    l1.call(self.ctx.cnot(*edge, only_low_to_high=True))
+                    l1.call(self.pulse.cnot(*edge, only_low_to_high=True))
                 l1.pad(
                     total_duration=l1_max_duration + h.duration,
                     pad_side="left",
@@ -3170,21 +3181,21 @@ class MeasurementService:
 
             for edge in l2_edges:
                 with PulseSchedule() as l2:
-                    l2.call(self.ctx.cnot(*edge, only_low_to_high=True))
-                    h = self.ctx.hadamard(edge[1])
+                    l2.call(self.pulse.cnot(*edge, only_low_to_high=True))
+                    h = self.pulse.hadamard(edge[1])
                     l2.add(edge[1], h)
                 ps.call(l2)
 
             # debug: no entanglement, just Hadamard gates
             # for target in targets:
-            #     ps.add(target, self.ctx.hadamard(target))
+            #     ps.add(target, self.pulse.hadamard(target))
 
             for qubit in qubits:
                 basis = qubit["basis"]
                 if basis == "X":
-                    ps.add(qubit["label"], self.ctx.y90m(qubit["label"]))
+                    ps.add(qubit["label"], self.pulse.y90m(qubit["label"]))
                 elif basis == "Y":
-                    ps.add(qubit["label"], self.ctx.x90(qubit["label"]))
+                    ps.add(qubit["label"], self.pulse.x90(qubit["label"]))
                 elif basis == "Z":
                     pass
                 else:
@@ -3194,7 +3205,7 @@ class MeasurementService:
                 for qubit in qubits:
                     resonator = self.ctx.resonators[qubit["label"]].label
                     ps.add(resonator, Blank(ps.get_offset(qubit["label"])))
-                    ps.add(resonator, self.ctx.readout(resonator))
+                    ps.add(resonator, self.pulse.readout(resonator))
         return ps
 
         # cluster_seq = self.create_entangle_sequence(
@@ -3212,13 +3223,13 @@ class MeasurementService:
         #     ps.call(cluster_seq)
         #     for qubit in qubits:
         #         if qubit["type"] == "H":
-        #             ps.add(qubit["label"], self.ctx.hadamard(qubit["label"]))
+        #             ps.add(qubit["label"], self.pulse.hadamard(qubit["label"]))
         #     for qubit in qubits:
         #         basis = qubit["basis"]
         #         if basis == "X":
-        #             ps.add(qubit["label"], self.ctx.y90m(qubit["label"]))
+        #             ps.add(qubit["label"], self.pulse.y90m(qubit["label"]))
         #         elif basis == "Y":
-        #             ps.add(qubit["label"], self.ctx.x90(qubit["label"]))
+        #             ps.add(qubit["label"], self.pulse.x90(qubit["label"]))
         #         elif basis == "Z":
         #             pass
         #         else:
@@ -4011,24 +4022,24 @@ class MeasurementService:
         with PulseSchedule(nodes) as ps:
             # Prepare qubits in |+> with Hadamards (can run in parallel)
             for node in nodes:
-                ps.add(node, self.ctx.hadamard(node))
+                ps.add(node, self.pulse.hadamard(node))
 
             # Apply CZ gates round by round so edges within a round run in parallel
             for batch in rounds:
                 for u, v in batch:
-                    ps.call(self.ctx.cz(u, v, only_low_to_high=True))
+                    ps.call(self.pulse.cz(u, v, only_low_to_high=True))
 
             # debug: no entanglement, just Hadamard gates
             # for node in nodes:
-            #     ps.add(node, self.ctx.hadamard(node))
+            #     ps.add(node, self.pulse.hadamard(node))
 
             # Basis rotations prior to readout
             for node in nodes:
                 basis = bases[node] if bases and node in bases else "Z"
                 if basis == "X":
-                    ps.add(node, self.ctx.y90m(node))
+                    ps.add(node, self.pulse.y90m(node))
                 elif basis == "Y":
-                    ps.add(node, self.ctx.x90(node))
+                    ps.add(node, self.pulse.x90(node))
                 elif basis == "Z":
                     pass
                 else:
@@ -4038,7 +4049,7 @@ class MeasurementService:
                 for node in nodes:
                     resonator = self.ctx.resonators[node].label
                     ps.add(resonator, Blank(ps.get_offset(node)))
-                    ps.add(resonator, self.ctx.readout(resonator))
+                    ps.add(resonator, self.pulse.readout(resonator))
         return ps
 
     def create_measurement_rounds(
@@ -4947,11 +4958,11 @@ class MeasurementService:
                     for edge in edges:
                         control_qubit, target_qubit = edge
                         # prepare |+⟩|0⟩
-                        ps.add(control_qubit, self.ctx.y90(control_qubit))
+                        ps.add(control_qubit, self.pulse.y90(control_qubit))
 
                         # create |0⟩|0⟩ + |1⟩|1⟩
                         ps.call(
-                            self.ctx.cnot(
+                            self.pulse.cnot(
                                 control_qubit,
                                 target_qubit,
                                 only_low_to_high=True,
@@ -4960,15 +4971,15 @@ class MeasurementService:
 
                         # apply the control basis transformation
                         if control_basis == "X":
-                            ps.add(control_qubit, self.ctx.y90m(control_qubit))
+                            ps.add(control_qubit, self.pulse.y90m(control_qubit))
                         elif control_basis == "Y":
-                            ps.add(control_qubit, self.ctx.x90(control_qubit))
+                            ps.add(control_qubit, self.pulse.x90(control_qubit))
 
                         # apply the target basis transformation
                         if target_basis == "X":
-                            ps.add(target_qubit, self.ctx.y90m(target_qubit))
+                            ps.add(target_qubit, self.pulse.y90m(target_qubit))
                         elif target_basis == "Y":
-                            ps.add(target_qubit, self.ctx.x90(target_qubit))
+                            ps.add(target_qubit, self.pulse.x90(target_qubit))
 
                 result = self.measure(
                     ps,
@@ -5107,7 +5118,7 @@ class MeasurementService:
             results = []
             for _ in tqdm(range(measurement_times), leave=False):
                 result = self.state_tomography(
-                    self.ctx.rzx(
+                    self.pulse.rzx(
                         control_qubit=control_qubit,
                         target_qubit=target_qubit,
                         angle=angle,

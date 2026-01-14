@@ -57,6 +57,7 @@ from ..rabi_param import RabiParam
 from ..result import Result
 from .calibration_service import CalibrationService
 from .measurement_service import MeasurementService
+from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
 
@@ -68,14 +69,20 @@ class CharacterizationService:
         experiment_context: ExperimentContext,
         measurement_service: MeasurementService,
         calibration_service: CalibrationService,
+        pulse_service: PulseService,
     ):
         self._experiment_context: ExperimentContext = experiment_context
         self._measurement_service = measurement_service
         self._calibration_service = calibration_service
+        self._pulse_service = pulse_service
 
     @property
     def ctx(self) -> ExperimentContext:
         return self._experiment_context
+
+    @property
+    def pulse(self) -> PulseService:
+        return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
@@ -105,7 +112,7 @@ class CharacterizationService:
             targets = list(targets)
 
         sequence = {
-            target: self.ctx.get_pulse_for_state(
+            target: self.pulse.get_pulse_for_state(
                 target=target,
                 state=initial_state,
             )
@@ -890,7 +897,7 @@ class CharacterizationService:
             def t1_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
-                        ps.add(target, self.ctx.get_hpi_pulse(target).repeated(2))
+                        ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
                         ps.add(target, Blank(T))
                 return ps
 
@@ -998,7 +1005,7 @@ class CharacterizationService:
             def t2_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
-                        hpi = self.ctx.get_hpi_pulse(target)
+                        hpi = self.pulse.get_hpi_pulse(target)
                         pi = pi_cpmg or hpi.repeated(2).shifted(np.pi / 2)
                         ps.add(target, hpi)
                         if n_cpmg is not None:
@@ -1135,7 +1142,7 @@ class CharacterizationService:
                     if spectator_state != "0":
                         for spectator in spectator_qubits:
                             if spectator in self.ctx.qubit_labels:
-                                pulse = self.ctx.get_pulse_for_state(
+                                pulse = self.pulse.get_pulse_for_state(
                                     target=spectator,
                                     state=spectator_state,
                                 )
@@ -1144,7 +1151,7 @@ class CharacterizationService:
 
                     # Ramsey sequence for the target qubit
                     for target in target_qubits:
-                        x90 = self.ctx.get_hpi_pulse(target)
+                        x90 = self.pulse.get_hpi_pulse(target)
                         ps.add(target, x90)
                         ps.add(target, Blank(T))
                         if second_rotation_axis == "X":
@@ -1256,7 +1263,7 @@ class CharacterizationService:
         data_t2: dict[str, T2Data] = {}
         data_ramsey: dict[str, RamseyData] = {}
 
-        x90_pulses = {target: self.ctx.get_hpi_pulse(target) for target in targets}
+        x90_pulses = {target: self.pulse.get_hpi_pulse(target) for target in targets}
 
         def t1_sequence(target, T: int) -> PulseSchedule:
             with PulseSchedule([target]) as ps:
@@ -1523,7 +1530,7 @@ class CharacterizationService:
 
             def stark_t1_sequence(T: int) -> PulseSchedule:
                 with PulseSchedule([target]) as ps:
-                    ps.add(target, self.ctx.get_hpi_pulse(target).repeated(2))
+                    ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
                     ps.add(
                         target,
                         FlatTop(
@@ -1649,7 +1656,7 @@ class CharacterizationService:
             detuning = stark_detuning[target]
 
             def stark_ramsey_sequence(T: int) -> PulseSchedule:
-                x90 = self.ctx.get_hpi_pulse(target=target)
+                x90 = self.pulse.get_hpi_pulse(target=target)
                 with PulseSchedule([target]) as ps:
                     ps.add(target, x90)
                     if envelope_region == "full":
@@ -1829,7 +1836,7 @@ class CharacterizationService:
 
         if x90 is None:
             x90 = {
-                target_qubit: self.ctx.get_hpi_pulse(target_qubit),
+                target_qubit: self.pulse.get_hpi_pulse(target_qubit),
             }
         elif isinstance(x90, Waveform):
             x90 = {
@@ -1838,8 +1845,8 @@ class CharacterizationService:
 
         if x180 is None:
             x180 = {
-                target_qubit: self.ctx.get_hpi_pulse(target_qubit).repeated(2),
-                spectator_qubit: self.ctx.get_hpi_pulse(spectator_qubit).repeated(2),
+                target_qubit: self.pulse.get_hpi_pulse(target_qubit).repeated(2),
+                spectator_qubit: self.pulse.get_hpi_pulse(spectator_qubit).repeated(2),
             }
         elif isinstance(x180, Waveform):
             x180 = {
@@ -2700,7 +2707,7 @@ class CharacterizationService:
 
         signals = []
 
-        initialize_pulse = self.ctx.get_pulse_for_state(
+        initialize_pulse = self.pulse.get_pulse_for_state(
             target=qubit_label,
             state=qubit_state,
         )
@@ -3656,7 +3663,7 @@ class CharacterizationService:
         if qubit_drive_detuning is None:
             qubit_drive_detuning = 0.0
         if qubit_pi_pulse is None:
-            qubit_pi_pulse = self.ctx.get_hpi_pulse(target).repeated(2)
+            qubit_pi_pulse = self.pulse.get_hpi_pulse(target).repeated(2)
         if qubit_drive_scale is None:
             qubit_drive_scale = 0.8
         if resonator_drive_detuning is None:
@@ -3681,7 +3688,7 @@ class CharacterizationService:
             .scaled(qubit_drive_scale)
             .detuned(qubit_drive_detuning)
         )
-        resonator_readout_pulse = self.ctx.readout(target)
+        resonator_readout_pulse = self.pulse.readout(target)
         with PulseSchedule() as seq:
             if qubit_initial_state == "1":
                 seq.add(qubit, qubit_pi_pulse)

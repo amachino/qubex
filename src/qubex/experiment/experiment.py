@@ -184,24 +184,28 @@ class Experiment:
             configuration_mode=configuration_mode,
             mock_mode=mock_mode,
         )
-        self._measurement_service = MeasurementService(
-            experiment_context=self._experiment_context,
-        )
         self._pulse_service = PulseService(
             experiment_context=self._experiment_context,
+        )
+        self._measurement_service = MeasurementService(
+            experiment_context=self._experiment_context,
+            pulse_service=self._pulse_service,
         )
         self._calibration_service = CalibrationService(
             experiment_context=self._experiment_context,
             measurement_service=self._measurement_service,
+            pulse_service=self._pulse_service,
         )
         self._characterization_service = CharacterizationService(
             experiment_context=self._experiment_context,
             measurement_service=self._measurement_service,
             calibration_service=self._calibration_service,
+            pulse_service=self._pulse_service,
         )
         self._benchmarking_service = BenchmarkingService(
             experiment_context=self._experiment_context,
             measurement_service=self._measurement_service,
+            pulse_service=self._pulse_service,
         )
         self._optimization_service = OptimizationService(
             experiment_context=self._experiment_context,
@@ -209,6 +213,7 @@ class Experiment:
             calibration_service=self._calibration_service,
             characterization_service=self._characterization_service,
             benchmarking_service=self._benchmarking_service,
+            pulse_service=self._pulse_service,
         )
 
     @property
@@ -385,31 +390,31 @@ class Experiment:
 
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
-        return self.ctx.hpi_pulse
+        return self.pulse.hpi_pulse
 
     @property
     def pi_pulse(self) -> dict[str, Waveform]:
-        return self.ctx.pi_pulse
+        return self.pulse.pi_pulse
 
     @property
     def drag_hpi_pulse(self) -> dict[str, Waveform]:
-        return self.ctx.drag_hpi_pulse
+        return self.pulse.drag_hpi_pulse
 
     @property
     def drag_pi_pulse(self) -> dict[str, Waveform]:
-        return self.ctx.drag_pi_pulse
+        return self.pulse.drag_pi_pulse
 
     @property
     def ef_hpi_pulse(self) -> dict[str, Waveform]:
-        return self.ctx.ef_hpi_pulse
+        return self.pulse.ef_hpi_pulse
 
     @property
     def ef_pi_pulse(self) -> dict[str, Waveform]:
-        return self.ctx.ef_pi_pulse
+        return self.pulse.ef_pi_pulse
 
     @property
     def cr_pulse(self) -> dict[str, PulseSchedule]:
-        return self.ctx.cr_pulse
+        return self.pulse.cr_pulse
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:

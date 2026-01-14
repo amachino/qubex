@@ -16,6 +16,7 @@ from ...typing import TargetMap
 from ..experiment_context import ExperimentContext
 from ..result import Result
 from .measurement_service import MeasurementService
+from .pulse_service import PulseService
 
 DEFAULT_RB_N_TRIALS = 30
 DEFAULT_MAX_N_CLIFFORDS_1Q = 2048
@@ -28,13 +29,19 @@ class BenchmarkingService:
         *,
         experiment_context: ExperimentContext,
         measurement_service: MeasurementService,
+        pulse_service: PulseService,
     ):
         self._experiment_context: ExperimentContext = experiment_context
         self._measurement_service = measurement_service
+        self._pulse_service = pulse_service
 
     @property
     def ctx(self) -> ExperimentContext:
         return self._experiment_context
+
+    @property
+    def pulse(self) -> PulseService:
+        return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
@@ -96,7 +103,7 @@ class BenchmarkingService:
         interleaved_waveform: Waveform | None = None,
         seed: int | None = None,
     ) -> PulseArray:
-        x90 = x90 or self.ctx.x90(target)
+        x90 = x90 or self.pulse.x90(target)
         z90 = VirtualZ(np.pi / 2)
 
         sequence: list[Waveform | VirtualZ] = []
@@ -110,9 +117,9 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "X90":
-                    interleaved_waveform = self.ctx.x90(target)
+                    interleaved_waveform = self.pulse.x90(target)
                 elif interleaved_clifford.name == "X180":
-                    interleaved_waveform = self.ctx.x180(target)
+                    interleaved_waveform = self.pulse.x180(target)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
             cliffords, inverse = self.ctx.clifford_generator.create_irb_sequences(
@@ -161,12 +168,12 @@ class BenchmarkingService:
 
         xi90 = x90.get(control_qubit) if x90 is not None else None
         ix90 = x90.get(target_qubit) if x90 is not None else None
-        xi90 = xi90 or self.ctx.x90(control_qubit)
-        ix90 = ix90 or self.ctx.x90(target_qubit)
+        xi90 = xi90 or self.pulse.x90(control_qubit)
+        ix90 = ix90 or self.pulse.x90(target_qubit)
         z90 = VirtualZ(np.pi / 2)
 
         if zx90 is None:
-            zx90 = self.ctx.zx90(control_qubit, target_qubit)
+            zx90 = self.pulse.zx90(control_qubit, target_qubit)
 
         if interleaved_clifford is None:
             cliffords, inverse = self.ctx.clifford_generator.create_rb_sequences(
@@ -177,7 +184,7 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "ZX90":
-                    interleaved_waveform = self.ctx.zx90(control_qubit, target_qubit)
+                    interleaved_waveform = self.pulse.zx90(control_qubit, target_qubit)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
             cliffords, inverse = self.ctx.clifford_generator.create_irb_sequences(
@@ -229,7 +236,7 @@ class BenchmarkingService:
         seed: int | None = None,
         basis: Literal["X", "Y", "Z"] = "Z",
     ) -> PulseArray:
-        x90 = x90 or self.ctx.x90(target)
+        x90 = x90 or self.pulse.x90(target)
         z90 = VirtualZ(np.pi / 2)
         y90m = x90.shifted(-np.pi / 2)
         sequence: list[Waveform | VirtualZ] = []
@@ -243,9 +250,9 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "X90":
-                    interleaved_waveform = self.ctx.x90(target)
+                    interleaved_waveform = self.pulse.x90(target)
                 elif interleaved_clifford.name == "X180":
-                    interleaved_waveform = self.ctx.x180(target)
+                    interleaved_waveform = self.pulse.x180(target)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
             cliffords, inverse = self.ctx.clifford_generator.create_irb_sequences(
@@ -315,12 +322,12 @@ class BenchmarkingService:
 
         xi90 = x90.get(control_qubit) if x90 is not None else None
         ix90 = x90.get(target_qubit) if x90 is not None else None
-        xi90 = xi90 or self.ctx.x90(control_qubit)
-        ix90 = ix90 or self.ctx.x90(target_qubit)
+        xi90 = xi90 or self.pulse.x90(control_qubit)
+        ix90 = ix90 or self.pulse.x90(target_qubit)
         z90 = VirtualZ(np.pi / 2)
 
         if zx90 is None:
-            zx90 = self.ctx.zx90(control_qubit, target_qubit)
+            zx90 = self.pulse.zx90(control_qubit, target_qubit)
 
         if interleaved_clifford is None:
             cliffords, inverse = self.ctx.clifford_generator.create_rb_sequences(
@@ -331,7 +338,7 @@ class BenchmarkingService:
         else:
             if interleaved_waveform is None:
                 if interleaved_clifford.name == "ZX90":
-                    interleaved_waveform = self.ctx.zx90(control_qubit, target_qubit)
+                    interleaved_waveform = self.pulse.zx90(control_qubit, target_qubit)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
             cliffords, inverse = self.ctx.clifford_generator.create_irb_sequences(

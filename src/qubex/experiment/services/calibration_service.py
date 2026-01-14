@@ -38,6 +38,7 @@ from ..experiment_context import ExperimentContext
 from ..experiment_result import AmplCalibData, ExperimentResult
 from ..result import Result
 from .measurement_service import MeasurementService
+from .pulse_service import PulseService
 
 
 class CalibrationService:
@@ -46,13 +47,19 @@ class CalibrationService:
         *,
         experiment_context: ExperimentContext,
         measurement_service: MeasurementService,
+        pulse_service: PulseService,
     ):
         self._experiment_context = experiment_context
         self._measurement_service = measurement_service
+        self._pulse_service = pulse_service
 
     @property
     def ctx(self) -> ExperimentContext:
         return self._experiment_context
+
+    @property
+    def pulse(self) -> PulseService:
+        return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
@@ -187,7 +194,7 @@ class CalibrationService:
                 if label not in self.ctx.calib_note.cr_params:
                     continue
                 result = self.measurement_service.state_tomography(
-                    self.ctx.zx90(control_qubit, target_qubit),
+                    self.pulse.zx90(control_qubit, target_qubit),
                     shots=shots,
                 )
                 x, y, _ = result[target_qubit]
@@ -494,7 +501,7 @@ class CalibrationService:
 
             def sequence(x: float) -> PulseSchedule:
                 with PulseSchedule() as ps:
-                    ps.add(ge_label, self.ctx.get_hpi_pulse(ge_label).repeated(2))
+                    ps.add(ge_label, self.pulse.get_hpi_pulse(ge_label).repeated(2))
                     ps.barrier()
                     ps.add(ef_label, pulse.scaled(x).repeated(repetitions))
                 return ps
@@ -705,7 +712,7 @@ class CalibrationService:
                             if spectator.label in self.ctx.qubit_labels:
                                 ps.add(
                                     spectator.label,
-                                    self.ctx.get_pulse_for_state(
+                                    self.pulse.get_pulse_for_state(
                                         target=spectator.label,
                                         state=spectator_state,
                                     ),
@@ -815,7 +822,7 @@ class CalibrationService:
                             if spectator.label in self.ctx.qubit_labels:
                                 ps.add(
                                     spectator.label,
-                                    self.ctx.get_pulse_for_state(
+                                    self.pulse.get_pulse_for_state(
                                         target=spectator.label,
                                         state=spectator_state,
                                     ),
@@ -828,7 +835,7 @@ class CalibrationService:
                             beta=beta,
                         )
                         x90m = x90p.scaled(-1)
-                        y90m = self.ctx.get_hpi_pulse(target).shifted(-np.pi / 2)
+                        y90m = self.pulse.get_hpi_pulse(target).shifted(-np.pi / 2)
                         ps.add(
                             target,
                             PulseArray(
@@ -846,7 +853,7 @@ class CalibrationService:
                             beta=beta,
                         )
                         x180m = x180p.scaled(-1)
-                        y90m = self.ctx.get_hpi_pulse(target).shifted(-np.pi / 2)
+                        y90m = self.pulse.get_hpi_pulse(target).shifted(-np.pi / 2)
                         ps.add(
                             target,
                             PulseArray(
@@ -1129,12 +1136,12 @@ class CalibrationService:
             x180_margin = 0.0
         if x90 is None:
             x90 = {
-                control_qubit: self.ctx.x90(control_qubit),
-                target_qubit: self.ctx.x90(target_qubit),
+                control_qubit: self.pulse.x90(control_qubit),
+                target_qubit: self.pulse.x90(target_qubit),
             }
         if x180 is None:
             x180 = {
-                control_qubit: self.ctx.x180(control_qubit),
+                control_qubit: self.pulse.x180(control_qubit),
             }
 
         if reset_awg_and_capunits:
@@ -1900,7 +1907,7 @@ class CalibrationService:
                 control_qubit, target_qubit
             )
         if x180 is None:
-            x180 = self.ctx.x180(control_qubit)
+            x180 = self.pulse.x180(control_qubit)
         elif not isinstance(x180, Waveform):
             x180 = x180[control_qubit]
 
@@ -1968,7 +1975,7 @@ class CalibrationService:
                 if initial_state != "0":
                     ps.add(
                         control_qubit,
-                        self.ctx.get_pulse_for_state(control_qubit, initial_state),
+                        self.pulse.get_pulse_for_state(control_qubit, initial_state),
                     )
                     ps.barrier()
                 ps.call(ecr)
@@ -2160,7 +2167,7 @@ class CalibrationService:
             coherence_limit = {}
 
         if plot:
-            zx90 = self.ctx.zx90(control_qubit, target_qubit, x180=x180)
+            zx90 = self.pulse.zx90(control_qubit, target_qubit, x180=x180)
             zx90.plot(
                 title=f"ZX90 sequence : {cr_label}",
                 show_physical_pulse=True,
@@ -2188,7 +2195,7 @@ class CalibrationService:
         control_qubit: str,
         target_qubit: str,
     ) -> Result:
-        zx90 = self.ctx.zx90(
+        zx90 = self.pulse.zx90(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
         )
@@ -2494,16 +2501,16 @@ class CalibrationService:
             x180_margin = 0.0
         if x90 is None:
             x90 = {
-                control_qubit: self.ctx.x90(control_qubit),
-                target_qubit: self.ctx.x90(target_qubit),
+                control_qubit: self.pulse.x90(control_qubit),
+                target_qubit: self.pulse.x90(target_qubit),
             }
             x90.update(
-                {spectator: self.ctx.x90(spectator) for spectator in spectator_qubits}
+                {spectator: self.pulse.x90(spectator) for spectator in spectator_qubits}
             )
 
         if x180 is None:
             x180 = {
-                control_qubit: self.ctx.x180(control_qubit),
+                control_qubit: self.pulse.x180(control_qubit),
             }
 
         if reset_awg_and_capunits:

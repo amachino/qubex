@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 import numpy as np
 
+from ...backend import Target
 from ...pulse import (
     Blank,
     CrossResonance,
@@ -239,7 +241,7 @@ class PulseService:
         self,
         target: str,
         *,
-        decomposition: str = "Z180-Y90",
+        decomposition: Literal["Z180-Y90", "Y90-X180"] = "Z180-Y90",
     ) -> PulseArray:
         if decomposition == "Z180-Y90":
             return PulseArray(
@@ -549,3 +551,130 @@ class PulseService:
                 cz.add(cr_label, z180)
                 cz.add(control_qubit, hadamard_c)
             return cz
+
+    @property
+    def ef_hpi_pulse(self) -> dict[str, Waveform]:
+        result = {}
+        for target in self._context.ef_targets:
+            param = self._context.calib_note.get_hpi_param(
+                target,
+                valid_days=self._context._calibration_valid_days,
+            )
+            if param is not None and None not in param.values():
+                result[target] = FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
+        return result
+
+    @property
+    def ef_pi_pulse(self) -> dict[str, Waveform]:
+        result = {}
+        for target in self._context.ef_targets:
+            param = self._context.calib_note.get_pi_param(
+                target,
+                valid_days=self._context._calibration_valid_days,
+            )
+            if param is not None and None not in param.values():
+                result[target] = FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
+        return result
+
+    @property
+    def cr_pulse(self) -> dict[str, PulseSchedule]:
+        result = {}
+        for cr_label in self._context.cr_targets:
+            control_qubit, target_qubit = Target.cr_qubit_pair(cr_label)
+            cr_param = self._context.calib_note.get_cr_param(cr_label)
+            if cr_param is not None and None not in cr_param.values():
+                cancel_amplitude = cr_param["cancel_amplitude"]
+                cancel_phase = cr_param["cancel_phase"]
+                rotary_amplitude = cr_param["rotary_amplitude"]
+                cancel_pulse = (
+                    cancel_amplitude * np.exp(1j * cancel_phase) + rotary_amplitude
+                )
+                result[cr_label] = CrossResonance(
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
+                    cr_amplitude=cr_param["cr_amplitude"],
+                    cr_duration=cr_param["duration"],
+                    cr_ramptime=cr_param["ramptime"],
+                    cr_phase=cr_param["cr_phase"],
+                    cr_beta=cr_param["cr_beta"],
+                    cancel_amplitude=np.abs(cancel_pulse),
+                    cancel_phase=np.angle(cancel_pulse),
+                    cancel_beta=cr_param["cancel_beta"],
+                    echo=True,
+                    pi_pulse=self.x180(control_qubit),
+                    pi_margin=0.0,
+                )
+
+        return result
+
+    @property
+    def drag_hpi_pulse(self) -> dict[str, Waveform]:
+        result = {}
+        for target in self._context.ge_targets:
+            param = self._context.calib_note.get_drag_hpi_param(
+                target,
+                valid_days=self._context._calibration_valid_days,
+            )
+            if param is not None and None not in param.values():
+                result[target] = Drag(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    beta=param["beta"],
+                )
+        return result
+
+    @property
+    def drag_pi_pulse(self) -> dict[str, Waveform]:
+        result = {}
+        for target in self._context.ge_targets:
+            param = self._context.calib_note.get_drag_pi_param(
+                target,
+                valid_days=self._context._calibration_valid_days,
+            )
+            if param is not None and None not in param.values():
+                result[target] = Drag(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    beta=param["beta"],
+                )
+        return result
+
+    @property
+    def hpi_pulse(self) -> dict[str, Waveform]:
+        result = {}
+        for target in self._context.ge_targets:
+            param = self._context.calib_note.get_hpi_param(
+                target,
+                valid_days=self._context._calibration_valid_days,
+            )
+            if param is not None and None not in param.values():
+                result[target] = FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
+        return result
+
+    @property
+    def pi_pulse(self) -> dict[str, Waveform]:
+        result = {}
+        for target in self._context.ge_targets:
+            param = self._context.calib_note.get_pi_param(
+                target,
+                valid_days=self._context._calibration_valid_days,
+            )
+            if param is not None and None not in param.values():
+                result[target] = FlatTop(
+                    duration=param["duration"],
+                    amplitude=param["amplitude"],
+                    tau=param["tau"],
+                )
+        return result
