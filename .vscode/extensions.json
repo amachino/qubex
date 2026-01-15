@@ -2,6 +2,7 @@
     "recommendations": [
         "ms-python.python",
         "ms-toolsai.jupyter",
+        "astral-sh.ty",
         "charliermarsh.ruff",
         "tamasfe.even-better-toml",
         "davidanson.vscode-markdownlint"

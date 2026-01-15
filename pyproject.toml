@@ -45,8 +45,8 @@ dev = [
     "pytest",
     "pytest-cov",
     "pytest-xdist",
-    "pyright",
     "ruff",
+    "ty",
 ]
 
 [tool.setuptools.dynamic]
@@ -61,3 +61,16 @@ addopts = "--import-mode=importlib"
 [tool.ruff.lint]
 ignore = ["E731", "E741"]
 unfixable = ["F401"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+exclude = [
+    "docs/**",
+    "tmp/**",
+    "src/qubex.egg-info/**",
+]
+
+[tool.ty.environment]
+python-version = "3.10"
+python-platform = "all"
+root = ["./src"]
