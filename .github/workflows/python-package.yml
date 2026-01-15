@@ -2,46 +2,59 @@ name: Python package
 
 on:
   push:
-    branches: ["develop", "release/**"]
+    branches:
+      - "main"
+      - "develop"
+    tags:
+      - "v*.*.*"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   pull_request:
-    branches: ["develop", "release/**"]
+    branches:
+      - "main"
+      - "develop"
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgirepository1.0-dev libcairo2-dev
-
       - name: Install dependencies
         run: |
-          uv pip install --system ruff pytest pytest-xdist
-          uv pip install --system .[backend]
+          uv pip install --system ".[backend,dev]"
 
-      - name: Lint with ruff
-        run: |
-          ruff check --output-format=github .
+      - name: Check formatting (Ruff)
+        run: ruff format --check .
 
-      - name: Test with pytest
-        run: |
-          pytest -v --tb=short --maxfail=1 --durations=10 -n auto
+      - name: Lint (Ruff)
+        run: ruff check --output-format=github .
+
+      - name: Type check (Pyright)
+        run: pyright .
+
+      - name: Test (pytest)
+        run: pytest -v --tb=short --durations=10 -n auto
