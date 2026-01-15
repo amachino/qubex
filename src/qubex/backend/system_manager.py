@@ -166,7 +166,9 @@ class SystemManager:
         self._experiment_system = experiment_system
         # update device controller to reflect the new experiment system
         if self._mock_mode:
-            print("Experiment system created in mock mode (device controller updates bypassed)")
+            print(
+                "Experiment system created in mock mode (device controller updates bypassed)"
+            )
             return
         self._update_device_controller(experiment_system)
         self.update_cache()
