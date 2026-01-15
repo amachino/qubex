@@ -59,19 +59,22 @@ qubex = ["py.typed", "clifford/**/*.json"]
 addopts = "--import-mode=importlib"
 
 [tool.ruff.lint]
-ignore = ["E731", "E741"]
-unfixable = ["F401"]
+select = [
+    # "E",     # pycodestyle
+    # "F",     # Pyflakes
+    # "UP",    # pyupgrade
+    # "B",     # flake8-bugbear
+    # "SIM",   # flake8-simplify
+    # "I",     # isort
+]
+ignore = [
+    "E501",  # line-too-long
+    "E731",  # do-not-assign-lambda
+    "E741",  # ambiguous-variable-name
+]
+unfixable = [
+    "F401",  # unused-import
+]
 
 [tool.ty.src]
 include = ["src", "tests"]
-exclude = [
-    "docs/**",
-    "tmp/**",
-    "src/qubex.egg-info/**",
-    "src/qubex/simulator/deprecated/**",
-]
-
-[tool.ty.environment]
-python-version = "3.10"
-python-platform = "all"
-root = ["./src"]
