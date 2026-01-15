@@ -35,6 +35,9 @@ pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```bash
 git clone https://github.com/amachino/qubex.git
 cd qubex
+uv sync --dev
+
+# Or, without uv
 pip install -e .
 ```
 
