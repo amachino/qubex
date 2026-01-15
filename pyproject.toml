@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qubex"
 dynamic = ["version"]
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex: Qubit experiment framework"
 readme = "README.md"
