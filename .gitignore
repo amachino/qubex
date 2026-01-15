@@ -102,8 +102,7 @@ Pipfile.lock
 poetry.lock
 
 # uv
-#   Similar to Pipfile.lock
-uv.lock
+#   uv.lock is tracked for CI reproducibility
 
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
