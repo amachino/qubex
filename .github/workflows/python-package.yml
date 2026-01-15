@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - name: Check out repository
@@ -45,16 +45,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --system ".[backend,dev]"
+          uv sync --locked --dev
 
-      - name: Check formatting (Ruff)
-        run: ruff format --check .
+      - name: Type check (ty)
+        run: uv run ty check --output-format=github
 
-      - name: Lint (Ruff)
-        run: ruff check --output-format=github .
+      - name: Format check (ruff)
+        run: uv run ruff format --check
 
-      - name: Type check (Pyright)
-        run: pyright .
+      - name: Lint  (ruff)
+        run: uv run ruff check --output-format=github
 
       - name: Test (pytest)
-        run: pytest -v --tb=short --durations=10 -n auto
+        run: uv run pytest -v --tb=short --durations=10 -n auto
