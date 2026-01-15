@@ -68,6 +68,7 @@ exclude = [
     "docs/**",
     "tmp/**",
     "src/qubex.egg-info/**",
+    "src/qubex/simulator/deprecated/**",
 ]
 
 [tool.ty.environment]
