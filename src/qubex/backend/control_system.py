@@ -764,6 +764,18 @@ class ControlSystem:
                 f"Port number `{port_number}` not found in box `{box_id}`."
             ) from None
 
+    def get_gen_port(self, box_id: str, port_number: int) -> GenPort:
+        port = self.get_port(box_id, port_number)
+        if not isinstance(port, GenPort):
+            raise TypeError(f"Port `{port.id}` is not a GenPort (type: {type(port)}).")
+        return port
+
+    def get_cap_port(self, box_id: str, port_number: int) -> CapPort:
+        port = self.get_port(box_id, port_number)
+        if not isinstance(port, CapPort):
+            raise TypeError(f"Port `{port.id}` is not a CapPort (type: {type(port)}).")
+        return port
+
     def get_port_by_id(self, port_id: str) -> GenPort | CapPort:
         for box in self.boxes:
             for port in box.ports:

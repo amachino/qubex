@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from pydantic import ConfigDict, RootModel, TypeAdapter
 from pydantic.dataclasses import dataclass
 
@@ -26,7 +28,8 @@ class Model:
         return RootModel(self)
 
     def to_dict(self) -> dict:
-        return self._pd_model().model_dump()
+        dumped = self._pd_model().model_dump()
+        return cast(dict, dumped)
 
     def to_json(self, indent: int | None = None) -> str:
         return self._pd_model().model_dump_json(indent=indent)

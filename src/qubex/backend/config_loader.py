@@ -490,12 +490,20 @@ class ConfigLoader:
         if quantum_system is None or control_system is None:
             return None
 
-        def get_port(specifier: str | None):
+        def get_gen_port(specifier: str | None):
             if specifier is None:
                 return None
             box_id = specifier.split("-")[0]
             port_num = int(specifier.split("-")[1])
-            port = control_system.get_port(box_id, port_num)
+            port = control_system.get_gen_port(box_id, port_num)
+            return port
+
+        def get_cap_port(specifier: str | None):
+            if specifier is None:
+                return None
+            box_id = specifier.split("-")[0]
+            port_num = int(specifier.split("-")[1])
+            port = control_system.get_cap_port(box_id, port_num)
             return port
 
         ctrl = []
@@ -507,13 +515,16 @@ class ConfigLoader:
             mux = quantum_system.get_mux(mux_num)
             qubits = quantum_system.get_qubits_in_mux(mux_num)
             for identifier, qubit in zip(wiring["ctrl"], qubits):
-                ctrl_port: GenPort = get_port(identifier)
-                ctrl.append((qubit, ctrl_port))
-            read_out_port: GenPort = get_port(wiring["read_out"])
-            read_out.append((mux, read_out_port))
-            read_in_port: CapPort = get_port(wiring["read_in"])
-            read_in.append((mux, read_in_port))
-            pump_port: GenPort = get_port(wiring.get("pump"))
+                ctrl_port = get_gen_port(identifier)
+                if ctrl_port is not None:
+                    ctrl.append((qubit, ctrl_port))
+            read_out_port = get_gen_port(wiring["read_out"])
+            if read_out_port is not None:
+                read_out.append((mux, read_out_port))
+            read_in_port = get_cap_port(wiring["read_in"])
+            if read_in_port is not None:
+                read_in.append((mux, read_in_port))
+            pump_port = get_gen_port(wiring.get("pump"))
             if pump_port is not None:
                 pump.append((mux, pump_port))
 
