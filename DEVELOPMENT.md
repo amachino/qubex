@@ -22,7 +22,6 @@ uv sync --extra backend --dev
 The project includes VS Code configuration with the following recommended extensions:
 
 - Python (ms-python.python)
-- ty (astral-sh.ty)
 - Ruff (charliermarsh.ruff)
 - Even Better TOML (tamasfe.even-better-toml)
 - markdownlint (davidanson.vscode-markdownlint)
@@ -62,8 +61,8 @@ uv run ruff format
 # Run all code quality checks
 uv run ruff check --fix && uv run ruff format
 
-# Run type checking (ty)
-uv run ty check
+# Run type checking (pyright)
+uv run pyright
 ```
 
 ### Package Building

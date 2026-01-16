@@ -45,8 +45,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --all-extras
 
-      - name: Type check (ty)
-        run: uv run ty check --output-format=github
+      - name: Type check (pyright)
+        run: uv run pyright
 
       - name: Format check (ruff)
         run: uv run ruff format --check

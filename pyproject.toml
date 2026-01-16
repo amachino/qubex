@@ -42,11 +42,11 @@ backend = [
 ]
 dev = [
     "pyinstrument",
+    "pyright",
     "pytest",
     "pytest-cov",
     "pytest-xdist",
     "ruff",
-    "ty",
 ]
 
 [tool.setuptools.dynamic]
@@ -57,6 +57,10 @@ qubex = ["py.typed", "clifford/**/*.json"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "basic"
 
 [tool.ruff.lint]
 select = [
@@ -75,6 +79,3 @@ ignore = [
 unfixable = [
     "F401",  # unused-import
 ]
-
-[tool.ty.src]
-include = ["src", "tests"]

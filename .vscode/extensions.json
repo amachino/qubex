@@ -1,9 +1,7 @@
 {
     "recommendations": [
         "ms-python.python",
-        "ms-toolsai.jupyter",
-        "astral-sh.ty",
-        "charliermarsh.ruff",
+        "ms-rliermarsh.ruff",
         "tamasfe.even-better-toml",
         "davidanson.vscode-markdownlint"
     ]
