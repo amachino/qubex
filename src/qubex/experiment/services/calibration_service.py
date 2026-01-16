@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Collection, Literal
+from typing import Collection, Literal, no_type_check
 
 import numpy as np
 import plotly.graph_objects as go
@@ -1364,7 +1364,7 @@ class CalibrationService:
             result_1["control_states"],
             return_figure=True,
         )
-        for data in fig_c_0.data:
+        for data in fig_c_0.data:  # type: ignore
             data: go.Scatter
             fig_c.add_trace(
                 go.Scatter(
@@ -1379,7 +1379,7 @@ class CalibrationService:
                 row=1,
                 col=1,
             )
-        for data in fig_c_1.data:
+        for data in fig_c_1.data:  # type: ignore
             data: go.Scatter
             fig_c.add_trace(
                 go.Scatter(
@@ -2648,6 +2648,7 @@ class CalibrationService:
             }
         )
 
+    @no_type_check
     def cr_crosstalk_hamiltonian_tomography(
         self,
         *,
@@ -3076,6 +3077,7 @@ class CalibrationService:
                 horizontal_spacing=0.01,
             )
 
+            @no_type_check
             def add_trace_with_color(
                 fig: go.Figure,
                 incoming_fig: go.Figure,

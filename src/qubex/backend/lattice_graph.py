@@ -187,7 +187,7 @@ class LatticeGraph:
     @cached_property
     def qubit_undirected_graph(
         self,
-    ) -> nx.Graph:
+    ):
         """
         Get qubit undirected graph.
 
