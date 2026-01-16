@@ -124,7 +124,7 @@ class StateClassifierKMeans(StateClassifier):
         n_clusters = len(dataset)
         model = KMeans(
             n_clusters=n_clusters,
-            n_init=n_init,
+            n_init=n_init,  # type: ignore
             random_state=random_state,
         )
         model.fit(concat_data)
@@ -205,7 +205,9 @@ class StateClassifierKMeans(StateClassifier):
         )
         concat_data = np.concatenate(list(dataset.values()))
         predicted_labels_ = model.predict(concat_data)
-        predicted_labels = np.array([label_map[label] for label in predicted_labels_])
+        predicted_labels = np.array(
+            [label_map[int(label)] for label in predicted_labels_]
+        )
         return confusion_matrix(true_labels, predicted_labels)
 
     def predict(
@@ -232,7 +234,9 @@ class StateClassifierKMeans(StateClassifier):
         # Predict k-means cluster labels
         cluster_labels = self.model.predict(real_imag_data)
         # Convert k-means cluster labels to state labels
-        state_labels = np.array([self.label_map[label] for label in cluster_labels])
+        state_labels = np.array(
+            [self.label_map[int(label)] for label in cluster_labels]
+        )
 
         return state_labels
 
