@@ -64,7 +64,7 @@ class XY4(PulseArray):
 
         waveforms: list[Waveform] = []
         if tau > 0:
-            for i in range(n):
+            for _ in range(n):
                 # XY4 cycle: X, Y, X, Y
                 waveforms += [
                     Blank(tau),

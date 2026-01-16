@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Final, Literal, Optional, Sequence, TypeAlias
+from typing import Final, Literal, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
@@ -278,7 +279,14 @@ class SimulationResult:
             N = qt.num(dim)
             U = lambda t: (-1j * delta * N * t).expm()
             substates = np.array(
-                [U(t).dag() * rho * U(t) for t, rho in zip(times, substates)]
+                [
+                    U(t).dag() * rho * U(t)
+                    for t, rho in zip(
+                        times,
+                        substates,
+                        strict=True,
+                    )
+                ]
             )
 
         return substates
@@ -556,7 +564,7 @@ class SimulationResult:
         # Apply unitary transformation: rho' = U rho U^dagger
         # U(t) = exp(i * H_frame * t)
         transformed_substates = []
-        for t, rho in zip(times, substates):
+        for t, rho in zip(times, substates, strict=True):
             U = (1j * H_frame * t).expm()
             transformed_substates.append(rho.transform(U))
 
@@ -572,10 +580,16 @@ class SimulationResult:
     ) -> npt.NDArray:
         dimensions = [self.system.get_object(label).dimension for label in labels]
         ket0 = qt.tensor(
-            *[qt.basis(dim, basis) for dim, basis in zip(dimensions, basis_set[0])]
+            *[
+                qt.basis(dim, basis)
+                for dim, basis in zip(dimensions, basis_set[0], strict=True)
+            ]
         )
         ket1 = qt.tensor(
-            *[qt.basis(dim, basis) for dim, basis in zip(dimensions, basis_set[1])]
+            *[
+                qt.basis(dim, basis)
+                for dim, basis in zip(dimensions, basis_set[1], strict=True)
+            ]
         )
         bra0 = ket0.dag()
         bra1 = ket1.dag()
@@ -641,7 +655,7 @@ class SimulationResult:
 
     def show_last_population(
         self,
-        label: Optional[str] = None,
+        label: str | None = None,
     ) -> None:
         """
         Show the population of the last state.
@@ -659,7 +673,7 @@ class SimulationResult:
 
     def plot_population_dynamics(
         self,
-        label: Optional[str] = None,
+        label: str | None = None,
         *,
         n_samples: int | None = None,
     ) -> None:
@@ -788,7 +802,7 @@ class QuantumSimulator:
         for idx, delta_t in enumerate(np.diff(times)):
             t = times[idx]
             H = self.system.get_rotating_hamiltonian(t)
-            for control, samples in zip(controls, control_samples):
+            for control, samples in zip(controls, control_samples, strict=True):
                 target = control.target
                 frame_frequency = self.system.get_object(target).frequency
                 a = self.system.get_lowering_operator(target)

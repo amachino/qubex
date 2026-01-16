@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import io
 import sys
+from collections.abc import Collection
 from contextlib import contextmanager
-from typing import Collection
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray

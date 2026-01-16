@@ -65,7 +65,7 @@ class ExperimentResult(Generic[T]):
     )
 
     def __repr__(self) -> str:
-        data_repr = "{" + ", ".join(f"{k}:..." for k in self.data.keys()) + "}"
+        data_repr = "{" + ", ".join(f"{k}:..." for k in self.data) + "}"
         return f"<ExperimentResult data={data_repr}>"
 
     def plot(

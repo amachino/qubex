@@ -26,7 +26,7 @@ def test_save_classified_no_memory(measure_result: MeasureResult, tmp_path: Path
     path = measure_result.save_classified(
         out, format="json", include_memory=False, compress=False
     )
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         obj = json.load(f)
     assert "memory" not in obj
 

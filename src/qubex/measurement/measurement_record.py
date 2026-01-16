@@ -118,7 +118,7 @@ class MeasurementRecord(Generic[T]):
         if not name.endswith(".json"):
             name = name + ".json"
         path = os.path.join(data_dir, name)
-        with open(path, "r") as f:
+        with open(path) as f:
             data = jsonpickle.decode(f.read())
             if not isinstance(data, MeasurementRecord):
                 raise TypeError(f"Expected MeasurementRecord, got {type(data)}")

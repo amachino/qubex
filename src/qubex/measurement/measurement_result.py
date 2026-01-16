@@ -4,12 +4,13 @@ import gzip
 import hashlib
 import json
 from collections import Counter
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property, reduce
 from pathlib import Path
-from typing import Collection, Literal
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -237,7 +238,7 @@ class MeasureResult:
     config: dict
 
     def __repr__(self) -> str:
-        data_repr = "{" + ", ".join(f"{k}:..." for k in self.data.keys()) + "}"
+        data_repr = "{" + ", ".join(f"{k}:..." for k in self.data) + "}"
         return f"<MeasureResult mode={self.mode.value}, data={data_repr}>"
 
     @cached_property
@@ -347,6 +348,7 @@ class MeasureResult:
                 counts.keys(),
                 probs.values(),
                 counts.values(),
+                strict=True,
             )
         }
 
@@ -732,7 +734,7 @@ class MultipleMeasureResult:
             raise ValueError("No classification data available")
 
         if targets is None:
-            target_tuples = [(target, -1) for target in self.data.keys()]
+            target_tuples = [(target, -1) for target in self.data]
         else:
             target_tuples: list[tuple[str, int]] = []
             for target in targets:
@@ -792,6 +794,7 @@ class MultipleMeasureResult:
                 counts.keys(),
                 probs.values(),
                 counts.values(),
+                strict=True,
             )
         }
 

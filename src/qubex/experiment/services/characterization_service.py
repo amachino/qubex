@@ -435,7 +435,7 @@ class CharacterizationService:
             for detuning in tqdm(detuning_range):
                 with self.ctx.util.no_output():
                     sweep_result = self.measurement_service.sweep_parameter(
-                        sequence=lambda t: {
+                        sequence=lambda t, subgroup=subgroup: {
                             label: Rect(duration=t, amplitude=amplitudes[label])
                             for label in subgroup
                         },
@@ -919,7 +919,7 @@ class CharacterizationService:
             if len(subgroup) == 0:
                 continue
 
-            def t1_sequence(T: int) -> PulseSchedule:
+            def t1_sequence(T: int, subgroup=subgroup) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
                         ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
@@ -1027,7 +1027,7 @@ class CharacterizationService:
             if len(subgroup) == 0:
                 continue
 
-            def t2_sequence(T: int) -> PulseSchedule:
+            def t2_sequence(T: int, subgroup=subgroup) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
                         hpi = self.pulse.get_hpi_pulse(target)
@@ -1149,7 +1149,9 @@ class CharacterizationService:
 
         data: dict[str, RamseyData] = {}
 
-        for target_qubits, spectator_qubits in zip(target_groups, spectator_groups):
+        for target_qubits, spectator_qubits in zip(
+            target_groups, spectator_groups, strict=True
+        ):
             if spectator_state != "0":
                 target_list = target_qubits + spectator_qubits
             else:
@@ -1161,7 +1163,12 @@ class CharacterizationService:
             print(f"Target qubits: {target_qubits}")
             print(f"Spectator qubits: {spectator_qubits}")
 
-            def ramsey_sequence(T: int) -> PulseSchedule:
+            def ramsey_sequence(
+                T: int,
+                target_list=target_list,
+                target_qubits=target_qubits,
+                spectator_qubits=spectator_qubits,
+            ) -> PulseSchedule:
                 with PulseSchedule(target_list) as ps:
                     # Excite spectator qubits if needed
                     if spectator_state != "0":
@@ -1555,7 +1562,13 @@ class CharacterizationService:
             ramptime = stark_ramptime[target]
             detuning = stark_detuning[target]
 
-            def stark_t1_sequence(T: int) -> PulseSchedule:
+            def stark_t1_sequence(
+                T: int,
+                target=target,
+                ramptime=ramptime,
+                power=power,
+                detuning=detuning,
+            ) -> PulseSchedule:
                 with PulseSchedule([target]) as ps:
                     ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
                     ps.add(
@@ -1683,7 +1696,13 @@ class CharacterizationService:
             ramptime = stark_ramptime[target]
             detuning = stark_detuning[target]
 
-            def stark_ramsey_sequence(T: int) -> PulseSchedule:
+            def stark_ramsey_sequence(
+                T: int,
+                target=target,
+                ramptime=ramptime,
+                power=power,
+                detuning=detuning,
+            ) -> PulseSchedule:
                 x90 = self.pulse.get_hpi_pulse(target=target)
                 with PulseSchedule([target]) as ps:
                     ps.add(target, x90)
@@ -2404,7 +2423,10 @@ class CharacterizationService:
                 prominence=0.05,
             )
             num_resonators = 4
-            sorted_peaks = sorted(zip(props["prominences"], peaks), reverse=True)
+            sorted_peaks = sorted(
+                zip(props["prominences"], peaks, strict=True),
+                reverse=True,
+            )
             top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
             peaks = [idx for _, idx in top_peaks]
         elif filter == "savgol":
@@ -2425,7 +2447,10 @@ class CharacterizationService:
                 prominence=0.05,
             )
             num_resonators = 4
-            sorted_peaks = sorted(zip(props["prominences"], peaks), reverse=True)
+            sorted_peaks = sorted(
+                zip(props["prominences"], peaks, strict=True),
+                reverse=True,
+            )
             top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
             peaks = [idx for _, idx in top_peaks]
         else:
@@ -3791,7 +3816,7 @@ class CharacterizationService:
             f0 = fitting.fit_lorentzian(
                 x=qubit_frequency_range,
                 y=result1d,
-                plot=True if verbose else False,
+                plot=verbose,
             ).get("f0", np.nan)
             qubit_resonance_frequencies.append(f0)
             result2d.append(result1d)

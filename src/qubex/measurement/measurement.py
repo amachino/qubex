@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import math
 from collections import defaultdict
+from collections.abc import Collection
 from contextlib import contextmanager
-from functools import cache, cached_property, reduce
+from functools import cached_property, reduce
 from pathlib import Path
-from typing import Collection, Final, Literal
+from typing import Final, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -355,7 +356,14 @@ class Measurement:
         >>> meas.check_clock_status(["Q73A", "U10B"])
         """
         clocks = self.device_controller.read_clocks(box_list)
-        clock_statuses = {box: clock for box, clock in zip(box_list, clocks)}
+        clock_statuses = {
+            box: clock
+            for box, clock in zip(
+                box_list,
+                clocks,
+                strict=True,
+            )
+        }
         is_synced = self.device_controller.check_clocks(box_list)
         return {
             "status": is_synced,
@@ -689,7 +697,6 @@ class Measurement:
             result.save(data_dir=rawdata_dir)
         return result
 
-    @cache
     def readout_pulse(
         self,
         target: str,
@@ -734,7 +741,6 @@ class Measurement:
             ]
         )
 
-    @cache
     def pump_pulse(
         self,
         target: str,

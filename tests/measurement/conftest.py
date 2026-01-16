@@ -47,7 +47,7 @@ class DummyClassifier(StateClassifier):
         phase: float = 0.0,
         n_init: int = 10,
         random_state: int = 42,
-    ) -> "DummyClassifier":
+    ) -> DummyClassifier:
         raise NotImplementedError
 
     def predict(self, data: NDArray) -> NDArray:

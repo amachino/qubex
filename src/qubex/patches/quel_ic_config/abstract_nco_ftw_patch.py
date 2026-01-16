@@ -1,13 +1,13 @@
 from fractions import Fraction
-from typing import Union
 
 from quel_ic_config.ad9082_nco import AbstractNcoFtw
 
 
+# TODO: Remove this patch
 def patched_from_frequency(
     cls,
-    nco_freq_hz_: Union[Fraction, float],
-    converter_freq_hz_: Union[int, float],
+    nco_freq_hz_: Fraction | float,
+    converter_freq_hz_: int | float,
     epsilon: float = 0.0,
 ):
     converter_freq_hz: int = cls._converter_frequency_as_interger(converter_freq_hz_)

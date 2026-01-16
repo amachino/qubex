@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import cache, cached_property, partial
+from functools import cached_property, partial
 from typing import Final
 
 import jax
@@ -186,17 +186,14 @@ class PulseOptimizer:
     def upper_bound(self) -> dict[str, float]:
         return {target: self.max_rabi_rate for target in self.control_frequencies}
 
-    @cache
     def lowering_operator(self, target) -> Array:
         a = self.quantum_system.get_lowering_operator(target)
         return jnp.asarray(a.full())
 
-    @cache
     def raising_operator(self, target) -> Array:
         ad = self.quantum_system.get_raising_operator(target)
         return jnp.asarray(ad.full())
 
-    @cache
     def number_operator(self, target) -> Array:
         N = self.quantum_system.get_number_operator(target)
         return jnp.asarray(N.full())

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Collection
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Collection, Final, Literal, Optional
+from typing import TYPE_CHECKING, Final, Literal
 
 if TYPE_CHECKING:
     from .services.benchmarking_service import BenchmarkingService
@@ -188,12 +189,12 @@ class ExperimentContext:
         self.print_environment(verbose=False)
         self._load_classifiers()
 
-        self._benchmarking_service: Optional[BenchmarkingService] = None
-        self._calibration_service: Optional[CalibrationService] = None
-        self._characterization_service: Optional[CharacterizationService] = None
-        self._measurement_service: Optional[MeasurementService] = None
-        self._optimization_service: Optional[OptimizationService] = None
-        self._pulse_service: Optional[PulseService] = None
+        self._benchmarking_service: BenchmarkingService | None = None
+        self._calibration_service: CalibrationService | None = None
+        self._characterization_service: CharacterizationService | None = None
+        self._measurement_service: MeasurementService | None = None
+        self._optimization_service: OptimizationService | None = None
+        self._pulse_service: PulseService | None = None
 
     def register_services(
         self,
@@ -597,7 +598,7 @@ class ExperimentContext:
     def load_property(self, property_name: str) -> dict:
         property_path = self.property_dir / self.chip_id / f"{property_name}.json"
         if property_path.exists():
-            with open(property_path, "r") as f:
+            with open(property_path) as f:
                 property_data = json.load(f)
                 return property_data
         else:
@@ -621,7 +622,7 @@ class ExperimentContext:
                 json.dump(data, f, indent=4)
             print(f"Property '{property_name}' saved to {property_path}")
         except Exception as e:
-            raise IOError(f"Failed to save property '{property_name}': {e}")
+            raise OSError(f"Failed to save property '{property_name}': {e}") from e
 
     def load_calib_note(self, path: Path | str | None = None):
         """
@@ -778,7 +779,9 @@ class ExperimentContext:
                     reference_phase=param.get("reference_phase"),
                 )
             except TypeError:
-                raise ValueError(f"Invalid Rabi parameters for {target}: {param}")
+                raise ValueError(
+                    f"Invalid Rabi parameters for {target}: {param}"
+                ) from None
         else:
             return None
 
@@ -955,7 +958,7 @@ class ExperimentContext:
         try:
             qubit_label = Target.qubit_label(label)
         except ValueError:
-            raise ValueError(f"Invalid target label: {label}")
+            raise ValueError(f"Invalid target label: {label}") from None
 
         port = self.control_system.get_port(box_id, port_number)
         channel = port.channels[channel_number]

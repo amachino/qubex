@@ -133,7 +133,7 @@ class ExperimentNote:
             current_dict = {}
             if Path(target_path).exists():
                 try:
-                    with open(target_path, "r") as file:
+                    with open(target_path) as file:
                         current_dict = json.load(file)
                 except (json.JSONDecodeError, Exception):
                     # If we can't read the file, start with empty dict
@@ -168,7 +168,7 @@ class ExperimentNote:
         file_path = Path(file_path)
 
         try:
-            with open(file_path, "r") as file:
+            with open(file_path) as file:
                 self._dict = json.load(file)
             # Note: We keep changed_keys to allow multiple saves to different files
         except FileNotFoundError:
@@ -297,7 +297,7 @@ class ExperimentNote:
             return {k: self._sanitize_for_json(v) for k, v in obj.items()}
 
         # list/tuple -> sanitize each element (tuples become lists for JSON)
-        if isinstance(obj, list) or isinstance(obj, tuple):
+        if isinstance(obj, (list, tuple)):
             return [self._sanitize_for_json(v) for v in obj]
 
         # floats (including numpy floats): convert non-finite to None

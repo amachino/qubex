@@ -23,12 +23,11 @@ from __future__ import annotations
 
 import socket
 import time
-from typing import Optional
 
 import serial
 
 
-class ONS61797(object):
+class ONS61797:
     """
     A class to interface with ONS61797 instruments via serial or socket communication.
 
@@ -57,7 +56,7 @@ class ONS61797(object):
         The time interval between sending a command and reading a response, default is 0.1 seconds.
     """
 
-    def __init__(self, port: Optional[str] = None, ip_address: Optional[str] = None):
+    def __init__(self, port: str | None = None, ip_address: str | None = None):
         """
         Initializes the connection to the instrument.
 
@@ -68,7 +67,7 @@ class ONS61797(object):
         ip_address : str, optional
             The IP address to connect to the instrument, by default None.
         """
-        self.instrument: Optional[socket.socket | serial.Serial] = None
+        self.instrument: socket.socket | serial.Serial | None = None
         self.port = port
         self.baudrate = 115200
         self.ip_address = ip_address
@@ -82,9 +81,7 @@ class ONS61797(object):
         if self.instrument:
             self.close()
 
-    def connect(
-        self, port: Optional[str] = None, ip_address: Optional[str] = None
-    ) -> None:
+    def connect(self, port: str | None = None, ip_address: str | None = None) -> None:
         """
         Establishes a connection to the instrument via serial or socket.
 

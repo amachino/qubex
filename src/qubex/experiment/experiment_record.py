@@ -141,7 +141,7 @@ class ExperimentRecord(Generic[T]):
         if not name.endswith(".json"):
             name = name + ".json"
         path = os.path.join(data_dir, name)
-        with open(path, "r") as f:
+        with open(path) as f:
             data = jsonpickle.decode(f.read())
             if not isinstance(data, ExperimentRecord):
                 raise TypeError(f"Expected ExperimentRecord, got {type(data)}")

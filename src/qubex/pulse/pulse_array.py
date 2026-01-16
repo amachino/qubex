@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import copy
 import logging
-from typing import Literal, Sequence
+from collections.abc import Sequence
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -306,9 +307,7 @@ class PulseArray(Waveform):
         """Returns a copy of the pulse array with the nested pulse arrays flattened."""
         new_array = PulseArray()
         for obj in self.flattened_elements:
-            if isinstance(obj, Pulse):
-                new_array.add(obj)
-            elif isinstance(obj, PhaseShift):
+            if isinstance(obj, (Pulse, PhaseShift)):
                 new_array.add(obj)
             else:
                 logger.warning(f"Unknown element type: {type(obj)}")

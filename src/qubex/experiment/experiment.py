@@ -5,9 +5,10 @@ It manages which methods act as the public interface for conducting experiments.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Collection, Literal, Optional, Sequence, TypeVar
+from typing import Literal, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -1257,7 +1258,7 @@ class Experiment:
         self,
         schedule: PulseSchedule,
         *,
-        frequencies: Optional[dict[str, float]] = None,
+        frequencies: dict[str, float] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
@@ -1367,7 +1368,7 @@ class Experiment:
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        frequencies: Optional[dict[str, float]] = None,
+        frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
@@ -1644,6 +1645,7 @@ class Experiment:
         sweep_range: ArrayLike,
         repetitions: int = 1,
         frequencies: dict[str, float] | None = None,
+        initial_states: dict[str, str] | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int | None = None,
         interval: float | None = None,
@@ -1652,6 +1654,7 @@ class Experiment:
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
         plot: bool = True,
+        enable_tqdm: bool = False,
         title: str = "Sweep result",
         xlabel: str = "Sweep value",
         ylabel: str = "Measured value",
@@ -1671,6 +1674,8 @@ class Experiment:
             Number of repetitions. Defaults to 1.
         frequencies : dict[str, float], optional
             Frequencies of the qubits.
+        initial_states : dict[str, str], optional
+            Initial states of the qubits.
         rabi_level : Literal["ge", "ef"], optional
             Rabi level to use. Defaults to "ge".
         shots : int, optional
@@ -1687,6 +1692,8 @@ class Experiment:
             Readout post-margin in ns.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
+        enable_tqdm : bool, optional
+            Whether to show a progress bar. Defaults to False.
         title : str, optional
             Title of the plot. Defaults to "Sweep result".
         xlabel : str, optional
@@ -1718,6 +1725,7 @@ class Experiment:
             sweep_range=sweep_range,
             repetitions=repetitions,
             frequencies=frequencies,
+            initial_states=initial_states,
             rabi_level=rabi_level,
             shots=shots,
             interval=interval,
@@ -1726,6 +1734,7 @@ class Experiment:
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
             plot=plot,
+            enable_tqdm=enable_tqdm,
             title=title,
             xlabel=xlabel,
             ylabel=ylabel,
@@ -2613,7 +2622,7 @@ class Experiment:
         *,
         spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        beta_range: ArrayLike | None = None,
         duration: float | None = None,
         n_turns: int = 1,
         degree: int = 3,
@@ -2646,7 +2655,7 @@ class Experiment:
         degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        beta_range: ArrayLike | None = None,
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
@@ -2683,7 +2692,7 @@ class Experiment:
         degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        beta_range: ArrayLike | None = None,
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
@@ -2974,7 +2983,7 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = np.arange(128, 2048, 128),
+        time_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2995,7 +3004,7 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
+        detuning_range: ArrayLike | None = None,
         time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
@@ -3022,8 +3031,8 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
-        time_range: ArrayLike = np.arange(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -3044,7 +3053,7 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
-        amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
+        amplitude_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -3062,8 +3071,8 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
-        time_range: ArrayLike = range(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -3085,8 +3094,8 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
-        time_range: ArrayLike = np.arange(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
@@ -3104,8 +3113,8 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
-        time_range: ArrayLike = range(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -3275,7 +3284,7 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 10001, 100),
+        time_range: ArrayLike | None = None,
         detuning: float = 0.001,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -3295,7 +3304,7 @@ class Experiment:
         target_qubit: str,
         spectator_qubit: str,
         *,
-        time_range: ArrayLike = np.arange(0, 2001, 100),
+        time_range: ArrayLike | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -3318,7 +3327,7 @@ class Experiment:
         target_qubit: str,
         spectator_qubit: str,
         *,
-        time_range: ArrayLike = np.arange(0, 5001, 200),
+        time_range: ArrayLike | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
         shots: int = CALIBRATION_SHOTS,
@@ -3395,7 +3404,7 @@ class Experiment:
         target: str,
         *,
         frequency_range: ArrayLike | None = None,
-        power_range: ArrayLike = np.arange(-60, 5, 5),
+        power_range: ArrayLike | None = None,
         electrical_delay: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = 0,
@@ -3502,7 +3511,7 @@ class Experiment:
         self,
         target: str,
         frequency_range: ArrayLike | None = None,
-        power_range: ArrayLike = np.arange(-60, 0, 5),
+        power_range: ArrayLike | None = None,
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
         shots: int | None = None,

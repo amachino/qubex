@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Collection
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Collection, Literal
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -386,7 +387,7 @@ class PulseSchedule:
             shared_xaxes=True,
             specs=[[{"secondary_y": True}] for _ in range(n_channels)],
         )
-        for i, (label, seq) in enumerate(sequences.items()):
+        for i, (_, seq) in enumerate(sequences.items()):
             if time_unit == "ns":
                 times = np.append(seq.times, seq.times[-1] + seq.SAMPLING_PERIOD)
             else:

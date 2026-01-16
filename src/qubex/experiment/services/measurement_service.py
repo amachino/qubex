@@ -1958,7 +1958,7 @@ class MeasurementService:
         prob_dict_raw = {label: prob_dict_raw.get(label, 0) for label in basis_labels}
         prob_dict_mitigated = result.get_mitigated_probabilities(pair)
 
-        labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
+        labels = [f"|{i}⟩" for i in prob_dict_raw]
         prob_arr_raw = np.array(list(prob_dict_raw.values()))
         prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
 
@@ -2000,7 +2000,12 @@ class MeasurementService:
                 }
             )
 
-            for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
+            for label, p, mp in zip(
+                labels,
+                prob_arr_raw,
+                prob_arr_mitigated,
+                strict=True,
+            ):
                 print(f"{label} : {p:.2%} -> {mp:.2%}")
 
         if save_image:
@@ -2169,7 +2174,14 @@ class MeasurementService:
                     if not nx.has_path(G, root, leaf):
                         continue
                     path = tuple(nx.shortest_path(G, source=root, target=leaf))
-                    length = sum(G[u][v]["weight"] for u, v in zip(path[:-1], path[1:]))
+                    length = sum(
+                        G[u][v]["weight"]
+                        for u, v in zip(
+                            path[:-1],
+                            path[1:],
+                            strict=True,
+                        )
+                    )
                     path_lengths[path] = length
 
             sorted_paths = sorted(
@@ -2177,7 +2189,7 @@ class MeasurementService:
             )
 
             all_edges = []
-            for path, length in sorted_paths:
+            for path, _ in sorted_paths:
                 substeps.append([])
                 for i in range(len(path) - 1):
                     edge = (path[i], path[i + 1])
@@ -2417,7 +2429,7 @@ class MeasurementService:
 
         with PulseSchedule() as ps:
             ps.call(seq)
-            for qb, basis in zip(qubits, measurement_bases):
+            for qb, basis in zip(qubits, measurement_bases, strict=True):
                 if basis == "X":
                     ps.add(qb, self.pulse.y90m(qb))
                 elif basis == "Y":
@@ -2435,7 +2447,7 @@ class MeasurementService:
         prob_dict_raw = {label: prob_dict_raw.get(label, 0) for label in basis_labels}
         prob_dict_mitigated = result.get_mitigated_probabilities(qubits)
 
-        labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
+        labels = [f"|{i}⟩" for i in prob_dict_raw]
         prob_arr_raw = np.array(list(prob_dict_raw.values()))
         prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
 
@@ -2471,7 +2483,12 @@ class MeasurementService:
                     },
                 }
             )
-            for label, p, mp in zip(labels, prob_arr_raw, prob_arr_mitigated):
+            for label, p, mp in zip(
+                labels,
+                prob_arr_raw,
+                prob_arr_mitigated,
+                strict=True,
+            ):
                 print(f"{label} : {p:.2%} -> {mp:.2%}")
         if save_image:
             viz.save_figure_image(
@@ -3145,7 +3162,7 @@ class MeasurementService:
                 "index": i,
                 "label": label,
                 "type": "L" if self.ctx.qubits[label].index % 4 in [0, 3] else "H",
-                "basis": bases[i] if i in bases else "Z",
+                "basis": bases.get(i, "Z"),
             }
             for i, label in enumerate(targets)
         ]
@@ -3297,7 +3314,7 @@ class MeasurementService:
             decouple_entangled_zz=decouple_entangled_zz,
             decouple_all_zz=decouple_all_zz,
             cpmg_duration_unit=cpmg_duration_unit,
-            with_readout_pulses=True if method == "execute" else False,
+            with_readout_pulses=method == "execute",
         )
         if plot:
             seq.plot()
@@ -3551,7 +3568,7 @@ class MeasurementService:
         for edge, sbits_results in edge_sbits_result.items():
             best_result = max(
                 sbits_results.values(),
-                key=lambda x: x["negativity"] if "negativity" in x else 0,
+                key=lambda x: x.get("negativity", 0),
             )
             result["best"][edge] = best_result
 
@@ -3573,7 +3590,7 @@ class MeasurementService:
         if plot:
             seq = self.create_1d_cluster_sequence(
                 qubits,
-                with_readout_pulses=True if method == "execute" else False,
+                with_readout_pulses=method == "execute",
             )
             seq.plot(
                 title=f"1D cluster state preparation sequence for {len(qubits)} qubits",
@@ -3607,7 +3624,7 @@ class MeasurementService:
         negativities_std = np.std(list(negativities.values()))
         negativities_med = np.median(list(negativities.values()))
         if plot:
-            for edge, fig in figures.items():
+            for fig in figures.values():
                 fig.show(
                     config={
                         "toImageButtonOptions": {
@@ -4111,7 +4128,7 @@ class MeasurementService:
 
         seq = self.create_graph_sequence(
             graph=graph,
-            with_readout_pulses=True if method == "execute" else False,
+            with_readout_pulses=method == "execute",
         )
         if plot:
             seq.plot()
@@ -4468,7 +4485,7 @@ class MeasurementService:
         for edge, sbits_results in edge_sbits_result.items():
             best_result = max(
                 sbits_results.values(),
-                key=lambda x: x["negativity"] if "negativity" in x else 0,
+                key=lambda x: x.get("negativity", 0),
             )
             result["best"][edge] = best_result
 
@@ -5003,7 +5020,7 @@ class MeasurementService:
                     }
                     prob_dict_mitigated = result.get_mitigated_probabilities(edge)
 
-                    labels = [f"|{i}⟩" for i in prob_dict_raw.keys()]
+                    labels = [f"|{i}⟩" for i in prob_dict_raw]
                     prob_arr_raw = np.array(list(prob_dict_raw.values()))
                     prob_arr_mitigated = np.array(list(prob_dict_mitigated.values()))
 
@@ -5104,9 +5121,12 @@ class MeasurementService:
         control_qubit: str,
         target_qubit: str,
         *,
-        angle_arr: np.ndarray = np.linspace(np.pi / 18, 4 * np.pi / 9, 8),
+        angle_arr: NDArray | None = None,
         measurement_times: int = 10,
     ) -> Result:
+        if angle_arr is None:
+            angle_arr = np.linspace(np.pi / 18, 4 * np.pi / 9, 8)
+
         RAD_TO_DEG = 180 / np.pi
 
         def cartesian_to_spherical(x, y, z):

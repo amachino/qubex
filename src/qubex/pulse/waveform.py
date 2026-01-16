@@ -6,7 +6,7 @@ from typing import Literal, cast
 
 import numpy as np
 import plotly.graph_objects as go
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 from plotly.subplots import make_subplots
 from typing_extensions import deprecated
 

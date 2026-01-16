@@ -3,8 +3,9 @@ from __future__ import annotations
 import math
 import subprocess
 from collections import defaultdict
+from collections.abc import Collection
 from pathlib import Path
-from typing import Collection, Literal
+from typing import Literal
 
 import yaml
 from rich.console import Console
@@ -49,7 +50,7 @@ def check_skew(
     box_file_path = config_path / box_file
     skew_file_path = config_path / skew_file
 
-    with open(skew_file_path, "r") as file:
+    with open(skew_file_path) as file:
         config = yaml.safe_load(file)
     ref_port = config["reference_port"].split("-")[0]
 
@@ -621,6 +622,7 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
             ctrl_port_labels,
             read_out_port_labels,
             read_in_port_labels,
+            strict=True,
         )
     ]
     graph.plot_lattice_data(

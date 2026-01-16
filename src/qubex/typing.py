@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Callable, Mapping, TypeVar, Union
+from collections.abc import Callable, Mapping
+from typing import TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -11,12 +12,7 @@ T_co = TypeVar("T_co", covariant=True)
 
 TargetMap = Mapping[str, T_co]
 
-IQArray = Union[
-    list[complex],
-    list[float],
-    NDArray[np.complex128],
-    NDArray[np.float64],
-]
+IQArray = list[complex] | list[float] | NDArray[np.complex128] | NDArray[np.float64]
 
 ParametricWaveformDict = Callable[..., TargetMap[Waveform]]
 ParametricPulseSchedule = Callable[..., PulseSchedule]

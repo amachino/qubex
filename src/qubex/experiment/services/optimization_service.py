@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Collection
+from collections.abc import Collection
 
 import cma
 import numpy as np
@@ -303,7 +303,7 @@ class OptimizationService:
             nonlocal best_loss, best_params
 
             params = {k: v["initial"] for k, v in defaults.items()}
-            for k, v in zip(opt_params, params_vec):
+            for k, v in zip(opt_params, params_vec, strict=True):
                 params[k] = v
 
             cr_amplitude = params["cr_amplitude"]
@@ -497,7 +497,7 @@ class OptimizationService:
         opt_result = {}
         if best_params is None:
             raise RuntimeError("No best parameters found during optimization.")
-        for key, value in zip(opt_params, best_params):
+        for key, value in zip(opt_params, best_params, strict=True):
             old_value = cr_param.get(key, None)
             opt_result[key] = value
             print(f"  {key}:")
