@@ -49,7 +49,9 @@ def test_update_rabi_param(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "distance": 0.5,
             "r2": 0.5,
+            "reference_phase": 0.0,
         },
     )
     param = note.get_rabi_param("Q00") or {}
@@ -156,6 +158,7 @@ def test_update_state_param(tmp_path):
         {
             "target": "Q00",
             "centers": {"0": [0.5, 0.5], "1": [0.5, 0.5]},
+            "reference_phase": 0.0,
         },
     )
     param = note.get_state_param("Q00") or {}
@@ -214,7 +217,9 @@ def test_timestamp(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "distance": 0.5,
             "r2": 0.5,
+            "reference_phase": 0.0,
         },
     )
     param = note.get_rabi_param("Q00") or {}
@@ -231,7 +236,9 @@ def test_timestamp(tmp_path):
             "offset": 1.0,
             "noise": 1.0,
             "angle": 1.0,
+            "distance": 1.0,
             "r2": 1.0,
+            "reference_phase": 0.0,
         },
     )
     updated_param = note.get_rabi_param("Q00") or {}
@@ -255,7 +262,9 @@ def test_get_param_with_valid_days(tmp_path):
             "offset": 0.5,
             "noise": 0.5,
             "angle": 0.5,
+            "distance": 0.5,
             "r2": 0.5,
+            "reference_phase": 0.0,
             "timestamp": datetime.strftime(
                 datetime.now() - timedelta(days=2), "%Y-%m-%d %H:%M:%S"
             ),

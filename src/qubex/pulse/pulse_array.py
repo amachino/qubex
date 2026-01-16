@@ -314,7 +314,7 @@ class PulseArray(Waveform):
                 logger.warning(f"Unknown element type: {type(obj)}")
         return new_array
 
-    def plot(
+    def plot(  # type: ignore[override]
         self,
         *,
         n_samples: int | None = None,
