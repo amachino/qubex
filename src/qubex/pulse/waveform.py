@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from functools import cached_property
-from typing import Literal
+from typing import Literal, cast
 
 import numpy as np
 import plotly.graph_objects as go
@@ -142,8 +142,7 @@ class Waveform(ABC):
 
     def reset_cached_duration(self):
         """Resets the cached duration of the waveform."""
-        if "cached_duration" in self.__dict__:
-            del self.__dict__["cached_duration"]
+        cast(dict, self.__dict__).pop("cached_duration", None)
 
     def _number_of_samples(
         self,

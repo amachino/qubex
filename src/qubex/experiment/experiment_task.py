@@ -10,7 +10,7 @@ class ExperimentTaskResult(Protocol):
     """Protocol for experiment task results."""
 
 
-T = TypeVar("T", bound=ExperimentTaskResult)
+T = TypeVar("T", bound=ExperimentTaskResult, covariant=True)
 
 
 class ExperimentTask(Protocol, Generic[T]):

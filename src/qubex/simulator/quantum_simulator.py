@@ -98,7 +98,7 @@ class Control:
             y=self.values,
             kind=self.interpolation,
             bounds_error=False,
-            fill_value=(self.values[0], self.values[-1]),
+            fill_value=(self.values[0], self.values[-1]),  # type: ignore
         )
 
     def get_samples(
