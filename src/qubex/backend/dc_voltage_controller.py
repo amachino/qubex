@@ -60,7 +60,7 @@ class DCVoltageController:
     def __init__(self):
         if self._initialized:
             return
-        self.ons61797: ONS61797 = None  # type: ignore
+        self.ons61797: ONS61797 = None
         self._initialized = True
 
     def __del__(self):

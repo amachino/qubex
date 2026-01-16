@@ -26,7 +26,7 @@ class Model:
         return RootModel(self)
 
     def to_dict(self) -> dict:
-        return self._pd_model().model_dump()  # type: ignore
+        return self._pd_model().model_dump()
 
     def to_json(self, indent: int | None = None) -> str:
         return self._pd_model().model_dump_json(indent=indent)

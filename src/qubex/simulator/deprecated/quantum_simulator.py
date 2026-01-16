@@ -571,7 +571,7 @@ class QuantumSimulator:
 
         total_hamiltonian = [static_hamiltonian] + dynamic_hamiltonian
 
-        H = qt.QobjEvo(  # type: ignore
+        H = qt.QobjEvo(
             total_hamiltonian,
             tlist=control.times,
             order=0,  # 0th order for piecewise constant control

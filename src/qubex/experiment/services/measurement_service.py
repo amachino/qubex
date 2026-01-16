@@ -298,7 +298,7 @@ class MeasurementService:
         with PulseSchedule(targets) as ps:
             for target, state in states.items():
                 if state in ["0", "1", "+", "-", "+i", "-i"]:
-                    ps.add(target, self.pulse.get_pulse_for_state(target, state))  # type: ignore
+                    ps.add(target, self.pulse.get_pulse_for_state(target, state))
                 elif state == "g":
                     ps.add(target, Blank(0))
                 elif state == "e":
@@ -2826,12 +2826,12 @@ class MeasurementService:
                 return_figure=True,
             )
             viz.save_figure_image(
-                fig,  # type: ignore
+                fig,
                 name=f"mqc_n{n_qubits}_{qubit}",
                 format="png",
             )
             viz.save_figure_image(
-                fig,  # type: ignore
+                fig,
                 name=f"mqc_n{n_qubits}_{qubit}",
                 format="svg",
             )
@@ -3078,12 +3078,12 @@ class MeasurementService:
         )
 
         viz.save_figure_image(
-            fig,  # type: ignore
+            fig,
             name=f"parity_oscillation_n{n_qubits}",
             format="png",
         )
         viz.save_figure_image(
-            fig,  # type: ignore
+            fig,
             name=f"parity_oscillation_n{n_qubits}",
             format="svg",
         )

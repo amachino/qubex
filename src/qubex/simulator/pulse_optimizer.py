@@ -286,8 +286,8 @@ class PulseOptimizer:
             state=state,
             times=np.linspace(0, self.duration, self.segment_count + 1),
             waveforms={
-                target: np.asarray([iq[0] + 1j * iq[1] for iq in iq_array])  # type: ignore
-                for target, iq_array in params.items()  # type: ignore
+                target: np.asarray([iq[0] + 1j * iq[1] for iq in iq_array])
+                for target, iq_array in params.items()
             },
             history=np.array(loss_history),
         )

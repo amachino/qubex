@@ -83,7 +83,7 @@ class ExperimentRecord(Generic[T]):
 
         with open(file_path, "w") as f:
             encoded = jsonpickle.encode(self, unpicklable=True)
-            f.write(encoded)  # type: ignore
+            f.write(encoded)
 
         print(f"Data saved to {file_path}")
         self.file_name = file_name

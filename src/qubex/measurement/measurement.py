@@ -1205,7 +1205,7 @@ class Measurement:
                     duration=EXTRA_SUM_SECTION_LENGTH,
                     post_blank=post_blank_to_first_readout,
                     original_duration=None,  # type: ignore
-                    original_post_blank=None,  # type: ignore
+                    original_post_blank=None,
                 )
             )
 
@@ -1237,7 +1237,7 @@ class Measurement:
                         duration=capture_range_length,
                         post_blank=post_blank_length,
                         original_duration=None,  # type: ignore
-                        original_post_blank=None,  # type: ignore
+                        original_post_blank=None,
                     )
                 )
             last_capture_range = ranges[-1]
@@ -1250,7 +1250,7 @@ class Measurement:
                     duration=last_capture_range_length,
                     post_blank=last_post_blank_length,
                     original_duration=None,  # type: ignore
-                    original_post_blank=None,  # type: ignore,
+                    original_post_blank=None,
                 )
             )
             cap_sequence = pls.CapSampledSequence(

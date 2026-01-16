@@ -507,13 +507,13 @@ class ConfigLoader:
             mux = quantum_system.get_mux(mux_num)
             qubits = quantum_system.get_qubits_in_mux(mux_num)
             for identifier, qubit in zip(wiring["ctrl"], qubits):
-                ctrl_port: GenPort = get_port(identifier)  # type: ignore
+                ctrl_port: GenPort = get_port(identifier)
                 ctrl.append((qubit, ctrl_port))
-            read_out_port: GenPort = get_port(wiring["read_out"])  # type: ignore
+            read_out_port: GenPort = get_port(wiring["read_out"])
             read_out.append((mux, read_out_port))
-            read_in_port: CapPort = get_port(wiring["read_in"])  # type: ignore
+            read_in_port: CapPort = get_port(wiring["read_in"])
             read_in.append((mux, read_in_port))
-            pump_port: GenPort = get_port(wiring.get("pump"))  # type: ignore
+            pump_port: GenPort = get_port(wiring.get("pump"))
             if pump_port is not None:
                 pump.append((mux, pump_port))
 

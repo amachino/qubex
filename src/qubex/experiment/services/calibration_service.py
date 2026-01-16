@@ -1367,7 +1367,7 @@ class CalibrationService:
             result_1["control_states"],
             return_figure=True,
         )
-        for data in fig_c_0.data:  # type: ignore
+        for data in fig_c_0.data:
             data: go.Scatter
             fig_c.add_trace(
                 go.Scatter(
@@ -1382,7 +1382,7 @@ class CalibrationService:
                 row=1,
                 col=1,
             )
-        for data in fig_c_1.data:  # type: ignore
+        for data in fig_c_1.data:
             data: go.Scatter
             fig_c.add_trace(
                 go.Scatter(
@@ -2805,7 +2805,7 @@ class CalibrationService:
             result_1["control_states"],
             return_figure=True,
         )
-        for data in fig_c_0.data:  # type: ignore
+        for data in fig_c_0.data:
             data: go.Scatter
             fig_c.add_trace(
                 go.Scatter(
@@ -2820,7 +2820,7 @@ class CalibrationService:
                 row=1,
                 col=1,
             )
-        for data in fig_c_1.data:  # type: ignore
+        for data in fig_c_1.data:
             data: go.Scatter
             fig_c.add_trace(
                 go.Scatter(
@@ -3001,7 +3001,7 @@ class CalibrationService:
                 vertical_spacing=0.1,
             )
 
-            for data in fig_s_0.data:  # type: ignore
+            for data in fig_s_0.data:
                 data: go.Scatter
                 fig_s.add_trace(
                     go.Scatter(
@@ -3017,7 +3017,7 @@ class CalibrationService:
                     col=1,
                 )
 
-            for data in fig_s_1.data:  # type: ignore
+            for data in fig_s_1.data:
                 data: go.Scatter
                 fig_s.add_trace(
                     go.Scatter(
@@ -3096,13 +3096,13 @@ class CalibrationService:
                         col=col,
                     )
                     if not isinstance(data, go.Surface):
-                        if data.mode == "markers":  # type: ignore
-                            fig.data[-1].marker.color = viz.COLORS[ddx]  # type: ignore
-                        if data.mode == "lines":  # type: ignore
-                            fig.data[-1].line.color = viz.COLORS[ddx]  # type: ignore
+                        if data.mode == "markers":
+                            fig.data[-1].marker.color = viz.COLORS[ddx]
+                        if data.mode == "lines":
+                            fig.data[-1].line.color = viz.COLORS[ddx]
                         if name is not None:
-                            fig.data[-1].name = f"{name_suffix} ({name})"  # type: ignore
-                            fig.data[-1].showlegend = True  # type: ignore
+                            fig.data[-1].name = f"{name_suffix} ({name})"
+                            fig.data[-1].showlegend = True
 
             add_trace_with_color(
                 fig=fig_s_3d,

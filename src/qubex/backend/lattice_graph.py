@@ -212,7 +212,7 @@ class LatticeGraph:
         """
         return {
             (id0, id1): data
-            for id0, id1, data in self.qubit_undirected_graph.edges(data=True)  # type: ignore
+            for id0, id1, data in self.qubit_undirected_graph.edges(data=True)
         }
 
     @cached_property

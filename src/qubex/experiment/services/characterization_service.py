@@ -2062,7 +2062,7 @@ class CharacterizationService:
                             )
                             new_signal = new_result.data[target].kerneled
                             new_phase = np.angle(new_signal)
-                            phase_offset = new_phase - phases[-1]  # type: ignore
+                            phase_offset = new_phase - phases[-1]
 
                     with self.ctx.modified_frequencies({read_label: freq}):
                         result = self._measurement_service.measure(
@@ -2076,7 +2076,7 @@ class CharacterizationService:
                         signal = result.data[target].kerneled
                         phase = np.angle(signal)
                         phase = phase - phase_offset
-                        phases.append(phase)  # type: ignore
+                        phases.append(phase)
 
                         idx += 1
 

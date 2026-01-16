@@ -60,7 +60,7 @@ class ChipInspector:
 
         for node in self.graph.qubit_nodes.values():
             label = node["label"]
-            node["properties"] = {  # type: ignore
+            node["properties"] = {
                 "frequency": frequency_dict.get(label),
                 "anharmonicity": anharmonicity_dict.get(label),
                 "t1": t1_dict.get(label),
@@ -69,7 +69,7 @@ class ChipInspector:
 
         for edge in self.graph.qubit_edges.values():
             label = edge["label"]
-            edge["properties"] = {  # type: ignore
+            edge["properties"] = {
                 "coupling": coupling_dict.get(label),
             }
 
@@ -79,7 +79,7 @@ class ChipInspector:
         params: dict | None = None,
     ) -> InspectionSummary:
         if types is None:
-            types = list(InspectionType.__args__)  # type: ignore
+            types = list(InspectionType.__args__)
         elif isinstance(types, str):
             types = [types]
 

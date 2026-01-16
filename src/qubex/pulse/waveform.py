@@ -448,7 +448,7 @@ class Waveform(ABC):
         freqs = np.fft.fftfreq(N, d=d)
         idx = np.argsort(freqs)
         freqs = freqs[idx]
-        fft_values = np.abs(fft_values[idx])  # type: ignore
+        fft_values = np.abs(fft_values[idx])
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
