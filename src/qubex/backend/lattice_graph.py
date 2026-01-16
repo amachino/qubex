@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from collections.abc import Collection
 from functools import cached_property
-from typing import Collection, Final, TypedDict
+from typing import Final, TypedDict
 
 import networkx as nx
 import plotly.graph_objects as go
@@ -253,10 +254,7 @@ class LatticeGraph:
         dict[int, list[int]]
             Nearest neighbors.
         """
-        nn = {
-            i: sorted(list(self.qubit_graph.neighbors(i)))
-            for i in self.qubit_nodes.keys()
-        }
+        nn = {i: sorted(list(self.qubit_graph.neighbors(i))) for i in self.qubit_nodes}
         return dict(sorted(nn.items()))
 
     @cached_property
@@ -1142,9 +1140,9 @@ class LatticeGraph:
 
         data_matrix = []
 
-        for qubit_index, data in enumerate(data):
-            mux_index = qubit_index // MUX_SIZE
-            qubit_index_in_mux = qubit_index % MUX_SIZE
+        for i, d in enumerate(data):
+            mux_index = i // MUX_SIZE
+            qubit_index_in_mux = i % MUX_SIZE
             mux_col = mux_index // self.n_mux_cols
             row_in_mux = qubit_index_in_mux // (MUX_SIZE // 2)
 
@@ -1152,7 +1150,7 @@ class LatticeGraph:
                 data_matrix.append([])
 
             row = mux_col * 2 + row_in_mux
-            data_matrix[row].append(data)
+            data_matrix[row].append(d)
 
         return data_matrix
 

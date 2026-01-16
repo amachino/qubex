@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Collection, Final, Literal
+from typing import Any, Final, Literal
 
 from typing_extensions import deprecated
 
@@ -26,7 +27,6 @@ try:
         DEFAULT_SAMPLING_PERIOD,
         CapSampledSequence,
         GenSampledSequence,
-        Sequence,
     )
     from qubecalib.qubecalib import (
         BoxPool,
@@ -705,30 +705,6 @@ class DeviceController:
             port=port,
             runit=runit,
             fnco_freq=fnco_freq,
-        )
-
-    @deprecated("Use add_sequencer instead.")
-    def add_sequence(
-        self,
-        sequence: Sequence,
-        *,
-        interval: float,
-        time_offset: dict[str, int] = {},  # {box_name: time_offset}
-        time_to_start: dict[str, int] = {},  # {box_name: time_to_start}
-    ):
-        """
-        Add a sequence to the queue.
-
-        Parameters
-        ----------
-        sequence : Sequence
-            The sequence to add to the queue.
-        """
-        self.qubecalib.add_sequence(
-            sequence,
-            interval=interval,
-            time_offset=time_offset,
-            time_to_start=time_to_start,
         )
 
     def add_sequencer(self, sequencer: Sequencer):

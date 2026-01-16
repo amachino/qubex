@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
-from typing import Final, Literal, Optional, Sequence, Union
+from typing import Final, Literal
 
 from pydantic import Field
 from pydantic.dataclasses import dataclass
@@ -349,8 +350,8 @@ def create_ports(
     box_id: str,
     box_type: BoxType,
     port_numbers: Sequence[int] | None = None,
-) -> tuple[Union[GenPort, CapPort], ...]:
-    ports: list[Union[GenPort, CapPort]] = []
+) -> tuple[GenPort | CapPort, ...]:
+    ports: list[GenPort | CapPort] = []
     port_index = {
         PortType.NOT_AVAILABLE: 0,
         PortType.READ_IN: 0,
@@ -386,7 +387,7 @@ def create_ports(
         else:
             raise ValueError(f"Invalid port type: {port_type}")
         n_channels = NUMBER_OF_CHANNELS[box_type].get(port_num, 0)
-        port: Union[GenPort, CapPort, Port]
+        port: GenPort | CapPort | Port
         if port_type == PortType.NOT_AVAILABLE:
             continue
         elif port_type in (PortType.READ_IN, PortType.MNTR_IN):
@@ -437,23 +438,7 @@ def create_ports(
                 )
                 for channel_num in range(n_channels)
             )
-        elif port_type == PortType.CTRL:
-            port = GenPort(
-                id=port_id,
-                box_id=box_id,
-                number=port_num,
-                type=port_type,
-                sideband="L",
-            )
-            port.channels = tuple(
-                GenChannel(
-                    id=f"{port_id}.CH{channel_num}",
-                    _port=port,
-                    number=channel_num,
-                )
-                for channel_num in range(n_channels)
-            )
-        elif port_type == PortType.PUMP:
+        elif port_type == PortType.CTRL or port_type == PortType.PUMP:
             port = GenPort(
                 id=port_id,
                 box_id=box_id,
@@ -506,7 +491,7 @@ class Box(Model):
     type: BoxType
     address: str
     adapter: str
-    ports: tuple[Union[GenPort, CapPort], ...]
+    ports: tuple[GenPort | CapPort, ...]
 
     @classmethod
     def new(
@@ -566,9 +551,9 @@ class Box(Model):
 class Port(Model):
     id: str
     box_id: str
-    number: Union[int, tuple[int, int]]
+    number: int | tuple[int, int]
     type: PortType
-    channels: Union[tuple[GenChannel, ...], tuple[CapChannel, ...]]
+    channels: tuple[GenChannel, ...] | tuple[CapChannel, ...]
 
     @property
     def direction(self) -> str:
@@ -610,10 +595,10 @@ class Port(Model):
 @dataclass
 class GenPort(Port):
     channels: tuple[GenChannel, ...] = ()
-    sideband: Optional[Literal["U", "L"]] = None
-    lo_freq: Optional[int] = DEFAULT_LO_FREQ
+    sideband: Literal["U", "L"] | None = None
+    lo_freq: int | None = DEFAULT_LO_FREQ
     cnco_freq: int = DEFAULT_CNCO_FREQ
-    vatt: Optional[int] = DEFAULT_VATT
+    vatt: int | None = DEFAULT_VATT
     fullscale_current: int = DEFAULT_FULLSCALE_CURRENT
     rfswitch: Literal["pass", "block"] = "pass"
 
@@ -815,7 +800,9 @@ class ControlSystem:
                         f"Expected {len(port.channels)} fnco_freqs, "
                         f"but got {len(fnco_freqs)}."
                     )
-                for gen_channel, fnco_freq in zip(port.channels, fnco_freqs):
+                for gen_channel, fnco_freq in zip(
+                    port.channels, fnco_freqs, strict=True
+                ):
                     gen_channel.fnco_freq = fnco_freq
             if not isinstance(vatt, self.NotGivenType):
                 port.vatt = vatt
@@ -838,7 +825,9 @@ class ControlSystem:
                         f"Expected {len(port.channels)} fnco_freqs, "
                         f"but got {len(fnco_freqs)}."
                     )
-                for cap_channel, fnco_freq in zip(port.channels, fnco_freqs):
+                for cap_channel, fnco_freq in zip(
+                    port.channels, fnco_freqs, strict=True
+                ):
                     cap_channel.fnco_freq = fnco_freq
             if ndelay is not None:
                 for cap_channel in port.channels:

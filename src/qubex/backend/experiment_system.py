@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Collection, Final, Literal, Optional
+from collections.abc import Collection
+from typing import Final, Literal
 
 import numpy as np
 from pydantic.dataclasses import dataclass
@@ -62,16 +63,16 @@ class QubitPortSet(Model):
 
 
 class JPAParam(TypedDict):
-    dc_voltage: Optional[float]
-    pump_frequency: Optional[float]
-    pump_amplitude: Optional[float]
+    dc_voltage: float | None
+    pump_frequency: float | None
+    pump_amplitude: float | None
 
 
 @dataclass
 class ControlParams(Model):
     control_amplitude: dict[str, float]
     readout_amplitude: dict[str, float]
-    control_vatt: dict[str, Optional[int]]
+    control_vatt: dict[str, int | None]
     readout_vatt: dict[int, int]
     pump_vatt: dict[int, int]
     control_fsc: dict[str, int]
@@ -79,7 +80,7 @@ class ControlParams(Model):
     pump_fsc: dict[int, int]
     capture_delay: dict[int, int]
     capture_delay_word: dict[int, int]
-    jpa_params: dict[int, Optional[JPAParam]]
+    jpa_params: dict[int, JPAParam | None]
 
     def get_control_amplitude(self, qubit: str) -> float:
         return self.control_amplitude.get(qubit, DEFAULT_CONTROL_AMPLITUDE)

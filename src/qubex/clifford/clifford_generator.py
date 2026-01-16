@@ -409,7 +409,7 @@ class CliffordGenerator:
 
     def generate_2q_cliffords(
         self,
-        two_qubit_gate: Clifford = Clifford.ZX90(),
+        two_qubit_gate: Clifford | None = None,
     ) -> dict[Clifford, CliffordSequence]:
         """
         Generate unique 2Q Clifford sequences.
@@ -424,6 +424,8 @@ class CliffordGenerator:
         dict[Clifford, CliffordSequence]
             A dictionary of unique 2Q Clifford operators and their sequences.
         """
+        if two_qubit_gate is None:
+            two_qubit_gate = Clifford.ZX90()
 
         IX90 = Clifford.IX90()
         XI90 = Clifford.XI90()
@@ -556,7 +558,7 @@ class CliffordGenerator:
     ):
         """Load the Clifford group from a JSON file."""
         file_path = self.get_file_path(type, file_name)
-        with open(file_path, "r") as file:
+        with open(file_path) as file:
             data = json.load(file)
 
         for item in data:

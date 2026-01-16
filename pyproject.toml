@@ -62,20 +62,22 @@ addopts = "--import-mode=importlib"
 include = ["src", "tests"]
 typeCheckingMode = "basic"
 
+[tool.ruff]
+src = ["src", "tests"]
+
 [tool.ruff.lint]
 select = [
-    # "E",     # pycodestyle
-    # "F",     # Pyflakes
-    # "UP",    # pyupgrade
-    # "B",     # flake8-bugbear
-    # "SIM",   # flake8-simplify
-    # "I",     # isort
+    "E",  # pycodestyle
+    "F",  # Pyflakes
+    "UP",  # pyupgrade
+    "B",  # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "I",  # isort
 ]
 ignore = [
     "E501",  # line-too-long
     "E731",  # do-not-assign-lambda
     "E741",  # ambiguous-variable-name
-]
-unfixable = [
-    "F401",  # unused-import
+    "SIM102",  # collapsible-if
+    "SIM108",  # if-else-block-instead-of-if-exp
 ]

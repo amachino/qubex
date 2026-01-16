@@ -9,7 +9,7 @@ from typing import Final, Literal
 
 import yaml
 
-from .control_system import Box, CapPort, ControlSystem, GenPort
+from .control_system import Box, ControlSystem
 from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
 from .quantum_system import Chip, QuantumSystem
 
@@ -196,14 +196,14 @@ class ConfigLoader:
             )
         if self._experiment_system is None:
             raise RuntimeError(
-                "ExperimentSystem is not available for chip: %s" % self._chip_id
+                f"ExperimentSystem is not available for chip: {self._chip_id}"
             )
         return self._experiment_system
 
     def _load_config_file(self, file_name) -> dict:
         path = Path(self._config_dir) / file_name
         try:
-            with open(path, "r") as file:
+            with open(path) as file:
                 result = yaml.safe_load(file)
         except FileNotFoundError as e:
             print(f"Configuration file not found: {path}\n\n{e}")
@@ -216,7 +216,7 @@ class ConfigLoader:
     def _load_legacy_params_file(self, file_name) -> dict:
         path = Path(self._params_dir) / file_name
         try:
-            with open(path, "r") as file:
+            with open(path) as file:
                 result = yaml.safe_load(file)
         except FileNotFoundError:
             # Tolerate missing legacy params files (e.g., props.yaml, params.yaml)
@@ -245,7 +245,7 @@ class ConfigLoader:
         tooling/annotation but not merged into data.
         """
         try:
-            with open(path, "r") as f:
+            with open(path) as f:
                 payload = yaml.safe_load(f)
         except FileNotFoundError:
             raise
@@ -514,7 +514,7 @@ class ConfigLoader:
             mux_num = int(wiring["mux"])
             mux = quantum_system.get_mux(mux_num)
             qubits = quantum_system.get_qubits_in_mux(mux_num)
-            for identifier, qubit in zip(wiring["ctrl"], qubits):
+            for identifier, qubit in zip(wiring["ctrl"], qubits, strict=True):
                 ctrl_port = get_gen_port(identifier)
                 if ctrl_port is not None:
                     ctrl.append((qubit, ctrl_port))

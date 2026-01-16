@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import os
 from collections import defaultdict, deque
+from collections.abc import Collection, Sequence
 from datetime import datetime
 from itertools import product
 from pathlib import Path
-from typing import Collection, Literal, Optional, Sequence
+from typing import Literal
 
 import networkx as nx
 import numpy as np
@@ -102,7 +103,7 @@ class MeasurementService:
         self,
         schedule: PulseSchedule,
         *,
-        frequencies: Optional[dict[str, float]] = None,
+        frequencies: dict[str, float] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
         interval: float | None = None,
@@ -130,7 +131,7 @@ class MeasurementService:
         if readout_post_margin is None:
             readout_post_margin = self.ctx.readout_post_margin
         if enable_dsp_sum is None:
-            enable_dsp_sum = True if mode == "single" else False
+            enable_dsp_sum = mode == "single"
 
         if reset_awg_and_capunits:
             qubits = {Target.qubit_label(target) for target in schedule.labels}
@@ -167,7 +168,7 @@ class MeasurementService:
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        frequencies: Optional[dict[str, float]] = None,
+        frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
@@ -198,7 +199,7 @@ class MeasurementService:
         waveforms: dict[str, NDArray[np.complex128]] = {}
 
         if enable_dsp_sum is None:
-            enable_dsp_sum = True if mode == "single" else False
+            enable_dsp_sum = mode == "single"
 
         if isinstance(sequence, PulseSchedule):
             if not sequence.is_valid():

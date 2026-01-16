@@ -334,8 +334,8 @@ class Inspection(ABC):
         save_image: bool = False,
         images_dir: str = "./images",
     ):
-        node_values = {label: 1 for label in self.invalid_nodes.keys()}
-        edge_values = {label: 1 for label in self.invalid_edges.keys()}
+        node_values = {label: 1 for label in self.invalid_nodes}
+        edge_values = {label: 1 for label in self.invalid_edges}
         node_hovertexts = {
             data["label"]: self.create_node_hovertext(data["label"])
             for data in self.graph.qubit_nodes.values()

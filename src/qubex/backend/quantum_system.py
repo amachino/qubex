@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Final, Optional
+from typing import Final
 
 from pydantic.dataclasses import dataclass
 
@@ -82,10 +82,10 @@ class Qubit(Model):
     label: str
     chip_id: str
     resonator: str
-    _bare_frequency: Optional[float] = None
-    _anharmonicity: Optional[float] = None
-    _control_frequency_ge: Optional[float] = None
-    _control_frequency_ef: Optional[float] = None
+    _bare_frequency: float | None = None
+    _anharmonicity: float | None = None
+    _control_frequency_ge: float | None = None
+    _control_frequency_ef: float | None = None
 
     def __repr__(self) -> str:
         return f"Qubit('{self.label}', ω={self.frequency:.6f} GHz, α={self.anharmonicity:.6f} GHz, Ej/Ec={self.ej_over_ec:.2f})"
@@ -166,9 +166,9 @@ class Resonator(Model):
     label: str
     chip_id: str
     qubit: str
-    _frequency_g: Optional[float] = None
-    _frequency_e: Optional[float] = None
-    _readout_frequency: Optional[float] = None
+    _frequency_g: float | None = None
+    _frequency_e: float | None = None
+    _readout_frequency: float | None = None
 
     def __repr__(self) -> str:
         repr = f"Resonator(label='{self.label}', frequency={self.frequency:.6f} GHz"

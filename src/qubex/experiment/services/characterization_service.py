@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Collection
 from copy import deepcopy
-from typing import Collection, Literal, no_type_check
+from typing import Literal, no_type_check
 
 import numpy as np
 import plotly.graph_objects as go
@@ -260,7 +261,7 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = np.arange(128, 2048, 128),
+        time_range: ArrayLike | None = None,
         initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -273,6 +274,9 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if time_range is None:
+            time_range = np.arange(128, 2048, 128)
 
         time_range = np.asarray(time_range)
 
@@ -362,7 +366,7 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.05, 0.05, 51),
+        detuning_range: ArrayLike | None = None,
         time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
@@ -383,6 +387,9 @@ class CharacterizationService:
             frequencies = {
                 target: self.ctx.targets[target].frequency for target in targets
             }
+
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.05, 0.05, 51)
 
         detuning_range = np.array(detuning_range, dtype=np.float64)
         time_range = np.array(time_range, dtype=np.float64)
@@ -620,8 +627,8 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = np.arange(0, 201, 4),
-        amplitude_range: ArrayLike = np.linspace(0.01, 0.1, 10),
+        time_range: ArrayLike | None = None,
+        amplitude_range: ArrayLike | None = None,
         ramptime: float | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -633,6 +640,12 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if time_range is None:
+            time_range = np.arange(0, 201, 4)
+
+        if amplitude_range is None:
+            amplitude_range = np.linspace(0.01, 0.1, 10)
 
         if ramptime is None:
             ramptime = 0
@@ -680,14 +693,20 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
-        time_range: ArrayLike = range(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
     ) -> Result:
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 21)
+
+        if time_range is None:
+            time_range = range(0, 101, 4)
+
         result = self.chevron_pattern(
             targets=targets,
             detuning_range=detuning_range,
@@ -773,8 +792,8 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        detuning_range: ArrayLike = np.linspace(-0.01, 0.01, 21),
-        time_range: ArrayLike = range(0, 101, 4),
+        detuning_range: ArrayLike | None = None,
+        time_range: ArrayLike | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
@@ -787,6 +806,12 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if detuning_range is None:
+            detuning_range = np.linspace(-0.01, 0.01, 21)
+
+        if time_range is None:
+            time_range = range(0, 101, 4)
 
         detuning_range = np.array(detuning_range, dtype=np.float64)
 
@@ -2572,7 +2597,7 @@ class CharacterizationService:
         target: str | None = None,
         *,
         frequency_range: ArrayLike | None = None,
-        power_range: ArrayLike = np.arange(-60, 5, 5),
+        power_range: ArrayLike | None = None,
         phase_shift: float | None = None,  # deprecated
         electrical_delay: float | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2582,6 +2607,9 @@ class CharacterizationService:
     ) -> Result:
         if target is None:
             target = self.ctx.qubit_labels[0]
+
+        if power_range is None:
+            power_range = np.arange(-60, 5, 5)
 
         power_range = np.array(power_range)
         qubit_label = Target.qubit_label(target)
@@ -3210,7 +3238,7 @@ class CharacterizationService:
         self,
         target: str,
         frequency_range: ArrayLike | None = None,
-        power_range: ArrayLike = np.arange(-60, 0, 5),
+        power_range: ArrayLike | None = None,
         readout_amplitude: float | None = None,
         readout_frequency: float | None = None,
         shots: int | None = None,
@@ -3218,6 +3246,9 @@ class CharacterizationService:
         plot: bool = True,
         save_image: bool = True,
     ) -> Result:
+        if power_range is None:
+            power_range = np.arange(-60, 0, 5)
+
         power_range = np.array(power_range)
         result2d = []
         for power in tqdm(power_range):

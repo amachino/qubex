@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import datetime
 import os
+from collections.abc import Collection, Mapping
 from pathlib import Path
-from typing import Collection, Literal, Mapping
+from typing import Literal
 
 import numpy as np
 import plotly.graph_objs as go

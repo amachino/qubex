@@ -488,7 +488,7 @@ def find_longest_1d_chain(
         return [], [], 0.0
 
     # Oriented edge sequence along the undirected path (for convenience).
-    edges_in_path_order = list(zip(best_path[:-1], best_path[1:]))
+    edges_in_path_order = list(zip(best_path[:-1], best_path[1:], strict=True))
     return best_path, edges_in_path_order, best_score
 
 

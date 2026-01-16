@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Collection, Literal, no_type_check
+from collections.abc import Collection
+from typing import Literal, no_type_check
 
 import numpy as np
 import plotly.graph_objects as go
@@ -778,7 +779,7 @@ class CalibrationService:
         *,
         spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"] = "hpi",
-        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        beta_range: ArrayLike | None = None,
         duration: float | None = None,
         n_turns: int = 1,
         degree: int = 3,
@@ -792,6 +793,9 @@ class CalibrationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if beta_range is None:
+            beta_range = np.linspace(-2.0, 2.0, 20)
 
         rabi_params = self.ctx.rabi_params
         self.ctx.validate_rabi_params(rabi_params)
@@ -928,7 +932,7 @@ class CalibrationService:
         degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        beta_range: ArrayLike | None = None,
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
@@ -941,6 +945,9 @@ class CalibrationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if beta_range is None:
+            beta_range = np.linspace(-2.0, 2.0, 20)
 
         for i in range(n_iterations):
             print(f"\nIteration {i + 1}/{n_iterations}")
@@ -1014,7 +1021,7 @@ class CalibrationService:
         degree: int = 3,
         r2_threshold: float = 0.5,
         calibrate_beta: bool = True,
-        beta_range: ArrayLike = np.linspace(-2.0, 2.0, 20),
+        beta_range: ArrayLike | None = None,
         duration: float | None = None,
         drag_coeff: float = DRAG_COEFF,
         plot: bool = True,
@@ -1027,6 +1034,9 @@ class CalibrationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if beta_range is None:
+            beta_range = np.linspace(-2.0, 2.0, 20)
 
         for i in range(n_iterations):
             print(f"\nIteration {i + 1}/{n_iterations}")
@@ -1317,6 +1327,7 @@ class CalibrationService:
             zip(
                 ["IX", "IY", "IZ", "ZX", "ZY", "ZZ"],
                 Omega / (2 * np.pi),  # GHz
+                strict=True,
             )
         )
 
@@ -2757,6 +2768,7 @@ class CalibrationService:
             zip(
                 ["IX", "IY", "IZ", "ZX", "ZY", "ZZ"],
                 Omega / (2 * np.pi),  # GHz
+                strict=True,
             )
         )
 
@@ -2980,7 +2992,7 @@ class CalibrationService:
         spectators_fit_results_1 = result_1["spectators_fit_result"]
         figs_s = {}
         figs_s_3d = {}
-        for label in spectators_fit_results_0.keys():
+        for label in spectators_fit_results_0:
             f_delta = (
                 self.ctx.qubits[control_qubit].frequency
                 - self.ctx.qubits[target_qubit].frequency
@@ -3199,6 +3211,7 @@ class CalibrationService:
                 zip(
                     ["IX", "IY", "IZ", "ZX", "ZY", "ZZ"],
                     spectator_Omega / (2 * np.pi),  # GHz
+                    strict=True,
                 )
             )
 

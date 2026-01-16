@@ -807,7 +807,7 @@ def fit_delayed_cosine(
     omega_est = 2 * np.pi * f[i]
     offset_est = (np.max(y) + np.min(y)) / 2
 
-    dy = np.abs((y - y[0]))
+    dy = np.abs(y - y[0])
     dy = dy / np.max(dy)
     idx = np.argmax(dy > threshold)
     t0_est = x[idx]

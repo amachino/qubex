@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from functools import cached_property
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 import httpx
 import numpy as np
@@ -97,7 +97,7 @@ class PulseAPI:
         self,
         waveforms: dict[str, Any] | PulseSchedule,
         *,
-        frequencies: Optional[dict[str, float]] = None,
+        frequencies: dict[str, float] | None = None,
         mode: Literal["single", "avg"] = "avg",
         shots: int = 1024,
         interval: int = 100 * 1024,

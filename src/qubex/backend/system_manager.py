@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Sequence
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -10,7 +11,6 @@ from typing import Literal
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
-from typing_extensions import Sequence
 
 from .config_loader import ConfigLoader
 from .control_system import CapPort, GenPort, PortType

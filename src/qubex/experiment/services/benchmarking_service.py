@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Collection, Literal, Mapping
+from collections.abc import Collection, Mapping
+from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike

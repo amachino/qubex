@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from enum import Enum
-from typing import Collection, Literal, Union
+from typing import Literal
 
 from pydantic.dataclasses import dataclass
 
@@ -20,7 +21,7 @@ class TargetType(Enum):
     UNKNOWN = "UNKNOWN"
 
 
-PhysicalObject = Union[Qubit, Resonator, Mux]
+PhysicalObject = Qubit | Resonator | Mux
 
 
 @dataclass
@@ -243,17 +244,14 @@ class Target(Model):
         cls,
         label: str,
     ) -> str:
-        if match := re.match(r"^R(Q\d+)$", label):
-            qubit_label = match.group(1)
-        elif match := re.match(r"^(Q\d+)$", label):
-            qubit_label = match.group(1)
-        elif match := re.match(r"^(Q\d+)-ef$", label):
-            qubit_label = match.group(1)
-        elif match := re.match(r"^(Q\d+)-CR$", label):
-            qubit_label = match.group(1)
-        elif match := re.match(r"^(Q\d+)-(Q\d+)$", label):
-            qubit_label = match.group(1)
-        elif match := re.match(r"^(Q\d+)(-|_)[a-zA-Z0-9]+$", label):
+        if (
+            (match := re.match(r"^R(Q\d+)$", label))
+            or (match := re.match(r"^(Q\d+)$", label))
+            or (match := re.match(r"^(Q\d+)-ef$", label))
+            or (match := re.match(r"^(Q\d+)-CR$", label))
+            or (match := re.match(r"^(Q\d+)-(Q\d+)$", label))
+            or (match := re.match(r"^(Q\d+)(-|_)[a-zA-Z0-9]+$", label))
+        ):
             qubit_label = match.group(1)
         else:
             raise ValueError(f"Invalid target label `{label}`.")
