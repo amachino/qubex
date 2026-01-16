@@ -5,8 +5,8 @@ from functools import cached_property
 from typing import Literal
 
 import numpy as np
-import numpy.typing as npt
 import plotly.graph_objects as go
+from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 from typing_extensions import deprecated
 
@@ -72,7 +72,7 @@ class Waveform(ABC):
 
     @property
     @abstractmethod
-    def values(self) -> npt.NDArray[np.complex128]:
+    def values(self) -> NDArray[np.complex128]:
         """Returns the I/Q values of the waveform."""
 
     @property
@@ -86,27 +86,27 @@ class Waveform(ABC):
         return self.duration
 
     @property
-    def times(self) -> npt.NDArray[np.float64]:
+    def times(self) -> NDArray[np.float64]:
         """Returns the time array of the waveform in ns."""
-        return np.arange(self.length) * self.SAMPLING_PERIOD
+        return np.arange(self.length, dtype=np.float64) * self.SAMPLING_PERIOD
 
     @property
-    def real(self) -> npt.NDArray[np.float64]:
+    def real(self) -> NDArray[np.float64]:
         """Returns the real part of the waveform."""
         return np.real(self.values)
 
     @property
-    def imag(self) -> npt.NDArray[np.float64]:
+    def imag(self) -> NDArray[np.float64]:
         """Returns the imaginary part of the waveform."""
         return np.imag(self.values)
 
     @property
-    def abs(self) -> npt.NDArray[np.float64]:
+    def abs(self) -> NDArray[np.float64]:
         """Returns the amplitude of the waveform."""
         return np.abs(self.values)
 
     @property
-    def angle(self) -> npt.NDArray[np.float64]:
+    def angle(self) -> NDArray[np.float64]:
         """Returns the phase of the waveform."""
         return np.where(self.abs == 0, 0, np.angle(self.values))
 
@@ -174,7 +174,7 @@ class Waveform(ABC):
     def _sampling_points(
         self,
         duration: float,
-    ) -> npt.NDArray[np.float64]:
+    ) -> NDArray[np.float64]:
         """
         Returns the sampling points of the waveform.
 
