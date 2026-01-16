@@ -47,7 +47,7 @@ class SequencerMod(Sequencer):
         self,
         boxpool: BoxPool,
     ) -> tuple[
-        dict[tuple[str, int, int], CaptureParam],
+        dict[tuple[str, Quel1PortType, int], CaptureParam],
         dict[tuple[str, Quel1PortType, int], WaveSequence],
         dict[str, Any],
     ]:

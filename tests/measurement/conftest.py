@@ -44,6 +44,7 @@ class DummyClassifier(StateClassifier):
     def fit(
         cls,
         data: dict[int, NDArray],
+        phase: float = 0.0,
         n_init: int = 10,
         random_state: int = 42,
     ) -> "DummyClassifier":

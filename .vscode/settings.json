@@ -23,7 +23,7 @@
         "notebook.source.organizeImports": "explicit"
     },
     "ty.disableLanguageServices": true,
-    "ty.diagnosticMode": "openFilesOnly",
+    "ty.diagnosticMode": "workspace",
     "ty.interpreter": ["${workspaceFolder}/.venv/bin/python"],
     "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"],
     "ruff.configuration": "${workspaceFolder}/pyproject.toml",

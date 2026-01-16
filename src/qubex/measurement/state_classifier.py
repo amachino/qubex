@@ -94,6 +94,7 @@ class StateClassifier(ABC):
     def fit(
         cls,
         data: dict[int, NDArray],
+        phase: float = 0.0,
         n_init: int = 10,
         random_state: int = 42,
     ) -> StateClassifier:
@@ -104,6 +105,8 @@ class StateClassifier(ABC):
         ----------
         data : dict[int, NDArray]
             A dictionary of state labels and complex data.
+        phase : float, optional
+            The phase offset to apply to the data, by default 0.0.
         n_init : int, optional
             Number of time the k-means algorithm will be run with different center seeds, by default 10.
         random_state : int, optional
