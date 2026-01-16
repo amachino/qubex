@@ -200,13 +200,10 @@ class CalibrationService:
                 )
                 x, y, _ = result[target_qubit]
                 phase = np.arctan2(y, x)
-                current_param = self.ctx.calib_note.get_cr_param(label)
-                self.ctx.calib_note.update_cr_param(
-                    label,
-                    {
-                        "cr_phase": current_param["cr_phase"] - phase - np.pi / 2,  # type: ignore
-                    },
-                )
+                cr_param = self.ctx.calib_note.get_cr_param(label)
+                if cr_param is not None:
+                    cr_param["cr_phase"] = cr_param["cr_phase"] - phase - np.pi / 2
+                    self.ctx.calib_note.update_cr_param(label, cr_param)
             except Exception as e:
                 print(f"Failed to correct CR parameters for {label}: {e}")
                 continue
@@ -1806,9 +1803,9 @@ class CalibrationService:
                 time_range=params["time_range"],
                 ramptime=ramptime,
                 cr_amplitude=cr_amplitude,
-                cr_phase=params["cr_phase"],
-                cancel_amplitude=params["cancel_amplitude"],
-                cancel_phase=params["cancel_phase"],
+                cr_phase=float(params["cr_phase"]),
+                cancel_amplitude=float(params["cancel_amplitude"]),
+                cancel_phase=float(params["cancel_phase"]),
                 x90=x90,
                 x180_margin=x180_margin,
                 shots=shots,
@@ -2123,8 +2120,9 @@ class CalibrationService:
             else:
                 cr_beta = 0.0
                 cancel_beta = 0.0
-            self.ctx.calib_note.cr_params = {
-                cr_label: {
+            self.ctx.calib_note.update_cr_param(
+                cr_label,
+                {
                     "target": cr_label,
                     "duration": duration,
                     "ramptime": ramptime,
@@ -2137,7 +2135,7 @@ class CalibrationService:
                     "rotary_amplitude": calibrated_rotary_amplitude,
                     "zx_rotation_rate": zx_rotation_rate,
                 },
-            }
+            )
 
         print()
         print("Calibrated CR parameters:")
@@ -2149,7 +2147,7 @@ class CalibrationService:
         print(f"  Cancel amplitude : {calibrated_cancel_amplitude:.6f}")
         print(f"  Cancel phase     : {cancel_phase:.6f}")
         print(f"  Cancel beta      : {cancel_beta:.6f}")
-        print(f"  Rotary amplitude : {rotary_amplitude:.6f}")
+        print(f"  Rotary amplitude : {calibrated_rotary_amplitude:.6f}")
         print()
 
         try:
