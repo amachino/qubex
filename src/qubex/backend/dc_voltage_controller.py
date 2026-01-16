@@ -23,21 +23,21 @@ def dc_voltage(voltages: dict[int, float]):
         for channel, voltage in original_voltages.items():
             ons61797.set_voltage(channel, voltage)
             ons61797.off(channel)
-            ons61797.close()
+        ons61797.close()
 
 
 def with_connection(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         try:
-            if self.ons61797 is None:
-                self.ons61797 = ONS61797(port=PORT)
+            if self._ons61797 is None:
+                self._ons61797 = ONS61797(port=PORT)
             else:
-                self.ons61797.connect(port=PORT)
+                self._ons61797.connect(port=PORT)
             return func(self, *args, **kwargs)
         finally:
-            if self.ons61797 is not None:
-                self.ons61797.close()
+            if self._ons61797 is not None:
+                self._ons61797.close()
 
     return wrapper
 
@@ -60,12 +60,18 @@ class DCVoltageController:
     def __init__(self):
         if self._initialized:
             return
-        self.ons61797: ONS61797 = None
+        self._ons61797: ONS61797 | None = None
         self._initialized = True
 
     def __del__(self):
-        if self.ons61797 is not None:
-            self.ons61797.close()
+        if self._ons61797 is not None:
+            self._ons61797.close()
+
+    @property
+    def ons61797(self) -> ONS61797:
+        if self._ons61797 is None:
+            raise RuntimeError("No connection established.")
+        return self._ons61797
 
     @with_connection
     def on(self, channel: int) -> None:
@@ -98,11 +104,11 @@ class DCVoltageController:
     @contextmanager
     def connection(self):
         try:
-            if self.ons61797 is None:
-                self.ons61797 = ONS61797(port=PORT)
+            if self._ons61797 is None:
+                self._ons61797 = ONS61797(port=PORT)
             else:
-                self.ons61797.connect(port=PORT)
-            yield self.ons61797
+                self._ons61797.connect(port=PORT)
+            yield self._ons61797
         finally:
-            if self.ons61797 is not None:
-                self.ons61797.close()
+            if self._ons61797 is not None:
+                self._ons61797.close()
