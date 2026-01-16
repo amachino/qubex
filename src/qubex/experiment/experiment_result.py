@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 import numpy as np
 import plotly.graph_objects as go
@@ -277,8 +277,8 @@ class SweepData(TargetData):
     title: str = "Sweep result"
     xlabel: str = "Sweep value"
     ylabel: str = "Measured signal"
-    xaxis_type: str = "linear"
-    yaxis_type: str = "linear"
+    xaxis_type: Literal["linear", "log"] = "linear"
+    yaxis_type: Literal["linear", "log"] = "linear"
 
     @property
     def rotated(self) -> NDArray[np.complex128]:

@@ -2075,7 +2075,7 @@ class CharacterizationService:
                         )
                         signal = result.data[target].kerneled
                         phase = np.angle(signal)
-                        phase = phase - phase_offset
+                        phase = float(phase - phase_offset)
                         phases.append(phase)
 
                         idx += 1

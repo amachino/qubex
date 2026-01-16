@@ -2825,6 +2825,7 @@ class MeasurementService:
                 xlabel="Z rotation : φ (rad)",
                 return_figure=True,
             )
+            assert fig is not None
             viz.save_figure_image(
                 fig,
                 name=f"mqc_n{n_qubits}_{qubit}",

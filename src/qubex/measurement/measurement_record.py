@@ -61,7 +61,8 @@ class MeasurementRecord(Generic[T]):
         self.file_name = file_name
         with open(file_path, "w") as f:
             encoded = jsonpickle.encode(self, unpicklable=True)
-            f.write(encoded)
+            if encoded is not None:
+                f.write(encoded)
 
     @staticmethod
     def create(

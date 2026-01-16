@@ -61,16 +61,16 @@ class ChipInspector:
         for node in self.graph.qubit_nodes.values():
             label = node["label"]
             node["properties"] = {
-                "frequency": frequency_dict.get(label),
-                "anharmonicity": anharmonicity_dict.get(label),
-                "t1": t1_dict.get(label),
-                "t2_echo": t2_echo_dict.get(label),
+                "frequency": frequency_dict[label],
+                "anharmonicity": anharmonicity_dict[label],
+                "t1": t1_dict[label],
+                "t2_echo": t2_echo_dict[label],
             }
 
         for edge in self.graph.qubit_edges.values():
             label = edge["label"]
             edge["properties"] = {
-                "coupling": coupling_dict.get(label),
+                "coupling": coupling_dict[label],
             }
 
     def execute(
