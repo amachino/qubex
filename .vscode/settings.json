@@ -24,13 +24,15 @@
     },
     "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"],
     "ruff.configuration": "${workspaceFolder}/pyproject.toml",
-    "markdownlint.config": {
-        "MD024": false,
-        "MD029": false,
-        "MD033": false,
-        "MD040": false,
-        "MD041": false,
-        "MD047": false
+    "markdown.validate.referenceLinks.enabled": "ignore",
+    "[markdown]": {
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.markdownlint": "explicit"
+        }
     },
-    "markdown.validate.referenceLinks.enabled": "ignore"
+    "[toml]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "tamasfe.even-better-toml"
+    }
 }

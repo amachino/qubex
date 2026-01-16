@@ -69,17 +69,17 @@ include = ["src/**/*.py", "tests/**/*.py"]
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle
-    "F",  # Pyflakes
+    "E",   # pycodestyle
+    "F",   # Pyflakes
     "UP",  # pyupgrade
-    "B",  # flake8-bugbear
-    "SIM",  # flake8-simplify
-    "I",  # isort
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "I",   # isort
 ]
 ignore = [
-    "E501",  # line-too-long
-    "E731",  # do-not-assign-lambda
-    "E741",  # ambiguous-variable-name
-    "SIM102",  # collapsible-if
-    "SIM108",  # if-else-block-instead-of-if-exp
+    "E501",   # line-too-long
+    "E731",   # do-not-assign-lambda
+    "E741",   # ambiguous-variable-name
+    "SIM102", # collapsible-if
+    "SIM108", # if-else-block-instead-of-if-exp
 ]

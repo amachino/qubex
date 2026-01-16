@@ -232,3 +232,6 @@ uv add --dev dev_package_name
 - [examples/](docs/examples/) - Usage examples for each component
 - [package_structure.md](docs/notes/package_structure.md) - Package design guidelines
 - [improvement_plan.md](docs/notes/improvement_plan.md) - Improvement plan
+[def]
+
+[def]: docs/notes/improvement_plan.md

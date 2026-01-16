@@ -1,0 +1,7 @@
+MD013: false  # Line length
+MD024: false  # Multiple headings with the same content
+MD029: false  # Ordered list item prefix
+MD033: false  # Inline HTML
+MD040: false  # Fenced code blocks should have a language specified
+MD041: false  # First line in file should be a top level heading
+MD047: false  # Files should end with a single newline character
