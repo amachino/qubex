@@ -62,19 +62,23 @@ class ChipInspector:
         t2_echo_dict = config_loader._load_param_data("t2_echo")
         coupling_dict = config_loader._load_param_data("qubit_qubit_coupling_strength")
 
+        def _get_val(d: dict, k: str) -> float:
+            v = d.get(k)
+            return v if v is not None else float("nan")
+
         for node in self.graph.qubit_nodes.values():
             label = node["label"]
             node["properties"] = {
-                "frequency": frequency_dict[label],
-                "anharmonicity": anharmonicity_dict[label],
-                "t1": t1_dict[label],
-                "t2_echo": t2_echo_dict[label],
+                "frequency": _get_val(frequency_dict, label),
+                "anharmonicity": _get_val(anharmonicity_dict, label),
+                "t1": _get_val(t1_dict, label),
+                "t2_echo": _get_val(t2_echo_dict, label),
             }
 
         for edge in self.graph.qubit_edges.values():
             label = edge["label"]
             edge["properties"] = {
-                "coupling": coupling_dict[label],
+                "coupling": _get_val(coupling_dict, label),
             }
 
     def execute(
