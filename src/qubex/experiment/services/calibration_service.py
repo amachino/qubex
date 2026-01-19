@@ -94,7 +94,7 @@ class CalibrationService:
 
         for target, phase in phases.items():
             try:
-                rabi_param = self.ctx.rabi_params.get(target)
+                rabi_param = self.ctx.pulse_service.rabi_params.get(target)
                 if rabi_param is None:
                     print(f"Rabi parameters for {target} are not stored.")
                     continue
@@ -303,7 +303,7 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        rabi_params = self.ctx.rabi_params
+        rabi_params = self.ctx.pulse_service.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
@@ -520,14 +520,14 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        rabi_params = self.ctx.rabi_params
+        rabi_params = self.ctx.pulse_service.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
         ef_labels = [
             Target.ef_label(label)
             for label in targets
-            if label in self.ctx.ef_rabi_params
+            if label in self.ctx.pulse_service.ef_rabi_params
         ]
 
         def calibrate(target: str) -> AmplCalibData:
@@ -757,7 +757,7 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        rabi_params = self.ctx.rabi_params
+        rabi_params = self.ctx.pulse_service.rabi_params
         self.ctx.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> FitResult:
@@ -924,7 +924,7 @@ class CalibrationService:
         if beta_range is None:
             beta_range = np.linspace(-2.0, 2.0, 20)
 
-        rabi_params = self.ctx.rabi_params
+        rabi_params = self.ctx.pulse_service.rabi_params
         self.ctx.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:

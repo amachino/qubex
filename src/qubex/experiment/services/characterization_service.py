@@ -1495,7 +1495,7 @@ class CharacterizationService:
                     target=target,
                     data=np.asarray(values),
                     sweep_range=time_range,
-                    rabi_param=self.ctx.rabi_params.get(target),
+                    rabi_param=self.ctx.pulse_service.rabi_params.get(target),
                     state_centers=self.ctx.state_centers.get(target),
                     title="Sweep result",
                     xlabel="Sweep value",
@@ -4095,7 +4095,9 @@ class CharacterizationService:
                 data = result.data[target][-1]
                 result1d.append(data.kerneled)
 
-            result1d = self.ctx.rabi_params[target].normalize(np.array(result1d))
+            result1d = self.ctx.pulse_service.rabi_params[target].normalize(
+                np.array(result1d)
+            )
 
             f0 = fitting.fit_lorentzian(
                 x=qubit_frequency_range,

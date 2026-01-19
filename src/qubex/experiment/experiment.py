@@ -39,9 +39,6 @@ from qubex.measurement import (
 )
 from qubex.measurement.measurement import (
     DEFAULT_INTERVAL,
-    DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_POST_MARGIN,
-    DEFAULT_READOUT_PRE_MARGIN,
     DEFAULT_SHOTS,
 )
 from qubex.pulse import (
@@ -61,12 +58,7 @@ from qubex.typing import (
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_SHOTS,
-    CALIBRATION_VALID_DAYS,
-    CLASSIFIER_DIR,
     DEFAULT_RABI_TIME_RANGE,
-    DRAG_HPI_DURATION,
-    DRAG_PI_DURATION,
-    PROPERTY_DIR,
 )
 from .experiment_context import ExperimentContext
 from .experiment_note import ExperimentNote
@@ -173,29 +165,6 @@ class Experiment:
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
         mock_mode: bool | None = None,
     ):
-        if calibration_valid_days is None:
-            calibration_valid_days = CALIBRATION_VALID_DAYS
-        if drag_hpi_duration is None:
-            drag_hpi_duration = DRAG_HPI_DURATION
-        if drag_pi_duration is None:
-            drag_pi_duration = DRAG_PI_DURATION
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
-        if readout_pre_margin is None:
-            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
-        if readout_post_margin is None:
-            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-        if property_dir is None:
-            property_dir = PROPERTY_DIR
-        if classifier_dir is None:
-            classifier_dir = CLASSIFIER_DIR
-        if classifier_type is None:
-            classifier_type = "gmm"
-        if configuration_mode is None:
-            configuration_mode = "ge-cr-cr"
-        if mock_mode is None:
-            mock_mode = False
-
         context = ExperimentContext(
             chip_id=chip_id,
             muxes=muxes,
@@ -216,9 +185,7 @@ class Experiment:
             configuration_mode=configuration_mode,
             mock_mode=mock_mode,
         )
-        pulse_service = PulseService(
-            context=context,
-        )
+        pulse_service = PulseService(context=context)
         measurement_service = MeasurementService(
             context=context,
             pulse_service=pulse_service,
@@ -425,25 +392,30 @@ class Experiment:
     def note(self) -> ExperimentNote:
         return self.ctx.note
 
+    @deprecated("Use `.pulse.readout_duration` instead.")
     @property
     def readout_duration(self) -> float:
-        return self.ctx.readout_duration
+        return self.pulse.readout_duration
 
     @property
+    @deprecated("Use `.pulse.readout_pre_margin` instead.")
     def readout_pre_margin(self) -> float:
-        return self.ctx.readout_pre_margin
+        return self.pulse.readout_pre_margin
 
     @property
+    @deprecated("Use `.pulse.readout_post_margin` instead.")
     def readout_post_margin(self) -> float:
-        return self.ctx.readout_post_margin
+        return self.pulse.readout_post_margin
 
     @property
+    @deprecated("Use `.pulse.drag_hpi_duration` instead.")
     def drag_hpi_duration(self) -> float:
-        return self.ctx.drag_hpi_duration
+        return self.pulse.drag_hpi_duration
 
     @property
+    @deprecated("Use `.pulse.drag_pi_duration` instead.")
     def drag_pi_duration(self) -> float:
-        return self.ctx.drag_pi_duration
+        return self.pulse.drag_pi_duration
 
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
@@ -474,16 +446,19 @@ class Experiment:
         return self.pulse.cr_pulse
 
     @property
+    @deprecated("Use `.pulse.rabi_params` instead.")
     def rabi_params(self) -> dict[str, RabiParam]:
-        return self.ctx.rabi_params
+        return self.pulse.rabi_params
 
     @property
+    @deprecated("Use `.pulse.ge_rabi_params` instead.")
     def ge_rabi_params(self) -> dict[str, RabiParam]:
-        return self.ctx.ge_rabi_params
+        return self.pulse.ge_rabi_params
 
     @property
+    @deprecated("Use `.pulse.ef_rabi_params` instead.")
     def ef_rabi_params(self) -> dict[str, RabiParam]:
-        return self.ctx.ef_rabi_params
+        return self.pulse.ef_rabi_params
 
     @property
     def property_dir(self) -> Path:

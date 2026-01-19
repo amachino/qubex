@@ -190,11 +190,11 @@ class ExperimentContext:
         )
         self._chip_id: Final = chip_id
         self._qubits: Final = qubits
-        self._drag_hpi_duration: Final = drag_hpi_duration
-        self._drag_pi_duration: Final = drag_pi_duration
         self._readout_duration: Final = readout_duration
         self._readout_pre_margin: Final = readout_pre_margin
         self._readout_post_margin: Final = readout_post_margin
+        self._drag_hpi_duration: Final = drag_hpi_duration
+        self._drag_pi_duration: Final = drag_pi_duration
         self._property_dir: Final = property_dir
         self._classifier_dir: Final = classifier_dir
         self._classifier_type: Final = classifier_type
@@ -561,28 +561,7 @@ class ExperimentContext:
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
-        params = {}
-        for target in self.ge_targets | self.ef_targets:
-            param = self.get_rabi_param(target)
-            if param is not None:
-                params[target] = param
-        return params
-
-    @property
-    def ge_rabi_params(self) -> dict[str, RabiParam]:
-        return {
-            target: param
-            for target, param in self.rabi_params.items()
-            if self.targets[target].is_ge
-        }
-
-    @property
-    def ef_rabi_params(self) -> dict[str, RabiParam]:
-        return {
-            Target.ge_label(target): param
-            for target, param in self.rabi_params.items()
-            if self.targets[target].is_ef
-        }
+        return self.pulse_service.rabi_params
 
     @property
     def property_dir(self) -> Path:
@@ -1153,6 +1132,7 @@ class ExperimentContext:
 
             rabi_amplitude_ratio = rabi_param.frequency / default_amplitude
 
+        assert rabi_amplitude_ratio is not None
         return rabi_rate / rabi_amplitude_ratio
 
     def calc_control_amplitudes(

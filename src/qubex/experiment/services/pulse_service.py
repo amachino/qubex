@@ -12,6 +12,7 @@ from qubex.experiment.experiment_constants import (
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.experiment_exceptions import CalibrationMissingError
+from qubex.experiment.rabi_param import RabiParam
 from qubex.pulse import (
     Blank,
     CrossResonance,
@@ -38,6 +39,51 @@ class PulseService:
     @property
     def ctx(self) -> ExperimentContext:
         return self._ctx
+
+    @property
+    def readout_duration(self) -> float:
+        return self._ctx.readout_duration
+
+    @property
+    def readout_pre_margin(self) -> float:
+        return self._ctx.readout_pre_margin
+
+    @property
+    def readout_post_margin(self) -> float:
+        return self._ctx.readout_post_margin
+
+    @property
+    def drag_hpi_duration(self) -> float:
+        return self._ctx.drag_hpi_duration
+
+    @property
+    def drag_pi_duration(self) -> float:
+        return self._ctx.drag_pi_duration
+
+    @property
+    def rabi_params(self) -> dict[str, RabiParam]:
+        params = {}
+        for target in self._ctx.ge_targets | self._ctx.ef_targets:
+            param = self._ctx.get_rabi_param(target)
+            if param is not None:
+                params[target] = param
+        return params
+
+    @property
+    def ge_rabi_params(self) -> dict[str, RabiParam]:
+        return {
+            target: param
+            for target, param in self.rabi_params.items()
+            if self._ctx.targets[target].is_ge
+        }
+
+    @property
+    def ef_rabi_params(self) -> dict[str, RabiParam]:
+        return {
+            Target.ge_label(target): param
+            for target, param in self.rabi_params.items()
+            if self._ctx.targets[target].is_ef
+        }
 
     def get_hpi_pulse(
         self,
@@ -277,11 +323,11 @@ class PulseService:
         post_margin: float | None = None,
     ) -> Waveform:
         if duration is None:
-            duration = self._ctx.readout_duration
+            duration = self.readout_duration
         if pre_margin is None:
-            pre_margin = self._ctx.readout_pre_margin
+            pre_margin = self.readout_pre_margin
         if post_margin is None:
-            post_margin = self._ctx.readout_post_margin
+            post_margin = self.readout_post_margin
 
         return self._ctx.measurement.readout_pulse(
             target=target,
