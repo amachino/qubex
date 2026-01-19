@@ -1,13 +1,20 @@
-import qubex.patches.quel_ic_config.abstract_nco_ftw_patch  # noqa: F401
+from __future__ import annotations
+
+# Patch default background noise threshold
 import qubex.patches.quel_ic_config.linkup_fpga_mxfe_patch  # noqa: F401
 
 from . import pulse
 from .analysis import fitting as fit
 from .analysis import visualization as viz
 from .experiment import Experiment
+from .log import set_log_level
 from .pulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
 from .style import apply_template
 
+# Set default log level to INFO
+set_log_level("INFO")
+
+# Set default plotly template
 apply_template("qubex")
 
 
@@ -22,4 +29,5 @@ __all__ = [
     "PulseChannel",
     "PulseSchedule",
     "VirtualZ",
+    "set_log_level",
 ]
