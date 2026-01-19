@@ -28,7 +28,7 @@ class ExperimentUtil:
     @staticmethod
     def discretize_time_range(
         time_range: ArrayLike,
-        sampling_period: float = SAMPLING_PERIOD,
+        sampling_period: float | None = None,
     ) -> NDArray[np.float64]:
         """
         Discretizes the time range.
@@ -45,6 +45,8 @@ class ExperimentUtil:
         NDArray[np.float64]
             Discretized time range.
         """
+        if sampling_period is None:
+            sampling_period = SAMPLING_PERIOD
         discretized_range = np.array(time_range)
         discretized_range = (
             np.round(discretized_range / sampling_period) * sampling_period
@@ -54,7 +56,7 @@ class ExperimentUtil:
     @staticmethod
     def split_frequency_range(
         frequency_range: ArrayLike,
-        subrange_width: float = 0.3,
+        subrange_width: float | None = None,
     ) -> list[NDArray[np.float64]]:
         """
         Splits the frequency range into sub-ranges.
@@ -71,6 +73,8 @@ class ExperimentUtil:
         list[NDArray[np.float64]]
             Sub-ranges.
         """
+        if subrange_width is None:
+            subrange_width = 0.3
         frequency_range = np.array(frequency_range)
         range_count = (frequency_range[-1] - frequency_range[0]) // subrange_width + 1
         sub_ranges = np.array_split(frequency_range, range_count)

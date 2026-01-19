@@ -53,7 +53,7 @@ class ExperimentRecord(Generic[T]):
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     file_name: str = ""
 
-    def save(self, data_path=DEFAULT_DATA_DIR):
+    def save(self, data_path: str | None = None):
         """
         Save the experiment record to a pickle file.
 
@@ -67,6 +67,8 @@ class ExperimentRecord(Generic[T]):
         The method creates a unique filename for the record based on the
         current date and the experiment's name to avoid overwriting.
         """
+        if data_path is None:
+            data_path = DEFAULT_DATA_DIR
         if not os.path.exists(data_path):
             os.makedirs(data_path)
 
@@ -96,7 +98,7 @@ class ExperimentRecord(Generic[T]):
     def create(
         data: Any,
         name: str,
-        description: str = "",
+        description: str | None = None,
     ) -> ExperimentRecord:
         """
         Create and save a new experiment record.
@@ -115,12 +117,14 @@ class ExperimentRecord(Generic[T]):
         ExperimentRecord
             The newly created and saved ExperimentRecord instance.
         """
+        if description is None:
+            description = ""
         record = ExperimentRecord(data=data, name=name, description=description)
         record.save()
         return record
 
     @staticmethod
-    def load(name: str, data_dir=DEFAULT_DATA_DIR) -> ExperimentRecord:
+    def load(name: str, data_dir: str | None = None) -> ExperimentRecord:
         """
         Load an experiment record from a file.
 
@@ -141,6 +145,8 @@ class ExperimentRecord(Generic[T]):
         FileNotFoundError
             If the specified file does not exist.
         """
+        if data_dir is None:
+            data_dir = DEFAULT_DATA_DIR
         if not name.endswith(".json"):
             name = name + ".json"
         path = os.path.join(data_dir, name)

@@ -3842,7 +3842,7 @@ class MeasurementService:
         )
 
     @staticmethod
-    def partial_transpose(rho: NDArray, subsystem: int = 1) -> NDArray:
+    def partial_transpose(rho: NDArray, subsystem: int | None = None) -> NDArray:
         """
         Perform partial transpose on a 2-qubit density matrix.
 
@@ -3858,6 +3858,8 @@ class MeasurementService:
         NDArray
             The partially transposed density matrix, reshaped as a 4x4 array.
         """
+        if subsystem is None:
+            subsystem = 1
         rho_tensor = rho.reshape(2, 2, 2, 2)  # (iA, iB, jA, jB)
 
         if subsystem == 0:

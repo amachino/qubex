@@ -141,18 +141,41 @@ class ExperimentContext:
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         calib_note_path: Path | str | None = None,
-        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
-        drag_hpi_duration: float = DRAG_HPI_DURATION,
-        drag_pi_duration: float = DRAG_PI_DURATION,
-        readout_duration: float = DEFAULT_READOUT_DURATION,
-        readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN,
-        readout_post_margin: float = DEFAULT_READOUT_POST_MARGIN,
-        property_dir: Path | str = PROPERTY_DIR,
-        classifier_dir: Path | str = CLASSIFIER_DIR,
-        classifier_type: Literal["kmeans", "gmm"] = "gmm",
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        mock_mode: bool = False,
+        calibration_valid_days: int | None = None,
+        drag_hpi_duration: float | None = None,
+        drag_pi_duration: float | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        property_dir: Path | str | None = None,
+        classifier_dir: Path | str | None = None,
+        classifier_type: Literal["kmeans", "gmm"] | None = None,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        mock_mode: bool | None = None,
     ):
+        if calibration_valid_days is None:
+            calibration_valid_days = CALIBRATION_VALID_DAYS
+        if drag_hpi_duration is None:
+            drag_hpi_duration = DRAG_HPI_DURATION
+        if drag_pi_duration is None:
+            drag_pi_duration = DRAG_PI_DURATION
+        if readout_duration is None:
+            readout_duration = DEFAULT_READOUT_DURATION
+        if readout_pre_margin is None:
+            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
+        if readout_post_margin is None:
+            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
+        if property_dir is None:
+            property_dir = PROPERTY_DIR
+        if classifier_dir is None:
+            classifier_dir = CLASSIFIER_DIR
+        if classifier_type is None:
+            classifier_type = "gmm"
+        if configuration_mode is None:
+            configuration_mode = "ge-cr-cr"
+        if mock_mode is None:
+            mock_mode = False
+
         self._load_config(
             chip_id=chip_id,
             config_dir=config_dir,
@@ -268,9 +291,11 @@ class ExperimentContext:
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
-        mock_mode: bool = False,
+        mock_mode: bool | None = None,
     ):
         """Load the configuration files."""
+        if mock_mode is None:
+            mock_mode = False
         self.system_manager.load(
             chip_id=chip_id,
             config_dir=config_dir,
@@ -319,8 +344,10 @@ class ExperimentContext:
 
         return qubit_labels
 
-    def print_environment(self, verbose: bool = True):
+    def print_environment(self, verbose: bool | None = None):
         """Print the environment information."""
+        if verbose is None:
+            verbose = True
         logger.info("========================================")
         logger.info(f"date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info(f"python: {sys.version.split()[0]}")
@@ -681,12 +708,16 @@ class ExperimentContext:
 
     def get_cr_pairs(
         self,
-        low_to_high: bool = True,
-        high_to_low: bool = False,
+        low_to_high: bool | None = None,
+        high_to_low: bool | None = None,
     ) -> list[tuple[str, str]]:
         """
         Get the cross-resonance pairs.
         """
+        if low_to_high is None:
+            low_to_high = True
+        if high_to_low is None:
+            high_to_low = False
         cr_pairs = []
         for label in self.cr_targets:
             try:
@@ -708,12 +739,16 @@ class ExperimentContext:
 
     def get_cr_labels(
         self,
-        low_to_high: bool = True,
-        high_to_low: bool = False,
+        low_to_high: bool | None = None,
+        high_to_low: bool | None = None,
     ) -> list[str]:
         """
         Get the cross-resonance labels.
         """
+        if low_to_high is None:
+            low_to_high = True
+        if high_to_low is None:
+            high_to_low = False
         return [
             Target.cr_label(*pair)
             for pair in self.get_cr_pairs(low_to_high, high_to_low)
@@ -799,8 +834,10 @@ class ExperimentContext:
     def store_rabi_params(
         self,
         rabi_params: dict[str, RabiParam],
-        r2_threshold: float = 0.5,
+        r2_threshold: float | None = None,
     ):
+        if r2_threshold is None:
+            r2_threshold = 0.5
         not_stored = []
         for label, rabi_param in rabi_params.items():
             if rabi_param.r2 < r2_threshold:
@@ -828,8 +865,10 @@ class ExperimentContext:
     def get_spectators(
         self,
         qubit: str,
-        in_same_mux: bool = False,
+        in_same_mux: bool | None = None,
     ) -> list[Qubit]:
+        if in_same_mux is None:
+            in_same_mux = False
         return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
 
     def get_confusion_matrix(
@@ -885,8 +924,10 @@ class ExperimentContext:
     def connect(
         self,
         *,
-        sync_clocks: bool = True,
+        sync_clocks: bool | None = None,
     ) -> None:
+        if sync_clocks is None:
+            sync_clocks = True
         try:
             self._measurement.connect(sync_clocks=sync_clocks)
             logger.info("Successfully connected.")
@@ -965,9 +1006,13 @@ class ExperimentContext:
         box_id: str,
         port_number: int,
         channel_number: int,
-        target_type: TargetType = TargetType.CTRL_GE,
-        update_lsi: bool = False,
+        target_type: TargetType | None = None,
+        update_lsi: bool | None = None,
     ):
+        if target_type is None:
+            target_type = TargetType.CTRL_GE
+        if update_lsi is None:
+            update_lsi = False
         try:
             qubit_label = Target.qubit_label(label)
         except ValueError:
@@ -1118,22 +1163,24 @@ class ExperimentContext:
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool | None = None,
     ) -> dict[str, float]:
-        if print_result is None:
-            print_result = True
-
         if rabi_rate is None:
             rabi_rate = DEFAULT_RABI_FREQUENCY
+        if current_amplitudes is None:
+            current_amplitudes = {}
 
-        current_rabi_params = current_rabi_params or self.rabi_params
+        if current_rabi_params is None:
+            current_rabi_params = self.rabi_params
 
         if current_rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
-        if current_amplitudes is None:
-            current_amplitudes = {}
+        if len(current_amplitudes) == 0:
             for target in current_rabi_params:
                 qubit = Target.qubit_label(target)
                 current_amplitudes[target] = self.params.get_control_amplitude(qubit)
+
+        if print_result is None:
+            print_result = True
 
         amplitudes = {
             target: current_amplitudes[target]

@@ -29,12 +29,18 @@ system_manager = SystemManager.shared()
 
 def check_skew(
     box_ids: Collection[str],
-    estimate: bool = True,
+    estimate: bool | None = None,
     config_dir: str | None = None,
-    skew_file: str = "skew.yaml",
-    box_file: str = "box.yaml",
+    skew_file: str | None = None,
+    box_file: str | None = None,
 ) -> dict:
     """Check the skew of the boxes."""
+    if estimate is None:
+        estimate = True
+    if skew_file is None:
+        skew_file = "skew.yaml"
+    if box_file is None:
+        box_file = "box.yaml"
     clock_master_address = (
         system_manager.experiment_system.control_system.clock_master_address
     )
@@ -187,10 +193,14 @@ def print_chip_info(
         "x180_gate_fidelity",
         "zx90_gate_fidelity",
     ],
-    directed: bool = False,
-    save_image: bool = False,
+    directed: bool | None = None,
+    save_image: bool | None = None,
 ) -> None:
     """Print the information of the chip."""
+    if directed is None:
+        directed = False
+    if save_image is None:
+        save_image = False
     chip = system_manager.experiment_system.chip
     loader = system_manager.config_loader
     graph = LatticeGraph(chip.n_qubits)
@@ -632,8 +642,10 @@ def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     )
 
 
-def print_box_info(box_id: str, fetch: bool = True) -> None:
+def print_box_info(box_id: str, fetch: bool | None = None) -> None:
     """Print the information of a box."""
+    if fetch is None:
+        fetch = True
     system_manager.print_box_info(box_id, fetch=fetch)
 
 
