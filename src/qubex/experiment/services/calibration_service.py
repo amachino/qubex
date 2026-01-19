@@ -1282,8 +1282,8 @@ class CalibrationService:
         cr_phase: float | None = None,
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
-        echo: bool = False,
-        control_state: str = "0",
+        echo: bool | None = None,
+        control_state: str | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
         ramp_type: Literal[
@@ -1299,6 +1299,10 @@ class CalibrationService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        if echo is None:
+            echo = False
+        if control_state is None:
+            control_state = "0"
         if ramp_type is None:
             ramp_type = "RaisedCosine"
         if shots is None:
@@ -1807,15 +1811,27 @@ class CalibrationService:
         cr_phase: float | None = None,
         cancel_amplitude: float | None = None,
         cancel_phase: float | None = None,
-        update_cr_phase: bool = True,
-        update_cancel_pulse: bool = True,
+        update_cr_phase: bool | None = None,
+        update_cancel_pulse: bool | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if update_cr_phase is None:
+            update_cr_phase = True
+        if update_cancel_pulse is None:
+            update_cancel_pulse = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if plot is None:
+            plot = True
         if ramptime is None:
             ramptime = self._ramptime(control_qubit, target_qubit)
         if cr_amplitude is None:
@@ -1925,21 +1941,43 @@ class CalibrationService:
         time_range: ArrayLike | None = None,
         ramptime: float | None = None,
         cr_amplitude: float | None = None,
-        n_iterations: int = 4,
-        n_cycles: int = 2,
-        n_points_per_cycle: int = 6,
-        use_stored_params: bool = False,
-        tolerance: float = 0.005e-3,
+        n_iterations: int | None = None,
+        n_cycles: int | None = None,
+        n_points_per_cycle: int | None = None,
+        use_stored_params: bool | None = None,
+        tolerance: float | None = None,
         adiabatic_safe_factor: float | None = None,
-        max_amplitude: float = 1.0,
-        max_time_range: float = 4096.0,
+        max_amplitude: float | None = None,
+        max_time_range: float | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if n_iterations is None:
+            n_iterations = 4
+        if n_cycles is None:
+            n_cycles = 2
+        if n_points_per_cycle is None:
+            n_points_per_cycle = 6
+        if use_stored_params is None:
+            use_stored_params = False
+        if tolerance is None:
+            tolerance = 0.005e-3
+        if max_amplitude is None:
+            max_amplitude = 1.0
+        if max_time_range is None:
+            max_time_range = 4096.0
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if plot is None:
+            plot = True
         if ramptime is None:
             ramptime = self._ramptime(control_qubit, target_qubit)
         if adiabatic_safe_factor is None:
@@ -2458,11 +2496,19 @@ class CalibrationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-        coarse: bool = False,
+        shots: int | None = None,
+        interval: int | None = None,
+        plot: bool | None = None,
+        coarse: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if coarse is None:
+            coarse = False
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -2539,10 +2585,16 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         *,
         cr_calib_params: dict | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: int | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
         if targets is None:
             targets = self.ctx.cr_labels
         elif isinstance(targets, str):
@@ -2611,10 +2663,16 @@ class CalibrationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: int | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -2690,17 +2748,31 @@ class CalibrationService:
         cancel_phase: float | None = None,
         cancel_betas: dict[int, float] | None = None,
         cancel_power: int | None = None,
-        echo: bool = False,
-        control_state: str = "0",
+        echo: bool | None = None,
+        control_state: str | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180: TargetMap[Waveform] | None = None,
-        ramp_type: RampType = "RaisedCosine",
+        ramp_type: RampType | None = None,
         x180_margin: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if echo is None:
+            echo = False
+        if control_state is None:
+            control_state = "0"
+        if ramp_type is None:
+            ramp_type = "RaisedCosine"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if plot is None:
+            plot = True
         cr_label = f"{control_qubit}-{target_qubit}"
         if time_range is None:
             time_range = np.array(DEFAULT_CR_TIME_RANGE, dtype=float)
@@ -2899,14 +2971,24 @@ class CalibrationService:
         cancel_phase: float | None = None,
         cancel_betas: dict[int, float] | None = None,
         cancel_power: int | None = None,
-        ramp_type: RampType = "RaisedCosine",
+        ramp_type: RampType | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if ramp_type is None:
+            ramp_type = "RaisedCosine"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if plot is None:
+            plot = True
         cr_label = f"{control_qubit}-{target_qubit}"
 
         if spectator_qubits is None:

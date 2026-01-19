@@ -287,12 +287,20 @@ class CharacterizationService:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if initial_state is None:
+            initial_state = "0"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -578,12 +586,22 @@ class CharacterizationService:
         *,
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
-        rabi_level: Literal["ge", "ef"] = "ge",
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        verbose: bool = False,
+        rabi_level: Literal["ge", "ef"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        verbose: bool | None = None,
     ) -> ExperimentResult[FreqRabiData]:
+        if rabi_level is None:
+            rabi_level = "ge"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if verbose is None:
+            verbose = False
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -666,10 +684,16 @@ class CharacterizationService:
         time_range: ArrayLike | None = None,
         amplitude_range: ArrayLike | None = None,
         ramptime: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> ExperimentResult[AmplRabiData]:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -733,10 +757,16 @@ class CharacterizationService:
         time_range: ArrayLike | None = None,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
         if detuning_range is None:
             detuning_range = np.linspace(-0.01, 0.01, 21)
 
@@ -767,11 +797,19 @@ class CharacterizationService:
         *,
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        verbose: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        verbose: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if verbose is None:
+            verbose = True
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -831,11 +869,19 @@ class CharacterizationService:
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1333,12 +1379,22 @@ class CharacterizationService:
         *,
         time_range: ArrayLike | None = None,
         detuning: float | None = None,
-        second_rotation_axis: Literal["X", "Y"] = "Y",
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> dict[str, ExperimentResult]:
+        if second_rotation_axis is None:
+            second_rotation_axis = "Y"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1574,12 +1630,22 @@ class CharacterizationService:
         stark_amplitude: float | dict[str, float] | None = None,
         stark_ramptime: float | dict[str, float] | None = None,
         time_range: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
-        xaxis_type: Literal["linear", "log"] = "log",
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T1Data]:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+        if xaxis_type is None:
+            xaxis_type = "log"
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1710,13 +1776,25 @@ class CharacterizationService:
         stark_amplitude: float | dict[str, float] | None = None,
         stark_ramptime: float | dict[str, float] | None = None,
         time_range: ArrayLike | None = None,
-        second_rotation_axis: Literal["X", "Y"] = "Y",
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        envelope_region: Literal["full", "flat"] = "full",
-        plot: bool = True,
-        save_image: bool = False,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        envelope_region: Literal["full", "flat"] | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
+        if second_rotation_axis is None:
+            second_rotation_axis = "Y"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if envelope_region is None:
+            envelope_region = "full"
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1877,11 +1955,19 @@ class CharacterizationService:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        detuning: float = 0.001,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        detuning: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if detuning is None:
+            detuning = 0.001
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
         if time_range is None:
             time_range = np.arange(0, 10001, 100)
 
@@ -1945,12 +2031,22 @@ class CharacterizationService:
         time_range: ArrayLike | None = None,
         x90: Waveform | TargetMap[Waveform] | None = None,
         x180: Waveform | TargetMap[Waveform] | None = None,
-        second_rotation_axis: Literal["X", "Y"] = "Y",
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        rotation_frequency: float = 0.0002,
-        plot: bool = True,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        rotation_frequency: float | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if second_rotation_axis is None:
+            second_rotation_axis = "Y"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if rotation_frequency is None:
+            rotation_frequency = 0.0002
+        if plot is None:
+            plot = True
         if time_range is None:
             time_range = np.arange(0, 20001, 400)
 
@@ -2053,12 +2149,22 @@ class CharacterizationService:
         time_range: ArrayLike | None = None,
         x90: Waveform | TargetMap[Waveform] | None = None,
         x180: Waveform | TargetMap[Waveform] | None = None,
-        second_rotation_axis: Literal["X", "Y"] = "Y",
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        rotation_frequency: float = 0.0002,
-        plot: bool = True,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        rotation_frequency: float | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if second_rotation_axis is None:
+            second_rotation_axis = "Y"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if rotation_frequency is None:
+            rotation_frequency = 0.0002
+        if plot is None:
+            plot = True
         qubit_1 = target_qubit
         qubit_2 = spectator_qubit
 
@@ -2108,11 +2214,19 @@ class CharacterizationService:
         *,
         frequency_range: ArrayLike | None = None,
         amplitude: float | None = None,
-        subrange_width: float = 0.3,
-        shots: int = 128,
-        interval: float = 0,
-        plot: bool = True,
+        subrange_width: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> float:
+        if subrange_width is None:
+            subrange_width = 0.3
+        if shots is None:
+            shots = 128
+        if interval is None:
+            interval = 0
+        if plot is None:
+            plot = True
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
@@ -2241,11 +2355,19 @@ class CharacterizationService:
         df: float | None = None,
         n_samples: int | None = None,
         readout_amplitude: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
-        plot: bool = True,
-        confirm: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        confirm: bool | None = None,
     ) -> float:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = 0
+        if plot is None:
+            plot = True
+        if confirm is None:
+            confirm = True
         read_label = Target.read_label(target)
         qubit_label = Target.qubit_label(target)
         mux = self.ctx.experiment_system.get_mux_by_qubit(qubit_label)
@@ -2357,12 +2479,18 @@ class CharacterizationService:
         subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
-        shots: int = DEFAULT_SHOTS,
+        shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = False,
+        plot: bool | None = None,
+        save_image: bool | None = None,
         filter: Literal["gaussian", "savgol"] | None = None,
     ) -> Result:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
         if target is None:
             target = self.ctx.qubit_labels[0]
 
@@ -2701,11 +2829,19 @@ class CharacterizationService:
         power_range: ArrayLike | None = None,
         phase_shift: float | None = None,  # deprecated
         electrical_delay: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = 0,
-        plot: bool = True,
-        save_image: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = 0
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         if target is None:
             target = self.ctx.qubit_labels[0]
 
@@ -2802,12 +2938,22 @@ class CharacterizationService:
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
-        qubit_state: str = "0",
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        qubit_state: str | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if qubit_state is None:
+            qubit_state = "0"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         qubit_label = Target.qubit_label(target)
         read_label = Target.read_label(target)
 
@@ -2914,12 +3060,18 @@ class CharacterizationService:
         subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
-        simultaneous_drive: bool = True,
+        simultaneous_drive: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = False,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if simultaneous_drive is None:
+            simultaneous_drive = True
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
         # control and readout pulses
         qubit = Target.qubit_label(target)
         resonator = Target.read_label(target)
@@ -3171,12 +3323,22 @@ class CharacterizationService:
         frequency_range: ArrayLike,
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
-        target_rabi_rate: float = DEFAULT_RABI_FREQUENCY,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        target_rabi_rate: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ):
+        if target_rabi_rate is None:
+            target_rabi_rate = DEFAULT_RABI_FREQUENCY
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         frequency_range = np.asarray(frequency_range)
         qubit_label = Target.qubit_label(target)
         if control_amplitude is None:
@@ -3243,12 +3405,22 @@ class CharacterizationService:
         frequency_range: ArrayLike | None = None,
         control_amplitude: float | None = None,
         readout_amplitude: float | None = None,
-        target_rabi_rate: float = DEFAULT_RABI_FREQUENCY,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        target_rabi_rate: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if target_rabi_rate is None:
+            target_rabi_rate = DEFAULT_RABI_FREQUENCY
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         qubit_label = Target.qubit_label(target)
         qubit_frequency = self.ctx.qubits[qubit_label].frequency
 
@@ -3344,9 +3516,13 @@ class CharacterizationService:
         readout_frequency: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         if power_range is None:
             power_range = np.arange(-60, 0, 5)
 
@@ -3428,12 +3604,22 @@ class CharacterizationService:
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
-        threshold: float = 0.5,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        threshold: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if threshold is None:
+            threshold = 0.5
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         result_0 = self.measure_reflection_coefficient(
             target,
             df=df,
@@ -3589,11 +3775,19 @@ class CharacterizationService:
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         if df is None:
             df = 0.0004
         if frequency_width is None:
@@ -3686,11 +3880,19 @@ class CharacterizationService:
         target: str,
         *,
         amplitude_range: ArrayLike | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         if amplitude_range is None:
             amplitude_range = np.arange(0.01, 0.26, 0.01)
         else:
@@ -3845,10 +4047,16 @@ class CharacterizationService:
         resonator_detuning_range: ArrayLike | None = None,
         resonator_drive_amplitude: float | None = None,
         resonator_drive_duration: float | None = None,
-        plot: bool = True,
-        verbose: bool = False,
-        save_image: bool = True,
+        plot: bool | None = None,
+        verbose: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if plot is None:
+            plot = True
+        if verbose is None:
+            verbose = False
+        if save_image is None:
+            save_image = True
         if qubit_detuning_range is None:
             qubit_detuning_range = np.linspace(-0.03, 0.01, 30)
         else:
@@ -3970,10 +4178,16 @@ class CharacterizationService:
         resonator_detuning_range: ArrayLike | None = None,
         resonator_drive_amplitude: float | None = None,
         resonator_drive_duration: float | None = None,
-        plot: bool = True,
-        verbose: bool = False,
-        save_image: bool = True,
+        plot: bool | None = None,
+        verbose: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if plot is None:
+            plot = True
+        if verbose is None:
+            verbose = False
+        if save_image is None:
+            save_image = True
         if resonator_drive_amplitude is None:
             resonator_drive_amplitude = self.ctx.params.get_readout_amplitude(
                 Target.qubit_label(target)
@@ -4163,11 +4377,19 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        shots: int | None = None,
+        interval: int | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -4254,11 +4476,19 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        shots: int = CALIBRATION_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        shots: int | None = None,
+        interval: int | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         if targets is None:
             targets = self.ctx.edge_labels
         elif isinstance(targets, str):

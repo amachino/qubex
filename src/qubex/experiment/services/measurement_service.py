@@ -1317,16 +1317,22 @@ class MeasurementService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        n_states: Literal[2, 3] = 2,
+        n_states: Literal[2, 3] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        plot: bool = True,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
     ) -> list[MeasureResult]:
+        if n_states is None:
+            n_states = 2
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if plot is None:
+            plot = True
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1364,7 +1370,7 @@ class MeasurementService:
         targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] | None = None,
-        save_classifier: bool = True,
+        save_classifier: bool | None = None,
         save_dir: Path | str | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -1372,10 +1378,18 @@ class MeasurementService:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        simultaneous: bool = False,
-        plot: bool = True,
+        add_pump_pulses: bool | None = None,
+        simultaneous: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if save_classifier is None:
+            save_classifier = True
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if simultaneous is None:
+            simultaneous = False
+        if plot is None:
+            plot = True
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1437,7 +1451,7 @@ class MeasurementService:
         targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] | None = None,
-        save_classifier: bool = True,
+        save_classifier: bool | None = None,
         save_dir: Path | str | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -1445,9 +1459,15 @@ class MeasurementService:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        plot: bool = True,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if save_classifier is None:
+            save_classifier = True
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if plot is None:
+            plot = True
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1566,14 +1586,26 @@ class MeasurementService:
         self,
         target: str,
         *,
-        target_state: str = "+",
+        target_state: str | None = None,
         waveform: Waveform | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        use_zvalues: bool = False,
-        plot: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        use_zvalues: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if target_state is None:
+            target_state = "+"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if use_zvalues is None:
+            use_zvalues = False
+        if plot is None:
+            plot = False
         if waveform is None:
             measure_result = self.state_tomography(
                 sequence={target: []},
@@ -1642,13 +1674,25 @@ class MeasurementService:
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        method: Literal["measure", "execute"] = "measure",
-        use_zvalues: bool = False,
-        plot: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        method: Literal["measure", "execute"] | None = None,
+        use_zvalues: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if method is None:
+            method = "measure"
+        if use_zvalues is None:
+            use_zvalues = False
+        if plot is None:
+            plot = False
         if isinstance(sequence, PulseSchedule):
             sequence = sequence.get_sequences()
         else:
@@ -1763,12 +1807,22 @@ class MeasurementService:
         ),
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        method: Literal["measure", "execute"] = "measure",
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        method: Literal["measure", "execute"] | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if method is None:
+            method = "measure"
+        if plot is None:
+            plot = True
         buffer: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
 
         if reset_awg_and_capunits:
@@ -1859,12 +1913,22 @@ class MeasurementService:
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        n_samples: int | None = 100,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        method: Literal["measure", "execute"] = "measure",
-        plot: bool = True,
+        n_samples: int | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        method: Literal["measure", "execute"] | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if n_samples is None:
+            n_samples = 100
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if method is None:
+            method = "measure"
+        if plot is None:
+            plot = True
         self.ctx.validate_rabi_params()
 
         if isinstance(sequence, PulseSchedule):
@@ -1936,10 +2000,16 @@ class MeasurementService:
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        fit_gmm: bool = False,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        fit_gmm: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
+        if fit_gmm is None:
+            fit_gmm = False
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
         if self.ctx.classifiers is None:
             raise ValueError("Classifiers are not built. Run `build_classifier` first.")
 
@@ -1973,13 +2043,25 @@ class MeasurementService:
         *,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
         params_list: Sequence | NDArray,
-        fit_gmm: bool = False,
-        xlabel: str = "Index",
-        scatter_mode: str = "lines+markers",
-        show_error: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        fit_gmm: bool | None = None,
+        xlabel: str | None = None,
+        scatter_mode: str | None = None,
+        show_error: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
+        if fit_gmm is None:
+            fit_gmm = False
+        if xlabel is None:
+            xlabel = "Index"
+        if scatter_mode is None:
+            scatter_mode = "lines+markers"
+        if show_error is None:
+            show_error = True
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
         if isinstance(params_list[0], int):
             x = params_list
         else:
@@ -2054,18 +2136,38 @@ class MeasurementService:
         control_qubit: str,
         target_qubit: str,
         *,
-        control_basis: str = "Z",
-        target_basis: str = "Z",
+        control_basis: str | None = None,
+        target_basis: str | None = None,
         zx90: PulseSchedule | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        plot_sequence: bool = False,
-        plot_raw: bool = True,
-        plot_mitigated: bool = True,
-        save_image: bool = True,
-        reset_awg_and_capunits: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        plot_sequence: bool | None = None,
+        plot_raw: bool | None = None,
+        plot_mitigated: bool | None = None,
+        save_image: bool | None = None,
+        reset_awg_and_capunits: bool | None = None,
     ) -> Result:
+        if control_basis is None:
+            control_basis = "Z"
+        if target_basis is None:
+            target_basis = "Z"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if plot_sequence is None:
+            plot_sequence = False
+        if plot_raw is None:
+            plot_raw = True
+        if plot_mitigated is None:
+            plot_mitigated = True
+        if save_image is None:
+            save_image = True
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
         if self.ctx.state_centers is None:
             self.build_classifier(plot=False)
 
@@ -2181,14 +2283,26 @@ class MeasurementService:
         control_qubit: str,
         target_qubit: str,
         *,
-        readout_mitigation: bool = True,
+        readout_mitigation: bool | None = None,
         zx90: PulseSchedule | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
-        mle_fit: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        mle_fit: bool | None = None,
     ) -> Result:
+        if readout_mitigation is None:
+            readout_mitigation = True
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+        if mle_fit is None:
+            mle_fit = True
         n_qubits = 2
         dim = 2**n_qubits
         probabilities = {}
@@ -2285,13 +2399,23 @@ class MeasurementService:
         entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         initialization_pulse: str | None = None,
-        optimize_sequence: bool = False,
-        as_late_as_possible: bool = False,
-        decouple_cr_crosstalk: bool = False,
-        decouple_entangled_zz: bool = False,
-        decouple_all_zz: bool = False,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
+        if optimize_sequence is None:
+            optimize_sequence = False
+        if as_late_as_possible is None:
+            as_late_as_possible = False
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = False
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = False
+        if decouple_all_zz is None:
+            decouple_all_zz = False
         if initialization_pulse is None:
             initialization_pulse = "Y90"
 
@@ -2483,17 +2607,27 @@ class MeasurementService:
         entangle_steps: Collection[tuple[str | int, str | int]],
         *,
         initialization_pulse: str | None = None,
-        optimize_sequence: bool = True,
-        as_late_as_possible: bool = True,
-        decouple_cr_crosstalk: bool = True,
-        decouple_entangled_zz: bool = True,
-        decouple_all_zz: bool = False,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
         """
         Create a GHZ state preparation sequence based on the entanglement steps.
         Returns a PulseSchedule object.
         """
+        if optimize_sequence is None:
+            optimize_sequence = True
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = True
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = True
+        if decouple_all_zz is None:
+            decouple_all_zz = False
         steps: list[tuple[str, str]] = []
 
         for parent, child in entangle_steps:
@@ -2529,21 +2663,39 @@ class MeasurementService:
         *,
         measurement_bases: Collection[str] | None = None,
         initialization_pulse: str | None = None,
-        optimize_sequence: bool = True,
-        as_late_as_possible: bool = True,
-        decouple_cr_crosstalk: bool = True,
-        decouple_entangled_zz: bool = True,
-        decouple_all_zz: bool = False,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         """
         Measure the n-qubit GHZ state in the specified bases.
         Returns dict with 'raw', 'mitigated', 'result', 'figure'.
         """
+        if optimize_sequence is None:
+            optimize_sequence = True
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = True
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = True
+        if decouple_all_zz is None:
+            decouple_all_zz = False
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
         if self.ctx.state_centers is None:
             self.build_classifier(plot=False)
 
@@ -2662,21 +2814,45 @@ class MeasurementService:
         self,
         entangle_steps: Collection[tuple[str | int, str | int]],
         *,
-        readout_mitigation: bool = True,
+        readout_mitigation: bool | None = None,
         initialization_pulse: str | None = None,
-        optimize_sequence: bool = True,
-        as_late_as_possible: bool = True,
-        decouple_cr_crosstalk: bool = True,
-        decouple_entangled_zz: bool = True,
-        decouple_all_zz: bool = False,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        show_sequence: bool = True,
-        save_image: bool = True,
-        mle_fit: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        show_sequence: bool | None = None,
+        save_image: bool | None = None,
+        mle_fit: bool | None = None,
     ) -> Result:
+        if readout_mitigation is None:
+            readout_mitigation = True
+        if optimize_sequence is None:
+            optimize_sequence = True
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = True
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = True
+        if decouple_all_zz is None:
+            decouple_all_zz = False
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if show_sequence is None:
+            show_sequence = True
+        if save_image is None:
+            save_image = True
+        if mle_fit is None:
+            mle_fit = True
         """
         Performs full state tomography on a n-qubit GHZ state.
 
@@ -2862,16 +3038,30 @@ class MeasurementService:
         self,
         entangle_steps: Collection[tuple[str | int, str | int]],
         *,
-        phi: float = 0.0,
-        echo: bool = True,
+        phi: float | None = None,
+        echo: bool | None = None,
         initialization_pulse: str | None = None,
-        optimize_sequence: bool = True,
-        as_late_as_possible: bool = True,
-        decouple_cr_crosstalk: bool = False,
-        decouple_entangled_zz: bool = True,
-        decouple_all_zz: bool = False,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
+        if phi is None:
+            phi = 0.0
+        if echo is None:
+            echo = True
+        if optimize_sequence is None:
+            optimize_sequence = True
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = False
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = True
+        if decouple_all_zz is None:
+            decouple_all_zz = False
         qubits: list[str] = []
         steps: list[tuple[str, str]] = []
 
@@ -2915,18 +3105,36 @@ class MeasurementService:
         *,
         phi_range: np.ndarray | None = None,
         n_points_per_qubit: int | None = None,
-        show_sequence: bool = True,
-        echo: bool = True,
+        show_sequence: bool | None = None,
+        echo: bool | None = None,
         initialization_pulse: str | None = None,
-        optimize_sequence: bool = True,
-        as_late_as_possible: bool = True,
-        decouple_cr_crosstalk: bool = False,
-        decouple_entangled_zz: bool = True,
-        decouple_all_zz: bool = False,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> Result:
+        if show_sequence is None:
+            show_sequence = True
+        if echo is None:
+            echo = True
+        if optimize_sequence is None:
+            optimize_sequence = True
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = False
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = True
+        if decouple_all_zz is None:
+            decouple_all_zz = False
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
         qubits: list[str] = []
         source_qubits: list[str] = []
         steps: list[tuple[str, str]] = []
@@ -3044,8 +3252,10 @@ class MeasurementService:
         data: ArrayLike,
         *,
         qubit: str | None = None,
-        title="Fourier analysis",
+        title: str | None = None,
     ) -> Result:
+        if title is None:
+            title = "Fourier analysis"
         data = np.asarray(data)
 
         S = (data + 1) / 2
@@ -3109,19 +3319,39 @@ class MeasurementService:
         *,
         phi_range: np.ndarray | None = None,
         n_points_per_qubit: int | None = None,
-        show_sequence: bool = True,
-        show_only_qubit_channels: bool = False,
+        show_sequence: bool | None = None,
+        show_only_qubit_channels: bool | None = None,
         initialization_pulse: str | None = None,
-        optimize_sequence: bool = True,
-        as_late_as_possible: bool = True,
-        decouple_cr_crosstalk: bool = False,
-        decouple_entangled_zz: bool = True,
-        decouple_all_zz: bool = False,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
-        readout_mitigation: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        readout_mitigation: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> Result:
+        if show_sequence is None:
+            show_sequence = True
+        if show_only_qubit_channels is None:
+            show_only_qubit_channels = False
+        if optimize_sequence is None:
+            optimize_sequence = True
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = False
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = True
+        if decouple_all_zz is None:
+            decouple_all_zz = False
+        if readout_mitigation is None:
+            readout_mitigation = True
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
         if initialization_pulse is None:
             initialization_pulse = "Y90"
 
@@ -3289,14 +3519,26 @@ class MeasurementService:
         targets: Collection[str | int],
         *,
         bases: dict[int, str] | None = None,
-        optimize_sequence: bool = False,
-        as_late_as_possible: bool = True,
-        decouple_cr_crosstalk: bool = False,
-        decouple_entangled_zz: bool = False,
-        decouple_all_zz: bool = False,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
-        with_readout_pulses: bool = True,
+        with_readout_pulses: bool | None = None,
     ):
+        if optimize_sequence is None:
+            optimize_sequence = False
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = False
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = False
+        if decouple_all_zz is None:
+            decouple_all_zz = False
+        if with_readout_pulses is None:
+            with_readout_pulses = True
         """
         Create a 1D cluster state preparation sequence for the given targets.
         Returns a PulseSchedule object.
@@ -3412,20 +3654,44 @@ class MeasurementService:
         self,
         targets: Collection[str | int],
         *,
-        offset: int = 0,
-        mle_fit: bool = True,
-        optimize_sequence: bool = False,
-        as_late_as_possible: bool = True,
-        decouple_cr_crosstalk: bool = False,
-        decouple_entangled_zz: bool = False,
-        decouple_all_zz: bool = False,
+        offset: int | None = None,
+        mle_fit: bool | None = None,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        method: str = "execute",
-        reset_awg_and_capunits: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        method: str | None = None,
+        reset_awg_and_capunits: bool | None = None,
     ):
+        if offset is None:
+            offset = 0
+        if mle_fit is None:
+            mle_fit = True
+        if optimize_sequence is None:
+            optimize_sequence = False
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = False
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = False
+        if decouple_all_zz is None:
+            decouple_all_zz = False
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if method is None:
+            method = "execute"
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
         targets = [
             self.ctx.quantum_system.get_qubit(target).label
             if isinstance(target, int)
@@ -3733,17 +3999,52 @@ class MeasurementService:
         self,
         qubits: Collection[str | int],
         *,
-        mle_fit: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        method: str = "execute",
-        reset_awg_and_capunits: bool = True,
+        mle_fit: bool | None = None,
+        optimize_sequence: bool | None = None,
+        as_late_as_possible: bool | None = None,
+        decouple_cr_crosstalk: bool | None = None,
+        decouple_entangled_zz: bool | None = None,
+        decouple_all_zz: bool | None = None,
+        cpmg_duration_unit: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        method: str | None = None,
+        reset_awg_and_capunits: bool | None = None,
     ) -> Result:
+        if mle_fit is None:
+            mle_fit = True
+        if optimize_sequence is None:
+            optimize_sequence = False
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = False
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = False
+        if decouple_all_zz is None:
+            decouple_all_zz = False
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if method is None:
+            method = "execute"
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+
         if plot:
             seq = self.create_1d_cluster_sequence(
                 qubits,
-                with_readout_pulses=method == "execute",
+                optimize_sequence=optimize_sequence,
+                as_late_as_possible=as_late_as_possible,
+                decouple_cr_crosstalk=decouple_cr_crosstalk,
+                decouple_entangled_zz=decouple_entangled_zz,
+                decouple_all_zz=decouple_all_zz,
+                cpmg_duration_unit=cpmg_duration_unit,
+                with_readout_pulses=False,
             )
             seq.plot(
                 title=f"1D cluster state preparation sequence for {len(qubits)} qubits",
@@ -3879,11 +4180,19 @@ class MeasurementService:
         *,
         t1: dict[str, float] | None = None,
         t2_echo: dict[str, float] | None = None,
-        threshold: float = 0.0,
-        plot: bool = False,
-        show_labels: bool = False,
-        show_data: bool = True,
+        threshold: float | None = None,
+        plot: bool | None = None,
+        show_labels: bool | None = None,
+        show_data: bool | None = None,
     ) -> list[nx.DiGraph]:
+        if threshold is None:
+            threshold = 0.0
+        if plot is None:
+            plot = False
+        if show_labels is None:
+            show_labels = False
+        if show_data is None:
+            show_data = True
         if fidelities is None:
             fidelities = self.ctx.load_property("bell_state_fidelity")
 
@@ -3939,11 +4248,19 @@ class MeasurementService:
         self,
         fidelities: dict[str, float] | None = None,
         *,
-        threshold: float = 0.0,
-        plot: bool = False,
-        show_labels: bool = False,
-        show_data: bool = True,
+        threshold: float | None = None,
+        plot: bool | None = None,
+        show_labels: bool | None = None,
+        show_data: bool | None = None,
     ):
+        if threshold is None:
+            threshold = 0.0
+        if plot is None:
+            plot = False
+        if show_labels is None:
+            show_labels = False
+        if show_data is None:
+            show_data = True
         if fidelities is None:
             fidelities = self.ctx.load_property("bell_state_fidelity")
 
@@ -3970,11 +4287,19 @@ class MeasurementService:
         self,
         fidelities: dict[str, float] | None = None,
         *,
-        threshold: float = 0.0,
-        plot: bool = False,
-        show_labels: bool = False,
-        show_data: bool = True,
+        threshold: float | None = None,
+        plot: bool | None = None,
+        show_labels: bool | None = None,
+        show_data: bool | None = None,
     ) -> nx.Graph:
+        if threshold is None:
+            threshold = 0.0
+        if plot is None:
+            plot = False
+        if show_labels is None:
+            show_labels = False
+        if show_data is None:
+            show_data = True
         """
         Create the maximum 1D chain in a 2D lattice graph.
 
@@ -4023,13 +4348,21 @@ class MeasurementService:
         self,
         fidelities: dict[str, float] | None = None,
         *,
-        threshold: float = 0.0,
+        threshold: float | None = None,
         t1: dict[str, float] | None = None,
         t2_echo: dict[str, float] | None = None,
-        plot: bool = False,
-        show_labels: bool = False,
-        show_data: bool = False,
+        plot: bool | None = None,
+        show_labels: bool | None = None,
+        show_data: bool | None = None,
     ):
+        if threshold is None:
+            threshold = 0.0
+        if plot is None:
+            plot = False
+        if show_labels is None:
+            show_labels = False
+        if show_data is None:
+            show_data = False
         if fidelities is None:
             fidelities = self.ctx.load_property("bell_state_fidelity")
 
@@ -4064,13 +4397,21 @@ class MeasurementService:
         root: str | None = None,
         max_depth: int | None = None,
         max_node: int | None = None,
-        threshold: float = 0.0,
+        threshold: float | None = None,
         t1: dict[str, float] | None = None,
         t2_echo: dict[str, float] | None = None,
-        plot: bool = False,
-        show_labels: bool = False,
-        show_data: bool = True,
+        plot: bool | None = None,
+        show_labels: bool | None = None,
+        show_data: bool | None = None,
     ):
+        if threshold is None:
+            threshold = 0.0
+        if plot is None:
+            plot = False
+        if show_labels is None:
+            show_labels = False
+        if show_data is None:
+            show_data = True
         if fidelities is None:
             fidelities = self.ctx.load_property("bell_state_fidelity")
 
@@ -4134,8 +4475,10 @@ class MeasurementService:
         self,
         graph: nx.Graph,
         *,
-        plot: bool = False,
+        plot: bool | None = None,
     ):
+        if plot is None:
+            plot = False
         edges = list(graph.edges())
         edges_remaining = edges.copy()
         rounds: list[list[tuple[str, str]]] = []
@@ -4188,8 +4531,10 @@ class MeasurementService:
         graph: nx.Graph,
         *,
         bases: dict[str, str] | None = None,
-        with_readout_pulses: bool = True,
+        with_readout_pulses: bool | None = None,
     ):
+        if with_readout_pulses is None:
+            with_readout_pulses = True
         nodes = list(graph.nodes())
         rounds = self.create_cz_rounds(graph, plot=False)
 
@@ -4229,8 +4574,10 @@ class MeasurementService:
     def create_measurement_rounds(
         self,
         G: nx.Graph,
-        plot=False,
+        plot: bool | None = None,
     ):
+        if plot is None:
+            plot = False
         chip_graph = self.ctx.quantum_system.chip_graph
         colored_edges = strong_edge_coloring(G)
         if plot:
@@ -4269,16 +4616,32 @@ class MeasurementService:
         graph: nx.Graph,
         *,
         target_edges: list[tuple[str, str]],
-        mle_fit: bool = True,
-        use_all_spectator_pattern: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        method: str = "execute",
-        reset_awg_and_capunits: bool = True,
+        mle_fit: bool | None = None,
+        use_all_spectator_pattern: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        method: str | None = None,
+        reset_awg_and_capunits: bool | None = None,
         n_bootstrap: int | None = None,
-        bootstrap_mle: bool = False,
+        bootstrap_mle: bool | None = None,
     ):
+        if mle_fit is None:
+            mle_fit = True
+        if use_all_spectator_pattern is None:
+            use_all_spectator_pattern = True
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if method is None:
+            method = "execute"
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if bootstrap_mle is None:
+            bootstrap_mle = False
         graph = graph.to_undirected()
 
         seq = self.create_graph_sequence(
@@ -4653,10 +5016,16 @@ class MeasurementService:
         G: nx.Graph,
         *,
         title: str | None = None,
-        property: str = "fidelity",
-        show_labels: bool = False,
-        show_data: bool = True,
+        property: str | None = None,
+        show_labels: bool | None = None,
+        show_data: bool | None = None,
     ) -> None:
+        if property is None:
+            property = "fidelity"
+        if show_labels is None:
+            show_labels = False
+        if show_data is None:
+            show_data = True
         node_values = {node: 1 for node in G.nodes()}
         edge_values = {}
         edge_texts = {}
@@ -4694,16 +5063,34 @@ class MeasurementService:
         self,
         graph: nx.Graph,
         *,
-        mle_fit: bool = True,
-        use_all_spectator_pattern: bool = True,
-        shots: int = 3000,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        method: str = "execute",
-        reset_awg_and_capunits: bool = True,
-        n_bootstrap: int | None = 200,
-        bootstrap_mle: bool = False,
+        mle_fit: bool | None = None,
+        use_all_spectator_pattern: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        method: str | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        n_bootstrap: int | None = None,
+        bootstrap_mle: bool | None = None,
     ) -> Result:
+        if mle_fit is None:
+            mle_fit = True
+        if use_all_spectator_pattern is None:
+            use_all_spectator_pattern = True
+        if shots is None:
+            shots = 3000
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if method is None:
+            method = "execute"
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if n_bootstrap is None:
+            n_bootstrap = 200
+        if bootstrap_mle is None:
+            bootstrap_mle = False
         if plot:
             seq = self.create_graph_sequence(
                 graph=graph,
@@ -4927,13 +5314,23 @@ class MeasurementService:
         targets: Collection[str | tuple[int | str, int | str]] | None = None,
         *,
         unavailable_pairs: Collection[str | tuple[int | str, int | str]] | None = None,
-        readout_mitigation: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = False,
-        save_data: bool = True,
+        readout_mitigation: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_data: bool | None = None,
         save_path: Path | str | None = None,
     ) -> Result:
+        if readout_mitigation is None:
+            readout_mitigation = True
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = False
+        if save_data is None:
+            save_data = True
         # TODO: move this to an appropriate location
         fidelities = {}
 
@@ -5019,20 +5416,44 @@ class MeasurementService:
         targets: Collection[str | tuple[int | str, int | str]] | None = None,
         *,
         unavailable_pairs: Collection[str | tuple[int | str, int | str]] | None = None,
-        control_basis: str = "Z",
-        target_basis: str = "Z",
-        readout_mitigation: bool = True,
-        in_parallel: bool = True,
-        n_cols: int = 6,
-        threshold: float = 0.0,
+        control_basis: str | None = None,
+        target_basis: str | None = None,
+        readout_mitigation: bool | None = None,
+        in_parallel: bool | None = None,
+        n_cols: int | None = None,
+        threshold: float | None = None,
         title: str | None = None,
-        plot: bool = True,
-        plot_round: bool = False,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        reset_awg_and_capunits_each_time: bool = True,
+        plot: bool | None = None,
+        plot_round: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        reset_awg_and_capunits_each_time: bool | None = None,
     ) -> Result:
+        if control_basis is None:
+            control_basis = "Z"
+        if target_basis is None:
+            target_basis = "Z"
+        if readout_mitigation is None:
+            readout_mitigation = True
+        if in_parallel is None:
+            in_parallel = True
+        if n_cols is None:
+            n_cols = 6
+        if threshold is None:
+            threshold = 0.0
+        if plot is None:
+            plot = True
+        if plot_round is None:
+            plot_round = False
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if reset_awg_and_capunits_each_time is None:
+            reset_awg_and_capunits_each_time = True
         if targets is None:
             try:
                 fidelities = self.ctx.load_property("bell_state_fidelity")
@@ -5277,8 +5698,10 @@ class MeasurementService:
         target_qubit: str,
         *,
         angle_arr: NDArray | None = None,
-        measurement_times: int = 10,
+        measurement_times: int | None = None,
     ) -> Result:
+        if measurement_times is None:
+            measurement_times = 10
         if angle_arr is None:
             angle_arr = np.linspace(np.pi / 18, 4 * np.pi / 9, 8)
 
