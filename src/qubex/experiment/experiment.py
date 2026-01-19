@@ -163,18 +163,41 @@ class Experiment:
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         calib_note_path: Path | str | None = None,
-        calibration_valid_days: int = CALIBRATION_VALID_DAYS,
-        drag_hpi_duration: float = DRAG_HPI_DURATION,
-        drag_pi_duration: float = DRAG_PI_DURATION,
-        readout_duration: float = DEFAULT_READOUT_DURATION,
-        readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN,
-        readout_post_margin: float = DEFAULT_READOUT_POST_MARGIN,
-        property_dir: Path | str = PROPERTY_DIR,
-        classifier_dir: Path | str = CLASSIFIER_DIR,
-        classifier_type: Literal["kmeans", "gmm"] = "gmm",
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        mock_mode: bool = False,
+        calibration_valid_days: int | None = None,
+        drag_hpi_duration: float | None = None,
+        drag_pi_duration: float | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        property_dir: Path | str | None = None,
+        classifier_dir: Path | str | None = None,
+        classifier_type: Literal["kmeans", "gmm"] | None = None,
+        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        mock_mode: bool | None = None,
     ):
+        if calibration_valid_days is None:
+            calibration_valid_days = CALIBRATION_VALID_DAYS
+        if drag_hpi_duration is None:
+            drag_hpi_duration = DRAG_HPI_DURATION
+        if drag_pi_duration is None:
+            drag_pi_duration = DRAG_PI_DURATION
+        if readout_duration is None:
+            readout_duration = DEFAULT_READOUT_DURATION
+        if readout_pre_margin is None:
+            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
+        if readout_post_margin is None:
+            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
+        if property_dir is None:
+            property_dir = PROPERTY_DIR
+        if classifier_dir is None:
+            classifier_dir = CLASSIFIER_DIR
+        if classifier_type is None:
+            classifier_type = "gmm"
+        if configuration_mode is None:
+            configuration_mode = "ge-cr-cr"
+        if mock_mode is None:
+            mock_mode = False
+
         context = ExperimentContext(
             chip_id=chip_id,
             muxes=muxes,
@@ -546,22 +569,30 @@ class Experiment:
 
     def get_cr_pairs(
         self,
-        low_to_high: bool = True,
-        high_to_low: bool = False,
+        low_to_high: bool | None = None,
+        high_to_low: bool | None = None,
     ) -> list[tuple[str, str]]:
         """
         Get the cross-resonance pairs.
         """
+        if low_to_high is None:
+            low_to_high = True
+        if high_to_low is None:
+            high_to_low = False
         return self.ctx.get_cr_pairs(low_to_high, high_to_low)
 
     def get_cr_labels(
         self,
-        low_to_high: bool = True,
-        high_to_low: bool = False,
+        low_to_high: bool | None = None,
+        high_to_low: bool | None = None,
     ) -> list[str]:
         """
         Get the cross-resonance labels.
         """
+        if low_to_high is None:
+            low_to_high = True
+        if high_to_low is None:
+            high_to_low = False
         return self.ctx.get_cr_labels(low_to_high, high_to_low)
 
     def get_edge_pairs(
@@ -856,8 +887,8 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        duration: int = 10240,
-        plot: bool = True,
+        duration: int | None = None,
+        plot: bool | None = None,
     ) -> MeasureResult:
         """
         Checks the noise level of the system.
@@ -867,7 +898,7 @@ class Experiment:
         targets : Collection[str] | str, optional
             Target labels to check the noise.
         duration : int, optional
-            Duration of the noise measurement. Defaults to 2048.
+            Duration of the noise measurement. Defaults to 10240.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -890,15 +921,15 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        method: Literal["measure", "execute"] = "measure",
+        method: Literal["measure", "execute"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        plot: bool = True,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
     ) -> MeasureResult | MultipleMeasureResult:
         """
         Checks the readout waveforms of the given targets.
@@ -907,6 +938,8 @@ class Experiment:
         ----------
         targets : Collection[str] | str, optional
             Target labels to check the waveforms.
+        method : Literal["measure", "execute"], optional
+            Method to check the waveforms. Defaults to "measure".
         shots : int, optional
             Number of shots.
         interval : int, optional
@@ -950,12 +983,12 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        store_params: bool = False,
-        rabi_level: Literal["ge", "ef"] = "ge",
-        plot: bool = True,
+        time_range: ArrayLike | None = None,
+        shots: int | None = None,
+        interval: int | None = None,
+        store_params: bool | None = None,
+        rabi_level: Literal["ge", "ef"] | None = None,
+        plot: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         """
         Checks the Rabi oscillation of the given targets.
@@ -972,6 +1005,8 @@ class Experiment:
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         store_params : bool, optional
             Whether to store the Rabi parameters. Defaults to False.
+        rabi_level : Literal["ge", "ef"], optional
+            Rabi level to use. Defaults to "ge".
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -1013,7 +1048,7 @@ class Experiment:
         *,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
-        print_result: bool = True,
+        print_result: bool | None = None,
     ) -> dict[str, float]:
         return self.ctx.calc_control_amplitudes(
             rabi_rate,
@@ -1031,9 +1066,9 @@ class Experiment:
 
     def calc_rabi_rates(
         self,
-        control_amplitude: float = 1.0,
+        control_amplitude: float | None = None,
         *,
-        print_result: bool = True,
+        print_result: bool | None = None,
     ) -> dict[str, float]:
         return self.ctx.calc_rabi_rates(
             control_amplitude,
@@ -1132,7 +1167,7 @@ class Experiment:
         self,
         target: str,
         *,
-        decomposition: Literal["Z180-Y90", "Y90-X180"] = "Z180-Y90",
+        decomposition: Literal["Z180-Y90", "Y90-X180"] | None = None,
     ) -> PulseArray:
         return self.pulse.hadamard(target, decomposition=decomposition)
 
@@ -1150,9 +1185,9 @@ class Experiment:
         cancel_phase: float | None = None,
         cancel_beta: float | None = None,
         rotary_amplitude: float | None = None,
-        echo: bool = True,
+        echo: bool | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
-        x180_margin: float = 0.0,
+        x180_margin: float | None = None,
     ) -> PulseSchedule:
         return self.pulse.zx90(
             control_qubit,
@@ -1186,9 +1221,9 @@ class Experiment:
         cancel_phase: float | None = None,
         cancel_beta: float | None = None,
         rotary_amplitude: float | None = None,
-        echo: bool = True,
+        echo: bool | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
-        x180_margin: float = 0.0,
+        x180_margin: float | None = None,
     ) -> PulseSchedule:
         return self.pulse.rzx(
             control_qubit,
@@ -1215,7 +1250,7 @@ class Experiment:
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
-        only_low_to_high: bool = False,
+        only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
         return self.pulse.cnot(
             control_qubit,
@@ -1232,7 +1267,7 @@ class Experiment:
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
-        only_low_to_high: bool = False,
+        only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
         return self.pulse.cx(
             control_qubit,
@@ -1249,7 +1284,7 @@ class Experiment:
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
-        only_low_to_high: bool = False,
+        only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
         return self.pulse.cz(
             control_qubit,
@@ -1266,7 +1301,7 @@ class Experiment:
         schedule: PulseSchedule,
         *,
         frequencies: dict[str, float] | None = None,
-        mode: Literal["single", "avg"] = "avg",
+        mode: Literal["single", "avg"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -1276,15 +1311,15 @@ class Experiment:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        enable_dsp_demodulation: bool = True,
+        add_last_measurement: bool | None = None,
+        add_pump_pulses: bool | None = None,
+        enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool = False,
+        enable_dsp_classification: bool | None = None,
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = False,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> MultipleMeasureResult:
         """
         Execute the given schedule.
@@ -1377,7 +1412,7 @@ class Experiment:
         *,
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
-        mode: Literal["single", "avg"] = "avg",
+        mode: Literal["single", "avg"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -1387,14 +1422,14 @@ class Experiment:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool = False,
-        enable_dsp_demodulation: bool = True,
+        add_pump_pulses: bool | None = None,
+        enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool = False,
+        enable_dsp_classification: bool | None = None,
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = False,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> MeasureResult:
         """
         Measures the signals using the given sequence.
@@ -1485,15 +1520,15 @@ class Experiment:
             str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]
         ],
         *,
-        mode: Literal["single", "avg"] = "single",
+        mode: Literal["single", "avg"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        plot: bool = False,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
     ) -> MeasureResult:
         """
         Measures the signals using the given states.
@@ -1559,8 +1594,8 @@ class Experiment:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        plot: bool = True,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
         """
         Measures the idle states of the given targets.
@@ -1613,7 +1648,7 @@ class Experiment:
         *,
         shots: int | None = None,
         interval: float | None = None,
-        store_reference_points: bool = True,
+        store_reference_points: bool | None = None,
     ) -> Result:
         """
         Obtains the reference points for the given targets.
@@ -1650,7 +1685,7 @@ class Experiment:
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
         sweep_range: ArrayLike,
-        repetitions: int = 1,
+        repetitions: int | None = None,
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
         rabi_level: Literal["ge", "ef"] = "ge",
@@ -1660,8 +1695,8 @@ class Experiment:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        plot: bool = True,
-        enable_tqdm: bool = False,
+        plot: bool | None = None,
+        enable_tqdm: bool | None = None,
         title: str = "Sweep result",
         xlabel: str = "Sweep value",
         ylabel: str = "Measured value",
@@ -1753,10 +1788,10 @@ class Experiment:
         self,
         sequence: TargetMap[Waveform] | PulseSchedule,
         *,
-        repetitions: int = 20,
+        repetitions: int | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
+        plot: bool | None = None,
     ) -> ExperimentResult[SweepData]:
         """
         Repeats the pulse sequence n times.
@@ -1801,13 +1836,13 @@ class Experiment:
         time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
-        is_damped: bool = False,
-        fit_threshold: float = 0.5,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = True,
-        simultaneous: bool = False,
+        is_damped: bool | None = None,
+        fit_threshold: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        store_params: bool | None = None,
+        simultaneous: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         return self.measurement_service.obtain_rabi_params(
             targets=targets,
@@ -1828,10 +1863,10 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
-        is_damped: bool = False,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        is_damped: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         return self.measurement_service.obtain_ef_rabi_params(
             targets=targets,
@@ -3142,11 +3177,11 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
-        xaxis_type: Literal["linear", "log"] = "log",
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T1Data]:
         return self.characterization_service.t1_experiment(
             targets=targets,
@@ -3163,13 +3198,13 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        n_cpmg: int = 1,
+        n_cpmg: int | None = None,
         pi_cpmg: Waveform | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
-        xaxis_type: Literal["linear", "log"] = "log",
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T2Data]:
         return self.characterization_service.t2_experiment(
             targets=targets,
@@ -3189,12 +3224,12 @@ class Experiment:
         *,
         time_range: ArrayLike | None = None,
         detuning: float | None = None,
-        second_rotation_axis: Literal["X", "Y"] = "Y",
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
         return self.characterization_service.ramsey_experiment(
             targets=targets,
@@ -3379,12 +3414,12 @@ class Experiment:
 
     def scan_resonator_frequencies(
         self,
-        target: str,
+        target: str | None = None,
         *,
         frequency_range: ArrayLike | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
-        subrange_width: float = 0.3,
+        subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -3408,7 +3443,7 @@ class Experiment:
 
     def resonator_spectroscopy(
         self,
-        target: str,
+        target: str | None = None,
         *,
         frequency_range: ArrayLike | None = None,
         power_range: ArrayLike | None = None,

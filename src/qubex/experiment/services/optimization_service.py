@@ -72,11 +72,20 @@ class OptimizationService:
         self,
         qubit: str,
         *,
-        sigma0: float = 0.001,
-        seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
+        sigma0: float | None = None,
+        seed: int | None = None,
+        ftarget: float | None = None,
+        timeout: int | None = None,
     ) -> Waveform:
+        if sigma0 is None:
+            sigma0 = 0.001
+        if seed is None:
+            seed = 42
+        if ftarget is None:
+            ftarget = 1e-3
+        if timeout is None:
+            timeout = 300
+
         pulse = self.pulse.get_drag_hpi_pulse(qubit)
         N = pulse.length
         initial_params = list(pulse.real) + list(pulse.imag)
@@ -111,12 +120,23 @@ class OptimizationService:
         self,
         qubit: str,
         *,
-        duration: float = 16,
-        sigma0: float = 0.001,
-        seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
+        duration: float | None = None,
+        sigma0: float | None = None,
+        seed: int | None = None,
+        ftarget: float | None = None,
+        timeout: int | None = None,
     ) -> Waveform:
+        if duration is None:
+            duration = 16
+        if sigma0 is None:
+            sigma0 = 0.001
+        if seed is None:
+            seed = 42
+        if ftarget is None:
+            ftarget = 1e-3
+        if timeout is None:
+            timeout = 300
+
         param = self.ctx.calib_note.get_drag_hpi_param(qubit)
         if param is None:
             raise ValueError("DRAG HPI parameters are not stored.")
@@ -159,11 +179,20 @@ class OptimizationService:
         pulse: Waveform,
         x90: Waveform,
         target_state: tuple[float, float, float],
-        sigma0: float = 0.001,
-        seed: int = 42,
-        ftarget: float = 1e-3,
-        timeout: int = 300,
+        sigma0: float | None = None,
+        seed: int | None = None,
+        ftarget: float | None = None,
+        timeout: int | None = None,
     ) -> Waveform:
+        if sigma0 is None:
+            sigma0 = 0.001
+        if seed is None:
+            seed = 42
+        if ftarget is None:
+            ftarget = 1e-3
+        if timeout is None:
+            timeout = 300
+
         N = pulse.length
         initial_params = list(pulse.real) + list(pulse.imag)
         es = cma.CMAEvolutionStrategy(
@@ -197,9 +226,9 @@ class OptimizationService:
         control_qubit: str,
         target_qubit: str,
         *,
-        objective_type: str = "st",  # "st" or "rb"
-        optimize_method: str = "cma",  # "cma" or "nm"
-        update_cr_param: bool = True,
+        objective_type: str | None = None,  # "st" or "rb"
+        optimize_method: str | None = None,  # "cma" or "nm"
+        update_cr_param: bool | None = None,
         opt_params: Collection[str] | None = None,
         seed: int | None = None,
         ftarget: float | None = None,
@@ -211,9 +240,20 @@ class OptimizationService:
         ramptime: float | None = None,
         x180: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        shots: int | None = None,
+        interval: float | None = None,
     ):
+        if objective_type is None:
+            objective_type = "st"
+        if optimize_method is None:
+            optimize_method = "cma"
+        if update_cr_param is None:
+            update_cr_param = True
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         if opt_params is None:
             opt_params = [
                 "cr_amplitude",

@@ -104,7 +104,7 @@ class MeasurementService:
         schedule: PulseSchedule,
         *,
         frequencies: dict[str, float] | None = None,
-        mode: Literal["single", "avg"] = "avg",
+        mode: Literal["single", "avg"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -114,16 +114,31 @@ class MeasurementService:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        enable_dsp_demodulation: bool = True,
+        add_last_measurement: bool | None = None,
+        add_pump_pulses: bool | None = None,
+        enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool = False,
+        enable_dsp_classification: bool | None = None,
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = False,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> MultipleMeasureResult:
+        if mode is None:
+            mode = "avg"
+        if add_last_measurement is None:
+            add_last_measurement = False
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if enable_dsp_demodulation is None:
+            enable_dsp_demodulation = True
+        if enable_dsp_classification is None:
+            enable_dsp_classification = False
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if plot is None:
+            plot = False
+
         if readout_duration is None:
             readout_duration = self.ctx.readout_duration
         if readout_pre_margin is None:
@@ -170,7 +185,7 @@ class MeasurementService:
         *,
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
-        mode: Literal["single", "avg"] = "avg",
+        mode: Literal["single", "avg"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -180,15 +195,28 @@ class MeasurementService:
         readout_ramptime: float | None = None,
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
-        add_pump_pulses: bool = False,
-        enable_dsp_demodulation: bool = True,
+        add_pump_pulses: bool | None = None,
+        enable_dsp_demodulation: bool | None = None,
         enable_dsp_sum: bool | None = None,
-        enable_dsp_classification: bool = False,
+        enable_dsp_classification: bool | None = None,
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = False,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> MeasureResult:
+        if mode is None:
+            mode = "avg"
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if enable_dsp_demodulation is None:
+            enable_dsp_demodulation = True
+        if enable_dsp_classification is None:
+            enable_dsp_classification = False
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if plot is None:
+            plot = False
+
         if readout_duration is None:
             readout_duration = self.ctx.readout_duration
         if readout_pre_margin is None:
@@ -279,16 +307,23 @@ class MeasurementService:
             str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]
         ],
         *,
-        mode: Literal["single", "avg"] = "single",
+        mode: Literal["single", "avg"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        plot: bool = False,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
     ) -> MeasureResult:
+        if mode is None:
+            mode = "single"
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if plot is None:
+            plot = False
+
         targets = []
 
         for target, state in states.items():
@@ -333,9 +368,14 @@ class MeasurementService:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        plot: bool = True,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if plot is None:
+            plot = True
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -378,8 +418,11 @@ class MeasurementService:
         *,
         shots: int | None = None,
         interval: float | None = None,
-        store_reference_points: bool = True,
+        store_reference_points: bool | None = None,
     ) -> Result:
+        if store_reference_points is None:
+            store_reference_points = True
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -420,24 +463,43 @@ class MeasurementService:
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
         *,
         sweep_range: ArrayLike,
-        repetitions: int = 1,
+        repetitions: int | None = None,
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
-        rabi_level: Literal["ge", "ef"] = "ge",
+        rabi_level: Literal["ge", "ef"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        plot: bool = True,
-        enable_tqdm: bool = False,
-        title: str = "Sweep result",
-        xlabel: str = "Sweep value",
-        ylabel: str = "Measured value",
-        xaxis_type: Literal["linear", "log"] = "linear",
-        yaxis_type: Literal["linear", "log"] = "linear",
+        plot: bool | None = None,
+        enable_tqdm: bool | None = None,
+        title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
+        yaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[SweepData]:
+        if repetitions is None:
+            repetitions = 1
+        if rabi_level is None:
+            rabi_level = "ge"
+        if plot is None:
+            plot = True
+        if enable_tqdm is None:
+            enable_tqdm = False
+        if title is None:
+            title = "Sweep result"
+        if xlabel is None:
+            xlabel = "Sweep value"
+        if ylabel is None:
+            ylabel = "Measured value"
+        if xaxis_type is None:
+            xaxis_type = "linear"
+        if yaxis_type is None:
+            yaxis_type = "linear"
+
         sweep_range = np.array(sweep_range)
 
         if rabi_level == "ge":
@@ -539,15 +601,29 @@ class MeasurementService:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_last_measurement: bool = True,
-        plot: bool = True,
-        title: str = "Sweep result",
-        xlabel: str = "Sweep value",
-        ylabel: str = "Measured value",
-        xaxis_type: Literal["linear", "log"] = "linear",
-        yaxis_type: Literal["linear", "log"] = "linear",
+        add_last_measurement: bool | None = None,
+        plot: bool | None = None,
+        title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
+        yaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[SweepData]:
         # TODO: Support ParametricWaveformDict and replace the sweep_parameter method
+        if add_last_measurement is None:
+            add_last_measurement = True
+        if plot is None:
+            plot = True
+        if title is None:
+            title = "Sweep result"
+        if xlabel is None:
+            xlabel = "Sweep value"
+        if ylabel is None:
+            ylabel = "Measured value"
+        if xaxis_type is None:
+            xaxis_type = "linear"
+        if yaxis_type is None:
+            yaxis_type = "linear"
 
         sweep_range = np.array(sweep_range)
 
@@ -606,11 +682,16 @@ class MeasurementService:
         sequence: TargetMap[Waveform] | PulseSchedule,
         *,
         initial_states: dict[str, str] | None = None,
-        repetitions: int = 20,
+        repetitions: int | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
+        plot: bool | None = None,
     ) -> ExperimentResult[SweepData]:
+        if repetitions is None:
+            repetitions = 20
+        if plot is None:
+            plot = True
+
         def repeated_sequence(N: int) -> PulseSchedule:
             if isinstance(sequence, dict):
                 with PulseSchedule() as ps:
@@ -641,18 +722,35 @@ class MeasurementService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        time_range: ArrayLike | None = None,
         ramptime: float | None = None,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
-        is_damped: bool = True,
-        fit_threshold: float = 0.5,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = True,
-        simultaneous: bool = False,
+        is_damped: bool | None = None,
+        fit_threshold: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        store_params: bool | None = None,
+        simultaneous: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        if time_range is None:
+            time_range = DEFAULT_RABI_TIME_RANGE
+        if is_damped is None:
+            is_damped = True
+        if fit_threshold is None:
+            fit_threshold = 0.5
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if store_params is None:
+            store_params = True
+        if simultaneous is None:
+            simultaneous = False
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -710,14 +808,24 @@ class MeasurementService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        time_range: ArrayLike | None = None,
         ramptime: float | None = None,
-        is_damped: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        is_damped: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         # TODO: Integrate with obtain_rabi_params
+        if time_range is None:
+            time_range = DEFAULT_RABI_TIME_RANGE
+        if is_damped is None:
+            is_damped = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
 
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -765,15 +873,15 @@ class MeasurementService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        method: Literal["measure", "execute"] = "measure",
+        method: Literal["measure", "execute"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitude: float | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        plot: bool = True,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
     ) -> MeasureResult | MultipleMeasureResult:
         """
         Checks the readout waveforms of the given targets.
@@ -808,6 +916,13 @@ class MeasurementService:
         --------
         >>> result = ex.check_waveform(["Q00", "Q01"])
         """
+        if method is None:
+            method = "measure"
+        if add_pump_pulses is None:
+            add_pump_pulses = False
+        if plot is None:
+            plot = True
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -855,12 +970,12 @@ class MeasurementService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
-        shots: int = DEFAULT_SHOTS,
-        interval: int = DEFAULT_INTERVAL,
-        store_params: bool = False,
-        rabi_level: Literal["ge", "ef"] = "ge",
-        plot: bool = True,
+        time_range: ArrayLike | None = None,
+        shots: int | None = None,
+        interval: int | None = None,
+        store_params: bool | None = None,
+        rabi_level: Literal["ge", "ef"] | None = None,
+        plot: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         """
         Checks the Rabi oscillation of the given targets.
@@ -889,6 +1004,19 @@ class MeasurementService:
         --------
         >>> result = ex.check_rabi(["Q00", "Q01"])
         """
+        if time_range is None:
+            time_range = DEFAULT_RABI_TIME_RANGE
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if store_params is None:
+            store_params = False
+        if rabi_level is None:
+            rabi_level = "ge"
+        if plot is None:
+            plot = True
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -923,17 +1051,32 @@ class MeasurementService:
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        time_range: ArrayLike | None = None,
         ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
-        is_damped: bool = True,
-        fit_threshold: float = 0.5,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = False,
+        is_damped: bool | None = None,
+        fit_threshold: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        store_params: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        if time_range is None:
+            time_range = DEFAULT_RABI_TIME_RANGE
+        if is_damped is None:
+            is_damped = True
+        if fit_threshold is None:
+            fit_threshold = 0.5
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if store_params is None:
+            store_params = False
+
         # target labels
         targets = list(amplitudes.keys())
 
@@ -1047,13 +1190,23 @@ class MeasurementService:
         ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
-        is_damped: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = False,
+        is_damped: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        store_params: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         # TODO: Integrate with rabi_experiment
+        if is_damped is None:
+            is_damped = True
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if store_params is None:
+            store_params = False
 
         amplitudes = {
             Target.ef_label(label): amplitude for label, amplitude in amplitudes.items()

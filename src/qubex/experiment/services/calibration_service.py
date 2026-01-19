@@ -73,8 +73,11 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         *,
         reference_phases: dict[str, float] | None = None,
-        save: bool = True,
+        save: bool | None = None,
     ):
+        if save is None:
+            save = True
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -124,8 +127,11 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         *,
         reference_phases: dict[str, float] | None = None,
-        save: bool = True,
+        save: bool | None = None,
     ):
+        if save is None:
+            save = True
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -181,9 +187,14 @@ class CalibrationService:
         self,
         cr_labels: Collection[str] | str | None = None,
         *,
-        shots: int = 10000,
-        save: bool = True,
+        shots: int | None = None,
+        save: bool | None = None,
     ):
+        if shots is None:
+            shots = 10000
+        if save is None:
+            save = True
+
         if cr_labels is None:
             cr_labels = self.ctx.cr_labels
         elif isinstance(cr_labels, str):
@@ -217,8 +228,11 @@ class CalibrationService:
         qubit_labels: Collection[str] | str | None = None,
         cr_labels: Collection[str] | str | None = None,
         *,
-        save: bool = False,
+        save: bool | None = None,
     ):
+        if save is None:
+            save = False
+
         if qubit_labels is None:
             qubit_labels = self.ctx.qubit_labels
         elif isinstance(qubit_labels, str):
@@ -259,14 +273,29 @@ class CalibrationService:
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        update_params: bool = True,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        update_params: bool | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 1
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if update_params is None:
+            update_params = True
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -385,13 +414,26 @@ class CalibrationService:
         *,
         duration: float | None = None,
         ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 1
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         return self.calibrate_default_pulse(
             targets=targets,
             pulse_type="hpi",
@@ -411,13 +453,26 @@ class CalibrationService:
         *,
         duration: float | None = None,
         ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 1
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         return self.calibrate_default_pulse(
             targets=targets,
             pulse_type="pi",
@@ -438,13 +493,26 @@ class CalibrationService:
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 1
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -575,13 +643,26 @@ class CalibrationService:
         *,
         duration: float | None = None,
         ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 1
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         return self.calibrate_ef_pulse(
             targets=targets,
             pulse_type="hpi",
@@ -600,13 +681,26 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         duration: float | None = None,
         ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 1
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         return self.calibrate_ef_pulse(
             targets=targets,
             pulse_type="pi",
@@ -627,16 +721,35 @@ class CalibrationService:
         spectator_state: str | None = None,
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 4,
-        r2_threshold: float = 0.5,
-        drag_coeff: float = DRAG_COEFF,
-        use_stored_amplitude: bool = False,
-        use_stored_beta: bool = False,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        drag_coeff: float | None = None,
+        use_stored_amplitude: bool | None = None,
+        use_stored_beta: bool | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> Result:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 4
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if drag_coeff is None:
+            drag_coeff = DRAG_COEFF
+        if use_stored_amplitude is None:
+            use_stored_amplitude = False
+        if use_stored_beta is None:
+            use_stored_beta = False
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -779,15 +892,28 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         *,
         spectator_state: str | None = None,
-        pulse_type: Literal["pi", "hpi"] = "hpi",
+        pulse_type: Literal["pi", "hpi"] | None = None,
         beta_range: ArrayLike | None = None,
         duration: float | None = None,
-        n_turns: int = 1,
-        degree: int = 3,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_turns: int | None = None,
+        degree: int | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> Result:
+        if pulse_type is None:
+            pulse_type = "hpi"
+        if n_turns is None:
+            n_turns = 1
+        if degree is None:
+            degree = 3
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -926,20 +1052,43 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         *,
         spectator_state: str | None = None,
-        n_points: int = 20,
-        n_rotations: int = 4,
-        n_turns: int = 1,
-        n_iterations: int = 2,
-        degree: int = 3,
-        r2_threshold: float = 0.5,
-        calibrate_beta: bool = True,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        n_turns: int | None = None,
+        n_iterations: int | None = None,
+        degree: int | None = None,
+        r2_threshold: float | None = None,
+        calibrate_beta: bool | None = None,
         beta_range: ArrayLike | None = None,
         duration: float | None = None,
-        drag_coeff: float = DRAG_COEFF,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        drag_coeff: float | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> Result:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 4
+        if n_turns is None:
+            n_turns = 1
+        if n_iterations is None:
+            n_iterations = 2
+        if degree is None:
+            degree = 3
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if calibrate_beta is None:
+            calibrate_beta = True
+        if drag_coeff is None:
+            drag_coeff = DRAG_COEFF
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1015,20 +1164,43 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         *,
         spectator_state: str | None = None,
-        n_points: int = 20,
-        n_rotations: int = 4,
-        n_turns: int = 1,
-        n_iterations: int = 2,
-        degree: int = 3,
-        r2_threshold: float = 0.5,
-        calibrate_beta: bool = True,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        n_turns: int | None = None,
+        n_iterations: int | None = None,
+        degree: int | None = None,
+        r2_threshold: float | None = None,
+        calibrate_beta: bool | None = None,
         beta_range: ArrayLike | None = None,
         duration: float | None = None,
-        drag_coeff: float = DRAG_COEFF,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        drag_coeff: float | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> Result:
+        if n_points is None:
+            n_points = 20
+        if n_rotations is None:
+            n_rotations = 4
+        if n_turns is None:
+            n_turns = 1
+        if n_iterations is None:
+            n_iterations = 2
+        if degree is None:
+            degree = 3
+        if r2_threshold is None:
+            r2_threshold = 0.5
+        if calibrate_beta is None:
+            calibrate_beta = True
+        if drag_coeff is None:
+            drag_coeff = DRAG_COEFF
+        if plot is None:
+            plot = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1119,13 +1291,25 @@ class CalibrationService:
             "RaisedCosine",
             "Sintegral",
             "Bump",
-        ] = "RaisedCosine",
+        ]
+        | None = None,
         x180_margin: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if ramp_type is None:
+            ramp_type = "RaisedCosine"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if plot is None:
+            plot = True
+
         cr_label = f"{control_qubit}-{target_qubit}"
         if time_range is None:
             time_range = np.array(DEFAULT_CR_TIME_RANGE, dtype=float)
@@ -1260,11 +1444,20 @@ class CalibrationService:
         cancel_phase: float | None = None,
         x90: TargetMap[Waveform] | None = None,
         x180_margin: float | None = None,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if reset_awg_and_capunits is None:
+            reset_awg_and_capunits = True
+        if plot is None:
+            plot = True
+
         cr_label = f"{control_qubit}-{target_qubit}"
 
         if cr_amplitude is None:
@@ -1893,23 +2086,52 @@ class CalibrationService:
         ramptime: float | None = None,
         duration: float | None = None,
         amplitude_range: ArrayLike | None = None,
-        initial_state: str = "0",
-        degree: int = 3,
+        initial_state: str | None = None,
+        degree: int | None = None,
         adiabatic_safe_factor: float | None = None,
-        max_amplitude: float = 1.0,
-        rotary_multiple: float = 9.0,
-        use_drag: bool = True,
-        duration_unit: float = 16.0,
-        duration_buffer: float = 1.05,
-        n_repetitions: int = 1,
+        max_amplitude: float | None = None,
+        rotary_multiple: float | None = None,
+        use_drag: bool | None = None,
+        duration_unit: float | None = None,
+        duration_buffer: float | None = None,
+        n_repetitions: int | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
-        x180_margin: float = 0.0,
-        use_zvalues: bool = False,
-        store_params: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        x180_margin: float | None = None,
+        use_zvalues: bool | None = None,
+        store_params: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> Result:
+        if initial_state is None:
+            initial_state = "0"
+        if degree is None:
+            degree = 3
+        if max_amplitude is None:
+            max_amplitude = 1.0
+        if rotary_multiple is None:
+            rotary_multiple = 9.0
+        if use_drag is None:
+            use_drag = True
+        if duration_unit is None:
+            duration_unit = 16.0
+        if duration_buffer is None:
+            duration_buffer = 1.05
+        if n_repetitions is None:
+            n_repetitions = 1
+        if x180_margin is None:
+            x180_margin = 0.0
+        if use_zvalues is None:
+            use_zvalues = False
+        if store_params is None:
+            store_params = True
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+
         if ramptime is None:
             ramptime = self._ramptime(control_qubit, target_qubit)
         if adiabatic_safe_factor is None:

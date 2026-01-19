@@ -241,8 +241,10 @@ class PulseService:
         self,
         target: str,
         *,
-        decomposition: Literal["Z180-Y90", "Y90-X180"] = "Z180-Y90",
+        decomposition: Literal["Z180-Y90", "Y90-X180"] | None = None,
     ) -> PulseArray:
+        if decomposition is None:
+            decomposition = "Z180-Y90"
         if decomposition == "Z180-Y90":
             return PulseArray(
                 [
@@ -306,10 +308,15 @@ class PulseService:
         cancel_phase: float | None = None,
         cancel_beta: float | None = None,
         rotary_amplitude: float | None = None,
-        echo: bool = True,
+        echo: bool | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
-        x180_margin: float = 0.0,
+        x180_margin: float | None = None,
     ) -> PulseSchedule:
+        if echo is None:
+            echo = True
+        if x180_margin is None:
+            x180_margin = 0.0
+
         cr_label = f"{control_qubit}-{target_qubit}"
         cr_param = self._ctx.calib_note.get_cr_param(
             cr_label,
@@ -377,10 +384,15 @@ class PulseService:
         cancel_phase: float | None = None,
         cancel_beta: float | None = None,
         rotary_amplitude: float | None = None,
-        echo: bool = True,
+        echo: bool | None = None,
         x180: TargetMap[Waveform] | Waveform | None = None,
-        x180_margin: float = 0.0,
+        x180_margin: float | None = None,
     ) -> PulseSchedule:
+        if echo is None:
+            echo = True
+        if x180_margin is None:
+            x180_margin = 0.0
+
         # Reference angle for RZX gate normalization (half pi)
         REFERENCE_ANGLE = np.pi / 2
         coeff_value = angle / REFERENCE_ANGLE
@@ -443,8 +455,11 @@ class PulseService:
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
-        only_low_to_high: bool = False,
+        only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
+        if only_low_to_high is None:
+            only_low_to_high = False
+
         cr_label = f"{control_qubit}-{target_qubit}"
 
         is_low_to_high = self._ctx.qubits[control_qubit].index % 4 in [0, 3]
@@ -489,7 +504,7 @@ class PulseService:
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
-        only_low_to_high: bool = False,
+        only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
         return self.cnot(
             control_qubit=control_qubit,
@@ -506,8 +521,11 @@ class PulseService:
         *,
         zx90: PulseSchedule | None = None,
         x90: Waveform | None = None,
-        only_low_to_high: bool = False,
+        only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
+        if only_low_to_high is None:
+            only_low_to_high = False
+
         cr_label = f"{control_qubit}-{target_qubit}"
 
         is_low_to_high = self._ctx.qubits[control_qubit].index % 4 in [0, 3]

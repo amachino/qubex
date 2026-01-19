@@ -239,8 +239,11 @@ class BenchmarkingService:
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: Waveform | None = None,
         seed: int | None = None,
-        basis: Literal["X", "Y", "Z"] = "Z",
+        basis: Literal["X", "Y", "Z"] | None = None,
     ) -> PulseArray:
+        if basis is None:
+            basis = "Z"
+
         x90 = x90 or self.pulse.x90(target)
         z90 = VirtualZ(np.pi / 2)
         y90m = x90.shifted(-np.pi / 2)
@@ -316,8 +319,12 @@ class BenchmarkingService:
             "ZX",
             "ZY",
             "ZZ",
-        ] = "ZZ",
+        ]
+        | None = None,
     ) -> PulseSchedule:
+        if basis is None:
+            basis = "ZZ"
+
         target_object = self.ctx.experiment_system.get_target(target)
         if not target_object.is_cr:
             raise ValueError(f"`{target}` is not a 2Q target.")
@@ -428,17 +435,24 @@ class BenchmarkingService:
         x90: TargetMap[Waveform] | None = None,
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: TargetMap[Waveform] | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
+
+        if in_parallel is None:
+            in_parallel = False
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
 
         if n_cliffords_range is not None:
             n_cliffords_range = np.array(n_cliffords_range, dtype=int)
@@ -599,14 +613,23 @@ class BenchmarkingService:
         zx90: TargetMap[PulseSchedule] | None = None,
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
-        mitigate_readout: bool = True,
+        in_parallel: bool | None = None,
+        mitigate_readout: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if in_parallel is None:
+            in_parallel = False
+        if mitigate_readout is None:
+            mitigate_readout = True
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+
         if self.ctx.state_centers is None:
             raise ValueError("State classifiers are not built.")
 
@@ -803,17 +826,24 @@ class BenchmarkingService:
         x90: TargetMap[Waveform] | None = None,
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: TargetMap[Waveform] | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
+
+        if in_parallel is None:
+            in_parallel = False
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
 
         if n_cliffords_range is not None:
             n_cliffords_range = np.array(n_cliffords_range, dtype=int)
@@ -974,14 +1004,23 @@ class BenchmarkingService:
         zx90: TargetMap[PulseSchedule] | None = None,
         interleaved_clifford: Clifford | None = None,
         interleaved_waveform: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
-        mitigate_readout: bool = True,
+        in_parallel: bool | None = None,
+        mitigate_readout: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
+        if in_parallel is None:
+            in_parallel = False
+        if mitigate_readout is None:
+            mitigate_readout = True
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
+
         if self.ctx.state_centers is None:
             raise ValueError("State classifiers are not built.")
 
@@ -1181,16 +1220,23 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
+
+        if in_parallel is None:
+            in_parallel = False
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
 
         if isinstance(interleaved_clifford, str):
             clifford = self.ctx.clifford.get(interleaved_clifford)
@@ -1385,16 +1431,23 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
+
+        if in_parallel is None:
+            in_parallel = False
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
 
         if isinstance(interleaved_clifford, str):
             clifford = self.ctx.clifford.get(interleaved_clifford)
@@ -1585,12 +1638,12 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if isinstance(targets, str):
             targets = [targets]
@@ -1646,16 +1699,19 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
+
+        if in_parallel is None:
+            in_parallel = False
 
         if in_parallel:
             result = self.irb_experiment(
@@ -1708,12 +1764,12 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if isinstance(targets, str):
             targets = [targets]
@@ -1769,16 +1825,19 @@ class BenchmarkingService:
         max_n_cliffords: int | None = None,
         x90: TargetMap[Waveform] | None = None,
         zx90: TargetMap[PulseSchedule] | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if isinstance(targets, str):
             targets = [targets]
         else:
             targets = list(targets)
+
+        if in_parallel is None:
+            in_parallel = False
 
         if in_parallel:
             result = self.ipb_experiment(
@@ -1826,11 +1885,11 @@ class BenchmarkingService:
         targets: Collection[str] | str | None = None,
         *,
         n_trials: int | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ):
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -1838,6 +1897,13 @@ class BenchmarkingService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if in_parallel is None:
+            in_parallel = False
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
 
         if in_parallel:
             self.interleaved_randomized_benchmarking(
@@ -1892,11 +1958,11 @@ class BenchmarkingService:
         targets: Collection[str] | str | None = None,
         *,
         n_trials: int | None = None,
-        in_parallel: bool = False,
+        in_parallel: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        plot: bool = True,
-        save_image: bool = True,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ):
         if targets is None:
             targets = self.ctx.cr_labels
@@ -1904,6 +1970,13 @@ class BenchmarkingService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if in_parallel is None:
+            in_parallel = False
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
 
         if in_parallel:
             self.interleaved_randomized_benchmarking(

@@ -1044,8 +1044,8 @@ class ExperimentContext:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        duration: int = 10240,
-        plot: bool = True,
+        duration: int | None = None,
+        plot: bool | None = None,
     ) -> MeasureResult:
         """
         Checks the noise level of the system.
@@ -1055,7 +1055,7 @@ class ExperimentContext:
         targets : Collection[str] | str, optional
             Target labels to check the noise.
         duration : int, optional
-            Duration of the noise measurement. Defaults to 2048.
+            Duration of the noise measurement. Defaults to 10240.
         plot : bool, optional
             Whether to plot the measured signals. Defaults to True.
 
@@ -1068,6 +1068,11 @@ class ExperimentContext:
         --------
         >>> result = ex.check_noise(["Q00", "Q01"])
         """
+        if duration is None:
+            duration = 10240
+        if plot is None:
+            plot = True
+
         if targets is None:
             targets = self.qubit_labels
         elif isinstance(targets, str):
@@ -1111,8 +1116,11 @@ class ExperimentContext:
         *,
         current_amplitudes: dict[str, float] | None = None,
         current_rabi_params: dict[str, RabiParam] | None = None,
-        print_result: bool = True,
+        print_result: bool | None = None,
     ) -> dict[str, float]:
+        if print_result is None:
+            print_result = True
+
         if rabi_rate is None:
             rabi_rate = DEFAULT_RABI_FREQUENCY
 
@@ -1159,10 +1167,15 @@ class ExperimentContext:
 
     def calc_rabi_rates(
         self,
-        control_amplitude: float = 1.0,
+        control_amplitude: float | None = None,
         *,
-        print_result: bool = True,
+        print_result: bool | None = None,
     ) -> dict[str, float]:
+        if control_amplitude is None:
+            control_amplitude = 1.0
+        if print_result is None:
+            print_result = True
+
         default_ampl = self.params.control_amplitude
 
         rabi_rates = {

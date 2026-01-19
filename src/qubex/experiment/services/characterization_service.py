@@ -102,13 +102,13 @@ class CharacterizationService:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -116,6 +116,17 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if initial_state is None:
+            initial_state = "0"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
 
         sequence = {
             target: self.pulse.get_pulse_for_state(
@@ -159,11 +170,11 @@ class CharacterizationService:
         targets: Collection[str] | str | None = None,
         *,
         amplitude_range: ArrayLike | None = None,
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_duration: float | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> Result:
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -171,6 +182,15 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if initial_state is None:
+            initial_state = "0"
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
 
         if amplitude_range is None:
             amplitude_range = np.linspace(0.0, 0.25, 51)
@@ -372,14 +392,14 @@ class CharacterizationService:
         targets: Collection[str] | str | None = None,
         *,
         detuning_range: ArrayLike | None = None,
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        time_range: ArrayLike | None = None,
         frequencies: dict[str, float] | None = None,
         amplitudes: dict[str, float] | None = None,
         rabi_params: dict[str, RabiParam] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> Result:
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -387,6 +407,17 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if time_range is None:
+            time_range = DEFAULT_RABI_TIME_RANGE
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = True
 
         if frequencies is None:
             frequencies = {
@@ -892,11 +923,11 @@ class CharacterizationService:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
-        xaxis_type: Literal["linear", "log"] = "log",
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T1Data]:
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -904,6 +935,17 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+        if xaxis_type is None:
+            xaxis_type = "log"
 
         self.ctx.validate_rabi_params(targets)
 
@@ -987,13 +1029,13 @@ class CharacterizationService:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        n_cpmg: int | None = 1,
+        n_cpmg: int | None = None,
         pi_cpmg: Waveform | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
-        xaxis_type: Literal["linear", "log"] = "log",
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T2Data]:
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -1001,6 +1043,19 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if n_cpmg is None:
+            n_cpmg = 1
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
+        if xaxis_type is None:
+            xaxis_type = "log"
 
         self.ctx.validate_rabi_params(targets)
 
@@ -1125,12 +1180,12 @@ class CharacterizationService:
         *,
         time_range: ArrayLike | None = None,
         detuning: float | None = None,
-        second_rotation_axis: Literal["X", "Y"] = "Y",
-        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = False,
+        second_rotation_axis: Literal["X", "Y"] | None = None,
+        spectator_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
         if targets is None:
             targets = self.ctx.qubit_labels
@@ -1138,6 +1193,19 @@ class CharacterizationService:
             targets = [targets]
         else:
             targets = list(targets)
+
+        if second_rotation_axis is None:
+            second_rotation_axis = "Y"
+        if spectator_state is None:
+            spectator_state = "0"
+        if shots is None:
+            shots = CALIBRATION_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if save_image is None:
+            save_image = False
 
         if time_range is None:
             time_range = np.arange(0, 10001, 100)
@@ -2286,7 +2354,7 @@ class CharacterizationService:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         electrical_delay: float | None = None,
-        subrange_width: float = 0.3,
+        subrange_width: float | None = None,
         peak_height: float | None = None,
         peak_distance: int | None = None,
         shots: int = DEFAULT_SHOTS,
@@ -2325,6 +2393,9 @@ class CharacterizationService:
             )
         else:
             tau = electrical_delay
+
+        if subrange_width is None:
+            subrange_width = 0.3  # GHz
 
         if readout_duration is None:
             readout_duration = 8192
