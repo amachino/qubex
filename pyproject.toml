@@ -73,6 +73,7 @@ select = [
     "UP",  # pyupgrade
     "B",   # flake8-bugbear
     "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports
     "I",   # isort
 ]
 ignore = [
