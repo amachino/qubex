@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from .pauli import Pauli
+
+logger = logging.getLogger(__name__)
 
 
 class Clifford:
@@ -697,8 +701,8 @@ class Clifford:
             for operator, pauli in self.map.items()
         }
 
-    def print(self):
-        print(self.to_string())
+    def log_info(self):
+        logger.info(self.to_string())
 
     def __repr__(self) -> str:
         return f"Clifford({self.to_string()})"

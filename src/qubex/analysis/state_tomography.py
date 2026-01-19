@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from functools import reduce
 from itertools import product
@@ -11,6 +12,8 @@ from numpy.typing import NDArray
 from plotly.subplots import make_subplots
 
 from .visualization import save_figure_image
+
+logger = logging.getLogger(__name__)
 
 
 def calculate_expected_values(
@@ -200,7 +203,7 @@ def plot_ghz_state_tomography(
     if plot:
         fig.show()
         if fidelity is not None:
-            print(f"State fidelity: {fidelity * 100:.3f}%")
+            logger.info(f"State fidelity: {fidelity * 100:.3f}%")
     if save_image:
         if file_name is None:
             file_name = f"ghz_state_tomography_{'-'.join(qubits)}"

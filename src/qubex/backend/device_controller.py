@@ -62,7 +62,7 @@ class DeviceController:
                 try:
                     self._qubecalib = QubeCalib(str(config_path))
                 except FileNotFoundError:
-                    print(f"Configuration file {config_path} not found.")
+                    logger.warning(f"Configuration file {config_path} not found.")
                     raise
         except Exception:
             self._qubecalib = None
@@ -421,7 +421,7 @@ class DeviceController:
         # check if all links are up
         status = box.link_status()
         if not all(status.values()):
-            print(f"Failed to linkup box {box_name}. Status: {status}")
+            logger.warning(f"Failed to linkup box {box_name}. Status: {status}")
         # return the box
         return box
 
@@ -442,9 +442,9 @@ class DeviceController:
         for box_name in box_list:
             try:
                 boxes[box_name] = self.linkup(box_name, noise_threshold=noise_threshold)
-                print(f"{box_name:5}", ":", "Linked up")
+                logger.info(f"{box_name:5} : Linked up")
             except Exception as e:
-                print(f"{box_name:5}", ":", "Error", e)
+                logger.error(f"{box_name:5} : Error {e}")
         return boxes
 
     def relinkup(self, box_name: str, noise_threshold: int | None = None):
@@ -540,7 +540,7 @@ class DeviceController:
             return True
         synchronized = self.resync_clocks(box_list)
         if not synchronized:
-            print("Failed to synchronize clocks.")
+            logger.warning("Failed to synchronize clocks.")
         return synchronized
 
     def dump_box(self, box_name: str) -> dict:
@@ -566,7 +566,7 @@ class DeviceController:
             box = self.get_box(box_name)
             box_config = box.dump_box()
         except Exception as e:
-            print(f"Failed to dump box {box_name}. Error: {e}")
+            logger.error(f"Failed to dump box {box_name}. Error: {e}")
             box_config = {}
         return box_config
 
@@ -595,7 +595,9 @@ class DeviceController:
             box = self.get_box(box_name)
             port_config = box.dump_port(port_number)
         except Exception as e:
-            print(f"Failed to dump port {port_number} of box {box_name}. Error: {e}")
+            logger.error(
+                f"Failed to dump port {port_number} of box {box_name}. Error: {e}"
+            )
             port_config = {}
         return port_config
 
@@ -720,7 +722,7 @@ class DeviceController:
 
     def show_command_queue(self):
         """Show the current command queue."""
-        print(self.qubecalib.show_command_queue())
+        logger.info(self.qubecalib.show_command_queue())
 
     def clear_command_queue(self):
         """Clear the command queue."""

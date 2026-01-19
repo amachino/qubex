@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from functools import cached_property, partial
 from typing import Final
@@ -16,6 +17,8 @@ from jax.scipy.linalg import expm
 from numpy.typing import NDArray
 
 from .quantum_system import QuantumSystem
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -107,11 +110,11 @@ class PulseOptimizer:
         if not isinstance(initial_state, qt.Qobj):
             initial_state = quantum_system.state(initial_state)
 
-        print("System Hamiltonian")
+        logger.info("System Hamiltonian")
         display(system_hamiltonian)
-        print("Target Unitary")
+        logger.info("Target Unitary")
         display(target_unitary)
-        print("Initial State")
+        logger.info("Initial State")
         display(initial_state)
 
         self.quantum_system: Final = quantum_system

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from functools import cached_property
@@ -11,6 +12,7 @@ import numpy as np
 from qubex.measurement import MeasureData, MeasureMode, MeasureResult
 from qubex.pulse import PulseSchedule, Waveform
 
+logger = logging.getLogger(__name__)
 API_BASE_URL = "https://qiqb.ngrok.dev"
 
 
@@ -220,7 +222,7 @@ class PulseAPI:
         )
         status_code = response.status_code
         if status_code == 401:
-            print("Unauthorized. Please check your API key.")
+            logger.error("Unauthorized. Please check your API key.")
             return {"error": {"message": "Unauthorized"}}
         response.raise_for_status()
         json = response.json()

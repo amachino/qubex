@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ from qubex.analysis.visualization import plot_bloch_vectors
 from qubex.pulse import PulseSchedule, Waveform
 
 from .quantum_system import Object, QuantumSystem
+
+logger = logging.getLogger(__name__)
 
 TIME_STEP = 0.1  # ns
 
@@ -116,7 +119,7 @@ class Control:
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ) -> None:
         if self.n_segments == 0:
-            print("Waveform is empty.")
+            logger.warning("Waveform is empty.")
             return
 
         if times is None:
@@ -670,7 +673,7 @@ class SimulationResult:
         population = np.real(states[-1].diag())
         for idx, prob in enumerate(population):
             basis = self.system.basis_labels[idx] if label is None else str(idx)
-            print(f"|{basis}⟩: {prob * 100:6.3f}%")
+            logger.info(f"|{basis}⟩: {prob * 100:6.3f}%")
 
     def plot_population_dynamics(
         self,

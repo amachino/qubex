@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from collections.abc import Collection
 from contextlib import contextmanager
@@ -70,6 +71,8 @@ from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_util import ExperimentUtil
 from .rabi_param import RabiParam
+
+logger = logging.getLogger(__name__)
 
 console = Console()
 
@@ -310,33 +313,39 @@ class ExperimentContext:
             qubit for qubit in qubit_labels if qubit not in available_qubits
         ]
         if len(unavailable_qubits) > 0:
-            print(f"Unavailable qubits: {unavailable_qubits}")
+            logger.warning(f"Unavailable qubits: {unavailable_qubits}")
 
         qubit_labels = [qubit for qubit in qubit_labels if qubit in available_qubits]
+
         return qubit_labels
 
     def print_environment(self, verbose: bool = True):
         """Print the environment information."""
-        print("========================================")
-        print("date:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        print("python:", sys.version.split()[0])
+        logger.info("========================================")
+        logger.info(f"date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"python: {sys.version.split()[0]}")
         if verbose:
-            print("numpy:", get_package_version("numpy"))
-            print("quel_ic_config:", get_package_version("quel_ic_config"))
-            print("quel_clock_master:", get_package_version("quel_clock_master"))
-            print("qubecalib:", get_package_version("qubecalib"))
-        print("qubex:", get_package_version("qubex"))
-        print("env:", sys.prefix)
-        print("config:", self.config_path)
-        print("params:", self.params_path)
-        print("chip:", self.chip_id, f"({self.chip.name})")
-        print("qubits:", self.qubit_labels)
-        print("muxes:", self.mux_labels)
-        print("boxes:", self.box_ids)
-        print("========================================")
+            logger.info(f"numpy: {get_package_version('numpy')}")
+            logger.info(f"quel_ic_config: {get_package_version('quel_ic_config')}")
+            logger.info(
+                f"quel_clock_master: {get_package_version('quel_clock_master')}"
+            )
+            logger.info(f"qubecalib: {get_package_version('qubecalib')}")
+        logger.info(f"qubex: {get_package_version('qubex')}")
+        logger.info(f"env: {sys.prefix}")
+        logger.info(f"config: {self.config_path}")
+        logger.info(f"params: {self.params_path}")
+        logger.info(f"chip: {self.chip_id} ({self.chip.name})")
+        logger.info(f"qubits: {self.qubit_labels}")
+        logger.info(f"muxes: {self.mux_labels}")
+        logger.info(f"boxes: {self.box_ids}")
+        logger.info("========================================")
 
     def print_boxes(self):
         """Print the box information."""
+        if not logger.isEnabledFor(logging.INFO):
+            return
+
         table = Table(header_style="bold")
         table.add_column("ID", justify="left")
         table.add_column("NAME", justify="left")
@@ -622,7 +631,7 @@ class ExperimentContext:
         try:
             with open(property_path, "w") as f:
                 json.dump(data, f, indent=4)
-            print(f"Property '{property_name}' saved to {property_path}")
+            logger.info(f"Property '{property_name}' saved to {property_path}")
         except Exception as e:
             raise OSError(f"Failed to save property '{property_name}': {e}") from e
 
@@ -639,7 +648,7 @@ class ExperimentContext:
             raise FileNotFoundError(f"Calibration file '{path}' does not exist.")
         try:
             self._calib_note.load(path)
-            print(f"Calibration data loaded from {path}")
+            logger.info(f"Calibration data loaded from {path}")
         except Exception as e:
             raise CalibrationMissingError(
                 f"Failed to load calibration data from {path}: {e}"
@@ -814,7 +823,7 @@ class ExperimentContext:
                 )
 
         if len(not_stored) > 0:
-            print(f"Rabi parameters are not stored for qubits: {not_stored}")
+            logger.warning(f"Rabi parameters are not stored for qubits: {not_stored}")
 
     def get_spectators(
         self,
@@ -840,36 +849,38 @@ class ExperimentContext:
 
     def check_status(self):
         if not self.is_connected():
-            print("Not connected to the devices. Call `connect()` method first.")
+            logger.warning(
+                "Not connected to the devices. Call `connect()` method first."
+            )
             return
 
         if len(self.box_ids) == 0:
-            print("No boxes are selected.")
+            logger.warning("No boxes are selected.")
             return
 
         # link status
         link_status = self._measurement.check_link_status(self.box_ids)
         if link_status["status"]:
-            print("Link status: OK")
+            logger.info("Link status: OK")
         else:
-            print("Link status: NG")
-        print(link_status["links"])
+            logger.warning("Link status: NG")
+        logger.info(link_status["links"])
 
         # clock status
         clock_status = self._measurement.check_clock_status(self.box_ids)
         if clock_status["status"]:
-            print("Clock status: OK")
+            logger.info("Clock status: OK")
         else:
-            print("Clock status: NG")
-        print(clock_status["clocks"])
+            logger.warning("Clock status: NG")
+        logger.info(clock_status["clocks"])
 
         # config status
         config_status = self.system_manager.is_synced(box_ids=self.box_ids)
         if config_status:
-            print("Config status: OK")
+            logger.info("Config status: OK")
         else:
-            print("Config status: NG")
-        print(self.system_manager.device_settings)
+            logger.warning("Config status: NG")
+        logger.info(self.system_manager.device_settings)
 
     def connect(
         self,
@@ -878,9 +889,9 @@ class ExperimentContext:
     ) -> None:
         try:
             self._measurement.connect(sync_clocks=sync_clocks)
-            print("Successfully connected.")
+            logger.info("Successfully connected.")
         except Exception as e:
-            print(f"Failed to connect to the devices: {e}")
+            logger.error(f"Failed to connect to the devices: {e}")
             raise
 
     def linkup(
@@ -926,9 +937,9 @@ class ExperimentContext:
     def reload(self):
         try:
             self._measurement.reload(configuration_mode=self.configuration_mode)
-            print("Successfully reloaded.")
+            logger.info("Successfully reloaded.")
         except Exception as e:
-            print(f"Failed to reload the devices: {e}")
+            logger.error(f"Failed to reload the devices: {e}")
             raise
 
     def reset_awg_and_capunits(
@@ -1024,9 +1035,9 @@ class ExperimentContext:
         name: str,
     ) -> ExperimentRecord:
         record = ExperimentRecord.load(name)
-        print(f"ExperimentRecord `{name}` is loaded.\n")
-        print(f"description: {record.description}")
-        print(f"created_at: {record.created_at}")
+        logger.info(f"ExperimentRecord `{name}` is loaded.\n")
+        logger.info(f"description: {record.description}")
+        logger.info(f"created_at: {record.created_at}")
         return record
 
     def check_noise(
@@ -1124,9 +1135,9 @@ class ExperimentContext:
         }
 
         if print_result:
-            print(f"Control amplitude for rabi rate {rabi_rate * 1e3:.3f} MHz\n")
+            logger.info(f"Control amplitude for rabi rate {rabi_rate * 1e3:.3f} MHz\n")
             for target, amplitude in amplitudes.items():
-                print(f"{target}: {amplitude:.6f}")
+                logger.info(f"{target}: {amplitude:.6f}")
 
         return amplitudes
 
@@ -1160,8 +1171,8 @@ class ExperimentContext:
         }
 
         if print_result:
-            print(f"Rabi rate for control amplitude {control_amplitude}\n")
+            logger.info(f"Rabi rate for control amplitude {control_amplitude}\n")
             for target, rabi_rate in rabi_rates.items():
-                print(f"{target}: {rabi_rate * 1e3:.3f} MHz")
+                logger.info(f"{target}: {rabi_rate * 1e3:.3f} MHz")
 
         return rabi_rates

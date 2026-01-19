@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import warnings
 from collections.abc import Sequence
 from contextlib import contextmanager
@@ -16,6 +17,8 @@ from .config_loader import ConfigLoader
 from .control_system import CapPort, GenPort, PortType
 from .device_controller import DeviceController
 from .experiment_system import ExperimentSystem
+
+logger = logging.getLogger(__name__)
 
 console = Console()
 
@@ -166,7 +169,7 @@ class SystemManager:
         self._experiment_system = experiment_system
         # update device controller to reflect the new experiment system
         if self._mock_mode:
-            print(
+            logger.info(
                 "Experiment system created in mock mode (device controller updates bypassed)"
             )
             return
@@ -274,14 +277,14 @@ class SystemManager:
     ):
         skew_file_path = self.config_loader.config_path / "skew.yaml"
         if not Path(skew_file_path).exists():
-            print(f"Skew file not found: {skew_file_path}")
+            logger.warning(f"Skew file not found: {skew_file_path}")
         else:
             try:
                 self.device_controller.qubecalib.sysdb.load_skew_yaml(
                     str(skew_file_path)
                 )
             except Exception as e:
-                print(f"Failed to load the skew file: {e}")
+                logger.error(f"Failed to load the skew file: {e}")
 
     def pull(
         self,
@@ -331,7 +334,7 @@ This operation will overwrite the existing device settings. Do you want to conti
 """
             )
             if not confirmed:
-                print("Operation cancelled.")
+                logger.info("Operation cancelled.")
                 return
 
         for box in boxes:
@@ -357,7 +360,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                                     fnco_freq=gen_channel.fnco_freq,
                                 )
                         except Exception as e:
-                            print(e, port.id)
+                            logger.error(f"{e} {port.id}")
                 elif isinstance(port, CapPort):
                     if port.type in (PortType.READ_IN,):
                         try:
@@ -376,7 +379,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                                     fnco_freq=cap_channel.fnco_freq,
                                 )
                         except Exception as e:
-                            print(e, port.id)
+                            logger.error(f"{e} {port.id}")
 
         self._device_settings = self._fetch_device_settings(box_ids=box_ids)
         self.update_cache()
@@ -405,7 +408,7 @@ This operation will overwrite the existing device settings. Do you want to conti
 
         box_ids = [box.id for box in experiment_system.boxes]
         if box_id not in box_ids:
-            print(f"Box {box_id} is not found.")
+            logger.warning(f"Box {box_id} is not found.")
             return
 
         box = experiment_system.get_box(box_id)
@@ -486,7 +489,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             f.write(self.device_controller.system_config_json)
-        print(f"Qubecalib configuration saved to {path}.")
+        logger.info(f"Qubecalib configuration saved to {path}.")
 
     def _fetch_device_settings(
         self,
@@ -506,7 +509,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                             port.number
                         ]
                     except Exception as e:
-                        print(e)
+                        logger.error(e)
         return result
 
     def _update_device_controller(

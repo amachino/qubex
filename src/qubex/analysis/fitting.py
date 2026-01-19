@@ -402,16 +402,16 @@ def fit_linear(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
+            logger.info(f"Target: {target}")
         if not intercept:
-            print("Fit: a * x")
-            print(f"  a = {a:.3g} ± {a_err:.1g}")
+            logger.info("Fit: a * x")
+            logger.info(f"  a = {a:.3g} ± {a_err:.1g}")
         else:
-            print("Fit: a * x + b")
-            print(f"  a = {a:.3g} ± {a_err:.1g}")
-            print(f"  b = {b:.3g} ± {b_err:.1g}")
-        print(f"  R² = {r2:.3f}")
-        print("")
+            logger.info("Fit: a * x + b")
+            logger.info(f"  a = {a:.3g} ± {a_err:.1g}")
+            logger.info(f"  b = {b:.3g} ± {b_err:.1g}")
+        logger.info(f"  R² = {r2:.3f}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -491,7 +491,7 @@ def fit_polynomial(
         # select root nearest to the center of the range
         root = roots_in_range[np.argmin(np.abs(roots_in_range - np.mean(x)))]
     except ValueError:
-        print(f"No root found in the range ({np.min(x)}, {np.max(x)}).")
+        logger.warning(f"No root found in the range ({np.min(x)}, {np.max(x)}).")
         root = np.nan
 
     fig = go.Figure()
@@ -641,7 +641,7 @@ def fit_cosine(
             )
             popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -707,16 +707,16 @@ def fit_cosine(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit: A * cos(2πft + φ) + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f = {f:.6g} ± {f_err:.1g}")
-        print(f"  φ = {phi:.6g} ± {phi_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
+            logger.info(f"Target: {target}")
+        logger.info("Fit: A * cos(2πft + φ) + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f = {f:.6g} ± {f_err:.1g}")
+        logger.info(f"  φ = {phi:.6g} ± {phi_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
         if is_damped:
-            print(f"  τ = {tau:.6g} ± {tau_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print("")
+            logger.info(f"  τ = {tau:.6g} ± {tau_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -828,7 +828,7 @@ def fit_delayed_cosine(
     try:
         popt, pcov = curve_fit(func_delayed_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -892,14 +892,14 @@ def fit_delayed_cosine(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit: A * cos(2πft + φ) + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f = {f:.6g} ± {f_err:.1g}")
-        print(f"  t0 = {t0:.6g} ± {t0_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print("")
+            logger.info(f"Target: {target}")
+        logger.info("Fit: A * cos(2πft + φ) + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f = {f:.6g} ± {f_err:.1g}")
+        logger.info(f"  t0 = {t0:.6g} ± {t0_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -992,7 +992,7 @@ def fit_exp_decay(
     try:
         popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1045,13 +1045,13 @@ def fit_exp_decay(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit: A * exp(-t/τ) + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  τ = {tau * 1e-3:.6g} ± {tau_err * 1e-3:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print("")
+            logger.info(f"Target: {target}")
+        logger.info("Fit: A * exp(-t/τ) + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  τ = {tau * 1e-3:.6g} ± {tau_err * 1e-3:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1142,7 +1142,7 @@ def fit_lorentzian(
     try:
         popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1205,12 +1205,12 @@ def fit_lorentzian(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit : A / [1 + {(f - f0) / γ}^2] + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
-        print(f"  γ = {gamma:.6g} ± {gamma_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
+            logger.info(f"Target: {target}")
+        logger.info("Fit : A / [1 + {(f - f0) / γ}^2] + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
+        logger.info(f"  γ = {gamma:.6g} ± {gamma_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1311,7 +1311,7 @@ def fit_sqrt_lorentzian(
             bounds=bounds,
         )
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1374,12 +1374,12 @@ def fit_sqrt_lorentzian(
         fig.show(config=_plotly_config(filename))
 
         if target:
-            print(f"Target: {target}")
-        print("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
-        print(f"  Ω = {Omega:.6g} ± {Omega_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
+            logger.info(f"Target: {target}")
+        logger.info("Fit : A / √[1 + {(f - f0) / Ω}^2] + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f0 = {f0:.6f} ± {f0_err:.1g}")
+        logger.info(f"  Ω = {Omega:.6g} ± {Omega_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1508,7 +1508,7 @@ def fit_rabi(
             )
             popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1581,8 +1581,10 @@ def fit_rabi(
     if plot:
         fig.show(config=_plotly_config(f"rabi_{target}"))
 
-        print(f"Target: {target}")
-        print(f"Rabi frequency: {frequency * 1e3:.6g} ± {frequency_err * 1e3:.1g} MHz")
+        logger.info(f"Target: {target}")
+        logger.info(
+            f"Rabi frequency: {frequency * 1e3:.6g} ± {frequency_err * 1e3:.1g} MHz"
+        )
 
     data_payload = {
         "amplitude": amplitude,
@@ -1610,7 +1612,7 @@ def fit_rabi(
     }
 
     if r2 < 0.9:
-        print("Warning: R² < 0.9")
+        logger.info("Warning: R² < 0.9")
         return FitResult(
             status=FitStatus.WARNING,
             message="R² < 0.9",
@@ -1663,7 +1665,7 @@ def fit_detuned_rabi(
     try:
         popt, pcov = curve_fit(func, control_frequencies, rabi_frequencies)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1724,8 +1726,8 @@ def fit_detuned_rabi(
     if plot:
         fig.show(config=_plotly_config(f"detuned_rabi_{target}"))
 
-        print("Resonance frequency")
-        print(f"  {target}: {f_resonance:.6f}")
+        logger.info("Resonance frequency")
+        logger.info(f"  {target}: {f_resonance:.6f}")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1831,7 +1833,7 @@ def fit_ramsey(
     try:
         popt, pcov = curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1886,15 +1888,15 @@ def fit_ramsey(
     if plot:
         fig.show(config=_plotly_config(f"ramsey_{target}"))
 
-        print(f"Target: {target}")
-        print("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  f = {f:.6g} ± {f_err:.1g}")
-        print(f"  φ = {phi:.6g} ± {phi_err:.1g}")
-        print(f"  τ = {tau:.6g} ± {tau_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print("")
+        logger.info(f"Target: {target}")
+        logger.info("Fit: A * exp(-t/τ) * cos(2πft + φ) + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  f = {f:.6g} ± {f_err:.1g}")
+        logger.info(f"  φ = {phi:.6g} ± {phi_err:.1g}")
+        logger.info(f"  τ = {tau:.6g} ± {tau_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -1988,7 +1990,7 @@ def fit_rb(
     try:
         popt, pcov = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -2044,16 +2046,16 @@ def fit_rb(
     if plot:
         fig.show(config=_plotly_config(f"rb_{target}"))
 
-        print(f"Target: {target}")
-        print("Fit: A * p^n + C")
-        print(f"  A = {A:.6g} ± {A_err:.1g}")
-        print(f"  p = {p:.6g} ± {p_err:.1g}")
-        print(f"  C = {C:.6g} ± {C_err:.1g}")
-        print(f"  R² = {r2:.6g}")
-        print(f"Depolarizing rate: {depolarizing_rate:.6g}")
-        print(f"Average gate error: {avg_gate_error:.6g}")
-        print(f"Average gate fidelity: {avg_gate_fidelity:.6g}")
-        print("")
+        logger.info(f"Target: {target}")
+        logger.info("Fit: A * p^n + C")
+        logger.info(f"  A = {A:.6g} ± {A_err:.1g}")
+        logger.info(f"  p = {p:.6g} ± {p_err:.1g}")
+        logger.info(f"  C = {C:.6g} ± {C_err:.1g}")
+        logger.info(f"  R² = {r2:.6g}")
+        logger.info(f"Depolarizing rate: {depolarizing_rate:.6g}")
+        logger.info(f"Average gate error: {avg_gate_error:.6g}")
+        logger.info(f"Average gate fidelity: {avg_gate_fidelity:.6g}")
+        logger.info("")
 
     return FitResult(
         status=FitStatus.SUCCESS,
@@ -2279,7 +2281,7 @@ def fit_ampl_calib_data(
     try:
         popt, pcov = curve_fit(cos_func, x, y, p0=p0)
     except RuntimeError:
-        print(f"Failed to fit the data for {target}.")
+        logger.error(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -2829,14 +2831,14 @@ def fit_reflection_coefficient_double(
     if plot:
         fig.show()
 
-    print(f"{target}\n--------------------")
-    print(f"Resonance frequency #0:\n  {f_r0:.6g} GHz")
-    print(f"Resonance frequency #1:\n  {f_r1:.6g} GHz")
-    print(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6g} MHz")
-    print(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6g} MHz")
-    print(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6g} MHz")
-    print(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6g} MHz")
-    print("--------------------\n")
+    logger.info(f"{target}\n--------------------")
+    logger.info(f"Resonance frequency #0:\n  {f_r0:.6g} GHz")
+    logger.info(f"Resonance frequency #1:\n  {f_r1:.6g} GHz")
+    logger.info(f"External loss rate #0:\n  {kappa_ex0 * 1e3:.6g} MHz")
+    logger.info(f"External loss rate #1:\n  {kappa_ex1 * 1e3:.6g} MHz")
+    logger.info(f"Internal loss rate #0:\n  {kappa_in0 * 1e3:.6g} MHz")
+    logger.info(f"Internal loss rate #1:\n  {kappa_in1 * 1e3:.6g} MHz")
+    logger.info("--------------------\n")
 
     return FitResult(
         status=(FitStatus.SUCCESS if result.success else FitStatus.WARNING),

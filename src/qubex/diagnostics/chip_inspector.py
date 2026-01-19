@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Literal
@@ -9,6 +10,8 @@ from qubex.backend.lattice_graph import LatticeGraph
 
 from . import inspection_library
 from .inspection import Inspection
+
+logger = logging.getLogger(__name__)
 
 InspectionType = Literal[
     "Type0A",
@@ -93,7 +96,7 @@ class ChipInspector:
             try:
                 inspection.execute()
             except Exception as e:
-                print(f"Error in {inspection.name}: {e}")
+                logger.error(f"Error in {inspection.name}: {e}")
             inspections[type] = inspection
 
         return InspectionSummary(
@@ -131,19 +134,19 @@ class InspectionSummary:
                 )
         return dict(sorted(invalid_edges.items()))
 
-    def print(self):
-        print(f"{len(self.invalid_nodes)} invalid nodes: ")
+    def log_report(self):
+        logger.info(f"{len(self.invalid_nodes)} invalid nodes: ")
         if self.invalid_nodes:
             for label, messages in self.invalid_nodes.items():
-                print(f"  {label}:")
+                logger.info(f"  {label}:")
                 for message in messages:
-                    print(f"    - {message}")
-        print(f"{len(self.invalid_edges)} invalid edges: ")
+                    logger.info(f"    - {message}")
+        logger.info(f"{len(self.invalid_edges)} invalid edges: ")
         if self.invalid_edges:
             for label, messages in self.invalid_edges.items():
-                print(f"  {label}:")
+                logger.info(f"  {label}:")
                 for message in messages:
-                    print(f"    - {message}")
+                    logger.info(f"    - {message}")
 
     def draw(
         self,

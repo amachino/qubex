@@ -148,7 +148,7 @@ class Measurement:
     ):
         """Connect to the devices."""
         if len(self.box_ids) == 0:
-            print("No boxes are selected. Please check the configuration.")
+            logger.warning("No boxes are selected. Please check the configuration.")
             return
         self.device_controller.connect(self.box_ids)
         self.system_manager.pull(self.box_ids)

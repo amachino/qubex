@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Final, Generic, TypeVar
@@ -9,6 +10,8 @@ import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
 
 jsonpickle_numpy.register_handlers()
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_DATA_DIR: Final[str] = "data"
@@ -86,7 +89,7 @@ class ExperimentRecord(Generic[T]):
             if encoded is not None:
                 f.write(encoded)
 
-        print(f"Data saved to {file_path}")
+        logger.info(f"Data saved to {file_path}")
         self.file_name = file_name
 
     @staticmethod

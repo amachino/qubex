@@ -323,13 +323,13 @@ class CalibrationNote(ExperimentNote):
     ):
         property = self.get(key)
         if property is None:
-            print(f"Key '{key}' not found.")
+            logger.warning(f"Key '{key}' not found.")
             return
         if target not in property:
-            print(f"Key '{target}' not found.")
+            logger.warning(f"Key '{target}' not found.")
             return
         del property[target]
-        print(f"Key '{target}' removed.")
+        logger.info(f"Key '{target}' removed.")
 
     def get(
         self,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import logging
 import os
 from collections.abc import Collection, Mapping
 from pathlib import Path
@@ -13,6 +14,8 @@ from numpy.typing import ArrayLike, NDArray
 
 from qubex.style import COLORS, get_colors, get_config
 from qubex.typing import IQArray
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_IMAGES_DIR = "./images"
 DEFAULT_TEMPLATE = "qubex"
@@ -61,7 +64,7 @@ def save_figure_image(
         height=height,
         scale=scale,
     )
-    print(f"Image saved to {file_path}")
+    logger.info(f"Image saved to {file_path}")
 
 
 def plot(

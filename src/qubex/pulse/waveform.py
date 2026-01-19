@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from functools import cached_property
 from typing import Literal, cast
@@ -9,6 +10,8 @@ import plotly.graph_objects as go
 from numpy.typing import NDArray
 from plotly.subplots import make_subplots
 from typing_extensions import deprecated
+
+logger = logging.getLogger(__name__)
 
 
 class Waveform(ABC):
@@ -243,7 +246,7 @@ class Waveform(ABC):
             Label of the y-axis.
         """
         if self.length == 0:
-            print("Waveform is empty.")
+            logger.warning("Waveform is empty.")
             return
 
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
@@ -315,7 +318,7 @@ class Waveform(ABC):
             Label of the y-axis.
         """
         if self.length == 0:
-            print("Waveform is empty.")
+            logger.warning("Waveform is empty.")
             return
 
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
@@ -423,7 +426,7 @@ class Waveform(ABC):
             Label of the y-axis.
         """
         if self.length == 0:
-            print("Waveform is empty.")
+            logger.warning("Waveform is empty.")
             return
 
         if title is None:

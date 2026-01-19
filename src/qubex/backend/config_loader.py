@@ -206,10 +206,10 @@ class ConfigLoader:
             with open(path) as file:
                 result = yaml.safe_load(file)
         except FileNotFoundError as e:
-            print(f"Configuration file not found: {path}\n\n{e}")
+            logger.error(f"Configuration file not found: {path}\n\n{e}")
             raise e
         except yaml.YAMLError as e:
-            print(f"Error loading configuration file: {path}\n\n{e}")
+            logger.error(f"Error loading configuration file: {path}\n\n{e}")
             raise e
         return result
 
@@ -225,7 +225,7 @@ class ConfigLoader:
             logger.debug("Legacy parameter file not found; treating as empty: %s", path)
             return {}
         except yaml.YAMLError as e:
-            print(f"Error loading parameter file: {path}\n\n{e}")
+            logger.error(f"Error loading parameter file: {path}\n\n{e}")
             raise e
         return result
 
@@ -250,7 +250,7 @@ class ConfigLoader:
         except FileNotFoundError:
             raise
         except yaml.YAMLError as e:
-            print(f"Error loading parameter file: {path}\n\n{e}")
+            logger.error(f"Error loading parameter file: {path}\n\n{e}")
             raise e
 
         if payload is None:
@@ -398,7 +398,7 @@ class ConfigLoader:
                         more,
                     )
                 else:
-                    logger.info(
+                    logger.debug(
                         "Param `%s` for chip `%s`: merged per-file (%s) over legacy (%s)%s.",
                         param_name,
                         self._chip_id,
@@ -407,7 +407,7 @@ class ConfigLoader:
                         f" with unit={unit!r}" if unit else "",
                     )
             else:
-                logger.info(
+                logger.debug(
                     "Param `%s` for chip `%s`: loaded per-file from %s%s.",
                     param_name,
                     self._chip_id,

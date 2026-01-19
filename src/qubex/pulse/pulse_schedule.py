@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Collection
 from copy import deepcopy
@@ -17,6 +18,8 @@ from qubex.style import COLORS
 from .blank import Blank
 from .pulse_array import PhaseShift, PulseArray
 from .waveform import Waveform
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -371,13 +374,13 @@ class PulseSchedule:
         >>> ps.plot()
         """
         if self._max_offset() == 0.0:
-            print("No data to plot.")
+            logger.warning("No data to plot.")
             return
 
         n_channels = len(self._channels)
 
         if n_channels == 0:
-            print("No data to plot.")
+            logger.warning("No data to plot.")
             return
 
         sequences = self.get_sequences()

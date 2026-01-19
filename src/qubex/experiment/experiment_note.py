@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 FILE_PATH = ".experiment_note.json"
 
@@ -72,9 +75,9 @@ class ExperimentNote:
             self._dict[key] = value
 
         if old_value is not None:
-            print(f"'{key}' updated: {value}")
+            logger.debug(f"'{key}' updated: {value}")
         else:
-            print(f"'{key}' added: {value}")
+            logger.debug(f"'{key}' added: {value}")
 
     def get(self, key: str) -> Any:
         """
@@ -105,16 +108,16 @@ class ExperimentNote:
         """
         removed_value = self._dict.pop(key, None)
         if removed_value is not None:
-            print(f"Key '{key}' removed, which had value '{removed_value}'.")
+            logger.info(f"Key '{key}' removed, which had value '{removed_value}'.")
         else:
-            print(f"Key '{key}' not found, no removal performed.")
+            logger.warning(f"Key '{key}' not found, no removal performed.")
 
     def clear(self) -> None:
         """
         Clears the dictionary.
         """
         self._dict.clear()
-        print("All entries have been cleared from the ExperimentNote.")
+        logger.info("All entries have been cleared from the ExperimentNote.")
 
     def save(self, file_path: Path | str | None = None):
         """
@@ -150,9 +153,9 @@ class ExperimentNote:
                 sanitized = self._sanitize_for_json(sorted_dict)
                 json.dump(sanitized, file, indent=4)
 
-            print(f"ExperimentNote saved to '{target_path}'.")
+            logger.info(f"ExperimentNote saved to '{target_path}'.")
         except Exception as e:
-            print(f"Failed to save ExperimentNote: {e}")
+            logger.error(f"Failed to save ExperimentNote: {e}")
 
     def load(self, file_path: Path | str | None = None):
         """
@@ -174,11 +177,11 @@ class ExperimentNote:
         except FileNotFoundError:
             pass
         except json.JSONDecodeError:
-            print(
+            logger.warning(
                 f"Error decoding JSON from '{file_path}'. Starting with an empty ExperimentNote."
             )
         except Exception as e:
-            print(f"Failed to load ExperimentNote: {e}")
+            logger.error(f"Failed to load ExperimentNote: {e}")
 
     def delete(self, file_path: Path | str | None = None):
         """
@@ -196,9 +199,9 @@ class ExperimentNote:
 
         if file_path.exists():
             file_path.unlink()
-            print(f"ExperimentNote file '{file_path}' deleted.")
+            logger.info(f"ExperimentNote file '{file_path}' deleted.")
         else:
-            print(f"ExperimentNote file '{file_path}' not found.")
+            logger.warning(f"ExperimentNote file '{file_path}' not found.")
 
     def __str__(self) -> str:
         """
@@ -274,7 +277,7 @@ class ExperimentNote:
                         else:
                             continue
                     except ValueError:
-                        print(
+                        logger.warning(
                             f"Invalid timestamp format for key '{key}': {value['timestamp']}"
                         )
                 else:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import math
 import subprocess
 from collections import defaultdict
@@ -7,22 +8,20 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Literal
 
+import quel_clock_master as qcm
 import yaml
+from qubecalib import QubeCalib
+from qubecalib.instrument.quel.quel1.tool.skew import Skew
+from quel_ic_config import Quel1Box
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
 
-try:
-    import quel_clock_master as qcm
-    from qubecalib import QubeCalib
-    from qubecalib.instrument.quel.quel1.tool.skew import Skew
-    from quel_ic_config import Quel1Box
-except ImportError:
-    pass
-
-
 from qubex.backend import LatticeGraph, SystemManager
 from qubex.diagnostics import ChipInspector
+
+logger = logging.getLogger(__name__)
+
 
 console = Console()
 system_manager = SystemManager.shared()
@@ -64,7 +63,7 @@ Do you want to continue?
 """
     )
     if not confirmed:
-        print("Operation cancelled.")
+        logger.info("Operation cancelled.")
         return {}
 
     all_box_ids = list(set(list(box_ids) + [ref_port]))
@@ -143,16 +142,16 @@ This operation will reset LO/NCO settings. Do you want to continue?
 """
     )
     if not confirmed:
-        print("Operation cancelled.")
+        logger.info("Operation cancelled.")
         return
 
-    print("Relinking up the boxes...")
+    logger.info("Relinking up the boxes...")
     system_manager.device_controller.relinkup_boxes(
         box_ids,
         noise_threshold=noise_threshold,
     )
     system_manager.device_controller.sync_clocks(box_ids)
-    print("Operation completed.")
+    logger.info("Operation completed.")
 
 
 def reset_clockmaster(
@@ -551,7 +550,7 @@ def print_chip_info(
                 )
 
     except Exception as e:
-        print(f"Error occurred while printing chip info: {e}")
+        logger.error(f"Error occurred while printing chip info: {e}")
 
 
 def print_wiring_info(qubits: Collection[str] | None = None) -> None:
@@ -848,10 +847,10 @@ def _configure_loopback(mux: str | int, *, enable: bool) -> None:
     try:
         for box_id, confs in box_confs.items():
             boxes[box_id].config_rfswitches(confs)
-        print(f"Loopback {action} for MUX#{mux} {[q.label for q in qubits]}.")
-        print(dict(box_confs))
+        logger.info(f"Loopback {action} for MUX#{mux} {[q.label for q in qubits]}.")
+        logger.info(dict(box_confs))
     except Exception as e:
-        console.print(f"Error {action} loopback: {e}")
+        logger.error(f"Error {action} loopback: {e}")
 
 
 def enable_loopback(*, mux: str | int):

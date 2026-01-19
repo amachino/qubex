@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, replace
@@ -7,6 +8,8 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from qubex.backend.lattice_graph import LatticeGraph
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -312,22 +315,22 @@ class Inspection(ABC):
         )
         return hovertext
 
-    def print(self):
-        print(f"[{self.name}]")
-        print(f"{self.description}")
-        print()
-        print(f"{len(self.invalid_nodes)} invalid nodes: ")
+    def log_report(self):
+        logger.info(f"[{self.name}]")
+        logger.info(f"{self.description}")
+        logger.info("")
+        logger.info(f"{len(self.invalid_nodes)} invalid nodes: ")
         if self.invalid_nodes:
             for label, messages in self.invalid_nodes.items():
-                print(f"  {label}:")
+                logger.info(f"  {label}:")
                 for message in messages:
-                    print(f"    - {message}")
-        print(f"{len(self.invalid_edges)} invalid edges: ")
+                    logger.info(f"    - {message}")
+        logger.info(f"{len(self.invalid_edges)} invalid edges: ")
         if self.invalid_edges:
             for label, messages in self.invalid_edges.items():
-                print(f"  {label}:")
+                logger.info(f"  {label}:")
                 for message in messages:
-                    print(f"    - {message}")
+                    logger.info(f"    - {message}")
 
     def draw(
         self,

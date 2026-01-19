@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Collection, Mapping
 from typing import Literal
@@ -19,6 +20,8 @@ from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService
 from .pulse_service import PulseService
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_RB_N_TRIALS = 30
 DEFAULT_MAX_N_CLIFFORDS_1Q = 2048
@@ -1335,26 +1338,26 @@ class BenchmarkingService:
                     name=f"interleaved_randomized_benchmarking_{target}",
                 )
 
-            print()
-            print(
+            logger.info("")
+            logger.info(
                 f"Average gate fidelity (RB)  : {avg_gate_fidelity_rb * 100:.3f} ± {avg_gate_fidelity_err_rb * 100:.3f}%"
             )
-            print(
+            logger.info(
                 f"Average gate fidelity (IRB) : {avg_gate_fidelity_irb * 100:.3f} ± {avg_gate_fidelity_err_irb * 100:.3f}%"
             )
-            print()
-            print(
+            logger.info("")
+            logger.info(
                 f"Gate error    : {gate_error * 100:.3f} ± {gate_fidelity_err * 100:.3f}%"
             )
-            print(
+            logger.info(
                 f"Gate fidelity : {gate_fidelity * 100:.3f} ± {gate_fidelity_err * 100:.3f}%"
             )
-            print()
+            logger.info("")
 
             if gate_error < 0.1 * avg_gate_error_rb:
                 # TODO: use a more appropriate threshold based on the system.
                 # NOTE: average number of gates per 2Q Clifford: 1Q=2.589, 2Q=1.5
-                print(
+                logger.warning(
                     f"Warning: Gate error ({gate_error * 100:.3f}%) is too low compared to the average gate error (RB) ({avg_gate_error_rb * 100:.3f}%)."
                 )
 

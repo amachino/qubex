@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 from pathlib import Path
 from typing import Literal
@@ -9,6 +10,7 @@ from .clifford import Clifford
 from .clifford_sequence import CliffordSequence
 from .pauli import Pauli
 
+logger = logging.getLogger(__name__)
 CLIFFORD_LIST_DIR = "clifford_list"
 CLIFFORD_LIST_1Q = "clifford_list_1q"
 CLIFFORD_LIST_1Q1Q = "clifford_list_1q1q"
@@ -354,12 +356,12 @@ class CliffordGenerator:
         sum_x90_count = sum(sequence.count(x90) for sequence in found_clifford_list)
         avg_x90_count = sum_x90_count / list_count
 
-        print(f"Generated {list_count} unique 1Q Clifford sequences.")
-        print()
-        print(f"  Maximum gate count per Clifford: {max_gate_count}")
-        print(f"  Maximum X90 count per Clifford: {max_x90_count}")
-        print(f"  Total X90 count: {sum_x90_count}")
-        print(f"  Average X90 count: {avg_x90_count}")
+        logger.info(f"Generated {list_count} unique 1Q Clifford sequences.")
+        logger.info("")
+        logger.info(f"  Maximum gate count per Clifford: {max_gate_count}")
+        logger.info(f"  Maximum X90 count per Clifford: {max_x90_count}")
+        logger.info(f"  Total X90 count: {sum_x90_count}")
+        logger.info(f"  Average X90 count: {avg_x90_count}")
 
         self._cliffords_1q = found_cliffords
         return self._cliffords_1q
@@ -401,9 +403,9 @@ class CliffordGenerator:
         list_count = len(found_clifford_list)
         max_gate_count = max(sequence.length for sequence in found_clifford_list)
 
-        print(f"Generated {list_count} unique 1Q1Q Clifford sequences.")
-        print()
-        print(f"  Maximum gate count per Clifford: {max_gate_count}")
+        logger.info(f"Generated {list_count} unique 1Q1Q Clifford sequences.")
+        logger.info("")
+        logger.info(f"  Maximum gate count per Clifford: {max_gate_count}")
 
         return self._cliffords_1q1q
 
@@ -484,22 +486,22 @@ class CliffordGenerator:
             return new_cliffords
 
         found_cliffords_1 = self.get_cliffords("1Q1Q")
-        print(f"1. 1Q1Q : {len(found_cliffords_1)}")
+        logger.info(f"1. 1Q1Q : {len(found_cliffords_1)}")
 
         found_cliffords_2 = apply_2q_clifford(found_cliffords_1)
-        print(f"2. 1Q1Q - 2Q : {len(found_cliffords_2)}")
+        logger.info(f"2. 1Q1Q - 2Q : {len(found_cliffords_2)}")
 
         found_cliffords_3 = apply_1q1q_clifford(found_cliffords_2)
-        print(f"3. 1Q1Q - 2Q - 1Q1Q : {len(found_cliffords_3)}")
+        logger.info(f"3. 1Q1Q - 2Q - 1Q1Q : {len(found_cliffords_3)}")
 
         found_cliffords_4 = apply_2q_clifford(found_cliffords_3)
-        print(f"4. 1Q1Q - 2Q - 1Q1Q - 2Q : {len(found_cliffords_4)}")
+        logger.info(f"4. 1Q1Q - 2Q - 1Q1Q - 2Q : {len(found_cliffords_4)}")
 
         found_cliffords_5 = apply_1q1q_clifford(found_cliffords_4)
-        print(f"5. 1Q1Q - 2Q - 1Q1Q - 2Q - 1Q1Q : {len(found_cliffords_5)}")
+        logger.info(f"5. 1Q1Q - 2Q - 1Q1Q - 2Q - 1Q1Q : {len(found_cliffords_5)}")
 
         found_cliffords_6 = apply_2q_clifford(found_cliffords_5)
-        print(f"6. 1Q1Q - 2Q - 1Q1Q - 2Q - 1Q1Q - 2Q : {len(found_cliffords_6)}")
+        logger.info(f"6. 1Q1Q - 2Q - 1Q1Q - 2Q - 1Q1Q - 2Q : {len(found_cliffords_6)}")
 
         self._cliffords_2q = found_cliffords_6
 
@@ -514,15 +516,15 @@ class CliffordGenerator:
         max_2q_count = max(count_2q_gate(sequence) for sequence in found_clifford_list)
         avg_2q_count = sum_2q_count / list_count
 
-        print(f"Generated {list_count} unique 2Q Clifford sequences.")
-        print()
-        print(f"  Maximum gate count per Clifford: {max_gate_count}")
-        print(f"  Maximum 1Q gate count per Clifford: {max_1q_count}")
-        print(f"  Total 1Q gate count: {sum_1q_count}")
-        print(f"  Average 1Q gate count: {avg_1q_count}")
-        print(f"  Maximum 2Q gate count per Clifford: {max_2q_count}")
-        print(f"  Total 2Q gate count: {sum_2q_count}")
-        print(f"  Average 2Q gate count: {avg_2q_count}")
+        logger.info(f"Generated {list_count} unique 2Q Clifford sequences.")
+        logger.info("")
+        logger.info(f"  Maximum gate count per Clifford: {max_gate_count}")
+        logger.info(f"  Maximum 1Q gate count per Clifford: {max_1q_count}")
+        logger.info(f"  Total 1Q gate count: {sum_1q_count}")
+        logger.info(f"  Average 1Q gate count: {avg_1q_count}")
+        logger.info(f"  Maximum 2Q gate count per Clifford: {max_2q_count}")
+        logger.info(f"  Total 2Q gate count: {sum_2q_count}")
+        logger.info(f"  Average 2Q gate count: {avg_2q_count}")
 
         return self._cliffords_2q
 

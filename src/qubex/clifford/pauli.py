@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 PAULI_1Q = [
     "I",
     "X",
@@ -61,9 +65,9 @@ class Pauli:
         sign = {1: "", -1: "-", 1j: "i", -1j: "-i"}[self.coefficient]
         return f"{sign}{self.operator}"
 
-    def print(self):
+    def log_info(self):
         """Prints the string representation of the Pauli operator."""
-        print(self.to_string())
+        logger.info(self.to_string())
 
     def __repr__(self) -> str:
         coefficient = {1: "1", -1: "-1", 1j: "1j", -1j: "-1j"}[self.coefficient]

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
+
+logger = logging.getLogger(__name__)
 
 try:
     import html
@@ -22,7 +25,7 @@ def profile(
 ):
     """Optional profiling using pyinstrument. Displays profile and elapsed time if installed."""
     if not _HAS_PYINSTRUMENT:
-        print("⚠️ pyinstrument not installed, skipping profiling.")
+        logger.warning("pyinstrument not installed, skipping profiling.")
         yield
         return
 
@@ -35,7 +38,7 @@ def profile(
     finally:
         profiler.stop()
         duration = profiler.last_session.duration  # type: ignore
-        print(f"⏱️ Elapsed time: {duration:.4f} seconds")
+        logger.info(f"Elapsed time: {duration:.4f} seconds")
         renderer = HTMLRenderer()
         html_str = profiler.output(renderer)
         iframe = IFrame(

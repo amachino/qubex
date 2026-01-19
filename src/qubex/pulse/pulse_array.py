@@ -344,7 +344,7 @@ class PulseArray(Waveform):
             Determines the line shape.
         """
         if self.length == 0:
-            print("Waveform is empty.")
+            logger.warning("Waveform is empty.")
             return
 
         times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)

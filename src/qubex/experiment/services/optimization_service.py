@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection
 
 import cma
@@ -21,6 +22,8 @@ from .calibration_service import CalibrationService
 from .characterization_service import CharacterizationService
 from .measurement_service import MeasurementService
 from .pulse_service import PulseService
+
+logger = logging.getLogger(__name__)
 
 
 class OptimizationService:
@@ -438,7 +441,7 @@ class OptimizationService:
 
                 def nm_callback(xk):
                     current_loss = objective_func(xk)
-                    print(f"loss = {current_loss:.6f}, x = {xk}")
+                    logger.info(f"loss = {current_loss:.6f}, x = {xk}")
 
                 if ftarget is None:
                     ftarget = 1e3
@@ -491,18 +494,20 @@ class OptimizationService:
                 raise ValueError(f"Unsupported optimization method: {optimize_method}")
 
         except KeyboardInterrupt:
-            print("Optimization interrupted by user.")
+            logger.warning("Optimization interrupted by user.")
             result = {}
 
-        print("Optimized parameters:")
+        logger.info("Optimized parameters:")
         opt_result = {}
         if best_params is None:
             raise RuntimeError("No best parameters found during optimization.")
         for key, value in zip(opt_params, best_params, strict=True):
             old_value = cr_param.get(key, None)
             opt_result[key] = value
-            print(f"  {key}:")
-            print(f"    {old_value:.6f} -> {value:.6f} ({value - old_value:+.6f})")
+            logger.info(f"  {key}:")
+            logger.info(
+                f"    {old_value:.6f} -> {value:.6f} ({value - old_value:+.6f})"
+            )
 
         cr_param.update(opt_result)
         if update_cr_param:
