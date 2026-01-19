@@ -43,7 +43,6 @@ from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.measurement import (
     Measurement,
-    MeasureResult,
     StateClassifier,
 )
 from qubex.measurement.measurement import (
@@ -1023,49 +1022,3 @@ class ExperimentContext:
         logger.info(f"description: {record.description}")
         logger.info(f"created_at: {record.created_at}")
         return record
-
-    def check_noise(
-        self,
-        targets: Collection[str] | str | None = None,
-        *,
-        duration: int | None = None,
-        plot: bool | None = None,
-    ) -> MeasureResult:
-        """
-        Checks the noise level of the system.
-
-        Parameters
-        ----------
-        targets : Collection[str] | str, optional
-            Target labels to check the noise.
-        duration : int, optional
-            Duration of the noise measurement. Defaults to 10240.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        MeasureResult
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.check_noise(["Q00", "Q01"])
-        """
-        if duration is None:
-            duration = 10240
-        if plot is None:
-            plot = True
-
-        if targets is None:
-            targets = self.qubit_labels
-        elif isinstance(targets, str):
-            targets = [targets]
-        else:
-            targets = list(targets)
-
-        result = self.measurement.measure_noise(targets, duration)
-        for data in result.data.values():
-            if plot:
-                data.plot()
-        return result

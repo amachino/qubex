@@ -99,6 +99,31 @@ class MeasurementService:
     def pulse(self) -> PulseService:
         return self._pulse_service
 
+    def check_noise(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        duration: int | None = None,
+        plot: bool | None = None,
+    ) -> MeasureResult:
+        if duration is None:
+            duration = 10240
+        if plot is None:
+            plot = True
+
+        if targets is None:
+            targets = self.ctx.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        result = self.ctx.measurement.measure_noise(targets, duration)
+        for data in result.data.values():
+            if plot:
+                data.plot()
+        return result
+
     def execute(
         self,
         schedule: PulseSchedule,

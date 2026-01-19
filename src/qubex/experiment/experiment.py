@@ -185,7 +185,9 @@ class Experiment:
             configuration_mode=configuration_mode,
             mock_mode=mock_mode,
         )
-        pulse_service = PulseService(context=context)
+        pulse_service = PulseService(
+            context=context,
+        )
         measurement_service = MeasurementService(
             context=context,
             pulse_service=pulse_service,
@@ -392,81 +394,6 @@ class Experiment:
     def note(self) -> ExperimentNote:
         return self.ctx.note
 
-    @deprecated("Use `.pulse.readout_duration` instead.")
-    @property
-    def readout_duration(self) -> float:
-        return self.pulse.readout_duration
-
-    @deprecated("Use `.pulse.readout_pre_margin` instead.")
-    @property
-    def readout_pre_margin(self) -> float:
-        return self.pulse.readout_pre_margin
-
-    @deprecated("Use `.pulse.readout_post_margin` instead.")
-    @property
-    def readout_post_margin(self) -> float:
-        return self.pulse.readout_post_margin
-
-    @deprecated("Use `.pulse.drag_hpi_duration` instead.")
-    @property
-    def drag_hpi_duration(self) -> float:
-        return self.pulse.drag_hpi_duration
-
-    @deprecated("Use `.pulse.drag_pi_duration` instead.")
-    @property
-    def drag_pi_duration(self) -> float:
-        return self.pulse.drag_pi_duration
-
-    @deprecated("Use `.pulse.hpi_pulse` instead.")
-    @property
-    def hpi_pulse(self) -> dict[str, Waveform]:
-        return self.pulse.hpi_pulse
-
-    @deprecated("Use `.pulse.pi_pulse` instead.")
-    @property
-    def pi_pulse(self) -> dict[str, Waveform]:
-        return self.pulse.pi_pulse
-
-    @deprecated("Use `.pulse.drag_hpi_pulse` instead.")
-    @property
-    def drag_hpi_pulse(self) -> dict[str, Waveform]:
-        return self.pulse.drag_hpi_pulse
-
-    @deprecated("Use `.pulse.drag_pi_pulse` instead.")
-    @property
-    def drag_pi_pulse(self) -> dict[str, Waveform]:
-        return self.pulse.drag_pi_pulse
-
-    @deprecated("Use `.pulse.ef_hpi_pulse` instead.")
-    @property
-    def ef_hpi_pulse(self) -> dict[str, Waveform]:
-        return self.pulse.ef_hpi_pulse
-
-    @deprecated("Use `.pulse.ef_pi_pulse` instead.")
-    @property
-    def ef_pi_pulse(self) -> dict[str, Waveform]:
-        return self.pulse.ef_pi_pulse
-
-    @deprecated("Use `.pulse.cr_pulse` instead.")
-    @property
-    def cr_pulse(self) -> dict[str, PulseSchedule]:
-        return self.pulse.cr_pulse
-
-    @deprecated("Use `.pulse.rabi_params` instead.")
-    @property
-    def rabi_params(self) -> dict[str, RabiParam]:
-        return self.pulse.rabi_params
-
-    @deprecated("Use `.pulse.ge_rabi_params` instead.")
-    @property
-    def ge_rabi_params(self) -> dict[str, RabiParam]:
-        return self.pulse.ge_rabi_params
-
-    @deprecated("Use `.pulse.ef_rabi_params` instead.")
-    @property
-    def ef_rabi_params(self) -> dict[str, RabiParam]:
-        return self.pulse.ef_rabi_params
-
     @property
     def property_dir(self) -> Path:
         return self.ctx.property_dir
@@ -502,6 +429,85 @@ class Experiment:
     @property
     def reference_phases(self) -> dict[str, float]:
         return self.ctx.reference_phases
+
+    # region pulse_service properties
+
+    @property
+    @deprecated("Use `.pulse.readout_duration` instead.")
+    def readout_duration(self) -> float:
+        return self.pulse.readout_duration
+
+    @property
+    @deprecated("Use `.pulse.readout_pre_margin` instead.")
+    def readout_pre_margin(self) -> float:
+        return self.pulse.readout_pre_margin
+
+    @property
+    @deprecated("Use `.pulse.readout_post_margin` instead.")
+    def readout_post_margin(self) -> float:
+        return self.pulse.readout_post_margin
+
+    @property
+    @deprecated("Use `.pulse.drag_hpi_duration` instead.")
+    def drag_hpi_duration(self) -> float:
+        return self.pulse.drag_hpi_duration
+
+    @property
+    @deprecated("Use `.pulse.drag_pi_duration` instead.")
+    def drag_pi_duration(self) -> float:
+        return self.pulse.drag_pi_duration
+
+    @property
+    @deprecated("Use `.pulse.hpi_pulse` instead.")
+    def hpi_pulse(self) -> dict[str, Waveform]:
+        return self.pulse.hpi_pulse
+
+    @property
+    @deprecated("Use `.pulse.pi_pulse` instead.")
+    def pi_pulse(self) -> dict[str, Waveform]:
+        return self.pulse.pi_pulse
+
+    @property
+    @deprecated("Use `.pulse.drag_hpi_pulse` instead.")
+    def drag_hpi_pulse(self) -> dict[str, Waveform]:
+        return self.pulse.drag_hpi_pulse
+
+    @property
+    @deprecated("Use `.pulse.drag_pi_pulse` instead.")
+    def drag_pi_pulse(self) -> dict[str, Waveform]:
+        return self.pulse.drag_pi_pulse
+
+    @property
+    @deprecated("Use `.pulse.ef_hpi_pulse` instead.")
+    def ef_hpi_pulse(self) -> dict[str, Waveform]:
+        return self.pulse.ef_hpi_pulse
+
+    @property
+    @deprecated("Use `.pulse.ef_pi_pulse` instead.")
+    def ef_pi_pulse(self) -> dict[str, Waveform]:
+        return self.pulse.ef_pi_pulse
+
+    @property
+    @deprecated("Use `.pulse.cr_pulse` instead.")
+    def cr_pulse(self) -> dict[str, PulseSchedule]:
+        return self.pulse.cr_pulse
+
+    @property
+    @deprecated("Use `.pulse.rabi_params` instead.")
+    def rabi_params(self) -> dict[str, RabiParam]:
+        return self.pulse.rabi_params
+
+    @property
+    @deprecated("Use `.pulse.ge_rabi_params` instead.")
+    def ge_rabi_params(self) -> dict[str, RabiParam]:
+        return self.pulse.ge_rabi_params
+
+    @property
+    @deprecated("Use `.pulse.ef_rabi_params` instead.")
+    def ef_rabi_params(self) -> dict[str, RabiParam]:
+        return self.pulse.ef_rabi_params
+
+    # endregion
 
     def load_property(self, property_name: str) -> dict:
         return self.ctx.load_property(property_name)
@@ -595,12 +601,6 @@ class Experiment:
     def cr_pair(cr_label: str) -> tuple[str, str]:
         return Target.cr_qubit_pair(cr_label)
 
-    def validate_rabi_params(
-        self,
-        targets: Collection[str] | None = None,
-    ):
-        return self.pulse.validate_rabi_params(targets=targets)
-
     def get_rabi_param(
         self,
         target: str,
@@ -620,121 +620,6 @@ class Experiment:
             rabi_params,
             r2_threshold=r2_threshold,
         )
-
-    def correct_rabi_params(
-        self,
-        targets: Collection[str] | str | None = None,
-        *,
-        reference_phases: dict[str, float] | None = None,
-        save: bool | None = None,
-    ):
-        return self.calibration_service.correct_rabi_params(
-            targets=targets,
-            reference_phases=reference_phases,
-            save=save,
-        )
-
-    def correct_classifiers(
-        self,
-        targets: Collection[str] | str | None = None,
-        *,
-        reference_phases: dict[str, float] | None = None,
-        save: bool | None = None,
-    ):
-        return self.calibration_service.correct_classifiers(
-            targets=targets,
-            reference_phases=reference_phases,
-            save=save,
-        )
-
-    def correct_cr_params(
-        self,
-        cr_labels: Collection[str] | str | None = None,
-        *,
-        shots: int | None = None,
-        save: bool | None = None,
-    ):
-        return self.calibration_service.correct_cr_params(
-            cr_labels=cr_labels,
-            shots=shots,
-            save=save,
-        )
-
-    def correct_calibration(
-        self,
-        qubit_labels: Collection[str] | str | None = None,
-        cr_labels: Collection[str] | str | None = None,
-        *,
-        save: bool | None = None,
-    ):
-        return self.calibration_service.correct_calibration(
-            qubit_labels=qubit_labels,
-            cr_labels=cr_labels,
-            save=save,
-        )
-
-    def get_hpi_pulse(
-        self,
-        target: str,
-        *,
-        valid_days: int | None = None,
-    ) -> Waveform:
-        """
-        Get the π/2 pulse for the given target.
-        """
-        return self.pulse.get_hpi_pulse(
-            target,
-            valid_days=valid_days,
-        )
-
-    def get_pi_pulse(
-        self,
-        target: str,
-        *,
-        valid_days: int | None = None,
-    ) -> Waveform:
-        """
-        Get the π pulse for the given target.
-        """
-        return self.pulse.get_pi_pulse(
-            target,
-            valid_days=valid_days,
-        )
-
-    def get_drag_hpi_pulse(
-        self,
-        target: str,
-        *,
-        valid_days: int | None = None,
-    ) -> Waveform:
-        """
-        Get the DRAG π/2 pulse for the given target.
-        """
-        return self.pulse.get_drag_hpi_pulse(
-            target,
-            valid_days=valid_days,
-        )
-
-    def get_drag_pi_pulse(
-        self,
-        target: str,
-        *,
-        valid_days: int | None = None,
-    ) -> Waveform:
-        """
-        Get the DRAG π pulse for the given target.
-        """
-        return self.pulse.get_drag_pi_pulse(
-            target,
-            valid_days=valid_days,
-        )
-
-    def get_pulse_for_state(
-        self,
-        target: str,
-        state: str,  # ["0", "1", "+", "-", "+i", "-i"],
-    ) -> Waveform:
-        return self.pulse.get_pulse_for_state(target, state)
 
     def get_spectators(
         self,
@@ -863,151 +748,76 @@ class Experiment:
     ) -> ExperimentRecord:
         return self.ctx.load_record(name)
 
-    def check_noise(
+    # region pulse_service methods
+
+    def validate_rabi_params(
         self,
-        targets: Collection[str] | str | None = None,
+        targets: Collection[str] | None = None,
+    ):
+        return self.pulse.validate_rabi_params(targets=targets)
+
+    def get_hpi_pulse(
+        self,
+        target: str,
         *,
-        duration: int | None = None,
-        plot: bool | None = None,
-    ) -> MeasureResult:
+        valid_days: int | None = None,
+    ) -> Waveform:
         """
-        Checks the noise level of the system.
-
-        Parameters
-        ----------
-        targets : Collection[str] | str, optional
-            Target labels to check the noise.
-        duration : int, optional
-            Duration of the noise measurement. Defaults to 10240.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        MeasureResult
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.check_noise(["Q00", "Q01"])
+        Get the π/2 pulse for the given target.
         """
-        return self.ctx.check_noise(
-            targets=targets,
-            duration=duration,
-            plot=plot,
+        return self.pulse.get_hpi_pulse(
+            target,
+            valid_days=valid_days,
         )
 
-    def check_waveform(
+    def get_pi_pulse(
         self,
-        targets: Collection[str] | str | None = None,
+        target: str,
         *,
-        method: Literal["measure", "execute"] | None = None,
-        shots: int | None = None,
-        interval: float | None = None,
-        readout_amplitude: float | None = None,
-        readout_duration: float | None = None,
-        readout_pre_margin: float | None = None,
-        readout_post_margin: float | None = None,
-        add_pump_pulses: bool | None = None,
-        plot: bool | None = None,
-    ) -> MeasureResult | MultipleMeasureResult:
+        valid_days: int | None = None,
+    ) -> Waveform:
         """
-        Checks the readout waveforms of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str] | str, optional
-            Target labels to check the waveforms.
-        method : Literal["measure", "execute"], optional
-            Method to check the waveforms. Defaults to "measure".
-        shots : int, optional
-            Number of shots.
-        interval : int, optional
-            Interval between shots.
-        readout_amplitude : float, optional
-            Amplitude of the readout pulse.
-        readout_duration : float, optional
-            Duration of the readout pulse in ns.
-        readout_pre_margin : float, optional
-            Pre-margin of the readout pulse in ns.
-        readout_post_margin : float, optional
-            Post-margin of the readout pulse in ns.
-        add_pump_pulses : bool, optional
-            Whether to add pump pulses to the readout sequence. Defaults to False.
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        MeasureResult
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.check_waveform(["Q00", "Q01"])
+        Get the π pulse for the given target.
         """
-        return self.measurement_service.check_waveform(
-            targets=targets,
-            method=method,
-            shots=shots,
-            interval=interval,
-            readout_amplitude=readout_amplitude,
-            readout_duration=readout_duration,
-            readout_pre_margin=readout_pre_margin,
-            readout_post_margin=readout_post_margin,
-            add_pump_pulses=add_pump_pulses,
-            plot=plot,
+        return self.pulse.get_pi_pulse(
+            target,
+            valid_days=valid_days,
         )
 
-    def check_rabi(
+    def get_drag_hpi_pulse(
         self,
-        targets: Collection[str] | str | None = None,
+        target: str,
         *,
-        time_range: ArrayLike | None = None,
-        shots: int | None = None,
-        interval: int | None = None,
-        store_params: bool | None = None,
-        rabi_level: Literal["ge", "ef"] | None = None,
-        plot: bool | None = None,
-    ) -> ExperimentResult[RabiData]:
+        valid_days: int | None = None,
+    ) -> Waveform:
         """
-        Checks the Rabi oscillation of the given targets.
-
-        Parameters
-        ----------
-        targets : Collection[str] | str, optional
-            Target labels to check the Rabi oscillation.
-        time_range : ArrayLike, optional
-            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
-        shots : int, optional
-            Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
-            Interval between shots. Defaults to DEFAULT_INTERVAL.
-        store_params : bool, optional
-            Whether to store the Rabi parameters. Defaults to False.
-        rabi_level : Literal["ge", "ef"], optional
-            Rabi level to use. Defaults to "ge".
-        plot : bool, optional
-            Whether to plot the measured signals. Defaults to True.
-
-        Returns
-        -------
-        ExperimentResult[RabiData]
-            Result of the experiment.
-
-        Examples
-        --------
-        >>> result = ex.check_rabi(["Q00", "Q01"])
+        Get the DRAG π/2 pulse for the given target.
         """
-        return self.measurement_service.check_rabi(
-            targets=targets,
-            time_range=time_range,
-            shots=shots,
-            interval=interval,
-            store_params=store_params,
-            rabi_level=rabi_level,
-            plot=plot,
+        return self.pulse.get_drag_hpi_pulse(
+            target,
+            valid_days=valid_days,
         )
+
+    def get_drag_pi_pulse(
+        self,
+        target: str,
+        *,
+        valid_days: int | None = None,
+    ) -> Waveform:
+        """
+        Get the DRAG π pulse for the given target.
+        """
+        return self.pulse.get_drag_pi_pulse(
+            target,
+            valid_days=valid_days,
+        )
+
+    def get_pulse_for_state(
+        self,
+        target: str,
+        state: str,  # ["0", "1", "+", "-", "+i", "-i"],
+    ) -> Waveform:
+        return self.pulse.get_pulse_for_state(target, state)
 
     def calc_control_amplitude(
         self,
@@ -1274,7 +1084,156 @@ class Experiment:
             only_low_to_high=only_low_to_high,
         )
 
+    # endregion
+
+    # region measurement_service methods
     # measurement_service methods
+
+    def check_noise(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        duration: int | None = None,
+        plot: bool | None = None,
+    ) -> MeasureResult:
+        """
+        Checks the noise level of the system.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target labels to check the noise.
+        duration : int, optional
+            Duration of the noise measurement. Defaults to 10240.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.check_noise(["Q00", "Q01"])
+        """
+        return self.measurement_service.check_noise(
+            targets=targets,
+            duration=duration,
+            plot=plot,
+        )
+
+    def check_waveform(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        method: Literal["measure", "execute"] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        readout_amplitude: float | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        add_pump_pulses: bool | None = None,
+        plot: bool | None = None,
+    ) -> MeasureResult | MultipleMeasureResult:
+        """
+        Checks the readout waveforms of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target labels to check the waveforms.
+        method : Literal["measure", "execute"], optional
+            Method to check the waveforms. Defaults to "measure".
+        shots : int, optional
+            Number of shots.
+        interval : int, optional
+            Interval between shots.
+        readout_amplitude : float, optional
+            Amplitude of the readout pulse.
+        readout_duration : float, optional
+            Duration of the readout pulse in ns.
+        readout_pre_margin : float, optional
+            Pre-margin of the readout pulse in ns.
+        readout_post_margin : float, optional
+            Post-margin of the readout pulse in ns.
+        add_pump_pulses : bool, optional
+            Whether to add pump pulses to the readout sequence. Defaults to False.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        MeasureResult
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.check_waveform(["Q00", "Q01"])
+        """
+        return self.measurement_service.check_waveform(
+            targets=targets,
+            method=method,
+            shots=shots,
+            interval=interval,
+            readout_amplitude=readout_amplitude,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            add_pump_pulses=add_pump_pulses,
+            plot=plot,
+        )
+
+    def check_rabi(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        shots: int | None = None,
+        interval: int | None = None,
+        store_params: bool | None = None,
+        rabi_level: Literal["ge", "ef"] | None = None,
+        plot: bool | None = None,
+    ) -> ExperimentResult[RabiData]:
+        """
+        Checks the Rabi oscillation of the given targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target labels to check the Rabi oscillation.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : int, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        store_params : bool, optional
+            Whether to store the Rabi parameters. Defaults to False.
+        rabi_level : Literal["ge", "ef"], optional
+            Rabi level to use. Defaults to "ge".
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        ExperimentResult[RabiData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.check_rabi(["Q00", "Q01"])
+        """
+        return self.measurement_service.check_rabi(
+            targets=targets,
+            time_range=time_range,
+            shots=shots,
+            interval=interval,
+            store_params=store_params,
+            rabi_level=rabi_level,
+            plot=plot,
+        )
 
     def execute(
         self,
@@ -2269,7 +2228,62 @@ class Experiment:
             mle_fit=mle_fit,
         )
 
+    # endregion
+
+    # region calibration_service methods
     # calibration_service methods
+
+    def correct_rabi_params(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool | None = None,
+    ):
+        return self.calibration_service.correct_rabi_params(
+            targets=targets,
+            reference_phases=reference_phases,
+            save=save,
+        )
+
+    def correct_classifiers(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        reference_phases: dict[str, float] | None = None,
+        save: bool | None = None,
+    ):
+        return self.calibration_service.correct_classifiers(
+            targets=targets,
+            reference_phases=reference_phases,
+            save=save,
+        )
+
+    def correct_cr_params(
+        self,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        save: bool | None = None,
+    ):
+        return self.calibration_service.correct_cr_params(
+            cr_labels=cr_labels,
+            shots=shots,
+            save=save,
+        )
+
+    def correct_calibration(
+        self,
+        qubit_labels: Collection[str] | str | None = None,
+        cr_labels: Collection[str] | str | None = None,
+        *,
+        save: bool | None = None,
+    ):
+        return self.calibration_service.correct_calibration(
+            qubit_labels=qubit_labels,
+            cr_labels=cr_labels,
+            save=save,
+        )
 
     def calibrate_default_pulse(
         self,
@@ -2956,6 +2970,9 @@ class Experiment:
             plot=plot,
         )
 
+    # endregion
+
+    # region characterization_service methods
     # characterization_service methods
 
     def measure_readout_snr(
@@ -3737,6 +3754,10 @@ class Experiment:
             save_image=save_image,
         )
 
+    # endregion
+
+    # region benchmarking_service methods
+
     def rb_sequence(
         self,
         target: str,
@@ -3898,6 +3919,10 @@ class Experiment:
             save_image=save_image,
         )
 
+    # endregion
+
+    # region optimization_service methods
+
     def optimize_x90(
         self,
         qubit: str,
@@ -3999,3 +4024,5 @@ class Experiment:
             shots=shots,
             interval=interval,
         )
+
+    # endregion
