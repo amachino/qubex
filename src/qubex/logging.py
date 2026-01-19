@@ -6,7 +6,7 @@ import logging
 logging.getLogger("qubex").addHandler(logging.NullHandler())
 
 
-class _NotebookFormatter(logging.Formatter):
+class LogFormatter(logging.Formatter):
     GREY = "\x1b[38;20m"
     YELLOW = "\x1b[33;20m"
     RED = "\x1b[31;20m"
@@ -14,6 +14,14 @@ class _NotebookFormatter(logging.Formatter):
     RESET = "\x1b[0m"
 
     def format(self, record):
+        if record.exc_info:
+            exc_type, exc_value, _ = record.exc_info
+            if exc_type:
+                # Append exception type and value to the message
+                record.msg = f"{record.msg} ({exc_type.__name__}: {exc_value})"
+                # Prevent caching effects if record is reused (unlikely but safe)
+                record.message = ""
+
         log_fmt = "[%(name)s] %(levelname)s: %(message)s"
         if record.levelno == logging.INFO:
             fmt = "%(message)s"
@@ -40,5 +48,5 @@ def set_log_level(level: int | str = logging.INFO):
     # Ensure a StreamHandler is attached so the user sees output
     if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
         handler = logging.StreamHandler()
-        handler.setFormatter(_NotebookFormatter())
+        handler.setFormatter(LogFormatter())
         logger.addHandler(handler)

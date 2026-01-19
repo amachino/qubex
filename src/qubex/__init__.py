@@ -7,7 +7,7 @@ from . import pulse
 from .analysis import fitting as fit
 from .analysis import visualization as viz
 from .experiment import Experiment
-from .log import set_log_level
+from .logging import set_log_level
 from .pulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
 from .style import apply_template
 

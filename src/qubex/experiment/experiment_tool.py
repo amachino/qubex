@@ -550,7 +550,7 @@ def print_chip_info(
                 )
 
     except Exception as e:
-        logger.error(f"Error occurred while printing chip info: {e}")
+        logger.error("Error occurred while printing chip info", exc_info=e)
 
 
 def print_wiring_info(qubits: Collection[str] | None = None) -> None:
