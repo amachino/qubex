@@ -59,7 +59,6 @@ from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
-    DEFAULT_RABI_FREQUENCY,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
     PROPERTY_DIR,
@@ -540,30 +539,6 @@ class ExperimentContext:
         return self._user_note
 
     @property
-    def readout_duration(self) -> float:
-        return self._readout_duration
-
-    @property
-    def readout_pre_margin(self) -> float:
-        return self._readout_pre_margin
-
-    @property
-    def readout_post_margin(self) -> float:
-        return self._readout_post_margin
-
-    @property
-    def drag_hpi_duration(self) -> float:
-        return self._drag_hpi_duration
-
-    @property
-    def drag_pi_duration(self) -> float:
-        return self._drag_pi_duration
-
-    @property
-    def rabi_params(self) -> dict[str, RabiParam]:
-        return self.pulse_service.rabi_params
-
-    @property
     def property_dir(self) -> Path:
         return Path(self._property_dir)
 
@@ -758,21 +733,6 @@ class ExperimentContext:
     @staticmethod
     def cr_pair(cr_label: str) -> tuple[str, str]:
         return Target.cr_qubit_pair(cr_label)
-
-    def validate_rabi_params(
-        self,
-        targets: Collection[str] | None = None,
-    ):
-        if len(self.rabi_params) == 0:
-            raise ValueError("Rabi parameters are not stored.")
-        if targets is not None:
-            for target in targets:
-                if target not in self.rabi_params:
-                    raise ValueError(f"Rabi parameters for {target} are not stored.")
-        if targets is not None:
-            for target in targets:
-                if target not in self.rabi_params:
-                    raise ValueError(f"Rabi parameters for {target} are not stored.")
 
     def get_rabi_param(
         self,
@@ -1109,110 +1069,3 @@ class ExperimentContext:
             if plot:
                 data.plot()
         return result
-
-    def calc_control_amplitude(
-        self,
-        target: str,
-        rabi_rate: float,
-        *,
-        rabi_amplitude_ratio: float | None = None,
-    ) -> float:
-        qubit = Target.qubit_label(target)
-        if rabi_amplitude_ratio is None:
-            rabi_param = self.rabi_params.get(target)
-            if self.targets[target].type == TargetType.CTRL_EF:
-                default_amplitude = self.params.get_ef_control_amplitude(qubit)
-            else:
-                default_amplitude = self.params.get_control_amplitude(qubit)
-
-            if rabi_param is None:
-                raise ValueError(f"Rabi parameters for {target} are not stored.")
-            if default_amplitude is None:
-                raise ValueError(f"Control amplitude for {qubit} is not defined.")
-
-            rabi_amplitude_ratio = rabi_param.frequency / default_amplitude
-
-        assert rabi_amplitude_ratio is not None
-        return rabi_rate / rabi_amplitude_ratio
-
-    def calc_control_amplitudes(
-        self,
-        rabi_rate: float | None = None,
-        *,
-        current_amplitudes: dict[str, float] | None = None,
-        current_rabi_params: dict[str, RabiParam] | None = None,
-        print_result: bool | None = None,
-    ) -> dict[str, float]:
-        if rabi_rate is None:
-            rabi_rate = DEFAULT_RABI_FREQUENCY
-        if current_amplitudes is None:
-            current_amplitudes = {}
-
-        if current_rabi_params is None:
-            current_rabi_params = self.rabi_params
-
-        if current_rabi_params is None:
-            raise ValueError("Rabi parameters are not stored.")
-
-        if len(current_amplitudes) == 0:
-            for target in current_rabi_params:
-                qubit = Target.qubit_label(target)
-                current_amplitudes[target] = self.params.get_control_amplitude(qubit)
-
-        if print_result is None:
-            print_result = True
-
-        amplitudes = {
-            target: current_amplitudes[target]
-            * rabi_rate
-            / current_rabi_params[target].frequency
-            for target in current_rabi_params
-        }
-
-        if print_result:
-            logger.info(f"Control amplitude for rabi rate {rabi_rate * 1e3:.3f} MHz\n")
-            for target, amplitude in amplitudes.items():
-                logger.info(f"{target}: {amplitude:.6f}")
-
-        return amplitudes
-
-    def calc_rabi_rate(
-        self,
-        target: str,
-        control_amplitude,
-    ) -> float:
-        # TODO: Support ef targets
-        default_amplitude = self.params.control_amplitude.get(target)
-        if default_amplitude is None:
-            raise ValueError(f"Control amplitude for {target} is not defined.")
-
-        rabi_param = self.rabi_params.get(target)
-        if rabi_param is None:
-            raise ValueError(f"Rabi parameters for {target} are not stored.")
-
-        return control_amplitude * rabi_param.frequency / default_amplitude
-
-    def calc_rabi_rates(
-        self,
-        control_amplitude: float | None = None,
-        *,
-        print_result: bool | None = None,
-    ) -> dict[str, float]:
-        if control_amplitude is None:
-            control_amplitude = 1.0
-        if print_result is None:
-            print_result = True
-
-        default_ampl = self.params.control_amplitude
-
-        rabi_rates = {
-            target: control_amplitude * rabi_param.frequency / default_ampl[target]
-            for target, rabi_param in self.rabi_params.items()
-        }
-
-        if print_result:
-            logger.info(f"Rabi rate for control amplitude {control_amplitude}\n")
-            for target, rabi_rate in rabi_rates.items():
-                logger.info(f"{target}: {rabi_rate * 1e3:.3f} MHz")
-
-        return rabi_rates

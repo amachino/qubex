@@ -1935,7 +1935,7 @@ class MeasurementService:
             method = "measure"
         if plot is None:
             plot = True
-        self.ctx.validate_rabi_params()
+        self.ctx.pulse_service.validate_rabi_params()
 
         if isinstance(sequence, PulseSchedule):
             pulses = sequence.get_sequences()

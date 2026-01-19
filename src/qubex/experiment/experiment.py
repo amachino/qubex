@@ -397,66 +397,73 @@ class Experiment:
     def readout_duration(self) -> float:
         return self.pulse.readout_duration
 
-    @property
     @deprecated("Use `.pulse.readout_pre_margin` instead.")
+    @property
     def readout_pre_margin(self) -> float:
         return self.pulse.readout_pre_margin
 
-    @property
     @deprecated("Use `.pulse.readout_post_margin` instead.")
+    @property
     def readout_post_margin(self) -> float:
         return self.pulse.readout_post_margin
 
-    @property
     @deprecated("Use `.pulse.drag_hpi_duration` instead.")
+    @property
     def drag_hpi_duration(self) -> float:
         return self.pulse.drag_hpi_duration
 
-    @property
     @deprecated("Use `.pulse.drag_pi_duration` instead.")
+    @property
     def drag_pi_duration(self) -> float:
         return self.pulse.drag_pi_duration
 
+    @deprecated("Use `.pulse.hpi_pulse` instead.")
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.hpi_pulse
 
+    @deprecated("Use `.pulse.pi_pulse` instead.")
     @property
     def pi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.pi_pulse
 
+    @deprecated("Use `.pulse.drag_hpi_pulse` instead.")
     @property
     def drag_hpi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.drag_hpi_pulse
 
+    @deprecated("Use `.pulse.drag_pi_pulse` instead.")
     @property
     def drag_pi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.drag_pi_pulse
 
+    @deprecated("Use `.pulse.ef_hpi_pulse` instead.")
     @property
     def ef_hpi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.ef_hpi_pulse
 
+    @deprecated("Use `.pulse.ef_pi_pulse` instead.")
     @property
     def ef_pi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.ef_pi_pulse
 
+    @deprecated("Use `.pulse.cr_pulse` instead.")
     @property
     def cr_pulse(self) -> dict[str, PulseSchedule]:
         return self.pulse.cr_pulse
 
-    @property
     @deprecated("Use `.pulse.rabi_params` instead.")
+    @property
     def rabi_params(self) -> dict[str, RabiParam]:
         return self.pulse.rabi_params
 
-    @property
     @deprecated("Use `.pulse.ge_rabi_params` instead.")
+    @property
     def ge_rabi_params(self) -> dict[str, RabiParam]:
         return self.pulse.ge_rabi_params
 
-    @property
     @deprecated("Use `.pulse.ef_rabi_params` instead.")
+    @property
     def ef_rabi_params(self) -> dict[str, RabiParam]:
         return self.pulse.ef_rabi_params
 
@@ -592,7 +599,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
     ):
-        return self.ctx.validate_rabi_params(targets=targets)
+        return self.pulse.validate_rabi_params(targets=targets)
 
     def get_rabi_param(
         self,
@@ -1009,7 +1016,7 @@ class Experiment:
         *,
         rabi_amplitude_ratio: float | None = None,
     ) -> float:
-        return self.ctx.calc_control_amplitude(
+        return self.pulse.calc_control_amplitude(
             target,
             rabi_rate,
             rabi_amplitude_ratio=rabi_amplitude_ratio,
@@ -1023,7 +1030,7 @@ class Experiment:
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool | None = None,
     ) -> dict[str, float]:
-        return self.ctx.calc_control_amplitudes(
+        return self.pulse.calc_control_amplitudes(
             rabi_rate,
             current_amplitudes=current_amplitudes,
             current_rabi_params=current_rabi_params,
@@ -1035,7 +1042,7 @@ class Experiment:
         target: str,
         control_amplitude,
     ) -> float:
-        return self.ctx.calc_rabi_rate(target, control_amplitude)
+        return self.pulse.calc_rabi_rate(target, control_amplitude)
 
     def calc_rabi_rates(
         self,
@@ -1043,7 +1050,7 @@ class Experiment:
         *,
         print_result: bool | None = None,
     ) -> dict[str, float]:
-        return self.ctx.calc_rabi_rates(
+        return self.pulse.calc_rabi_rates(
             control_amplitude,
             print_result=print_result,
         )
