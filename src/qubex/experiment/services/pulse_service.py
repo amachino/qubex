@@ -5,8 +5,14 @@ from typing import Literal
 
 import numpy as np
 
-from ...backend import Target
-from ...pulse import (
+from qubex.backend import Target
+from qubex.experiment.experiment_constants import (
+    HPI_DURATION,
+    HPI_RAMPTIME,
+)
+from qubex.experiment.experiment_context import ExperimentContext
+from qubex.experiment.experiment_exceptions import CalibrationMissingError
+from qubex.pulse import (
     Blank,
     CrossResonance,
     Drag,
@@ -17,13 +23,7 @@ from ...pulse import (
     VirtualZ,
     Waveform,
 )
-from ...typing import TargetMap
-from ..experiment_constants import (
-    HPI_DURATION,
-    HPI_RAMPTIME,
-)
-from ..experiment_context import ExperimentContext
-from ..experiment_exceptions import CalibrationMissingError
+from qubex.typing import TargetMap
 
 logger = logging.getLogger(__name__)
 

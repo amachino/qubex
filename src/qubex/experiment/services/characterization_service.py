@@ -15,16 +15,39 @@ from scipy.signal import find_peaks
 from tqdm import tqdm
 from typing_extensions import deprecated
 
-from ...analysis import fitting
-from ...analysis import visualization as viz
-from ...backend import BoxType, MixingUtil, Target
-from ...backend.experiment_system import (
+from qubex.analysis import fitting
+from qubex.analysis import visualization as viz
+from qubex.backend import BoxType, MixingUtil, Target
+from qubex.backend.experiment_system import (
     CNCO_CENTER_CTRL,
     CNCO_CETNER_READ,
     CNCO_CETNER_READ_R8,
 )
-from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS, SAMPLING_PERIOD
-from ...pulse import (
+from qubex.experiment.experiment_constants import (
+    CALIBRATION_SHOTS,
+    DEFAULT_RABI_FREQUENCY,
+    DEFAULT_RABI_TIME_RANGE,
+)
+from qubex.experiment.experiment_context import ExperimentContext
+from qubex.experiment.experiment_result import (
+    AmplRabiData,
+    ExperimentResult,
+    FreqRabiData,
+    RabiData,
+    RamseyData,
+    SweepData,
+    T1Data,
+    T2Data,
+)
+from qubex.experiment.experiment_util import ExperimentUtil
+from qubex.experiment.rabi_param import RabiParam
+from qubex.experiment.result import Result
+from qubex.measurement.measurement import (
+    DEFAULT_INTERVAL,
+    DEFAULT_SHOTS,
+    SAMPLING_PERIOD,
+)
+from qubex.pulse import (
     CPMG,
     Blank,
     FlatTop,
@@ -35,27 +58,9 @@ from ...pulse import (
     VirtualZ,
     Waveform,
 )
-from ...style import COLORS
-from ...typing import TargetMap
-from ..experiment_constants import (
-    CALIBRATION_SHOTS,
-    DEFAULT_RABI_FREQUENCY,
-    DEFAULT_RABI_TIME_RANGE,
-)
-from ..experiment_context import ExperimentContext
-from ..experiment_result import (
-    AmplRabiData,
-    ExperimentResult,
-    FreqRabiData,
-    RabiData,
-    RamseyData,
-    SweepData,
-    T1Data,
-    T2Data,
-)
-from ..experiment_util import ExperimentUtil
-from ..rabi_param import RabiParam
-from ..result import Result
+from qubex.style import COLORS
+from qubex.typing import TargetMap
+
 from .calibration_service import CalibrationService
 from .measurement_service import MeasurementService
 from .pulse_service import PulseService

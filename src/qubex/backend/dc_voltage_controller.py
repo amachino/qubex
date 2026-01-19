@@ -4,7 +4,7 @@ import functools
 from contextlib import contextmanager
 from typing import Final
 
-from ..third_party.ons61797 import ONS61797
+from qubex.third_party.ons61797 import ONS61797
 
 PORT: Final = "/dev/ttyACM0"
 

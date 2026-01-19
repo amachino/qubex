@@ -12,7 +12,7 @@ from typing import Final, Literal
 import numpy as np
 import numpy.typing as npt
 
-from ..backend import (
+from qubex.backend import (
     SAMPLING_PERIOD,
     ConfigLoader,
     ControlParams,
@@ -23,9 +23,10 @@ from ..backend import (
     SystemManager,
     Target,
 )
-from ..backend.dc_voltage_controller import dc_voltage
-from ..pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
-from ..typing import IQArray, TargetMap
+from qubex.backend.dc_voltage_controller import dc_voltage
+from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
+from qubex.typing import IQArray, TargetMap
+
 from .measurement_result import (
     MeasureData,
     MeasureMode,
@@ -40,7 +41,7 @@ try:
     from qubecalib import Sequencer
     from qubecalib import neopulse as pls
 
-    from ..backend.sequencer_mod import SequencerMod
+    from qubex.backend.sequencer_mod import SequencerMod
 except ImportError as e:
     logger.info(e)
 

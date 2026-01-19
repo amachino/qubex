@@ -9,9 +9,10 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
 
-from ..analysis import FitResult, fitting, util
-from ..analysis import visualization as viz
-from ..typing import TargetMap
+from qubex.analysis import FitResult, fitting, util
+from qubex.analysis import visualization as viz
+from qubex.typing import TargetMap
+
 from .experiment_record import ExperimentRecord
 from .rabi_param import RabiParam
 

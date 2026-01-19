@@ -21,8 +21,8 @@ except ImportError:
     pass
 
 
-from ..backend import LatticeGraph, SystemManager
-from ..diagnostics import ChipInspector
+from qubex.backend import LatticeGraph, SystemManager
+from qubex.diagnostics import ChipInspector
 
 console = Console()
 system_manager = SystemManager.shared()

@@ -10,7 +10,8 @@ from scipy.stats import multivariate_normal
 from sklearn.metrics import confusion_matrix
 from sklearn.mixture import GaussianMixture
 
-from ..style import get_colors, get_config
+from qubex.style import get_colors, get_config
+
 from .state_classifier import StateClassifier
 
 

@@ -15,8 +15,9 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from ..analysis import visualization as viz
-from ..backend import SAMPLING_PERIOD
+from qubex.analysis import visualization as viz
+from qubex.backend import SAMPLING_PERIOD
+
 from .measurement_record import MeasurementRecord
 from .state_classifier import StateClassifier
 

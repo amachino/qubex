@@ -5,8 +5,8 @@ import plotly.graph_objs as go
 from IPython.display import display
 from ipywidgets import Output
 
-from ..style import get_colors, get_config
-from ..typing import IQArray, TargetMap
+from qubex.style import get_colors, get_config
+from qubex.typing import IQArray, TargetMap
 
 
 class IQPlotter:

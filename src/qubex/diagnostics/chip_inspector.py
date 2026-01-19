@@ -4,8 +4,9 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Literal
 
-from ..backend.config_loader import ConfigLoader
-from ..backend.lattice_graph import LatticeGraph
+from qubex.backend.config_loader import ConfigLoader
+from qubex.backend.lattice_graph import LatticeGraph
+
 from . import inspection_library
 from .inspection import Inspection
 

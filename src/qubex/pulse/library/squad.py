@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy.special import betainc
 
-from ..pulse import Pulse
+from qubex.pulse.pulse import Pulse
 
 SmoothingType = Literal["none", "hann", "beta"]
 

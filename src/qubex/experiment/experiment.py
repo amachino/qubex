@@ -14,7 +14,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from typing_extensions import deprecated
 
-from ..backend import (
+from qubex.backend import (
     Box,
     Chip,
     ConfigLoader,
@@ -29,28 +29,35 @@ from ..backend import (
     Target,
     TargetType,
 )
-from ..clifford import Clifford, CliffordGenerator
-from ..measurement import (
+from qubex.clifford.clifford import Clifford
+from qubex.clifford.clifford_generator import CliffordGenerator
+from qubex.measurement import (
     Measurement,
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
 )
-from ..measurement.measurement import (
+from qubex.measurement.measurement import (
     DEFAULT_INTERVAL,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
     DEFAULT_SHOTS,
 )
-from ..pulse import (
+from qubex.pulse import (
     PulseArray,
     PulseSchedule,
     RampType,
     VirtualZ,
     Waveform,
 )
-from ..typing import IQArray, ParametricPulseSchedule, ParametricWaveformDict, TargetMap
+from qubex.typing import (
+    IQArray,
+    ParametricPulseSchedule,
+    ParametricWaveformDict,
+    TargetMap,
+)
+
 from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_SHOTS,

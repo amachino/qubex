@@ -9,7 +9,8 @@ from numpy.typing import NDArray
 from sklearn.cluster import KMeans
 from sklearn.metrics import confusion_matrix
 
-from ..style import get_colors, get_config
+from qubex.style import get_colors, get_config
+
 from .state_classifier import StateClassifier
 
 

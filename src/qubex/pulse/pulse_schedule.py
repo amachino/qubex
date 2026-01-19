@@ -12,7 +12,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from typing_extensions import deprecated
 
-from ..style import COLORS
+from qubex.style import COLORS
+
 from .blank import Blank
 from .pulse_array import PhaseShift, PulseArray
 from .waveform import Waveform

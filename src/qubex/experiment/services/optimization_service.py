@@ -6,15 +6,16 @@ import cma
 import numpy as np
 import scipy.optimize
 
-from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from ...pulse import (
+from qubex.experiment.experiment_context import ExperimentContext
+from qubex.measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.pulse import (
     CrossResonance,
     Drag,
     Pulse,
     Waveform,
 )
-from ...typing import TargetMap
-from ..experiment_context import ExperimentContext
+from qubex.typing import TargetMap
+
 from .benchmarking_service import BenchmarkingService
 from .calibration_service import CalibrationService
 from .characterization_service import CharacterizationService

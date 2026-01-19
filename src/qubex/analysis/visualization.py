@@ -11,8 +11,8 @@ import plotly.graph_objs as go
 import qctrlvisualizer as qcv
 from numpy.typing import ArrayLike, NDArray
 
-from ..style import COLORS, get_colors, get_config
-from ..typing import IQArray
+from qubex.style import COLORS, get_colors, get_config
+from qubex.typing import IQArray
 
 DEFAULT_IMAGES_DIR = "./images"
 DEFAULT_TEMPLATE = "qubex"

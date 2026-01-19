@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from ..backend.lattice_graph import LatticeGraph
+from qubex.backend.lattice_graph import LatticeGraph
 
 
 @dataclass(frozen=True)

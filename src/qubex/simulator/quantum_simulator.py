@@ -14,8 +14,9 @@ import qutip as qt
 import qutip.typing as qtt
 from scipy.interpolate import interp1d
 
-from ..analysis.visualization import plot_bloch_vectors
-from ..pulse import PulseSchedule, Waveform
+from qubex.analysis.visualization import plot_bloch_vectors
+from qubex.pulse import PulseSchedule, Waveform
+
 from .quantum_system import Object, QuantumSystem
 
 TIME_STEP = 0.1  # ns

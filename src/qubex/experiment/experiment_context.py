@@ -22,7 +22,7 @@ from rich.prompt import Confirm
 from rich.table import Table
 from typing_extensions import deprecated
 
-from ..backend import (
+from qubex.backend import (
     Box,
     Chip,
     ConfigLoader,
@@ -38,19 +38,21 @@ from ..backend import (
     Target,
     TargetType,
 )
-from ..clifford import Clifford, CliffordGenerator
-from ..measurement import (
+from qubex.clifford.clifford import Clifford
+from qubex.clifford.clifford_generator import CliffordGenerator
+from qubex.measurement import (
     Measurement,
     MeasureResult,
     StateClassifier,
 )
-from ..measurement.measurement import (
+from qubex.measurement.measurement import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
 )
-from ..typing import TargetMap
-from ..version import get_package_version
+from qubex.typing import TargetMap
+from qubex.version import get_package_version
+
 from . import experiment_tool
 from .calibration_note import CalibrationNote
 from .experiment_constants import (

@@ -8,7 +8,7 @@ from contextlib import contextmanager
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ..backend import SAMPLING_PERIOD, SystemManager
+from qubex.backend import SAMPLING_PERIOD, SystemManager
 
 
 class ExperimentUtil:

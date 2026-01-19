@@ -10,7 +10,7 @@ import networkx as nx
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 
-from ..analysis.visualization import save_figure_image
+from qubex.analysis.visualization import save_figure_image
 
 MUX_SIZE = 4
 NODE_SIZE = 24

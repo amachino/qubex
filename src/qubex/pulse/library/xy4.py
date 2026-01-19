@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Final
 
-from ..blank import Blank
-from ..pulse_array import PulseArray
-from ..waveform import Waveform
+from qubex.pulse.blank import Blank
+from qubex.pulse.pulse_array import PulseArray
+from qubex.pulse.waveform import Waveform
 
 
 class XY4(PulseArray):

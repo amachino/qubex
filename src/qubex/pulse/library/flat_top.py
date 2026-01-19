@@ -5,7 +5,8 @@ from typing import Final, Literal
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from ..pulse import Pulse
+from qubex.pulse.pulse import Pulse
+
 from .bump import Bump
 from .gaussian import Gaussian
 from .multi_derivative import MultiDerivative

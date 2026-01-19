@@ -9,22 +9,10 @@ import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
 
-from ...analysis import FitResult, fitting, util
-from ...analysis import visualization as viz
-from ...backend import SAMPLING_PERIOD, Target
-from ...measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from ...pulse import (
-    CrossResonance,
-    Drag,
-    FlatTop,
-    MultiDerivativeCrossResonance,
-    PulseArray,
-    PulseSchedule,
-    RampType,
-    Waveform,
-)
-from ...typing import TargetMap
-from ..experiment_constants import (
+from qubex.analysis import FitResult, fitting, util
+from qubex.analysis import visualization as viz
+from qubex.backend import SAMPLING_PERIOD, Target
+from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_CR_RAMPTIME,
     DEFAULT_CR_TIME_RANGE,
@@ -36,9 +24,22 @@ from ..experiment_constants import (
     PI_DURATION,
     PI_RAMPTIME,
 )
-from ..experiment_context import ExperimentContext
-from ..experiment_result import AmplCalibData, ExperimentResult
-from ..result import Result
+from qubex.experiment.experiment_context import ExperimentContext
+from qubex.experiment.experiment_result import AmplCalibData, ExperimentResult
+from qubex.experiment.result import Result
+from qubex.measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.pulse import (
+    CrossResonance,
+    Drag,
+    FlatTop,
+    MultiDerivativeCrossResonance,
+    PulseArray,
+    PulseSchedule,
+    RampType,
+    Waveform,
+)
+from qubex.typing import TargetMap
+
 from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 

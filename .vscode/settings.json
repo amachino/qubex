@@ -27,9 +27,14 @@
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.languageServer": "Pylance",
   "python.terminal.activateEnvironment": false,
-  "python.testing.pytestArgs": ["--import-mode=importlib", "tests"],
+  "python.testing.pytestArgs": [
+    "--import-mode=importlib",
+    "tests"
+  ],
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
   "ruff.configuration": "${workspaceFolder}/pyproject.toml",
-  "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"]
+  "ruff.path": [
+    "${workspaceFolder}/.venv/bin/ruff"
+  ]
 }
