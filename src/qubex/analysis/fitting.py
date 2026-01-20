@@ -641,7 +641,7 @@ def fit_cosine(
             )
             popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -812,7 +812,7 @@ def fit_delayed_cosine(
     idx = np.argmax(dy > threshold)
     t0_est = x[idx]
 
-    logger.error(
+    logger.debug(
         f"Initial guess: A = {amplitude_est:.3g}, ω = {omega_est:.3g}, t0 = {t0_est:.3g}, C = {offset_est:.3g}"
     )
 
@@ -828,7 +828,7 @@ def fit_delayed_cosine(
     try:
         popt, pcov = curve_fit(func_delayed_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -992,7 +992,7 @@ def fit_exp_decay(
     try:
         popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1142,7 +1142,7 @@ def fit_lorentzian(
     try:
         popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1311,7 +1311,7 @@ def fit_sqrt_lorentzian(
             bounds=bounds,
         )
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1508,7 +1508,7 @@ def fit_rabi(
             )
             popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1612,7 +1612,7 @@ def fit_rabi(
     }
 
     if r2 < 0.9:
-        logger.info("Warning: R² < 0.9")
+        logger.warning("R² < 0.9")
         return FitResult(
             status=FitStatus.WARNING,
             message="R² < 0.9",
@@ -1665,7 +1665,7 @@ def fit_detuned_rabi(
     try:
         popt, pcov = curve_fit(func, control_frequencies, rabi_frequencies)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1833,7 +1833,7 @@ def fit_ramsey(
     try:
         popt, pcov = curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -1990,7 +1990,7 @@ def fit_rb(
     try:
         popt, pcov = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
@@ -2281,7 +2281,7 @@ def fit_ampl_calib_data(
     try:
         popt, pcov = curve_fit(cos_func, x, y, p0=p0)
     except RuntimeError:
-        logger.error(f"Failed to fit the data for {target}.")
+        logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
             status=FitStatus.ERROR,
             message="Failed to fit the data.",
