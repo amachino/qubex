@@ -3533,6 +3533,31 @@ class Experiment:
             save_image=save_image,
         )
 
+    def measure_qubit_resonance(
+        self,
+        target: str,
+        *,
+        frequency_range: ArrayLike | None = None,
+        control_amplitude: float | None = None,
+        readout_amplitude: float | None = None,
+        target_rabi_rate: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> Result:
+        return self.characterization_service.measure_qubit_resonance(
+            target=target,
+            frequency_range=frequency_range,
+            control_amplitude=control_amplitude,
+            readout_amplitude=readout_amplitude,
+            target_rabi_rate=target_rabi_rate,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
     def qubit_spectroscopy(
         self,
         target: str,
