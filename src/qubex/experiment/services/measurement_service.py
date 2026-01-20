@@ -85,10 +85,10 @@ class MeasurementService:
     def __init__(
         self,
         *,
-        context: ExperimentContext,
+        experiment_context: ExperimentContext,
         pulse_service: PulseService,
     ):
-        self._ctx = context
+        self._ctx = experiment_context
         self._pulse_service = pulse_service
 
     @property

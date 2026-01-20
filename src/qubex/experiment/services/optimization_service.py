@@ -30,14 +30,14 @@ class OptimizationService:
     def __init__(
         self,
         *,
-        context: ExperimentContext,
+        experiment_context: ExperimentContext,
         measurement_service: MeasurementService,
         calibration_service: CalibrationService,
         characterization_service: CharacterizationService,
         benchmarking_service: BenchmarkingService,
         pulse_service: PulseService,
     ):
-        self._ctx = context
+        self._experiment_context = experiment_context
         self._calibration_service = calibration_service
         self._measurement_service = measurement_service
         self._characterization_service = characterization_service
@@ -46,7 +46,7 @@ class OptimizationService:
 
     @property
     def ctx(self) -> ExperimentContext:
-        return self._ctx
+        return self._experiment_context
 
     @property
     def pulse(self) -> PulseService:

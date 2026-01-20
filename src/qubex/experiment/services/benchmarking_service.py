@@ -32,17 +32,17 @@ class BenchmarkingService:
     def __init__(
         self,
         *,
-        context: ExperimentContext,
+        experiment_context: ExperimentContext,
         measurement_service: MeasurementService,
         pulse_service: PulseService,
     ):
-        self._ctx: ExperimentContext = context
+        self._experiment_context: ExperimentContext = experiment_context
         self._measurement_service = measurement_service
         self._pulse_service = pulse_service
 
     @property
     def ctx(self) -> ExperimentContext:
-        return self._ctx
+        return self._experiment_context
 
     @property
     def pulse(self) -> PulseService:

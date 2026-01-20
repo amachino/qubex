@@ -186,30 +186,30 @@ class Experiment:
             mock_mode=mock_mode,
         )
         pulse_service = PulseService(
-            context=experiment_context,
+            experiment_context=experiment_context,
         )
         measurement_service = MeasurementService(
-            context=experiment_context,
+            experiment_context=experiment_context,
             pulse_service=pulse_service,
         )
         calibration_service = CalibrationService(
-            context=experiment_context,
+            experiment_context=experiment_context,
             measurement_service=measurement_service,
             pulse_service=pulse_service,
         )
         characterization_service = CharacterizationService(
-            context=experiment_context,
+            experiment_context=experiment_context,
             measurement_service=measurement_service,
             calibration_service=calibration_service,
             pulse_service=pulse_service,
         )
         benchmarking_service = BenchmarkingService(
-            context=experiment_context,
+            experiment_context=experiment_context,
             measurement_service=measurement_service,
             pulse_service=pulse_service,
         )
         optimization_service = OptimizationService(
-            context=experiment_context,
+            experiment_context=experiment_context,
             measurement_service=measurement_service,
             calibration_service=calibration_service,
             characterization_service=characterization_service,
