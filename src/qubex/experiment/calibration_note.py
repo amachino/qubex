@@ -91,6 +91,10 @@ class CalibrationNote(ExperimentNote):
         return self._chip_id
 
     @property
+    def reference_phases(self) -> dict[str, float]:
+        return self._reference_phases
+
+    @property
     def rabi_params(self) -> dict[str, RabiParam]:
         return self.get(RABI_PARAMS)
 

@@ -2471,8 +2471,8 @@ class CalibrationService:
             target_qubit=target_qubit,
         )
         gate_time = zx90.duration
-        t1_dict = self.ctx.system_manager.config_loader._load_param_data("t1")
-        t2_dict = self.ctx.system_manager.config_loader._load_param_data("t2_echo")
+        t1_dict = self.ctx.system_manager.config_loader.load_param_data("t1")
+        t2_dict = self.ctx.system_manager.config_loader.load_param_data("t2_echo")
         t1 = (t1_dict[control_qubit], t1_dict[target_qubit])
         t2 = (t2_dict[control_qubit], t2_dict[target_qubit])
         return Result(

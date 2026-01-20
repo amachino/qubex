@@ -341,10 +341,11 @@ class QuantumSystem:
         anharmonicity: float | None = None,
     ) -> None:
         obj = self.get_qubit(qubit)
+        # TODO: Fix SLF001
         if frequency is not None:
-            obj._bare_frequency = frequency
+            obj._bare_frequency = frequency  # noqa: SLF001
         if anharmonicity is not None:
-            obj._anharmonicity = anharmonicity
+            obj._anharmonicity = anharmonicity  # noqa: SLF001
 
     def set_resonator_params(
         self,
@@ -353,5 +354,6 @@ class QuantumSystem:
         frequency: float | None = None,
     ) -> None:
         obj = self.get_resonator(resonator)
+        # TODO: Fix SLF001
         if frequency is not None:
-            obj._frequency_g = frequency
+            obj._frequency_g = frequency  # noqa: SLF001

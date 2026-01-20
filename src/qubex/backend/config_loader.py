@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Final, Literal
 
 import yaml
+from typing_extensions import deprecated
 
 from .control_system import Box, ControlSystem
 from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
@@ -321,7 +322,7 @@ class ConfigLoader:
             return data
         return {k: apply(v, k) for k, v in data.items()}
 
-    def _load_param_data(self, param_name: str, use_default: bool = True) -> dict:
+    def load_param_data(self, param_name: str, use_default: bool = True) -> dict:
         """
         Load a parameter dictionary with per-file preference and legacy fallback.
 
@@ -332,6 +333,10 @@ class ConfigLoader:
           are filled by legacy values. Per-file keys override legacy.
         - If a per-file YAML is absent, return the legacy map as-is (or empty).
         """
+        return self._load_param_data(param_name, use_default=use_default)
+
+    @deprecated("Use load_param_data() instead.")
+    def _load_param_data(self, param_name: str, use_default: bool = True) -> dict:
         legacy_name, legacy_file = PARAMS_MAP[param_name]
         file_path = Path(self._params_dir) / f"{param_name}.yaml"
 
@@ -430,21 +435,22 @@ class ConfigLoader:
             name=chip_info["name"],
             n_qubits=chip_info["n_qubits"],
         )
-        qubit_frequency_dict = self._load_param_data("qubit_frequency")
-        qubit_anharmonicity_dict = self._load_param_data("qubit_anharmonicity")
-        resonator_frequency_dict = self._load_param_data("resonator_frequency")
-        control_frequency_dict = self._load_param_data("control_frequency")
-        control_frequency_ef_dict = self._load_param_data("control_frequency_ef")
-        readout_frequency_dict = self._load_param_data("readout_frequency")
+        qubit_frequency_dict = self.load_param_data("qubit_frequency")
+        qubit_anharmonicity_dict = self.load_param_data("qubit_anharmonicity")
+        resonator_frequency_dict = self.load_param_data("resonator_frequency")
+        control_frequency_dict = self.load_param_data("control_frequency")
+        control_frequency_ef_dict = self.load_param_data("control_frequency_ef")
+        readout_frequency_dict = self.load_param_data("readout_frequency")
 
+        # TODO: Fix SLF001
         for qubit in chip.qubits:
-            qubit._bare_frequency = qubit_frequency_dict.get(qubit.label)
-            qubit._anharmonicity = qubit_anharmonicity_dict.get(qubit.label)
-            qubit._control_frequency_ge = control_frequency_dict.get(qubit.label)
-            qubit._control_frequency_ef = control_frequency_ef_dict.get(qubit.label)
+            qubit._bare_frequency = qubit_frequency_dict.get(qubit.label)  # noqa: SLF001
+            qubit._anharmonicity = qubit_anharmonicity_dict.get(qubit.label)  # noqa: SLF001
+            qubit._control_frequency_ge = control_frequency_dict.get(qubit.label)  # noqa: SLF001
+            qubit._control_frequency_ef = control_frequency_ef_dict.get(qubit.label)  # noqa: SLF001
         for resonator in chip.resonators:
-            resonator._frequency_g = resonator_frequency_dict.get(resonator.qubit)
-            resonator._readout_frequency = readout_frequency_dict.get(resonator.qubit)
+            resonator._frequency_g = resonator_frequency_dict.get(resonator.qubit)  # noqa: SLF001
+            resonator._readout_frequency = readout_frequency_dict.get(resonator.qubit)  # noqa: SLF001
         return QuantumSystem(chip=chip)
 
     def _load_control_system(self) -> ControlSystem | None:
@@ -541,17 +547,17 @@ class ConfigLoader:
         # fall back to monolithic params.yaml where needed. Do not require the
         # legacy monolithic file to exist.
         control_params = ControlParams(
-            control_amplitude=self._load_param_data("control_amplitude"),
-            readout_amplitude=self._load_param_data("readout_amplitude"),
-            control_vatt=self._load_param_data("control_vatt"),
-            readout_vatt=self._load_param_data("readout_vatt"),
-            pump_vatt=self._load_param_data("pump_vatt"),
-            control_fsc=self._load_param_data("control_fsc"),
-            readout_fsc=self._load_param_data("readout_fsc"),
-            pump_fsc=self._load_param_data("pump_fsc"),
-            capture_delay=self._load_param_data("capture_delay"),
-            capture_delay_word=self._load_param_data("capture_delay_word"),
-            jpa_params=self._load_param_data("jpa_params"),
+            control_amplitude=self.load_param_data("control_amplitude"),
+            readout_amplitude=self.load_param_data("readout_amplitude"),
+            control_vatt=self.load_param_data("control_vatt"),
+            readout_vatt=self.load_param_data("readout_vatt"),
+            pump_vatt=self.load_param_data("pump_vatt"),
+            control_fsc=self.load_param_data("control_fsc"),
+            readout_fsc=self.load_param_data("readout_fsc"),
+            pump_fsc=self.load_param_data("pump_fsc"),
+            capture_delay=self.load_param_data("capture_delay"),
+            capture_delay_word=self.load_param_data("capture_delay_word"),
+            jpa_params=self.load_param_data("jpa_params"),
         )
         return control_params
 

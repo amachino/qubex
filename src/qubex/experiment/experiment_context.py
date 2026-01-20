@@ -516,7 +516,7 @@ class ExperimentContext:
 
     @property
     def reference_phases(self) -> dict[str, float]:
-        return self.calib_note._reference_phases
+        return self.calib_note.reference_phases
 
     def load_property(self, property_name: str) -> dict:
         property_path = self.property_dir / self.chip_id / f"{property_name}.json"

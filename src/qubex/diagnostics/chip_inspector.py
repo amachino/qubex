@@ -54,13 +54,13 @@ class ChipInspector:
             params_dir=props_dir,
         )
         experiment_system = config_loader.get_experiment_system(chip_id)
-        self.graph = experiment_system.quantum_system._graph
+        self.graph = experiment_system.quantum_system.chip_graph
 
-        frequency_dict = config_loader._load_param_data("qubit_frequency")
-        anharmonicity_dict = config_loader._load_param_data("qubit_anharmonicity")
-        t1_dict = config_loader._load_param_data("t1")
-        t2_echo_dict = config_loader._load_param_data("t2_echo")
-        coupling_dict = config_loader._load_param_data("qubit_qubit_coupling_strength")
+        frequency_dict = config_loader.load_param_data("qubit_frequency")
+        anharmonicity_dict = config_loader.load_param_data("qubit_anharmonicity")
+        t1_dict = config_loader.load_param_data("t1")
+        t2_echo_dict = config_loader.load_param_data("t2_echo")
+        coupling_dict = config_loader.load_param_data("qubit_qubit_coupling_strength")
 
         def _get_val(d: dict, k: str) -> float:
             v = d.get(k)

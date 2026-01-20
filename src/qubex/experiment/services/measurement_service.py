@@ -473,7 +473,7 @@ class MeasurementService:
         amplitude = {target: float(np.abs(v)) for target, v in iq.items()}
 
         if store_reference_points:
-            self.ctx.calib_note._reference_phases.update(phase)
+            self.ctx.calib_note.reference_phases.update(phase)
 
         return Result(
             data={
@@ -1599,7 +1599,7 @@ class MeasurementService:
                     str(state): [center.real, center.imag]
                     for state, center in classifiers[target].centers.items()
                 },
-                "reference_phase": self.ctx.calib_note._reference_phases[target],
+                "reference_phase": self.ctx.calib_note.reference_phases[target],
             }
             for target in targets
         }
@@ -2563,7 +2563,7 @@ class MeasurementService:
 
             if as_late_as_possible:
                 # Put final CNOT gates as late as possible
-                max_duration = ps._max_offset()
+                max_duration = ps._max_offset()  # noqa
                 for leaf_edge in leaf_edges:
                     if self.ctx.qubits[leaf_edge[0]].index % 4 in [0, 3]:
                         control_label = leaf_edge[0]
@@ -2572,21 +2572,21 @@ class MeasurementService:
                         control_label = leaf_edge[1]
                         target_label = leaf_edge[0]
                     cr_label = f"{control_label}-{target_label}"
-                    if ps._offsets[control_label] == ps._offsets[target_label]:
-                        offset = ps._offsets[control_label]
+                    if ps._offsets[control_label] == ps._offsets[target_label]:  # noqa
+                        offset = ps._offsets[control_label]  # noqa
                         if offset < max_duration:
                             blank = max_duration - offset
                             for label in [control_label, target_label, cr_label]:
-                                ps._channels[label].sequence._elements.insert(
+                                ps._channels[label].sequence._elements.insert(  # noqa
                                     -1, Blank(duration=blank)
                                 )
-                                ps._offsets[label] += blank
+                                ps._offsets[label] += blank  # noqa
 
             if decouple_entangled_zz:
                 # Apply CPMG to blanks after entanglement gates
                 for qubit in qubits:
                     if self.ctx.qubits[qubit].index % 4 in [0, 3]:
-                        dd_duration = ps._max_offset() - ps._offsets[qubit]
+                        dd_duration = ps._max_offset() - ps._offsets[qubit]  # noqa
                         pi = self.pulse.x180(qubit)
                         if cpmg_duration_unit is None:
                             n_pi = 2
@@ -3447,7 +3447,7 @@ class MeasurementService:
             if show_only_qubit_channels:
                 for label in seq_plot.labels:
                     if label not in self.ctx.qubits:
-                        del seq_plot._channels[label]
+                        del seq_plot._channels[label]  # noqa
             seq_plot.plot(
                 title=f"{n_qubits}-qubits entanglement sequence",
                 show_physical_pulse=False,

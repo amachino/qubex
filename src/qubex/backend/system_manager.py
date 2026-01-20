@@ -500,7 +500,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         for box in boxes:
             # TODO: run this in a separate thread
             box_config = self.device_controller.dump_box(box.id)
-            self.device_controller.boxpool._box_config_cache[box.id] = box_config
+            self.device_controller.boxpool._box_config_cache[box.id] = box_config  # noqa: SLF001
             result[box.id] = {"ports": {}}
             for port in box.ports:
                 if port.type not in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
@@ -565,8 +565,8 @@ This operation will overwrite the existing device settings. Do you want to conti
                     PortType.MNTR_IN,
                 ):
                     rel = (port.channels[0].id, port.id)
-                    if rel not in qc.sysdb._relation_channel_target:
-                        qc.sysdb._relation_channel_target.append(rel)
+                    if rel not in qc.sysdb._relation_channel_target:  # noqa: SLF001
+                        qc.sysdb._relation_channel_target.append(rel)  # noqa: SLF001
 
         for target in experiment_system.all_targets:
             qc.define_target(
@@ -668,7 +668,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         target = self.experiment_system.get_target(label)
         channel = target.channel
         port = channel.port
-        box_cache = self.device_controller.boxpool._box_config_cache
+        box_cache = self.device_controller.boxpool._box_config_cache  # noqa: SLF001
 
         original_lo_freq = port.lo_freq
         original_cnco_freq = port.cnco_freq
@@ -757,7 +757,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                 )
 
             # restore the original box config
-            self.device_controller.boxpool._box_config_cache = original_box_cache
+            self.device_controller.boxpool._box_config_cache = original_box_cache  # noqa: SLF001
 
     @contextmanager
     def save_rawdata(

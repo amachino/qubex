@@ -243,8 +243,8 @@ def print_chip_info(
         if "chip_summary" in info_type:
             inspector = ChipInspector(
                 chip_id=chip.id,
-                config_dir=system_manager.config_loader._config_dir,
-                props_dir=system_manager.config_loader._params_dir,
+                config_dir=system_manager.config_loader.config_path,
+                props_dir=system_manager.config_loader.params_path,
             )
             if chip.n_qubits == 144:
                 inspection_params = {
@@ -262,7 +262,7 @@ def print_chip_info(
             )
 
         if "resonator_frequency" in info_type:
-            if values := loader._load_param_data("resonator_frequency"):
+            if values := loader.load_param_data("resonator_frequency"):
                 graph.plot_lattice_data(
                     title="Resonator frequency (GHz)",
                     values=list(values.values()),
@@ -281,7 +281,7 @@ def print_chip_info(
                 )
 
         if "qubit_frequency" in info_type:
-            if values := loader._load_param_data("qubit_frequency"):
+            if values := loader.load_param_data("qubit_frequency"):
                 graph.plot_lattice_data(
                     title="Qubit frequency (GHz)",
                     values=list(values.values()),
@@ -300,7 +300,7 @@ def print_chip_info(
                 )
 
         if "qubit_anharmonicity" in info_type:
-            if values := loader._load_param_data("qubit_anharmonicity"):
+            if values := loader.load_param_data("qubit_anharmonicity"):
                 graph.plot_lattice_data(
                     title="Qubit anharmonicity (MHz)",
                     values=list(values.values()),
@@ -321,7 +321,7 @@ def print_chip_info(
                 )
 
         if "t1" in info_type:
-            if values := loader._load_param_data("t1"):
+            if values := loader.load_param_data("t1"):
                 graph.plot_lattice_data(
                     title="T1 (μs)",
                     values=list(values.values()),
@@ -342,7 +342,7 @@ def print_chip_info(
                 )
 
         if "t2_star" in info_type:
-            if values := loader._load_param_data("t2_star"):
+            if values := loader.load_param_data("t2_star"):
                 graph.plot_lattice_data(
                     title="T2* (μs)",
                     values=list(values.values()),
@@ -363,7 +363,7 @@ def print_chip_info(
                 )
 
         if "t2_echo" in info_type:
-            if values := loader._load_param_data("t2_echo"):
+            if values := loader.load_param_data("t2_echo"):
                 graph.plot_lattice_data(
                     title="T2 echo (μs)",
                     values=list(values.values()),
@@ -411,9 +411,7 @@ def print_chip_info(
             return result
 
         if "static_zz_interaction" in info_type:
-            if static_zz_interaction := loader._load_param_data(
-                "static_zz_interaction"
-            ):
+            if static_zz_interaction := loader.load_param_data("static_zz_interaction"):
                 values = (
                     static_zz_interaction
                     if directed
@@ -441,7 +439,7 @@ def print_chip_info(
                 )
 
         if "qubit_qubit_coupling_strength" in info_type:
-            if qubit_qubit_coupling_strength := loader._load_param_data(
+            if qubit_qubit_coupling_strength := loader.load_param_data(
                 "qubit_qubit_coupling_strength"
             ):
                 values = (
@@ -471,7 +469,7 @@ def print_chip_info(
                 )
 
         if "average_readout_fidelity" in info_type:
-            if values := loader._load_param_data("average_readout_fidelity"):
+            if values := loader.load_param_data("average_readout_fidelity"):
                 graph.plot_lattice_data(
                     title="Average readout fidelity (%)",
                     values=list(values.values()),
@@ -488,7 +486,7 @@ def print_chip_info(
                 )
 
         if "x90_gate_fidelity" in info_type:
-            if values := loader._load_param_data("x90_gate_fidelity"):
+            if values := loader.load_param_data("x90_gate_fidelity"):
                 graph.plot_lattice_data(
                     title="X90 gate fidelity (%)",
                     values=list(values.values()),
@@ -505,7 +503,7 @@ def print_chip_info(
                 )
 
         if "x180_gate_fidelity" in info_type:
-            if values := loader._load_param_data("x180_gate_fidelity"):
+            if values := loader.load_param_data("x180_gate_fidelity"):
                 graph.plot_lattice_data(
                     title="X180 gate fidelity (%)",
                     values=list(values.values()),
@@ -522,7 +520,7 @@ def print_chip_info(
                 )
 
         if "zx90_gate_fidelity" in info_type:
-            if values := loader._load_param_data("zx90_gate_fidelity"):
+            if values := loader.load_param_data("zx90_gate_fidelity"):
                 graph.plot_graph_data(
                     directed=True,
                     title="ZX90 gate fidelity (%)",
