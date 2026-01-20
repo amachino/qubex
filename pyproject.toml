@@ -52,7 +52,7 @@ dev = [
 ]
 
 [tool.setuptools.dynamic]
-version = { attr = "qubex.version.get_version" }
+version = { attr = "qubex.version.VERSION" }
 
 [tool.setuptools.package-data]
 qubex = ["py.typed", "clifford/**/*.json"]

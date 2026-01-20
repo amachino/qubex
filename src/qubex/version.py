@@ -1,9 +1,12 @@
 import importlib.metadata
 import subprocess
 
+from typing_extensions import deprecated
+
 VERSION = "1.5.0a1"
 
 
+@deprecated("get_version is deprecated, use VERSION constant instead.")
 def get_version():
     try:
         commit_hash = (
