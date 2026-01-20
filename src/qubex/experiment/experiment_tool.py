@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 import subprocess
@@ -8,11 +9,14 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Literal
 
-import quel_clock_master as qcm
 import yaml
-from qubecalib import QubeCalib
-from qubecalib.instrument.quel.quel1.tool.skew import Skew
-from quel_ic_config import Quel1Box
+
+with contextlib.suppress(ImportError):
+    import quel_clock_master as qcm
+    from qubecalib import QubeCalib
+    from qubecalib.instrument.quel.quel1.tool.skew import Skew
+    from quel_ic_config import Quel1Box
+
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table

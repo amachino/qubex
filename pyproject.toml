@@ -37,9 +37,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-backend = [
-    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.16beta1",
-]
+backend = ["qubecalib"]
 
 [dependency-groups]
 dev = [
@@ -50,6 +48,9 @@ dev = [
     "pytest-xdist",
     "ruff",
 ]
+
+[tool.uv.sources]
+qubecalib = { git = "https://github.com/qiqb-osaka/qube-calib.git", rev = "3.1.16beta1" }
 
 [tool.setuptools.dynamic]
 version = { attr = "qubex.version.VERSION" }

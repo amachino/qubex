@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-# Patch default background noise threshold
 import qubex.patches.quel_ic_config.linkup_fpga_mxfe_patch  # noqa: F401
 
 from . import pulse
