@@ -216,15 +216,13 @@ class Experiment:
             benchmarking_service=benchmarking_service,
             pulse_service=pulse_service,
         )
-        context.register_services(
-            benchmarking_service=benchmarking_service,
-            calibration_service=calibration_service,
-            characterization_service=characterization_service,
-            measurement_service=measurement_service,
-            optimization_service=optimization_service,
-            pulse_service=pulse_service,
-        )
         self._ctx = context
+        self._pulse_service = pulse_service
+        self._measurement_service = measurement_service
+        self._calibration_service = calibration_service
+        self._characterization_service = characterization_service
+        self._benchmarking_service = benchmarking_service
+        self._optimization_service = optimization_service
 
     @property
     def ctx(self) -> ExperimentContext:
@@ -244,31 +242,31 @@ class Experiment:
         R
             The experiment result.
         """
-        return task.execute(self.ctx)
+        return task.execute(self)
 
     @property
     def pulse(self) -> PulseService:
-        return self.ctx.pulse_service
+        return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
-        return self.ctx.measurement_service
+        return self._measurement_service
 
     @property
     def calibration_service(self) -> CalibrationService:
-        return self.ctx.calibration_service
+        return self._calibration_service
 
     @property
     def characterization_service(self) -> CharacterizationService:
-        return self.ctx.characterization_service
+        return self._characterization_service
 
     @property
     def benchmarking_service(self) -> BenchmarkingService:
-        return self.ctx.benchmarking_service
+        return self._benchmarking_service
 
     @property
     def optimization_service(self) -> OptimizationService:
-        return self.ctx.optimization_service
+        return self._optimization_service
 
     @property
     def tool(self):

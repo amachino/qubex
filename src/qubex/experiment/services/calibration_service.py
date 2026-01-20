@@ -94,7 +94,7 @@ class CalibrationService:
 
         for target, phase in phases.items():
             try:
-                rabi_param = self.ctx.pulse_service.rabi_params.get(target)
+                rabi_param = self.pulse.rabi_params.get(target)
                 if rabi_param is None:
                     print(f"Rabi parameters for {target} are not stored.")
                     continue
@@ -303,7 +303,7 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        rabi_params = self.ctx.pulse_service.rabi_params
+        rabi_params = self.pulse.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
@@ -328,7 +328,7 @@ class CalibrationService:
                 raise ValueError("Invalid pulse type.")
 
             # calculate the control amplitude for the target rabi rate
-            ampl = self.ctx.pulse_service.calc_control_amplitude(target, rabi_rate)
+            ampl = self.pulse.calc_control_amplitude(target, rabi_rate)
 
             # create a range of amplitudes around the estimated value
             ampl_min = ampl * (1 - 0.5 / n_rotations)
@@ -520,14 +520,14 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        rabi_params = self.ctx.pulse_service.rabi_params
+        rabi_params = self.pulse.rabi_params
         if rabi_params is None:
             raise ValueError("Rabi parameters are not stored.")
 
         ef_labels = [
             Target.ef_label(label)
             for label in targets
-            if label in self.ctx.pulse_service.ef_rabi_params
+            if label in self.pulse.ef_rabi_params
         ]
 
         def calibrate(target: str) -> AmplCalibData:
@@ -553,7 +553,7 @@ class CalibrationService:
             else:
                 raise ValueError("Invalid pulse type.")
 
-            ampl = self.ctx.pulse_service.calc_control_amplitude(ef_label, rabi_rate)
+            ampl = self.pulse.calc_control_amplitude(ef_label, rabi_rate)
 
             ampl_min = ampl * (1 - 0.5 / n_rotations)
             ampl_max = ampl * (1 + 0.5 / n_rotations)
@@ -757,8 +757,8 @@ class CalibrationService:
         else:
             targets = list(targets)
 
-        rabi_params = self.ctx.pulse_service.rabi_params
-        self.ctx.pulse_service.validate_rabi_params(rabi_params)
+        rabi_params = self.pulse.rabi_params
+        self.pulse.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> FitResult:
             # hpi
@@ -780,9 +780,7 @@ class CalibrationService:
                 if hpi_param is not None and use_stored_amplitude:
                     ampl = hpi_param["amplitude"]
                 else:
-                    ampl = self.ctx.pulse_service.calc_control_amplitude(
-                        target, rabi_rate
-                    )
+                    ampl = self.pulse.calc_control_amplitude(target, rabi_rate)
             # pi
             elif pulse_type == "pi":
                 pi_param = self.ctx.calib_note.get_drag_pi_param(target)
@@ -802,9 +800,7 @@ class CalibrationService:
                 if pi_param is not None and use_stored_amplitude:
                     ampl = pi_param["amplitude"]
                 else:
-                    ampl = self.ctx.pulse_service.calc_control_amplitude(
-                        target, rabi_rate
-                    )
+                    ampl = self.pulse.calc_control_amplitude(target, rabi_rate)
             else:
                 raise ValueError("Invalid pulse type.")
 
@@ -928,8 +924,8 @@ class CalibrationService:
         if beta_range is None:
             beta_range = np.linspace(-2.0, 2.0, 20)
 
-        rabi_params = self.ctx.pulse_service.rabi_params
-        self.ctx.pulse_service.validate_rabi_params(rabi_params)
+        rabi_params = self.pulse.rabi_params
+        self.pulse.validate_rabi_params(rabi_params)
 
         def calibrate(target: str) -> float:
             if pulse_type == "hpi":
@@ -1540,7 +1536,7 @@ class CalibrationService:
         # xt (cross-talk) rotation
         xt_rotation = coeffs["IX"] + 1j * coeffs["IY"]
         xt_rotation_amplitude = np.abs(xt_rotation)
-        xt_rotation_amplitude_hw = self.ctx.pulse_service.calc_control_amplitude(
+        xt_rotation_amplitude_hw = self.pulse.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=xt_rotation_amplitude,
         )
@@ -1550,7 +1546,7 @@ class CalibrationService:
         # cr (cross-resonance) rotation
         cr_rotation = coeffs["ZX"] + 1j * coeffs["ZY"]
         cr_rotation_amplitude = np.abs(cr_rotation)
-        cr_rotation_amplitude_hw = self.ctx.pulse_service.calc_control_amplitude(
+        cr_rotation_amplitude_hw = self.pulse.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=cr_rotation_amplitude,
         )
@@ -1559,9 +1555,7 @@ class CalibrationService:
         zx90_duration = 1 / (4 * cr_rotation_amplitude)
 
         # ZX90 gate
-        cr_rabi_rate = self.ctx.pulse_service.calc_rabi_rate(
-            control_qubit, cr_amplitude
-        )
+        cr_rabi_rate = self.pulse.calc_rabi_rate(control_qubit, cr_amplitude)
 
         fig_c = make_subplots(
             rows=2,
@@ -2005,9 +1999,7 @@ class CalibrationService:
         f_target = self.ctx.qubits[target_qubit].frequency
         f_delta = np.abs(f_target - f_control)
         max_cr_rabi = adiabatic_safe_factor * f_delta
-        max_cr_amplitude = self.ctx.pulse_service.calc_control_amplitude(
-            control_qubit, max_cr_rabi
-        )
+        max_cr_amplitude = self.pulse.calc_control_amplitude(control_qubit, max_cr_rabi)
         max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
 
         current_cr_param = self.ctx.calib_note.get_cr_param(cr_label)
@@ -2201,7 +2193,7 @@ class CalibrationService:
         cancel_phase = cr_param["cancel_phase"]
         zx_rotation_rate = cr_param["zx_rotation_rate"]
         zx_frequency = zx_rotation_rate * cr_amplitude
-        rotary_amplitude = self.ctx.pulse_service.calc_control_amplitude(
+        rotary_amplitude = self.pulse.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=zx_frequency * rotary_multiple,
         )
@@ -2211,9 +2203,7 @@ class CalibrationService:
         f_target = self.ctx.qubits[target_qubit].frequency
         f_delta = np.abs(f_target - f_control)
         max_cr_rabi = adiabatic_safe_factor * f_delta
-        max_cr_amplitude = self.ctx.pulse_service.calc_control_amplitude(
-            control_qubit, max_cr_rabi
-        )
+        max_cr_amplitude = self.pulse.calc_control_amplitude(control_qubit, max_cr_rabi)
         max_cr_amplitude: float = np.clip(max_cr_amplitude, 0.0, max_amplitude)
 
         if duration is None:
@@ -3094,7 +3084,7 @@ class CalibrationService:
         # xt (cross-talk) rotation
         xt_rotation = coeffs["IX"] + 1j * coeffs["IY"]
         xt_rotation_amplitude = np.abs(xt_rotation)
-        xt_rotation_amplitude_hw = self.ctx.pulse_service.calc_control_amplitude(
+        xt_rotation_amplitude_hw = self.pulse.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=xt_rotation_amplitude,
         )
@@ -3104,7 +3094,7 @@ class CalibrationService:
         # cr (cross-resonance) rotation
         cr_rotation = coeffs["ZX"] + 1j * coeffs["ZY"]
         cr_rotation_amplitude = np.abs(cr_rotation)
-        cr_rotation_amplitude_hw = self.ctx.pulse_service.calc_control_amplitude(
+        cr_rotation_amplitude_hw = self.pulse.calc_control_amplitude(
             target=target_qubit,
             rabi_rate=cr_rotation_amplitude,
         )
@@ -3113,9 +3103,7 @@ class CalibrationService:
         zx90_duration = 1 / (4 * cr_rotation_amplitude)
 
         # ZX90 gate
-        cr_rabi_rate = self.ctx.pulse_service.calc_rabi_rate(
-            control_qubit, cr_amplitude
-        )
+        cr_rabi_rate = self.pulse.calc_rabi_rate(control_qubit, cr_amplitude)
 
         fig_c = make_subplots(
             rows=2,

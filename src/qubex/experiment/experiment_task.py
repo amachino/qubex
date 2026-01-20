@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Generic, Protocol, TypeVar
 
 if TYPE_CHECKING:
-    from .experiment_context import ExperimentContext
+    from .experiment import Experiment
 
 
 class ExperimentTaskResult(Protocol):
@@ -16,6 +16,6 @@ T = TypeVar("T", bound=ExperimentTaskResult, covariant=True)
 class ExperimentTask(Protocol, Generic[T]):
     """Protocol for experiment tasks executed by `Experiment`."""
 
-    def execute(self, ctx: ExperimentContext) -> T:
-        """Execute the task using the given experiment context."""
+    def execute(self, exp: Experiment) -> T:
+        """Execute the task using the given Experiment object."""
         ...

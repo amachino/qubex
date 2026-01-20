@@ -547,7 +547,7 @@ class BenchmarkingService:
                     )
                     for target, data in result.data.items():
                         iq = data.kerneled
-                        z = self.ctx.pulse_service.rabi_params[target].normalize(iq)
+                        z = self.pulse.rabi_params[target].normalize(iq)
                         trial_data[target].append((z + 1) / 2)
 
                 check_vals = {}
@@ -938,7 +938,7 @@ class BenchmarkingService:
                     )
                     for target, data in result.data.items():
                         iq = data.kerneled
-                        z = self.ctx.pulse_service.rabi_params[target].normalize(iq)
+                        z = self.pulse.rabi_params[target].normalize(iq)
                         trial_data[target].append((z + 1) / 2)
 
                 check_vals = {}

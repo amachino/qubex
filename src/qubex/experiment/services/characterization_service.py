@@ -993,7 +993,7 @@ class CharacterizationService:
         if xaxis_type is None:
             xaxis_type = "log"
 
-        self.ctx.pulse_service.validate_rabi_params(targets)
+        self.pulse.validate_rabi_params(targets)
 
         if time_range is None:
             time_range = np.logspace(
@@ -1103,7 +1103,7 @@ class CharacterizationService:
         if xaxis_type is None:
             xaxis_type = "log"
 
-        self.ctx.pulse_service.validate_rabi_params(targets)
+        self.pulse.validate_rabi_params(targets)
 
         if time_range is None:
             time_range = np.logspace(
@@ -1261,7 +1261,7 @@ class CharacterizationService:
         if detuning is None:
             detuning = 0.001
 
-        self.ctx.pulse_service.validate_rabi_params(targets)
+        self.pulse.validate_rabi_params(targets)
 
         target_groups = self.ctx.util.create_qubit_subgroups(targets)
         spectator_groups = reversed(target_groups)  # TODO: make it more general
@@ -1413,7 +1413,7 @@ class CharacterizationService:
         if detuning is None:
             detuning = 0.001
 
-        self.ctx.pulse_service.validate_rabi_params(targets)
+        self.pulse.validate_rabi_params(targets)
 
         modes = ("T1", "T2", "Ramsey")
 
@@ -1495,7 +1495,7 @@ class CharacterizationService:
                     target=target,
                     data=np.asarray(values),
                     sweep_range=time_range,
-                    rabi_param=self.ctx.pulse_service.rabi_params.get(target),
+                    rabi_param=self.pulse.rabi_params.get(target),
                     state_centers=self.ctx.state_centers.get(target),
                     title="Sweep result",
                     xlabel="Sweep value",
@@ -1680,7 +1680,7 @@ class CharacterizationService:
         elif isinstance(stark_ramptime, float):
             stark_ramptime = {target: stark_ramptime for target in targets}
 
-        self.ctx.pulse_service.validate_rabi_params(targets)
+        self.pulse.validate_rabi_params(targets)
 
         if time_range is None:
             time_range = np.logspace(
@@ -1693,7 +1693,7 @@ class CharacterizationService:
         data: dict[str, T1Data] = {}
 
         for target in targets:
-            power = self.ctx.pulse_service.calc_control_amplitude(
+            power = self.pulse.calc_control_amplitude(
                 target=target, rabi_rate=stark_amplitude[target]
             )
             if power > 1:
@@ -1834,12 +1834,12 @@ class CharacterizationService:
         else:
             time_range = self.ctx.util.discretize_time_range(time_range)
 
-        self.ctx.pulse_service.validate_rabi_params(targets)
+        self.pulse.validate_rabi_params(targets)
 
         data: dict[str, RamseyData] = {}
 
         for target in targets:
-            power = self.ctx.pulse_service.calc_control_amplitude(
+            power = self.pulse.calc_control_amplitude(
                 target=target, rabi_rate=stark_amplitude[target]
             )
             if power > 1:
@@ -1979,7 +1979,7 @@ class CharacterizationService:
             targets = list(targets)
 
         time_range = np.asarray(time_range)
-        self.ctx.pulse_service.validate_rabi_params(targets)
+        self.pulse.validate_rabi_params(targets)
 
         result_0 = self.ramsey_experiment(
             targets=targets,
@@ -2099,7 +2099,7 @@ class CharacterizationService:
             return ps
 
         time_range = np.asarray(time_range)
-        self.ctx.pulse_service.validate_rabi_params([target_qubit, spectator_qubit])
+        self.pulse.validate_rabi_params([target_qubit, spectator_qubit])
 
         result = self.measurement_service.sweep_parameter(
             sequence=jazz_sequence,
@@ -4095,9 +4095,7 @@ class CharacterizationService:
                 data = result.data[target][-1]
                 result1d.append(data.kerneled)
 
-            result1d = self.ctx.pulse_service.rabi_params[target].normalize(
-                np.array(result1d)
-            )
+            result1d = self.pulse.rabi_params[target].normalize(np.array(result1d))
 
             f0 = fitting.fit_lorentzian(
                 x=qubit_frequency_range,

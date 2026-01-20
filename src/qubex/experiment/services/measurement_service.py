@@ -165,11 +165,11 @@ class MeasurementService:
             plot = False
 
         if readout_duration is None:
-            readout_duration = self.ctx.pulse_service.readout_duration
+            readout_duration = self.pulse.readout_duration
         if readout_pre_margin is None:
-            readout_pre_margin = self.ctx.pulse_service.readout_pre_margin
+            readout_pre_margin = self.pulse.readout_pre_margin
         if readout_post_margin is None:
-            readout_post_margin = self.ctx.pulse_service.readout_post_margin
+            readout_post_margin = self.pulse.readout_post_margin
         if enable_dsp_sum is None:
             enable_dsp_sum = mode == "single"
 
@@ -243,11 +243,11 @@ class MeasurementService:
             plot = False
 
         if readout_duration is None:
-            readout_duration = self.ctx.pulse_service.readout_duration
+            readout_duration = self.pulse.readout_duration
         if readout_pre_margin is None:
-            readout_pre_margin = self.ctx.pulse_service.readout_pre_margin
+            readout_pre_margin = self.pulse.readout_pre_margin
         if readout_post_margin is None:
-            readout_post_margin = self.ctx.pulse_service.readout_post_margin
+            readout_post_margin = self.pulse.readout_post_margin
 
         waveforms: dict[str, NDArray[np.complex128]] = {}
 
@@ -528,9 +528,9 @@ class MeasurementService:
         sweep_range = np.array(sweep_range)
 
         if rabi_level == "ge":
-            rabi_params = self.ctx.pulse_service.ge_rabi_params
+            rabi_params = self.pulse.ge_rabi_params
         elif rabi_level == "ef":
-            rabi_params = self.ctx.pulse_service.ef_rabi_params
+            rabi_params = self.pulse.ef_rabi_params
         else:
             raise ValueError("Invalid Rabi level.")
 
@@ -613,7 +613,7 @@ class MeasurementService:
         }
         result = ExperimentResult(
             data=sweep_data,
-            rabi_params=self.ctx.pulse_service.rabi_params,
+            rabi_params=self.pulse.rabi_params,
         )
         return result
 
@@ -655,7 +655,7 @@ class MeasurementService:
 
         sweep_range = np.array(sweep_range)
 
-        rabi_params = self.ctx.pulse_service.ge_rabi_params
+        rabi_params = self.pulse.ge_rabi_params
 
         signals = defaultdict(list)
         plotter = IQPlotter(self.ctx.state_centers)
@@ -704,7 +704,7 @@ class MeasurementService:
         }
         result = ExperimentResult(
             data=sweep_data,
-            rabi_params=self.ctx.pulse_service.rabi_params,
+            rabi_params=self.pulse.rabi_params,
         )
         return result
 
@@ -1299,7 +1299,7 @@ class MeasurementService:
         ef_rabi_data = {}
         for qubit, data in sweep_result.data.items():
             ef_label = Target.ef_label(qubit)
-            ge_rabi_param = self.ctx.pulse_service.ge_rabi_params[qubit]
+            ge_rabi_param = self.pulse.ge_rabi_params[qubit]
             iq_e = ge_rabi_param.endpoints[1]
             fit_result = fitting.fit_rabi(
                 target=qubit,
@@ -1781,7 +1781,7 @@ class MeasurementService:
                     plot=plot,
                 )
                 for qubit, data in measure_result.data.items():
-                    rabi_param = self.ctx.pulse_service.rabi_params[qubit]
+                    rabi_param = self.pulse.rabi_params[qubit]
                     if rabi_param is None:
                         raise ValueError("Rabi parameters are not stored.")
                     values = data[-1].kerneled
@@ -1799,7 +1799,7 @@ class MeasurementService:
                     plot=plot,
                 )
                 for qubit, data in measure_result.data.items():
-                    rabi_param = self.ctx.pulse_service.rabi_params[qubit]
+                    rabi_param = self.pulse.rabi_params[qubit]
                     if rabi_param is None:
                         raise ValueError("Rabi parameters are not stored.")
 
@@ -1960,7 +1960,7 @@ class MeasurementService:
             method = "measure"
         if plot is None:
             plot = True
-        self.ctx.pulse_service.validate_rabi_params()
+        self.pulse.validate_rabi_params()
 
         if isinstance(sequence, PulseSchedule):
             pulses = sequence.get_sequences()
