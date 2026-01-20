@@ -43,7 +43,6 @@ backend = [
 
 [dependency-groups]
 dev = [
-    "marimo",
     "pyinstrument",
     "pyright",
     "pytest",
