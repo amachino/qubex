@@ -309,7 +309,7 @@ class Measurement:
         bool
             True if connected, False otherwise.
         """
-        return self.device_controller._quel1system is not None
+        return self.device_controller.is_connected
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """

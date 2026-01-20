@@ -74,6 +74,10 @@ class DeviceController:
         self._quel1system: Quel1System | None = None
 
     @property
+    def is_connected(self) -> bool:
+        return self._quel1system is not None
+
+    @property
     def qubecalib(self) -> QubeCalib:
         if self._qubecalib is None:
             raise ModuleNotFoundError(name="qubecalib")

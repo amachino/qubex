@@ -1,3 +1,4 @@
+# ruff: noqa: SLF001
 import numpy as np
 import pytest
 

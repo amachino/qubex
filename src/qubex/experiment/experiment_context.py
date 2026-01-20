@@ -470,6 +470,30 @@ class ExperimentContext:
         return self._user_note
 
     @property
+    def calibration_valid_days(self) -> int:
+        return self._calibration_valid_days
+
+    @property
+    def readout_duration(self) -> float:
+        return self._readout_duration
+
+    @property
+    def readout_pre_margin(self) -> float:
+        return self._readout_pre_margin
+
+    @property
+    def readout_post_margin(self) -> float:
+        return self._readout_post_margin
+
+    @property
+    def drag_hpi_duration(self) -> float:
+        return self._drag_hpi_duration
+
+    @property
+    def drag_pi_duration(self) -> float:
+        return self._drag_pi_duration
+
+    @property
     def property_dir(self) -> Path:
         return Path(self._property_dir)
 
