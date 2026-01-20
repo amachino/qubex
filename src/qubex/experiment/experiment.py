@@ -414,77 +414,62 @@ class Experiment:
     # region pulse_service properties
 
     @property
-    @deprecated("Use `.pulse.readout_duration` instead.")
     def readout_duration(self) -> float:
         return self.pulse.readout_duration
 
     @property
-    @deprecated("Use `.pulse.readout_pre_margin` instead.")
     def readout_pre_margin(self) -> float:
         return self.pulse.readout_pre_margin
 
     @property
-    @deprecated("Use `.pulse.readout_post_margin` instead.")
     def readout_post_margin(self) -> float:
         return self.pulse.readout_post_margin
 
     @property
-    @deprecated("Use `.pulse.drag_hpi_duration` instead.")
     def drag_hpi_duration(self) -> float:
         return self.pulse.drag_hpi_duration
 
     @property
-    @deprecated("Use `.pulse.drag_pi_duration` instead.")
     def drag_pi_duration(self) -> float:
         return self.pulse.drag_pi_duration
 
     @property
-    @deprecated("Use `.pulse.hpi_pulse` instead.")
     def hpi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.hpi_pulse
 
     @property
-    @deprecated("Use `.pulse.pi_pulse` instead.")
     def pi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.pi_pulse
 
     @property
-    @deprecated("Use `.pulse.drag_hpi_pulse` instead.")
     def drag_hpi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.drag_hpi_pulse
 
     @property
-    @deprecated("Use `.pulse.drag_pi_pulse` instead.")
     def drag_pi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.drag_pi_pulse
 
     @property
-    @deprecated("Use `.pulse.ef_hpi_pulse` instead.")
     def ef_hpi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.ef_hpi_pulse
 
     @property
-    @deprecated("Use `.pulse.ef_pi_pulse` instead.")
     def ef_pi_pulse(self) -> dict[str, Waveform]:
         return self.pulse.ef_pi_pulse
 
     @property
-    @deprecated("Use `.pulse.cr_pulse` instead.")
     def cr_pulse(self) -> dict[str, PulseSchedule]:
         return self.pulse.cr_pulse
 
     @property
-    @deprecated("Use `.pulse.rabi_params` instead.")
     def rabi_params(self) -> dict[str, RabiParam]:
         return self.pulse.rabi_params
 
     @property
-    @deprecated("Use `.pulse.ge_rabi_params` instead.")
     def ge_rabi_params(self) -> dict[str, RabiParam]:
         return self.pulse.ge_rabi_params
 
     @property
-    @deprecated("Use `.pulse.ef_rabi_params` instead.")
     def ef_rabi_params(self) -> dict[str, RabiParam]:
         return self.pulse.ef_rabi_params
 
