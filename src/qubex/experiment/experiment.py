@@ -165,7 +165,7 @@ class Experiment:
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
         mock_mode: bool | None = None,
     ):
-        context = ExperimentContext(
+        experiment_context = ExperimentContext(
             chip_id=chip_id,
             muxes=muxes,
             qubits=qubits,
@@ -186,37 +186,37 @@ class Experiment:
             mock_mode=mock_mode,
         )
         pulse_service = PulseService(
-            context=context,
+            context=experiment_context,
         )
         measurement_service = MeasurementService(
-            context=context,
+            context=experiment_context,
             pulse_service=pulse_service,
         )
         calibration_service = CalibrationService(
-            context=context,
+            context=experiment_context,
             measurement_service=measurement_service,
             pulse_service=pulse_service,
         )
         characterization_service = CharacterizationService(
-            context=context,
+            context=experiment_context,
             measurement_service=measurement_service,
             calibration_service=calibration_service,
             pulse_service=pulse_service,
         )
         benchmarking_service = BenchmarkingService(
-            context=context,
+            context=experiment_context,
             measurement_service=measurement_service,
             pulse_service=pulse_service,
         )
         optimization_service = OptimizationService(
-            context=context,
+            context=experiment_context,
             measurement_service=measurement_service,
             calibration_service=calibration_service,
             characterization_service=characterization_service,
             benchmarking_service=benchmarking_service,
             pulse_service=pulse_service,
         )
-        self._ctx = context
+        self._experiment_context = experiment_context
         self._pulse_service = pulse_service
         self._measurement_service = measurement_service
         self._calibration_service = calibration_service
@@ -226,7 +226,7 @@ class Experiment:
 
     @property
     def ctx(self) -> ExperimentContext:
-        return self._ctx
+        return self._experiment_context
 
     def run(self, task: ExperimentTask[T]) -> T:
         """
@@ -3239,6 +3239,8 @@ class Experiment:
             save_image=save_image,
         )
 
+    # TODO: Implement SimultaneousCoherenceMeasurementTask and remove this deprecated method.
+    @deprecated("Use SimultaneousCoherenceMeasurementTask instead.")
     def _simultaneous_measurement_coherence(
         self,
         targets: Collection[str] | str | None = None,
@@ -3251,7 +3253,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> dict[str, ExperimentResult]:
-        return self.characterization_service._simultaneous_measurement_coherence(
+        return self.characterization_service._simultaneous_measurement_coherence(  # noqa: SLF001
             targets=targets,
             time_range=time_range,
             detuning=detuning,
@@ -3262,6 +3264,8 @@ class Experiment:
             save_image=save_image,
         )
 
+    # TODO: Implement StarkT1ExperimentTask and remove this deprecated method.
+    @deprecated("Use StarkT1ExperimentTask instead.")
     def _stark_t1_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -3276,7 +3280,7 @@ class Experiment:
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] = "log",
     ) -> ExperimentResult[T1Data]:
-        return self.characterization_service._stark_t1_experiment(
+        return self.characterization_service._stark_t1_experiment(  # noqa: SLF001
             targets=targets,
             stark_detuning=stark_detuning,
             stark_amplitude=stark_amplitude,
@@ -3289,6 +3293,7 @@ class Experiment:
             xaxis_type=xaxis_type,
         )
 
+    # TODO: Implement StarkRamseyExperimentTask and remove this deprecated method.
     def _stark_ramsey_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -3304,7 +3309,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
-        return self.characterization_service._stark_ramsey_experiment(
+        return self.characterization_service._stark_ramsey_experiment(  # noqa: SLF001
             targets=targets,
             stark_detuning=stark_detuning,
             stark_amplitude=stark_amplitude,
