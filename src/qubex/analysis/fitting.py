@@ -3007,8 +3007,8 @@ def fit_rotation(
             ),
         )
 
-    logger.info("Fitting rotation data.")
-    logger.info(f"Initial guess: {p0}")
+    logger.debug("Fitting rotation data.")
+    logger.debug(f"Initial guess: {p0}")
 
     result = least_squares(
         residuals,
