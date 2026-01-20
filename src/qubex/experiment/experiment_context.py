@@ -31,8 +31,6 @@ from qubex.backend import (
     Target,
     TargetType,
 )
-from qubex.clifford.clifford import Clifford
-from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.measurement import (
     Measurement,
     StateClassifier,
@@ -196,7 +194,6 @@ class ExperimentContext:
             load_configs=False,
             connect_devices=False,
         )
-        self._clifford_generator: CliffordGenerator | None = None
         self._user_note: Final = ExperimentNote(file_path=USER_NOTE_PATH)
         self._system_note: Final = ExperimentNote(file_path=SYSTEM_NOTE_PATH)
         self._calib_note: Final = CalibrationNote(
@@ -523,16 +520,6 @@ class ExperimentContext:
                     for state, center in param["centers"].items()
                 }
         return result
-
-    @property
-    def clifford_generator(self) -> CliffordGenerator:
-        if self._clifford_generator is None:
-            self._clifford_generator = CliffordGenerator()
-        return self._clifford_generator
-
-    @property
-    def clifford(self) -> dict[str, Clifford]:
-        return self.clifford_generator.cliffords
 
     @property
     def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:

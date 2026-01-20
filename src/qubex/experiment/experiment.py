@@ -30,7 +30,6 @@ from qubex.backend import (
     TargetType,
 )
 from qubex.clifford.clifford import Clifford
-from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.measurement import (
     Measurement,
     MeasureResult,
@@ -403,14 +402,6 @@ class Experiment:
     @property
     def state_centers(self) -> dict[str, dict[int, complex]]:
         return self.ctx.state_centers
-
-    @property
-    def clifford_generator(self) -> CliffordGenerator:
-        return self.ctx.clifford_generator
-
-    @property
-    def clifford(self) -> dict[str, Clifford]:
-        return self.ctx.clifford
 
     @property
     def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
