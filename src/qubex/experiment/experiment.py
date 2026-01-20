@@ -37,10 +37,6 @@ from qubex.measurement import (
     MultipleMeasureResult,
     StateClassifier,
 )
-from qubex.measurement.measurement import (
-    DEFAULT_INTERVAL,
-    DEFAULT_SHOTS,
-)
 from qubex.pulse import (
     PulseArray,
     PulseSchedule,
@@ -56,10 +52,6 @@ from qubex.typing import (
 )
 
 from .calibration_note import CalibrationNote
-from .experiment_constants import (
-    CALIBRATION_SHOTS,
-    DEFAULT_RABI_TIME_RANGE,
-)
 from .experiment_context import ExperimentContext
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
@@ -1625,7 +1617,7 @@ class Experiment:
         repetitions: int | None = None,
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
-        rabi_level: Literal["ge", "ef"] = "ge",
+        rabi_level: Literal["ge", "ef"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -1634,11 +1626,11 @@ class Experiment:
         readout_post_margin: float | None = None,
         plot: bool | None = None,
         enable_tqdm: bool | None = None,
-        title: str = "Sweep result",
-        xlabel: str = "Sweep value",
-        ylabel: str = "Measured value",
-        xaxis_type: Literal["linear", "log"] = "linear",
-        yaxis_type: Literal["linear", "log"] = "linear",
+        title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        xaxis_type: Literal["linear", "log"] | None = None,
+        yaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[SweepData]:
         """
         Sweeps a parameter and measures the signals.
@@ -1770,7 +1762,7 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        time_range: ArrayLike | None = None,
         amplitudes: dict[str, float] | None = None,
         frequencies: dict[str, float] | None = None,
         is_damped: bool | None = None,
@@ -1799,7 +1791,7 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        time_range: ArrayLike | None = None,
         is_damped: bool | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -1818,16 +1810,16 @@ class Experiment:
         self,
         *,
         amplitudes: dict[str, float],
-        time_range: ArrayLike = DEFAULT_RABI_TIME_RANGE,
+        time_range: ArrayLike | None = None,
         ramptime: float | None = None,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
-        is_damped: bool = True,
-        fit_threshold: float = 0.5,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = False,
+        is_damped: bool | None = None,
+        fit_threshold: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        store_params: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         return self.measurement_service.rabi_experiment(
             amplitudes=amplitudes,
@@ -1850,11 +1842,11 @@ class Experiment:
         time_range: ArrayLike,
         frequencies: dict[str, float] | None = None,
         detuning: float | None = None,
-        is_damped: bool = False,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        store_params: bool = False,
+        is_damped: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        store_params: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         return self.measurement_service.ef_rabi_experiment(
             amplitudes=amplitudes,
@@ -1872,12 +1864,12 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        n_states: Literal[2, 3] = 2,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_states: Literal[2, 3] | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
-        plot: bool = True,
+        plot: bool | None = None,
     ) -> list[MeasureResult]:
         return self.measurement_service.measure_state_distribution(
             targets=targets,
@@ -1894,7 +1886,7 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         n_states: Literal[2, 3] | None = None,
-        save_classifier: bool = True,
+        save_classifier: bool | None = None,
         save_dir: Path | str | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -1902,9 +1894,9 @@ class Experiment:
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
         readout_post_margin: float | None = None,
-        add_pump_pulses: bool = False,
-        simultaneous: bool = False,
-        plot: bool = True,
+        add_pump_pulses: bool | None = None,
+        simultaneous: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
         return self.measurement_service.build_classifier(
             targets=targets,
@@ -1928,12 +1920,12 @@ class Experiment:
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        reset_awg_and_capunits: bool = True,
-        method: Literal["measure", "execute"] = "measure",
-        use_zvalues: bool = False,
-        plot: bool = False,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        method: Literal["measure", "execute"] | None = None,
+        use_zvalues: bool | None = None,
+        plot: bool | None = None,
     ) -> Result:
         """
         Conducts a state tomography experiment.
@@ -1986,9 +1978,9 @@ class Experiment:
         ),
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
     ) -> Result:
         """
         Conducts a state evolution tomography experiment.
@@ -2028,11 +2020,11 @@ class Experiment:
         *,
         x90: TargetMap[Waveform] | None = None,
         initial_state: TargetMap[str] | None = None,
-        n_samples: int | None = 100,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        method: Literal["measure", "execute"] = "measure",
-        plot: bool = True,
+        n_samples: int | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        method: Literal["measure", "execute"] | None = None,
+        plot: bool | None = None,
     ) -> Result:
         """
         Conducts a pulse tomography experiment.
@@ -2076,9 +2068,9 @@ class Experiment:
         self,
         sequence: TargetMap[IQArray] | TargetMap[Waveform] | PulseSchedule,
         *,
-        fit_gmm: bool = False,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        fit_gmm: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measures the state populations of the target qubits.
@@ -2119,12 +2111,12 @@ class Experiment:
         *,
         sequence: ParametricPulseSchedule | ParametricWaveformDict,
         params_list: Sequence | NDArray,
-        fit_gmm: bool = False,
-        xlabel: str = "Index",
-        scatter_mode: str = "lines+markers",
-        show_error: bool = True,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        fit_gmm: bool | None = None,
+        xlabel: str | None = None,
+        scatter_mode: str | None = None,
+        show_error: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
         """
         Measures the population dynamics of the target qubits.
@@ -2173,17 +2165,17 @@ class Experiment:
         control_qubit: str,
         target_qubit: str,
         *,
-        control_basis: str = "Z",
-        target_basis: str = "Z",
+        control_basis: str | None = None,
+        target_basis: str | None = None,
         zx90: PulseSchedule | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        plot_sequence: bool = False,
-        plot_raw: bool = True,
-        plot_mitigated: bool = True,
-        save_image: bool = True,
-        reset_awg_and_capunits: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        plot_sequence: bool | None = None,
+        plot_raw: bool | None = None,
+        plot_mitigated: bool | None = None,
+        save_image: bool | None = None,
+        reset_awg_and_capunits: bool | None = None,
     ) -> Result:
         return self.measurement_service.measure_bell_state(
             control_qubit=control_qubit,
@@ -2206,13 +2198,13 @@ class Experiment:
         control_qubit: str,
         target_qubit: str,
         *,
-        readout_mitigation: bool = True,
+        readout_mitigation: bool | None = None,
         zx90: PulseSchedule | None = None,
-        shots: int = DEFAULT_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
-        plot: bool = True,
-        save_image: bool = True,
-        mle_fit: bool = True,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+        mle_fit: bool | None = None,
     ) -> Result:
         return self.measurement_service.bell_state_tomography(
             control_qubit=control_qubit,
@@ -2290,13 +2282,13 @@ class Experiment:
         pulse_type: Literal["pi", "hpi"],
         duration: float | None = None,
         ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        update_params: bool = True,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        update_params: bool | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the default pulse.
@@ -2349,12 +2341,12 @@ class Experiment:
         *,
         duration: float | None = None,
         ramptime: float | None = None,
-        n_points: int = 20,
-        n_rotations: int = 1,
-        r2_threshold: float = 0.5,
-        plot: bool = True,
-        shots: int = CALIBRATION_SHOTS,
-        interval: float = DEFAULT_INTERVAL,
+        n_points: int | None = None,
+        n_rotations: int | None = None,
+        r2_threshold: float | None = None,
+        plot: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
         """
         Calibrates the π/2 pulse.
@@ -2977,7 +2969,7 @@ class Experiment:
         self,
         targets: Collection[str] | str | None = None,
         *,
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_duration: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int | None = None,
@@ -3001,7 +2993,7 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         amplitude_range: ArrayLike | None = None,
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_duration: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -3022,7 +3014,7 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] = "0",
+        initial_state: Literal["0", "1", "+", "-", "+i", "-i"] | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         shots: int | None = None,
         interval: float | None = None,
@@ -3071,7 +3063,7 @@ class Experiment:
         *,
         detuning_range: ArrayLike | None = None,
         time_range: ArrayLike | None = None,
-        rabi_level: Literal["ge", "ef"] = "ge",
+        rabi_level: Literal["ge", "ef"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -3247,7 +3239,7 @@ class Experiment:
         *,
         time_range: ArrayLike | None = None,
         detuning: float | None = None,
-        second_rotation_axis: Literal["X", "Y"] = "Y",
+        second_rotation_axis: Literal["X", "Y"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -3278,7 +3270,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-        xaxis_type: Literal["linear", "log"] = "log",
+        xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T1Data]:
         return self.characterization_service._stark_t1_experiment(  # noqa: SLF001
             targets=targets,
@@ -3302,10 +3294,10 @@ class Experiment:
         stark_amplitude: float | dict[str, float] | None = None,
         stark_ramptime: float | dict[str, float] | None = None,
         time_range: ArrayLike | None = None,
-        second_rotation_axis: Literal["X", "Y"] = "Y",
+        second_rotation_axis: Literal["X", "Y"] | None = None,
         shots: int | None = None,
         interval: float | None = None,
-        envelope_region: Literal["full", "flat"] = "full",
+        envelope_region: Literal["full", "flat"] | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
@@ -3328,7 +3320,7 @@ class Experiment:
         targets: Collection[str] | str | None = None,
         *,
         time_range: ArrayLike | None = None,
-        detuning: float = 0.001,
+        detuning: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
@@ -3397,7 +3389,7 @@ class Experiment:
         n_samples: int | None = None,
         readout_amplitude: float | None = None,
         shots: int | None = None,
-        interval: float = 0,
+        interval: float | None = None,
         plot: bool | None = None,
         confirm: bool | None = None,
     ) -> float:
@@ -3424,7 +3416,7 @@ class Experiment:
         peak_height: float | None = None,
         peak_distance: int | None = None,
         shots: int | None = None,
-        interval: float = 0,
+        interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -3450,7 +3442,7 @@ class Experiment:
         power_range: ArrayLike | None = None,
         electrical_delay: float | None = None,
         shots: int | None = None,
-        interval: float = 0,
+        interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -3474,7 +3466,7 @@ class Experiment:
         frequency_width: float | None = None,
         readout_amplitude: float | None = None,
         electrical_delay: float | None = None,
-        qubit_state: str = "0",
+        qubit_state: str | None = None,
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
