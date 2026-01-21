@@ -1,4 +1,4 @@
-.PHONY: sync test lint format clean build
+.PHONY: sync test check format clean build
 
 # Install dependencies
 sync:
@@ -9,7 +9,7 @@ test:
 	uv run pytest
 
 # Run type checker (pyright) and linter (ruff)
-lint:
+check:
 	uv run pyright
 	uv run ruff check
 
