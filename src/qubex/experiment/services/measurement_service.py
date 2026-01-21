@@ -33,12 +33,16 @@ from qubex.experiment.experiment_constants import (
     HPI_RAMPTIME,
 )
 from qubex.experiment.experiment_context import ExperimentContext
-from qubex.experiment.experiment_result import ExperimentResult, RabiData, SweepData
 from qubex.experiment.library.graph import (
     find_longest_1d_chain,
     get_max_undirected_weight,
     strong_edge_coloring,
     tree_center,
+)
+from qubex.experiment.models.experiment_result import (
+    ExperimentResult,
+    RabiData,
+    SweepData,
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result

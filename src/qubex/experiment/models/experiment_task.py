@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Generic, Protocol, TypeVar
 
 if TYPE_CHECKING:
-    from .experiment import Experiment
+    from qubex.experiment import Experiment
 
 
 class ExperimentTaskResult(Protocol):

@@ -3,8 +3,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from qubex.experiment.calibration_note import CalibrationNote
-from qubex.experiment.experiment_note import ExperimentNote
+from qubex.experiment.models.calibration_note import CalibrationNote
+from qubex.experiment.models.experiment_note import ExperimentNote
 
 
 def test_inheritance():

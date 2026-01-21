@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from qubex.experiment.experiment_note import ExperimentNote
+from qubex.experiment.models.experiment_note import ExperimentNote
 
 
 def test_init(tmp_path):

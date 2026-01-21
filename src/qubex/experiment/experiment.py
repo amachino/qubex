@@ -50,11 +50,11 @@ from qubex.typing import (
     TargetMap,
 )
 
-from .calibration_note import CalibrationNote
 from .experiment_context import ExperimentContext
-from .experiment_note import ExperimentNote
-from .experiment_record import ExperimentRecord
-from .experiment_result import (
+from .models.calibration_note import CalibrationNote
+from .models.experiment_note import ExperimentNote
+from .models.experiment_record import ExperimentRecord
+from .models.experiment_result import (
     AmplCalibData,
     AmplRabiData,
     ExperimentResult,
@@ -65,7 +65,7 @@ from .experiment_result import (
     T1Data,
     T2Data,
 )
-from .experiment_task import ExperimentTask, ExperimentTaskResult
+from .models.experiment_task import ExperimentTask, ExperimentTaskResult
 from .models.rabi_param import RabiParam
 from .models.result import Result
 from .services import (

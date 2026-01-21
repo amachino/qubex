@@ -14,7 +14,7 @@ from qubex.analysis import visualization as viz
 from qubex.typing import TargetMap
 
 from .experiment_record import ExperimentRecord
-from .models.rabi_param import RabiParam
+from .rabi_param import RabiParam
 
 
 @dataclass

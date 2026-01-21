@@ -5,7 +5,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import Any, TypedDict
 
-from .experiment_constants import (
+from qubex.experiment.experiment_constants import (
     CALIBRATION_DIR,
     CR_PARAMS,
     DRAG_HPI_PARAMS,
@@ -15,6 +15,7 @@ from .experiment_constants import (
     RABI_PARAMS,
     STATE_PARAMS,
 )
+
 from .experiment_note import ExperimentNote
 
 logger = getLogger(__name__)

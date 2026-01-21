@@ -44,7 +44,6 @@ from qubex.typing import TargetMap
 from qubex.version import get_package_version
 
 from . import experiment_tool
-from .calibration_note import CalibrationNote
 from .experiment_constants import (
     CALIBRATION_VALID_DAYS,
     CLASSIFIER_DIR,
@@ -55,9 +54,10 @@ from .experiment_constants import (
     USER_NOTE_PATH,
 )
 from .experiment_exceptions import CalibrationMissingError
-from .experiment_note import ExperimentNote
-from .experiment_record import ExperimentRecord
 from .experiment_util import ExperimentUtil
+from .models.calibration_note import CalibrationNote
+from .models.experiment_note import ExperimentNote
+from .models.experiment_record import ExperimentRecord
 from .models.rabi_param import RabiParam
 
 logger = logging.getLogger(__name__)

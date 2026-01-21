@@ -29,7 +29,8 @@ from qubex.experiment.experiment_constants import (
     DEFAULT_RABI_TIME_RANGE,
 )
 from qubex.experiment.experiment_context import ExperimentContext
-from qubex.experiment.experiment_result import (
+from qubex.experiment.experiment_util import ExperimentUtil
+from qubex.experiment.models.experiment_result import (
     AmplRabiData,
     ExperimentResult,
     FreqRabiData,
@@ -39,7 +40,6 @@ from qubex.experiment.experiment_result import (
     T1Data,
     T2Data,
 )
-from qubex.experiment.experiment_util import ExperimentUtil
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
 from qubex.measurement.measurement import (
