@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from numpy.typing import NDArray
 
-from qubex.core.model import ImmutableModel
+from qubex.core.model import Model
 
 
-class SweepMeasurementResult(ImmutableModel):
+class SweepMeasurementResult(Model):
     metadata: dict
     data: NDArray
     data_shape: list[int]

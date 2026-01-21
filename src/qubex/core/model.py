@@ -46,14 +46,15 @@ def _is_tunits_dict(value: Any) -> TypeGuard[dict[str, Any]]:
 
 
 def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray:
-    type_name: str = value.pop("__type__")
+    payload = dict(value)  # make a copy to avoid modifying the original
+    type_name: str = payload.pop("__type__")
     class_name = type_name.removeprefix(_TUNITS_PREFIX)
     cls = getattr(tunits, class_name)
     if issubclass(cls, tunits.Value):
-        message = ParseDict(value, tunits_pb2.Value())
+        message = ParseDict(payload, tunits_pb2.Value())
         return cls.from_proto(message)
     elif issubclass(cls, tunits.ValueArray):
-        message = ParseDict(value, tunits_pb2.ValueArray())
+        message = ParseDict(payload, tunits_pb2.ValueArray())
         return cls.from_proto(message)
     else:
         raise TypeError(f"Unknown tunits class: {class_name}")
@@ -71,6 +72,7 @@ def _deserialize(obj: Any) -> Any:
 
 class Model(BaseModel):
     model_config = ConfigDict(
+        frozen=True,
         arbitrary_types_allowed=True,
     )
 
@@ -105,8 +107,7 @@ class Model(BaseModel):
 
 
 class MutableModel(Model):
-    model_config = ConfigDict(validate_assignment=True)
-
-
-class ImmutableModel(Model):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(
+        frozen=False,
+        validate_assignment=True,
+    )
