@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import math
-from collections import defaultdict
 from collections.abc import Collection
 from contextlib import contextmanager
 from functools import cached_property, reduce
@@ -19,7 +18,6 @@ from qubex.backend import (
     DeviceController,
     ExperimentSystem,
     Mux,
-    RawResult,
     SystemManager,
     Target,
 )
@@ -28,8 +26,8 @@ from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers import StateClassifier
+from .measurement_executor import MeasurementExecutor
 from .models import (
-    MeasureData,
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
@@ -105,6 +103,7 @@ class Measurement:
         self._chip_id: Final = chip_id
         self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
+        self._executor: MeasurementExecutor | None = None
         self._system_manager = SystemManager.shared()
         if load_configs:
             self.load(
@@ -191,6 +190,20 @@ class Measurement:
     def system_manager(self) -> SystemManager:
         """Get the state manager."""
         return self._system_manager
+
+    @property
+    def executor(self) -> MeasurementExecutor:
+        """Get the measurement executor."""
+        if self._executor is None:
+            # Lazily initialize to avoid capturing uninitialized state when configs
+            # or device connections are intentionally deferred.
+            self._executor = MeasurementExecutor(
+                system_manager=self.system_manager,
+                device_controller=self.device_controller,
+                experiment_system=self.experiment_system,
+                classifiers=self._classifiers,
+            )
+        return self._executor
 
     @property
     def config_loader(self) -> ConfigLoader:
@@ -569,25 +582,16 @@ class Measurement:
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
         )
-        backend_result = self.device_controller.execute_sequencer(
+        return self.executor.execute_measurement(
             sequencer=sequencer,
-            repeats=shots,
-            integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=enable_dsp_demodulation,
-            enable_sum=enable_dsp_sum,
-            enable_classification=enable_dsp_classification,
+            measure_mode=measure_mode,
+            shots=shots,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
             line_param0=line_param0,
             line_param1=line_param1,
         )
-        result = self._create_measure_result(
-            backend_result=backend_result,
-            measure_mode=measure_mode,
-            shots=shots,
-        )
-        rawdata_dir = self.system_manager.rawdata_dir
-        if rawdata_dir is not None:
-            result.save(data_dir=rawdata_dir)
-        return result
 
     def execute(
         self,
@@ -678,25 +682,16 @@ class Measurement:
             add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
-        backend_result = self.device_controller.execute_sequencer(
+        return self.executor.execute_schedule(
             sequencer=sequencer,
-            repeats=shots,
-            integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=enable_dsp_demodulation,
-            enable_sum=enable_dsp_sum,
-            enable_classification=enable_dsp_classification,
+            measure_mode=measure_mode,
+            shots=shots,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
             line_param0=line_param0,
             line_param1=line_param1,
         )
-        result = self._create_multiple_measure_result(
-            backend_result=backend_result,
-            measure_mode=measure_mode,
-            shots=shots,
-        )
-        rawdata_dir = self.system_manager.rawdata_dir
-        if rawdata_dir is not None:
-            result.save(data_dir=rawdata_dir)
-        return result
 
     def readout_pulse(
         self,
@@ -1323,118 +1318,6 @@ class Measurement:
             interval=backend_interval,
             sysdb=self.device_controller.qubecalib.sysdb,
             driver=self.device_controller.quel1system,
-        )
-
-    def _create_measure_result(
-        self,
-        backend_result: RawResult,
-        measure_mode: MeasureMode,
-        shots: int,
-    ) -> MeasureResult:
-        label_slice = slice(1, None)  # remove the resonator prefix "R"
-        norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-        capture_index = -1
-
-        iq_data = {}
-        for target, iqs in sorted(backend_result.data.items()):
-            sideband = self.experiment_system.get_target(target).sideband
-            if sideband == "L":
-                iq_data[target] = np.conjugate(iqs)
-            else:
-                iq_data[target] = iqs
-
-        if measure_mode == MeasureMode.SINGLE:
-            backend_data = {
-                # iqs[capture_index]: ndarray[shots, duration]
-                target[label_slice]: iqs[capture_index] * norm_factor
-                for target, iqs in iq_data.items()
-            }
-            measure_data = {
-                qubit: MeasureData(
-                    target=qubit,
-                    mode=measure_mode,
-                    raw=iq,
-                    classifier=self.classifiers.get(qubit),
-                )
-                for qubit, iq in backend_data.items()
-            }
-        elif measure_mode == MeasureMode.AVG:
-            backend_data = {
-                # iqs[capture_index]: ndarray[1, duration]
-                target[label_slice]: iqs[capture_index].squeeze() * norm_factor / shots
-                for target, iqs in iq_data.items()
-            }
-            measure_data = {
-                qubit: MeasureData(
-                    target=qubit,
-                    mode=measure_mode,
-                    raw=iq,
-                )
-                for qubit, iq in backend_data.items()
-            }
-        else:
-            raise ValueError(f"Invalid measure mode: {measure_mode}")
-
-        return MeasureResult(
-            mode=measure_mode,
-            data=measure_data,
-            config=self.device_controller.box_config,
-        )
-
-    def _create_multiple_measure_result(
-        self,
-        backend_result: RawResult,
-        measure_mode: MeasureMode,
-        shots: int,
-    ) -> MultipleMeasureResult:
-        label_slice = slice(1, None)  # remove the resonator prefix "R"
-        norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-
-        iq_data = {}
-        for target, iqs in sorted(backend_result.data.items()):
-            sideband = self.experiment_system.get_target(target).sideband
-            if sideband == "L":
-                iq_data[target] = [np.conjugate(iq) for iq in iqs]
-            else:
-                iq_data[target] = iqs
-
-        measure_data = defaultdict(list)
-        if measure_mode == MeasureMode.SINGLE:
-            for target, iqs in iq_data.items():
-                qubit = target[label_slice]
-                for idx, iq in enumerate(iqs):
-                    if idx == 0:
-                        # skip the first extra capture
-                        continue
-                    measure_data[qubit].append(
-                        MeasureData(
-                            target=qubit,
-                            mode=measure_mode,
-                            raw=iq * norm_factor,
-                            classifier=self.classifiers.get(qubit),
-                        )
-                    )
-        elif measure_mode == MeasureMode.AVG:
-            for target, iqs in iq_data.items():
-                qubit = target[label_slice]
-                for idx, iq in enumerate(iqs):
-                    if idx == 0:
-                        # skip the first extra capture
-                        continue
-                    measure_data[qubit].append(
-                        MeasureData(
-                            target=qubit,
-                            mode=measure_mode,
-                            raw=iq.squeeze() * norm_factor / shots,
-                        )
-                    )
-        else:
-            raise ValueError(f"Invalid measure mode: {measure_mode}")
-
-        return MultipleMeasureResult(
-            mode=measure_mode,
-            data=dict(measure_data),
-            config=self.device_controller.box_config,
         )
 
     @staticmethod
