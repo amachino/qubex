@@ -2500,15 +2500,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pip"
-version = "24.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/94/59/6638090c25e9bc4ce0c42817b5a234e183872a1129735a9330c472cc2056/pip-24.0.tar.gz", hash = "sha256:ea9bd1a847e8c5774a5777bb398c19e80bcd4e2aa16a4b301b718fe6f593aba2", size = 2132709, upload-time = "2024-02-03T09:53:18.999Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/6a/19e9fe04fca059ccf770861c7d5721ab4c2aebc539889e97c7977528a53b/pip-24.0-py3-none-any.whl", hash = "sha256:ba0d021a166865d2265246961bec0152ff124de910c5cc39f1156ce3fa7c69dc", size = 2110226, upload-time = "2024-02-03T09:53:09.575Z" },
-]
-
-[[package]]
 name = "platformdirs"
 version = "4.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3143,8 +3134,8 @@ dependencies = [
     { name = "numpy" },
     { name = "optax", version = "0.2.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or python_full_version >= '3.13'" },
     { name = "optax", version = "0.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and python_full_version < '3.13'" },
-    { name = "pip" },
     { name = "plotly" },
+    { name = "protobuf" },
     { name = "pydantic" },
     { name = "pyserial" },
     { name = "pyyaml" },
@@ -3188,8 +3179,8 @@ requires-dist = [
     { name = "networkx", specifier = "~=3.0" },
     { name = "numpy", specifier = "~=1.0" },
     { name = "optax", specifier = "~=0.0" },
-    { name = "pip", specifier = "==24.0" },
     { name = "plotly", specifier = "~=5.23" },
+    { name = "protobuf", specifier = "~=6.0" },
     { name = "pydantic", specifier = "~=2.0" },
     { name = "pyserial", specifier = "~=3.5" },
     { name = "pyyaml", specifier = "~=6.0" },
