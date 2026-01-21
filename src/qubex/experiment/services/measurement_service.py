@@ -40,8 +40,8 @@ from qubex.experiment.library.graph import (
     strong_edge_coloring,
     tree_center,
 )
-from qubex.experiment.rabi_param import RabiParam
-from qubex.experiment.result import Result
+from qubex.experiment.models.rabi_param import RabiParam
+from qubex.experiment.models.result import Result
 from qubex.measurement import (
     MeasureResult,
     MultipleMeasureResult,

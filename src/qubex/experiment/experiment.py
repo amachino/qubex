@@ -66,8 +66,8 @@ from .experiment_result import (
     T2Data,
 )
 from .experiment_task import ExperimentTask, ExperimentTaskResult
-from .rabi_param import RabiParam
-from .result import Result
+from .models.rabi_param import RabiParam
+from .models.result import Result
 from .services import (
     BenchmarkingService,
     CalibrationService,

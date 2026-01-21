@@ -14,7 +14,7 @@ from qubex.experiment.experiment_constants import (
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.experiment_exceptions import CalibrationMissingError
-from qubex.experiment.rabi_param import RabiParam
+from qubex.experiment.models.rabi_param import RabiParam
 from qubex.pulse import (
     Blank,
     CrossResonance,

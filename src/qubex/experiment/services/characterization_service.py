@@ -40,8 +40,8 @@ from qubex.experiment.experiment_result import (
     T2Data,
 )
 from qubex.experiment.experiment_util import ExperimentUtil
-from qubex.experiment.rabi_param import RabiParam
-from qubex.experiment.result import Result
+from qubex.experiment.models.rabi_param import RabiParam
+from qubex.experiment.models.result import Result
 from qubex.measurement.measurement import (
     DEFAULT_INTERVAL,
     DEFAULT_SHOTS,

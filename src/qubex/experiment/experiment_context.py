@@ -58,7 +58,7 @@ from .experiment_exceptions import CalibrationMissingError
 from .experiment_note import ExperimentNote
 from .experiment_record import ExperimentRecord
 from .experiment_util import ExperimentUtil
-from .rabi_param import RabiParam
+from .models.rabi_param import RabiParam
 
 logger = logging.getLogger(__name__)
 
