@@ -1,20 +1,21 @@
-.PHONY: sync test check format clean build
+.PHONY: sync test check fix clean build
 
 # Install dependencies
 sync:
 	uv sync --dev --all-extras
 
-# Run tests with pytest
+# Run tests
 test:
 	uv run pytest
 
-# Run type checker (pyright) and linter (ruff)
+# Run static type checks and linting
 check:
 	uv run pyright
+	uv run ruff format --check
 	uv run ruff check
 
-# Format code with ruff
-format:
+# Fix format and lint issues
+fix:
 	uv run ruff format
 	uv run ruff check --fix
 
