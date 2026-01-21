@@ -27,13 +27,13 @@ from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
-from .measurement_result import (
+from .classifiers import StateClassifier
+from .models import (
     MeasureData,
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
 )
-from .state_classifier import StateClassifier
 
 logger = logging.getLogger(__name__)
 

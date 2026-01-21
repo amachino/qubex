@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from qubex.measurement.measurement_result import MeasureData, MeasureMode, MeasureResult
-from qubex.measurement.state_classifier import StateClassifier
+from qubex.measurement import MeasureData, MeasureMode, MeasureResult, StateClassifier
 
 
 class DummyClassifier(StateClassifier):

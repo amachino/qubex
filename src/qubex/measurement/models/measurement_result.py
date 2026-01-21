@@ -17,9 +17,9 @@ from numpy.typing import NDArray
 
 from qubex.analysis import visualization as viz
 from qubex.backend import SAMPLING_PERIOD
+from qubex.measurement.classifiers import StateClassifier
 
 from .measurement_record import MeasurementRecord
-from .state_classifier import StateClassifier
 
 SAMPLING_PERIOD_SINGLE = SAMPLING_PERIOD
 SAMPLING_PERIOD_AVG = SAMPLING_PERIOD * 4

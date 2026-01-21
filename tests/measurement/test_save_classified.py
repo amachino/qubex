@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from qubex.measurement.measurement_result import MeasureResult
+from qubex.measurement import MeasureResult
 
 
 def test_save_classified_json(measure_result: MeasureResult, tmp_path: Path):
