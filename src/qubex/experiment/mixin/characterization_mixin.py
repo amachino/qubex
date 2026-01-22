@@ -1507,8 +1507,7 @@ class CharacterizationMixin(
             stark_ramptime = 10
 
         if wait_time is None:
-            chip = self.system_manager.experiment_system.chip
-            half_t1 = self.system_manager.config_loader._props_dict[chip.id]["t1"][
+            half_t1 = self.system_manager.config_loader._load_param_data("t1")[
                 target
             ] * np.log(2)
             wait_time = np.round(half_t1 / SAMPLING_PERIOD) * SAMPLING_PERIOD
@@ -1572,8 +1571,7 @@ class CharacterizationMixin(
             stark_ramptime = 50
 
         if wait_time is None:
-            chip = self.system_manager.experiment_system.chip
-            half_t1 = self.system_manager.config_loader._props_dict[chip.id]["t1"][
+            half_t1 = self.system_manager.config_loader._load_param_data("t1")[
                 target
             ] * np.log(2)
             wait_time = np.round(half_t1 / SAMPLING_PERIOD) * SAMPLING_PERIOD
@@ -1589,6 +1587,7 @@ class CharacterizationMixin(
                 stark_ramptime=stark_ramptime,
                 shots=shots,
                 interval=interval,
+                wait_time=wait_time,
                 mode="single",
             )
             results.append(result)
