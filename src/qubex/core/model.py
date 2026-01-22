@@ -24,6 +24,13 @@ _COLLECTION_PREFIX = "collection."
 _COLLECTION_ITEMS_KEY = "items"
 
 
+def _get_type_tag(value: Mapping[str, Any]) -> str | None:
+    type_tag = value.get(_TYPE_KEY)
+    if not isinstance(type_tag, str):
+        return None
+    return type_tag
+
+
 def _is_numpy(value: Any) -> TypeGuard[np.ndarray | np.generic]:
     return isinstance(value, (np.ndarray, np.generic))
 
@@ -58,9 +65,9 @@ def _collection_to_dict(
     if isinstance(value, tuple):
         collection_type = "tuple"
     elif isinstance(value, frozenset):
-        collection_type = "frozenset"
+        raise TypeError("frozenset is not supported; use list or tuple instead.")
     else:
-        collection_type = "set"
+        raise TypeError("set is not supported; use list or tuple instead.")
     return {
         _TYPE_KEY: f"{_COLLECTION_PREFIX}{collection_type}",
         _COLLECTION_ITEMS_KEY: [_serialize(item) for item in value],
@@ -79,24 +86,6 @@ def _serialize(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_serialize(v) for v in obj]
     return obj
-
-
-def _is_numpy_dict(value: Any) -> TypeGuard[dict[str, Any]]:
-    if not isinstance(value, dict) or _TYPE_KEY not in value:
-        return False
-    return value[_TYPE_KEY].startswith(_NUMPY_PREFIX)
-
-
-def _is_tunits_dict(value: Any) -> TypeGuard[dict[str, Any]]:
-    if not isinstance(value, dict) or _TYPE_KEY not in value:
-        return False
-    return value[_TYPE_KEY].startswith(_TUNITS_PREFIX)
-
-
-def _is_collection_dict(value: Any) -> TypeGuard[dict[str, Any]]:
-    if not isinstance(value, dict) or _TYPE_KEY not in value:
-        return False
-    return value[_TYPE_KEY].startswith(_COLLECTION_PREFIX)
 
 
 def _numpy_from_dict(value: dict[str, Any]) -> np.ndarray | np.generic:
@@ -155,20 +144,23 @@ def _collection_from_dict(
     if kind == "tuple":
         return tuple(deserialized_items)
     if kind == "frozenset":
-        return frozenset(deserialized_items)
+        raise TypeError("frozenset is not supported; use list or tuple instead.")
     if kind == "set":
-        return set(deserialized_items)
+        raise TypeError("set is not supported; use list or tuple instead.")
     raise TypeError(f"Unknown collection type: {kind}")
 
 
 def _deserialize(obj: Any) -> Any:
-    if _is_numpy_dict(obj):
-        return _numpy_from_dict(obj)
-    if _is_tunits_dict(obj):
-        return _tunits_from_dict(obj)
-    if _is_collection_dict(obj):
-        return _collection_from_dict(obj)
     if isinstance(obj, Mapping):
+        type_tag = _get_type_tag(obj)
+        if type_tag is not None:
+            payload = dict(obj)
+            if type_tag.startswith(_NUMPY_PREFIX):
+                return _numpy_from_dict(payload)
+            if type_tag.startswith(_TUNITS_PREFIX):
+                return _tunits_from_dict(payload)
+            if type_tag.startswith(_COLLECTION_PREFIX):
+                return _collection_from_dict(payload)
         return {k: _deserialize(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_deserialize(v) for v in obj]
