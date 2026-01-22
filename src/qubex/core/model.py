@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from typing import Any, TypeGuard
 
@@ -13,6 +14,7 @@ from pydantic import (
     SerializerFunctionWrapHandler,
     model_serializer,
 )
+from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from tunits.proto import tunits_pb2
 from typing_extensions import Self
 
@@ -21,12 +23,7 @@ _TYPE_KEY = "__type__"
 _NUMPY_PREFIX = "numpy."
 _TUNITS_PREFIX = "tunits."
 
-
-def _get_type_tag(value: Mapping[str, Any]) -> str | None:
-    type_tag = value.get(_TYPE_KEY)
-    if not isinstance(type_tag, str):
-        return None
-    return type_tag
+logger = logging.getLogger(__name__)
 
 
 def _is_numpy(value: Any) -> TypeGuard[np.ndarray | np.generic]:
@@ -114,17 +111,40 @@ def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray
 
 def _deserialize(obj: Any) -> Any:
     if isinstance(obj, Mapping):
-        type_tag = _get_type_tag(obj)
-        if type_tag is not None:
+        type_tag = obj.get(_TYPE_KEY)
+        if isinstance(type_tag, str):
             payload = dict(obj)
             if type_tag.startswith(_NUMPY_PREFIX):
                 return _numpy_from_dict(payload)
-            if type_tag.startswith(_TUNITS_PREFIX):
+            elif type_tag.startswith(_TUNITS_PREFIX):
                 return _tunits_from_dict(payload)
+            else:
+                logger.warning(f"Unknown type during deserialization: {type_tag}")
         return {k: _deserialize(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_deserialize(v) for v in obj]
     return obj
+
+
+def _is_custom_class(cls: type[Any]) -> bool:
+    return issubclass(
+        cls,
+        (
+            np.ndarray,
+            np.generic,
+            tunits.Value,
+            tunits.ValueArray,
+        ),
+    )
+
+
+class NumpyTunitsJsonSchema(GenerateJsonSchema):
+    def handle_invalid_for_json_schema(self, schema, error_info) -> JsonSchemaValue:
+        if schema.get("type") == "is-instance":
+            cls = schema.get("cls")
+            if isinstance(cls, type) and _is_custom_class(cls):
+                return {"type": "object"}
+        return super().handle_invalid_for_json_schema(schema, error_info)
 
 
 class Model(BaseModel):
@@ -143,6 +163,7 @@ class Model(BaseModel):
 
     @classmethod
     def json_schema(cls, **kwargs) -> dict[str, Any]:
+        kwargs.setdefault("schema_generator", NumpyTunitsJsonSchema)
         return cls.model_json_schema(**kwargs)
 
     @classmethod
