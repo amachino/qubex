@@ -14,14 +14,12 @@ from pydantic import (
     model_serializer,
 )
 from tunits.proto import tunits_pb2
+from typing_extensions import Self
 
 _TYPE_KEY = "__type__"
 
 _NUMPY_PREFIX = "numpy."
 _TUNITS_PREFIX = "tunits."
-_COLLECTION_PREFIX = "collection."
-
-_COLLECTION_ITEMS_KEY = "items"
 
 
 def _get_type_tag(value: Mapping[str, Any]) -> str | None:
@@ -59,31 +57,14 @@ def _numpy_to_dict(value: np.ndarray | np.generic) -> dict[str, Any]:
     return data
 
 
-def _collection_to_dict(
-    value: tuple[Any, ...] | set[Any] | frozenset[Any],
-) -> dict[str, Any]:
-    if isinstance(value, tuple):
-        collection_type = "tuple"
-    elif isinstance(value, frozenset):
-        raise TypeError("frozenset is not supported; use list or tuple instead.")
-    else:
-        raise TypeError("set is not supported; use list or tuple instead.")
-    return {
-        _TYPE_KEY: f"{_COLLECTION_PREFIX}{collection_type}",
-        _COLLECTION_ITEMS_KEY: [_serialize(item) for item in value],
-    }
-
-
 def _serialize(obj: Any) -> Any:
     if _is_numpy(obj):
         return _numpy_to_dict(obj)
     if _is_tunits(obj):
         return _tunits_to_dict(obj)
-    if isinstance(obj, (tuple, set, frozenset)):
-        return _collection_to_dict(obj)
     if isinstance(obj, Mapping):
         return {k: _serialize(v) for k, v in obj.items()}
-    if isinstance(obj, list):
+    if isinstance(obj, (list, tuple)):
         return [_serialize(v) for v in obj]
     return obj
 
@@ -131,25 +112,6 @@ def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray
         raise TypeError(f"Unknown tunits class: {class_name}")
 
 
-def _collection_from_dict(
-    value: dict[str, Any],
-) -> tuple[Any, ...] | set[Any] | frozenset[Any]:
-    payload = dict(value)
-    type_name: str = payload.pop(_TYPE_KEY)
-    items = payload.get(_COLLECTION_ITEMS_KEY, [])
-    if not isinstance(items, list):
-        raise TypeError("Collection payload must contain a list under 'items'.")
-    deserialized_items = [_deserialize(item) for item in items]
-    kind = type_name.removeprefix(_COLLECTION_PREFIX)
-    if kind == "tuple":
-        return tuple(deserialized_items)
-    if kind == "frozenset":
-        raise TypeError("frozenset is not supported; use list or tuple instead.")
-    if kind == "set":
-        raise TypeError("set is not supported; use list or tuple instead.")
-    raise TypeError(f"Unknown collection type: {kind}")
-
-
 def _deserialize(obj: Any) -> Any:
     if isinstance(obj, Mapping):
         type_tag = _get_type_tag(obj)
@@ -159,10 +121,8 @@ def _deserialize(obj: Any) -> Any:
                 return _numpy_from_dict(payload)
             if type_tag.startswith(_TUNITS_PREFIX):
                 return _tunits_from_dict(payload)
-            if type_tag.startswith(_COLLECTION_PREFIX):
-                return _collection_from_dict(payload)
         return {k: _deserialize(v) for k, v in obj.items()}
-    if isinstance(obj, list):
+    if isinstance(obj, (list, tuple)):
         return [_deserialize(v) for v in obj]
     return obj
 
@@ -182,15 +142,15 @@ class Model(BaseModel):
         return _serialize(data)
 
     @classmethod
-    def json_schema(cls):
-        return cls.model_json_schema()
+    def json_schema(cls, **kwargs) -> dict[str, Any]:
+        return cls.model_json_schema(**kwargs)
 
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_dict(cls, data: dict) -> Self:
         return cls.model_validate(_deserialize(data))
 
     @classmethod
-    def from_json(cls, data: str):
+    def from_json(cls, data: str) -> Self:
         return cls.model_validate(_deserialize(json.loads(data)))
 
     def to_dict(self) -> dict:
