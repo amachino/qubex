@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Literal
 
 import tunits
 
 from qubex.core.model import Model
-
-if TYPE_CHECKING:
-    # tunits.ValueArray is generic only in type stubs; runtime class is not subscriptable.
-    # Keep generics for static type checking while avoiding TypeError at runtime.
-    ValueArray = tunits.ValueArray[Any]
-else:
-    ValueArray = tunits.ValueArray
+from qubex.core.typing import ValueArray
 
 
 class ParametricSequencePulseCommand(Model):
