@@ -4,6 +4,7 @@ import json
 from collections.abc import Mapping
 from typing import Any, TypeGuard
 
+import numpy as np
 import tunits
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import (
@@ -14,7 +15,12 @@ from pydantic import (
 )
 from tunits.proto import tunits_pb2
 
+_NUMPY_PREFIX = "numpy."
 _TUNITS_PREFIX = "tunits."
+
+
+def _is_numpy(value: Any) -> TypeGuard[np.ndarray | np.generic]:
+    return isinstance(value, (np.ndarray, np.generic))
 
 
 def _is_tunits(value: Any) -> TypeGuard[tunits.Value | tunits.ValueArray]:
@@ -29,7 +35,21 @@ def _tunits_to_dict(value: tunits.Value | tunits.ValueArray) -> dict[str, Any]:
     return data
 
 
+def _numpy_to_dict(value: np.ndarray | np.generic) -> dict[str, Any]:
+    if isinstance(value, np.ndarray):
+        value_tunits = tunits.ValueArray(value)
+    else:
+        value_tunits = tunits.Value(value.item())
+    class_name = value.__class__.__name__
+    message = value_tunits.to_proto()
+    data = MessageToDict(message, preserving_proto_field_name=True)
+    data["__type__"] = f"{_NUMPY_PREFIX}{class_name}"
+    return data
+
+
 def _serialize(obj: Any) -> Any:
+    if _is_numpy(obj):
+        return _numpy_to_dict(obj)
     if _is_tunits(obj):
         return _tunits_to_dict(obj)
     if isinstance(obj, Mapping):
@@ -39,10 +59,34 @@ def _serialize(obj: Any) -> Any:
     return obj
 
 
+def _is_numpy_dict(value: Any) -> TypeGuard[dict[str, Any]]:
+    if not isinstance(value, dict) or "__type__" not in value:
+        return False
+    return value["__type__"].startswith(_NUMPY_PREFIX)
+
+
 def _is_tunits_dict(value: Any) -> TypeGuard[dict[str, Any]]:
     if not isinstance(value, dict) or "__type__" not in value:
         return False
     return value["__type__"].startswith(_TUNITS_PREFIX)
+
+
+def _numpy_from_dict(value: dict[str, Any]) -> np.ndarray | np.generic:
+    payload = dict(value)  # make a copy to avoid modifying the original
+    type_name: str = payload.pop("__type__")
+    class_name = type_name.removeprefix(_NUMPY_PREFIX)
+    cls = getattr(np, class_name)
+    # Use tunits as an intermediary for deserialization
+    if issubclass(cls, np.ndarray):
+        message = ParseDict(payload, tunits_pb2.ValueArray())
+        value_tunits = tunits.ValueArray.from_proto(message)
+        return value_tunits.value
+    elif issubclass(cls, np.generic):
+        message = ParseDict(payload, tunits_pb2.Value())
+        value_tunits = tunits.Value.from_proto(message)
+        return cls(value_tunits.value)
+    else:
+        raise TypeError(f"Unknown numpy class: {class_name}")
 
 
 def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray:
@@ -61,6 +105,8 @@ def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray
 
 
 def _deserialize(obj: Any) -> Any:
+    if _is_numpy_dict(obj):
+        return _numpy_from_dict(obj)
     if _is_tunits_dict(obj):
         return _tunits_from_dict(obj)
     if isinstance(obj, Mapping):
