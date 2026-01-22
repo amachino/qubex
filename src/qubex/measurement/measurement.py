@@ -682,7 +682,7 @@ class Measurement:
             add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
-        return self.executor.execute_schedule(
+        return self.executor.execute_multiple_measurement(
             sequencer=sequencer,
             measure_mode=measure_mode,
             shots=shots,

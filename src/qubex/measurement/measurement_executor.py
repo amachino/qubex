@@ -53,7 +53,7 @@ class MeasurementExecutor:
         self._save_if_needed(result)
         return result
 
-    def execute_schedule(
+    def execute_multiple_measurement(
         self,
         *,
         sequencer,
