@@ -1592,7 +1592,7 @@ class CharacterizationMixin(
                 mode="single",
             )
             results.append(result)
-            p1_list.append(result.probabilities["1"])
+            p1_list.append(1 - result.probabilities["0"])
 
         if plot:
             fig = go.Figure()
