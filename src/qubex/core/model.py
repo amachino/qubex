@@ -15,8 +15,13 @@ from pydantic import (
 )
 from tunits.proto import tunits_pb2
 
+_TYPE_KEY = "__type__"
+
 _NUMPY_PREFIX = "numpy."
 _TUNITS_PREFIX = "tunits."
+_COLLECTION_PREFIX = "collection."
+
+_COLLECTION_ITEMS_KEY = "items"
 
 
 def _is_numpy(value: Any) -> TypeGuard[np.ndarray | np.generic]:
@@ -31,7 +36,7 @@ def _tunits_to_dict(value: tunits.Value | tunits.ValueArray) -> dict[str, Any]:
     class_name = value.__class__.__name__
     message = value.to_proto()
     data = MessageToDict(message, preserving_proto_field_name=True)
-    data["__type__"] = f"{_TUNITS_PREFIX}{class_name}"
+    data[_TYPE_KEY] = f"{_TUNITS_PREFIX}{class_name}"
     return data
 
 
@@ -43,8 +48,23 @@ def _numpy_to_dict(value: np.ndarray | np.generic) -> dict[str, Any]:
     class_name = value.__class__.__name__
     message = value_tunits.to_proto()
     data = MessageToDict(message, preserving_proto_field_name=True)
-    data["__type__"] = f"{_NUMPY_PREFIX}{class_name}"
+    data[_TYPE_KEY] = f"{_NUMPY_PREFIX}{class_name}"
     return data
+
+
+def _collection_to_dict(
+    value: tuple[Any, ...] | set[Any] | frozenset[Any],
+) -> dict[str, Any]:
+    if isinstance(value, tuple):
+        collection_type = "tuple"
+    elif isinstance(value, frozenset):
+        collection_type = "frozenset"
+    else:
+        collection_type = "set"
+    return {
+        _TYPE_KEY: f"{_COLLECTION_PREFIX}{collection_type}",
+        _COLLECTION_ITEMS_KEY: [_serialize(item) for item in value],
+    }
 
 
 def _serialize(obj: Any) -> Any:
@@ -52,30 +72,43 @@ def _serialize(obj: Any) -> Any:
         return _numpy_to_dict(obj)
     if _is_tunits(obj):
         return _tunits_to_dict(obj)
+    if isinstance(obj, (tuple, set, frozenset)):
+        return _collection_to_dict(obj)
     if isinstance(obj, Mapping):
         return {k: _serialize(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set)):
+    if isinstance(obj, list):
         return [_serialize(v) for v in obj]
     return obj
 
 
 def _is_numpy_dict(value: Any) -> TypeGuard[dict[str, Any]]:
-    if not isinstance(value, dict) or "__type__" not in value:
+    if not isinstance(value, dict) or _TYPE_KEY not in value:
         return False
-    return value["__type__"].startswith(_NUMPY_PREFIX)
+    return value[_TYPE_KEY].startswith(_NUMPY_PREFIX)
 
 
 def _is_tunits_dict(value: Any) -> TypeGuard[dict[str, Any]]:
-    if not isinstance(value, dict) or "__type__" not in value:
+    if not isinstance(value, dict) or _TYPE_KEY not in value:
         return False
-    return value["__type__"].startswith(_TUNITS_PREFIX)
+    return value[_TYPE_KEY].startswith(_TUNITS_PREFIX)
+
+
+def _is_collection_dict(value: Any) -> TypeGuard[dict[str, Any]]:
+    if not isinstance(value, dict) or _TYPE_KEY not in value:
+        return False
+    return value[_TYPE_KEY].startswith(_COLLECTION_PREFIX)
 
 
 def _numpy_from_dict(value: dict[str, Any]) -> np.ndarray | np.generic:
     payload = dict(value)  # make a copy to avoid modifying the original
-    type_name: str = payload.pop("__type__")
+    type_name: str = payload.pop(_TYPE_KEY)
     class_name = type_name.removeprefix(_NUMPY_PREFIX)
-    cls = getattr(np, class_name)
+    try:
+        cls = getattr(np, class_name)
+    except AttributeError as exc:
+        raise TypeError(f"Unknown numpy class: {class_name}") from exc
+    if not isinstance(cls, type):
+        raise TypeError(f"Unknown numpy class: {class_name}")
     # Use tunits as an intermediary for deserialization
     if issubclass(cls, np.ndarray):
         message = ParseDict(payload, tunits_pb2.ValueArray())
@@ -91,9 +124,14 @@ def _numpy_from_dict(value: dict[str, Any]) -> np.ndarray | np.generic:
 
 def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray:
     payload = dict(value)  # make a copy to avoid modifying the original
-    type_name: str = payload.pop("__type__")
+    type_name: str = payload.pop(_TYPE_KEY)
     class_name = type_name.removeprefix(_TUNITS_PREFIX)
-    cls = getattr(tunits, class_name)
+    try:
+        cls = getattr(tunits, class_name)
+    except AttributeError as exc:
+        raise TypeError(f"Unknown tunits class: {class_name}") from exc
+    if not isinstance(cls, type):
+        raise TypeError(f"Unknown tunits class: {class_name}")
     if issubclass(cls, tunits.Value):
         message = ParseDict(payload, tunits_pb2.Value())
         return cls.from_proto(message)
@@ -104,14 +142,35 @@ def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray
         raise TypeError(f"Unknown tunits class: {class_name}")
 
 
+def _collection_from_dict(
+    value: dict[str, Any],
+) -> tuple[Any, ...] | set[Any] | frozenset[Any]:
+    payload = dict(value)
+    type_name: str = payload.pop(_TYPE_KEY)
+    items = payload.get(_COLLECTION_ITEMS_KEY, [])
+    if not isinstance(items, list):
+        raise TypeError("Collection payload must contain a list under 'items'.")
+    deserialized_items = [_deserialize(item) for item in items]
+    kind = type_name.removeprefix(_COLLECTION_PREFIX)
+    if kind == "tuple":
+        return tuple(deserialized_items)
+    if kind == "frozenset":
+        return frozenset(deserialized_items)
+    if kind == "set":
+        return set(deserialized_items)
+    raise TypeError(f"Unknown collection type: {kind}")
+
+
 def _deserialize(obj: Any) -> Any:
     if _is_numpy_dict(obj):
         return _numpy_from_dict(obj)
     if _is_tunits_dict(obj):
         return _tunits_from_dict(obj)
+    if _is_collection_dict(obj):
+        return _collection_from_dict(obj)
     if isinstance(obj, Mapping):
         return {k: _deserialize(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set)):
+    if isinstance(obj, list):
         return [_deserialize(v) for v in obj]
     return obj
 
