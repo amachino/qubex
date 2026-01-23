@@ -5,7 +5,7 @@ from typing import Literal
 import tunits
 
 from qubex.core.model import Model
-from qubex.core.typing import ValueArray
+from qubex.core.typing import ValueArrayLike
 
 
 class ParametricSequencePulseCommand(Model):
@@ -20,7 +20,7 @@ class ParametricSequenceConfig(Model):
     command_list: list[ParametricSequencePulseCommand]
 
 
-class FreequencyConfig(Model):
+class FrequencyConfig(Model):
     channel_to_frequency: dict[str, tunits.Frequency]
     channel_to_frequency_reference: dict[str, str]
     channel_to_frequency_shift: dict[str, tunits.Frequency]
@@ -37,13 +37,13 @@ class DataAcquisitionConfig(Model):
     flag_average_shots: bool
     delta_time: tunits.Time
     channel_to_averaging_time: dict[str, tunits.Time]
-    channel_to_averaging_window_coefficients: dict[str, ValueArray]
+    channel_to_averaging_window: dict[str, ValueArrayLike]
 
 
 class ParameterSweepContent(Model):
     category: Literal["frequency_shift", "sequence_variable"]
     sweep_target: list[str]
-    value_list: list[float] | ValueArray
+    value_list: ValueArrayLike
 
 
 class ParameterSweepConfig(Model):
@@ -54,6 +54,6 @@ class ParameterSweepConfig(Model):
 class SweepMeasurementConfig(Model):
     channel_list: list[str]
     sequence: ParametricSequenceConfig
-    frequency: FreequencyConfig
+    frequency: FrequencyConfig
     data_acquisition: DataAcquisitionConfig
     sweep_parameter: ParameterSweepConfig

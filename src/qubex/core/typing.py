@@ -1,5 +1,6 @@
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
+import numpy.typing as npt
 import tunits
 
 if TYPE_CHECKING:
@@ -8,3 +9,5 @@ if TYPE_CHECKING:
     ValueArray = tunits.ValueArray[Any]
 else:
     ValueArray = tunits.ValueArray
+
+ValueArrayLike: TypeAlias = ValueArray | npt.NDArray | list | tuple
