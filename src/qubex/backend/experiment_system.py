@@ -614,6 +614,26 @@ class ExperimentSystem:
                 channel=port.channels[0],
             )
             self._gen_target_dict[ge_target.label] = ge_target
+        elif port.n_channels == 2:
+            # ge
+            ge_target = Target.new_ge_target(
+                qubit=qubit,
+                channel=port.channels[0],
+            )
+            self._gen_target_dict[ge_target.label] = ge_target
+            # cr
+            cr_target = Target.new_cr_target(
+                control_qubit=qubit,
+                channel=port.channels[1],
+            )
+            self._gen_target_dict[cr_target.label] = cr_target
+            for spectator in self.get_spectator_qubits(qubit.label):
+                cr_target = Target.new_cr_target(
+                    control_qubit=qubit,
+                    target_qubit=spectator,
+                    channel=port.channels[1],
+                )
+                self._gen_target_dict[cr_target.label] = cr_target
         elif port.n_channels == 3:
             if mode == "ge-ef-cr":
                 # ge

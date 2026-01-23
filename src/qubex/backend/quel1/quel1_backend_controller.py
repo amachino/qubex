@@ -39,7 +39,7 @@ try:
         WaveSequenceTools,
     )
     from quel_clock_master import QuBEMasterClient
-    from quel_ic_config import Quel1Box
+    from quel_ic_config import Quel1Box, Quel1ConfigOption
 except ImportError as e:
     logger.info(e)
 
@@ -433,9 +433,14 @@ class Quel1BackendController:
 
         # relinkup the box if any of the links are down
         if not all(box.link_status().values()):
+            if box.boxtype == "quel1se-riken8":
+                config_options = [Quel1ConfigOption.SE8_MXFE1_AWG2222]
+            else:
+                config_options = None
             box.relinkup(
                 use_204b=False,
                 background_noise_threshold=noise_threshold,
+                config_options=config_options,
                 **kwargs,
             )
         box.reconnect(background_noise_threshold=noise_threshold)
@@ -481,7 +486,15 @@ class Quel1BackendController:
         if noise_threshold is None:
             noise_threshold = _RELAXED_NOISE_THRESHOLD
         box = self.qubecalib.create_box(box_name, reconnect=False)
-        box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
+        if box.boxtype == "quel1se-riken8":
+            config_options = [Quel1ConfigOption.SE8_MXFE1_AWG2222]
+        else:
+            config_options = None
+        box.relinkup(
+            use_204b=False,
+            background_noise_threshold=noise_threshold,
+            config_options=config_options,
+        )
         box.reconnect(background_noise_threshold=noise_threshold)
 
     def relinkup_boxes(
