@@ -42,6 +42,8 @@ class Sintegral(Pulse):
         beta: float | None = None,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
         self.power: Final = power
         self.beta: Final = beta
@@ -56,8 +58,7 @@ class Sintegral(Pulse):
                 beta=beta,
                 power=power,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     @staticmethod
     def func(

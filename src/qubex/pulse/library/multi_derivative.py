@@ -44,6 +44,8 @@ class MultiDerivative(Pulse):
         power: int = 2,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
         self.betas: Final = betas
         self.power: Final = power
@@ -57,8 +59,7 @@ class MultiDerivative(Pulse):
                 amplitude=amplitude,
                 betas=betas,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     @staticmethod
     def func(

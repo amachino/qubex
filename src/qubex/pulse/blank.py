@@ -22,10 +22,12 @@ class Blank(Pulse):
     def __init__(
         self,
         duration: float,
+        **kwargs,
     ):
+        super().__init__(**kwargs)
+
         N = self._number_of_samples(duration)
         real = np.zeros(N, dtype=np.float64)
         imag = 0
         values = real + 1j * imag
-
-        super().__init__(values)
+        self._values = np.array(values, dtype=np.complex128)

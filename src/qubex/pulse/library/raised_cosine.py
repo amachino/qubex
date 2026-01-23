@@ -37,6 +37,8 @@ class RaisedCosine(Pulse):
         beta: float | None = None,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
         self.beta: Final = beta
 
@@ -49,8 +51,7 @@ class RaisedCosine(Pulse):
                 amplitude=amplitude,
                 beta=beta,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     @staticmethod
     def func(

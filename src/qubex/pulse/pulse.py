@@ -25,24 +25,30 @@ class Pulse(Waveform):
         Detuning of the pulse in GHz.
     phase : float, optional
         Phase shift of the pulse in rad.
+    sampling_period : float, optional
+        Sampling period of the pulse in ns.
     """
 
     def __init__(
         self,
-        values: npt.ArrayLike,
+        values: npt.ArrayLike | None = None,
         *,
         scale: float | None = None,
         detuning: float | None = None,
         phase: float | None = None,
+        sampling_period: float | None = None,
         **kwargs,
     ):
         super().__init__(
             scale=scale,
             detuning=detuning,
             phase=phase,
+            sampling_period=sampling_period,
             **kwargs,
         )
-        self._values = np.array(values, dtype=np.complex128)
+        if values is None:
+            values = []
+        self._values = np.asarray(values, dtype=np.complex128)
 
     def __repr__(self) -> str:
         return f"{self.name}({self.length})"

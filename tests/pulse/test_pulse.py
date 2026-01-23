@@ -13,9 +13,16 @@ def test_inheritance():
 
 
 def test_empty_init():
-    """Pulse should raise a TypeError if no parameters are provided."""
-    with pytest.raises(TypeError):
-        Pulse()  # type: ignore
+    """Pulse should be initialized with no parameters."""
+    pulse = Pulse()
+    assert pulse.name == "Pulse"
+    assert pulse.length == 0
+    assert pulse.duration == 0.0
+    assert pulse.phase == 0.0
+    assert pulse.scale == 1.0
+    assert pulse.detuning == 0.0
+    assert pulse.values == pytest.approx([])
+    assert pulse.times == pytest.approx([])
 
 
 def test_empty_list():
@@ -42,6 +49,23 @@ def test_init():
     assert pulse.imag == pytest.approx([0, 0, 0.5])
     assert pulse.abs == pytest.approx([0, 0.5, 0.5])
     assert pulse.angle == pytest.approx([0, np.pi, np.pi / 2])
+
+
+def test_sampling_period_default():
+    """Pulse should use the global default sampling period when not provided."""
+    pulse = Pulse([0, 1])
+    assert pulse.sampling_period == dt
+    assert pulse.duration == 2 * dt
+    assert pulse.times == pytest.approx(np.arange(2) * dt)
+
+
+def test_sampling_period_override():
+    """Pulse should use the provided sampling period per instance."""
+    custom_dt = dt / 2
+    pulse = Pulse([0, 1, 2], sampling_period=custom_dt)
+    assert pulse.sampling_period == custom_dt
+    assert pulse.duration == 3 * custom_dt
+    assert pulse.times == pytest.approx(np.arange(3) * custom_dt)
 
 
 def test_copy():

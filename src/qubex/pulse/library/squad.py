@@ -66,6 +66,8 @@ class Squad(Pulse):
         beta_sum: float = 5.0,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
         self.delta: Final = delta
         self.tau: Final = tau
@@ -89,8 +91,7 @@ class Squad(Pulse):
                 beta_mode=beta_mode,
                 beta_sum=beta_sum,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     # ------------------------------------------------------------------
     # Internal helpers

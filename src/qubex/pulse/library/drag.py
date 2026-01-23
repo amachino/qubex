@@ -47,6 +47,8 @@ class Drag(Pulse):
         type: RampType | None = None,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
         self.beta: Final = beta
         self.type: Final = type
@@ -61,8 +63,7 @@ class Drag(Pulse):
                 beta=beta,
                 type=type,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     @staticmethod
     def func(

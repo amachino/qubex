@@ -4,10 +4,14 @@ from typing import Final
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from typing_extensions import deprecated
 
 from qubex.pulse.pulse import Pulse
 
 
+@deprecated(
+    "The 'VertRamp' class is deprecated and will be removed in a future release."
+)
 class VertRamp(Pulse):
     """
     A class to represent a vertical ramp pulse.
@@ -35,6 +39,8 @@ class VertRamp(Pulse):
         beta: float | None = None,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
         self.beta: Final = beta
 
@@ -46,8 +52,7 @@ class VertRamp(Pulse):
                 duration=duration,
                 amplitude=amplitude,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     @staticmethod
     def func(

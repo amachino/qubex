@@ -31,6 +31,8 @@ class Rect(Pulse):
         amplitude: float,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
 
         if duration == 0:
@@ -41,8 +43,7 @@ class Rect(Pulse):
                 duration=duration,
                 amplitude=amplitude,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     @staticmethod
     def func(

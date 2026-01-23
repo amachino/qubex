@@ -57,6 +57,8 @@ class FlatTop(Pulse):
         correction_factor: float | None = None,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
         self.tau: Final = tau
         self.beta: Final = beta
@@ -80,8 +82,7 @@ class FlatTop(Pulse):
                 correction_factor=correction_factor,
                 **kwargs,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     @staticmethod
     def func(

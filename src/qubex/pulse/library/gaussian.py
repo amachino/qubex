@@ -44,6 +44,8 @@ class Gaussian(Pulse):
         beta: float | None = None,
         **kwargs,
     ):
+        super().__init__(**kwargs)
+
         self.amplitude: Final = amplitude
         self.sigma: Final = sigma
         self.zero_bounds: Final = zero_bounds
@@ -60,8 +62,7 @@ class Gaussian(Pulse):
                 zero_bounds=zero_bounds,
                 beta=beta,
             )
-
-        super().__init__(values, **kwargs)
+        self._values = np.array(values, dtype=np.complex128)
 
     @staticmethod
     def func(

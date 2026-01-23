@@ -14,6 +14,10 @@ from typing_extensions import deprecated
 logger = logging.getLogger(__name__)
 
 
+# Default sampling period in ns
+DEFAULT_SAMPLING_PERIOD = 2.0
+
+
 class Waveform(ABC):
     """
     An abstract base class to represent a waveform.
@@ -26,9 +30,11 @@ class Waveform(ABC):
         Detuning of the waveform in GHz.
     phase : float, optional
         Phase of the waveform in rad.
+    sampling_period : float, optional
+        Sampling period of the waveform in ns.
     """
 
-    SAMPLING_PERIOD: float = 2.0  # ns
+    SAMPLING_PERIOD: float = DEFAULT_SAMPLING_PERIOD
 
     def __init__(
         self,
@@ -36,6 +42,7 @@ class Waveform(ABC):
         scale: float | None = None,
         detuning: float | None = None,
         phase: float | None = None,
+        sampling_period: float | None = None,
         **kwargs,
     ):
         if scale is None:
@@ -44,9 +51,12 @@ class Waveform(ABC):
             detuning = 0.0
         if phase is None:
             phase = 0.0
+        if sampling_period is None:
+            sampling_period = self.SAMPLING_PERIOD
         self._scale = scale
         self._detuning = detuning
         self._phase = phase
+        self._sampling_period = sampling_period
 
     @property
     def name(self) -> str:
@@ -69,6 +79,11 @@ class Waveform(ABC):
         return self._phase
 
     @property
+    def sampling_period(self) -> float:
+        """Returns the sampling period of the waveform in ns."""
+        return self._sampling_period
+
+    @property
     @abstractmethod
     def length(self) -> int:
         """Returns the length of the waveform in samples."""
@@ -81,7 +96,7 @@ class Waveform(ABC):
     @property
     def duration(self) -> float:
         """Returns the duration of the waveform in ns."""
-        return self.length * self.SAMPLING_PERIOD
+        return self.length * self.sampling_period
 
     @cached_property
     def cached_duration(self) -> float:
@@ -91,7 +106,7 @@ class Waveform(ABC):
     @property
     def times(self) -> NDArray[np.float64]:
         """Returns the time array of the waveform in ns."""
-        return np.arange(self.length, dtype=np.float64) * self.SAMPLING_PERIOD
+        return np.arange(self.length, dtype=np.float64) * self.sampling_period
 
     @property
     def real(self) -> NDArray[np.float64]:
@@ -159,7 +174,7 @@ class Waveform(ABC):
         duration : float
             Duration of the waveform in ns.
         """
-        dt = self.SAMPLING_PERIOD
+        dt = self.sampling_period
         if duration < 0:
             raise ValueError("Duration must be positive.")
 
@@ -185,7 +200,7 @@ class Waveform(ABC):
         duration : float
             Duration of the waveform in ns.
         """
-        dt = self.SAMPLING_PERIOD
+        dt = self.sampling_period
         N = self._number_of_samples(duration)
         # Sampling points are at the center of each time interval
         sampling_points = np.linspace(dt / 2, duration - dt / 2, N)
@@ -249,7 +264,7 @@ class Waveform(ABC):
             logger.warning("Waveform is empty.")
             return
 
-        times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
+        times = np.append(self.times, self.times[-1] + self.sampling_period)
         real = np.append(self.real, self.real[-1])
         imag = np.append(self.imag, self.imag[-1])
 
@@ -321,7 +336,7 @@ class Waveform(ABC):
             logger.warning("Waveform is empty.")
             return
 
-        times = np.append(self.times, self.times[-1] + self.SAMPLING_PERIOD)
+        times = np.append(self.times, self.times[-1] + self.sampling_period)
         ampl = np.append(self.abs, self.abs[-1])
         phase = np.append(self.angle, self.angle[-1])
 
@@ -444,9 +459,9 @@ class Waveform(ABC):
         values = pulse.values
         fft_values = np.fft.fft(values)
         if frequency_sign == "positive":
-            d = self.SAMPLING_PERIOD
+            d = self.sampling_period
         else:
-            d = -self.SAMPLING_PERIOD
+            d = -self.sampling_period
         freqs = np.fft.fftfreq(N, d=d)
         idx = np.argsort(freqs)
         freqs = freqs[idx]
