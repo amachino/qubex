@@ -7,6 +7,7 @@ from .models import (
     MeasureResult,
     MultipleMeasureResult,
 )
+from .sweep_measurement_builder import SweepMeasurementBuilder
 
 __all__ = [
     "Measurement",
@@ -15,6 +16,7 @@ __all__ = [
     "MeasureMode",
     "MeasureResult",
     "MultipleMeasureResult",
+    "SweepMeasurementBuilder",
     "StateClassifier",
     "StateClassifierGMM",
     "StateClassifierKMeans",
