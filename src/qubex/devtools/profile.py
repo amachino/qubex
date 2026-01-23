@@ -23,7 +23,7 @@ def profile(
     interval: float = 0.001,
     height: int = 400,
 ):
-    """Optional profiling using pyinstrument. Displays profile and elapsed time if installed."""
+    """Run optional profiling using pyinstrument and display timing if installed."""
     if not _HAS_PYINSTRUMENT:
         logger.warning("pyinstrument not installed, skipping profiling.")
         yield

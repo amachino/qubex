@@ -15,15 +15,16 @@ FILE_PATH = ".experiment_note.json"
 
 class ExperimentNote:
     """
-    A class to represent an experiment note. An experiment note is a key-value pair dictionary where the keys are
-    strings and the values are JSON serializable objects. The experiment note is used to store additional information
-    about an experiment that is not part of the main experiment data.
+    Represent an experiment note.
+
+    An experiment note is a key-value pair dictionary where the keys are strings and
+    the values are JSON serializable objects. The experiment note is used to store
+    additional information about an experiment that is not part of the main experiment
+    data.
     """
 
     def __init__(self, file_path: Path | str | None = None):
-        """
-        Initializes the ExperimentNote with an empty dictionary.
-        """
+        """Initialize the ExperimentNote with an empty dictionary."""
         if file_path is None:
             file_path = Path(FILE_PATH)
         else:
@@ -36,7 +37,7 @@ class ExperimentNote:
     @property
     def file_path(self) -> Path:
         """
-        Returns the file path of the ExperimentNote.
+        Return the file path of the ExperimentNote.
 
         Returns
         -------
@@ -47,7 +48,9 @@ class ExperimentNote:
 
     def put(self, key: str, value: Any):
         """
-        Puts the key-value pair into the dictionary. Only allows JSON serializable values.
+        Put the key-value pair into the dictionary.
+
+        Only JSON-serializable values are allowed.
 
         Parameters
         ----------
@@ -81,7 +84,7 @@ class ExperimentNote:
 
     def get(self, key: str) -> Any:
         """
-        Gets the value associated with the key.
+        Get the value associated with the key.
 
         Parameters
         ----------
@@ -99,7 +102,7 @@ class ExperimentNote:
 
     def remove(self, key: str):
         """
-        Removes the key-value pair from the dictionary.
+        Remove the key-value pair from the dictionary.
 
         Parameters
         ----------
@@ -113,15 +116,13 @@ class ExperimentNote:
             logger.warning(f"Key '{key}' not found, no removal performed.")
 
     def clear(self) -> None:
-        """
-        Clears the dictionary.
-        """
+        """Clear the dictionary."""
         self._dict.clear()
         logger.info("All entries have been cleared from the ExperimentNote.")
 
     def save(self, file_path: Path | str | None = None):
         """
-        Saves the ExperimentNote to a JSON file.
+        Save the ExperimentNote to a JSON file.
 
         Parameters
         ----------
@@ -159,14 +160,13 @@ class ExperimentNote:
 
     def load(self, file_path: Path | str | None = None):
         """
-        Loads the ExperimentNote from a JSON file.
+        Load the ExperimentNote from a JSON file.
 
         Parameters
         ----------
         file_path : Path or str, optional
             The path to load the JSON file. Defaults to the path specified in the constructor.
         """
-
         file_path = file_path or self._file_path
         file_path = Path(file_path)
 
@@ -185,7 +185,7 @@ class ExperimentNote:
 
     def delete(self, file_path: Path | str | None = None):
         """
-        Deletes the JSON file containing the ExperimentNote.
+        Delete the JSON file containing the ExperimentNote.
 
         Parameters
         ----------
@@ -205,7 +205,7 @@ class ExperimentNote:
 
     def __str__(self) -> str:
         """
-        Returns the JSON representation of the ExperimentNote.
+        Return the JSON representation of the ExperimentNote.
 
         Returns
         -------
@@ -217,7 +217,7 @@ class ExperimentNote:
 
     def __repr__(self) -> str:
         """
-        Returns the JSON representation of the ExperimentNote.
+        Return the JSON representation of the ExperimentNote.
 
         Returns
         -------
@@ -229,7 +229,7 @@ class ExperimentNote:
 
     def _is_json_serializable(self, value: Any) -> bool:
         """
-        Checks if a value is JSON serializable.
+        Check whether a value is JSON serializable.
 
         Parameters
         ----------
@@ -290,8 +290,9 @@ class ExperimentNote:
 
     def _sanitize_for_json(self, obj: Any) -> Any:
         """
-        Recursively replace non-finite float values in the object with None so that
-        the resulting structure conforms to RFC 8259 (no NaN/Infinity values).
+        Recursively replace non-finite float values with None.
+
+        The resulting structure conforms to RFC 8259 (no NaN/Infinity values).
 
         Returns a sanitized copy of the object (dicts/lists are recreated).
         """

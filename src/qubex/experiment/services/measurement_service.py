@@ -919,7 +919,7 @@ class MeasurementService:
         plot: bool | None = None,
     ) -> MeasureResult | MultipleMeasureResult:
         """
-        Checks the readout waveforms of the given targets.
+        Check the readout waveforms of the given targets.
 
         Parameters
         ----------
@@ -1013,7 +1013,7 @@ class MeasurementService:
         plot: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         """
-        Checks the Rabi oscillation of the given targets.
+        Check the Rabi oscillation of the given targets.
 
         Parameters
         ----------
@@ -1894,8 +1894,7 @@ class MeasurementService:
         return Result(data=result)
 
     def partial_waveform(self, waveform: Waveform, index: int) -> Waveform:
-        """Returns a partial waveform up to the given index."""
-
+        """Return a partial waveform up to the given index."""
         # If the index is 0, return an empty Pulse as the initial state.
         if index == 0:
             return Pulse([])
@@ -2651,6 +2650,7 @@ class MeasurementService:
     ) -> PulseSchedule:
         """
         Create a GHZ state preparation sequence based on the entanglement steps.
+
         Returns a PulseSchedule object.
         """
         if optimize_sequence is None:
@@ -2711,6 +2711,7 @@ class MeasurementService:
     ) -> Result:
         """
         Measure the n-qubit GHZ state in the specified bases.
+
         Returns dict with 'raw', 'mitigated', 'result', 'figure'.
         """
         if optimize_sequence is None:

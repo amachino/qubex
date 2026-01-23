@@ -1326,7 +1326,7 @@ class Measurement:
         allow_negative: bool = False,
     ) -> int:
         """
-        Returns the number of samples in the waveform.
+        Return the number of samples in the waveform.
 
         Parameters
         ----------

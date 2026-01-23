@@ -26,7 +26,8 @@ class PulseAPI:
         api_base_url: str | None = None,
     ):
         """
-        Pulse API Client
+        Pulse API client.
+
         API documentation: https://qiqb.ngrok.dev/docs
 
         Parameters

@@ -86,7 +86,6 @@ class MultiDerivative(Pulse):
         power : int
             Power of the sine integral function.
         """
-
         return MultiDerivativeSintegral.func(
             t=t,
             duration=duration,

@@ -69,24 +69,38 @@ typeCheckingMode = "basic"
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle
-    "F",   # Pyflakes
-    "UP",  # pyupgrade
-    "B",   # flake8-bugbear
-    "SIM", # flake8-simplify
-    "SLF", # flake8-self
-    "TID", # flake8-tidy-imports
-    "I",   # isort
+    "E",    # pycodestyle
+    "F",    # Pyflakes
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "SLF",  # flake8-self
+    "TID",  # flake8-tidy-imports
+    "I",    # isort
+    "D",    # pydocstyle
+    "D213", # multi-line-summary-second-line
 ]
+
 ignore = [
     "E501",   # line-too-long
     "E731",   # lambda-assignment
     "E741",   # ambiguous-variable-name
     "SIM102", # collapsible-if
     "SIM108", # if-else-block-instead-of-if-exp
+    "D100",   # undocumented-public-module
+    "D101",   # undocumented-public-class
+    "D102",   # undocumented-public-method
+    "D103",   # undocumented-public-function
+    "D104",   # undocumented-public-package
+    "D105",   # undocumented-magic-method
+    "D106",   # undocumented-public-nested-class
+    "D107",   # undocumented-init
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = [
-    "F401", # per-file-ignores
+    "F401", # unused-import
 ]

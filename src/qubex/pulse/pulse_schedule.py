@@ -39,7 +39,7 @@ class PulseSchedule:
         /,
     ):
         """
-        A class to represent a pulse schedule.
+        Represent a pulse schedule.
 
         Parameters
         ----------
@@ -105,23 +105,17 @@ class PulseSchedule:
 
     @property
     def labels(self) -> list[str]:
-        """
-        Returns the channel labels.
-        """
+        """Return the channel labels."""
         return list(self._channels.keys())
 
     @property
     def values(self) -> dict[str, npt.NDArray[np.complex128]]:
-        """
-        Returns the sampled pulse sequences.
-        """
+        """Return the sampled pulse sequences."""
         return self.get_sampled_sequences()
 
     @property
     def length(self) -> int:
-        """
-        Returns the length of the pulse schedule in samples.
-        """
+        """Return the length of the pulse schedule in samples."""
         if len(self._channels) == 0:
             return 0
         if not self.is_valid():
@@ -136,9 +130,7 @@ class PulseSchedule:
 
     @property
     def duration(self) -> float:
-        """
-        Returns the duration of the pulse schedule in ns.
-        """
+        """Return the duration of the pulse schedule in ns."""
         return self._max_offset()
 
     def add(
@@ -237,9 +229,7 @@ class PulseSchedule:
             self.add(label, sequence)
 
     def copy(self) -> PulseSchedule:
-        """
-        Returns a copy of the pulse schedule.
-        """
+        """Return a copy of the pulse schedule."""
         return deepcopy(self)
 
     def padded(
@@ -248,7 +238,7 @@ class PulseSchedule:
         pad_side: Literal["right", "left"] = "right",
     ) -> PulseSchedule:
         """
-        Returns a copy of the pulse schedule with zero padding.
+        Return a copy of the pulse schedule with zero padding.
 
         Parameters
         ----------
@@ -273,7 +263,7 @@ class PulseSchedule:
         pad_side: Literal["right", "left"] = "right",
     ) -> None:
         """
-        Pads the pulse schedule with blank pulses.
+        Pad the pulse schedule with blank pulses.
 
         Parameters
         ----------
@@ -291,9 +281,7 @@ class PulseSchedule:
             channel.sequence.pad(total_duration, pad_side)
 
     def scaled(self, scale: float) -> PulseSchedule:
-        """
-        Returns a scaled pulse schedule.
-        """
+        """Return a scaled pulse schedule."""
         if scale == 1:
             return self
         new_sched = deepcopy(self)
@@ -302,9 +290,7 @@ class PulseSchedule:
         return new_sched
 
     def detuned(self, detuning: float) -> PulseSchedule:
-        """
-        Returns a detuned pulse schedule.
-        """
+        """Return a detuned pulse schedule."""
         if detuning == 0:
             return self
         new_sched = deepcopy(self)
@@ -313,9 +299,7 @@ class PulseSchedule:
         return new_sched
 
     def shifted(self, phase: float) -> PulseSchedule:
-        """
-        Returns a shifted pulse schedule.
-        """
+        """Return a shifted pulse schedule."""
         if phase == 0:
             return self
         new_sched = deepcopy(self)
@@ -324,9 +308,7 @@ class PulseSchedule:
         return new_sched
 
     def repeated(self, n: int) -> PulseSchedule:
-        """
-        Returns a repeated pulse schedule.
-        """
+        """Return a repeated pulse schedule."""
         if n == 1:
             return self
         new_sched = PulseSchedule()
@@ -343,7 +325,7 @@ class PulseSchedule:
         return self.inverted()
 
     def inverted(self) -> PulseSchedule:
-        """Returns an inverted pulse schedule."""
+        """Return an inverted pulse schedule."""
         with PulseSchedule() as new_sched:
             for label, channel in self._channels.items():
                 new_sched.add(label, channel.sequence.inverted())
@@ -361,7 +343,7 @@ class PulseSchedule:
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
-        Plots the pulse schedule.
+        Plot the pulse schedule.
 
         Examples
         --------
@@ -520,9 +502,7 @@ class PulseSchedule:
         )
 
     def is_valid(self) -> bool:
-        """
-        Returns True if the pulse schedule is valid.
-        """
+        """Return True if the pulse schedule is valid."""
         return len(set(ch.sequence.length for ch in self._channels.values())) == 1
 
     def get_sequence(
@@ -533,7 +513,7 @@ class PulseSchedule:
         copy: bool = True,
     ) -> PulseArray:
         """
-        Returns the pulse sequence for a specific channel.
+        Return the pulse sequence for a specific channel.
 
         Parameters
         ----------
@@ -572,7 +552,7 @@ class PulseSchedule:
         copy: bool = True,
     ) -> dict[str, PulseArray]:
         """
-        Returns the pulse sequences.
+        Return the pulse sequences.
 
         Parameters
         ----------
@@ -606,7 +586,7 @@ class PulseSchedule:
         copy: bool = True,
     ) -> npt.NDArray[np.complex128]:
         """
-        Returns the sampled pulse sequence for a specific channel.
+        Return the sampled pulse sequence for a specific channel.
 
         Parameters
         ----------
@@ -639,7 +619,7 @@ class PulseSchedule:
         copy: bool = True,
     ) -> dict[str, npt.NDArray[np.complex128]]:
         """
-        Returns the sampled pulse sequences.
+        Return the sampled pulse sequences.
 
         Parameters
         ----------
@@ -670,7 +650,7 @@ class PulseSchedule:
         label: str,
     ) -> float:
         """
-        Returns the final frame shift for a specific channel.
+        Return the final frame shift for a specific channel.
 
         Parameters
         ----------
@@ -690,7 +670,7 @@ class PulseSchedule:
         self,
     ) -> dict[str, float]:
         """
-        Returns the final frame shifts.
+        Return the final frame shifts.
 
         Returns
         -------
@@ -704,7 +684,7 @@ class PulseSchedule:
         labels: list[str] | None = None,
     ) -> dict[str, list[range]]:
         """
-        Returns the pulse ranges.
+        Return the pulse ranges.
 
         Parameters
         ----------
@@ -734,7 +714,7 @@ class PulseSchedule:
         labels: list[str] | None = None,
     ) -> dict[str, list[range]]:
         """
-        Returns the blank ranges.
+        Return the blank ranges.
 
         Parameters
         ----------
@@ -764,7 +744,7 @@ class PulseSchedule:
         label: str,
     ) -> float | None:
         """
-        Returns the frequency for a specific channel.
+        Return the frequency for a specific channel.
 
         Parameters
         ----------
@@ -782,7 +762,7 @@ class PulseSchedule:
         self,
     ) -> dict[str, float | None]:
         """
-        Returns the frequencies.
+        Return the frequencies.
 
         Returns
         -------
@@ -796,7 +776,7 @@ class PulseSchedule:
         label: str,
     ) -> str | None:
         """
-        Returns the target for a specific channel.
+        Return the target for a specific channel.
 
         Parameters
         ----------
@@ -814,7 +794,7 @@ class PulseSchedule:
         self,
     ) -> dict[str, str | None]:
         """
-        Returns the targets.
+        Return the targets.
 
         Returns
         -------
@@ -828,7 +808,7 @@ class PulseSchedule:
         label: str,
     ) -> str | None:
         """
-        Returns the frame for a specific channel.
+        Return the frame for a specific channel.
 
         Parameters
         ----------
@@ -846,7 +826,7 @@ class PulseSchedule:
         self,
     ) -> dict[str, str | None]:
         """
-        Returns the frames.
+        Return the frames.
 
         Returns
         -------
@@ -860,7 +840,7 @@ class PulseSchedule:
         label: str,
     ) -> float:
         """
-        Returns the offset for a specific channel.
+        Return the offset for a specific channel.
 
         Parameters
         ----------

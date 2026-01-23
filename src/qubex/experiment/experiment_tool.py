@@ -567,7 +567,6 @@ def print_chip_info(
 
 def print_wiring_info(qubits: Collection[str] | None = None) -> None:
     """Print the wiring information of the chip."""
-
     experiment_system = system_manager.experiment_system
 
     table = Table(
@@ -812,7 +811,7 @@ def print_cr_targets(qubits: Collection[str] | str | None = None) -> None:
 
 def _configure_loopback(mux: str | int, *, enable: bool) -> None:
     """
-    Internal helper: configure RF switches for all qubits in the given MUX.
+    Configure RF switches for all qubits in the given MUX.
 
     Mapping when enable is True:
         read_in  -> loop

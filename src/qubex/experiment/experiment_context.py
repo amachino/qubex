@@ -559,9 +559,7 @@ class ExperimentContext:
             raise OSError(f"Failed to save property '{property_name}': {e}") from e
 
     def load_calib_note(self, path: Path | str | None = None):
-        """
-        Load the calibration data from the given path or from the default calibration note file.
-        """
+        """Load the calibration data from a given path or the default calibration note file."""
         if path is None:
             # TODO: Make this path configurable
             path = (
@@ -578,15 +576,11 @@ class ExperimentContext:
             ) from e
 
     def get_qubit_label(self, index: int) -> str:
-        """
-        Get the qubit label from the given qubit index.
-        """
+        """Get the qubit label from the given qubit index."""
         return self.quantum_system.get_qubit(index).label
 
     def get_resonator_label(self, index: int) -> str:
-        """
-        Get the resonator label from the given resonator index.
-        """
+        """Get the resonator label from the given resonator index."""
         return self.quantum_system.get_resonator(index).label
 
     def get_cr_label(
@@ -594,9 +588,7 @@ class ExperimentContext:
         control_index: int,
         target_index: int,
     ) -> str:
-        """
-        Get the cross-resonance label from the given control and target qubit indices.
-        """
+        """Get the cross-resonance label from the given control and target qubit indices."""
         control_qubit = self.quantum_system.get_qubit(control_index)
         target_qubit = self.quantum_system.get_qubit(target_index)
         label = Target.cr_label(control_qubit.label, target_qubit.label)
@@ -607,9 +599,7 @@ class ExperimentContext:
         low_to_high: bool | None = None,
         high_to_low: bool | None = None,
     ) -> list[tuple[str, str]]:
-        """
-        Get the cross-resonance pairs.
-        """
+        """Get the cross-resonance pairs."""
         if low_to_high is None:
             low_to_high = True
         if high_to_low is None:
@@ -638,9 +628,7 @@ class ExperimentContext:
         low_to_high: bool | None = None,
         high_to_low: bool | None = None,
     ) -> list[str]:
-        """
-        Get the cross-resonance labels.
-        """
+        """Get the cross-resonance labels."""
         if low_to_high is None:
             low_to_high = True
         if high_to_low is None:
@@ -653,9 +641,7 @@ class ExperimentContext:
     def get_edge_pairs(
         self,
     ) -> list[tuple[str, str]]:
-        """
-        Get the qubit edge pairs.
-        """
+        """Get the qubit edge pairs."""
         edge_pairs = []
         for qubit in self.qubit_labels:
             spectators = self.get_spectators(qubit, in_same_mux=True)
@@ -667,9 +653,7 @@ class ExperimentContext:
     def get_edge_labels(
         self,
     ) -> list[str]:
-        """
-        Get the qubit edge labels.
-        """
+        """Get the qubit edge labels."""
         return [f"{pair[0]}-{pair[1]}" for pair in self.get_edge_pairs()]
 
     @staticmethod
@@ -681,9 +665,7 @@ class ExperimentContext:
         target: str,
         valid_days: int | None = None,
     ) -> RabiParam | None:
-        """
-        Get the Rabi parameters for the given target.
-        """
+        """Get the Rabi parameters for the given target."""
         if valid_days is None:
             valid_days = self._calibration_valid_days
 

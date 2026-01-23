@@ -39,9 +39,7 @@ class LogFormatter(logging.Formatter):
 
 
 def set_log_level(level: int | str = logging.INFO):
-    """
-    Sets the logging level for the qubex package and ensures a console handler is present.
-    """
+    """Set the logging level for the qubex package and ensure a console handler is present."""
     logger = logging.getLogger("qubex")
     logger.setLevel(level)
 

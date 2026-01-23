@@ -387,6 +387,8 @@ class StateClassifierKMeans(StateClassifier):
         max_iter: int = 100,
     ) -> NDArray:
         """
+        Estimate mixture weights from data.
+
         Parameters
         ----------
         data : NDArray

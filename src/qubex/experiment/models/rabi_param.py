@@ -76,7 +76,7 @@ class RabiParam:
 
     def correct(self, new_reference_phase: float):
         """
-        Corrects the angle according to a new reference phase.
+        Correct the angle according to a new reference phase.
 
         Parameters
         ----------
@@ -94,7 +94,7 @@ class RabiParam:
         values: NDArray,
     ) -> NDArray:
         """
-        Normalizes the measured I/Q values.
+        Normalize the measured I/Q values.
 
         Parameters
         ----------

@@ -1,5 +1,6 @@
 """
-This module provides the Experiment class, which serves as a facade for users conducting experiments using Notebooks.
+Provide the Experiment facade for notebook users.
+
 It manages which methods act as the public interface for conducting experiments.
 """
 
@@ -492,21 +493,15 @@ class Experiment:
         )
 
     def load_calib_note(self, path: Path | str | None = None):
-        """
-        Load the calibration data from the given path or from the default calibration note file.
-        """
+        """Load the calibration data from a given path or the default calibration note file."""
         return self.ctx.load_calib_note(path=path)
 
     def get_qubit_label(self, index: int) -> str:
-        """
-        Get the qubit label from the given qubit index.
-        """
+        """Get the qubit label from the given qubit index."""
         return self.ctx.get_qubit_label(index)
 
     def get_resonator_label(self, index: int) -> str:
-        """
-        Get the resonator label from the given resonator index.
-        """
+        """Get the resonator label from the given resonator index."""
         return self.ctx.get_resonator_label(index)
 
     def get_cr_label(
@@ -514,9 +509,7 @@ class Experiment:
         control_index: int,
         target_index: int,
     ) -> str:
-        """
-        Get the cross-resonance label from the given control and target qubit indices.
-        """
+        """Get the cross-resonance label from the given control and target qubit indices."""
         return self.ctx.get_cr_label(control_index, target_index)
 
     def get_cr_pairs(
@@ -524,9 +517,7 @@ class Experiment:
         low_to_high: bool | None = None,
         high_to_low: bool | None = None,
     ) -> list[tuple[str, str]]:
-        """
-        Get the cross-resonance pairs.
-        """
+        """Get the cross-resonance pairs."""
         if low_to_high is None:
             low_to_high = True
         if high_to_low is None:
@@ -538,9 +529,7 @@ class Experiment:
         low_to_high: bool | None = None,
         high_to_low: bool | None = None,
     ) -> list[str]:
-        """
-        Get the cross-resonance labels.
-        """
+        """Get the cross-resonance labels."""
         if low_to_high is None:
             low_to_high = True
         if high_to_low is None:
@@ -550,17 +539,13 @@ class Experiment:
     def get_edge_pairs(
         self,
     ) -> list[tuple[str, str]]:
-        """
-        Get the qubit edge pairs.
-        """
+        """Get the qubit edge pairs."""
         return self.ctx.get_edge_pairs()
 
     def get_edge_labels(
         self,
     ) -> list[str]:
-        """
-        Get the qubit edge labels.
-        """
+        """Get the qubit edge labels."""
         return self.ctx.get_edge_labels()
 
     @staticmethod
@@ -572,9 +557,7 @@ class Experiment:
         target: str,
         valid_days: int | None = None,
     ) -> RabiParam | None:
-        """
-        Get the Rabi parameters for the given target.
-        """
+        """Get the Rabi parameters for the given target."""
         return self.ctx.get_rabi_param(target, valid_days=valid_days)
 
     def store_rabi_params(
@@ -728,9 +711,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        """
-        Get the π/2 pulse for the given target.
-        """
+        """Get the π/2 pulse for the given target."""
         return self.pulse.get_hpi_pulse(
             target,
             valid_days=valid_days,
@@ -742,9 +723,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        """
-        Get the π pulse for the given target.
-        """
+        """Get the π pulse for the given target."""
         return self.pulse.get_pi_pulse(
             target,
             valid_days=valid_days,
@@ -756,9 +735,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        """
-        Get the DRAG π/2 pulse for the given target.
-        """
+        """Get the DRAG π/2 pulse for the given target."""
         return self.pulse.get_drag_hpi_pulse(
             target,
             valid_days=valid_days,
@@ -770,9 +747,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        """
-        Get the DRAG π pulse for the given target.
-        """
+        """Get the DRAG π pulse for the given target."""
         return self.pulse.get_drag_pi_pulse(
             target,
             valid_days=valid_days,
@@ -1063,7 +1038,7 @@ class Experiment:
         plot: bool | None = None,
     ) -> MeasureResult:
         """
-        Checks the noise level of the system.
+        Check the noise level of the system.
 
         Parameters
         ----------
@@ -1104,7 +1079,7 @@ class Experiment:
         plot: bool | None = None,
     ) -> MeasureResult | MultipleMeasureResult:
         """
-        Checks the readout waveforms of the given targets.
+        Check the readout waveforms of the given targets.
 
         Parameters
         ----------
@@ -1163,7 +1138,7 @@ class Experiment:
         plot: bool | None = None,
     ) -> ExperimentResult[RabiData]:
         """
-        Checks the Rabi oscillation of the given targets.
+        Check the Rabi oscillation of the given targets.
 
         Parameters
         ----------
@@ -1556,7 +1531,7 @@ class Experiment:
         store_reference_points: bool | None = None,
     ) -> Result:
         """
-        Obtains the reference points for the given targets.
+        Obtain the reference points for the given targets.
 
         Parameters
         ----------

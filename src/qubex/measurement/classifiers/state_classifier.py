@@ -11,9 +11,7 @@ from numpy.typing import NDArray
 
 @dataclass
 class StateClassifier(ABC):
-    """
-    A protocol for state classifiers.
-    """
+    """Define a protocol for state classifiers."""
 
     dataset: dict[int, NDArray]
     model: Any
@@ -56,7 +54,7 @@ class StateClassifier(ABC):
     @property
     @abstractmethod
     def n_states(self) -> int:
-        """The number of states in the model."""
+        """Return the number of states in the model."""
         raise NotImplementedError
 
     @property
@@ -211,6 +209,8 @@ class StateClassifier(ABC):
         max_iter: int = 100,
     ) -> NDArray:
         """
+        Estimate mixture weights from data.
+
         Parameters
         ----------
         data : NDArray

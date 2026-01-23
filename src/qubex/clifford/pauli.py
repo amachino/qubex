@@ -61,12 +61,12 @@ class Pauli:
         self.operator = operator
 
     def to_string(self) -> str:
-        """Returns a string representation of the Pauli operator with its coefficient."""
+        """Return a string representation of the Pauli operator with its coefficient."""
         sign = {1: "", -1: "-", 1j: "i", -1j: "-i"}[self.coefficient]
         return f"{sign}{self.operator}"
 
     def log_info(self):
-        """Prints the string representation of the Pauli operator."""
+        """Print the string representation of the Pauli operator."""
         logger.info(self.to_string())
 
     def __repr__(self) -> str:

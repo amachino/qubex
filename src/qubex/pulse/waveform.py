@@ -100,66 +100,66 @@ class Waveform(ABC):
 
     @cached_property
     def cached_duration(self) -> float:
-        """Returns the cached duration of the waveform."""
+        """Return the cached duration of the waveform."""
         return self.duration
 
     @property
     def times(self) -> NDArray[np.float64]:
-        """Returns the time array of the waveform in ns."""
+        """Return the time array of the waveform in ns."""
         return np.arange(self.length, dtype=np.float64) * self.sampling_period
 
     @property
     def real(self) -> NDArray[np.float64]:
-        """Returns the real part of the waveform."""
+        """Return the real part of the waveform."""
         return np.real(self.values)
 
     @property
     def imag(self) -> NDArray[np.float64]:
-        """Returns the imaginary part of the waveform."""
+        """Return the imaginary part of the waveform."""
         return np.imag(self.values)
 
     @property
     def abs(self) -> NDArray[np.float64]:
-        """Returns the amplitude of the waveform."""
+        """Return the amplitude of the waveform."""
         return np.abs(self.values)
 
     @property
     def angle(self) -> NDArray[np.float64]:
-        """Returns the phase of the waveform."""
+        """Return the phase of the waveform."""
         return np.where(self.abs == 0, 0, np.angle(self.values))
 
     @abstractmethod
     def copy(self) -> Waveform:
-        """Returns a copy of the waveform."""
+        """Return a copy of the waveform."""
 
     @abstractmethod
     def padded(
         self, total_duration: float, pad_side: Literal["right", "left"] = "right"
     ) -> Waveform:
-        """Returns a copy of the waveform with zero padding."""
+        """Return a copy of the waveform with zero padding."""
 
     @abstractmethod
     def scaled(self, scale: float) -> Waveform:
-        """Returns a copy of the waveform scaled by the given factor."""
+        """Return a copy of the waveform scaled by the given factor."""
 
     @abstractmethod
     def detuned(self, detuning: float) -> Waveform:
-        """Returns a copy of the waveform detuned by the given frequency."""
+        """Return a copy of the waveform detuned by the given frequency."""
 
     @abstractmethod
     def shifted(self, phase: float) -> Waveform:
-        """Returns a copy of the waveform shifted by the given phase."""
+        """Return a copy of the waveform shifted by the given phase."""
 
     @abstractmethod
     def repeated(self, n: int) -> Waveform:
-        """Returns a copy of the waveform repeated n times."""
+        """Return a copy of the waveform repeated n times."""
 
     @abstractmethod
     def inverted(self) -> Waveform:
-        """Returns a copy of the waveform with the time inverted."""
+        """Return a copy of the waveform with the time inverted."""
 
     def reset_cached_duration(self):
-        """Resets the cached duration of the waveform."""
+        """Reset the cached duration of the waveform."""
         cast(dict, self.__dict__).pop("cached_duration", None)
 
     def _number_of_samples(
@@ -167,7 +167,7 @@ class Waveform(ABC):
         duration: float,
     ) -> int:
         """
-        Returns the number of samples in the waveform.
+        Return the number of samples in the waveform.
 
         Parameters
         ----------
@@ -193,7 +193,7 @@ class Waveform(ABC):
         duration: float,
     ) -> NDArray[np.float64]:
         """
-        Returns the sampling points of the waveform.
+        Return the sampling points of the waveform.
 
         Parameters
         ----------
@@ -215,7 +215,7 @@ class Waveform(ABC):
         divide_by_two_pi: bool = False,
     ):
         """
-        Plots the waveform.
+        Plot the waveform.
 
         Parameters
         ----------
@@ -249,7 +249,7 @@ class Waveform(ABC):
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
-        Plots the waveform with I/Q values.
+        Plot the waveform with I/Q values.
 
         Parameters
         ----------
@@ -321,7 +321,7 @@ class Waveform(ABC):
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
-        Plots the waveform with amplitude and phase.
+        Plot the waveform with amplitude and phase.
 
         Parameters
         ----------
@@ -394,7 +394,7 @@ class Waveform(ABC):
         zero_padding_factor: int = 100,
     ):
         """
-        Plots the FFT of the waveform.
+        Plot the FFT of the waveform.
 
         Parameters
         ----------
@@ -429,7 +429,7 @@ class Waveform(ABC):
         xlim: tuple[float, float] | None = None,
     ):
         """
-        Plots the spectrum of the waveform.
+        Plot the spectrum of the waveform.
 
         Parameters
         ----------

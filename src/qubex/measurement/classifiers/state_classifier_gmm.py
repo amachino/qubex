@@ -448,6 +448,8 @@ class StateClassifierGMM(StateClassifier):
         tol: float = 1e-4,
     ) -> NDArray:
         """
+        Estimate mixture weights from data.
+
         Parameters
         ----------
         data : NDArray

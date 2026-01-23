@@ -304,7 +304,8 @@ class MeasureResult:
         threshold: float | None = None,
     ) -> list[str]:
         """
-        Returns memory: list of bitstrings (e.g., ['0110', '1010', ...])
+        Return memory: list of bitstrings (e.g., ['0110', '1010', ...]).
+
         representing each shot's classified result.
         """
         classified_data = self.get_classified_data(targets, threshold=threshold)

@@ -696,7 +696,7 @@ class RamseyData(SweepData):
 @dataclass
 class RBData(SweepData):
     """
-    Data class representing the result of a randomized benchmarking
+    Represent the result of a randomized benchmarking.
 
     Attributes
     ----------

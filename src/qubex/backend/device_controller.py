@@ -455,7 +455,7 @@ class DeviceController:
 
     def relinkup(self, box_name: str, noise_threshold: int | None = None):
         """
-        Relinkup a box.
+        Relink a box.
 
         Parameters
         ----------
@@ -470,9 +470,7 @@ class DeviceController:
         box.reconnect(background_noise_threshold=10000)
 
     def relinkup_boxes(self, box_list: list[str], noise_threshold: int | None = None):
-        """
-        Relinkup all the boxes in the list.
-        """
+        """Relink all the boxes in the list."""
         for box_name in box_list:
             self.relinkup(box_name, noise_threshold=noise_threshold)
 
@@ -507,7 +505,6 @@ class DeviceController:
         bool
             True if the clocks are synchronized, False otherwise.
         """
-
         result = self.qubecalib.read_clock(*box_list)
         timestamps: list[str] = []
         accuracy = -8

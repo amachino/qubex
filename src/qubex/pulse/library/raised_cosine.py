@@ -62,7 +62,7 @@ class RaisedCosine(Pulse):
         beta: float | None = None,
     ) -> NDArray:
         """
-        Raised cosine pulse function.
+        Compute a raised cosine pulse function.
 
         Parameters
         ----------

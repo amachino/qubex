@@ -66,7 +66,6 @@ class SystemManager:
 
         Returns
         -------
-
         SystemManager
             Shared instance of the SystemManager.
         """

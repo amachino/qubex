@@ -40,7 +40,7 @@ class Control:
         final_frame_shift: float = 0.0,
     ):
         """
-        A control signal for a quantum system.
+        Initialize a control signal for a quantum system.
 
         Parameters
         ----------
@@ -730,7 +730,7 @@ class QuantumSimulator:
         system: QuantumSystem,
     ):
         """
-        A quantum simulator to simulate the dynamics of the quantum system.
+        Initialize a quantum simulator for the quantum system.
 
         Parameters
         ----------

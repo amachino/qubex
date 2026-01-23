@@ -13,7 +13,7 @@ from .waveform import Waveform
 
 class Pulse(Waveform):
     """
-    A class to represent a pulse.
+    Represent a pulse.
 
     Parameters
     ----------
@@ -55,12 +55,12 @@ class Pulse(Waveform):
 
     @property
     def length(self) -> int:
-        """Returns the length of the pulse in samples."""
+        """Return the length of the pulse in samples."""
         return len(self._values)
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
-        """Returns the I/Q values of the pulse."""
+        """Return the I/Q values of the pulse."""
         return (
             self._values
             * self._scale
@@ -68,7 +68,7 @@ class Pulse(Waveform):
         )
 
     def copy(self, reset_cached_duration: bool = False) -> Pulse:
-        """Returns a copy of the pulse."""
+        """Return a copy of the pulse."""
         pulse = deepcopy(self)
         if reset_cached_duration:
             pulse.reset_cached_duration()
@@ -80,7 +80,7 @@ class Pulse(Waveform):
         pad_side: Literal["right", "left"] = "right",
     ) -> Pulse:
         """
-        Returns a copy of the pulse with zero padding.
+        Return a copy of the pulse with zero padding.
 
         Parameters
         ----------
@@ -101,7 +101,7 @@ class Pulse(Waveform):
         return new_pulse
 
     def scaled(self, scale: float) -> Pulse:
-        """Returns a copy of the pulse scaled by the given factor."""
+        """Return a copy of the pulse scaled by the given factor."""
         if scale == 1:
             return self
         new_pulse = self.copy()
@@ -109,7 +109,7 @@ class Pulse(Waveform):
         return new_pulse
 
     def detuned(self, detuning: float) -> Pulse:
-        """Returns a copy of the pulse detuned by the given frequency."""
+        """Return a copy of the pulse detuned by the given frequency."""
         if detuning == 0:
             return self
         new_pulse = self.copy()
@@ -117,7 +117,7 @@ class Pulse(Waveform):
         return new_pulse
 
     def shifted(self, phase: float) -> Pulse:
-        """Returns a copy of the pulse shifted by the given phase."""
+        """Return a copy of the pulse shifted by the given phase."""
         if phase == 0:
             return self
         new_pulse = self.copy()
@@ -125,7 +125,7 @@ class Pulse(Waveform):
         return new_pulse
 
     def repeated(self, n: int) -> Pulse:
-        """Returns a copy of the pulse repeated n times."""
+        """Return a copy of the pulse repeated n times."""
         if n == 1:
             return self
         new_pulse = self.copy(reset_cached_duration=True)
@@ -139,7 +139,7 @@ class Pulse(Waveform):
         return self.inverted()
 
     def inverted(self) -> Pulse:
-        """Returns a copy of the pulse with the time inverted."""
+        """Return a copy of the pulse with the time inverted."""
         new_pulse = self.copy()
         new_pulse._values = np.flip(-1 * self._values)
         return new_pulse

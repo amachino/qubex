@@ -270,9 +270,10 @@ class ConfigLoader:
 
     def _unit_scale_to_internal(self, unit: str) -> float:
         """
-        Return a scale factor to convert values from the given unit to the internal base
-        units (GHz for frequency-like, ns for time-like). If unit is already base or
-        unrecognized/dimensionless, returns 1.0.
+        Return a scale factor to convert values to internal base units.
+
+        Internal base units are GHz for frequency-like values and ns for time-like values.
+        If unit is already base or unrecognized/dimensionless, returns 1.0.
 
         Supported units (case-insensitive):
         - Frequency: Hz, kHz, MHz, GHz → internal GHz

@@ -1,5 +1,5 @@
 """
-Copyright (c) 2024 NF Corporation
+Copyright (c) 2024 NF Corporation.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of
 this software and associated documentation files (the "Software"), to deal in
@@ -29,7 +29,7 @@ import serial
 
 class ONS61797:
     """
-    A class to interface with ONS61797 instruments via serial or socket communication.
+    Interface with ONS61797 instruments via serial or socket communication.
 
     Parameters
     ----------
@@ -58,7 +58,7 @@ class ONS61797:
 
     def __init__(self, port: str | None = None, ip_address: str | None = None):
         """
-        Initializes the connection to the instrument.
+        Initialize the connection to the instrument.
 
         Parameters
         ----------
@@ -77,13 +77,13 @@ class ONS61797:
         self.connect(port=self.port, ip_address=self.ip_address)
 
     def __del__(self) -> None:
-        """Closes the connection to the instrument when the object is deleted."""
+        """Close the connection to the instrument when the object is deleted."""
         if self.instrument:
             self.close()
 
     def connect(self, port: str | None = None, ip_address: str | None = None) -> None:
         """
-        Establishes a connection to the instrument via serial or socket.
+        Establish a connection to the instrument via serial or socket.
 
         Parameters
         ----------
@@ -119,14 +119,14 @@ class ONS61797:
             self.instrument.connect((self.ip_address, 10001))
 
     def close(self) -> None:
-        """Closes the connection to the instrument."""
+        """Close the connection to the instrument."""
         if self.instrument:
             self.instrument.close()
             self.instrument = None
 
     def write(self, cmd: str) -> None:
         """
-        Sends a command to the instrument.
+        Send a command to the instrument.
 
         Parameters
         ----------
@@ -146,7 +146,7 @@ class ONS61797:
 
     def read(self) -> str:
         """
-        Reads a response from the instrument.
+        Read a response from the instrument.
 
         Returns
         -------
@@ -177,7 +177,7 @@ class ONS61797:
 
     def query(self, cmd: str) -> str:
         """
-        Sends a command and reads the response from the instrument.
+        Send a command and read the response from the instrument.
 
         Parameters
         ----------
@@ -195,7 +195,7 @@ class ONS61797:
 
     def on(self, channel: int) -> None:
         """
-        Turns on the specified output channel.
+        Turn on the specified output channel.
 
         Parameters
         ----------
@@ -207,7 +207,7 @@ class ONS61797:
 
     def off(self, channel: int) -> None:
         """
-        Turns off the specified output channel.
+        Turn off the specified output channel.
 
         Parameters
         ----------
@@ -219,7 +219,7 @@ class ONS61797:
 
     def get_output_state(self, channel: int) -> int:
         """
-        Gets the current state of the specified output channel.
+        Get the current state of the specified output channel.
 
         Parameters
         ----------
@@ -236,7 +236,7 @@ class ONS61797:
 
     def set_voltage(self, channel: int, voltage: float) -> None:
         """
-        Sets the output voltage for the specified channel.
+        Set the output voltage for the specified channel.
 
         Parameters
         ----------
@@ -250,7 +250,7 @@ class ONS61797:
 
     def get_voltage(self, channel: int) -> float:
         """
-        Gets the current output voltage for the specified channel.
+        Get the current output voltage for the specified channel.
 
         Parameters
         ----------
@@ -267,7 +267,7 @@ class ONS61797:
 
     def get_device_information(self) -> str:
         """
-        Retrieves the device information.
+        Retrieve the device information.
 
         Returns
         -------
@@ -278,13 +278,13 @@ class ONS61797:
         return self.query(cmd=cmd)
 
     def reset(self) -> None:
-        """Resets the instrument to its default settings."""
+        """Reset the instrument to its default settings."""
         cmd = "*RST"
         self.write(cmd=cmd)
 
     def set_ip_address(self, ip_address: str) -> None:
         """
-        Sets the instrument's IP address.
+        Set the instrument's IP address.
 
         Parameters
         ----------
@@ -296,7 +296,7 @@ class ONS61797:
 
     def get_ip_address(self) -> str:
         """
-        Gets the current IP address of the instrument.
+        Get the current IP address of the instrument.
 
         Returns
         -------
@@ -308,7 +308,7 @@ class ONS61797:
 
     def set_subnet_mask(self, subnet_mask: str) -> None:
         """
-        Sets the subnet mask for the instrument.
+        Set the subnet mask for the instrument.
 
         Parameters
         ----------
@@ -320,7 +320,7 @@ class ONS61797:
 
     def get_subnet_mask(self) -> str:
         """
-        Gets the current subnet mask of the instrument.
+        Get the current subnet mask of the instrument.
 
         Returns
         -------
@@ -332,7 +332,7 @@ class ONS61797:
 
     def set_default_gateway(self, default_gateway: str) -> None:
         """
-        Sets the default gateway for the instrument.
+        Set the default gateway for the instrument.
 
         Parameters
         ----------
@@ -344,7 +344,7 @@ class ONS61797:
 
     def get_default_gateway(self) -> str:
         """
-        Gets the current default gateway of the instrument.
+        Get the current default gateway of the instrument.
 
         Returns
         -------

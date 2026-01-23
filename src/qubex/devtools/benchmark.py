@@ -26,7 +26,6 @@ def benchmark(
 
     Parameters
     ----------
-
     func : Callable[[Any], Any]
         Function to benchmark.
     params : Sequence | NDArray

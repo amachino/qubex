@@ -57,6 +57,8 @@ class MuxNode(TypedDict):
 
 class LatticeGraph:
     """
+    Show example lattice layouts.
+
     ex1) n_qubits = 16
     |00|01|04|05|
     |02|03|06|07|

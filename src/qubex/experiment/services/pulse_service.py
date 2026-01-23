@@ -218,9 +218,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        """
-        Get the π/2 pulse for the given target.
-        """
+        """Get the π/2 pulse for the given target."""
         param = self.ctx.calib_note.get_hpi_param(
             target,
             valid_days=valid_days or self.ctx.calibration_valid_days,
@@ -244,9 +242,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        """
-        Get the π pulse for the given target.
-        """
+        """Get the π pulse for the given target."""
         param = self.ctx.calib_note.get_pi_param(
             target,
             valid_days=valid_days or self.ctx.calibration_valid_days,
@@ -269,9 +265,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        """
-        Get the DRAG π/2 pulse for the given target.
-        """
+        """Get the DRAG π/2 pulse for the given target."""
         param = self.ctx.calib_note.get_drag_hpi_param(
             target,
             valid_days=valid_days or self.ctx.calibration_valid_days,
@@ -294,9 +288,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
-        """
-        Get the DRAG π pulse for the given target.
-        """
+        """Get the DRAG π pulse for the given target."""
         param = self.ctx.calib_note.get_drag_pi_param(
             target,
             valid_days=valid_days or self.ctx.calibration_valid_days,

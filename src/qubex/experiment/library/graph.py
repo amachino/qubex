@@ -204,7 +204,7 @@ def find_longest_1d_chain(
     eps: float = 1e-12,
 ) -> tuple[list, list, float]:
     """
-    Find the longest simple path in a 1D chain graph, maximizing fidelity
+    Find the longest simple path in a 1D chain graph, maximizing fidelity.
 
     The search considers connectivity as undirected even when ``G`` is directed,
     and uses an aggregated per-step weight across directions and parallel edges
@@ -245,7 +245,6 @@ def find_longest_1d_chain(
     - For fidelity, the computation uses log-sum cost to avoid
       underflow.
     """
-
     # Basic validation and setup
     assert weight_attr in {
         "fidelity",
@@ -265,6 +264,7 @@ def find_longest_1d_chain(
     def aggregate_value(u, v) -> float | None:
         """
         Aggregate weight across directions/parallel edges for the pair (u, v).
+
         - fidelity: maximum value (missing attributes treated as 0.0 if edge exists)
         - duration: minimum value (edges without the attribute are ignored)
         Returns None if no edge exists in either direction or no usable value found (duration).

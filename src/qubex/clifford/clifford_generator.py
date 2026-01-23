@@ -55,7 +55,7 @@ class CliffordGenerator:
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
     ) -> dict[Clifford, CliffordSequence]:
         """
-        Returns a dictionary of Clifford operators.
+        Return a dictionary of Clifford operators.
 
         Parameters
         ----------
@@ -79,7 +79,7 @@ class CliffordGenerator:
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
     ) -> list[CliffordSequence]:
         """
-        Returns a list of Clifford operators.
+        Return a list of Clifford operators.
 
         Parameters
         ----------
@@ -103,7 +103,7 @@ class CliffordGenerator:
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
     ) -> list[dict]:
         """
-        Returns a list of Clifford operators.
+        Return a list of Clifford operators.
 
         Parameters
         ----------
@@ -131,7 +131,7 @@ class CliffordGenerator:
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
     ) -> dict:
         """
-        Returns a Clifford operator by index.
+        Return a Clifford operator by index.
 
         Parameters
         ----------
@@ -154,7 +154,7 @@ class CliffordGenerator:
         seed: int | None = None,
     ) -> list[CliffordSequence]:
         """
-        Returns a list of n random Clifford operators.
+        Return a list of n random Clifford operators.
 
         Parameters
         ----------
@@ -180,7 +180,7 @@ class CliffordGenerator:
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
     ) -> CliffordSequence:
         """
-        Returns the inverse of a given Clifford operator.
+        Return the inverse of a given Clifford operator.
 
         Parameters
         ----------

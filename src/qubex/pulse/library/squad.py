@@ -181,9 +181,7 @@ class Squad(Pulse):
         beta_mode: float = 1.0 / 3.0,
         beta_sum: float = 5.0,
     ) -> NDArray:
-        """
-        Flat-top constant-adiabaticity pulse envelope (I component only).
-        """
+        """Compute the flat-top constant-adiabaticity pulse envelope (I component only)."""
         t = np.asarray(t, dtype=float)
         values = np.zeros_like(t, dtype=np.complex128)
 
@@ -250,6 +248,8 @@ class Squad(Pulse):
         beta_sum: float = 5.0,
     ) -> NDArray:
         """
+        Compute the full complex SQUAD pulse.
+
         Full complex SQUAD pulse:
             I(t) + i Q(t),
 

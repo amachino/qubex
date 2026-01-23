@@ -90,7 +90,7 @@ class PulseArray(Waveform):
 
     @property
     def flattened_elements(self) -> list[Pulse | PhaseShift]:
-        """Returns the flattened list of pulses and phase shifts in the pulse array."""
+        """Return the flattened list of pulses and phase shifts in the pulse array."""
         elements = []
         for obj in self.elements:
             obj = copy.copy(obj)
@@ -112,7 +112,7 @@ class PulseArray(Waveform):
         self,
         apply_frame_shifts: bool = True,
     ) -> list[Waveform]:
-        """Returns the list of pulses in the pulse array."""
+        """Return the list of pulses in the pulse array."""
         waveforms: list[Waveform] = []
         current_phase = 0.0
         if apply_frame_shifts:
@@ -133,7 +133,7 @@ class PulseArray(Waveform):
         self,
         apply_frame_shifts: bool = True,
     ) -> npt.NDArray[np.complex128]:
-        """Returns the concatenated values of the pulse array."""
+        """Return the concatenated values of the pulse array."""
         if len(self.elements) == 0:
             return np.array([])
 
@@ -148,17 +148,17 @@ class PulseArray(Waveform):
 
     @property
     def length(self) -> int:
-        """Returns the total length of the pulse array in samples."""
+        """Return the total length of the pulse array in samples."""
         return sum([waveform.length for waveform in self.waveforms])
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
-        """Returns the concatenated values of the pulse array."""
+        """Return the concatenated values of the pulse array."""
         return self.get_values()
 
     @property
     def frame_shifts(self) -> npt.NDArray[np.float64]:
-        """Returns the frame shifts of the pulse array."""
+        """Return the frame shifts of the pulse array."""
         phases = []
         current_phase = 0.0
         for obj in self.flattened_elements:
@@ -172,7 +172,7 @@ class PulseArray(Waveform):
 
     @property
     def final_frame_shift(self) -> float:
-        """Returns the final frame shift of the pulse array."""
+        """Return the final frame shift of the pulse array."""
         # NOTE: This is not the same as frame_shifts[-1]
         current_phase = 0.0
         for obj in self.flattened_elements:
@@ -181,7 +181,7 @@ class PulseArray(Waveform):
         return current_phase
 
     def add(self, obj: Waveform | PhaseShift) -> None:
-        """Adds the given waveform or phase shift to the pulse sequence."""
+        """Add the given waveform or phase shift to the pulse sequence."""
         self._elements.append(obj)
 
     def pad(
@@ -190,7 +190,7 @@ class PulseArray(Waveform):
         pad_side: Literal["right", "left"] = "right",
     ) -> None:
         """
-        Adds zero padding to the pulse array.
+        Add zero padding to the pulse array.
 
         Parameters
         ----------
@@ -213,7 +213,7 @@ class PulseArray(Waveform):
             raise ValueError("pad_side must be either 'right' or 'left'.")
 
     def copy(self) -> PulseArray:
-        """Returns a copy of the pulse array."""
+        """Return a copy of the pulse array."""
         return copy.deepcopy(self)
 
     def padded(
@@ -223,7 +223,7 @@ class PulseArray(Waveform):
         deepcopy: bool = True,
     ) -> PulseArray:
         """
-        Returns a copy of the pulse array with zero padding.
+        Return a copy of the pulse array with zero padding.
 
         Parameters
         ----------
@@ -252,7 +252,7 @@ class PulseArray(Waveform):
         return new_array
 
     def scaled(self, scale: float) -> PulseArray:
-        """Returns a copy of the pulse array scaled by the given factor."""
+        """Return a copy of the pulse array scaled by the given factor."""
         if scale == 1:
             return self
         new_array = copy.deepcopy(self)
@@ -260,7 +260,7 @@ class PulseArray(Waveform):
         return new_array
 
     def detuned(self, detuning: float) -> PulseArray:
-        """Returns a copy of the pulse array detuned by the given frequency."""
+        """Return a copy of the pulse array detuned by the given frequency."""
         if detuning == 0:
             return self
         new_array = copy.deepcopy(self)
@@ -268,7 +268,7 @@ class PulseArray(Waveform):
         return new_array
 
     def shifted(self, phase: float) -> PulseArray:
-        """Returns a copy of the pulse array shifted by the given phase."""
+        """Return a copy of the pulse array shifted by the given phase."""
         if phase == 0:
             return self
         new_array = copy.deepcopy(self)
@@ -276,7 +276,7 @@ class PulseArray(Waveform):
         return new_array
 
     def repeated(self, n: int) -> PulseArray:
-        """Returns a copy of the pulse array repeated n times."""
+        """Return a copy of the pulse array repeated n times."""
         if n == 1:
             return self
         new_array = copy.deepcopy(self)
@@ -284,7 +284,7 @@ class PulseArray(Waveform):
         return new_array
 
     def added(self, obj: Waveform | PhaseShift) -> PulseArray:
-        """Returns a copy of the pulse array with the given waveform or phase shift added."""
+        """Return a copy of the pulse array with the given waveform or phase shift added."""
         new_array = copy.deepcopy(self)
         new_array._elements.append(obj)
         return new_array
@@ -294,7 +294,7 @@ class PulseArray(Waveform):
         return self.inverted()
 
     def inverted(self) -> PulseArray:
-        """Returns a copy of the pulse array with the time inverted."""
+        """Return a copy of the pulse array with the time inverted."""
         new_array = PulseArray()
         for obj in reversed(self.flattened_elements):
             if isinstance(obj, Pulse):
@@ -306,7 +306,7 @@ class PulseArray(Waveform):
         return new_array
 
     def flattened(self) -> PulseArray:
-        """Returns a copy of the pulse array with the nested pulse arrays flattened."""
+        """Return a copy of the pulse array with the nested pulse arrays flattened."""
         new_array = PulseArray()
         for obj in self.flattened_elements:
             if isinstance(obj, (Pulse, PhaseShift)):
@@ -327,7 +327,7 @@ class PulseArray(Waveform):
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ):
         """
-        Plots the waveform of the pulse array.
+        Plot the waveform of the pulse array.
 
         Parameters
         ----------

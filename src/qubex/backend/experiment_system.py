@@ -728,7 +728,7 @@ class ExperimentSystem:
         cnco_center: int = CNCO_CETNER_READ,
     ) -> dict:
         """
-        Finds the (lo, cnco, fnco) values for the readout mux.
+        Find the (lo, cnco, fnco) values for the readout mux.
 
         Parameters
         ----------
@@ -779,7 +779,7 @@ class ExperimentSystem:
         min_frequency: float = 6.5e9,
     ) -> dict:
         """
-        Finds the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
+        Find the (lo, cnco, (fnco_ge, fnco_ef, fnco_cr)) values for the control qubit.
 
         Parameters
         ----------

@@ -59,7 +59,7 @@ class ExperimentUtil:
         subrange_width: float | None = None,
     ) -> list[NDArray[np.float64]]:
         """
-        Splits the frequency range into sub-ranges.
+        Split the frequency range into sub-ranges.
 
         Parameters
         ----------
@@ -85,7 +85,7 @@ class ExperimentUtil:
         qubits: Collection[str],
     ) -> list[list[str]]:
         """
-        Creates subgroups of qubits.
+        Create subgroups of qubits.
 
         Parameters
         ----------
