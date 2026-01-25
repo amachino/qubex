@@ -8,6 +8,7 @@ class Variable:
         self,
         expr: str,
         symbols: dict[str, Symbol] | None = None,
+        modules: str | list[str] | None = "numpy",
     ) -> None:
         try:
             self._expr = parse_expr(expr, local_dict=symbols)
@@ -21,7 +22,7 @@ class Variable:
             )
         )
         self._symbol_names = [s.name for s in self._symbols]
-        self._func = lambdify(self._symbols, self._expr, modules="numpy")
+        self._func = lambdify(self._symbols, self._expr, modules=modules)
 
     def __repr__(self) -> str:
         return f"Variable(expr='{self._expr}')"
