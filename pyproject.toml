@@ -33,12 +33,15 @@ dependencies = [
     "rich ~= 13.0",
     "scikit-learn ~= 1.0",
     "scipy ~= 1.0",
+    "sympy ~= 1.0",
     "typedunits ~= 0.0",
     "tqdm ~= 4.0",
 ]
 
 [project.optional-dependencies]
-backend = ["qubecalib"]
+backend = [
+    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.16beta1",
+]
 
 [dependency-groups]
 dev = [
@@ -49,9 +52,6 @@ dev = [
     "pytest-xdist",
     "ruff",
 ]
-
-[tool.uv.sources]
-qubecalib = { git = "https://github.com/qiqb-osaka/qube-calib.git", rev = "3.1.16beta1" }
 
 [tool.setuptools.dynamic]
 version = { attr = "qubex.version.VERSION" }
