@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Any, cast
 
 from sympy import Symbol, lambdify, parse_expr
@@ -65,13 +66,13 @@ class Expression:
         """Symbols appearing in the expression, sorted by name."""
         return self._symbols
 
-    def resolve(self, params: dict[str, Any]) -> Any:
+    def resolve(self, params: Mapping[str, Any]) -> Any:
         """
         Evaluate the expression with provided parameter values.
 
         Parameters
         ----------
-        params
+        params : Mapping[str, Any]
             Mapping from symbol names to values.
 
         Returns

@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import tunits
 
+from qubex.core.expression import Expression
 from qubex.pulse import (
     Blank,
     Drag,
@@ -327,12 +328,18 @@ class SweepMeasurementBuilder:
         """
         # NOTE: When the argument is a string, it could be a literal parameter
         if isinstance(arg, str):
+            # Try to resolve as a variable name
             if arg in sequence_variables:
                 return sequence_variables[arg]
             try:
                 return float(arg)
-            except ValueError as exc:
-                raise ValueError(f"Unknown variable: {arg}") from exc
+            except ValueError:
+                pass
+            # Try to resolve as a symbolic expression
+            try:
+                return float(Expression(arg).resolve(sequence_variables))
+            except Exception as exc:
+                raise ValueError(f"Failed to resolve argument: {arg}") from exc
         return float(arg)
 
     @staticmethod
