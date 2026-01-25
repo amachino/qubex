@@ -914,9 +914,62 @@ class ExperimentSystem:
                     },
                 },
             }
+        elif n_channels == 2:
+            f_ge = qubit.frequency * 1e9
+            f_ef = qubit.control_frequency_ef * 1e9
+            spectators = self.get_spectator_qubits(qubit.label)
+            f_CRs = [
+                spectator.frequency * 1e9
+                for spectator in spectators
+                if spectator.frequency > 0
+                and spectator.label not in self._targets_to_exclude
+                and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
+            ]
+            if not f_CRs:
+                f_CRs = [f_ge]
 
-        elif n_channels != 3:
-            raise ValueError("Invalid number of channels.")
+            f_CR_max = max(f_CRs)
+            if f_CR_max > f_ge:
+                # if any CR is larger than GE, then let EF be the smallest
+                if f_ef < min_frequency:
+                    f_ef = f_ge
+                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
+                    f=f_ef + FNCO_MAX,
+                    ssb=ssb,
+                    cnco_center=cnco_center,
+                )
+                f_CRs_valid = [f for f in f_CRs if f < f_coarse + FNCO_MAX + AWG_MAX]
+            else:
+                # if all CRs are smaller than GE, then let GE be the largest
+                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
+                    f=f_ge - FNCO_MAX,
+                    ssb=ssb,
+                    cnco_center=cnco_center,
+                )
+                f_CRs_valid = [f for f in f_CRs if f > f_coarse - FNCO_MAX - AWG_MAX]
+            f_CR = self._find_center_freq_for_cr(
+                f_coarse=f_coarse,
+                f_CRs=f_CRs_valid,
+            )
+            fnco_ge, _ = MixingUtil.calc_fnco(f=f_ge, ssb=ssb, lo=lo, cnco=cnco)
+            fnco_CR, _ = MixingUtil.calc_fnco(f=f_CR, ssb=ssb, lo=lo, cnco=cnco)
+            return {
+                "lo": lo,
+                "cnco": cnco,
+                "channels": {
+                    0: {
+                        "fnco": fnco_ge,
+                        "targets": [qubit.label],
+                    },
+                    1: {
+                        "fnco": fnco_CR,
+                        "targets": [
+                            f"{qubit.label}-{spectator.label}"
+                            for spectator in self.get_spectator_qubits(qubit.label)
+                        ],
+                    },
+                },
+            }
 
         if mode == "ge-ef-cr":
             f_ge = qubit.frequency * 1e9
