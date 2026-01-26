@@ -1,4 +1,13 @@
+"""
+Device-independent multi-channel pulse sequence definition.
+
+This module provides `PulseSchedule`, a class that defines pulse sequences for multiple channels
+in a device-independent manner. It is used as a common data structure by both `qubex.measurement`
+and `qubex.simulator`.
+"""
+
 # ruff: noqa: SLF001
+
 from __future__ import annotations
 
 import logging
