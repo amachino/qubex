@@ -17,7 +17,7 @@ from typing_extensions import deprecated
 
 from qubex.analysis import fitting
 from qubex.analysis import visualization as viz
-from qubex.backend import BoxType, MixingUtil, Target
+from qubex.backend import SAMPLING_PERIOD, BoxType, MixingUtil, Target
 from qubex.backend.experiment_system import (
     CNCO_CENTER_CTRL,
     CNCO_CETNER_READ,
@@ -42,11 +42,7 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
-from qubex.measurement.measurement import (
-    DEFAULT_INTERVAL,
-    DEFAULT_SHOTS,
-    SAMPLING_PERIOD,
-)
+from qubex.measurement.defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.pulse import (
     CPMG,
     Blank,

@@ -24,7 +24,7 @@ from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
 )
-from qubex.backend import Target
+from qubex.backend import SAMPLING_PERIOD, Target
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
@@ -53,11 +53,7 @@ from qubex.measurement import (
     StateClassifierGMM,
     StateClassifierKMeans,
 )
-from qubex.measurement.measurement import (
-    DEFAULT_INTERVAL,
-    DEFAULT_SHOTS,
-    SAMPLING_PERIOD,
-)
+from qubex.measurement.defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.pulse import (
     CPMG,
     Blank,
