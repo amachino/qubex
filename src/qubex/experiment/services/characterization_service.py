@@ -4399,8 +4399,8 @@ class CharacterizationService:
             "ramsey_experiment": {},
         }
 
-        for target in targets:
-            try:
+        try:
+            for target in targets:
                 result = self.t1_experiment(
                     target,
                     shots=shots,
@@ -4427,43 +4427,49 @@ class CharacterizationService:
                     save_image=save_image,
                 )
                 data["ramsey_experiment"][target] = result.data[target]
-
-            except Exception as e:
-                print(f"Characterization failed for {target}: {e}")
-                continue
+        except Exception as e:
+            print(f"Characterization failed for {target}: {e}")
 
         if plot:
             print()
             print("T1 (µs):")
             for target in targets:
-                try:
-                    t1 = data["t1_experiment"][target].t1
+                t1_data = data["t1_experiment"].get(target)
+                t1 = getattr(t1_data, "t1", None) if t1_data is not None else None
+                if t1 is not None:
                     print(f"  {target}: {t1 * 1e-3:.6f}")
-                except Exception:
+                else:
                     print(f"  {target}: null")
             print()
             print("T2 echo (µs):")
             for target in targets:
-                try:
-                    t2_echo = data["t2_experiment"][target].t2
+                t2_data = data["t2_experiment"].get(target)
+                t2_echo = getattr(t2_data, "t2", None) if t2_data is not None else None
+                if t2_echo is not None:
                     print(f"  {target}: {t2_echo * 1e-3:.6f}")
-                except Exception:
+                else:
                     print(f"  {target}: null")
             print()
             print("T2* (µs):")
             for target in targets:
-                try:
-                    t2_star = data["ramsey_experiment"][target].t2
+                t2_data = data["ramsey_experiment"].get(target)
+                t2_star = getattr(t2_data, "t2", None) if t2_data is not None else None
+                if t2_star is not None:
                     print(f"  {target}: {t2_star * 1e-3:.6f}")
-                except Exception:
+                else:
                     print(f"  {target}: null")
             print()
             print("Qubit frequency (GHz):")
             for target in targets:
-                try:
-                    bare_freq = data["ramsey_experiment"][target].bare_freq
+                ramsey_data = data["ramsey_experiment"].get(target)
+                bare_freq = (
+                    getattr(ramsey_data, "bare_freq", None)
+                    if ramsey_data is not None
+                    else None
+                )
+                if bare_freq is not None:
                     print(f"  {target}: {bare_freq:.6f}")
-                except Exception:
+                else:
                     print(f"  {target}: null")
 
         return Result(data=data)
@@ -4496,8 +4502,8 @@ class CharacterizationService:
             "obtain_coupling_strength": {},
         }
 
-        for target in targets:
-            try:
+        try:
+            for target in targets:
                 pair = target.split("-")
                 result = self.obtain_coupling_strength(
                     *pair,
@@ -4506,27 +4512,27 @@ class CharacterizationService:
                     plot=plot,
                 )
                 data["obtain_coupling_strength"][target] = result.data
-
-            except Exception as e:
-                print(f"Characterization failed for {target}: {e}")
-                continue
+        except Exception as e:
+            print(f"Characterization failed for {target}: {e}")
 
         if plot:
             print()
             print("Qubit-qubit coupling strength g (MHz):")
             for target in targets:
-                try:
-                    g = data["obtain_coupling_strength"][target]["g"]
+                coupling = data["obtain_coupling_strength"].get(target)
+                g = coupling.get("g") if coupling is not None else None
+                if g is not None:
                     print(f"  {target}: {g * 1e3:.6f}")
-                except Exception:
+                else:
                     print(f"  {target}: null")
             print()
             print("ZZ coefficient ξ (kHz):")
             for target in targets:
-                try:
-                    xi = data["obtain_coupling_strength"][target]["xi"]
+                coupling = data["obtain_coupling_strength"].get(target)
+                xi = coupling.get("xi") if coupling is not None else None
+                if xi is not None:
                     print(f"  {target}: {xi * 1e6:.6f}")
-                except Exception:
+                else:
                     print(f"  {target}: null")
 
         return Result(data=data)

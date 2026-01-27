@@ -249,8 +249,9 @@ class ExperimentContext:
                 ]
                 qubit_labels.extend(labels)
         if qubits is not None:
-            for qubit in qubits:
-                qubit_labels.append(quantum_system.get_qubit(qubit).label)
+            qubit_labels.extend(
+                quantum_system.get_qubit(qubit).label for qubit in qubits
+            )
         if exclude_qubits is not None:
             for qubit in exclude_qubits:
                 label = quantum_system.get_qubit(qubit).label

@@ -3455,9 +3455,9 @@ class CalibrationService:
         fig_c.show()
         fig_t.show()
         fig_t_3d.show()
-        for _, fig_s_ in figs_s.items():
+        for fig_s_ in figs_s.values():
             fig_s_.show()
-        for _, fig_s_3d in figs_s_3d.items():
+        for fig_s_3d in figs_s_3d.values():
             fig_s_3d.show()
 
         print("Qubit frequencies:")

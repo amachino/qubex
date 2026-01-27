@@ -69,6 +69,7 @@ typeCheckingMode = "basic"
 
 [tool.ruff.lint]
 select = [
+    "PERF", # Perflint
     "E",    # pycodestyle
     "F",    # Pyflakes
     "UP",   # pyupgrade

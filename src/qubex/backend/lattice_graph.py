@@ -291,9 +291,8 @@ class LatticeGraph:
         """
         pairs = []
         for i, neighbors in self.next_nearest_neighbors.items():
-            for j in neighbors:
-                # if (j, i) not in pairs:
-                pairs.append((i, j))
+            # if (j, i) not in pairs:
+            pairs.extend((i, j) for j in neighbors)
         return sorted(pairs)
 
     @cached_property

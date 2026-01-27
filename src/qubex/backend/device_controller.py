@@ -445,12 +445,14 @@ class DeviceController:
             Dictionary of linked up boxes.
         """
         boxes = {}
-        for box_name in box_list:
-            try:
-                boxes[box_name] = self.linkup(box_name, noise_threshold=noise_threshold)
+        try:
+            for box_name in box_list:
+                boxes[box_name] = self.linkup(
+                    box_name, noise_threshold=noise_threshold
+                )
                 logger.info(f"{box_name:5} : Linked up")
-            except Exception as e:
-                logger.error(f"{box_name:5} : Error {e}")
+        except Exception as e:
+            logger.error(f"{box_name:5} : Error {e}")
         return boxes
 
     def relinkup(self, box_name: str, noise_threshold: int | None = None):

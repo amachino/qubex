@@ -124,9 +124,9 @@ class PulseArray(Waveform):
                 else:
                     logger.warning(f"Unknown element type: {type(obj)}")
         else:
-            for obj in self.flattened_elements:
-                if isinstance(obj, Waveform):
-                    waveforms.append(obj)
+            waveforms.extend(
+                obj for obj in self.flattened_elements if isinstance(obj, Waveform)
+            )
         return waveforms
 
     def get_values(

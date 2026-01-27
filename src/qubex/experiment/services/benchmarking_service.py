@@ -1939,8 +1939,8 @@ class BenchmarkingService:
                 save_image=save_image,
             )
         else:
-            for target in targets:
-                try:
+            try:
+                for target in targets:
                     self.interleaved_randomized_benchmarking(
                         target,
                         interleaved_clifford="X90",
@@ -1961,9 +1961,8 @@ class BenchmarkingService:
                         plot=plot,
                         save_image=save_image,
                     )
-                except Exception as e:
-                    print(f"Failed to benchmark {target}: {e}")
-                    continue
+            except Exception as e:
+                print(f"Failed to benchmark {target}: {e}")
 
     def benchmark_2q(
         self,
@@ -2002,8 +2001,8 @@ class BenchmarkingService:
                 save_image=save_image,
             )
         else:
-            for target in targets:
-                try:
+            try:
+                for target in targets:
                     self.interleaved_randomized_benchmarking(
                         target,
                         interleaved_clifford="ZX90",
@@ -2014,6 +2013,5 @@ class BenchmarkingService:
                         plot=plot,
                         save_image=save_image,
                     )
-                except Exception as e:
-                    print(f"Failed to benchmark {target}: {e}")
-                    continue
+            except Exception as e:
+                print(f"Failed to benchmark {target}: {e}")

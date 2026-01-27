@@ -4692,9 +4692,9 @@ class MeasurementService:
             edge_spectators: list[str] = []
             for node in edge:
                 node_spectators = graph.neighbors(node)
-                for spectator in node_spectators:
-                    if spectator not in edge:
-                        edge_spectators.append(spectator)
+                edge_spectators.extend(
+                    spectator for spectator in node_spectators if spectator not in edge
+                )
             edge_and_spectators[edge] = edge_spectators
             if plot:
                 print(f"Edge: {edge}, Spectators: {edge_spectators}")
