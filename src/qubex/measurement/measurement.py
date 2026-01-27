@@ -22,7 +22,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
-from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
+from qubex.pulse import Blank, FlatTop, Pulse, PulseArray, PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers import StateClassifier
@@ -566,36 +566,36 @@ class Measurement:
         ...     "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ... })
         """
-        if shots is None:
-            shots = DEFAULT_SHOTS
-
-        measure_mode = MeasureMode(mode)
-        sequencer = self._create_sequencer(
-            waveforms=waveforms,
+        result = self.execute(
+            schedule=waveforms,
+            mode=mode,
+            shots=shots,
             interval=interval,
-            add_pump_pulses=add_pump_pulses,
+            readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
             readout_post_margin=readout_post_margin,
-            readout_amplitudes=readout_amplitudes,
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-        )
-        return self.executor.execute_measurement(
-            sequencer=sequencer,
-            measure_mode=measure_mode,
-            shots=shots,
+            add_last_measurement=True,
+            add_pump_pulses=add_pump_pulses,
             enable_dsp_demodulation=enable_dsp_demodulation,
             enable_dsp_sum=enable_dsp_sum,
             enable_dsp_classification=enable_dsp_classification,
             line_param0=line_param0,
             line_param1=line_param1,
         )
+        data = {target: measures[0] for target, measures in result.data.items()}
+        return MeasureResult(
+            mode=result.mode,
+            data=data,
+            config=result.config,
+        )
 
     def execute(
         self,
-        schedule: PulseSchedule,
+        schedule: PulseSchedule | TargetMap[IQArray],
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
@@ -621,8 +621,8 @@ class Measurement:
 
         Parameters
         ----------
-        schedule : PulseSchedule
-            The pulse schedule.
+        schedule : PulseSchedule | TargetMap[IQArray]
+            The pulse schedule or control waveforms.
         mode : Literal["single", "avg"], optional
             The measurement mode, by default "single".
             - "single": Measure once.
@@ -661,6 +661,13 @@ class Measurement:
         MultipleMeasureResult
             The measurement results.
         """
+        if not isinstance(schedule, PulseSchedule):
+            labels = list(schedule.keys())
+            with PulseSchedule(labels) as ps:
+                for target, waveform in schedule.items():
+                    ps.add(target, Pulse(waveform))
+            schedule = ps
+
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
 
