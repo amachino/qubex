@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Literal
@@ -24,8 +24,10 @@ from plotly.subplots import make_subplots
 from typing_extensions import deprecated
 
 from qubex.style import COLORS
+from qubex.typing import IQArray
 
 from .blank import Blank
+from .pulse import Pulse
 from .pulse_array import PhaseShift, PulseArray
 from .waveform import Waveform
 
@@ -111,6 +113,32 @@ class PulseSchedule:
         Note that duration of sequences might be different if context manager is not used.
         """
         self.barrier()
+
+    @classmethod
+    def from_waveforms(
+        cls,
+        waveforms: Mapping[str, IQArray],
+    ) -> PulseSchedule:
+        """
+        Create a pulse schedule from waveforms.
+
+        Parameters
+        ----------
+        waveforms : Mapping[str, IQArray]
+            The waveforms for each channel.
+
+        Returns
+        -------
+        PulseSchedule
+            The created pulse schedule.
+        """
+        if not len(set(len(v) for v in waveforms.values())) == 1:
+            raise ValueError("Waveforms must have the same length.")
+
+        with cls() as sched:
+            for label, values in waveforms.items():
+                sched.add(label, Pulse(values))
+        return sched
 
     @property
     def labels(self) -> list[str]:

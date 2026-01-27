@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from contextlib import contextmanager
 from functools import cached_property, reduce
 from pathlib import Path
@@ -22,7 +22,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
-from qubex.pulse import Blank, FlatTop, Pulse, PulseArray, PulseSchedule, RampType
+from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers import StateClassifier
@@ -502,7 +502,7 @@ class Measurement:
 
     def measure(
         self,
-        waveforms: TargetMap[IQArray],
+        waveforms: Mapping[str, IQArray],
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
@@ -526,7 +526,7 @@ class Measurement:
 
         Parameters
         ----------
-        waveforms : TargetMap[IQArray]
+        waveforms : Mapping[str, IQArray]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays with the sampling period of 2 ns.
         mode : Literal["single", "avg"], optional
@@ -595,7 +595,7 @@ class Measurement:
 
     def execute(
         self,
-        schedule: PulseSchedule | TargetMap[IQArray],
+        schedule: PulseSchedule | Mapping[str, IQArray],
         *,
         mode: Literal["single", "avg"] = "avg",
         shots: int | None = None,
@@ -621,7 +621,7 @@ class Measurement:
 
         Parameters
         ----------
-        schedule : PulseSchedule | TargetMap[IQArray]
+        schedule : PulseSchedule | Mapping[str, IQArray]
             The pulse schedule or control waveforms.
         mode : Literal["single", "avg"], optional
             The measurement mode, by default "single".
@@ -662,11 +662,7 @@ class Measurement:
             The measurement results.
         """
         if not isinstance(schedule, PulseSchedule):
-            labels = list(schedule.keys())
-            with PulseSchedule(labels) as ps:
-                for target, waveform in schedule.items():
-                    ps.add(target, Pulse(waveform))
-            schedule = ps
+            schedule = PulseSchedule.from_waveforms(schedule)
 
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -675,6 +671,7 @@ class Measurement:
             shots = DEFAULT_SHOTS
 
         measure_mode = MeasureMode(mode)
+
         sequencer = self._create_sequencer_from_schedule(
             schedule=schedule,
             interval=interval,
@@ -689,6 +686,7 @@ class Measurement:
             add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
+
         return self.executor.execute_multiple_measurement(
             sequencer=sequencer,
             measure_mode=measure_mode,
@@ -1100,30 +1098,3 @@ class Measurement:
             sysdb=self.device_controller.qubecalib.sysdb,
             driver=self.device_controller.quel1system,
         )
-
-    @staticmethod
-    def _number_of_samples(
-        duration: float,
-        allow_negative: bool = False,
-    ) -> int:
-        """
-        Return the number of samples in the waveform.
-
-        Parameters
-        ----------
-        duration : float
-            Duration of the waveform in ns.
-        """
-        dt = SAMPLING_PERIOD
-        if duration < 0 and not allow_negative:
-            raise ValueError("Duration must be positive.")
-
-        # Tolerance for floating point comparison
-        tolerance = 1e-9
-        frac = duration / dt
-        N = round(frac)
-        if abs(frac - N) > tolerance:
-            raise ValueError(
-                f"Duration must be a multiple of the sampling period ({dt} ns)."
-            )
-        return N
