@@ -17,10 +17,14 @@ def test_put_invalid_values(tmp_path):
     """ExperimentNote should raise a ValueError if the value is not JSON serializable."""
     note = ExperimentNote(file_path=tmp_path / "note.json")
     # complex
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Value for key 'foo' is not JSON serializable\."
+    ):
         note.put("foo", 1 + 1j)
     # ndarray
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Value for key 'foo' is not JSON serializable\."
+    ):
         note.put("foo", np.array([1, 2, 3]))
 
 

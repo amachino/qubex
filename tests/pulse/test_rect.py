@@ -38,5 +38,7 @@ def test_zero_duration():
 
 def test_invalid_duration():
     """Rect should raise a ValueError if duration is not a multiple of the sampling period."""
-    with pytest.raises(ValueError):
+    with pytest.raises(
+        ValueError, match=r"Duration must be a multiple of the sampling period"
+    ):
         Rect(duration=5 * dt + np.pi, amplitude=0.1)

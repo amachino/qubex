@@ -46,5 +46,5 @@ def test_zero_duration():
 
 def test_invalid_parameter():
     """Gaussian should raise a ValueError if sigma is zero."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"Sigma must be greater than zero\."):
         Gaussian(duration=5 * dt, amplitude=1, sigma=0, beta=1)

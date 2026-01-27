@@ -17,7 +17,8 @@ def test_save_classified_json(measure_result: MeasureResult, tmp_path: Path):
     assert path.exists()
     with gzip.open(path, "rt", encoding="utf-8") as f:
         obj = json.load(f)
-    assert "counts" in obj and "probabilities" in obj
+    assert "counts" in obj
+    assert "probabilities" in obj
     assert obj["metadata"]["n_shots_kept"] <= obj["metadata"]["n_shots_raw"]
 
 
@@ -54,5 +55,5 @@ def test_save_classified_threshold(measure_result: MeasureResult, tmp_path: Path
 def test_save_classified_overwrite_false(measure_result: MeasureResult, tmp_path: Path):
     out = tmp_path / "dup.json.gz"
     measure_result.save_classified(out, format="json")
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"File already exists:"):
         measure_result.save_classified(out, format="json", overwrite=False)

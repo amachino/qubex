@@ -149,11 +149,9 @@ def test_build_experiment_system_and_unit_conversion(tmp_path: Path):
     assert first_ctrl_port.number == 2
     (mux_ro, ro_port) = w.read_out[0]
     (mux_ri, ri_port) = w.read_in[0]
-    assert (
-        ro_port.number == 1
-        and ri_port.number == 0
-        and mux_ro.index == mux_ri.index == 0
-    )
+    assert ro_port.number == 1
+    assert ri_port.number == 0
+    assert mux_ro.index == mux_ri.index == 0
 
 
 def test_control_params_sources_and_jpa_passthrough(tmp_path: Path):
@@ -197,7 +195,13 @@ def test_get_experiment_system_deprecation_warning(tmp_path: Path):
         config_dir=config_dir,
         params_dir=params_dir,
     )
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(
+        DeprecationWarning,
+        match=(
+            r"get_experiment_system\(chip_id\) is deprecated; the argument is ignored\. "
+            r"Use get_experiment_system\(\) instead\."
+        ),
+    ):
         sys = loader.get_experiment_system(chip_id="IGNORED")
     assert sys is not None
 

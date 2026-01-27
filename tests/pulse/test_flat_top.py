@@ -45,5 +45,5 @@ def test_zero_duration():
 
 def test_invalid_duration():
     """FlatTop should raise a ValueError if duration is not greater than `2 * tau`."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"duration must be greater than `2 \* tau`\."):
         FlatTop(duration=5 * dt, amplitude=1, tau=3 * dt)

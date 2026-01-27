@@ -75,6 +75,7 @@ select = [
     "B",    # flake8-bugbear
     "SIM",  # flake8-simplify
     "SLF",  # flake8-self
+    "PT",   # flake8-pytest-style
     "TID",  # flake8-tidy-imports
     "I",    # isort
     "D",    # pydocstyle
