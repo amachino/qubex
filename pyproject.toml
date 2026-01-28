@@ -53,6 +53,18 @@ dev = [
     "ruff",
 ]
 
+docs = [
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocs-jupyter",
+    "mkdocstrings[python]",
+    "mkdocs-autorefs",
+    "mkdocs-gen-files",
+    "mkdocs-literate-nav",
+    "mkdocs-section-index",
+    "pymdown-extensions",
+]
+
 [tool.setuptools.dynamic]
 version = { attr = "qubex.version.VERSION" }
 
@@ -64,7 +76,7 @@ addopts = "--import-mode=importlib"
 testpaths = ["tests"]
 
 [tool.pyright]
-include = ["src", "tests"]
+include = ["src", "tests", "tools"]
 typeCheckingMode = "basic"
 
 [tool.ruff.lint]

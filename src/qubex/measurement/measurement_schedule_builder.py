@@ -1,3 +1,14 @@
+"""
+Build measurement and capture schedules from pulse schedules.
+
+This module provides utilities for augmenting a ``PulseSchedule`` with readout
+and (optionally) pump pulses, and for creating a corresponding
+``CaptureSchedule``.
+
+Timing in this module is expressed in the same units as ``SAMPLING_PERIOD``
+(i.e., sample count multiplied by ``SAMPLING_PERIOD`` yields a time value).
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -24,6 +35,26 @@ from .models.measurement_schedule import MeasurementSchedule
 
 @dataclass(frozen=True)
 class MeasurementScheduleDefaults:
+    """
+    Default parameters used when building measurement schedules.
+
+    Attributes
+    ----------
+    readout_duration
+        Readout pulse duration.
+    readout_ramptime
+        Rise/fall time for ramped readout envelopes.
+    readout_pre_margin
+        Time margin inserted before the readout pulse.
+    readout_post_margin
+        Time margin inserted after the readout pulse.
+
+    Notes
+    -----
+    These defaults are used only when the corresponding argument is passed as
+    ``None`` to schedule-building methods.
+    """
+
     readout_duration: float = DEFAULT_READOUT_DURATION
     readout_ramptime: float = DEFAULT_READOUT_RAMPTIME
     readout_pre_margin: float = DEFAULT_READOUT_PRE_MARGIN
@@ -45,6 +76,26 @@ class MeasurementScheduleBuilder:
         pump_pulse_factory: PumpPulseFactory,
         defaults: MeasurementScheduleDefaults | None = None,
     ) -> None:
+        """
+        Initialize a schedule builder.
+
+        Parameters
+        ----------
+        targets
+            Mapping from schedule label to ``Target`` metadata.
+            Used to identify readout and pump channels.
+        mux_dict
+            Mapping from qubit label to ``Mux``.
+            Used to map a target/qubit to its mux index for pump/capture settings.
+        control_params
+            Control parameters providing default amplitudes and capture delays.
+        readout_pulse_factory
+            Factory used to create a readout ``PulseArray``.
+        pump_pulse_factory
+            Factory used to create a pump ``FlatTop`` pulse.
+        defaults
+            Optional override of default readout timing parameters.
+        """
         self._targets = targets
         self._mux_dict = mux_dict
         self._control_params = control_params
@@ -53,6 +104,20 @@ class MeasurementScheduleBuilder:
         self._defaults = defaults or MeasurementScheduleDefaults()
 
     def get_readout_targets(self, schedule: PulseSchedule) -> list[str]:
+        """
+        Return schedule labels that correspond to readout targets.
+
+        Parameters
+        ----------
+        schedule
+            Pulse schedule whose labels are inspected.
+
+        Returns
+        -------
+        list[str]
+            Labels in ``schedule.labels`` for which the corresponding
+            ``Target`` is a readout target.
+        """
         return [label for label in schedule.labels if self._targets[label].is_read]
 
     def add_readout_pulses(
@@ -67,6 +132,36 @@ class MeasurementScheduleBuilder:
         readout_drag_coeff: float | None,
         readout_ramp_type: RampType | None,
     ) -> None:
+        """
+        Add readout pulses to a pulse schedule in-place.
+
+        Parameters
+        ----------
+        schedule
+            Schedule to be modified.
+        readout_amplitudes
+            Optional per-readout-target amplitude mapping. When ``None``,
+            ``ControlParams.readout_amplitude`` is used.
+        readout_duration
+            Readout duration. When ``None``, the builder default is used.
+        readout_pre_margin
+            Time margin inserted before each readout pulse. When ``None``, the
+            builder default is used.
+        readout_post_margin
+            Time margin inserted after each readout pulse. When ``None``, the
+            builder default is used.
+        readout_ramptime
+            Ramp time forwarded to the readout pulse factory.
+        readout_drag_coeff
+            DRAG coefficient forwarded to the readout pulse factory.
+        readout_ramp_type
+            Ramp type forwarded to the readout pulse factory.
+
+        Notes
+        -----
+        This method only adds readout pulses for channels present in
+        ``schedule.labels`` that are not pump targets.
+        """
         if readout_amplitudes is None:
             readout_amplitudes = self._control_params.readout_amplitude
         if readout_duration is None:
@@ -108,6 +203,29 @@ class MeasurementScheduleBuilder:
         readout_ramptime: float | None,
         readout_ramp_type: RampType | None,
     ) -> None:
+        """
+        Add pump pulses aligned to readout ranges in-place.
+
+        Parameters
+        ----------
+        schedule
+            Schedule to be modified.
+        readout_ranges
+            Mapping from readout target label to a list of sample-index ranges
+            where readout pulses occur.
+        readout_pre_margin
+            Pre-margin used to extend the pump window. When ``None``, the builder
+            default is used.
+        readout_ramptime
+            Ramp time forwarded to the pump pulse factory.
+        readout_ramp_type
+            Ramp type forwarded to the pump pulse factory.
+
+        Notes
+        -----
+        Pump amplitude is determined by ``ControlParams.get_pump_amplitude``
+        using the mux index resolved from ``readout_ranges`` keys.
+        """
         if readout_pre_margin is None:
             readout_pre_margin = self._defaults.readout_pre_margin
 
@@ -158,6 +276,36 @@ class MeasurementScheduleBuilder:
         readout_ranges: dict[str, list[range]],
         capture_delays: dict[int, int] | None = None,
     ) -> CaptureSchedule:
+        """
+        Create a capture schedule from readout pulse ranges.
+
+        Parameters
+        ----------
+        schedule
+            Pulse schedule used for overall timing and for validating the last
+            range length.
+        readout_ranges
+            Mapping from readout target label to a list of sample-index ranges
+            representing readout pulses.
+        capture_delays
+            Optional mapping from mux index to capture delay, expressed in
+            words. When ``None``,
+            ``ControlParams.capture_delay_word`` is used.
+
+        Returns
+        -------
+        CaptureSchedule
+            Capture schedule containing one initial extra-sum capture and one
+            capture per readout range for each target.
+
+        Raises
+        ------
+        ValueError
+            If any capture range start or duration is not aligned to
+            ``WORD_LENGTH`` samples,
+            if readout pulses do not provide sufficient post-blank time between
+            consecutive ranges, or if the last range extends beyond the schedule.
+        """
         if capture_delays is None:
             capture_delays = self._control_params.capture_delay_word
 
@@ -243,6 +391,37 @@ class MeasurementScheduleBuilder:
         readout_ramp_type: RampType | None = None,
         capture_delays: dict[int, int] | None = None,
     ) -> MeasurementSchedule:
+        """
+        Build a ``MeasurementSchedule``.
+
+        Parameters
+        ----------
+        schedule
+            Base schedule to use and (optionally) modify.
+        add_last_measurement
+            If ``True``, readout pulses are appended to the schedule.
+        add_pump_pulses
+            If ``True``, pump pulses are added based on detected readout ranges.
+        readout_amplitudes, readout_duration, readout_pre_margin, readout_post_margin
+            Optional overrides for readout pulse construction. Any value passed
+            as ``None`` falls back to builder defaults.
+        readout_ramptime, readout_drag_coeff, readout_ramp_type
+            Parameters forwarded to the readout (and/or pump) pulse factories.
+        capture_delays
+            Optional capture delay mapping; see ``create_capture_schedule``.
+
+        Returns
+        -------
+        MeasurementSchedule
+            Measurement schedule containing the (possibly augmented) pulse
+            schedule and the derived capture schedule.
+
+        Raises
+        ------
+        ValueError
+            If there are no readout targets in the pulse schedule, or if capture
+            schedule creation fails due to invalid alignment/spacing constraints.
+        """
         if add_last_measurement:
             self.add_readout_pulses(
                 schedule=schedule,

@@ -1,41 +1,60 @@
-.PHONY: sync test lint format typecheck check fix clean build
+.PHONY: sync test check fix lint lint-fix format format-check type-check clean build docs docs-serve docs-build docs-clean
 
 # Install dependencies
 sync:
-	@uv sync --dev --all-extras
+	uv sync --group dev --group docs --all-extras
 
-# Run tests
+# Run unit tests
 test:
-	@uv run pytest
-# Run linting
+	uv run pytest
+
+# Run type, lint, and format checks
+check: type-check lint format-check
+
+# Auto-fix formatting and lint issues
+fix: format lint-fix
+
+# Lint the codebase
 lint:
-	@uv run ruff check
+	uv run ruff check
 
-# Format code
+# Auto-fix lint issues
+lint-fix:
+	uv run ruff check --fix
+
+# Format the codebase
 format:
-	@uv run ruff format
+	uv run ruff format
 
-# Type checking
-typecheck:
-	@uv run pyright
+# Check formatting without modifying files
+format-check:
+	uv run ruff format --check
 
-# Run static type checks and linting
-check:
-	@uv run pyright
-	@uv run ruff format --check
-	@uv run ruff check
+# Run static type checking
+type-check:
+	uv run pyright
 
-# Fix format and lint issues
-fix:
-	@uv run ruff format
-	@uv run ruff check --fix
-
-# Clean up cache and build artifacts
+# Remove caches and build artifacts
 clean:
-	@rm -rf dist build *.egg-info
-	@find . -type d -name "__pycache__" -exec rm -rf {} +
-	@rm -rf .pytest_cache .ruff_cache .mypy_cache
+	rm -rf dist build *.egg-info
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	rm -rf .pytest_cache .ruff_cache .mypy_cache
 
-# Build the package
+# Build distribution artifacts
 build:
-	@uv build
+	uv build
+
+# Build documentation site
+docs: docs-build
+
+# Serve documentation locally
+docs-serve:
+	uv run mkdocs serve
+
+# Build documentation into the site/ directory
+docs-build:
+	uv run mkdocs build
+
+# Remove generated documentation output
+docs-clean:
+	rm -rf site
