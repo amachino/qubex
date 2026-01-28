@@ -83,20 +83,21 @@ class MeasurementScheduleBuilder:
                 if not self._targets[label].is_pump
             }
         )
-        for target in readout_targets:
-            schedule.add(
-                target,
-                self._readout_pulse_factory(
-                    target=target,
-                    duration=readout_duration,
-                    amplitude=readout_amplitudes.get(target),
-                    ramptime=readout_ramptime,
-                    type=readout_ramp_type,
-                    drag_coeff=readout_drag_coeff,
-                    pre_margin=readout_pre_margin,
-                    post_margin=readout_post_margin,
-                ),
-            )
+        with schedule:
+            for target in readout_targets:
+                schedule.add(
+                    target,
+                    self._readout_pulse_factory(
+                        target=target,
+                        duration=readout_duration,
+                        amplitude=readout_amplitudes.get(target),
+                        ramptime=readout_ramptime,
+                        type=readout_ramp_type,
+                        drag_coeff=readout_drag_coeff,
+                        pre_margin=readout_pre_margin,
+                        post_margin=readout_post_margin,
+                    ),
+                )
 
     def add_pump_pulses(
         self,
@@ -110,44 +111,45 @@ class MeasurementScheduleBuilder:
         if readout_pre_margin is None:
             readout_pre_margin = self._defaults.readout_pre_margin
 
-        for target, ranges in readout_ranges.items():
-            if not ranges:
-                continue
-            mux = self._mux_dict[Target.qubit_label(target)]
-            for i in range(len(ranges)):
-                current_range = ranges[i]
+        with schedule:
+            for target, ranges in readout_ranges.items():
+                if not ranges:
+                    continue
+                mux = self._mux_dict[Target.qubit_label(target)]
+                for i in range(len(ranges)):
+                    current_range = ranges[i]
 
-                if i == 0:
-                    blank_duration = current_range.start * SAMPLING_PERIOD
-                else:
-                    prev_range = ranges[i - 1]
-                    blank_duration = (
-                        current_range.start - prev_range.stop
-                    ) * SAMPLING_PERIOD
+                    if i == 0:
+                        blank_duration = current_range.start * SAMPLING_PERIOD
+                    else:
+                        prev_range = ranges[i - 1]
+                        blank_duration = (
+                            current_range.start - prev_range.stop
+                        ) * SAMPLING_PERIOD
 
-                blank_duration -= readout_pre_margin
+                    blank_duration -= readout_pre_margin
 
-                pump_duration = (
-                    current_range.stop - current_range.start
-                ) * SAMPLING_PERIOD + readout_pre_margin
+                    pump_duration = (
+                        current_range.stop - current_range.start
+                    ) * SAMPLING_PERIOD + readout_pre_margin
 
-                pump_amplitude = self._control_params.get_pump_amplitude(mux.index)
+                    pump_amplitude = self._control_params.get_pump_amplitude(mux.index)
 
-                schedule.add(
-                    mux.label,
-                    PulseArray(
-                        [
-                            Blank(blank_duration),
-                            self._pump_pulse_factory(
-                                target=target,
-                                duration=pump_duration,
-                                amplitude=pump_amplitude,
-                                ramptime=readout_ramptime,
-                                type=readout_ramp_type,
-                            ),
-                        ]
-                    ),
-                )
+                    schedule.add(
+                        mux.label,
+                        PulseArray(
+                            [
+                                Blank(blank_duration),
+                                self._pump_pulse_factory(
+                                    target=target,
+                                    duration=pump_duration,
+                                    amplitude=pump_amplitude,
+                                    ramptime=readout_ramptime,
+                                    type=readout_ramp_type,
+                                ),
+                            ]
+                        ),
+                    )
 
     def create_capture_schedule(
         self,
