@@ -1,3 +1,4 @@
 - Python commands must run in project env: use `uv run ...`, or `source .venv/bin/activate`
 - Use `make check` (lint/type/format check) and `make fix` (format + auto-fix) to maintain code quality
 - Write docstrings following the guideline in docs/development/docstring-guidelines.md (NumPy style).
+- Follow the test guideline in docs/development/test-guidelines.md: write tests first and use 1-line spec docstrings.

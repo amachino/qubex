@@ -1,4 +1,4 @@
-.PHONY: sync test check fix lint lint-fix format format-check type-check clean build docs docs-serve docs-build docs-clean
+.PHONY: sync test coverage check fix lint lint-fix format format-check type-check clean build docs docs-serve docs-build docs-clean
 
 # Install dependencies
 sync:
@@ -7,6 +7,10 @@ sync:
 # Run unit tests
 test:
 	uv run pytest
+
+# Run tests with coverage
+coverage:
+	uv run pytest --cov=qubex --cov-report=term-missing
 
 # Run type, lint, and format checks
 check: type-check lint format-check
