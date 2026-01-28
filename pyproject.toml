@@ -70,8 +70,8 @@ typeCheckingMode = "basic"
 [tool.ruff.lint]
 select = [
     "ANN", # flake8-annotations
-    # "S" # flake8-bandit
-    "B", # flake8-bugbear
+    "S",   # flake8-bandit
+    "B",   # flake8-bugbear
     # "BLE", # flake8-blind-except
     "C4",   # flake8-comprehensions
     "SIM",  # flake8-simplify
@@ -99,6 +99,9 @@ ignore = [
     "ANN204", # missing-return-type-special-method
     "ANN401", # any-type
 
+    # flake8-bandit
+    "S311", # suspicious-non-cryptographic-random-usage
+
     # flake8-comprehensions
     "C408", # unnecessary-collection-call
 
@@ -125,15 +128,26 @@ ignore = [
     "RUF001", # ambiguous-unicode-character-string
     "RUF002", # ambiguous-unicode-character-docstring
     "RUF003", # ambiguous-unicode-character-comment
+
+    # flake8-bandit
+    "S311", # standard pseudo-random generators
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = [
-    "ANN",  # flake8-annotations
+    "ANN", # flake8-annotations
+
+    # Pyflakes
     "F401", # unused-import
+
+    # flake8-bandit
+    "S101", # assert
 ]
 "tests/**/*.py" = [
     "ANN", # flake8-annotations
+
+    # flake8-bandit
+    "S101", # assert
 ]
 
 [tool.ruff.lint.pydocstyle]

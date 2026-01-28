@@ -3229,7 +3229,10 @@ class MeasurementService:
                 xlabel="Z rotation : φ (rad)",
                 return_figure=True,
             )
-            assert fig is not None
+            if fig is None:
+                raise RuntimeError(
+                    "Expected figure from plot() when return_figure=True."
+                )
             viz.save_figure_image(
                 fig,
                 name=f"mqc_n{n_qubits}_{qubit}",

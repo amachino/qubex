@@ -1002,7 +1002,8 @@ class CharacterizationService:
                 51,
             )
         time_range = self.ctx.util.discretize_time_range(np.asarray(time_range))
-        assert time_range is not None
+        if time_range is None:
+            raise ValueError("time_range could not be discretized.")
 
         data: dict[str, T1Data] = {}
 
@@ -1183,7 +1184,8 @@ class CharacterizationService:
             # if plot:
             #     t2_sequence(time_range[-1]).plot()
 
-            assert time_range is not None
+            if time_range is None:
+                raise ValueError("time_range could not be discretized.")
             sweep_result = self.measurement_service.sweep_parameter(
                 sequence=t2_sequence,
                 sweep_range=time_range,
@@ -1265,7 +1267,8 @@ class CharacterizationService:
             time_range = np.arange(0, 10001, 100)
         else:
             time_range = self.ctx.util.discretize_time_range(time_range)
-        assert time_range is not None
+        if time_range is None:
+            raise ValueError("time_range could not be discretized.")
 
         if detuning is None:
             detuning = 0.001
@@ -1418,7 +1421,8 @@ class CharacterizationService:
             time_range=np.asarray(time_range),
             sampling_period=2 * SAMPLING_PERIOD,
         )
-        assert time_range is not None
+        if time_range is None:
+            raise ValueError("time_range could not be discretized.")
 
         if detuning is None:
             detuning = 0.001

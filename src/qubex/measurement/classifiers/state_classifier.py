@@ -49,7 +49,7 @@ class StateClassifier(ABC):
             A state classifier model.
         """
         with open(path, "rb") as file:
-            return pickle.load(file)
+            return pickle.load(file)  # noqa: S301
 
     @property
     @abstractmethod

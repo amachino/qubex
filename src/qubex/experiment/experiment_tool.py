@@ -131,8 +131,8 @@ def reboot_fpga(box_id: str) -> None:
     experiment_system = system_manager.experiment_system
     box = experiment_system.get_box(box_id)
     adapter = box.adapter
-    reboot_command = f"quel_reboot_fpga --port 3121 --adapter {adapter}"
-    subprocess.run(reboot_command.split())
+    reboot_command = ["quel_reboot_fpga", "--port", "3121", "--adapter", adapter]
+    subprocess.run(reboot_command, check=True)  # noqa: S603
 
 
 def relinkup_box(box_id: str, noise_threshold: int | None = None) -> None:

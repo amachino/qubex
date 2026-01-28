@@ -125,7 +125,8 @@ class PulseService:
 
             rabi_amplitude_ratio = rabi_param.frequency / default_amplitude
 
-        assert rabi_amplitude_ratio is not None
+        if rabi_amplitude_ratio is None:
+            raise ValueError("rabi_amplitude_ratio must be provided or derivable.")
         return rabi_rate / rabi_amplitude_ratio
 
     def calc_control_amplitudes(

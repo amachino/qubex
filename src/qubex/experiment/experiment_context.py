@@ -620,7 +620,13 @@ class ExperimentContext:
                 else:
                     if high_to_low:
                         cr_pairs.append(pair)
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "Failed to parse CR target label %s: %s",
+                    label,
+                    exc,
+                    exc_info=True,
+                )
                 continue
         return cr_pairs
 

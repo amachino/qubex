@@ -237,7 +237,8 @@ def _ramp_func(
             amplitude=amplitude,
         )
     elif type == "Squad":
-        assert delta is not None, "delta must be provided for Squad ramp."
+        if delta is None:
+            raise ValueError("delta must be provided for Squad ramp.")
         return Squad.func(
             t=t,
             duration=duration,

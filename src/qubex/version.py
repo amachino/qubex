@@ -1,4 +1,5 @@
 import importlib.metadata
+import shutil
 import subprocess
 
 from typing_extensions import deprecated
@@ -9,8 +10,11 @@ VERSION = "1.5.0a1"
 @deprecated("get_version is deprecated, use VERSION constant instead.")
 def get_version() -> str:
     try:
+        git_path = shutil.which("git")
+        if git_path is None:
+            return VERSION
         commit_hash = (
-            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+            subprocess.check_output([git_path, "rev-parse", "--short", "HEAD"])  # noqa: S603
             .decode("utf-8")
             .strip()
         )
