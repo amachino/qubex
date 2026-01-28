@@ -85,7 +85,7 @@ class IQPlotter:
                 initial=0.0,
             )
 
-    def update(self, data: TargetMap[IQArray]):
+    def update(self, data: TargetMap[IQArray]) -> None:
         if self._num_scatters == -1:
             display(self._output)
             with self._output:
@@ -128,11 +128,11 @@ class IQPlotter:
                     scatter.x = np.real(data[qubit])
                     scatter.y = np.imag(data[qubit])
 
-    def clear(self):
+    def clear(self) -> None:
         self._output.clear_output()
         self._output.close()
 
-    def show(self):
+    def show(self) -> None:
         self.clear()
         self._widget.show(config=get_config())
 
@@ -174,7 +174,7 @@ class IQPlotterPolar:
     def update(
         self,
         data: TargetMap[IQArray],
-    ):
+    ) -> None:
         if self._num_scatters is None:
             display(self._widget)
             for qubit in data:

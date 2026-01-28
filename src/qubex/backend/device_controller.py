@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from collections.abc import Collection
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -282,12 +282,12 @@ class DeviceController:
                     }
         return result
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         if self._boxpool is not None:
             self._boxpool._box_config_cache.clear()
 
     @deprecated("Use qubecalib.sysdb.load_skew_yaml instead.")
-    def load_skew_file(self, box_list: list[str], file_path: str | Path):
+    def load_skew_file(self, box_list: list[str], file_path: str | Path) -> None:
         if len(box_list) == 0:
             return
         clockmaster_setting = self.qubecalib.sysdb._clockmaster_setting
@@ -323,7 +323,7 @@ class DeviceController:
         box = self.qubecalib.create_box(box_name, reconnect=False)
         return box.link_status()
 
-    def connect(self, box_names: str | list[str] | None = None):
+    def connect(self, box_names: str | list[str] | None = None) -> None:
         """
         Connect to the boxes.
 
@@ -370,7 +370,7 @@ class DeviceController:
     def initialize_awg_and_capunits(
         self,
         box_names: str | Collection[str],
-    ):
+    ) -> None:
         """
         Initialize all awg and capture units in the specified boxes.
 
@@ -450,7 +450,7 @@ class DeviceController:
             logger.error(f"{box_name:5} : Error {e}")
         return boxes
 
-    def relinkup(self, box_name: str, noise_threshold: int | None = None):
+    def relinkup(self, box_name: str, noise_threshold: int | None = None) -> None:
         """
         Relink a box.
 
@@ -466,7 +466,11 @@ class DeviceController:
         # TODO: use appropriate noise threshold
         box.reconnect(background_noise_threshold=10000)
 
-    def relinkup_boxes(self, box_list: list[str], noise_threshold: int | None = None):
+    def relinkup_boxes(
+        self,
+        box_list: list[str],
+        noise_threshold: int | None = None,
+    ) -> None:
         """Relink all the boxes in the list."""
         for box_name in box_list:
             self.relinkup(box_name, noise_threshold=noise_threshold)
@@ -612,7 +616,7 @@ class DeviceController:
         sideband: str | None = None,
         fullscale_current: int | None = None,
         rfswitch: str | None = None,
-    ):
+    ) -> None:
         """
         Configure the port of a box.
 
@@ -658,7 +662,7 @@ class DeviceController:
         port: int | tuple[int, int],
         channel: int,
         fnco_freq: float | None = None,
-    ):
+    ) -> None:
         """
         Configure the channel of a box.
 
@@ -687,7 +691,7 @@ class DeviceController:
         port: int | tuple[int, int],
         runit: int,
         fnco_freq: float | None = None,
-    ):
+    ) -> None:
         """
         Configure the runit of a box.
 
@@ -709,7 +713,7 @@ class DeviceController:
             fnco_freq=fnco_freq,
         )
 
-    def add_sequencer(self, sequencer: Sequencer):
+    def add_sequencer(self, sequencer: Sequencer) -> None:
         """
         Add a sequencer to the queue.
 
@@ -720,11 +724,11 @@ class DeviceController:
         """
         self.qubecalib._executor.add_command(sequencer)
 
-    def show_command_queue(self):
+    def show_command_queue(self) -> None:
         """Show the current command queue."""
         logger.info(self.qubecalib.show_command_queue())
 
-    def clear_command_queue(self):
+    def clear_command_queue(self) -> None:
         """Clear the command queue."""
         self.qubecalib.clear_command_queue()
 
@@ -735,7 +739,7 @@ class DeviceController:
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
-    ):
+    ) -> Iterator[RawResult]:
         """
         Execute the queue and yield measurement results.
 
@@ -955,7 +959,7 @@ class DeviceController:
             config=config,
         )
 
-    def modify_target_frequency(self, target: str, frequency: float):
+    def modify_target_frequency(self, target: str, frequency: float) -> None:
         """
         Modify the target frequency.
 
@@ -968,7 +972,7 @@ class DeviceController:
         """
         self.qubecalib.modify_target_frequency(target, frequency)
 
-    def modify_target_frequencies(self, frequencies: dict[str, float]):
+    def modify_target_frequencies(self, frequencies: dict[str, float]) -> None:
         """
         Modify the target frequencies.
 
@@ -985,7 +989,7 @@ class DeviceController:
         target_name: str,
         channel_name: str,
         target_frequency: float | None = None,
-    ):
+    ) -> None:
         """
         Define a target.
 

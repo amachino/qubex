@@ -6,10 +6,10 @@ It manages which methods act as the public interface for conducting experiments.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -261,11 +261,11 @@ class Experiment:
         return self._optimization_service
 
     @property
-    def tool(self):
+    def tool(self) -> Any:
         return self.ctx.tool
 
     @property
-    def util(self):
+    def util(self) -> Any:
         return self.ctx.util
 
     @property
@@ -485,14 +485,14 @@ class Experiment:
         data: dict,
         *,
         save_path: Path | str | None = None,
-    ):
+    ) -> None:
         return self.ctx.save_property(
             property_name,
             data,
             save_path=save_path,
         )
 
-    def load_calib_note(self, path: Path | str | None = None):
+    def load_calib_note(self, path: Path | str | None = None) -> None:
         """Load the calibration data from a given path or the default calibration note file."""
         return self.ctx.load_calib_note(path=path)
 
@@ -564,7 +564,7 @@ class Experiment:
         self,
         rabi_params: dict[str, RabiParam],
         r2_threshold: float | None = None,
-    ):
+    ) -> None:
         self.ctx.store_rabi_params(
             rabi_params,
             r2_threshold=r2_threshold,
@@ -592,7 +592,7 @@ class Experiment:
     def is_connected(self) -> bool:
         return self.ctx.is_connected()
 
-    def check_status(self):
+    def check_status(self) -> None:
         return self.ctx.check_status()
 
     def connect(
@@ -623,21 +623,21 @@ class Experiment:
         box_ids: str | list[str] | None = None,
         exclude: str | list[str] | None = None,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
-    ):
+    ) -> None:
         return self.ctx.configure(
             box_ids=box_ids,
             exclude=exclude,
             mode=mode,
         )
 
-    def reload(self):
+    def reload(self) -> None:
         return self.ctx.reload()
 
     def reset_awg_and_capunits(
         self,
         box_ids: str | Collection[str] | None = None,
         qubits: Collection[str] | None = None,
-    ):
+    ) -> None:
         return self.ctx.reset_awg_and_capunits(
             box_ids=box_ids,
             qubits=qubits,
@@ -654,7 +654,7 @@ class Experiment:
         channel_number: int,
         target_type: TargetType | None = None,
         update_lsi: bool | None = None,
-    ):
+    ) -> None:
         return self.ctx.register_custom_target(
             label=label,
             frequency=frequency,
@@ -669,26 +669,26 @@ class Experiment:
     def modified_frequencies(
         self,
         frequencies: dict[str, float] | None,
-    ):
+    ) -> Iterator[None]:
         with self.ctx.modified_frequencies(frequencies):
             yield
 
     def save_calib_note(
         self,
         file_path: Path | str | None = None,
-    ):
+    ) -> None:
         return self.ctx.save_calib_note(file_path=file_path)
 
     @deprecated("Use `calib_note.save()` instead.")
-    def save_defaults(self):
+    def save_defaults(self) -> None:
         return self.ctx.save_defaults()
 
     @deprecated("Use `calib_note.clear()` instead.")
-    def clear_defaults(self):
+    def clear_defaults(self) -> None:
         return self.ctx.clear_defaults()
 
     @deprecated("")
-    def delete_defaults(self):
+    def delete_defaults(self) -> None:
         return self.ctx.delete_defaults()
 
     def load_record(
@@ -702,7 +702,7 @@ class Experiment:
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
-    ):
+    ) -> None:
         return self.pulse.validate_rabi_params(targets=targets)
 
     def get_hpi_pulse(
@@ -791,7 +791,7 @@ class Experiment:
     def calc_rabi_rate(
         self,
         target: str,
-        control_amplitude,
+        control_amplitude: float,
     ) -> float:
         return self.pulse.calc_rabi_rate(target, control_amplitude)
 
@@ -2180,7 +2180,7 @@ class Experiment:
         *,
         reference_phases: dict[str, float] | None = None,
         save: bool | None = None,
-    ):
+    ) -> None:
         return self.calibration_service.correct_rabi_params(
             targets=targets,
             reference_phases=reference_phases,
@@ -2193,7 +2193,7 @@ class Experiment:
         *,
         reference_phases: dict[str, float] | None = None,
         save: bool | None = None,
-    ):
+    ) -> None:
         return self.calibration_service.correct_classifiers(
             targets=targets,
             reference_phases=reference_phases,
@@ -2206,7 +2206,7 @@ class Experiment:
         *,
         shots: int | None = None,
         save: bool | None = None,
-    ):
+    ) -> None:
         return self.calibration_service.correct_cr_params(
             cr_labels=cr_labels,
             shots=shots,
@@ -2219,7 +2219,7 @@ class Experiment:
         cr_labels: Collection[str] | str | None = None,
         *,
         save: bool | None = None,
-    ):
+    ) -> None:
         return self.calibration_service.correct_calibration(
             qubit_labels=qubit_labels,
             cr_labels=cr_labels,
@@ -3296,7 +3296,7 @@ class Experiment:
         shots: int | None = None,
         interval: float | None = None,
         plot: bool | None = None,
-    ):
+    ) -> Result:
         return self.characterization_service.jazz_experiment(
             target_qubit=target_qubit,
             spectator_qubit=spectator_qubit,
@@ -3480,7 +3480,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ):
+    ) -> float:
         return self.characterization_service.estimate_control_amplitude(
             target=target,
             frequency_range=frequency_range,

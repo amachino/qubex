@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from functools import cached_property, reduce
 from pathlib import Path
@@ -106,7 +106,7 @@ class Measurement:
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
-    ):
+    ) -> None:
         """
         Load the measurement settings.
 
@@ -131,7 +131,7 @@ class Measurement:
         self,
         *,
         sync_clocks: bool = True,
-    ):
+    ) -> None:
         """Connect to the devices."""
         if len(self.box_ids) == 0:
             logger.warning("No boxes are selected. Please check the configuration.")
@@ -145,7 +145,7 @@ class Measurement:
         self,
         *,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
-    ):
+    ) -> None:
         """Reload the measuremnt settings."""
         self.load(
             config_dir=self.config_loader.config_path,
@@ -293,7 +293,7 @@ class Measurement:
         """
         return self.experiment_system.get_diff_frequency(target)
 
-    def update_classifiers(self, classifiers: TargetMap[StateClassifier]):
+    def update_classifiers(self, classifiers: TargetMap[StateClassifier]) -> None:
         """Update the state classifiers."""
         for target, classifier in classifiers.items():
             self._classifiers[target] = classifier  # type: ignore
@@ -388,7 +388,7 @@ class Measurement:
             "clocks": clock_statuses,
         }
 
-    def linkup(self, box_list: list[str], noise_threshold: int | None = None):
+    def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
         """
         Link up the boxes and synchronize the clocks.
 
@@ -404,7 +404,7 @@ class Measurement:
         self.device_controller.linkup_boxes(box_list, noise_threshold=noise_threshold)
         self.device_controller.sync_clocks(box_list)
 
-    def relinkup(self, box_list: list[str]):
+    def relinkup(self, box_list: list[str]) -> None:
         """
         Relink up the boxes and synchronize the clocks.
 
@@ -421,7 +421,10 @@ class Measurement:
         self.device_controller.sync_clocks(box_list)
 
     @contextmanager
-    def modified_frequencies(self, target_frequencies: dict[str, float]):
+    def modified_frequencies(
+        self,
+        target_frequencies: dict[str, float],
+    ) -> Iterator[None]:
         """
         Temporarily modify the target frequencies.
 
@@ -445,7 +448,7 @@ class Measurement:
                 yield
 
     @contextmanager
-    def apply_dc_voltages(self, targets: str | Collection[str]):
+    def apply_dc_voltages(self, targets: str | Collection[str]) -> Iterator[None]:
         """
         Temporarily apply DC voltages to the specified targets.
 

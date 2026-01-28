@@ -143,7 +143,7 @@ def sin_pow_integral(
         return result
     else:
         # n is even: reduce via recurrence
-        def recursive_even_integral(x, m):
+        def recursive_even_integral(x: NDArray, m: int) -> NDArray:
             if m == 0:
                 return x
             term1 = (-(np.sin(x) ** (m - 1)) * np.cos(x)) / m

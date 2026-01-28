@@ -13,7 +13,7 @@ class LogFormatter(logging.Formatter):
     BOLD_RED = "\x1b[31;1m"
     RESET = "\x1b[0m"
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         if record.exc_info:
             exc_type, exc_value, _ = record.exc_info
             if exc_type:
@@ -38,7 +38,7 @@ class LogFormatter(logging.Formatter):
         return formatter.format(record)
 
 
-def set_log_level(level: int | str = logging.INFO):
+def set_log_level(level: int | str = logging.INFO) -> None:
     """Set the logging level for the qubex package and ensure a console handler is present."""
     logger = logging.getLogger("qubex")
     logger.setLevel(level)

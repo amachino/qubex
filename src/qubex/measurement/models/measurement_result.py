@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property, reduce
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -194,7 +194,7 @@ class MeasureData:
         title: str | None = None,
         return_figure: bool = False,
         save_image: bool = False,
-    ):
+    ) -> Any:
         if self.mode == MeasureMode.SINGLE:
             return viz.scatter_iq_data(
                 data={self.target: np.asarray(self.kerneled)},
@@ -220,7 +220,7 @@ class MeasureData:
         title: str | None = None,
         return_figure: bool = False,
         save_image: bool = False,
-    ):
+    ) -> Any:
         return viz.plot_fft(
             x=self.times * 1e-3,
             y=self.raw,
@@ -418,7 +418,7 @@ class MeasureResult:
         self,
         return_figure: bool = False,
         save_image: bool = False,
-    ):
+    ) -> Any:
         if self.mode == MeasureMode.SINGLE:
             data = {
                 qubit: np.asarray(data.kerneled) for qubit, data in self.data.items()
@@ -445,7 +445,7 @@ class MeasureResult:
         self,
         return_figure: bool = False,
         save_image: bool = False,
-    ):
+    ) -> Any:
         figures = []
         for data in self.data.values():
             fig = data.plot_fft(
@@ -887,7 +887,7 @@ class MultipleMeasureResult:
         self,
         return_figure: bool = False,
         save_image: bool = False,
-    ):
+    ) -> Any:
         for qubit, data_list in self.data.items():
             figures = []
             for capture_index, data in enumerate(data_list):
@@ -905,7 +905,7 @@ class MultipleMeasureResult:
         self,
         return_figure: bool = False,
         save_image: bool = False,
-    ):
+    ) -> Any:
         for qubit, data_list in self.data.items():
             figures = []
             for capture_index, data in enumerate(data_list):

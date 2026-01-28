@@ -90,7 +90,7 @@ class PulseService:
     def validate_rabi_params(
         self,
         targets: Collection[str] | None = None,
-    ):
+    ) -> None:
         rabi_params = self.rabi_params
         if len(rabi_params) == 0:
             raise ValueError("Rabi parameters are not stored.")
@@ -174,7 +174,7 @@ class PulseService:
     def calc_rabi_rate(
         self,
         target: str,
-        control_amplitude,
+        control_amplitude: float,
     ) -> float:
         # TODO: Support ef targets
         default_amplitude = self.ctx.params.control_amplitude.get(target)

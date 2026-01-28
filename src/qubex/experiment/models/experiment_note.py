@@ -46,7 +46,7 @@ class ExperimentNote:
         """
         return self._file_path
 
-    def put(self, key: str, value: Any):
+    def put(self, key: str, value: Any) -> None:
         """
         Put the key-value pair into the dictionary.
 
@@ -100,7 +100,7 @@ class ExperimentNote:
             return None
         return self._dict.get(key)
 
-    def remove(self, key: str):
+    def remove(self, key: str) -> None:
         """
         Remove the key-value pair from the dictionary.
 
@@ -120,7 +120,7 @@ class ExperimentNote:
         self._dict.clear()
         logger.info("All entries have been cleared from the ExperimentNote.")
 
-    def save(self, file_path: Path | str | None = None):
+    def save(self, file_path: Path | str | None = None) -> None:
         """
         Save the ExperimentNote to a JSON file.
 
@@ -158,7 +158,7 @@ class ExperimentNote:
         except Exception as e:
             logger.error(f"Failed to save ExperimentNote: {e}")
 
-    def load(self, file_path: Path | str | None = None):
+    def load(self, file_path: Path | str | None = None) -> None:
         """
         Load the ExperimentNote from a JSON file.
 
@@ -183,7 +183,7 @@ class ExperimentNote:
         except Exception as e:
             logger.error(f"Failed to load ExperimentNote: {e}")
 
-    def delete(self, file_path: Path | str | None = None):
+    def delete(self, file_path: Path | str | None = None) -> None:
         """
         Delete the JSON file containing the ExperimentNote.
 

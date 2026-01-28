@@ -701,7 +701,7 @@ class Clifford:
             for operator, pauli in self.map.items()
         }
 
-    def log_info(self):
+    def log_info(self) -> None:
         logger.info(self.to_string())
 
     def __repr__(self) -> str:
@@ -710,5 +710,7 @@ class Clifford:
     def __hash__(self):
         return hash(tuple(self.map.items()))
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Clifford):
+            return False
         return self.map == other.map

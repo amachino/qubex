@@ -100,7 +100,7 @@ pio.templates["square"] = go.layout.Template(
 )
 
 
-def apply_template(template: str):
+def apply_template(template: str) -> None:
     pio.templates.default = template
 
 

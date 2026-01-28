@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import sys
-from collections.abc import Collection
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 
 import numpy as np
@@ -14,7 +14,7 @@ from qubex.backend import SAMPLING_PERIOD, SystemManager
 class ExperimentUtil:
     @staticmethod
     @contextmanager
-    def no_output():
+    def no_output() -> Iterator[None]:
         original_stdout = sys.stdout
         original_stderr = sys.stderr
         try:

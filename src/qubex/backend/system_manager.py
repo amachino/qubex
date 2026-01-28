@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -60,7 +60,7 @@ class SystemManager:
         return cls._instance
 
     @classmethod
-    def shared(cls):
+    def shared(cls) -> SystemManager:
         """
         Get the shared instance of the SystemManager.
 
@@ -152,7 +152,7 @@ class SystemManager:
         """Get the cached state."""
         return self._cached_state
 
-    def set_experiment_system(self, experiment_system: ExperimentSystem):
+    def set_experiment_system(self, experiment_system: ExperimentSystem) -> None:
         """
         Set the experiment system.
 
@@ -175,7 +175,7 @@ class SystemManager:
         self._update_device_controller(experiment_system)
         self.update_cache()
 
-    def set_device_settings(self, device_settings: dict):
+    def set_device_settings(self, device_settings: dict) -> None:
         """
         Set the device settings.
 
@@ -193,7 +193,7 @@ class SystemManager:
         self._experiment_system = self._create_experiment_system(device_settings)
         self.update_cache()
 
-    def update_cache(self):
+    def update_cache(self) -> None:
         """Update the cached state."""
         self._cached_state = self.state
 
@@ -242,7 +242,7 @@ class SystemManager:
         targets_to_exclude: list[str] | None = None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
         mock_mode: bool = False,
-    ):
+    ) -> None:
         """
         Load the experiment system and device controller.
 
@@ -273,7 +273,7 @@ class SystemManager:
     def load_skew_file(
         self,
         box_ids: list[str],  # deprecated
-    ):
+    ) -> None:
         skew_file_path = self.config_loader.config_path / "skew.yaml"
         if not Path(skew_file_path).exists():
             logger.warning(f"Skew file not found: {skew_file_path}")
@@ -288,7 +288,7 @@ class SystemManager:
     def pull(
         self,
         box_ids: Sequence[str],
-    ):
+    ) -> None:
         """
         Pull the hardware state to the software state.
 
@@ -306,7 +306,7 @@ class SystemManager:
         self,
         box_ids: Sequence[str],
         confirm: bool = True,
-    ):
+    ) -> None:
         """
         Push the software state to the hardware state.
 
@@ -475,7 +475,7 @@ This operation will overwrite the existing device settings. Do you want to conti
     def save_qubecalib_config(
         self,
         path_to_save: str = "./qubecalib.json",
-    ):
+    ) -> None:
         """
         Save the Qubecalib configuration to a file.
 
@@ -615,7 +615,9 @@ This operation will overwrite the existing device settings. Do you want to conti
         return experiment_system
 
     @contextmanager
-    def modified_frequencies(self, target_frequencies: dict[str, float]):
+    def modified_frequencies(
+        self, target_frequencies: dict[str, float]
+    ) -> Iterator[None]:
         """
         Temporarily modify the target frequencies.
 
@@ -645,7 +647,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         lo_freq: int | None,
         cnco_freq: int,
         fnco_freq: int,
-    ):
+    ) -> Iterator[None]:
         """
         Temporarily modify the device settings.
 
@@ -764,7 +766,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         *,
         rawdata_dir: Path | str = ".rawdata",
         tag: str | None = None,
-    ):
+    ) -> Iterator[None]:
         """
         Context manager to save raw data to a specified directory.
 

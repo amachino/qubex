@@ -866,11 +866,11 @@ def _configure_loopback(mux: str | int, *, enable: bool) -> None:
         logger.error(f"Error {action} loopback: {e}")
 
 
-def enable_loopback(*, mux: str | int):
+def enable_loopback(*, mux: str | int) -> None:
     """Enable loopback for the specified MUX (backward-compatible API)."""
     _configure_loopback(mux, enable=True)
 
 
-def disable_loopback(*, mux: str | int):
+def disable_loopback(*, mux: str | int) -> None:
     """Disable loopback for the specified MUX (backward-compatible API)."""
     _configure_loopback(mux, enable=False)

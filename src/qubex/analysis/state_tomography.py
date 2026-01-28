@@ -4,6 +4,7 @@ import logging
 import warnings
 from functools import reduce
 from itertools import product
+from typing import Any
 
 import cvxpy as cp
 import numpy as np
@@ -129,7 +130,7 @@ def plot_ghz_state_tomography(
     plot: bool = True,
     save_image: bool = False,
     file_name: str | None = None,
-):
+) -> dict[str, Any]:
     n_qubits = len(qubits)
     dim = 2**n_qubits
 

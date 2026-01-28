@@ -5,7 +5,7 @@ import warnings
 from collections import defaultdict
 from logging import getLogger
 from pathlib import Path
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 import yaml
 from typing_extensions import deprecated
@@ -201,7 +201,7 @@ class ConfigLoader:
             )
         return self._experiment_system
 
-    def _load_config_file(self, file_name) -> dict:
+    def _load_config_file(self, file_name: str) -> dict:
         path = Path(self._config_dir) / file_name
         try:
             with open(path) as file:
@@ -214,7 +214,7 @@ class ConfigLoader:
             raise e
         return result
 
-    def _load_legacy_params_file(self, file_name) -> dict:
+    def _load_legacy_params_file(self, file_name: str) -> dict:
         path = Path(self._params_dir) / file_name
         try:
             with open(path) as file:
@@ -308,7 +308,7 @@ class ConfigLoader:
         Returns a new dict; does not mutate the input.
         """
 
-        def apply(value, key: str | None = None):
+        def apply(value: Any, key: str | None = None) -> Any:
             if isinstance(unit, str):
                 scale = self._unit_scale_to_internal(unit)
             else:

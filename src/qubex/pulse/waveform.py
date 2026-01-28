@@ -158,7 +158,7 @@ class Waveform(ABC):
     def inverted(self) -> Waveform:
         """Return a copy of the waveform with the time inverted."""
 
-    def reset_cached_duration(self):
+    def reset_cached_duration(self) -> None:
         """Reset the cached duration of the waveform."""
         cast(dict, self.__dict__).pop("cached_duration", None)
 
@@ -213,7 +213,7 @@ class Waveform(ABC):
         title: str | None = None,
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
         divide_by_two_pi: bool = False,
-    ):
+    ) -> None:
         """
         Plot the waveform.
 
@@ -247,7 +247,7 @@ class Waveform(ABC):
         xlabel: str = "Time (ns)",
         ylabel: str = "Amplitude (arb. units)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
-    ):
+    ) -> None:
         """
         Plot the waveform with I/Q values.
 
@@ -319,7 +319,7 @@ class Waveform(ABC):
         ylabel_1: str = "Amplitude (arb. units)",
         ylabel_2: str = "Phase (rad)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
-    ):
+    ) -> None:
         """
         Plot the waveform with amplitude and phase.
 
@@ -392,7 +392,7 @@ class Waveform(ABC):
         xlabel: str = "Frequency (MHz)",
         ylabel: str = "Amplitude (arb. units)",
         zero_padding_factor: int = 100,
-    ):
+    ) -> None:
         """
         Plot the FFT of the waveform.
 
@@ -427,7 +427,7 @@ class Waveform(ABC):
         zero_padding_factor: int = 100,
         frequency_sign: Literal["positive", "negative"] = "negative",
         xlim: tuple[float, float] | None = None,
-    ):
+    ) -> None:
         """
         Plot the spectrum of the waveform.
 

@@ -53,7 +53,7 @@ class ExperimentRecord(Generic[T]):
     created_at: str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     file_name: str = ""
 
-    def save(self, data_path: str | None = None):
+    def save(self, data_path: str | None = None) -> None:
         """
         Save the experiment record to a pickle file.
 

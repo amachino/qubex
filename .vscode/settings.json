@@ -28,7 +28,6 @@
   "python.languageServer": "Pylance",
   "python.terminal.activateEnvironment": false,
   "python.testing.pytestArgs": [
-    "--import-mode=importlib",
     "tests"
   ],
   "python.testing.pytestEnabled": true,

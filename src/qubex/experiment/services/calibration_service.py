@@ -74,7 +74,7 @@ class CalibrationService:
         *,
         reference_phases: dict[str, float] | None = None,
         save: bool | None = None,
-    ):
+    ) -> None:
         if save is None:
             save = True
 
@@ -128,7 +128,7 @@ class CalibrationService:
         *,
         reference_phases: dict[str, float] | None = None,
         save: bool | None = None,
-    ):
+    ) -> None:
         if save is None:
             save = True
 
@@ -189,7 +189,7 @@ class CalibrationService:
         *,
         shots: int | None = None,
         save: bool | None = None,
-    ):
+    ) -> None:
         if shots is None:
             shots = 10000
         if save is None:
@@ -229,7 +229,7 @@ class CalibrationService:
         cr_labels: Collection[str] | str | None = None,
         *,
         save: bool | None = None,
-    ):
+    ) -> None:
         if save is None:
             save = False
 
@@ -2252,16 +2252,17 @@ class CalibrationService:
             return ps
 
         def calibrate(
-            amplitude_range,
+            amplitude_range: ArrayLike,
             duration: float,
             n_repetitions: int,
         ) -> dict:
-            min_amplitude = np.clip(amplitude_range[0], 0.0, max_cr_amplitude)
-            max_amplitude = np.clip(amplitude_range[-1], 0.0, max_cr_amplitude)
+            amplitude_array = np.asarray(amplitude_range, dtype=float)
+            min_amplitude = np.clip(amplitude_array[0], 0.0, max_cr_amplitude)
+            max_amplitude = np.clip(amplitude_array[-1], 0.0, max_cr_amplitude)
             amplitude_range = np.linspace(
                 min_amplitude,
                 max_amplitude,
-                len(amplitude_range),
+                len(amplitude_array),
             )
             sweep_result = self.measurement_service.sweep_parameter(
                 lambda x: ecr_sequence(

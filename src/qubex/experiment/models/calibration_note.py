@@ -162,13 +162,13 @@ class CalibrationNote(ExperimentNote):
         self,
         target: str,
         value: RabiParam,
-    ):
+    ) -> None:
         self.put_property(RABI_PARAMS, target, value)
 
     def remove_rabi_param(
         self,
         target: str,
-    ):
+    ) -> None:
         self.remove_property(RABI_PARAMS, target)
 
     def get_hpi_param(
@@ -182,13 +182,13 @@ class CalibrationNote(ExperimentNote):
         self,
         target: str,
         value: FlatTopParam,
-    ):
+    ) -> None:
         self.put_property(HPI_PARAMS, target, value)
 
     def remove_hpi_param(
         self,
         target: str,
-    ):
+    ) -> None:
         self.remove_property(HPI_PARAMS, target)
 
     def get_pi_param(
@@ -202,13 +202,13 @@ class CalibrationNote(ExperimentNote):
         self,
         target: str,
         value: FlatTopParam,
-    ):
+    ) -> None:
         self.put_property(PI_PARAMS, target, value)
 
     def remove_pi_param(
         self,
         target: str,
-    ):
+    ) -> None:
         self.remove_property(PI_PARAMS, target)
 
     def get_drag_hpi_param(
@@ -222,13 +222,13 @@ class CalibrationNote(ExperimentNote):
         self,
         target: str,
         value: DragParam,
-    ):
+    ) -> None:
         self.put_property(DRAG_HPI_PARAMS, target, value)
 
     def remove_drag_hpi_param(
         self,
         target: str,
-    ):
+    ) -> None:
         self.remove_property(DRAG_HPI_PARAMS, target)
 
     def get_drag_pi_param(
@@ -242,13 +242,13 @@ class CalibrationNote(ExperimentNote):
         self,
         target: str,
         value: DragParam,
-    ):
+    ) -> None:
         self.put_property(DRAG_PI_PARAMS, target, value)
 
     def remove_drag_pi_param(
         self,
         target: str,
-    ):
+    ) -> None:
         self.remove_property(DRAG_PI_PARAMS, target)
 
     def get_state_param(
@@ -262,13 +262,13 @@ class CalibrationNote(ExperimentNote):
         self,
         target: str,
         value: StateParam,
-    ):
+    ) -> None:
         self.put_property(STATE_PARAMS, target, value)
 
     def remove_state_param(
         self,
         target: str,
-    ):
+    ) -> None:
         self.remove_property(STATE_PARAMS, target)
 
     def get_cr_param(
@@ -282,13 +282,13 @@ class CalibrationNote(ExperimentNote):
         self,
         target: str,
         value: CrossResonanceParam,
-    ):
+    ) -> None:
         self.put_property(CR_PARAMS, target, value)
 
     def remove_cr_param(
         self,
         target: str,
-    ):
+    ) -> None:
         self.remove_property(CR_PARAMS, target)
 
     def get_property(
@@ -318,14 +318,14 @@ class CalibrationNote(ExperimentNote):
         key: str,
         target: str,
         value: Any,
-    ):
+    ) -> None:
         self.put(key, {target: value})
 
     def remove_property(
         self,
         key: str,
         target: str,
-    ):
+    ) -> None:
         property = self.get(key)
         if property is None:
             logger.warning(f"Key '{key}' not found.")
@@ -358,7 +358,7 @@ class CalibrationNote(ExperimentNote):
         self,
         key: str,
         value: dict[str, Any],
-    ):
+    ) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         for v in value.values():
             if v.get("timestamp") is None:

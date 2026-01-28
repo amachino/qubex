@@ -37,7 +37,7 @@ class MeasurementRecord(Generic[T]):
     def save(
         self,
         data_dir: Path | str | None = None,
-    ):
+    ) -> None:
         """
         Save the experiment record to a pickle file.
 

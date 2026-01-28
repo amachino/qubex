@@ -1002,6 +1002,7 @@ class CharacterizationService:
                 51,
             )
         time_range = self.ctx.util.discretize_time_range(np.asarray(time_range))
+        assert time_range is not None
 
         data: dict[str, T1Data] = {}
 
@@ -1012,7 +1013,10 @@ class CharacterizationService:
             if len(subgroup) == 0:
                 continue
 
-            def t1_sequence(T: int, subgroup=subgroup) -> PulseSchedule:
+            def t1_sequence(
+                T: int,
+                subgroup: list[str] = subgroup,
+            ) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
                         ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
@@ -1133,7 +1137,10 @@ class CharacterizationService:
             if len(subgroup) == 0:
                 continue
 
-            def t2_sequence(T: int, subgroup=subgroup) -> PulseSchedule:
+            def t2_sequence(
+                T: int,
+                subgroup: list[str] = subgroup,
+            ) -> PulseSchedule:
                 with PulseSchedule(subgroup) as ps:
                     for target in subgroup:
                         hpi = self.pulse.get_hpi_pulse(target)
@@ -1176,6 +1183,7 @@ class CharacterizationService:
             # if plot:
             #     t2_sequence(time_range[-1]).plot()
 
+            assert time_range is not None
             sweep_result = self.measurement_service.sweep_parameter(
                 sequence=t2_sequence,
                 sweep_range=time_range,
@@ -1257,6 +1265,7 @@ class CharacterizationService:
             time_range = np.arange(0, 10001, 100)
         else:
             time_range = self.ctx.util.discretize_time_range(time_range)
+        assert time_range is not None
 
         if detuning is None:
             detuning = 0.001
@@ -1284,9 +1293,9 @@ class CharacterizationService:
 
             def ramsey_sequence(
                 T: int,
-                target_list=target_list,
-                target_qubits=target_qubits,
-                spectator_qubits=spectator_qubits,
+                target_list: list[str] = target_list,
+                target_qubits: list[str] = target_qubits,
+                spectator_qubits: list[str] = spectator_qubits,
             ) -> PulseSchedule:
                 with PulseSchedule(target_list) as ps:
                     # Excite spectator qubits if needed
@@ -1409,6 +1418,7 @@ class CharacterizationService:
             time_range=np.asarray(time_range),
             sampling_period=2 * SAMPLING_PERIOD,
         )
+        assert time_range is not None
 
         if detuning is None:
             detuning = 0.001
@@ -1427,13 +1437,13 @@ class CharacterizationService:
 
         x90_pulses = {target: self.pulse.get_hpi_pulse(target) for target in targets}
 
-        def t1_sequence(target, T: int) -> PulseSchedule:
+        def t1_sequence(target: str, T: int) -> PulseSchedule:
             with PulseSchedule([target]) as ps:
                 ps.add(target, x90_pulses[target].repeated(2))
                 ps.add(target, Blank(T))
             return ps
 
-        def t2_sequence(target, T: int) -> PulseSchedule:
+        def t2_sequence(target: str, T: int) -> PulseSchedule:
             half_T = T // 2
             with PulseSchedule([target]) as ps:
                 ps.add(target, x90_pulses[target])
@@ -1443,7 +1453,7 @@ class CharacterizationService:
                 ps.add(target, x90_pulses[target].scaled(-1))
             return ps
 
-        def ramsey_sequence(target, T: int) -> PulseSchedule:
+        def ramsey_sequence(target: str, T: int) -> PulseSchedule:
             with PulseSchedule([target]) as ps:
                 x90 = x90_pulses[target]
                 ps.add(target, x90)
@@ -1703,10 +1713,10 @@ class CharacterizationService:
 
             def stark_t1_sequence(
                 T: int,
-                target=target,
-                ramptime=ramptime,
-                power=power,
-                detuning=detuning,
+                target: str = target,
+                ramptime: float = ramptime,
+                power: float = power,
+                detuning: float = detuning,
             ) -> PulseSchedule:
                 with PulseSchedule([target]) as ps:
                     ps.add(target, self.pulse.get_hpi_pulse(target).repeated(2))
@@ -1849,10 +1859,10 @@ class CharacterizationService:
 
             def stark_ramsey_sequence(
                 T: int,
-                target=target,
-                ramptime=ramptime,
-                power=power,
-                detuning=detuning,
+                target: str = target,
+                ramptime: float = ramptime,
+                power: float = power,
+                detuning: float = detuning,
             ) -> PulseSchedule:
                 x90 = self.pulse.get_hpi_pulse(target=target)
                 with PulseSchedule([target]) as ps:
@@ -3328,7 +3338,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ):
+    ) -> float:
         if target_rabi_rate is None:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
         if shots is None:

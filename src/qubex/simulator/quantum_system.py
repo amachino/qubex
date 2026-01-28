@@ -344,7 +344,7 @@ class QuantumSystem:
         )
         return qt.to_super(choi_truncated)
 
-    def draw(self, **kwargs):
+    def draw(self, **kwargs) -> None:
         nx.draw(
             self.graph,
             with_labels=True,

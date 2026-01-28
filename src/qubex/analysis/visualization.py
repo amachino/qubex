@@ -21,7 +21,7 @@ DEFAULT_IMAGES_DIR = "./images"
 DEFAULT_TEMPLATE = "qubex"
 
 
-def display_bloch_sphere(bloch_vectors: NDArray[np.float64]):
+def display_bloch_sphere(bloch_vectors: NDArray[np.float64]) -> None:
     qcv.display_bloch_sphere_from_bloch_vectors(bloch_vectors)
 
 
@@ -34,7 +34,7 @@ def save_figure_image(
     width: int | None = None,
     height: int | None = None,
     scale: int = 3,
-):
+) -> None:
     if not os.path.exists(images_dir):
         os.makedirs(images_dir)
 
@@ -83,7 +83,7 @@ def plot(
     return_figure: bool = False,
     save_image: bool = False,
     **kwargs,
-):
+) -> go.Figure | None:
     fig = go.Figure()
     y = np.asarray(y)
 
@@ -160,7 +160,7 @@ def plot_cdf(
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-):
+) -> go.Figure | None:
     dataset = {}
     data_min = float("inf")
     data_max = float("-inf")
@@ -260,7 +260,7 @@ def plot_fft(
     return_figure: bool = False,
     save_image: bool = False,
     **kwargs,
-):
+) -> go.Figure | None:
     N = len(x)
     dt = x[1] - x[0]
     f = np.fft.fftfreq(N, dt)[: N // 2]
@@ -312,7 +312,7 @@ def plot_bloch_vectors(
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-):
+) -> go.Figure | None:
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -384,7 +384,7 @@ def plot_waveform(
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-):
+) -> go.Figure | None:
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -444,7 +444,7 @@ def scatter_iq_data(
     template: str = DEFAULT_TEMPLATE,
     return_figure: bool = False,
     save_image: bool = False,
-):
+) -> go.Figure | None:
     if not isinstance(data, Mapping):
         data = {"data": data}
 

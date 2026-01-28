@@ -294,7 +294,7 @@ class StateClassifierKMeans(StateClassifier):
         data: NDArray,
         labels: NDArray,
         n_samples: int = 1000,
-    ):
+    ) -> None:
         """
         Plot the data and the predicted labels.
 

@@ -3551,7 +3551,7 @@ class MeasurementService:
         decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
         with_readout_pulses: bool | None = None,
-    ):
+    ) -> PulseSchedule:
         if optimize_sequence is None:
             optimize_sequence = False
         if as_late_as_possible is None:
@@ -4277,7 +4277,7 @@ class MeasurementService:
         plot: bool | None = None,
         show_labels: bool | None = None,
         show_data: bool | None = None,
-    ):
+    ) -> nx.Graph:
         if threshold is None:
             threshold = 0.0
         if plot is None:
@@ -4379,7 +4379,7 @@ class MeasurementService:
         plot: bool | None = None,
         show_labels: bool | None = None,
         show_data: bool | None = None,
-    ):
+    ) -> nx.Graph:
         if threshold is None:
             threshold = 0.0
         if plot is None:
@@ -4428,7 +4428,7 @@ class MeasurementService:
         plot: bool | None = None,
         show_labels: bool | None = None,
         show_data: bool | None = None,
-    ):
+    ) -> nx.DiGraph:
         if threshold is None:
             threshold = 0.0
         if plot is None:
@@ -4501,7 +4501,7 @@ class MeasurementService:
         graph: nx.Graph,
         *,
         plot: bool | None = None,
-    ):
+    ) -> list[list[tuple[str, str]]]:
         if plot is None:
             plot = False
         edges = list(graph.edges())
@@ -4557,7 +4557,7 @@ class MeasurementService:
         *,
         bases: dict[str, str] | None = None,
         with_readout_pulses: bool | None = None,
-    ):
+    ) -> PulseSchedule:
         if with_readout_pulses is None:
             with_readout_pulses = True
         nodes = list(graph.nodes())
@@ -4600,7 +4600,7 @@ class MeasurementService:
         self,
         G: nx.Graph,
         plot: bool | None = None,
-    ):
+    ) -> dict[int, list[tuple[str, str]]]:
         if plot is None:
             plot = False
         chip_graph = self.ctx.quantum_system.chip_graph
@@ -5732,7 +5732,11 @@ class MeasurementService:
 
         RAD_TO_DEG = 180 / np.pi
 
-        def cartesian_to_spherical(x, y, z):
+        def cartesian_to_spherical(
+            x: float,
+            y: float,
+            z: float,
+        ) -> tuple[float, float, float]:
             r = np.sqrt(x**2 + y**2 + z**2)
             theta = np.arctan2(y, x) * RAD_TO_DEG
             phi = np.arccos(z / r) * RAD_TO_DEG if r != 0 else 0

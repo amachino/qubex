@@ -15,6 +15,7 @@ from collections import defaultdict
 from collections.abc import Collection, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
+from types import TracebackType
 from typing import Literal
 
 import numpy as np
@@ -86,7 +87,7 @@ class PulseSchedule:
         self._offsets = defaultdict(lambda: 0.0)
         self._global_offset = 0.0
 
-    def __enter__(self):
+    def __enter__(self) -> PulseSchedule:
         """
         Enter the context manager.
 
@@ -97,7 +98,12 @@ class PulseSchedule:
         """
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         """
         Exit the context manager and add a barrier to the sequence.
 
@@ -175,7 +181,7 @@ class PulseSchedule:
         /,
         label: str,
         obj: Waveform | PhaseShift,
-    ):
+    ) -> None:
         """
         Add a waveform or a phase shift to the pulse schedule.
 
@@ -201,7 +207,7 @@ class PulseSchedule:
     def barrier(
         self,
         labels: Collection[str] | None = None,
-    ):
+    ) -> None:
         """
         Add a barrier to the pulse schedule.
 
@@ -233,7 +239,7 @@ class PulseSchedule:
         self,
         schedule: PulseSchedule,
         copy: bool = False,
-    ):
+    ) -> None:
         """
         Call another pulse schedule in the current pulse schedule.
 
@@ -378,7 +384,7 @@ class PulseSchedule:
         divide_by_two_pi: bool = False,
         time_unit: Literal["ns", "samples"] = "ns",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
-    ):
+    ) -> None:
         """
         Plot the pulse schedule.
 

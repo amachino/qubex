@@ -65,7 +65,7 @@ class Pauli:
         sign = {1: "", -1: "-", 1j: "i", -1j: "-i"}[self.coefficient]
         return f"{sign}{self.operator}"
 
-    def log_info(self):
+    def log_info(self) -> None:
         """Print the string representation of the Pauli operator."""
         logger.info(self.to_string())
 
@@ -76,5 +76,7 @@ class Pauli:
     def __hash__(self):
         return hash((self.coefficient, self.operator))
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Pauli):
+            return False
         return self.coefficient == other.coefficient and self.operator == other.operator

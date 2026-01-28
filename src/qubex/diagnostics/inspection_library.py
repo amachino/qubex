@@ -20,7 +20,7 @@ class Type0A(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         min_frequency = self.params.min_frequency
         max_frequency = self.params.max_frequency
         min_t1 = self.params.min_t1
@@ -73,7 +73,7 @@ class Type0B(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         max_detuning = self.params.max_detuning
 
         for i, j in self.graph.qubit_edges:
@@ -102,7 +102,7 @@ class Type1A(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         adiabatic_limit = self.params.adiabatic_limit
 
         for i, j in self.graph.qubit_edges:
@@ -154,7 +154,7 @@ class Type1B(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         adiabatic_limit = self.params.adiabatic_limit
 
         for c in self.graph.qubit_nodes:
@@ -190,7 +190,7 @@ class Type1C(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         cr_control_limit = self.params.cr_control_limit
 
         for c, t in self.graph.qubit_edges:
@@ -219,7 +219,7 @@ class Type2A(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         adiabatic_limit = self.params.adiabatic_limit
 
         for c, t in self.graph.qubit_edges:
@@ -251,7 +251,7 @@ class Type2B(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         adiabatic_limit = self.params.adiabatic_limit
 
         for c, t in self.graph.qubit_edges:
@@ -284,7 +284,7 @@ class Type3A(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         adiabatic_limit = self.params.adiabatic_limit
 
         for i, j in self.graph.qubit_edges:
@@ -332,7 +332,7 @@ class Type3B(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         cr_control_limit = self.params.cr_control_limit
 
         for c, t in self.graph.qubit_edges:
@@ -364,7 +364,7 @@ class Type7(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         adiabatic_limit = self.params.adiabatic_limit
 
         for c, t in self.graph.qubit_edges:
@@ -409,7 +409,7 @@ class Type8(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         for c, t in self.graph.qubit_edges:
             label_ct = self.get_label((c, t))
             D_stark_c = self.get_stark_shift((c, t))
@@ -451,7 +451,7 @@ class Type9(Inspection):
             params=params,
         )
 
-    def execute(self):
+    def execute(self) -> None:
         for c, t in self.graph.qubit_edges:
             label_ct = self.get_label((c, t))
             D_stark_c = self.get_stark_shift((c, t))

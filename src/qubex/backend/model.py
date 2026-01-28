@@ -9,15 +9,15 @@ from pydantic.dataclasses import dataclass
 @dataclass(config=ConfigDict(validate_assignment=True))
 class Model:
     @classmethod
-    def _pd_class(cls):
+    def _pd_class(cls) -> TypeAdapter:
         return TypeAdapter(cls)
 
     @classmethod
-    def json_schema(cls):
+    def json_schema(cls) -> dict:
         return cls._pd_class().json_schema()
 
     @classmethod
-    def load(cls, data: dict | str):
+    def load(cls, data: dict | str) -> Model:
         if isinstance(data, str):
             obj = cls._pd_class().validate_json(data)
         else:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Collection
+from typing import Any
 
 import cma
 import numpy as np
@@ -100,14 +101,14 @@ class OptimizationService:
             },
         )
 
-        def objective_func(params):
+        def objective_func(params: np.ndarray) -> float:
             pulse = Pulse(params[:N] + 1j * params[N:])
             result = self.measurement_service.state_tomography(
                 {qubit: pulse.repeated(2)},
                 x90={qubit: pulse},
             )
             loss = np.linalg.norm(result[qubit] - np.array((0, 0, -1)))
-            return loss
+            return float(loss)
 
         es.optimize(objective_func)
         x = es.result.xbest
@@ -152,7 +153,7 @@ class OptimizationService:
             },
         )
 
-        def objective_func(params):
+        def objective_func(params: np.ndarray) -> float:
             pulse = Drag(
                 duration=duration,
                 amplitude=params[0],
@@ -163,7 +164,7 @@ class OptimizationService:
                 x90={qubit: pulse},
             )
             loss = np.linalg.norm(result[qubit] - np.array((0, 0, -1)))
-            return loss
+            return float(loss)
 
         es.optimize(objective_func)
         x = es.result.xbest
@@ -206,13 +207,13 @@ class OptimizationService:
             },
         )
 
-        def objective_func(params):
+        def objective_func(params: np.ndarray) -> float:
             pulse = Pulse(params[:N] + 1j * params[N:])
             result = self.measurement_service.state_tomography(
                 {qubit: pulse}, x90={qubit: x90}
             )
             loss = np.linalg.norm(result[qubit] - np.array(target_state))
-            return loss
+            return float(loss)
 
         es.optimize(objective_func)
         x = es.result.xbest
@@ -242,7 +243,7 @@ class OptimizationService:
         x180_margin: float | None = None,
         shots: int | None = None,
         interval: float | None = None,
-    ):
+    ) -> dict[str, Any]:
         if objective_type is None:
             objective_type = "st"
         if optimize_method is None:
@@ -343,7 +344,7 @@ class OptimizationService:
         best_loss = float("inf")
         best_params = None
 
-        def objective_func(params_vec):
+        def objective_func(params_vec: np.ndarray) -> float:
             nonlocal best_loss, best_params
 
             params = {k: v["initial"] for k, v in defaults.items()}
@@ -471,14 +472,14 @@ class OptimizationService:
                 best_loss = loss
                 best_params = params_vec.copy()
 
-            return loss
+            return float(loss)
 
         initial_params = [opt_params_dict[k]["initial"] for k in opt_params]
 
         try:
             if optimize_method == "nm":
 
-                def nm_callback(xk):
+                def nm_callback(xk: np.ndarray) -> None:
                     current_loss = objective_func(xk)
                     logger.info(f"loss = {current_loss:.6f}, x = {xk}")
 

@@ -325,7 +325,7 @@ class PulseArray(Waveform):
         xlabel: str = "Time (ns)",
         ylabel: str = "Amplitude (arb. units)",
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
-    ):
+    ) -> None:
         """
         Plot the waveform of the pulse array.
 

@@ -21,7 +21,7 @@ class StateClassifier(ABC):
     phase: float
     created_at: str
 
-    def save(self, path: Path | str):
+    def save(self, path: Path | str) -> None:
         """
         Save the state classifier model to a file.
 
@@ -187,7 +187,7 @@ class StateClassifier(ABC):
         data: NDArray,
         labels: NDArray,
         n_samples: int = 1000,
-    ):
+    ) -> None:
         """
         Plot the data and the predicted labels.
 

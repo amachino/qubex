@@ -1902,7 +1902,7 @@ class BenchmarkingService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ):
+    ) -> None:
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1974,7 +1974,7 @@ class BenchmarkingService:
         interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
-    ):
+    ) -> None:
         if targets is None:
             targets = self.ctx.cr_labels
         elif isinstance(targets, str):

@@ -7,7 +7,7 @@ VERSION = "1.5.0a1"
 
 
 @deprecated("get_version is deprecated, use VERSION constant instead.")
-def get_version():
+def get_version() -> str:
     try:
         commit_hash = (
             subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])

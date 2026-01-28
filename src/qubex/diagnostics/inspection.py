@@ -4,6 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, replace
+from typing import NoReturn
 
 import numpy as np
 
@@ -45,7 +46,7 @@ class Inspection(ABC):
         self._invalid_edges = defaultdict(list[str])
 
     @abstractmethod
-    def execute(self):
+    def execute(self) -> NoReturn:
         raise NotImplementedError
 
     @property
@@ -153,7 +154,7 @@ class Inspection(ABC):
         self,
         target: tuple[int, int],
     ) -> float:
-        def get_composite_coupling(i, j, k):
+        def get_composite_coupling(i: int, j: int, k: int) -> float:
             f_i = self.get_ge_frequency(i)
             f_j = self.get_ge_frequency(j)
             f_k = self.get_ge_frequency(k)
@@ -199,7 +200,7 @@ class Inspection(ABC):
         self,
         nodes: list[str],
         message: str,
-    ):
+    ) -> None:
         nodes = nodes or []
         for node in nodes:
             self._invalid_nodes[node].append(message)
@@ -208,7 +209,7 @@ class Inspection(ABC):
         self,
         edges: list[str],
         message: str,
-    ):
+    ) -> None:
         edges = edges or []
         for edge in edges:
             self._invalid_edges[edge].append(message)
@@ -315,7 +316,7 @@ class Inspection(ABC):
         )
         return hovertext
 
-    def log_report(self):
+    def log_report(self) -> None:
         logger.info(f"[{self.name}]")
         logger.info(f"{self.description}")
         logger.info("")
@@ -336,7 +337,7 @@ class Inspection(ABC):
         self,
         save_image: bool = False,
         images_dir: str = "./images",
-    ):
+    ) -> None:
         node_values = dict.fromkeys(self.invalid_nodes, 1)
         edge_values = dict.fromkeys(self.invalid_edges, 1)
         node_hovertexts = {

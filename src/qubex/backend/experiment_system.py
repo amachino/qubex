@@ -230,7 +230,7 @@ class ExperimentSystem:
     def all_targets(self) -> list[Target | CapTarget]:
         return self.targets + self.read_in_targets
 
-    def add_target(self, target: Target | CapTarget):
+    def add_target(self, target: Target | CapTarget) -> None:
         if isinstance(target, Target):
             self._gen_target_dict[target.label] = target
         elif isinstance(target, CapTarget):
@@ -392,7 +392,7 @@ class ExperimentSystem:
     def modify_target_frequencies(
         self,
         frequencies: dict[str, float],
-    ):
+    ) -> None:
         for label, frequency in frequencies.items():
             target = self.get_target(label)
             target.frequency = frequency
@@ -404,7 +404,7 @@ class ExperimentSystem:
         lo_freq: int | None,
         cnco_freq: int,
         fnco_freq: int,
-    ):
+    ) -> None:
         target = self.get_target(label)
         gen_channel = target.channel
         original_values = (
@@ -460,7 +460,7 @@ class ExperimentSystem:
     def configure(
         self,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-    ):
+    ) -> None:
         params = self.control_params
 
         self._gen_target_dict: dict[str, Target] = {}

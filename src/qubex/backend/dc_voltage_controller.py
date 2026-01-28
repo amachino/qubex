@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import Final
+from typing import Any, Final
 
 from qubex.third_party.ons61797 import ONS61797
 
@@ -10,7 +11,7 @@ PORT: Final = "/dev/ttyACM0"
 
 
 @contextmanager
-def dc_voltage(voltages: dict[int, float]):
+def dc_voltage(voltages: dict[int, float]) -> Iterator[ONS61797]:
     try:
         ons61797 = ONS61797(port=PORT)
         original_voltages = {}
@@ -26,9 +27,9 @@ def dc_voltage(voltages: dict[int, float]):
         ons61797.close()
 
 
-def with_connection(func):
+def with_connection(func: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         try:
             if self._ons61797 is None:
                 self._ons61797 = ONS61797(port=PORT)
@@ -52,7 +53,7 @@ class DCVoltageController:
         return cls._instance
 
     @classmethod
-    def shared(cls):
+    def shared(cls) -> DCVoltageController:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -102,7 +103,7 @@ class DCVoltageController:
         self.ons61797.reset()
 
     @contextmanager
-    def connection(self):
+    def connection(self) -> Iterator[ONS61797]:
         try:
             if self._ons61797 is None:
                 self._ons61797 = ONS61797(port=PORT)

@@ -122,7 +122,7 @@ def func_delayed_cos(
     A: float,
     omega: float,
     C: float,
-):
+) -> NDArray:
     """
     Calculate a delayed cosine function with given parameters.
 
@@ -343,10 +343,10 @@ def fit_linear(
     x = x[mask]
     y = y[mask]
 
-    def func_linear(x, a):
+    def func_linear(x: NDArray, a: float) -> NDArray:
         return a * x
 
-    def func_linear_with_intercept(x, a, b):
+    def func_linear_with_intercept(x: NDArray, a: float, b: float) -> NDArray:
         return a * x + b
 
     if not intercept:
@@ -745,8 +745,8 @@ def fit_delayed_cosine(
     y: ArrayLike,
     *,
     threshold: float = 0.5,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Delayed cosine fit",
@@ -925,8 +925,8 @@ def fit_exp_decay(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Decay time",
@@ -1075,8 +1075,8 @@ def fit_lorentzian(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Lorentzian fit",
@@ -1236,8 +1236,8 @@ def fit_sqrt_lorentzian(
     x: ArrayLike,
     y: ArrayLike,
     *,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     target: str | None = None,
     title: str = "Square root Lorentzian fit",
@@ -1659,7 +1659,7 @@ def fit_detuned_rabi(
     control_frequencies = control_frequencies[mask]
     rabi_frequencies = rabi_frequencies[mask]
 
-    def func(f_control, f_resonance, f_rabi):
+    def func(f_control: NDArray, f_resonance: float, f_rabi: float) -> NDArray:
         return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
 
     try:
@@ -1755,8 +1755,8 @@ def fit_ramsey(
     phase_est: float | None = None,
     offset_est: float | None = None,
     tau_est: float | None = None,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     title: str = "Ramsey fringe",
     xlabel: str = "Time (μs)",
@@ -1929,8 +1929,8 @@ def fit_rb(
     y: NDArray[np.float64],
     error_y: NDArray[np.float64] | None = None,
     dimension: int = 2,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     title: str = "Randomized benchmarking",
     xlabel: str = "Number of Cliffords",
@@ -2220,7 +2220,7 @@ def fit_ampl_calib_data(
     target: str,
     amplitude_range: NDArray,
     data: NDArray,
-    p0=None,
+    p0: Any | None = None,
     maximize: bool = True,
     plot: bool = True,
     title: str = "Amplitude calibration",
@@ -2258,7 +2258,14 @@ def fit_ampl_calib_data(
     if maximize:
         data = -data
 
-    def cos_func(t, ampl, omega, phi, a, b):
+    def cos_func(
+        t: NDArray,
+        ampl: float,
+        omega: float,
+        phi: float,
+        a: float,
+        b: float,
+    ) -> NDArray:
         return ampl * np.cos(omega * t + phi) + a * t + b
 
     x = amplitude_range
@@ -2366,8 +2373,8 @@ def fit_reflection_coefficient(
     target: str,
     freq_range: NDArray,
     data: NDArray,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     title: str = "Reflection coefficient",
 ) -> FitResult:
@@ -2413,7 +2420,7 @@ def fit_reflection_coefficient(
             (np.max(freq_range), 1.0, 1.0, np.inf, np.pi, np.inf),
         )
 
-    def residuals(params, f, y):
+    def residuals(params: NDArray, f: NDArray, y: NDArray) -> NDArray:
         f_r, kappa_ex, kappa_in, A, phi, tau = params
         y_model = func_resonator_reflection(f, f_r, kappa_ex, kappa_in, A, phi, tau)
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
@@ -2608,8 +2615,8 @@ def fit_reflection_coefficient_double(
     target: str,
     freq_range: NDArray,
     data: NDArray,
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     title: str = "Reflection coefficient",
 ) -> FitResult:
@@ -2668,7 +2675,7 @@ def fit_reflection_coefficient_double(
             ),
         )
 
-    def residuals(params, f, y):
+    def residuals(params: NDArray, f: NDArray, y: NDArray) -> NDArray:
         y_model = func_double_resonator_reflection(f, *params)
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
@@ -2866,8 +2873,8 @@ def fit_reflection_coefficient_double(
 def fit_rotation(
     times: NDArray[np.float64],
     data: NDArray[np.float64],
-    p0=None,
-    bounds=None,
+    p0: Any | None = None,
+    bounds: Any | None = None,
     plot: bool = True,
     plot3d: bool = False,
     title: str = "State evolution",
@@ -2953,7 +2960,7 @@ def fit_rotation(
         decay_factor = np.exp(-alpha * times)
         return decay_factor[:, np.newaxis] * r_t
 
-    def residuals(params, times, data):
+    def residuals(params: NDArray, times: NDArray, data: NDArray) -> NDArray:
         return (rotate(times, *params) - data).flatten()
 
     if p0 is None:

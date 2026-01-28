@@ -74,7 +74,7 @@ class RabiParam:
         iq_1 = complex(rotated_1 * np.exp(1j * self.angle))
         return iq_0, iq_1
 
-    def correct(self, new_reference_phase: float):
+    def correct(self, new_reference_phase: float) -> None:
         """
         Correct the angle according to a new reference phase.
 

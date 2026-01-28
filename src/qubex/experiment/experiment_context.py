@@ -3,11 +3,11 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from collections.abc import Collection
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 from numpy.typing import NDArray
 from rich.console import Console
@@ -272,7 +272,7 @@ class ExperimentContext:
 
         return qubit_labels
 
-    def print_environment(self, verbose: bool | None = None):
+    def print_environment(self, verbose: bool | None = None) -> None:
         """Print the environment information."""
         if verbose is None:
             verbose = True
@@ -296,7 +296,7 @@ class ExperimentContext:
         logger.info(f"boxes: {self.box_ids}")
         logger.info("========================================")
 
-    def print_boxes(self):
+    def print_boxes(self) -> None:
         """Print the box information."""
         if not logger.isEnabledFor(logging.INFO):
             return
@@ -311,11 +311,11 @@ class ExperimentContext:
         console.print(table)
 
     @property
-    def tool(self):
+    def tool(self) -> Any:
         return experiment_tool
 
     @property
-    def util(self):
+    def util(self) -> Any:
         return ExperimentUtil
 
     @property
@@ -545,7 +545,7 @@ class ExperimentContext:
         data: dict,
         *,
         save_path: Path | str | None = None,
-    ):
+    ) -> None:
         if save_path is not None:
             property_path = Path(save_path)
         else:
@@ -559,7 +559,7 @@ class ExperimentContext:
         except Exception as e:
             raise OSError(f"Failed to save property '{property_name}': {e}") from e
 
-    def load_calib_note(self, path: Path | str | None = None):
+    def load_calib_note(self, path: Path | str | None = None) -> None:
         """Load the calibration data from a given path or the default calibration note file."""
         if path is None:
             # TODO: Make this path configurable
@@ -699,7 +699,7 @@ class ExperimentContext:
         self,
         rabi_params: dict[str, RabiParam],
         r2_threshold: float | None = None,
-    ):
+    ) -> None:
         if r2_threshold is None:
             r2_threshold = 0.5
         not_stored = []
@@ -750,7 +750,7 @@ class ExperimentContext:
     def is_connected(self) -> bool:
         return self._measurement.is_connected()
 
-    def check_status(self):
+    def check_status(self) -> None:
         if not self.is_connected():
             logger.warning(
                 "Not connected to the devices. Call `connect()` method first."
@@ -821,7 +821,7 @@ class ExperimentContext:
         box_ids: str | list[str] | None = None,
         exclude: str | list[str] | None = None,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
-    ):
+    ) -> None:
         if isinstance(box_ids, str):
             box_ids = [box_ids]
         if isinstance(exclude, str):
@@ -839,7 +839,7 @@ class ExperimentContext:
             box_ids=box_ids or self.box_ids,
         )
 
-    def reload(self):
+    def reload(self) -> None:
         try:
             self._measurement.reload(configuration_mode=self.configuration_mode)
             logger.info("Successfully reloaded.")
@@ -851,7 +851,7 @@ class ExperimentContext:
         self,
         box_ids: str | Collection[str] | None = None,
         qubits: Collection[str] | None = None,
-    ):
+    ) -> None:
         box_ids = []
         if qubits is not None:
             boxes = self.experiment_system.get_boxes_for_qubits(qubits)
@@ -872,7 +872,7 @@ class ExperimentContext:
         channel_number: int,
         target_type: TargetType | None = None,
         update_lsi: bool | None = None,
-    ):
+    ) -> None:
         if target_type is None:
             target_type = TargetType.CTRL_GE
         if update_lsi is None:
@@ -912,7 +912,7 @@ class ExperimentContext:
     def modified_frequencies(
         self,
         frequencies: dict[str, float] | None,
-    ):
+    ) -> Iterator[None]:
         if frequencies is None:
             yield
         else:
@@ -922,19 +922,19 @@ class ExperimentContext:
     def save_calib_note(
         self,
         file_path: Path | str | None = None,
-    ):
+    ) -> None:
         self.calib_note.save(file_path=file_path)
 
     @deprecated("Use `calib_note.save()` instead.")
-    def save_defaults(self):
+    def save_defaults(self) -> None:
         self._system_note.save()
 
     @deprecated("Use `calib_note.clear()` instead.")
-    def clear_defaults(self):
+    def clear_defaults(self) -> None:
         self._system_note.clear()
 
     @deprecated("")
-    def delete_defaults(self):
+    def delete_defaults(self) -> None:
         if Confirm.ask("Delete the default params?"):
             self._system_note.clear()
             self._system_note.save()

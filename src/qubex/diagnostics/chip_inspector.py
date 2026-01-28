@@ -138,7 +138,7 @@ class InspectionSummary:
                 )
         return dict(sorted(invalid_edges.items()))
 
-    def log_report(self):
+    def log_report(self) -> None:
         logger.info(f"{len(self.invalid_nodes)} invalid nodes: ")
         if self.invalid_nodes:
             for label, messages in self.invalid_nodes.items():
@@ -157,7 +157,7 @@ class InspectionSummary:
         draw_individual_results: bool = True,
         save_image: bool = False,
         images_dir: str = "./images",
-    ):
+    ) -> None:
         if len(self.inspections) == 0:
             raise ValueError("No inspections have been executed.")
 

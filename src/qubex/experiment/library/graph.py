@@ -3,6 +3,7 @@ from __future__ import annotations
 import itertools
 import time
 from collections import deque
+from typing import Any
 
 import networkx as nx
 from networkx.algorithms.coloring import greedy_color
@@ -160,7 +161,7 @@ def strong_edge_coloring(
     return colored_edges
 
 
-def tree_center(G):
+def tree_center(G: nx.Graph) -> list[Any]:
     u = max(
         nx.single_source_shortest_path_length(G, next(iter(G.nodes))).items(),
         key=lambda x: x[1],
@@ -262,7 +263,7 @@ def find_longest_1d_chain(
 
     # Use weight_attr directly as the UG edge attribute key for the aggregated value
 
-    def aggregate_value(u, v) -> float | None:
+    def aggregate_value(u: Any, v: Any) -> float | None:
         """
         Aggregate weight across directions/parallel edges for the pair (u, v).
 
@@ -377,7 +378,12 @@ def find_longest_1d_chain(
 
     # Reachability-based pruning: can we tie or exceed current best length from u?
 
-    def can_tie_or_exceed(u, visited: set, cur_len: int, best_len: int) -> bool:
+    def can_tie_or_exceed(
+        u: Any,
+        visited: set[Any],
+        cur_len: int,
+        best_len: int,
+    ) -> bool:
         # To tie the incumbent, we need (best_len - cur_len) more edges from u,
         # which requires at least that many new nodes; counting u, that's +1.
         need_nodes = (best_len - cur_len) + 1
@@ -432,7 +438,7 @@ def find_longest_1d_chain(
             u = v
         return path, cost
 
-    def node_weight(u):
+    def node_weight(u: Any) -> float:
         # Weighted degree used to rank promising starting nodes.
         vals = [UG[u][v].get(weight_attr) for v in neighbors_sorted[u]]
         vals = [x for x in vals if x is not None]
@@ -457,7 +463,7 @@ def find_longest_1d_chain(
         if score_better(l, s_cost, best_len, best_score):
             best_len, best_score, best_path = l, s_cost, p
 
-    def dfs(u, visited: set, cur_cost: float, path: list):
+    def dfs(u: Any, visited: set[Any], cur_cost: float, path: list[Any]) -> None:
         nonlocal best_len, best_score, best_path
         # Honor optional time budget.
         if time_limit is not None and (time.perf_counter() - start_time) > time_limit:

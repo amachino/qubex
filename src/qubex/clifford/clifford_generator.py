@@ -532,7 +532,7 @@ class CliffordGenerator:
         self,
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
         file_name: str | None = None,
-    ):
+    ) -> Path:
         dir = Path(__file__).parent / CLIFFORD_LIST_DIR
         if type == "1Q":
             file_name = file_name or CLIFFORD_LIST_1Q
@@ -546,7 +546,7 @@ class CliffordGenerator:
         self,
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
         file_name: str | None = None,
-    ):
+    ) -> None:
         """Save the Clifford group to a JSON file."""
         file_path = self.get_file_path(type, file_name)
         clifford_list = self.get_clifford_list(type)
@@ -557,7 +557,7 @@ class CliffordGenerator:
         self,
         type: Literal["1Q", "1Q1Q", "2Q"],
         file_name: str | None = None,
-    ):
+    ) -> None:
         """Load the Clifford group from a JSON file."""
         file_path = self.get_file_path(type, file_name)
         with open(file_path) as file:

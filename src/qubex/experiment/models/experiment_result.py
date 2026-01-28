@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, NoReturn, TypeVar
 
 import numpy as np
 import plotly.graph_objects as go
@@ -33,10 +33,10 @@ class TargetData:
     target: str
     data: NDArray
 
-    def plot(self, *args, **kwargs):
+    def plot(self, *args, **kwargs) -> NoReturn:
         raise NotImplementedError
 
-    def fit(self, *args, **kwargs):
+    def fit(self, *args, **kwargs) -> NoReturn:
         raise NotImplementedError
 
 
@@ -73,7 +73,7 @@ class ExperimentResult(Generic[T]):
         self,
         *args,
         **kwargs,
-    ):
+    ) -> None:
         for target in self.data:
             self.data[target].plot(*args, **kwargs)
 
@@ -151,7 +151,7 @@ class RabiData(TargetData):
         height: int | None = None,
         return_figure: bool = False,
         images_dir: Path | str | None = None,
-    ):
+    ) -> go.Figure | None:
         fig = go.Figure()
 
         fig.update_layout(
@@ -320,7 +320,7 @@ class SweepData(TargetData):
         height: int | None = None,
         return_figure: bool = False,
         images_dir: Path | str | None = None,
-    ):
+    ) -> go.Figure | None:
         fig = go.Figure()
 
         fig.update_layout(
@@ -782,7 +782,7 @@ class AmplRabiData(TargetData):
     sweep_range: NDArray
     rabi_data: list[RabiData]
 
-    def plot(self):
+    def plot(self) -> None:
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -831,7 +831,7 @@ class FreqRabiData(TargetData):
     frequency_range: NDArray
     rabi_data: list[RabiData]
 
-    def plot(self):
+    def plot(self) -> None:
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(

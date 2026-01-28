@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Literal
 
@@ -26,7 +27,7 @@ def profile(
     show_all: bool = False,
     timeline: bool = False,
     height: int = 400,
-):
+) -> Iterator[None]:
     """Run optional profiling using pyinstrument and display timing if installed."""
     if not _HAS_PYINSTRUMENT:
         logger.warning("pyinstrument not installed, skipping profiling.")

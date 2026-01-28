@@ -170,7 +170,11 @@ def _is_custom_class(cls: type[Any]) -> bool:
 
 
 class NumpyTunitsJsonSchema(GenerateJsonSchema):
-    def handle_invalid_for_json_schema(self, schema, error_info) -> JsonSchemaValue:
+    def handle_invalid_for_json_schema(
+        self,
+        schema: Any,
+        error_info: Any,
+    ) -> JsonSchemaValue:
         if schema.get("type") == "is-instance":
             cls = schema.get("cls")
             if isinstance(cls, type) and _is_custom_class(cls):

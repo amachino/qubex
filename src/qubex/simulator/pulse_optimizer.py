@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import cached_property, partial
-from typing import Final
+from typing import Any, Final
 
 import jax
 import jax.numpy as jnp
@@ -31,7 +31,7 @@ class OptimizationResult:
     waveforms: dict[str, NDArray[np.complex128]]
     history: NDArray[np.float64]
 
-    def plot_waveforms(self):
+    def plot_waveforms(self) -> None:
         for target, waveform in self.waveforms.items():
             dt = self.times[1] - self.times[0]
             times = np.append(self.times, self.times[-1] + dt)
@@ -66,7 +66,7 @@ class OptimizationResult:
             )
             fig.show()
 
-    def plot_history(self):
+    def plot_history(self) -> None:
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -151,7 +151,7 @@ class PulseOptimizer:
         return self.system_hamiltonian.shape[0]
 
     @cached_property
-    def dimensions(self):
+    def dimensions(self) -> Any:
         return self.quantum_system.hamiltonian.dims
 
     @cached_property
@@ -189,15 +189,15 @@ class PulseOptimizer:
     def upper_bound(self) -> dict[str, float]:
         return dict.fromkeys(self.control_frequencies, self.max_rabi_rate)
 
-    def lowering_operator(self, target) -> Array:
+    def lowering_operator(self, target: str) -> Array:
         a = self.quantum_system.get_lowering_operator(target)
         return jnp.asarray(a.full())
 
-    def raising_operator(self, target) -> Array:
+    def raising_operator(self, target: str) -> Array:
         ad = self.quantum_system.get_raising_operator(target)
         return jnp.asarray(ad.full())
 
-    def number_operator(self, target) -> Array:
+    def number_operator(self, target: str) -> Array:
         N = self.quantum_system.get_number_operator(target)
         return jnp.asarray(N.full())
 

@@ -4,7 +4,7 @@ import math
 from collections import defaultdict
 from collections.abc import Collection
 from functools import cached_property
-from typing import Final, TypedDict
+from typing import Final, TypedDict, cast
 
 import networkx as nx
 import plotly.graph_objects as go
@@ -190,7 +190,7 @@ class LatticeGraph:
     @cached_property
     def qubit_undirected_graph(
         self,
-    ):
+    ) -> nx.Graph:
         """
         Get qubit undirected graph.
 
@@ -214,7 +214,7 @@ class LatticeGraph:
             Qubit undirected edges.
         """
         return {
-            (id0, id1): data
+            (id0, id1): cast(QubitEdge, data)
             for id0, id1, data in self.qubit_undirected_graph.edges(data=True)
         }
 
@@ -738,7 +738,7 @@ class LatticeGraph:
         image_name: str = "graph_data",
         images_dir: str = "./images",
         save_image: bool = False,
-    ):
+    ) -> None:
         width = 3 * NODE_SIZE * self.n_qubit_cols
         height = 3 * NODE_SIZE * self.n_qubit_rows
 
@@ -1065,7 +1065,7 @@ class LatticeGraph:
         image_name: str = "lattice_data",
         images_dir: str = "./images",
         save_image: bool = False,
-    ):
+    ) -> None:
         value_matrix = self.create_data_matrix(values) if values else None
         text_matrix = self.create_data_matrix(texts) if texts else None
         hovertext_matrix = self.create_data_matrix(hovertexts) if hovertexts else None
