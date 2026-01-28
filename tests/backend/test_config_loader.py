@@ -284,3 +284,34 @@ def test_override_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture)
     # Assert a warning was logged indicating override
     messages = [rec.getMessage() for rec in caplog.records]
     assert any(("overrides legacy" in m and "readout_amplitude" in m) for m in messages)
+
+
+def test_load_param_data_applies_default_when_requested(tmp_path: Path) -> None:
+    """Default values from per-file params only apply when requested."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    loader = ConfigLoader(
+        chip_id=chip_id,
+        config_dir=config_dir,
+        params_dir=params_dir,
+    )
+
+    with_default = loader.load_param_data("qubit_frequency", use_default=True)
+    without_default = loader.load_param_data("qubit_frequency", use_default=False)
+
+    assert math.isclose(with_default["Q1"], 6.0, rel_tol=0, abs_tol=1e-9)
+    assert without_default["Q1"] is None
+
+
+def test_load_param_data_requires_structured_yaml(tmp_path: Path) -> None:
+    """Per-file params must define meta/data mappings."""
+    config_dir, params_dir, chip_id = _make_minimal_files(tmp_path)
+
+    _write_yaml(params_dir / "control_amplitude.yaml", {"unexpected": 1})
+
+    with pytest.raises(TypeError, match="Per-file params must be structured"):
+        ConfigLoader(
+            chip_id=chip_id,
+            config_dir=config_dir,
+            params_dir=params_dir,
+        )

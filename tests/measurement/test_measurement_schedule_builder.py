@@ -7,7 +7,11 @@ from typing import cast
 
 import pytest
 
-from qubex.backend import ControlParams, Mux, Target
+from qubex.backend import SAMPLING_PERIOD, ControlParams, Mux, Target
+from qubex.backend.quel_instrument_executor import (
+    EXTRA_SUM_SECTION_LENGTH,
+    WORD_LENGTH,
+)
 from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
 from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule
 from qubex.typing import TargetMap
@@ -189,4 +193,95 @@ def test_create_capture_schedule_rejects_misaligned_ranges() -> None:
         builder.create_capture_schedule(
             schedule=schedule,
             readout_ranges={"RQ00": [range(2, 6)]},
+        )
+
+
+def test_create_capture_schedule_constructs_expected_captures() -> None:
+    """Ensure capture schedule contains extra-sum and per-range captures."""
+    readout_factory = StubReadoutFactory()
+    pump_factory = StubPumpFactory()
+
+    targets = cast(
+        TargetMap[Target],
+        {"RQ00": SimpleNamespace(is_pump=False, is_read=True)},
+    )
+    mux = cast(Mux, SimpleNamespace(index=1, label="MX1"))
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(capture_delay_word={1: 2}),
+    )
+
+    builder = MeasurementScheduleBuilder(
+        targets=targets,
+        mux_dict=cast(dict[str, Mux], {"Q00": mux}),
+        control_params=control_params,
+        readout_pulse_factory=readout_factory,
+        pump_pulse_factory=pump_factory,
+    )
+
+    schedule = PulseSchedule(["RQ00"])
+    schedule.add("RQ00", Blank(duration=100))
+
+    first_range = range(0, WORD_LENGTH)
+    second_range = range(WORD_LENGTH * 2, WORD_LENGTH * 3)
+    capture_schedule = builder.create_capture_schedule(
+        schedule=schedule,
+        readout_ranges={"RQ00": [first_range, second_range]},
+    )
+
+    captures = capture_schedule.captures
+    assert len(captures) == 3
+
+    delay_samples = 2 * WORD_LENGTH
+    delay_time = delay_samples * SAMPLING_PERIOD
+    assert captures[0].channels == ["RQ00"]
+    assert captures[0].start_time == delay_time
+    assert captures[0].duration == EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD
+
+    first_capture = captures[1]
+    assert first_capture.start_time == delay_time
+    assert first_capture.duration == len(first_range) * SAMPLING_PERIOD
+
+    second_capture = captures[2]
+    assert second_capture.start_time == (
+        (second_range.start + delay_samples) * SAMPLING_PERIOD
+    )
+    assert second_capture.duration == len(second_range) * SAMPLING_PERIOD
+
+
+def test_create_capture_schedule_rejects_consecutive_ranges_without_blank() -> None:
+    """Reject capture creation when readout pulses lack required post blank."""
+    readout_factory = StubReadoutFactory()
+    pump_factory = StubPumpFactory()
+
+    targets = cast(
+        TargetMap[Target],
+        {"RQ00": SimpleNamespace(is_pump=False, is_read=True)},
+    )
+    mux = cast(Mux, SimpleNamespace(index=0, label="MX0"))
+    control_params = cast(
+        ControlParams,
+        SimpleNamespace(capture_delay_word={}),
+    )
+
+    builder = MeasurementScheduleBuilder(
+        targets=targets,
+        mux_dict=cast(dict[str, Mux], {"Q00": mux}),
+        control_params=control_params,
+        readout_pulse_factory=readout_factory,
+        pump_pulse_factory=pump_factory,
+    )
+
+    schedule = PulseSchedule(["RQ00"])
+    schedule.add("RQ00", Blank(duration=100))
+
+    with pytest.raises(ValueError, match="post-blank time"):
+        builder.create_capture_schedule(
+            schedule=schedule,
+            readout_ranges={
+                "RQ00": [
+                    range(0, WORD_LENGTH),
+                    range(WORD_LENGTH, WORD_LENGTH * 2),
+                ]
+            },
         )
