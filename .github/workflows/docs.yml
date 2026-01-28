@@ -5,6 +5,7 @@ on:
     branches:
       - "main"
       - "develop"
+      - "develop-next"
     paths:
       - "mkdocs.yml"
       - "docs/**"
