@@ -72,6 +72,9 @@ qubex = ["py.typed", "clifford/**/*.json"]
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning:^(?!qubex\\.|tests\\.).*$",
+]
 
 [tool.pyright]
 include = ["src", "tests"]
