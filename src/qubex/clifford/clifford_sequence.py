@@ -36,7 +36,7 @@ class CliffordSequence:
         return cls(sequence=[], clifford=Clifford.I())
 
     @classmethod
-    def II(cls) -> CliffordSequence:  # noqa: E743
+    def II(cls) -> CliffordSequence:
         """
         Create an two-qubit identity Clifford sequence.
 
@@ -94,7 +94,7 @@ class CliffordSequence:
             composed_sequence = self.sequence + other.sequence
             composed_clifford = self.clifford.compose(other.clifford)
         else:
-            composed_sequence = self.sequence + [other]
+            composed_sequence = [*self.sequence, other]
             composed_clifford = self.clifford.compose(other)
         return CliffordSequence(sequence=composed_sequence, clifford=composed_clifford)
 

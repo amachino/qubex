@@ -85,7 +85,7 @@ def mle_fit_density_matrix(
         "Z": np.array([[1, 0], [0, -1]], dtype=complex),
     }
 
-    label = list(expected_values.keys())[0]
+    label = next(iter(expected_values.keys()))
     n = len(label)
     dim = 2**n
 

@@ -163,7 +163,7 @@ class PulseSchedule:
         #   We therefore compute the ratio and round it to the nearest integer.
         #   This assumes that duration is always intended to be an integer multiple of
         #   Waveform.SAMPLING_PERIOD within normal floating point tolerance.
-        return int(round(self.duration / Waveform.SAMPLING_PERIOD))
+        return round(self.duration / Waveform.SAMPLING_PERIOD)
 
     @property
     def duration(self) -> float:

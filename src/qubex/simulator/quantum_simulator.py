@@ -1009,7 +1009,11 @@ class QuantumSimulator:
             control_hamiltonian.append([a, np.conj(gamma)])
 
         # Total Hamiltonian
-        hamiltonian = [static_hamiltonian] + coupling_hamiltonian + control_hamiltonian
+        hamiltonian = [
+            static_hamiltonian,
+            *coupling_hamiltonian,
+            *control_hamiltonian,
+        ]
 
         # Add collapse operators
         for object in self.system.objects:

@@ -10,8 +10,9 @@ from .sintegral import Sintegral
 from .xy4 import XY4
 
 __all__ = [
-    "Bump",
     "CPMG",
+    "XY4",
+    "Bump",
     "CrossResonance",
     "Drag",
     "FlatTop",
@@ -21,5 +22,4 @@ __all__ = [
     "RampType",
     "Rect",
     "Sintegral",
-    "XY4",
 ]

@@ -124,7 +124,7 @@ def hex_to_rgba(
         The RGBA tuple (e.g., (255, 170, 187, 1.0)).
     """
     hex_color = hex_color.lstrip("#")
-    return tuple(int(hex_color[i : i + 2], 16) for i in range(0, 6, 2)) + (alpha,)
+    return (*tuple(int(hex_color[i : i + 2], 16) for i in range(0, 6, 2)), alpha)
 
 
 def get_colors(

@@ -5,7 +5,7 @@ import os
 from collections import defaultdict, deque
 from collections.abc import Collection, Sequence
 from datetime import datetime
-from itertools import product
+from itertools import pairwise, product
 from pathlib import Path
 from typing import Literal
 
@@ -2481,14 +2481,7 @@ class MeasurementService:
                     if not nx.has_path(G, root, leaf):
                         continue
                     path = tuple(nx.shortest_path(G, source=root, target=leaf))
-                    length = sum(
-                        G[u][v]["weight"]
-                        for u, v in zip(
-                            path[:-1],
-                            path[1:],
-                            strict=True,
-                        )
-                    )
+                    length = sum(G[u][v]["weight"] for u, v in pairwise(path))
                     path_lengths[path] = length
 
             sorted_paths = sorted(
@@ -5028,7 +5021,7 @@ class MeasurementService:
                 edge_sbits_result[edge][sbits]["figure"] = fig
                 edge_sbits_result[edge][sbits]["negativity_std"] = neg_std
                 edge_sbits_result[edge][sbits]["negativity_ci"] = (neg_lo, neg_hi)
-                # Note: CI is approximately 68% via 16–84th percentiles.
+                # Note: CI is approximately 68% via 16-84th percentiles.
 
         result = {"best": {edge: {} for edge in target_edges}}
 

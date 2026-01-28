@@ -2814,7 +2814,7 @@ class CalibrationService:
 
         if reset_awg_and_capunits:
             self.ctx.reset_awg_and_capunits(
-                qubits=[control_qubit, target_qubit] + spectator_qubits
+                qubits=[control_qubit, target_qubit, *spectator_qubits]
             )
 
         def cr_sequence(targets: list[str], T: float) -> PulseSchedule:
@@ -2875,7 +2875,7 @@ class CalibrationService:
             for T in time_range:
                 result = self.measurement_service.state_tomography(
                     sequence=sequence_func(
-                        targets=[control_qubit, target_qubit] + spectator_qubits, T=T
+                        targets=[control_qubit, target_qubit, *spectator_qubits], T=T
                     ),
                     x90=x90,
                     initial_state={control_qubit: control_state},
@@ -3007,7 +3007,7 @@ class CalibrationService:
 
         if reset_awg_and_capunits:
             self.ctx.reset_awg_and_capunits(
-                qubits=[control_qubit, target_qubit] + spectator_qubits
+                qubits=[control_qubit, target_qubit, *spectator_qubits]
             )
 
         result_0 = self.measure_cr_crosstalk(

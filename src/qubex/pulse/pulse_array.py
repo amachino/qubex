@@ -243,9 +243,9 @@ class PulseArray(Waveform):
             new_array = copy.copy(self)
         blank = Blank(duration=duration)
         if pad_side == "right":
-            new_elements = new_array._elements + [blank]
+            new_elements = [*new_array._elements, blank]
         elif pad_side == "left":
-            new_elements = [blank] + new_array._elements
+            new_elements = [blank, *new_array._elements]
         else:
             raise ValueError("pad_side must be either 'right' or 'left'.")
         new_array._elements = new_elements

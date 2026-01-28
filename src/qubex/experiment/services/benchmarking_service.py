@@ -262,7 +262,7 @@ class BenchmarkingService:
         sequence: list[Waveform | VirtualZ] = []
 
         if interleaved_clifford is None:
-            cliffords, inverse = self.clifford_generator.create_rb_sequences(
+            cliffords, _inverse = self.clifford_generator.create_rb_sequences(
                 n=n,
                 type="1Q",
                 seed=seed,
@@ -275,7 +275,7 @@ class BenchmarkingService:
                     interleaved_waveform = self.pulse.x180(target)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
-            cliffords, inverse = self.clifford_generator.create_irb_sequences(
+            cliffords, _inverse = self.clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford,
                 type="1Q",
@@ -354,7 +354,7 @@ class BenchmarkingService:
             zx90 = self.pulse.zx90(control_qubit, target_qubit)
 
         if interleaved_clifford is None:
-            cliffords, inverse = self.clifford_generator.create_rb_sequences(
+            cliffords, _inverse = self.clifford_generator.create_rb_sequences(
                 n=n,
                 type="2Q",
                 seed=seed,
@@ -365,7 +365,7 @@ class BenchmarkingService:
                     interleaved_waveform = self.pulse.zx90(control_qubit, target_qubit)
                 else:
                     raise ValueError("interleaved_waveform must be provided.")
-            cliffords, inverse = self.clifford_generator.create_irb_sequences(
+            cliffords, _inverse = self.clifford_generator.create_irb_sequences(
                 n=n,
                 interleave=interleaved_clifford,
                 type="2Q",

@@ -76,7 +76,7 @@ Do you want to continue?
         logger.info("Operation cancelled.")
         return {}
 
-    all_box_ids = list(set(list(box_ids) + [ref_port]))
+    all_box_ids = list({*box_ids, ref_port})
     skew = Skew.from_yaml(
         str(skew_file_path),
         box_yaml=str(box_file_path),
@@ -89,7 +89,7 @@ Do you want to continue?
         skew.estimate()
     fig = skew.plot()
     fig.update_layout(
-        title=f"Skew : {str(', '.join(box_ids))} (Ref. {ref_port})",
+        title=f"Skew : {', '.join(box_ids)!s} (Ref. {ref_port})",
         width=800,
     )
     fig.show()

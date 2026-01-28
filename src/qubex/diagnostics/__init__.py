@@ -17,10 +17,10 @@ from .inspection_library import (
 
 __all__ = [
     "ChipInspector",
-    "InspectionType",
-    "InspectionSummary",
     "Inspection",
     "InspectionParams",
+    "InspectionSummary",
+    "InspectionType",
     "Type0A",
     "Type0B",
     "Type1A",

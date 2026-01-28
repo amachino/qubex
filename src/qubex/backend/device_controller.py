@@ -271,11 +271,8 @@ class DeviceController:
                     continue
                 box = self.get_box(box_name, reconnect=False)
                 port_setting = db._port_settings[port_name]
-                if (
-                    type == "cap"
-                    and port_setting.port in box.get_input_ports()
-                    or type == "gen"
-                    and port_setting.port in box.get_output_ports()
+                if (type == "cap" and port_setting.port in box.get_input_ports()) or (
+                    type == "gen" and port_setting.port in box.get_output_ports()
                 ):
                     result[target] = {
                         "box": db._box_settings[box_name],

@@ -191,7 +191,7 @@ def plot_cdf(
             dx = (data_max - data_min) / 100
             xlim = (data_min - dx, data_max + dx)
 
-        x = [xlim[0]] + values.tolist() + [xlim[1]]
+        x = [xlim[0], *values.tolist(), xlim[1]]
         y = [0] + [(i + 1) / N for i in range(N)] + [1]
 
         fig.add_scatter(

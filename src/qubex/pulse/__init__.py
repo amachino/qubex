@@ -20,9 +20,10 @@ from .pulse_schedule import PulseChannel, PulseSchedule
 from .waveform import Waveform
 
 __all__ = [
+    "CPMG",
+    "XY4",
     "Blank",
     "Bump",
-    "CPMG",
     "CrossResonance",
     "Drag",
     "FlatTop",
@@ -39,7 +40,6 @@ __all__ = [
     "Sintegral",
     "VirtualZ",
     "Waveform",
-    "XY4",
 ]
 
 

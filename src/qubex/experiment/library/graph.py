@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import time
 from collections import deque
 
@@ -161,7 +162,7 @@ def strong_edge_coloring(
 
 def tree_center(G):
     u = max(
-        nx.single_source_shortest_path_length(G, list(G.nodes)[0]).items(),
+        nx.single_source_shortest_path_length(G, next(iter(G.nodes))).items(),
         key=lambda x: x[1],
     )[0]
     lengths = nx.single_source_shortest_path_length(G, u)
@@ -488,13 +489,13 @@ def find_longest_1d_chain(
         return [], [], 0.0
 
     # Oriented edge sequence along the undirected path (for convenience).
-    edges_in_path_order = list(zip(best_path[:-1], best_path[1:], strict=True))
+    edges_in_path_order = list(itertools.pairwise(best_path))
     return best_path, edges_in_path_order, best_score
 
 
 __all__ = [
-    "strong_edge_coloring",
     "find_longest_1d_chain",
     "get_max_undirected_weight",
+    "strong_edge_coloring",
     "tree_center",
 ]

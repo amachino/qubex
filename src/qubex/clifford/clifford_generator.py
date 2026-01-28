@@ -4,7 +4,7 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from .clifford import Clifford
 from .clifford_sequence import CliffordSequence
@@ -18,7 +18,7 @@ CLIFFORD_LIST_2Q = "clifford_list_2q"
 
 
 class CliffordGenerator:
-    cliffords = {
+    cliffords: ClassVar[dict[str, Clifford]] = {
         "I": Clifford.I(),
         "X90": Clifford.X90(),
         "Y90": Clifford.Y90(),

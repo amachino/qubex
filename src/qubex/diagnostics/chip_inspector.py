@@ -189,7 +189,7 @@ class InspectionSummary:
             for label in inspection.invalid_edges:
                 invalid_types[label].append(type.replace("Type", ""))
 
-        inspection = list(self.inspections.values())[0]
+        inspection = next(iter(self.inspections.values()))
         node_hovertexts = {}
         for data in self.graph.qubit_nodes.values():
             label = data["label"]

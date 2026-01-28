@@ -81,7 +81,10 @@ select = [
     "D",    # pydocstyle
     "F",    # Pyflakes
     "UP",   # pyupgrade
+    # "TRY",  # tryceratops
+    "RUF", # Ruff-specific rules
 
+    # pydocstyle
     "D213", # multi-line-summary-second-line
 ]
 
@@ -97,6 +100,11 @@ ignore = [
     "E501", # line-too-long
     "E731", # lambda-assignment
     "E741", # ambiguous-variable-name
+
+    # ruff-specific (ambiguous unicode in strings/comments/docstrings)
+    "RUF001",
+    "RUF002",
+    "RUF003",
 
     # pydocstyle
     "D100", # undocumented-public-module
