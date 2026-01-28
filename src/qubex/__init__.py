@@ -1,3 +1,5 @@
+"""Top-level package exports for qubex."""
+
 from __future__ import annotations
 
 import qubex.patches.quel_ic_config.linkup_fpga_mxfe_patch  # noqa: F401

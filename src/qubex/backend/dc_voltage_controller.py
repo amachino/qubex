@@ -1,3 +1,5 @@
+"""DC voltage control helpers for the ONS61797 device."""
+
 from __future__ import annotations
 
 import functools
@@ -12,6 +14,7 @@ PORT: Final = "/dev/ttyACM0"
 
 @contextmanager
 def dc_voltage(voltages: dict[int, float]) -> Iterator[ONS61797]:
+    """Temporarily apply DC voltages and restore originals on exit."""
     try:
         ons61797 = ONS61797(port=PORT)
         original_voltages = {}
@@ -28,6 +31,8 @@ def dc_voltage(voltages: dict[int, float]) -> Iterator[ONS61797]:
 
 
 def with_connection(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Wrap calls with a temporary ONS61797 connection."""
+
     @functools.wraps(func)
     def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         try:
@@ -44,66 +49,81 @@ def with_connection(func: Callable[..., Any]) -> Callable[..., Any]:
 
 
 class DCVoltageController:
+    """Singleton controller for DC voltage device access."""
+
     _instance = None
     _initialized = False
 
     def __new__(cls, *args, **kwargs):
+        """Create or return the singleton instance."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
     @classmethod
     def shared(cls) -> DCVoltageController:
+        """Return the shared controller instance."""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
     def __init__(self):
+        """Initialize the controller if not already initialized."""
         if self._initialized:
             return
         self._ons61797: ONS61797 | None = None
         self._initialized = True
 
     def __del__(self):
+        """Close the device connection on deletion."""
         if self._ons61797 is not None:
             self._ons61797.close()
 
     @property
     def ons61797(self) -> ONS61797:
+        """Return the active device connection."""
         if self._ons61797 is None:
             raise RuntimeError("No connection established.")
         return self._ons61797
 
     @with_connection
     def on(self, channel: int) -> None:
+        """Turn on the specified output channel."""
         self.ons61797.on(channel=channel)
 
     @with_connection
     def off(self, channel: int) -> None:
+        """Turn off the specified output channel."""
         self.ons61797.off(channel=channel)
 
     @with_connection
     def get_output_state(self, channel: int) -> int:
+        """Get the output state of the specified channel."""
         return self.ons61797.get_output_state(channel=channel)
 
     @with_connection
     def set_voltage(self, channel: int, voltage: float) -> None:
+        """Set the voltage for the specified channel."""
         self.ons61797.set_voltage(channel=channel, voltage=voltage)
 
     @with_connection
     def get_voltage(self, channel: int) -> float:
+        """Get the voltage for the specified channel."""
         return self.ons61797.get_voltage(channel=channel)
 
     @with_connection
     def get_device_information(self) -> str:
+        """Return device information from the controller."""
         return self.ons61797.get_device_information()
 
     @with_connection
     def reset(self) -> None:
+        """Reset the device settings."""
         self.ons61797.reset()
 
     @contextmanager
     def connection(self) -> Iterator[ONS61797]:
+        """Yield a connected device and close on exit."""
         try:
             if self._ons61797 is None:
                 self._ons61797 = ONS61797(port=PORT)

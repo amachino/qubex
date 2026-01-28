@@ -1,3 +1,5 @@
+"""Lattice graph layout utilities and plotting helpers."""
+
 from __future__ import annotations
 
 import math
@@ -23,6 +25,8 @@ PREFIX_MUX = "MUX"
 
 
 class QubitNode(TypedDict):
+    """Typed dictionary describing a qubit node."""
+
     id: int
     label: str
     coordinates: tuple[int, int]
@@ -33,6 +37,8 @@ class QubitNode(TypedDict):
 
 
 class QubitEdge(TypedDict):
+    """Typed dictionary describing a qubit edge."""
+
     id: tuple[int, int]
     label: str
     position: tuple[tuple[float, float], tuple[float, float], tuple[float, float]]
@@ -40,6 +46,8 @@ class QubitEdge(TypedDict):
 
 
 class ResonatorNode(TypedDict):
+    """Typed dictionary describing a resonator node."""
+
     id: int
     label: str
     coordinates: tuple[int, int]
@@ -48,6 +56,8 @@ class ResonatorNode(TypedDict):
 
 
 class MuxNode(TypedDict):
+    """Typed dictionary describing a mux node."""
+
     id: int
     label: str
     coordinates: tuple[int, int]
@@ -739,6 +749,7 @@ class LatticeGraph:
         images_dir: str = "./images",
         save_image: bool = False,
     ) -> None:
+        """Plot graph data with optional overlays and annotations."""
         width = 3 * NODE_SIZE * self.n_qubit_cols
         height = 3 * NODE_SIZE * self.n_qubit_rows
 
@@ -1066,6 +1077,7 @@ class LatticeGraph:
         images_dir: str = "./images",
         save_image: bool = False,
     ) -> None:
+        """Plot lattice data as a heatmap aligned to qubit layout."""
         value_matrix = self.create_data_matrix(values) if values else None
         text_matrix = self.create_data_matrix(texts) if texts else None
         hovertext_matrix = self.create_data_matrix(hovertexts) if hovertexts else None
@@ -1132,6 +1144,7 @@ class LatticeGraph:
         self,
         data: Collection,
     ) -> list[list]:
+        """Convert flat data into a matrix aligned with the lattice layout."""
         data = list(data)
 
         if len(data) != self.n_qubits:

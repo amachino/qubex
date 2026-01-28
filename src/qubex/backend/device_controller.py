@@ -1,5 +1,7 @@
 # ruff: noqa: SLF001
 
+"""Device controller for QUEL hardware and configuration access."""
+
 from __future__ import annotations
 
 import logging
@@ -47,12 +49,16 @@ SAMPLING_PERIOD: Final[float] = 2.0  # ns
 
 @dataclass
 class RawResult:
+    """Raw status, data, and config returned from devices."""
+
     status: dict
     data: dict
     config: dict
 
 
 class DeviceController:
+    """Control and query device state through QubeCalib."""
+
     def __init__(
         self,
         config_path: str | Path | None = None,
@@ -75,10 +81,12 @@ class DeviceController:
 
     @property
     def is_connected(self) -> bool:
+        """Return whether the hardware is connected."""
         return self._quel1system is not None
 
     @property
     def qubecalib(self) -> QubeCalib:
+        """Return the QubeCalib instance or raise if unavailable."""
         if self._qubecalib is None:
             raise ModuleNotFoundError(name="qubecalib")
         return self._qubecalib
@@ -206,6 +214,7 @@ class DeviceController:
             )
 
     def get_resource_map(self, targets: list[str]) -> dict[str, list[dict]]:
+        """Build a resource map for the requested targets."""
         db = self.qubecalib.system_config_database
         result = {}
         for target in targets:
@@ -259,6 +268,7 @@ class DeviceController:
         self,
         type: Literal["cap", "gen"],
     ) -> dict[str, dict]:
+        """Create a capture or generator resource map from configuration."""
         if self._boxpool is None:
             raise ValueError("Boxes not connected. Call connect() method first.")
         db = self.qubecalib.system_config_database
@@ -283,11 +293,13 @@ class DeviceController:
         return result
 
     def clear_cache(self) -> None:
+        """Clear cached box configuration data."""
         if self._boxpool is not None:
             self._boxpool._box_config_cache.clear()
 
     @deprecated("Use qubecalib.sysdb.load_skew_yaml instead.")
     def load_skew_file(self, box_list: list[str], file_path: str | Path) -> None:
+        """Load skew calibration data from a file."""
         if len(box_list) == 0:
             return
         clockmaster_setting = self.qubecalib.sysdb._clockmaster_setting

@@ -1,3 +1,5 @@
+"""Sequencer extensions for resource map generation."""
+
 from __future__ import annotations
 
 from collections.abc import MutableSequence
@@ -18,7 +20,10 @@ from qubecalib.qubecalib import (
 
 
 class SequencerMod(Sequencer):
+    """Sequencer with helper methods for QUEL resource maps."""
+
     def generate_cap_resource_map(self, boxpool: BoxPool) -> dict[str, Any]:
+        """Generate capture resource mappings for the box pool."""
         _cap_resource_map: dict[str, MutableSequence[dict[str, Any]]] = {}
         for target_name, ms in self.resource_map.items():
             for m in ms:
@@ -52,6 +57,7 @@ class SequencerMod(Sequencer):
         dict[tuple[str, Quel1PortType, int], WaveSequence],
         dict[str, Any],
     ]:
+        """Generate E7 settings for capture and waveform sequencing."""
         cap_resource_map = self.generate_cap_resource_map(boxpool)
         _gen_resource_map: dict[str, MutableSequence[dict[str, Any]]] = {}
         for target_name, ms in self.resource_map.items():

@@ -1,3 +1,5 @@
+"""Backend system models and controllers."""
+
 from .config_loader import DEFAULT_CONFIG_DIR, ConfigLoader
 from .control_system import Box, BoxType, Channel, ControlSystem, Port, PortType
 from .device_controller import SAMPLING_PERIOD, DeviceController, RawResult

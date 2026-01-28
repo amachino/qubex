@@ -1,3 +1,5 @@
+"""Core Pydantic models and JSON helpers."""
+
 from __future__ import annotations
 
 import json
@@ -170,11 +172,14 @@ def _is_custom_class(cls: type[Any]) -> bool:
 
 
 class NumpyTunitsJsonSchema(GenerateJsonSchema):
+    """JSON schema generator that supports NumPy and tunits types."""
+
     def handle_invalid_for_json_schema(
         self,
         schema: Any,
         error_info: Any,
     ) -> JsonSchemaValue:
+        """Handle unsupported schema nodes for custom types."""
         if schema.get("type") == "is-instance":
             cls = schema.get("cls")
             if isinstance(cls, type) and _is_custom_class(cls):
@@ -183,6 +188,8 @@ class NumpyTunitsJsonSchema(GenerateJsonSchema):
 
 
 class Model(BaseModel):
+    """Base model with custom serialization helpers."""
+
     model_config = ConfigDict(
         frozen=True,
         arbitrary_types_allowed=True,
@@ -193,26 +200,32 @@ class Model(BaseModel):
         self,
         handler: SerializerFunctionWrapHandler,
     ):
+        """Serialize the model with custom value handling."""
         data = handler(self)
         return _serialize(data)
 
     @classmethod
     def json_schema(cls, **kwargs) -> dict[str, Any]:
+        """Return the JSON schema for the model."""
         kwargs.setdefault("schema_generator", NumpyTunitsJsonSchema)
         return cls.model_json_schema(**kwargs)
 
     @classmethod
     def from_dict(cls, data: dict) -> Self:
+        """Create a model instance from a dictionary."""
         return cls.model_validate(_deserialize(data))
 
     @classmethod
     def from_json(cls, data: str) -> Self:
+        """Create a model instance from a JSON string."""
         return cls.model_validate(_deserialize(json.loads(data)))
 
     def to_dict(self) -> dict:
+        """Serialize the model to a dictionary."""
         return self.model_dump()
 
     def to_json(self, indent: int | None = None) -> str:
+        """Serialize the model to a JSON string."""
         # NOTE: Pydantic's built-in model_dump_json does not support custom serialization well.
         # return self.model_dump_json(indent=indent)
         data = self.model_dump()
@@ -220,6 +233,8 @@ class Model(BaseModel):
 
 
 class MutableModel(Model):
+    """Mutable variant of the base model."""
+
     model_config = ConfigDict(
         frozen=False,
         validate_assignment=True,

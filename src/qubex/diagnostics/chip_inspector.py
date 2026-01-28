@@ -1,3 +1,5 @@
+"""Chip inspection routines and reporting utilities."""
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +32,8 @@ InspectionType = Literal[
 
 
 class ChipInspector:
+    """Run inspection suites against chip configuration data."""
+
     def __init__(
         self,
         chip_id: str,
@@ -86,6 +90,7 @@ class ChipInspector:
         types: InspectionType | list[InspectionType] | None = None,
         params: dict | None = None,
     ) -> InspectionSummary:
+        """Execute selected inspections and return a summary."""
         if types is None:
             types = list(InspectionType.__args__)
         elif isinstance(types, str):
@@ -110,6 +115,8 @@ class ChipInspector:
 
 
 class InspectionSummary:
+    """Aggregate inspection results and provide reporting helpers."""
+
     def __init__(
         self,
         graph: LatticeGraph,
@@ -120,6 +127,7 @@ class InspectionSummary:
 
     @property
     def invalid_nodes(self) -> dict[str, list[str]]:
+        """Return invalid nodes aggregated across inspections."""
         invalid_nodes = defaultdict(list)
         for result in self.inspections.values():
             for label, messages in result.invalid_nodes.items():
@@ -130,6 +138,7 @@ class InspectionSummary:
 
     @property
     def invalid_edges(self) -> dict[str, list[str]]:
+        """Return invalid edges aggregated across inspections."""
         invalid_edges = defaultdict(list)
         for result in self.inspections.values():
             for label, messages in result.invalid_edges.items():
@@ -139,6 +148,7 @@ class InspectionSummary:
         return dict(sorted(invalid_edges.items()))
 
     def log_report(self) -> None:
+        """Log a summary of invalid nodes and edges."""
         logger.info(f"{len(self.invalid_nodes)} invalid nodes: ")
         if self.invalid_nodes:
             for label, messages in self.invalid_nodes.items():
@@ -158,6 +168,7 @@ class InspectionSummary:
         save_image: bool = False,
         images_dir: str = "./images",
     ) -> None:
+        """Visualize inspection results on the chip graph."""
         if len(self.inspections) == 0:
             raise ValueError("No inspections have been executed.")
 

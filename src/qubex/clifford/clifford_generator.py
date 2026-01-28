@@ -1,3 +1,5 @@
+"""Clifford generator utilities and cached lookup tables."""
+
 from __future__ import annotations
 
 import json
@@ -18,6 +20,8 @@ CLIFFORD_LIST_2Q = "clifford_list_2q"
 
 
 class CliffordGenerator:
+    """Generate and cache Clifford sequences for 1Q/2Q operations."""
+
     cliffords: ClassVar[dict[str, Clifford]] = {
         "I": Clifford.I(),
         "X90": Clifford.X90(),
@@ -533,6 +537,7 @@ class CliffordGenerator:
         type: Literal["1Q", "1Q1Q", "2Q"] = "1Q",
         file_name: str | None = None,
     ) -> Path:
+        """Return the file path for cached Clifford sequences."""
         dir = Path(__file__).parent / CLIFFORD_LIST_DIR
         if type == "1Q":
             file_name = file_name or CLIFFORD_LIST_1Q

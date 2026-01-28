@@ -1,3 +1,5 @@
+"""Pauli operator utilities and representations."""
+
 from __future__ import annotations
 
 import logging
@@ -70,13 +72,16 @@ class Pauli:
         logger.info(self.to_string())
 
     def __repr__(self) -> str:
+        """Return the debug representation of the Pauli."""
         coefficient = {1: "1", -1: "-1", 1j: "1j", -1j: "-1j"}[self.coefficient]
         return f"Pauli({coefficient}, '{self.operator}')"
 
     def __hash__(self):
+        """Return a hash based on coefficient and operator."""
         return hash((self.coefficient, self.operator))
 
     def __eq__(self, other: object) -> bool:
+        """Return whether another object represents the same Pauli."""
         if not isinstance(other, Pauli):
             return False
         return self.coefficient == other.coefficient and self.operator == other.operator

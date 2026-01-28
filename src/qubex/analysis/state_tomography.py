@@ -1,3 +1,5 @@
+"""State tomography analysis helpers."""
+
 from __future__ import annotations
 
 import logging
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 def calculate_expected_values(
     probabilities: dict[str, NDArray],
 ) -> dict[str, float]:
+    """Calculate expected Pauli values from measurement probabilities."""
     n_qubits = len(next(iter(probabilities.keys())))
     dim = 2**n_qubits
 
@@ -54,6 +57,7 @@ def create_density_matrix(
     probabilities: dict[str, NDArray],
     mle_fit: bool = True,
 ) -> NDArray:
+    """Create a density matrix from measurement probabilities."""
     n_qubits = len(next(iter(probabilities.keys())))
     dim = 2**n_qubits
     expected_values = calculate_expected_values(probabilities)
@@ -79,6 +83,7 @@ def create_density_matrix(
 def mle_fit_density_matrix(
     expected_values: dict[str, float],
 ) -> NDArray:
+    """Estimate a physical density matrix via MLE fitting."""
     paulis = {
         "I": np.array([[1, 0], [0, 1]], dtype=complex),
         "X": np.array([[0, 1], [1, 0]], dtype=complex),
@@ -131,6 +136,7 @@ def plot_ghz_state_tomography(
     save_image: bool = False,
     file_name: str | None = None,
 ) -> dict[str, Any]:
+    """Plot and optionally save a GHZ state tomography heatmap."""
     n_qubits = len(qubits)
     dim = 2**n_qubits
 

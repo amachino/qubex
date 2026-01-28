@@ -1,3 +1,5 @@
+"""Instrument executor for QUEL hardware backends."""
+
 from __future__ import annotations
 
 import logging
@@ -35,6 +37,8 @@ EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
 
 
 class QuelInstrumentExecutor:
+    """Execute pulse schedules on QUEL instruments."""
+
     def __init__(
         self,
         *,
@@ -62,6 +66,7 @@ class QuelInstrumentExecutor:
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
     ) -> MultipleMeasureResult:
+        """Execute a schedule and return the measurement results."""
         sequencer = self._create_sequencer(
             schedule=schedule,
             capture_schedule=capture_schedule,
@@ -86,6 +91,7 @@ class QuelInstrumentExecutor:
         return result
 
     def pad_schedule_for_capture(self, schedule: PulseSchedule) -> None:
+        """Pad a schedule to accommodate capture duration and alignment."""
         schedule.pad(
             total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
             pad_side="left",

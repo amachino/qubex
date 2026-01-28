@@ -1,3 +1,5 @@
+"""Shared typing helpers for core models."""
+
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy.typing as npt

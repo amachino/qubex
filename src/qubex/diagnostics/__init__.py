@@ -1,3 +1,5 @@
+"""Diagnostics and inspection utilities for chip validation."""
+
 from .chip_inspector import ChipInspector, InspectionSummary, InspectionType
 from .inspection import Inspection, InspectionParams
 from .inspection_library import (

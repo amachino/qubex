@@ -1,3 +1,5 @@
+"""Clifford sequence composition utilities."""
+
 from __future__ import annotations
 
 from .clifford import Clifford
@@ -99,7 +101,9 @@ class CliffordSequence:
         return CliffordSequence(sequence=composed_sequence, clifford=composed_clifford)
 
     def __hash__(self) -> int:
+        """Return a hash based on the sequence content."""
         return hash(tuple(self.sequence))
 
     def __repr__(self) -> str:
+        """Return the debug representation of the sequence."""
         return f"CliffordSequence({self.gate_sequence})"

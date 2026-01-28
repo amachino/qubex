@@ -1,3 +1,5 @@
+"""Experiment system configuration and target mapping utilities."""
+
 from __future__ import annotations
 
 import logging
@@ -49,6 +51,8 @@ AWG_MAX = 250_000_000
 
 @dataclass
 class WiringInfo(Model):
+    """Wiring relationships between qubits, muxes, and ports."""
+
     ctrl: list[tuple[Qubit, GenPort]]
     read_out: list[tuple[Mux, GenPort]]
     read_in: list[tuple[Mux, CapPort]]
@@ -57,12 +61,16 @@ class WiringInfo(Model):
 
 @dataclass
 class QubitPortSet(Model):
+    """Port assignments for a single qubit."""
+
     ctrl_port: GenPort
     read_out_port: GenPort
     read_in_port: CapPort
 
 
 class JPAParam(TypedDict):
+    """JPA parameter dictionary for a mux."""
+
     dc_voltage: float | None
     pump_frequency: float | None
     pump_amplitude: float | None
@@ -70,6 +78,8 @@ class JPAParam(TypedDict):
 
 @dataclass
 class ControlParams(Model):
+    """Control parameters and access helpers for the system."""
+
     control_amplitude: dict[str, float]
     readout_amplitude: dict[str, float]
     control_vatt: dict[str, int | None]
@@ -83,39 +93,51 @@ class ControlParams(Model):
     jpa_params: dict[int, JPAParam | None]
 
     def get_control_amplitude(self, qubit: str) -> float:
+        """Return the control amplitude for a qubit."""
         return self.control_amplitude.get(qubit, DEFAULT_CONTROL_AMPLITUDE)
 
     def get_ef_control_amplitude(self, qubit: str) -> float:
+        """Return the ef control amplitude for a qubit."""
         return self.get_control_amplitude(qubit) / np.sqrt(2)
 
     def get_readout_amplitude(self, qubit: str) -> float:
+        """Return the readout amplitude for a qubit."""
         return self.readout_amplitude.get(qubit, DEFAULT_READOUT_AMPLITUDE)
 
     def get_control_vatt(self, qubit: str) -> int | None:
+        """Return the control VATT for a qubit."""
         return self.control_vatt.get(qubit, DEFAULT_CONTROL_VATT)
 
     def get_readout_vatt(self, mux: int) -> int:
+        """Return the readout VATT for a mux."""
         return self.readout_vatt.get(mux, DEFAULT_READOUT_VATT)
 
     def get_pump_vatt(self, mux: int) -> int:
+        """Return the pump VATT for a mux."""
         return self.pump_vatt.get(mux, DEFAULT_PUMP_VATT)
 
     def get_control_fsc(self, qubit: str) -> int:
+        """Return the control FSC for a qubit."""
         return self.control_fsc.get(qubit, DEFAULT_CONTROL_FSC)
 
     def get_readout_fsc(self, mux: int) -> int:
+        """Return the readout FSC for a mux."""
         return self.readout_fsc.get(mux, DEFAULT_READOUT_FSC)
 
     def get_pump_fsc(self, mux: int) -> int:
+        """Return the pump FSC for a mux."""
         return self.pump_fsc.get(mux, DEFAULT_PUMP_FSC)
 
     def get_capture_delay(self, mux: int) -> int:
+        """Return the capture delay for a mux."""
         return self.capture_delay.get(mux, DEFAULT_CAPTURE_DELAY)
 
     def get_capture_delay_word(self, mux: int) -> int:
+        """Return the capture delay word for a mux."""
         return self.capture_delay_word.get(mux, DEFAULT_CAPTURE_DELAY_WORD)
 
     def get_pump_frequency(self, mux: int) -> float:
+        """Return the pump frequency for a mux."""
         jpa_param = self.jpa_params.get(mux)
         if jpa_param is None:
             return DEFAULT_PUMP_FREQUENCY
@@ -123,6 +145,7 @@ class ControlParams(Model):
             return jpa_param.get("pump_frequency") or DEFAULT_PUMP_FREQUENCY
 
     def get_pump_amplitude(self, mux: int) -> float:
+        """Return the pump amplitude for a mux."""
         jpa_param = self.jpa_params.get(mux)
         if jpa_param is None:
             return DEFAULT_PUMP_AMPLITUDE
@@ -130,6 +153,7 @@ class ControlParams(Model):
             return jpa_param.get("pump_amplitude") or DEFAULT_PUMP_AMPLITUDE
 
     def get_dc_voltage(self, mux: int) -> float:
+        """Return the DC voltage for a mux."""
         jpa_param = self.jpa_params.get(mux)
         if jpa_param is None:
             return DEFAULT_DC_VOLTAGE
@@ -138,6 +162,8 @@ class ControlParams(Model):
 
 
 class ExperimentSystem:
+    """Experiment system containing wiring and target mappings."""
+
     def __init__(
         self,
         quantum_system: QuantumSystem,
@@ -157,6 +183,7 @@ class ExperimentSystem:
 
     @property
     def hash(self) -> int:
+        """Return a hash representing the system configuration."""
         return hash(
             (
                 self.quantum_system.hash,
@@ -168,81 +195,101 @@ class ExperimentSystem:
 
     @property
     def quantum_system(self) -> QuantumSystem:
+        """Return the underlying quantum system."""
         return self._quantum_system
 
     @property
     def control_system(self) -> ControlSystem:
+        """Return the underlying control system."""
         return self._control_system
 
     @property
     def wiring_info(self) -> WiringInfo:
+        """Return wiring information for the system."""
         return self._wiring_info
 
     @property
     def control_params(self) -> ControlParams:
+        """Return the control parameters."""
         return self._control_params
 
     @property
     def chip(self) -> Chip:
+        """Return the chip model."""
         return self.quantum_system.chip
 
     @property
     def qubits(self) -> list[Qubit]:
+        """Return the list of qubits."""
         return self.quantum_system.qubits
 
     @property
     def resonators(self) -> list[Resonator]:
+        """Return the list of resonators."""
         return self.quantum_system.resonators
 
     @property
     def boxes(self) -> list[Box]:
+        """Return the list of control boxes."""
         return self.control_system.boxes
 
     @property
     def ge_targets(self) -> list[Target]:
+        """Return the ge targets."""
         return [target for target in self._gen_target_dict.values() if target.is_ge]
 
     @property
     def ef_targets(self) -> list[Target]:
+        """Return the ef targets."""
         return [target for target in self._gen_target_dict.values() if target.is_ef]
 
     @property
     def cr_targets(self) -> list[Target]:
+        """Return the cr targets."""
         return [target for target in self._gen_target_dict.values() if target.is_cr]
 
     @property
     def ctrl_targets(self) -> list[Target]:
+        """Return the control targets."""
         return self.ge_targets + self.ef_targets + self.cr_targets
 
     @property
     def read_out_targets(self) -> list[Target]:
+        """Return the readout targets."""
         return [target for target in self._gen_target_dict.values() if target.is_read]
 
     @property
     def targets(self) -> list[Target]:
+        """Return all generator targets."""
         return list(self._gen_target_dict.values())
 
     @property
     def read_in_targets(self) -> list[CapTarget]:
+        """Return all capture targets."""
         return list(self._cap_target_dict.values())
 
     @property
     def all_targets(self) -> list[Target | CapTarget]:
+        """Return all generator and capture targets."""
         return self.targets + self.read_in_targets
 
     def add_target(self, target: Target | CapTarget) -> None:
+        """Add a target to the system mapping."""
         if isinstance(target, Target):
             self._gen_target_dict[target.label] = target
         elif isinstance(target, CapTarget):
             self._cap_target_dict[target.label] = target
 
     def get_mux(self, label: int | str) -> Mux:
+        """Return a mux by label or index."""
         return self.quantum_system.get_mux(label)
 
     def get_qubit(self, label: int | str) -> Qubit:
+        """Return a qubit by label or index."""
         return self.quantum_system.get_qubit(label)
 
     def get_resonator(self, label: int | str) -> Resonator:
+        """Return a resonator by label or index."""
         return self.quantum_system.get_resonator(label)
 
     def get_spectator_qubits(
@@ -251,12 +298,15 @@ class ExperimentSystem:
         *,
         in_same_mux: bool = False,
     ) -> list[Qubit]:
+        """Return spectator qubits for the specified qubit."""
         return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
 
     def get_box(self, box_id: str) -> Box:
+        """Return a control box by ID."""
         return self.control_system.get_box(box_id)
 
     def get_boxes_for_qubits(self, qubits: Collection[str]) -> list[Box]:
+        """Return control boxes associated with the given qubits."""
         box_ids = set()
         for qubit in qubits:
             ports = self.get_qubit_port_set(qubit)
@@ -268,6 +318,7 @@ class ExperimentSystem:
         return [self.get_box(box_id) for box_id in box_ids]
 
     def get_control_box_for_qubit(self, qubit: int | str) -> Box:
+        """Return the control box for a qubit."""
         if isinstance(qubit, int):
             qubit = self.qubits[qubit].label
         ports = self.get_qubit_port_set(qubit)
@@ -276,6 +327,7 @@ class ExperimentSystem:
         return self.get_box(ports.ctrl_port.box_id)
 
     def get_readout_box_for_qubit(self, qubit: int | str) -> Box:
+        """Return the readout box for a qubit."""
         if isinstance(qubit, int):
             qubit = self.qubits[qubit].label
         ports = self.get_qubit_port_set(qubit)
@@ -284,52 +336,63 @@ class ExperimentSystem:
         return self.get_box(ports.read_out_port.box_id)
 
     def get_target(self, label: str) -> Target:
+        """Return a generator target by label."""
         try:
             return self._gen_target_dict[label]
         except KeyError:
             raise KeyError(f"Target `{label}` not found.") from None
 
     def get_cap_target(self, label: str) -> CapTarget:
+        """Return a capture target by label."""
         try:
             return self._cap_target_dict[label]
         except KeyError:
             raise KeyError(f"CapTarget `{label}` not found.") from None
 
     def get_ge_target(self, label: str) -> Target:
+        """Return a ge target by label."""
         label = Target.ge_label(label)
         return self.get_target(label)
 
     def get_ef_target(self, label: str) -> Target:
+        """Return an ef target by label."""
         label = Target.ef_label(label)
         return self.get_target(label)
 
     def get_cr_target(self, label: str) -> Target:
+        """Return a cr target by label."""
         label = Target.cr_label(label)
         return self.get_target(label)
 
     def get_read_out_target(self, label: str) -> Target:
+        """Return a readout target by label."""
         label = Target.read_label(label)
         return self.get_target(label)
 
     def get_read_in_target(self, label: str) -> CapTarget:
+        """Return a read-in target by label."""
         return self.get_cap_target(label)
 
     def get_qubit_port_set(self, qubit: int | str) -> QubitPortSet | None:
+        """Return the port set for a qubit if available."""
         if isinstance(qubit, int):
             qubit = self.qubits[qubit].label
         return self._qubit_port_set_map.get(qubit)
 
     def get_control_port(self, qubit: int | str) -> GenPort:
+        """Return the control port for a qubit."""
         ports = self.get_qubit_port_set(qubit)
         if ports is None:
             raise ValueError(f"Qubit `{qubit}` not found.")
         return ports.ctrl_port
 
     def get_nco_frequency(self, label: str) -> float:
+        """Return the NCO frequency for a target."""
         target = self.get_target(label)
         return target.fine_frequency
 
     def get_awg_frequency(self, label: str) -> float:
+        """Return the AWG frequency for a target."""
         target = self.get_target(label)
         if target.channel.port.sideband == "U":
             f_awg = target.frequency - self.get_nco_frequency(label)
@@ -344,11 +407,13 @@ class ExperimentSystem:
         return round(f_awg, 10)
 
     def get_diff_frequency(self, label: str) -> float:
+        """Return the difference frequency for a target."""
         target = self.get_target(label)
         f_diff = target.frequency - self.get_nco_frequency(label)
         return round(f_diff, 10)
 
     def get_mux_by_readout_port(self, port: GenPort | CapPort) -> Mux | None:
+        """Return the mux associated with a readout port."""
         if isinstance(port, CapPort):
             for mux, cap_port in self.wiring_info.read_in:
                 if cap_port == port:
@@ -360,18 +425,21 @@ class ExperimentSystem:
         return None
 
     def get_mux_by_pump_port(self, port: GenPort) -> Mux | None:
+        """Return the mux associated with a pump port."""
         for mux, gen_port in self.wiring_info.pump:
             if gen_port == port:
                 return mux
         return None
 
     def get_qubit_by_control_port(self, port: GenPort) -> Qubit | None:
+        """Return the qubit associated with a control port."""
         for qubit, gen_port in self.wiring_info.ctrl:
             if gen_port == port:
                 return qubit
         return None
 
     def get_mux_by_qubit(self, label: str) -> Mux:
+        """Return the mux associated with a qubit."""
         ports = self.get_qubit_port_set(label)
         if ports is None:
             raise ValueError(f"Qubit `{label}` not found.")
@@ -381,6 +449,7 @@ class ExperimentSystem:
         return mux
 
     def get_readout_pair(self, port: CapPort) -> GenPort:
+        """Return the generator port paired with a capture port."""
         cap_mux = self.get_mux_by_readout_port(port)
         if cap_mux is None:
             raise ValueError(f"No mux found for port: {port}")
@@ -393,6 +462,7 @@ class ExperimentSystem:
         self,
         frequencies: dict[str, float],
     ) -> None:
+        """Update target frequencies in place."""
         for label, frequency in frequencies.items():
             target = self.get_target(label)
             target.frequency = frequency
@@ -405,6 +475,7 @@ class ExperimentSystem:
         cnco_freq: int,
         fnco_freq: int,
     ) -> None:
+        """Update LO/CNCO/FNCO parameters for a target port."""
         target = self.get_target(label)
         gen_channel = target.channel
         original_values = (
@@ -461,6 +532,7 @@ class ExperimentSystem:
         self,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ) -> None:
+        """Configure target mappings for the specified mode."""
         params = self.control_params
 
         self._gen_target_dict: dict[str, Target] = {}
@@ -1037,6 +1109,8 @@ class ExperimentSystem:
 
 
 class MixingUtil:
+    """Utility helpers for LO/NCO mixing calculations."""
+
     @staticmethod
     def calc_lo_cnco(
         f: float,
@@ -1045,6 +1119,7 @@ class MixingUtil:
         lo_step: int = LO_STEP,
         nco_step: int = NCO_STEP,
     ) -> tuple[int | None, int, int]:
+        """Calculate LO/CNCO settings for a target frequency."""
         if ssb is None:
             lo = None
             cnco = round(f / nco_step) * nco_step
@@ -1069,6 +1144,7 @@ class MixingUtil:
         cnco: int,
         nco_step: int = NCO_STEP,
     ) -> tuple[int, int]:
+        """Calculate FNCO settings for a target frequency."""
         if ssb is None and lo is None:
             fnco = round((f - cnco) / nco_step) * nco_step
             f_mix = cnco + fnco

@@ -1,3 +1,5 @@
+"""Control system models for boxes, ports, and channels."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -20,6 +22,8 @@ DEFAULT_NWAIT: Final = 0
 
 
 class BoxType(Enum):
+    """Supported box types."""
+
     QUEL1_A = "quel1-a"
     QUEL1_B = "quel1-b"
     QUBE_RIKEN_A = "qube-riken-a"
@@ -32,6 +36,8 @@ class BoxType(Enum):
 
 
 class PortType(Enum):
+    """Supported port types."""
+
     NOT_AVAILABLE = "NA"
     READ_IN = "READ_IN"
     READ_OUT = "READ_OUT"
@@ -351,6 +357,7 @@ def create_ports(
     box_type: BoxType,
     port_numbers: Sequence[int] | None = None,
 ) -> tuple[GenPort | CapPort, ...]:
+    """Create ports for a box based on mapping rules."""
     ports: list[GenPort | CapPort] = []
     port_index = {
         PortType.NOT_AVAILABLE: 0,
@@ -480,12 +487,16 @@ def create_ports(
 
 @dataclass
 class BoxPool(Model):
+    """Collection of boxes and clock master configuration."""
+
     clock_master_address: str
     boxes: tuple[Box, ...]
 
 
 @dataclass
 class Box(Model):
+    """Representation of a control box and its ports."""
+
     id: str
     name: str
     type: BoxType
@@ -504,6 +515,7 @@ class Box(Model):
         adapter: str,
         port_numbers: Sequence[int] | None = None,
     ) -> Box:
+        """Create a box with ports from settings."""
         type = BoxType(type) if isinstance(type, str) else type
         return cls(
             id=id,
@@ -516,29 +528,36 @@ class Box(Model):
 
     @property
     def input_ports(self) -> list[CapPort]:
+        """Return input ports for capture."""
         return [port for port in self.ports if isinstance(port, CapPort)]
 
     @property
     def output_ports(self) -> list[GenPort]:
+        """Return output ports for generation."""
         return [port for port in self.ports if isinstance(port, GenPort)]
 
     @property
     def control_ports(self) -> list[Port]:
+        """Return ports used for control."""
         return [port for port in self.ports if port.is_control_port]
 
     @property
     def readout_ports(self) -> list[Port]:
+        """Return ports used for readout."""
         return [port for port in self.ports if port.is_readout_port]
 
     @property
     def monitor_ports(self) -> list[Port]:
+        """Return ports used for monitoring."""
         return [port for port in self.ports if port.is_monitor_port]
 
     @property
     def pump_ports(self) -> list[Port]:
+        """Return ports used for pumping."""
         return [port for port in self.ports if port.is_pump_port]
 
     def get_port(self, port_number: int) -> GenPort | CapPort:
+        """Return a port by number."""
         try:
             return next(port for port in self.ports if port.number == port_number)
         except StopIteration:
@@ -549,6 +568,8 @@ class Box(Model):
 
 @dataclass
 class Port(Model):
+    """Base port definition shared by Gen and Cap ports."""
+
     id: str
     box_id: str
     number: int | tuple[int, int]
@@ -557,43 +578,54 @@ class Port(Model):
 
     @property
     def direction(self) -> str:
+        """Return port direction string."""
         return PORT_DIRECTION[self.type]
 
     @property
     def n_channels(self) -> int:
+        """Return number of channels on the port."""
         return len(self.channels)
 
     @property
     def is_input_port(self) -> bool:
+        """Return whether the port is an input."""
         return self.direction == "in"
 
     @property
     def is_output_port(self) -> bool:
+        """Return whether the port is an output."""
         return self.direction == "out"
 
     @property
     def is_control_port(self) -> bool:
+        """Return whether the port is a control port."""
         return self.type == PortType.CTRL
 
     @property
     def is_readout_port(self) -> bool:
+        """Return whether the port is a readout port."""
         return self.type in (PortType.READ_IN, PortType.READ_OUT)
 
     @property
     def is_monitor_port(self) -> bool:
+        """Return whether the port is a monitor port."""
         return self.type in (PortType.MNTR_IN, PortType.MNTR_OUT)
 
     @property
     def is_pump_port(self) -> bool:
+        """Return whether the port is a pump port."""
         return self.type == PortType.PUMP
 
     @property
     def is_fogi_port(self) -> bool:
+        """Return whether the port is a FOGI port."""
         return self.type == PortType.FOGI
 
 
 @dataclass
 class GenPort(Port):
+    """Generator port with frequency and output settings."""
+
     channels: tuple[GenChannel, ...] = ()
     sideband: Literal["U", "L"] | None = None
     lo_freq: int | None = DEFAULT_LO_FREQ
@@ -604,11 +636,14 @@ class GenPort(Port):
 
     @property
     def base_frequencies(self) -> tuple[int, ...]:
+        """Return coarse frequencies for each channel."""
         return tuple(channel.coarse_frequency for channel in self.channels)
 
 
 @dataclass
 class CapPort(Port):
+    """Capture port with frequency settings."""
+
     channels: tuple[CapChannel, ...] = ()
     lo_freq: int = DEFAULT_LO_FREQ
     cnco_freq: int = DEFAULT_CNCO_FREQ
@@ -617,36 +652,45 @@ class CapPort(Port):
 
 @dataclass
 class Channel(Model):
+    """Base channel with identifier and number."""
+
     id: str
     number: int
 
 
 @dataclass
 class GenChannel(Channel):
+    """Generator channel with frequency parameters."""
+
     _port: GenPort = Field(exclude=True)
     fnco_freq: int = DEFAULT_FNCO_FREQ
     nwait: int = DEFAULT_NWAIT
 
     @property
     def port(self) -> GenPort:
+        """Return the parent generator port."""
         return self._port
 
     @property
     def lo_freq(self) -> int:
+        """Return the LO frequency for the channel."""
         if self.port.lo_freq is None:
             raise ValueError("LO frequency is not set.")
         return self.port.lo_freq
 
     @property
     def cnco_freq(self) -> int:
+        """Return the CNCO frequency for the channel."""
         return self.port.cnco_freq
 
     @property
     def nco_freq(self) -> int:
+        """Return the NCO frequency for the channel."""
         return self.port.cnco_freq + self.fnco_freq
 
     @property
     def coarse_frequency(self) -> int:
+        """Return the coarse frequency for the channel."""
         sideband = self.port.sideband
         lo = self.port.lo_freq
         cnco = self.port.cnco_freq
@@ -667,6 +711,7 @@ class GenChannel(Channel):
 
     @property
     def fine_frequency(self) -> int:
+        """Return the fine frequency for the channel."""
         sideband = self.port.sideband
         lo = self.port.lo_freq
         cnco = self.port.cnco_freq
@@ -690,17 +735,24 @@ class GenChannel(Channel):
 
 @dataclass
 class CapChannel(Channel):
+    """Capture channel with frequency parameters."""
+
     _port: CapPort = Field(exclude=True)
     fnco_freq: int = DEFAULT_FNCO_FREQ
     ndelay: int = DEFAULT_NDELAY
 
     @property
     def port(self) -> CapPort:
+        """Return the parent capture port."""
         return self._port
 
 
 class ControlSystem:
+    """Collection of boxes and access helpers for ports."""
+
     class NotGivenType:
+        """Sentinel class for unset values."""
+
         pass
 
     NotGiven = NotGivenType()
@@ -720,27 +772,33 @@ class ControlSystem:
 
     @property
     def box_pool(self) -> BoxPool:
+        """Return the box pool."""
         return self._box_pool
 
     @property
     def hash(self) -> int:
+        """Return a hash for the control system."""
         return self.box_pool.hash
 
     @property
     def clock_master_address(self) -> str:
+        """Return the clock master address."""
         return self.box_pool.clock_master_address
 
     @property
     def boxes(self) -> list[Box]:
+        """Return the list of boxes."""
         return list(self._box_pool.boxes)
 
     def get_box(self, box_id: str) -> Box:
+        """Return a box by ID."""
         try:
             return self._box_dict[box_id]
         except KeyError:
             raise KeyError(f"Box `{box_id}` not found.") from None
 
     def get_port(self, box_id: str, port_number: int) -> GenPort | CapPort:
+        """Return a port by box ID and port number."""
         box = self.get_box(box_id)
         try:
             return next(port for port in box.ports if port.number == port_number)
@@ -750,18 +808,21 @@ class ControlSystem:
             ) from None
 
     def get_gen_port(self, box_id: str, port_number: int) -> GenPort:
+        """Return a generator port by box ID and port number."""
         port = self.get_port(box_id, port_number)
         if not isinstance(port, GenPort):
             raise TypeError(f"Port `{port.id}` is not a GenPort (type: {type(port)}).")
         return port
 
     def get_cap_port(self, box_id: str, port_number: int) -> CapPort:
+        """Return a capture port by box ID and port number."""
         port = self.get_port(box_id, port_number)
         if not isinstance(port, CapPort):
             raise TypeError(f"Port `{port.id}` is not a CapPort (type: {type(port)}).")
         return port
 
     def get_port_by_id(self, port_id: str) -> GenPort | CapPort:
+        """Return a port by its ID."""
         for box in self.boxes:
             for port in box.ports:
                 if port.id == port_id:
@@ -783,6 +844,7 @@ class ControlSystem:
         nwait: int | None = None,
         ndelay: int | None = None,
     ) -> None:
+        """Set port and channel parameters for a box port."""
         port = self.get_port(box_id, port_number)
 
         if isinstance(port, GenPort):

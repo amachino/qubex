@@ -1,3 +1,5 @@
+"""System management for experiment and device control."""
+
 from __future__ import annotations
 
 import logging
@@ -25,11 +27,14 @@ console = Console()
 
 @dataclass
 class StateHash:
+    """Hash values for system state components."""
+
     experiment_system: int
     device_controller: int
     device_settings: int
 
     def __eq__(self, other: object) -> bool:
+        """Return equality based on hash components."""
         if not isinstance(other, StateHash):
             return NotImplemented
         return (
@@ -55,6 +60,7 @@ class SystemManager:
     _initialized = False
 
     def __new__(cls, *args, **kwargs):
+        """Create or return the singleton instance."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -274,6 +280,7 @@ class SystemManager:
         self,
         box_ids: list[str],  # deprecated
     ) -> None:
+        """Load skew calibration data for the configured system."""
         skew_file_path = self.config_loader.config_path / "skew.yaml"
         if not Path(skew_file_path).exists():
             logger.warning(f"Skew file not found: {skew_file_path}")

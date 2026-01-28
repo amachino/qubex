@@ -1,3 +1,5 @@
+"""Quantum system data models and access helpers."""
+
 from __future__ import annotations
 
 import math
@@ -11,6 +13,8 @@ from .model import Model
 
 @dataclass
 class Chip(Model):
+    """Chip metadata and collections of qubits and resonators."""
+
     id: str
     name: str
     qubits: tuple[Qubit, ...]
@@ -19,14 +23,17 @@ class Chip(Model):
 
     @property
     def n_qubits(self) -> int:
+        """Return the number of qubits."""
         return len(self.qubits)
 
     @property
     def n_resonators(self) -> int:
+        """Return the number of resonators."""
         return len(self.resonators)
 
     @property
     def n_muxes(self) -> int:
+        """Return the number of muxes."""
         return len(self.muxes)
 
     @classmethod
@@ -36,6 +43,7 @@ class Chip(Model):
         name: str,
         n_qubits: int,
     ) -> Chip:
+        """Create a new chip model with a lattice layout."""
         graph = LatticeGraph(n_qubits)
 
         qubits = tuple(
@@ -78,6 +86,8 @@ class Chip(Model):
 
 @dataclass
 class Qubit(Model):
+    """Qubit metadata and derived frequency helpers."""
+
     index: int
     label: str
     chip_id: str
@@ -88,10 +98,12 @@ class Qubit(Model):
     _control_frequency_ef: float | None = None
 
     def __repr__(self) -> str:
+        """Return the debug representation of the qubit."""
         return f"Qubit('{self.label}', ω={self.frequency:.6f} GHz, α={self.anharmonicity:.6f} GHz, Ej/Ec={self.ej_over_ec:.2f})"
 
     @property
     def frequency(self) -> float:
+        """Return the control GE frequency in GHz."""
         if self._control_frequency_ge is not None and not math.isnan(
             self._control_frequency_ge
         ):
@@ -103,6 +115,7 @@ class Qubit(Model):
 
     @property
     def bare_frequency(self) -> float:
+        """Return the bare frequency in GHz."""
         if self._bare_frequency is not None:
             return self._bare_frequency
         else:
@@ -110,6 +123,7 @@ class Qubit(Model):
 
     @property
     def anharmonicity(self) -> float:
+        """Return the anharmonicity in GHz."""
         if self._anharmonicity is not None:
             return self._anharmonicity
         else:
@@ -117,6 +131,7 @@ class Qubit(Model):
 
     @property
     def control_frequency_ge(self) -> float:
+        """Return the configured GE control frequency in GHz."""
         if self._control_frequency_ge is not None:
             return self._control_frequency_ge
         else:
@@ -124,6 +139,7 @@ class Qubit(Model):
 
     @property
     def control_frequency_ef(self) -> float:
+        """Return the configured EF control frequency in GHz."""
         if self._control_frequency_ef is not None:
             return self._control_frequency_ef
         else:
@@ -131,37 +147,45 @@ class Qubit(Model):
 
     @property
     def alpha(self) -> float:
+        """Return the angular anharmonicity in rad/ns."""
         return 2 * math.pi * self.anharmonicity
 
     @property
     def charging_energy(self) -> float:
+        """Return the charging energy in GHz."""
         return -self.anharmonicity
 
     @property
     def josephson_energy(self) -> float:
+        """Return the Josephson energy in GHz."""
         if self.charging_energy == 0:
             return math.nan
         return (self.frequency + self.charging_energy) ** 2 / (8 * self.charging_energy)
 
     @property
     def ej_over_ec(self) -> float:
+        """Return the ratio $E_J/E_C$."""
         if self.charging_energy == 0:
             return math.nan
         return self.josephson_energy / self.charging_energy
 
     @property
     def ec_over_ej(self) -> float:
+        """Return the ratio $E_C/E_J$."""
         if self.josephson_energy == 0:
             return math.nan
         return self.charging_energy / self.josephson_energy
 
     @property
     def is_valid(self) -> bool:
+        """Return whether qubit parameters are valid."""
         return not math.isnan(self.frequency) and not math.isnan(self.anharmonicity)
 
 
 @dataclass
 class Resonator(Model):
+    """Resonator metadata and frequency helpers."""
+
     index: int
     label: str
     chip_id: str
@@ -171,6 +195,7 @@ class Resonator(Model):
     _readout_frequency: float | None = None
 
     def __repr__(self) -> str:
+        """Return the debug representation of the resonator."""
         repr = f"Resonator(label='{self.label}', frequency={self.frequency:.6f} GHz"
         if not math.isnan(self.dispersive_shift):
             return repr + f", dispersive_shift={self.dispersive_shift:.6f} GHz)"
@@ -179,6 +204,7 @@ class Resonator(Model):
 
     @property
     def frequency(self) -> float:
+        """Return the readout frequency in GHz."""
         if self._readout_frequency is not None and not math.isnan(
             self._readout_frequency
         ):
@@ -190,6 +216,7 @@ class Resonator(Model):
 
     @property
     def frequency_g(self) -> float:
+        """Return the ground-state resonator frequency in GHz."""
         if self._frequency_g is not None:
             return self._frequency_g
         else:
@@ -197,6 +224,7 @@ class Resonator(Model):
 
     @property
     def frequency_e(self) -> float:
+        """Return the excited-state resonator frequency in GHz."""
         if self._frequency_e is not None:
             return self._frequency_e
         else:
@@ -204,6 +232,7 @@ class Resonator(Model):
 
     @property
     def readout_frequency(self) -> float:
+        """Return the readout frequency in GHz."""
         if self._readout_frequency is not None:
             return self._readout_frequency
         else:
@@ -211,19 +240,24 @@ class Resonator(Model):
 
     @property
     def dispersive_shift(self) -> float:
+        """Return the dispersive shift in GHz."""
         return (self.frequency_e - self.frequency_g) / 2
 
     @property
     def chi(self) -> float:
+        """Return the dispersive shift in rad/ns."""
         return 2 * math.pi * self.dispersive_shift
 
     @property
     def is_valid(self) -> bool:
+        """Return whether resonator parameters are valid."""
         return not math.isnan(self.frequency)
 
 
 @dataclass
 class Mux(Model):
+    """Mux metadata and resonator grouping."""
+
     index: int
     label: str
     chip_id: str
@@ -231,18 +265,23 @@ class Mux(Model):
 
     @property
     def is_valid(self) -> bool:
+        """Return whether all resonators are valid."""
         return all(resonator.is_valid for resonator in self.resonators)
 
     @property
     def is_not_available(self) -> bool:
+        """Return whether all resonators are invalid."""
         return all(not resonator.is_valid for resonator in self.resonators)
 
 
 class QuantumSystem:
+    """Container for chip-level models and lookup helpers."""
+
     def __init__(
         self,
         chip: Chip,
     ):
+        """Initialize the QuantumSystem with a chip model."""
         self._graph: Final = LatticeGraph(chip.n_qubits)
         self._chip: Final = chip
         self._qubit_dict: Final = {q.label: q for q in chip.qubits}
@@ -251,40 +290,49 @@ class QuantumSystem:
 
     @property
     def chip(self) -> Chip:
+        """Return the chip model."""
         return self._chip
 
     @property
     def chip_graph(self) -> LatticeGraph:
+        """Return the lattice graph for the chip."""
         return self._graph
 
     @property
     def hash(self) -> int:
+        """Return a hash of the chip model."""
         return self.chip.hash
 
     @property
     def n_qubits(self) -> int:
+        """Return the number of qubits."""
         return self.chip.n_qubits
 
     @property
     def qubits(self) -> list[Qubit]:
+        """Return a list of qubit objects."""
         return list(self.chip.qubits)
 
     @property
     def resonators(self) -> list[Resonator]:
+        """Return a list of resonator objects."""
         return list(self.chip.resonators)
 
     @property
     def n_muxes(self) -> int:
+        """Return the number of muxes."""
         return self.chip.n_muxes
 
     @property
     def muxes(self) -> list[Mux]:
+        """Return a list of mux objects."""
         return list(self.chip.muxes)
 
     def get_qubit(
         self,
         label: int | str,
     ) -> Qubit:
+        """Return a qubit by index or label."""
         try:
             if isinstance(label, int):
                 return self.qubits[label]
@@ -297,6 +345,7 @@ class QuantumSystem:
         self,
         label: int | str,
     ) -> Resonator:
+        """Return a resonator by index or label."""
         try:
             if isinstance(label, int):
                 return self.resonators[label]
@@ -309,6 +358,7 @@ class QuantumSystem:
         self,
         label: int | str,
     ) -> Mux:
+        """Return a mux by index or label."""
         try:
             if isinstance(label, int):
                 return self.muxes[label]
@@ -321,6 +371,7 @@ class QuantumSystem:
         self,
         mux: int | str,
     ) -> list[Qubit]:
+        """Return qubits that belong to a mux."""
         labels = self._graph.get_qubits_in_mux(mux)
         return [self.get_qubit(label) for label in labels]
 
@@ -330,6 +381,7 @@ class QuantumSystem:
         *,
         in_same_mux: bool = False,
     ) -> list[Qubit]:
+        """Return spectator qubits for the given qubit."""
         labels = self._graph.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
         return [self.get_qubit(label) for label in labels]
 
@@ -340,6 +392,7 @@ class QuantumSystem:
         frequency: float | None = None,
         anharmonicity: float | None = None,
     ) -> None:
+        """Set qubit parameters for the specified qubit."""
         obj = self.get_qubit(qubit)
         # TODO: Fix SLF001
         if frequency is not None:
@@ -353,6 +406,7 @@ class QuantumSystem:
         *,
         frequency: float | None = None,
     ) -> None:
+        """Set resonator parameters for the specified resonator."""
         obj = self.get_resonator(resonator)
         # TODO: Fix SLF001
         if frequency is not None:

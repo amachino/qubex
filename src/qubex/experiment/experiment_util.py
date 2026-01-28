@@ -15,6 +15,7 @@ from qubex.backend import SAMPLING_PERIOD, SystemManager
 
 class ExperimentUtil:
     """Utility functions for experiment workflows."""
+
     @staticmethod
     @contextmanager
     def no_output() -> Iterator[None]:

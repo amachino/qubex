@@ -1,3 +1,5 @@
+"""Numerical utilities for analysis workflows."""
+
 from __future__ import annotations
 
 import numpy as np

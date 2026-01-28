@@ -1,3 +1,5 @@
+"""Curve fitting utilities and result containers."""
+
 from __future__ import annotations
 
 import logging
@@ -27,12 +29,16 @@ logger = logging.getLogger(__name__)
 
 
 class FitStatus(Enum):
+    """Status values for fit operations."""
+
     SUCCESS = "success"
     WARNING = "warning"
     ERROR = "error"
 
 
 class FitResult(UserDict):
+    """Result container for fit outputs and status."""
+
     status: FitStatus = FitStatus.SUCCESS
 
     def __init__(
@@ -47,6 +53,7 @@ class FitResult(UserDict):
         self.data["status"] = self.status.value
 
     def __repr__(self) -> str:
+        """Return a compact representation of the fit result."""
         return f"<FitResult status={self.status.value} message={self.message} data={{...}}>"
 
 

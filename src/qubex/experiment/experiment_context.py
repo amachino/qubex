@@ -577,6 +577,7 @@ class ExperimentContext:
         return self.calib_note.reference_phases
 
     def load_property(self, property_name: str) -> dict:
+        """Load a JSON property dictionary by name."""
         property_path = self.property_dir / self.chip_id / f"{property_name}.json"
         if property_path.exists():
             with open(property_path) as f:
@@ -592,6 +593,7 @@ class ExperimentContext:
         *,
         save_path: Path | str | None = None,
     ) -> None:
+        """Save a JSON property dictionary by name."""
         if save_path is not None:
             property_path = Path(save_path)
         else:
@@ -711,6 +713,7 @@ class ExperimentContext:
 
     @staticmethod
     def cr_pair(cr_label: str) -> tuple[str, str]:
+        """Return the control/target qubit pair for a CR label."""
         return Target.cr_qubit_pair(cr_label)
 
     def get_rabi_param(
@@ -752,6 +755,7 @@ class ExperimentContext:
         rabi_params: dict[str, RabiParam],
         r2_threshold: float | None = None,
     ) -> None:
+        """Store Rabi parameters that meet the quality threshold."""
         if r2_threshold is None:
             r2_threshold = 0.5
         not_stored = []
@@ -783,6 +787,7 @@ class ExperimentContext:
         qubit: str,
         in_same_mux: bool | None = None,
     ) -> list[Qubit]:
+        """Return spectator qubits for the given target."""
         if in_same_mux is None:
             in_same_mux = False
         return self.quantum_system.get_spectator_qubits(qubit, in_same_mux=in_same_mux)
@@ -791,18 +796,22 @@ class ExperimentContext:
         self,
         targets: Collection[str],
     ) -> NDArray:
+        """Return the confusion matrix for the specified targets."""
         return self.measurement.get_confusion_matrix(targets)
 
     def get_inverse_confusion_matrix(
         self,
         targets: Collection[str],
     ) -> NDArray:
+        """Return the inverse confusion matrix for the specified targets."""
         return self.measurement.get_inverse_confusion_matrix(targets)
 
     def is_connected(self) -> bool:
+        """Report whether the measurement backend is connected."""
         return self._measurement.is_connected()
 
     def check_status(self) -> None:
+        """Log connectivity, clock, and configuration status."""
         if not self.is_connected():
             logger.warning(
                 "Not connected to the devices. Call `connect()` method first."
@@ -842,6 +851,7 @@ class ExperimentContext:
         *,
         sync_clocks: bool | None = None,
     ) -> None:
+        """Connect to the measurement backend and optionally sync clocks."""
         if sync_clocks is None:
             sync_clocks = True
         try:
@@ -856,6 +866,7 @@ class ExperimentContext:
         box_ids: list[str] | None = None,
         noise_threshold: int | None = None,
     ) -> None:
+        """Link up specified boxes with optional noise threshold."""
         if box_ids is None:
             box_ids = self.box_ids
         self._measurement.linkup(box_ids, noise_threshold=noise_threshold)
@@ -864,6 +875,7 @@ class ExperimentContext:
         self,
         box_ids: list[str] | None = None,
     ) -> None:
+        """Resynchronize clocks for the specified boxes."""
         if box_ids is None:
             box_ids = self.box_ids
         self.device_controller.resync_clocks(box_ids)
@@ -874,6 +886,7 @@ class ExperimentContext:
         exclude: str | list[str] | None = None,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ) -> None:
+        """Configure hardware targets and push settings to devices."""
         if isinstance(box_ids, str):
             box_ids = [box_ids]
         if isinstance(exclude, str):
@@ -892,6 +905,7 @@ class ExperimentContext:
         )
 
     def reload(self) -> None:
+        """Reload measurement configuration from the backend."""
         try:
             self._measurement.reload(configuration_mode=self.configuration_mode)
             logger.info("Successfully reloaded.")
@@ -904,6 +918,7 @@ class ExperimentContext:
         box_ids: str | Collection[str] | None = None,
         qubits: Collection[str] | None = None,
     ) -> None:
+        """Reset AWG and capture units for specified boxes or qubits."""
         box_ids = []
         if qubits is not None:
             boxes = self.experiment_system.get_boxes_for_qubits(qubits)
@@ -925,6 +940,7 @@ class ExperimentContext:
         target_type: TargetType | None = None,
         update_lsi: bool | None = None,
     ) -> None:
+        """Register a custom target with the control system."""
         if target_type is None:
             target_type = TargetType.CTRL_GE
         if update_lsi is None:
@@ -965,6 +981,7 @@ class ExperimentContext:
         self,
         frequencies: dict[str, float] | None,
     ) -> Iterator[None]:
+        """Temporarily override target frequencies within the context."""
         if frequencies is None:
             yield
         else:
@@ -975,18 +992,22 @@ class ExperimentContext:
         self,
         file_path: Path | str | None = None,
     ) -> None:
+        """Save the calibration note to disk."""
         self.calib_note.save(file_path=file_path)
 
     @deprecated("Use `calib_note.save()` instead.")
     def save_defaults(self) -> None:
+        """Save default calibration notes (deprecated)."""
         self._system_note.save()
 
     @deprecated("Use `calib_note.clear()` instead.")
     def clear_defaults(self) -> None:
+        """Clear default calibration notes (deprecated)."""
         self._system_note.clear()
 
     @deprecated("")
     def delete_defaults(self) -> None:
+        """Delete default calibration notes after confirmation."""
         if Confirm.ask("Delete the default params?"):
             self._system_note.clear()
             self._system_note.save()
@@ -995,6 +1016,7 @@ class ExperimentContext:
         self,
         name: str,
     ) -> ExperimentRecord:
+        """Load an experiment record by name and log its metadata."""
         record = ExperimentRecord.load(name)
         logger.info(f"ExperimentRecord `{name}` is loaded.\n")
         logger.info(f"description: {record.description}")

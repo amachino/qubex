@@ -218,6 +218,7 @@ class Experiment:
 
     @property
     def ctx(self) -> ExperimentContext:
+        """Return the experiment context."""
         return self._experiment_context
 
     def run(self, task: ExperimentTask[T]) -> T:
@@ -238,245 +239,305 @@ class Experiment:
 
     @property
     def pulse(self) -> PulseService:
+        """Return the pulse service."""
         return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
+        """Return the measurement service."""
         return self._measurement_service
 
     @property
     def calibration_service(self) -> CalibrationService:
+        """Return the calibration service."""
         return self._calibration_service
 
     @property
     def characterization_service(self) -> CharacterizationService:
+        """Return the characterization service."""
         return self._characterization_service
 
     @property
     def benchmarking_service(self) -> BenchmarkingService:
+        """Return the benchmarking service."""
         return self._benchmarking_service
 
     @property
     def optimization_service(self) -> OptimizationService:
+        """Return the optimization service."""
         return self._optimization_service
 
     @property
     def tool(self) -> Any:
+        """Return the experiment tool module."""
         return self.ctx.tool
 
     @property
     def util(self) -> Any:
+        """Return the experiment utility helpers."""
         return self.ctx.util
 
     @property
     def measurement(self) -> Measurement:
+        """Return the measurement instance."""
         return self.ctx.measurement
 
     @property
     def system_manager(self) -> SystemManager:
+        """Return the system manager."""
         return self.ctx.system_manager
 
     @property
     def config_loader(self) -> ConfigLoader:
+        """Return the configuration loader."""
         return self.ctx.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
+        """Return the experiment system."""
         return self.ctx.experiment_system
 
     @property
     def quantum_system(self) -> QuantumSystem:
+        """Return the quantum system."""
         return self.ctx.quantum_system
 
     @property
     def control_system(self) -> ControlSystem:
+        """Return the control system."""
         return self.ctx.control_system
 
     @property
     def device_controller(self) -> DeviceController:
+        """Return the device controller."""
         return self.ctx.device_controller
 
     @property
     def params(self) -> ControlParams:
+        """Return the control parameters."""
         return self.ctx.params
 
     @property
     def chip(self) -> Chip:
+        """Return the chip model."""
         return self.ctx.chip
 
     @property
     def chip_id(self) -> str:
+        """Return the chip identifier."""
         return self.ctx.chip_id
 
     @property
     def qubit_labels(self) -> list[str]:
+        """Return the list of active qubit labels."""
         return self.ctx.qubit_labels
 
     @property
     def mux_labels(self) -> list[str]:
+        """Return mux labels for active qubits."""
         return self.ctx.mux_labels
 
     @property
     def qubits(self) -> dict[str, Qubit]:
+        """Return qubit objects keyed by label."""
         return self.ctx.qubits
 
     @property
     def resonators(self) -> dict[str, Resonator]:
+        """Return resonator objects keyed by qubit label."""
         return self.ctx.resonators
 
     @property
     def targets(self) -> dict[str, Target]:
+        """Return all targets keyed by label."""
         return self.ctx.targets
 
     @property
     def available_targets(self) -> dict[str, Target]:
+        """Return available targets keyed by label."""
         return self.ctx.available_targets
 
     @property
     def ge_targets(self) -> dict[str, Target]:
+        """Return available GE targets."""
         return self.ctx.ge_targets
 
     @property
     def ef_targets(self) -> dict[str, Target]:
+        """Return available EF targets."""
         return self.ctx.ef_targets
 
     @property
     def cr_targets(self) -> dict[str, Target]:
+        """Return available CR targets."""
         return self.ctx.cr_targets
 
     @property
     def cr_labels(self) -> list[str]:
+        """Return CR labels for the current chip."""
         return self.ctx.cr_labels
 
     @property
     def cr_pairs(self) -> list[tuple[str, str]]:
+        """Return CR qubit pairs."""
         return self.ctx.cr_pairs
 
     @property
     def edge_pairs(self) -> list[tuple[str, str]]:
+        """Return edge pairs in the chip graph."""
         return self.ctx.edge_pairs
 
     @property
     def edge_labels(self) -> list[str]:
+        """Return edge labels in the chip graph."""
         return self.ctx.edge_labels
 
     @property
     def boxes(self) -> dict[str, Box]:
+        """Return control/readout boxes keyed by ID."""
         return self.ctx.boxes
 
     @property
     def box_ids(self) -> list[str]:
+        """Return the list of box IDs."""
         return self.ctx.box_ids
 
     @property
     def config_path(self) -> str:
+        """Return the resolved configuration path."""
         return self.ctx.config_path
 
     @property
     def params_path(self) -> str:
+        """Return the resolved parameters path."""
         return self.ctx.params_path
 
     @property
     def calib_note(self) -> CalibrationNote:
+        """Return the calibration note instance."""
         return self.ctx.calib_note
 
     @property
     def note(self) -> ExperimentNote:
+        """Return the user experiment note instance."""
         return self.ctx.note
 
     @property
     def property_dir(self) -> Path:
+        """Return the property directory path."""
         return self.ctx.property_dir
 
     @property
     def classifier_dir(self) -> Path:
+        """Return the classifier directory path."""
         return self.ctx.classifier_dir
 
     @property
     def classifier_type(self) -> Literal["kmeans", "gmm"]:
+        """Return the classifier type."""
         return self.ctx.classifier_type
 
     @property
     def classifiers(self) -> TargetMap[StateClassifier]:
+        """Return the active state classifiers."""
         return self.ctx.classifiers
 
     @property
     def state_centers(self) -> dict[str, dict[int, complex]]:
+        """Return state centers from calibration notes."""
         return self.ctx.state_centers
 
     @property
     def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
+        """Return the configuration mode."""
         return self.ctx.configuration_mode
 
     @property
     def reference_phases(self) -> dict[str, float]:
+        """Return reference phases by target."""
         return self.ctx.reference_phases
 
     # region pulse_service properties
 
     @property
     def readout_duration(self) -> float:
+        """Return the readout duration."""
         return self.pulse.readout_duration
 
     @property
     def readout_pre_margin(self) -> float:
+        """Return the readout pre margin."""
         return self.pulse.readout_pre_margin
 
     @property
     def readout_post_margin(self) -> float:
+        """Return the readout post margin."""
         return self.pulse.readout_post_margin
 
     @property
     def drag_hpi_duration(self) -> float:
+        """Return the DRAG half-pi duration."""
         return self.pulse.drag_hpi_duration
 
     @property
     def drag_pi_duration(self) -> float:
+        """Return the DRAG pi duration."""
         return self.pulse.drag_pi_duration
 
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
+        """Return cached half-pi pulses."""
         return self.pulse.hpi_pulse
 
     @property
     def pi_pulse(self) -> dict[str, Waveform]:
+        """Return cached pi pulses."""
         return self.pulse.pi_pulse
 
     @property
     def drag_hpi_pulse(self) -> dict[str, Waveform]:
+        """Return cached DRAG half-pi pulses."""
         return self.pulse.drag_hpi_pulse
 
     @property
     def drag_pi_pulse(self) -> dict[str, Waveform]:
+        """Return cached DRAG pi pulses."""
         return self.pulse.drag_pi_pulse
 
     @property
     def ef_hpi_pulse(self) -> dict[str, Waveform]:
+        """Return cached EF half-pi pulses."""
         return self.pulse.ef_hpi_pulse
 
     @property
     def ef_pi_pulse(self) -> dict[str, Waveform]:
+        """Return cached EF pi pulses."""
         return self.pulse.ef_pi_pulse
 
     @property
     def cr_pulse(self) -> dict[str, PulseSchedule]:
+        """Return cached CR pulse schedules."""
         return self.pulse.cr_pulse
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
+        """Return stored Rabi parameters."""
         return self.pulse.rabi_params
 
     @property
     def ge_rabi_params(self) -> dict[str, RabiParam]:
+        """Return stored GE Rabi parameters."""
         return self.pulse.ge_rabi_params
 
     @property
     def ef_rabi_params(self) -> dict[str, RabiParam]:
+        """Return stored EF Rabi parameters."""
         return self.pulse.ef_rabi_params
 
     # endregion
 
     def load_property(self, property_name: str) -> dict:
+        """Load a property dictionary by name."""
         return self.ctx.load_property(property_name)
 
     def save_property(
@@ -486,6 +547,7 @@ class Experiment:
         *,
         save_path: Path | str | None = None,
     ) -> None:
+        """Save a property dictionary by name."""
         return self.ctx.save_property(
             property_name,
             data,
@@ -550,6 +612,7 @@ class Experiment:
 
     @staticmethod
     def cr_pair(cr_label: str) -> tuple[str, str]:
+        """Return the control/target qubit pair for a CR label."""
         return Target.cr_qubit_pair(cr_label)
 
     def get_rabi_param(
@@ -565,6 +628,7 @@ class Experiment:
         rabi_params: dict[str, RabiParam],
         r2_threshold: float | None = None,
     ) -> None:
+        """Store Rabi parameters meeting the quality threshold."""
         self.ctx.store_rabi_params(
             rabi_params,
             r2_threshold=r2_threshold,
@@ -575,24 +639,29 @@ class Experiment:
         qubit: str,
         in_same_mux: bool | None = None,
     ) -> list[Qubit]:
+        """Return spectator qubits for the given target."""
         return self.ctx.get_spectators(qubit, in_same_mux=in_same_mux)
 
     def get_confusion_matrix(
         self,
         targets: Collection[str],
     ) -> NDArray:
+        """Return the confusion matrix for the specified targets."""
         return self.ctx.get_confusion_matrix(targets)
 
     def get_inverse_confusion_matrix(
         self,
         targets: Collection[str],
     ) -> NDArray:
+        """Return the inverse confusion matrix for the specified targets."""
         return self.ctx.get_inverse_confusion_matrix(targets)
 
     def is_connected(self) -> bool:
+        """Report whether the measurement backend is connected."""
         return self.ctx.is_connected()
 
     def check_status(self) -> None:
+        """Log connectivity, clock, and configuration status."""
         return self.ctx.check_status()
 
     def connect(
@@ -600,6 +669,7 @@ class Experiment:
         *,
         sync_clocks: bool | None = None,
     ) -> None:
+        """Connect to the measurement backend and optionally sync clocks."""
         return self.ctx.connect(sync_clocks=sync_clocks)
 
     def linkup(
@@ -607,6 +677,7 @@ class Experiment:
         box_ids: list[str] | None = None,
         noise_threshold: int | None = None,
     ) -> None:
+        """Link up specified boxes with optional noise threshold."""
         return self.ctx.linkup(
             box_ids=box_ids,
             noise_threshold=noise_threshold,
@@ -616,6 +687,7 @@ class Experiment:
         self,
         box_ids: list[str] | None = None,
     ) -> None:
+        """Resynchronize clocks for the specified boxes."""
         return self.ctx.resync_clocks(box_ids=box_ids)
 
     def configure(
@@ -624,6 +696,7 @@ class Experiment:
         exclude: str | list[str] | None = None,
         mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
     ) -> None:
+        """Configure hardware targets and push settings to devices."""
         return self.ctx.configure(
             box_ids=box_ids,
             exclude=exclude,
@@ -631,6 +704,7 @@ class Experiment:
         )
 
     def reload(self) -> None:
+        """Reload measurement configuration from the backend."""
         return self.ctx.reload()
 
     def reset_awg_and_capunits(
@@ -638,6 +712,7 @@ class Experiment:
         box_ids: str | Collection[str] | None = None,
         qubits: Collection[str] | None = None,
     ) -> None:
+        """Reset AWG and capture units for specified boxes or qubits."""
         return self.ctx.reset_awg_and_capunits(
             box_ids=box_ids,
             qubits=qubits,
@@ -655,6 +730,7 @@ class Experiment:
         target_type: TargetType | None = None,
         update_lsi: bool | None = None,
     ) -> None:
+        """Register a custom target with the control system."""
         return self.ctx.register_custom_target(
             label=label,
             frequency=frequency,
@@ -670,6 +746,7 @@ class Experiment:
         self,
         frequencies: dict[str, float] | None,
     ) -> Iterator[None]:
+        """Temporarily override target frequencies within the context."""
         with self.ctx.modified_frequencies(frequencies):
             yield
 
@@ -677,24 +754,29 @@ class Experiment:
         self,
         file_path: Path | str | None = None,
     ) -> None:
+        """Save the calibration note to disk."""
         return self.ctx.save_calib_note(file_path=file_path)
 
     @deprecated("Use `calib_note.save()` instead.")
     def save_defaults(self) -> None:
+        """Save default calibration notes (deprecated)."""
         return self.ctx.save_defaults()
 
     @deprecated("Use `calib_note.clear()` instead.")
     def clear_defaults(self) -> None:
+        """Clear default calibration notes (deprecated)."""
         return self.ctx.clear_defaults()
 
     @deprecated("")
     def delete_defaults(self) -> None:
+        """Delete default calibration notes after confirmation."""
         return self.ctx.delete_defaults()
 
     def load_record(
         self,
         name: str,
     ) -> ExperimentRecord:
+        """Load an experiment record by name."""
         return self.ctx.load_record(name)
 
     # region pulse_service methods
@@ -703,6 +785,7 @@ class Experiment:
         self,
         targets: Collection[str] | None = None,
     ) -> None:
+        """Validate stored Rabi parameters for targets."""
         return self.pulse.validate_rabi_params(targets=targets)
 
     def get_hpi_pulse(
@@ -758,6 +841,7 @@ class Experiment:
         target: str,
         state: str,  # ["0", "1", "+", "-", "+i", "-i"],
     ) -> Waveform:
+        """Return a preparation pulse for the requested state."""
         return self.pulse.get_pulse_for_state(target, state)
 
     def calc_control_amplitude(
@@ -767,6 +851,7 @@ class Experiment:
         *,
         rabi_amplitude_ratio: float | None = None,
     ) -> float:
+        """Calculate control amplitude for the target Rabi rate."""
         return self.pulse.calc_control_amplitude(
             target,
             rabi_rate,
@@ -781,6 +866,7 @@ class Experiment:
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool | None = None,
     ) -> dict[str, float]:
+        """Calculate control amplitudes for available targets."""
         return self.pulse.calc_control_amplitudes(
             rabi_rate,
             current_amplitudes=current_amplitudes,
@@ -793,6 +879,7 @@ class Experiment:
         target: str,
         control_amplitude: float,
     ) -> float:
+        """Calculate Rabi rate from control amplitude."""
         return self.pulse.calc_rabi_rate(target, control_amplitude)
 
     def calc_rabi_rates(
@@ -801,6 +888,7 @@ class Experiment:
         *,
         print_result: bool | None = None,
     ) -> dict[str, float]:
+        """Calculate Rabi rates for available targets."""
         return self.pulse.calc_rabi_rates(
             control_amplitude,
             print_result=print_result,
@@ -819,6 +907,7 @@ class Experiment:
         pre_margin: float | None = None,
         post_margin: float | None = None,
     ) -> Waveform:
+        """Build a readout pulse for the target."""
         return self.pulse.readout(
             target,
             duration=duration,
@@ -837,6 +926,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return an X90 pulse for the target."""
         return self.pulse.x90(target, valid_days=valid_days)
 
     def x90m(
@@ -846,6 +936,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return a negative X90 pulse for the target."""
         return self.pulse.x90m(target, valid_days=valid_days)
 
     def x180(
@@ -855,6 +946,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return an X180 pulse for the target."""
         return self.pulse.x180(target, valid_days=valid_days)
 
     def y90(
@@ -864,6 +956,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return a Y90 pulse for the target."""
         return self.pulse.y90(target, valid_days=valid_days)
 
     def y90m(
@@ -873,6 +966,7 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return a negative Y90 pulse for the target."""
         return self.pulse.y90m(target, valid_days=valid_days)
 
     def y180(
@@ -882,16 +976,19 @@ class Experiment:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return a Y180 pulse for the target."""
         return self.pulse.y180(target, valid_days=valid_days)
 
     def z90(
         self,
     ) -> VirtualZ:
+        """Return a virtual Z90 rotation."""
         return self.pulse.z90()
 
     def z180(
         self,
     ) -> VirtualZ:
+        """Return a virtual Z180 rotation."""
         return self.pulse.z180()
 
     def hadamard(
@@ -900,6 +997,7 @@ class Experiment:
         *,
         decomposition: Literal["Z180-Y90", "Y90-X180"] | None = None,
     ) -> PulseArray:
+        """Return a Hadamard pulse for the target."""
         return self.pulse.hadamard(target, decomposition=decomposition)
 
     def zx90(
@@ -920,6 +1018,7 @@ class Experiment:
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float | None = None,
     ) -> PulseSchedule:
+        """Return a ZX90 pulse schedule for a qubit pair."""
         return self.pulse.zx90(
             control_qubit,
             target_qubit,
@@ -956,6 +1055,7 @@ class Experiment:
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float | None = None,
     ) -> PulseSchedule:
+        """Return an RZX pulse schedule for a qubit pair."""
         return self.pulse.rzx(
             control_qubit,
             target_qubit,
@@ -983,6 +1083,7 @@ class Experiment:
         x90: Waveform | None = None,
         only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
+        """Return a CNOT pulse schedule for a qubit pair."""
         return self.pulse.cnot(
             control_qubit,
             target_qubit,
@@ -1000,6 +1101,7 @@ class Experiment:
         x90: Waveform | None = None,
         only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
+        """Return a CX pulse schedule for a qubit pair."""
         return self.pulse.cx(
             control_qubit,
             target_qubit,
@@ -1017,6 +1119,7 @@ class Experiment:
         x90: Waveform | None = None,
         only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
+        """Return a CZ pulse schedule for a qubit pair."""
         return self.pulse.cz(
             control_qubit,
             target_qubit,
@@ -1724,6 +1827,7 @@ class Experiment:
         store_params: bool | None = None,
         simultaneous: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        """Obtain Rabi parameters for target qubits."""
         return self.measurement_service.obtain_rabi_params(
             targets=targets,
             time_range=time_range,
@@ -1748,6 +1852,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        """Obtain EF Rabi parameters for target qubits."""
         return self.measurement_service.obtain_ef_rabi_params(
             targets=targets,
             time_range=time_range,
@@ -1772,6 +1877,7 @@ class Experiment:
         plot: bool | None = None,
         store_params: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        """Run a Rabi experiment for the specified amplitudes."""
         return self.measurement_service.rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -1799,6 +1905,7 @@ class Experiment:
         plot: bool | None = None,
         store_params: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        """Run an EF Rabi experiment for the specified amplitudes."""
         return self.measurement_service.ef_rabi_experiment(
             amplitudes=amplitudes,
             time_range=time_range,
@@ -1822,6 +1929,7 @@ class Experiment:
         readout_amplitudes: dict[str, float] | None = None,
         plot: bool | None = None,
     ) -> list[MeasureResult]:
+        """Measure state distributions for the specified targets."""
         return self.measurement_service.measure_state_distribution(
             targets=targets,
             n_states=n_states,
@@ -1849,6 +1957,7 @@ class Experiment:
         simultaneous: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Build state classifiers from measurement data."""
         return self.measurement_service.build_classifier(
             targets=targets,
             n_states=n_states,
@@ -2128,6 +2237,7 @@ class Experiment:
         save_image: bool | None = None,
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
+        """Measure a Bell state for a qubit pair."""
         return self.measurement_service.measure_bell_state(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -2157,6 +2267,7 @@ class Experiment:
         save_image: bool | None = None,
         mle_fit: bool | None = None,
     ) -> Result:
+        """Perform Bell-state tomography for a qubit pair."""
         return self.measurement_service.bell_state_tomography(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -2181,6 +2292,7 @@ class Experiment:
         reference_phases: dict[str, float] | None = None,
         save: bool | None = None,
     ) -> None:
+        """Correct stored Rabi parameters using reference phases."""
         return self.calibration_service.correct_rabi_params(
             targets=targets,
             reference_phases=reference_phases,
@@ -2194,6 +2306,7 @@ class Experiment:
         reference_phases: dict[str, float] | None = None,
         save: bool | None = None,
     ) -> None:
+        """Correct stored classifiers using reference phases."""
         return self.calibration_service.correct_classifiers(
             targets=targets,
             reference_phases=reference_phases,
@@ -2207,6 +2320,7 @@ class Experiment:
         shots: int | None = None,
         save: bool | None = None,
     ) -> None:
+        """Correct stored CR parameters via tomography."""
         return self.calibration_service.correct_cr_params(
             cr_labels=cr_labels,
             shots=shots,
@@ -2220,6 +2334,7 @@ class Experiment:
         *,
         save: bool | None = None,
     ) -> None:
+        """Correct stored calibration data for qubits and CR pairs."""
         return self.calibration_service.correct_calibration(
             qubit_labels=qubit_labels,
             cr_labels=cr_labels,
@@ -2577,6 +2692,7 @@ class Experiment:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """Calibrate DRAG amplitude for targets."""
         return self.calibration_service.calibrate_drag_amplitude(
             targets=targets,
             spectator_state=spectator_state,
@@ -2607,6 +2723,7 @@ class Experiment:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """Calibrate DRAG beta for targets."""
         return self.calibration_service.calibrate_drag_beta(
             targets=targets,
             spectator_state=spectator_state,
@@ -2639,6 +2756,7 @@ class Experiment:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """Calibrate DRAG half-pi pulses for targets."""
         return self.calibration_service.calibrate_drag_hpi_pulse(
             targets=targets,
             spectator_state=spectator_state,
@@ -2676,6 +2794,7 @@ class Experiment:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """Calibrate DRAG pi pulses for targets."""
         return self.calibration_service.calibrate_drag_pi_pulse(
             targets=targets,
             spectator_state=spectator_state,
@@ -2722,6 +2841,7 @@ class Experiment:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Measure CR dynamics for a control/target pair."""
         return self.calibration_service.measure_cr_dynamics(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -2761,6 +2881,7 @@ class Experiment:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Run CR Hamiltonian tomography for a qubit pair."""
         return self.calibration_service.cr_hamiltonian_tomography(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -2798,6 +2919,7 @@ class Experiment:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Update CR calibration parameters for a qubit pair."""
         return self.calibration_service.update_cr_params(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -2840,6 +2962,7 @@ class Experiment:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Obtain CR parameters for a qubit pair."""
         return self.calibration_service.obtain_cr_params(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -2887,6 +3010,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Calibrate the ZX90 gate for a qubit pair."""
         return self.calibration_service.calibrate_zx90(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -2928,6 +3052,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Measure readout SNR for targets."""
         return self.characterization_service.measure_readout_snr(
             targets=targets,
             initial_state=initial_state,
@@ -2950,6 +3075,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Sweep readout amplitudes for targets."""
         return self.characterization_service.sweep_readout_amplitude(
             targets=targets,
             amplitude_range=amplitude_range,
@@ -2971,6 +3097,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Sweep readout durations for targets."""
         return self.characterization_service.sweep_readout_duration(
             targets=targets,
             time_range=time_range,
@@ -2995,6 +3122,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Measure a chevron pattern for targets."""
         return self.characterization_service.chevron_pattern(
             targets=targets,
             detuning_range=detuning_range,
@@ -3019,6 +3147,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> ExperimentResult[FreqRabiData]:
+        """Obtain the frequency-Rabi relation for targets."""
         return self.characterization_service.obtain_freq_rabi_relation(
             targets=targets,
             detuning_range=detuning_range,
@@ -3039,6 +3168,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> ExperimentResult[AmplRabiData]:
+        """Obtain the amplitude-Rabi relation for targets."""
         return self.characterization_service.obtain_ampl_rabi_relation(
             targets=targets,
             time_range=time_range,
@@ -3060,6 +3190,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Calibrate control frequencies for targets."""
         return self.characterization_service.calibrate_control_frequency(
             targets=targets,
             detuning_range=detuning_range,
@@ -3081,6 +3212,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Calibrate EF control frequencies for targets."""
         return self.characterization_service.calibrate_ef_control_frequency(
             targets=targets,
             detuning_range=detuning_range,
@@ -3101,6 +3233,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Calibrate readout frequencies for targets."""
         return self.characterization_service.calibrate_readout_frequency(
             targets=targets,
             detuning_range=detuning_range,
@@ -3122,6 +3255,7 @@ class Experiment:
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T1Data]:
+        """Run a T1 experiment for targets."""
         return self.characterization_service.t1_experiment(
             targets=targets,
             time_range=time_range,
@@ -3145,6 +3279,7 @@ class Experiment:
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T2Data]:
+        """Run a T2 echo experiment for targets."""
         return self.characterization_service.t2_experiment(
             targets=targets,
             time_range=time_range,
@@ -3170,6 +3305,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
+        """Run a Ramsey experiment for targets."""
         return self.characterization_service.ramsey_experiment(
             targets=targets,
             time_range=time_range,
@@ -3276,6 +3412,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Estimate effective control frequencies for targets."""
         return self.characterization_service.obtain_effective_control_frequency(
             targets=targets,
             time_range=time_range,
@@ -3297,6 +3434,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Run a JAZZ experiment for a target/spectator pair."""
         return self.characterization_service.jazz_experiment(
             target_qubit=target_qubit,
             spectator_qubit=spectator_qubit,
@@ -3320,6 +3458,7 @@ class Experiment:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Estimate coupling strength for a target/spectator pair."""
         return self.characterization_service.obtain_coupling_strength(
             target_qubit=target_qubit,
             spectator_qubit=spectator_qubit,
@@ -3344,6 +3483,7 @@ class Experiment:
         plot: bool | None = None,
         confirm: bool | None = None,
     ) -> float:
+        """Measure the electrical delay for a readout line."""
         return self.characterization_service.measure_electrical_delay(
             target=target,
             f_start=f_start,
@@ -3371,6 +3511,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Scan resonator frequencies to find peaks."""
         return self.characterization_service.scan_resonator_frequencies(
             target=target,
             frequency_range=frequency_range,
@@ -3397,6 +3538,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run resonator spectroscopy for a target."""
         return self.characterization_service.resonator_spectroscopy(
             target=target,
             frequency_range=frequency_range,
@@ -3423,6 +3565,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Measure reflection coefficient around a center frequency."""
         return self.characterization_service.measure_reflection_coefficient(
             target=target,
             center_frequency=center_frequency,
@@ -3453,6 +3596,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Scan qubit frequencies to locate resonances."""
         return self.characterization_service.scan_qubit_frequencies(
             target=target,
             frequency_range=frequency_range,
@@ -3481,6 +3625,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> float:
+        """Estimate control amplitude from a resonance scan."""
         return self.characterization_service.estimate_control_amplitude(
             target=target,
             frequency_range=frequency_range,
@@ -3506,6 +3651,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Measure qubit resonance over a frequency sweep."""
         return self.characterization_service.measure_qubit_resonance(
             target=target,
             frequency_range=frequency_range,
@@ -3530,6 +3676,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run qubit spectroscopy over frequency and power."""
         return self.characterization_service.qubit_spectroscopy(
             target=target,
             frequency_range=frequency_range,
@@ -3556,6 +3703,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Measure dispersive shift for the target qubit."""
         return self.characterization_service.measure_dispersive_shift(
             target=target,
             df=df,
@@ -3582,6 +3730,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Find the readout frequency maximizing state separation."""
         return self.characterization_service.find_optimal_readout_frequency(
             target=target,
             df=df,
@@ -3604,6 +3753,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Find the readout amplitude maximizing state separation."""
         return self.characterization_service.find_optimal_readout_amplitude(
             target=target,
             amplitude_range=amplitude_range,
@@ -3625,6 +3775,7 @@ class Experiment:
         resonator_drive_duration: float | None = None,
         resonator_drive_ramptime: float | None = None,
     ) -> PulseSchedule:
+        """Build a CKP sequence for qubit-resonator interaction."""
         return self.characterization_service.ckp_sequence(
             target=target,
             qubit_initial_state=qubit_initial_state,
@@ -3651,6 +3802,7 @@ class Experiment:
         verbose: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run a CKP measurement over detuning grids."""
         return self.characterization_service.ckp_measurement(
             target=target,
             qubit_initial_state=qubit_initial_state,
@@ -3678,6 +3830,7 @@ class Experiment:
         verbose: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run a CKP experiment and fit dispersive parameters."""
         return self.characterization_service.ckp_experiment(
             target=target,
             qubit_detuning_range=qubit_detuning_range,
@@ -3700,6 +3853,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run basic single-qubit characterization routines."""
         return self.characterization_service.characterize_1q(
             targets=targets,
             shots=shots,
@@ -3717,6 +3871,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run basic two-qubit characterization routines."""
         return self.characterization_service.characterize_2q(
             targets=targets,
             shots=shots,
@@ -3740,6 +3895,7 @@ class Experiment:
         interleaved_clifford: Clifford | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
+        """Build a randomized benchmarking sequence."""
         return self.benchmarking_service.rb_sequence(
             target=target,
             n=n,
@@ -3767,6 +3923,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run randomized benchmarking for the specified targets."""
         return self.benchmarking_service.randomized_benchmarking(
             targets=targets,
             n_cliffords_range=n_cliffords_range,
@@ -3803,6 +3960,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run interleaved randomized benchmarking for the specified targets."""
         return self.benchmarking_service.interleaved_randomized_benchmarking(
             targets=targets,
             interleaved_clifford=interleaved_clifford,
@@ -3837,6 +3995,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run purity benchmarking for the specified targets."""
         return self.benchmarking_service.purity_benchmarking(
             targets=targets,
             n_cliffords_range=n_cliffords_range,
@@ -3873,6 +4032,7 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run interleaved purity benchmarking for the specified targets."""
         return self.benchmarking_service.interleaved_purity_benchmarking(
             targets=targets,
             interleaved_clifford=interleaved_clifford,
@@ -3903,6 +4063,7 @@ class Experiment:
         ftarget: float | None = None,
         timeout: int | None = None,
     ) -> Waveform:
+        """Optimize an X90 pulse for a target qubit."""
         return self.optimization_service.optimize_x90(
             qubit=qubit,
             sigma0=sigma0,
@@ -3921,6 +4082,7 @@ class Experiment:
         ftarget: float | None = None,
         timeout: int | None = None,
     ) -> Waveform:
+        """Optimize a DRAG X90 pulse for a target qubit."""
         return self.optimization_service.optimize_drag_x90(
             qubit=qubit,
             duration=duration,

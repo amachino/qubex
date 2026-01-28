@@ -1,3 +1,5 @@
+"""Interactive IQ plotter widgets."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -10,6 +12,8 @@ from qubex.typing import IQArray, TargetMap
 
 
 class IQPlotter:
+    """Plot IQ data in a Cartesian plane."""
+
     def __init__(
         self,
         state_centers: TargetMap[dict[int, complex]] | None = None,
@@ -86,6 +90,7 @@ class IQPlotter:
             )
 
     def update(self, data: TargetMap[IQArray]) -> None:
+        """Update the plot with new IQ data."""
         if self._num_scatters == -1:
             display(self._output)
             with self._output:
@@ -129,15 +134,19 @@ class IQPlotter:
                     scatter.y = np.imag(data[qubit])
 
     def clear(self) -> None:
+        """Clear and close the widget output."""
         self._output.clear_output()
         self._output.close()
 
     def show(self) -> None:
+        """Show the plot widget."""
         self.clear()
         self._widget.show(config=get_config())
 
 
 class IQPlotterPolar:
+    """Plot IQ data on a polar plane."""
+
     def __init__(self, normalize: bool = True):
         self._normalize = normalize
         self._num_scatters: int | None = None
@@ -175,6 +184,7 @@ class IQPlotterPolar:
         self,
         data: TargetMap[IQArray],
     ) -> None:
+        """Update the plot with new IQ data."""
         if self._num_scatters is None:
             display(self._widget)
             for qubit in data:

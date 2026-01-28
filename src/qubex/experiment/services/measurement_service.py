@@ -3115,7 +3115,8 @@ class MeasurementService:
         save_image: bool | None = None,
         mle_fit: bool | None = None,
     ) -> Result:
-        """Performs full state tomography on a n-qubit GHZ state.
+        """
+        Perform full state tomography on a n-qubit GHZ state.
 
         This involves:
         1. Measuring the GHZ state in all 3^n Pauli bases.

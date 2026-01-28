@@ -1,3 +1,5 @@
+"""Plotting helpers for analysis outputs."""
+
 from __future__ import annotations
 
 import datetime
@@ -22,6 +24,7 @@ DEFAULT_TEMPLATE = "qubex"
 
 
 def display_bloch_sphere(bloch_vectors: NDArray[np.float64]) -> None:
+    """Display Bloch sphere visualization for the given vectors."""
     qcv.display_bloch_sphere_from_bloch_vectors(bloch_vectors)
 
 
@@ -35,6 +38,7 @@ def save_figure_image(
     height: int | None = None,
     scale: int = 3,
 ) -> None:
+    """Save a figure to an image file in the images directory."""
     if not os.path.exists(images_dir):
         os.makedirs(images_dir)
 
@@ -84,6 +88,7 @@ def plot(
     save_image: bool = False,
     **kwargs,
 ) -> go.Figure | None:
+    """Plot 1D or 2D array data and optionally save the figure."""
     fig = go.Figure()
     y = np.asarray(y)
 
@@ -161,6 +166,7 @@ def plot_cdf(
     return_figure: bool = False,
     save_image: bool = False,
 ) -> go.Figure | None:
+    """Plot a cumulative distribution function for the data."""
     dataset = {}
     data_min = float("inf")
     data_max = float("-inf")
@@ -261,6 +267,7 @@ def plot_fft(
     save_image: bool = False,
     **kwargs,
 ) -> go.Figure | None:
+    """Plot FFT magnitude for the provided signal."""
     N = len(x)
     dt = x[1] - x[0]
     f = np.fft.fftfreq(N, dt)[: N // 2]
@@ -313,6 +320,7 @@ def plot_bloch_vectors(
     return_figure: bool = False,
     save_image: bool = False,
 ) -> go.Figure | None:
+    """Plot Bloch vector trajectories over time."""
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -385,6 +393,7 @@ def plot_waveform(
     return_figure: bool = False,
     save_image: bool = False,
 ) -> go.Figure | None:
+    """Plot waveform I/Q components over time."""
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -445,6 +454,7 @@ def scatter_iq_data(
     return_figure: bool = False,
     save_image: bool = False,
 ) -> go.Figure | None:
+    """Scatter-plot IQ data for one or more channels."""
     if not isinstance(data, Mapping):
         data = {"data": data}
 

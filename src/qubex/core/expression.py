@@ -1,3 +1,5 @@
+"""Expression utilities for model evaluation."""
+
 from collections.abc import Mapping
 from typing import Any, cast
 

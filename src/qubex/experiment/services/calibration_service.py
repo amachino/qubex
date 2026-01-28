@@ -48,6 +48,7 @@ from .pulse_service import PulseService
 
 class CalibrationService:
     """Service for calibration workflows."""
+
     def __init__(
         self,
         *,
@@ -432,6 +433,7 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        """Calibrate half-pi pulse amplitude for targets."""
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -472,6 +474,7 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        """Calibrate pi pulse amplitude for targets."""
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -2186,6 +2189,7 @@ class CalibrationService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Calibrate the ZX90 gate for a qubit pair."""
         if initial_state is None:
             initial_state = "0"
         if degree is None:
