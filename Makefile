@@ -2,7 +2,7 @@
 
 # Install dependencies
 sync:
-	uv sync --group dev --group docs --all-extras
+	uv sync --all-groups --all-extras
 
 # Run unit tests
 test:

@@ -55,13 +55,11 @@ dev = [
 
 docs = [
     "mkdocs",
+    "mkdocs-autoapi[python]",
     "mkdocs-material",
     "mkdocs-jupyter",
     "mkdocstrings[python]",
     "mkdocs-autorefs",
-    "mkdocs-gen-files",
-    "mkdocs-literate-nav",
-    "mkdocs-section-index",
     "pymdown-extensions",
 ]
 
@@ -76,7 +74,7 @@ addopts = "--import-mode=importlib"
 testpaths = ["tests"]
 
 [tool.pyright]
-include = ["src", "tests", "tools"]
+include = ["src", "tests"]
 typeCheckingMode = "basic"
 
 [tool.ruff.lint]
