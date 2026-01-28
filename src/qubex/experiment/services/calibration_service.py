@@ -2868,10 +2868,9 @@ class CalibrationService:
         spectators_states = defaultdict(list)
 
         with self.ctx.modified_frequencies(
-            frequencies={
-                spectator_qubit: self.ctx.targets[cr_label].frequency
-                for spectator_qubit in spectator_qubits
-            }
+            frequencies=dict.fromkeys(
+                spectator_qubits, self.ctx.targets[cr_label].frequency
+            )
         ):
             for T in time_range:
                 result = self.measurement_service.state_tomography(

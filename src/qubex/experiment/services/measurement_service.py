@@ -409,7 +409,7 @@ class MeasurementService:
             targets = list(targets)
 
         result = self.measure_state(
-            states={target: "g" for target in targets},
+            states=dict.fromkeys(targets, "g"),
             mode="single",
             shots=shots,
             interval=interval,
@@ -459,7 +459,7 @@ class MeasurementService:
             shots = 10000
 
         result = self.measure_state(
-            {target: "g" for target in targets},
+            dict.fromkeys(targets, "g"),
             mode="avg",
             shots=shots,
             interval=interval,
@@ -962,7 +962,7 @@ class MeasurementService:
             targets = list(targets)
 
         if readout_amplitude is not None:
-            readout_amplitudes = {target: readout_amplitude for target in targets}
+            readout_amplitudes = dict.fromkeys(targets, readout_amplitude)
         else:
             readout_amplitudes = None
 
@@ -1374,7 +1374,7 @@ class MeasurementService:
         states = ["g", "e", "f"][:n_states]
         result = {
             state: self.measure_state(
-                {target: state for target in targets},  # type: ignore
+                dict.fromkeys(targets, state),  # type: ignore
                 shots=shots,
                 interval=interval,
                 readout_amplitudes=readout_amplitudes,
@@ -1738,7 +1738,7 @@ class MeasurementService:
 
         buffer: dict[str, list[float]] = defaultdict(list)
 
-        qubits = set(Target.qubit_label(target) for target in sequence)
+        qubits = {Target.qubit_label(target) for target in sequence}
         targets = list(qubits | sequence.keys())
 
         if reset_awg_and_capunits:
@@ -4130,7 +4130,7 @@ class MeasurementService:
                 print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
 
             x = [f"{edge[0]}-{edge[1]}" for edge in negativities]
-            y = [fidelity for fidelity in negativities.values()]
+            y = list(negativities.values())
             fig = go.Figure(
                 layout=go.Layout(
                     title=f"Negativities of {len(qubits)}-qubit 1D cluster state",
@@ -4535,7 +4535,7 @@ class MeasurementService:
                     graph.add_node(v)
                     graph.add_edge(u, v)
 
-                node_values = {node: 1.0 for node in graph.nodes()}
+                node_values = dict.fromkeys(graph.nodes(), 1.0)
                 edge_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
                 edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
 
@@ -4620,7 +4620,7 @@ class MeasurementService:
                     graph.add_node(v)
                     graph.add_edge(u, v, color=color)
 
-                node_values = {node: 1.0 for node in G.nodes()}
+                node_values = dict.fromkeys(G.nodes(), 1.0)
                 edge_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
                 edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
 
@@ -5058,7 +5058,7 @@ class MeasurementService:
             show_labels = False
         if show_data is None:
             show_data = True
-        node_values = {node: 1 for node in G.nodes()}
+        node_values = dict.fromkeys(G.nodes(), 1)
         edge_values = {}
         edge_texts = {}
         if show_data:
@@ -5147,7 +5147,7 @@ class MeasurementService:
                     G.add_node(v)
                     G.add_edge(u, v)
 
-                node_values = {node: 1.0 for node in graph.nodes()}
+                node_values = dict.fromkeys(graph.nodes(), 1.0)
                 edge_values = {f"{u}-{v}": 1.0 for u, v in graph.edges()}
                 edge_overlay_values = {f"{u}-{v}": 1.0 for u, v in G.edges()}
 
@@ -5230,7 +5230,7 @@ class MeasurementService:
                     print(f"  {edge[0]}-{edge[1]}: {negativity:.3f}")
 
             x = [f"{edge[0]}-{edge[1]}" for edge in negativities]
-            y = [negativity for negativity in negativities.values()]
+            y = list(negativities.values())
             y_err = [negativity_errors.get(edge, 0.0) for edge in negativities]
 
             min_y = min(
@@ -5400,8 +5400,8 @@ class MeasurementService:
 
         if plot:
             n_pairs = len(sorted_fidelities)
-            x = [label for label in sorted_fidelities]
-            y = [fidelity for fidelity in sorted_fidelities.values()]
+            x = list(sorted_fidelities)
+            y = list(sorted_fidelities.values())
             fig = go.Figure(
                 layout=go.Layout(
                     title="Fidelities",

@@ -350,7 +350,7 @@ class Measurement:
         link_statuses = {
             box: self.device_controller.link_status(box) for box in box_list
         }
-        is_linkedup = all([all(status.values()) for status in link_statuses.values()])
+        is_linkedup = all(all(status.values()) for status in link_statuses.values())
         return {
             "status": is_linkedup,
             "links": link_statuses,
@@ -375,14 +375,13 @@ class Measurement:
         >>> meas.check_clock_status(["Q73A", "U10B"])
         """
         clocks = self.device_controller.read_clocks(box_list)
-        clock_statuses = {
-            box: clock
-            for box, clock in zip(
+        clock_statuses = dict(
+            zip(
                 box_list,
                 clocks,
                 strict=True,
             )
-        }
+        )
         is_synced = self.device_controller.check_clocks(box_list)
         return {
             "status": is_synced,
@@ -502,7 +501,7 @@ class Measurement:
             mode="avg",
             shots=1,
             readout_duration=duration,
-            readout_amplitudes={target: 0 for target in targets},
+            readout_amplitudes=dict.fromkeys(targets, 0),
         )
 
     def measure(

@@ -271,7 +271,7 @@ class MeasureResult:
         if targets is None:
             targets = self.data.keys()
         dimensions = [self.data[target].n_states for target in targets]
-        return list(np.ndindex(*[dim for dim in dimensions]))
+        return list(np.ndindex(*list(dimensions)))
 
     def get_basis_labels(
         self,
@@ -717,7 +717,7 @@ class MultipleMeasureResult:
         if targets is None:
             targets = self.data.keys()
         dimensions = [self.data[target][0].n_states for target in targets]
-        return list(np.ndindex(*[dim for dim in dimensions]))
+        return list(np.ndindex(*list(dimensions)))
 
     def get_basis_labels(
         self,
@@ -958,7 +958,7 @@ class MultipleMeasureResult:
                     raise ValueError(f"Target '{t}' not in MultipleMeasureResult.data")
         targets = list(targets)
         if capture_indices is None:
-            capture_indices = {t: 0 for t in targets}
+            capture_indices = dict.fromkeys(targets, 0)
         # Validate capture indices
         for t, idx in capture_indices.items():
             if t not in self.data:

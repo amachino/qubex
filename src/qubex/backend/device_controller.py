@@ -447,9 +447,7 @@ class DeviceController:
         boxes = {}
         try:
             for box_name in box_list:
-                boxes[box_name] = self.linkup(
-                    box_name, noise_threshold=noise_threshold
-                )
+                boxes[box_name] = self.linkup(box_name, noise_threshold=noise_threshold)
                 logger.info(f"{box_name:5} : Linked up")
         except Exception as e:
             logger.error(f"{box_name:5} : Error {e}")

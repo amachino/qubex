@@ -132,7 +132,7 @@ class PulseSchedule:
         PulseSchedule
             The created pulse schedule.
         """
-        if not len(set(len(v) for v in waveforms.values())) == 1:
+        if not len({len(v) for v in waveforms.values()}) == 1:
             raise ValueError("Waveforms must have the same length.")
 
         with cls() as sched:
@@ -540,7 +540,7 @@ class PulseSchedule:
 
     def is_valid(self) -> bool:
         """Return True if the pulse schedule is valid."""
-        return len(set(ch.sequence.length for ch in self._channels.values())) == 1
+        return len({ch.sequence.length for ch in self._channels.values()}) == 1
 
     def get_sequence(
         self,

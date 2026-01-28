@@ -220,7 +220,7 @@ class ExperimentSystem:
 
     @property
     def targets(self) -> list[Target]:
-        return [target for target in self._gen_target_dict.values()]
+        return list(self._gen_target_dict.values())
 
     @property
     def read_in_targets(self) -> list[CapTarget]:

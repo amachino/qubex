@@ -183,11 +183,11 @@ class PulseOptimizer:
 
     @cached_property
     def lower_bound(self) -> dict[str, float]:
-        return {target: -self.max_rabi_rate for target in self.control_frequencies}
+        return dict.fromkeys(self.control_frequencies, -self.max_rabi_rate)
 
     @cached_property
     def upper_bound(self) -> dict[str, float]:
-        return {target: self.max_rabi_rate for target in self.control_frequencies}
+        return dict.fromkeys(self.control_frequencies, self.max_rabi_rate)
 
     def lowering_operator(self, target) -> Array:
         a = self.quantum_system.get_lowering_operator(target)

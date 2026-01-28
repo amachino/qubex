@@ -427,7 +427,7 @@ def print_chip_info(
                 graph.plot_graph_data(
                     directed=directed,
                     title="Static ZZ interaction (kHz)",
-                    edge_values={key: value for key, value in values.items()},
+                    edge_values=dict(values.items()),
                     edge_texts={
                         key: f"{value * 1e6:.0f}" if not math.isnan(value) else None
                         for key, value in values.items()
@@ -457,7 +457,7 @@ def print_chip_info(
                 graph.plot_graph_data(
                     directed=directed,
                     title="Qubit-qubit coupling strength (MHz)",
-                    edge_values={key: value for key, value in values.items()},
+                    edge_values=dict(values.items()),
                     edge_texts={
                         key: f"{value * 1e3:.1f}" if not math.isnan(value) else None
                         for key, value in values.items()
@@ -528,7 +528,7 @@ def print_chip_info(
                 graph.plot_graph_data(
                     directed=True,
                     title="ZX90 gate fidelity (%)",
-                    edge_values={key: value for key, value in values.items()},
+                    edge_values=dict(values.items()),
                     edge_texts={
                         key: f"{value:.2%}" if _is_valid(value) else None
                         for key, value in values.items()
@@ -548,7 +548,7 @@ def print_chip_info(
                 graph.plot_graph_data(
                     directed=False,
                     title="ZX90 gate fidelity (%)",
-                    edge_values={key: value for key, value in values.items()},
+                    edge_values=dict(values.items()),
                     edge_texts={
                         key: f"{value * 1e2:.1f}" if _is_valid(value) else None
                         for key, value in values.items()

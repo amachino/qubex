@@ -87,7 +87,7 @@ class StateClassifierGMM(StateClassifier):
     def weights(self) -> dict[int, float]:
         """The weights of each state."""
         weights_arr = np.asarray(self.model.weights_)
-        return {label: weight for label, weight in enumerate(weights_arr)}
+        return dict(enumerate(weights_arr))
 
     @classmethod
     def fit(
@@ -201,7 +201,7 @@ class StateClassifierGMM(StateClassifier):
             A mapping from GMM component labels to state labels.
         """
         n_components = len(dataset)
-        label_map = {label: -1 for label in range(n_components)}
+        label_map = dict.fromkeys(range(n_components), -1)
         for state, data in dataset.items():
             result = model.predict(data)
             count = np.bincount(result, minlength=n_components)

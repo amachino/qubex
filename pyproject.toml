@@ -69,34 +69,44 @@ typeCheckingMode = "basic"
 
 [tool.ruff.lint]
 select = [
-    "PERF", # Perflint
-    "E",    # pycodestyle
-    "F",    # Pyflakes
-    "UP",   # pyupgrade
     "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
     "SIM",  # flake8-simplify
     "SLF",  # flake8-self
     "PT",   # flake8-pytest-style
     "TID",  # flake8-tidy-imports
     "I",    # isort
+    "PERF", # Perflint
+    "E",    # pycodestyle
     "D",    # pydocstyle
+    "F",    # Pyflakes
+    "UP",   # pyupgrade
+
     "D213", # multi-line-summary-second-line
 ]
 
 ignore = [
-    "E501",   # line-too-long
-    "E731",   # lambda-assignment
-    "E741",   # ambiguous-variable-name
+    # flake8-comprehensions
+    "C408", # unnecessary-collection-call
+
+    # flake8-simplify
     "SIM102", # collapsible-if
     "SIM108", # if-else-block-instead-of-if-exp
-    "D100",   # undocumented-public-module
-    "D101",   # undocumented-public-class
-    "D102",   # undocumented-public-method
-    "D103",   # undocumented-public-function
-    "D104",   # undocumented-public-package
-    "D105",   # undocumented-magic-method
-    "D106",   # undocumented-public-nested-class
-    "D107",   # undocumented-init
+
+    # pycodestyle
+    "E501", # line-too-long
+    "E731", # lambda-assignment
+    "E741", # ambiguous-variable-name
+
+    # pydocstyle
+    "D100", # undocumented-public-module
+    "D101", # undocumented-public-class
+    "D102", # undocumented-public-method
+    "D103", # undocumented-public-function
+    "D104", # undocumented-public-package
+    "D105", # undocumented-magic-method
+    "D106", # undocumented-public-nested-class
+    "D107", # undocumented-init
 ]
 
 [tool.ruff.lint.pydocstyle]

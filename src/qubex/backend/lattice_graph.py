@@ -256,7 +256,7 @@ class LatticeGraph:
         dict[int, list[int]]
             Nearest neighbors.
         """
-        nn = {i: sorted(list(self.qubit_graph.neighbors(i))) for i in self.qubit_nodes}
+        nn = {i: sorted(self.qubit_graph.neighbors(i)) for i in self.qubit_nodes}
         return dict(sorted(nn.items()))
 
     @cached_property
@@ -276,7 +276,7 @@ class LatticeGraph:
             two_hop = set()
             for j in neighbors:
                 two_hop.update(nn[j])
-            nnm[i] = sorted(list(two_hop - one_hop - {i}))
+            nnm[i] = sorted(two_hop - one_hop - {i})
         return dict(sorted(nnm.items()))
 
     @cached_property

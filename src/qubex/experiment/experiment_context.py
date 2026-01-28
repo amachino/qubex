@@ -257,7 +257,7 @@ class ExperimentContext:
                 label = quantum_system.get_qubit(qubit).label
                 if label in qubit_labels:
                     qubit_labels.remove(label)
-        qubit_labels = sorted(list(set(qubit_labels)))
+        qubit_labels = sorted(set(qubit_labels))
 
         available_qubits = [
             target.qubit for target in self.experiment_system.ge_targets
@@ -368,7 +368,7 @@ class ExperimentContext:
         for qubit in self.qubit_labels:
             mux = self.experiment_system.get_mux_by_qubit(qubit)
             mux_set.add(mux.label)
-        return sorted(list(mux_set))
+        return sorted(mux_set)
 
     @property
     def qubits(self) -> dict[str, Qubit]:

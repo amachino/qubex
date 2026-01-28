@@ -745,7 +745,7 @@ class QuantumSimulator:
     ):
         if len(controls) == 0:
             raise ValueError("At least one control signal is required.")
-        if len(set([control.n_segments for control in controls])) != 1:
+        if len({control.n_segments for control in controls}) != 1:
             raise ValueError("The waveforms must have the same length.")
 
     def simulate(

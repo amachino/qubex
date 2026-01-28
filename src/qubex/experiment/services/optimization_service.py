@@ -347,7 +347,7 @@ class OptimizationService:
             nonlocal best_loss, best_params
 
             params = {k: v["initial"] for k, v in defaults.items()}
-            params.update({k: v for k, v in zip(opt_params, params_vec, strict=True)})
+            params.update(dict(zip(opt_params, params_vec, strict=True)))
 
             cr_amplitude = params["cr_amplitude"]
             cr_phase = params["cr_phase"]

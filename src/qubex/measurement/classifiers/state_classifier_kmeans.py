@@ -168,7 +168,7 @@ class StateClassifierKMeans(StateClassifier):
             A mapping from k-means cluster labels to state labels.
         """
         n_clusters = len(dataset)
-        label_map = {label: -1 for label in range(n_clusters)}
+        label_map = dict.fromkeys(range(n_clusters), -1)
         for state, data in dataset.items():
             result = model.predict(data)
             count = np.bincount(result, minlength=n_clusters)

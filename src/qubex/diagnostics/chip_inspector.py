@@ -165,8 +165,8 @@ class InspectionSummary:
         invalid_nodes = set(self.invalid_nodes)
         valid_nodes = all_nodes - invalid_nodes
 
-        invalid_node_values = {label: 1 for label in invalid_nodes}
-        valid_node_values = {label: 1 for label in valid_nodes}
+        invalid_node_values = dict.fromkeys(invalid_nodes, 1)
+        valid_node_values = dict.fromkeys(valid_nodes, 1)
 
         all_edges = {edge["label"] for edge in self.graph.qubit_edges.values()}
         invalid_edges = set(self.invalid_edges)
@@ -179,8 +179,8 @@ class InspectionSummary:
                 all_edges.remove(label)
         valid_edges = all_edges - invalid_edges
 
-        invalid_edge_values = {label: 1 for label in invalid_edges}
-        valid_edge_values = {label: 1 for label in valid_edges}
+        invalid_edge_values = dict.fromkeys(invalid_edges, 1)
+        valid_edge_values = dict.fromkeys(valid_edges, 1)
 
         invalid_types: dict[str, list[str]] = defaultdict(list)
         for type, inspection in self.inspections.items():

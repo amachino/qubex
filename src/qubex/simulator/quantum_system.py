@@ -194,7 +194,7 @@ class QuantumSystem:
 
     @cached_property
     def basis_indices(self) -> list[tuple[int, ...]]:
-        return list(np.ndindex(*[dim for dim in self.object_dimensions]))
+        return list(np.ndindex(*list(self.object_dimensions)))
 
     @cached_property
     def basis_labels(self) -> list[str]:

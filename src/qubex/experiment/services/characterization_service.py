@@ -198,11 +198,14 @@ class CharacterizationService:
         snr_buf = defaultdict(list)
 
         for amplitude in tqdm(amplitude_range):
+            readout_amplitudes: dict[str, float] = dict.fromkeys(
+                targets, float(amplitude)
+            )
             result = self.measure_readout_snr(
                 targets=targets,
                 initial_state=initial_state,
                 readout_duration=readout_duration,
-                readout_amplitudes={target: amplitude for target in targets},
+                readout_amplitudes=readout_amplitudes,
                 shots=shots,
                 interval=interval,
                 plot=False,
@@ -712,8 +715,9 @@ class CharacterizationService:
         rabi_data: dict[str, list[RabiData]] = defaultdict(list)
 
         for amplitude in tqdm(amplitude_range):
+            amplitudes: dict[str, float] = dict.fromkeys(targets, float(amplitude))
             rabi_result = self.measurement_service.rabi_experiment(
-                amplitudes={target: amplitude for target in targets},
+                amplitudes=amplitudes,
                 time_range=time_range,
                 ramptime=ramptime,
                 shots=shots,
@@ -1650,14 +1654,14 @@ class CharacterizationService:
             targets = list(targets)
 
         if stark_detuning is None:
-            stark_detuning = {target: 0.15 for target in targets}
+            stark_detuning = dict.fromkeys(targets, 0.15)
         elif isinstance(stark_detuning, float):
             detuning = stark_detuning
             if abs(detuning) > 0.2:
                 raise ValueError(
                     "Detuning of a stark tone must not exceed 0.2 GHz: the guard-banded AWG baseband limit."
                 )
-            stark_detuning = {target: detuning for target in targets}
+            stark_detuning = dict.fromkeys(targets, detuning)
         else:
             for target in targets:
                 detuning = stark_detuning[target]
@@ -1667,14 +1671,14 @@ class CharacterizationService:
                     )
 
         if stark_amplitude is None:
-            stark_amplitude = {target: 0.1 for target in targets}
+            stark_amplitude = dict.fromkeys(targets, 0.1)
         elif isinstance(stark_amplitude, float):
-            stark_amplitude = {target: stark_amplitude for target in targets}
+            stark_amplitude = dict.fromkeys(targets, stark_amplitude)
 
         if stark_ramptime is None:
-            stark_ramptime = {target: 10 for target in targets}
+            stark_ramptime = dict.fromkeys(targets, 10)
         elif isinstance(stark_ramptime, float):
-            stark_ramptime = {target: stark_ramptime for target in targets}
+            stark_ramptime = dict.fromkeys(targets, stark_ramptime)
 
         self.pulse.validate_rabi_params(targets)
 
@@ -1799,14 +1803,14 @@ class CharacterizationService:
             targets = list(targets)
 
         if stark_detuning is None:
-            stark_detuning = {target: 0.15 for target in targets}
+            stark_detuning = dict.fromkeys(targets, 0.15)
         elif isinstance(stark_detuning, float):
             detuning = stark_detuning
             if abs(detuning) > 0.2:
                 raise ValueError(
                     "Detuning of a stark tone must not exceed 0.2 GHz: the guard-banded AWG baseband limit."
                 )
-            stark_detuning = {target: detuning for target in targets}
+            stark_detuning = dict.fromkeys(targets, detuning)
         else:
             for target in targets:
                 detuning = stark_detuning[target]
@@ -1816,14 +1820,14 @@ class CharacterizationService:
                     )
 
         if stark_amplitude is None:
-            stark_amplitude = {target: 0.1 for target in targets}
+            stark_amplitude = dict.fromkeys(targets, 0.1)
         elif isinstance(stark_amplitude, float):
-            stark_amplitude = {target: stark_amplitude for target in targets}
+            stark_amplitude = dict.fromkeys(targets, stark_amplitude)
 
         if stark_ramptime is None:
-            stark_ramptime = {target: 10 for target in targets}
+            stark_ramptime = dict.fromkeys(targets, 10)
         elif isinstance(stark_ramptime, float):
-            stark_ramptime = {target: stark_ramptime for target in targets}
+            stark_ramptime = dict.fromkeys(targets, stark_ramptime)
 
         if time_range is None:
             time_range = np.arange(0, 401, 4)
