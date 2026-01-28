@@ -473,7 +473,7 @@ class BenchmarkingService:
             n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = np.random.default_rng().integers(0, 2**32, n_trials)
         else:
             seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
@@ -664,7 +664,7 @@ class BenchmarkingService:
             n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = np.random.default_rng().integers(0, 2**32, n_trials)
         else:
             seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
@@ -864,7 +864,7 @@ class BenchmarkingService:
             n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = np.random.default_rng().integers(0, 2**32, n_trials)
         else:
             seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
@@ -1055,7 +1055,7 @@ class BenchmarkingService:
             n_trials = DEFAULT_RB_N_TRIALS
 
         if seeds is None:
-            seeds = np.random.randint(0, 2**32, n_trials)
+            seeds = np.random.default_rng().integers(0, 2**32, n_trials)
         else:
             seeds = np.array(seeds, dtype=int)
             if len(seeds) != n_trials:
