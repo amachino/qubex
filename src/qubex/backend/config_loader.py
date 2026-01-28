@@ -325,6 +325,10 @@ class ConfigLoader:
             return data
         return {k: apply(v, k) for k, v in data.items()}
 
+    @deprecated("Use load_param_data() instead.")
+    def _load_param_data(self, param_name: str, use_default: bool = True) -> dict:
+        return self.load_param_data(param_name, use_default=use_default)
+
     def load_param_data(self, param_name: str, use_default: bool = True) -> dict:
         """
         Load a parameter dictionary with per-file preference and legacy fallback.
@@ -336,10 +340,6 @@ class ConfigLoader:
           are filled by legacy values. Per-file keys override legacy.
         - If a per-file YAML is absent, return the legacy map as-is (or empty).
         """
-        return self._load_param_data(param_name, use_default=use_default)
-
-    @deprecated("Use load_param_data() instead.")
-    def _load_param_data(self, param_name: str, use_default: bool = True) -> dict:
         legacy_name, legacy_file = PARAMS_MAP[param_name]
         file_path = Path(self._params_dir) / f"{param_name}.yaml"
 
