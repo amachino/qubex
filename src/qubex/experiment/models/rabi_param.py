@@ -1,3 +1,5 @@
+"""Rabi parameter model and helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -53,6 +55,7 @@ class RabiParam:
 
     @classmethod
     def nan(cls, target: str) -> RabiParam:
+        """Return a RabiParam filled with NaN values."""
         return cls(
             target=target,
             amplitude=np.nan,
@@ -68,6 +71,7 @@ class RabiParam:
 
     @property
     def endpoints(self) -> tuple[complex, complex]:
+        """Return the complex endpoints of the Rabi arc."""
         rotated_0 = complex(self.distance, self.offset + self.amplitude)
         rotated_1 = complex(self.distance, self.offset - self.amplitude)
         iq_0 = complex(rotated_0 * np.exp(1j * self.angle))

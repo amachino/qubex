@@ -1,3 +1,5 @@
+"""Patch helpers for link-up of FPGA MxFE configuration."""
+
 import contextlib
 
 from quel_ic_config import LinkupFpgaMxfe

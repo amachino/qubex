@@ -1,3 +1,5 @@
+"""Experiment-wide constant values."""
+
 CALIBRATION_DIR = ".calibration"
 CLASSIFIER_DIR = ".classifier"
 PROPERTY_DIR = ".property"

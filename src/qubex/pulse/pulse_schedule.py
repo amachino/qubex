@@ -2,8 +2,8 @@
 Device-independent multi-channel pulse sequence definition.
 
 This module provides `PulseSchedule`, a class that defines pulse sequences for multiple channels
-in a device-independent manner. It is used as a common data structure by both `qubex.measurement`
-and `qubex.simulator`.
+in a device-independent manner. It is used as a common data structure by both qubex.measurement
+and qubex.simulator.
 """
 
 # ruff: noqa: SLF001
@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PulseChannel:
+    """Container for a labeled pulse channel."""
+
     label: str
     sequence: PulseArray = field(default_factory=PulseArray)
     frequency: float | None = None
@@ -45,6 +47,8 @@ class PulseChannel:
 
 
 class PulseSchedule:
+    """Device-independent multi-channel pulse schedule."""
+
     def __init__(
         self,
         channels: list[str] | list[PulseChannel] | None = None,
@@ -367,6 +371,7 @@ class PulseSchedule:
         "The `reversed` method is deprecated, use `inverted` instead.",
     )
     def reversed(self) -> PulseSchedule:
+        """Return an inverted pulse schedule."""
         return self.inverted()
 
     def inverted(self) -> PulseSchedule:

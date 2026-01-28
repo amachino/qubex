@@ -1,3 +1,5 @@
+"""Version helpers for Qubex."""
+
 import importlib.metadata
 import shutil
 import subprocess
@@ -9,6 +11,7 @@ VERSION = "1.5.0a1"
 
 @deprecated("get_version is deprecated, use VERSION constant instead.")
 def get_version() -> str:
+    """Return the package version with an optional git suffix."""
     try:
         git_path = shutil.which("git")
         if git_path is None:

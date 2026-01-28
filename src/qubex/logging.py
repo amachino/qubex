@@ -1,3 +1,5 @@
+"""Logging helpers for Qubex."""
+
 from __future__ import annotations
 
 import logging
@@ -7,6 +9,8 @@ logging.getLogger("qubex").addHandler(logging.NullHandler())
 
 
 class LogFormatter(logging.Formatter):
+    """Colored log formatter for console output."""
+
     GREY = "\x1b[38;20m"
     YELLOW = "\x1b[33;20m"
     RED = "\x1b[31;20m"
@@ -14,6 +18,7 @@ class LogFormatter(logging.Formatter):
     RESET = "\x1b[0m"
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format log records with color and exception context."""
         if record.exc_info:
             exc_type, exc_value, _ = record.exc_info
             if exc_type:

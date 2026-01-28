@@ -1,3 +1,5 @@
+"""Tests for the PhaseShift pulse."""
+
 import numpy as np
 import pytest
 

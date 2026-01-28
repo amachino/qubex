@@ -1,3 +1,5 @@
+"""Measurement service for experiment execution and analysis."""
+
 from __future__ import annotations
 
 import logging
@@ -82,6 +84,8 @@ console = Console()
 
 
 class MeasurementService:
+    """Service for running measurement routines."""
+
     def __init__(
         self,
         *,
@@ -93,10 +97,12 @@ class MeasurementService:
 
     @property
     def ctx(self) -> ExperimentContext:
+        """Return the experiment context."""
         return self._ctx
 
     @property
     def pulse(self) -> PulseService:
+        """Return the pulse service."""
         return self._pulse_service
 
     def check_noise(
@@ -106,6 +112,7 @@ class MeasurementService:
         duration: int | None = None,
         plot: bool | None = None,
     ) -> MeasureResult:
+        """Measure noise for the specified targets."""
         if duration is None:
             duration = 10240
         if plot is None:
@@ -149,6 +156,7 @@ class MeasurementService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> MultipleMeasureResult:
+        """Execute a schedule and return multiple measurement results."""
         if mode is None:
             mode = "avg"
         if add_last_measurement is None:
@@ -229,6 +237,7 @@ class MeasurementService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> MeasureResult:
+        """Measure a sequence or schedule and return results."""
         if mode is None:
             mode = "avg"
         if add_pump_pulses is None:
@@ -342,6 +351,7 @@ class MeasurementService:
         add_pump_pulses: bool | None = None,
         plot: bool | None = None,
     ) -> MeasureResult:
+        """Prepare given states and measure readout results."""
         if mode is None:
             mode = "single"
         if add_pump_pulses is None:
@@ -396,6 +406,7 @@ class MeasurementService:
         add_pump_pulses: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Measure idle states for targets."""
         if add_pump_pulses is None:
             add_pump_pulses = False
         if plot is None:
@@ -445,6 +456,7 @@ class MeasurementService:
         interval: float | None = None,
         store_reference_points: bool | None = None,
     ) -> Result:
+        """Obtain and optionally store reference IQ points."""
         if store_reference_points is None:
             store_reference_points = True
 
@@ -506,6 +518,18 @@ class MeasurementService:
         xaxis_type: Literal["linear", "log"] | None = None,
         yaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[SweepData]:
+        """
+        Sweep a parameter and measure results.
+
+        Parameters
+        ----------
+        sequence
+            Parametric schedule or waveform map to evaluate.
+        sweep_range
+            Values to sweep over.
+        repetitions
+            Number of repetitions for each sweep point.
+        """
         if repetitions is None:
             repetitions = 1
         if rabi_level is None:
@@ -637,6 +661,18 @@ class MeasurementService:
         xaxis_type: Literal["linear", "log"] | None = None,
         yaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[SweepData]:
+        """
+        Run a sweep measurement for the provided sequence.
+
+        Parameters
+        ----------
+        sequence
+            Parametric pulse schedule to sweep.
+        sweep_range
+            Values to sweep over.
+        add_last_measurement
+            Whether to append a measurement at the end.
+        """
         # TODO: Support ParametricWaveformDict and replace the sweep_parameter method
         if add_last_measurement is None:
             add_last_measurement = True
@@ -718,6 +754,16 @@ class MeasurementService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> ExperimentResult[SweepData]:
+        """
+        Measure repeated sequences across repetition counts.
+
+        Parameters
+        ----------
+        sequence
+            Sequence to repeat.
+        repetitions
+            Maximum repetition count used for the sweep.
+        """
         if repetitions is None:
             repetitions = 20
         if plot is None:
@@ -765,6 +811,18 @@ class MeasurementService:
         store_params: bool | None = None,
         simultaneous: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        """
+        Estimate Rabi parameters for the specified targets.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to characterize.
+        time_range
+            Time sweep range for the Rabi experiment.
+        simultaneous
+            Whether to perform a simultaneous experiment.
+        """
         if time_range is None:
             time_range = DEFAULT_RABI_TIME_RANGE
         if is_damped is None:
@@ -846,6 +904,16 @@ class MeasurementService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        """
+        Estimate EF Rabi parameters for the specified targets.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to characterize.
+        time_range
+            Time sweep range for the EF Rabi experiment.
+        """
         # TODO: Integrate with obtain_rabi_params
         if time_range is None:
             time_range = DEFAULT_RABI_TIME_RANGE
@@ -1093,6 +1161,18 @@ class MeasurementService:
         plot: bool | None = None,
         store_params: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        """
+        Run a GE Rabi experiment and fit parameters.
+
+        Parameters
+        ----------
+        amplitudes
+            Drive amplitudes per target.
+        time_range
+            Drive durations used for the sweep.
+        detuning
+            Optional detuning applied to target frequencies.
+        """
         if time_range is None:
             time_range = DEFAULT_RABI_TIME_RANGE
         if is_damped is None:
@@ -1227,6 +1307,18 @@ class MeasurementService:
         plot: bool | None = None,
         store_params: bool | None = None,
     ) -> ExperimentResult[RabiData]:
+        """
+        Run an EF Rabi experiment and fit parameters.
+
+        Parameters
+        ----------
+        amplitudes
+            EF drive amplitudes per target.
+        time_range
+            Drive durations used for the sweep.
+        detuning
+            Optional detuning applied to target frequencies.
+        """
         # TODO: Integrate with rabi_experiment
         if is_damped is None:
             is_damped = True
@@ -1358,6 +1450,18 @@ class MeasurementService:
         add_pump_pulses: bool | None = None,
         plot: bool | None = None,
     ) -> list[MeasureResult]:
+        """
+        Measure distributions for prepared basis states.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to measure.
+        n_states
+            Number of states to prepare (2 or 3).
+        plot
+            Whether to plot IQ distributions.
+        """
         if n_states is None:
             n_states = 2
         if add_pump_pulses is None:
@@ -1413,6 +1517,18 @@ class MeasurementService:
         simultaneous: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """
+        Build state classifiers from measured distributions.
+
+        Parameters
+        ----------
+        targets
+            Target qubits used for classifier training.
+        n_states
+            Number of basis states to use.
+        save_classifier
+            Whether to save trained classifiers.
+        """
         if save_classifier is None:
             save_classifier = True
         if add_pump_pulses is None:
@@ -1625,6 +1741,18 @@ class MeasurementService:
         use_zvalues: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """
+        Measure fidelity of a prepared single-qubit state.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        target_state
+            Ideal state label for comparison.
+        waveform
+            Optional waveform used for state preparation.
+        """
         if target_state is None:
             target_state = "+"
         if shots is None:
@@ -1712,6 +1840,18 @@ class MeasurementService:
         use_zvalues: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """
+        Perform single-qubit state tomography.
+
+        Parameters
+        ----------
+        sequence
+            Preparation sequence or schedule.
+        initial_state
+            Optional state preparation per target.
+        method
+            Measurement method to use.
+        """
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
@@ -1844,6 +1984,18 @@ class MeasurementService:
         method: Literal["measure", "execute"] | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """
+        Perform tomography over a sequence of states.
+
+        Parameters
+        ----------
+        sequences
+            Sequences to measure in order.
+        initial_state
+            Optional initial state preparation per target.
+        method
+            Measurement method to use.
+        """
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
@@ -1949,6 +2101,18 @@ class MeasurementService:
         method: Literal["measure", "execute"] | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """
+        Reconstruct state evolution across a pulse waveform.
+
+        Parameters
+        ----------
+        sequence
+            Pulse schedule or waveform map to analyze.
+        n_samples
+            Number of samples taken along the waveform.
+        method
+            Measurement method to use.
+        """
         if n_samples is None:
             n_samples = 100
         if shots is None:
@@ -2034,6 +2198,16 @@ class MeasurementService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
+        """
+        Measure population probabilities for each target.
+
+        Parameters
+        ----------
+        sequence
+            Sequence to measure.
+        fit_gmm
+            Whether to estimate probabilities using GMM.
+        """
         if fit_gmm is None:
             fit_gmm = False
         if shots is None:
@@ -2080,6 +2254,18 @@ class MeasurementService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
+        """
+        Measure population dynamics over a parameter sweep.
+
+        Parameters
+        ----------
+        sequence
+            Parametric sequence evaluated for each parameter.
+        params_list
+            Parameter values to sweep.
+        show_error
+            Whether to display error bars.
+        """
         if fit_gmm is None:
             fit_gmm = False
         if xlabel is None:
@@ -2178,6 +2364,20 @@ class MeasurementService:
         save_image: bool | None = None,
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
+        """
+        Measure Bell-state probabilities in a specified basis.
+
+        Parameters
+        ----------
+        control_qubit
+            Control qubit label.
+        target_qubit
+            Target qubit label.
+        control_basis
+            Measurement basis for the control qubit.
+        target_basis
+            Measurement basis for the target qubit.
+        """
         if control_basis is None:
             control_basis = "Z"
         if target_basis is None:
@@ -2321,6 +2521,18 @@ class MeasurementService:
         save_image: bool | None = None,
         mle_fit: bool | None = None,
     ) -> Result:
+        """
+        Perform two-qubit state tomography for a Bell state.
+
+        Parameters
+        ----------
+        control_qubit
+            Control qubit label.
+        target_qubit
+            Target qubit label.
+        readout_mitigation
+            Whether to apply readout mitigation.
+        """
         if readout_mitigation is None:
             readout_mitigation = True
         if shots is None:
@@ -2333,6 +2545,43 @@ class MeasurementService:
             save_image = True
         if mle_fit is None:
             mle_fit = True
+
+        """Performs full state tomography on a n-qubit GHZ state.
+
+        This involves:
+        1. Measuring the GHZ state in all 3^n Pauli bases.
+        2. Calculating the expectation values for all 4^n Pauli strings.
+        3. Reconstructing the 2^n x 2^n density matrix using linear inversion or MLE.
+        4. Calculating the fidelity with the ideal GHZ state.
+        5. Plotting the resulting density matrix.
+
+        Parameters
+        ----------
+        entangle_steps : list[tuple[str, str]]
+            List of tuples representing the entanglement steps, e.g., [("Q00", "Q01"), ("Q01", "Q02")].
+        readout_mitigation : bool
+            Whether to apply readout error mitigation.
+        shots : int
+            Number of shots for each measurement.
+        interval : float
+            Time interval between measurements.
+        plot : bool
+            Whether to plot the resulting density matrix.
+        save_image : bool
+            Whether to save the plot as an image.
+        mle_fit : bool
+            Whether to use Maximum Likelihood Estimation (MLE) for density matrix reconstruction.
+
+        Returns
+        -------
+        dict
+            A dictionary containing:
+            - "probabilities": Measured probabilities in all bases.
+            - "expected_values": Calculated expectation values for all Pauli strings.
+            - "density_matrix": Reconstructed density matrix.
+            - "fidelity": Fidelity with the ideal GHZ state.
+            - "figure": Plotly figure of the density matrix.
+        """
         n_qubits = 2
         dim = 2**n_qubits
         probabilities = {}
@@ -2436,6 +2685,18 @@ class MeasurementService:
         decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
+        """
+        Create an entangling sequence from edge steps.
+
+        Parameters
+        ----------
+        entangle_steps
+            Directed edges defining entanglement order.
+        optimize_sequence
+            Whether to optimize ordering for depth.
+        decouple_all_zz
+            Whether to apply global dynamical decoupling.
+        """
         if optimize_sequence is None:
             optimize_sequence = False
         if as_late_as_possible is None:
@@ -2854,32 +3115,7 @@ class MeasurementService:
         save_image: bool | None = None,
         mle_fit: bool | None = None,
     ) -> Result:
-        if readout_mitigation is None:
-            readout_mitigation = True
-        if optimize_sequence is None:
-            optimize_sequence = True
-        if as_late_as_possible is None:
-            as_late_as_possible = True
-        if decouple_cr_crosstalk is None:
-            decouple_cr_crosstalk = True
-        if decouple_entangled_zz is None:
-            decouple_entangled_zz = True
-        if decouple_all_zz is None:
-            decouple_all_zz = False
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-        if plot is None:
-            plot = True
-        if show_sequence is None:
-            show_sequence = True
-        if save_image is None:
-            save_image = True
-        if mle_fit is None:
-            mle_fit = True
-        """
-        Performs full state tomography on a n-qubit GHZ state.
+        """Performs full state tomography on a n-qubit GHZ state.
 
         This involves:
         1. Measuring the GHZ state in all 3^n Pauli bases.
@@ -2915,6 +3151,30 @@ class MeasurementService:
             - "fidelity": Fidelity with the ideal GHZ state.
             - "figure": Plotly figure of the density matrix.
         """
+        if readout_mitigation is None:
+            readout_mitigation = True
+        if optimize_sequence is None:
+            optimize_sequence = True
+        if as_late_as_possible is None:
+            as_late_as_possible = True
+        if decouple_cr_crosstalk is None:
+            decouple_cr_crosstalk = True
+        if decouple_entangled_zz is None:
+            decouple_entangled_zz = True
+        if decouple_all_zz is None:
+            decouple_all_zz = False
+        if shots is None:
+            shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
+        if plot is None:
+            plot = True
+        if show_sequence is None:
+            show_sequence = True
+        if save_image is None:
+            save_image = True
+        if mle_fit is None:
+            mle_fit = True
 
         qubits: list[str] = []
         steps: list[tuple[str, str]] = []
@@ -3073,6 +3333,18 @@ class MeasurementService:
         decouple_all_zz: bool | None = None,
         cpmg_duration_unit: float | None = None,
     ) -> PulseSchedule:
+        """
+        Create an MQC sequence with a variable phase.
+
+        Parameters
+        ----------
+        entangle_steps
+            Entanglement edges defining the preparation.
+        phi
+            Phase applied as a virtual Z rotation.
+        echo
+            Whether to insert echo pi pulses.
+        """
         if phi is None:
             phi = 0.0
         if echo is None:
@@ -3142,6 +3414,18 @@ class MeasurementService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """
+        Run an MQC experiment over a phase sweep.
+
+        Parameters
+        ----------
+        entangle_steps
+            Entanglement edges defining the preparation.
+        phi_range
+            Phase values to sweep.
+        show_sequence
+            Whether to display the pulse sequence.
+        """
         if show_sequence is None:
             show_sequence = True
         if echo is None:
@@ -3282,6 +3566,16 @@ class MeasurementService:
         qubit: str | None = None,
         title: str | None = None,
     ) -> Result:
+        """
+        Perform Fourier analysis on normalized data.
+
+        Parameters
+        ----------
+        data
+            Input signal to analyze.
+        qubit
+            Optional qubit label used for file naming.
+        """
         if title is None:
             title = "Fourier analysis"
         data = np.asarray(data)
@@ -3360,6 +3654,18 @@ class MeasurementService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """
+        Measure parity oscillations of an entangled state.
+
+        Parameters
+        ----------
+        entangle_steps
+            Entanglement edges defining the preparation.
+        phi_range
+            Phase values to sweep.
+        readout_mitigation
+            Whether to apply readout mitigation.
+        """
         if show_sequence is None:
             show_sequence = True
         if show_only_qubit_channels is None:
@@ -3555,6 +3861,18 @@ class MeasurementService:
         cpmg_duration_unit: float | None = None,
         with_readout_pulses: bool | None = None,
     ) -> PulseSchedule:
+        """
+        Create a 1D cluster state preparation sequence.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to include in the chain.
+        bases
+            Measurement bases per position.
+        with_readout_pulses
+            Whether to append readout pulses.
+        """
         if optimize_sequence is None:
             optimize_sequence = False
         if as_late_as_possible is None:
@@ -3567,10 +3885,6 @@ class MeasurementService:
             decouple_all_zz = False
         if with_readout_pulses is None:
             with_readout_pulses = True
-        """
-        Create a 1D cluster state preparation sequence for the given targets.
-        Returns a PulseSchedule object.
-        """
         targets = [
             self.ctx.quantum_system.get_qubit(target).label
             if isinstance(target, int)
@@ -3696,6 +4010,18 @@ class MeasurementService:
         method: str | None = None,
         reset_awg_and_capunits: bool | None = None,
     ):
+        """
+        Measure 1D cluster state edges for a given offset.
+
+        Parameters
+        ----------
+        targets
+            Target qubits in the chain.
+        offset
+            Offset for selecting measured edges.
+        method
+            Measurement method to use.
+        """
         if offset is None:
             offset = 0
         if mle_fit is None:
@@ -4040,6 +4366,18 @@ class MeasurementService:
         method: str | None = None,
         reset_awg_and_capunits: bool | None = None,
     ) -> Result:
+        """
+        Measure negativities for a 1D cluster state.
+
+        Parameters
+        ----------
+        qubits
+            Target qubits in the chain.
+        mle_fit
+            Whether to use MLE for density matrix reconstruction.
+        method
+            Measurement method to use.
+        """
         if mle_fit is None:
             mle_fit = True
         if optimize_sequence is None:
@@ -4213,6 +4551,18 @@ class MeasurementService:
         show_labels: bool | None = None,
         show_data: bool | None = None,
     ) -> list[nx.DiGraph]:
+        """
+        Build connected subgraphs from edge fidelities.
+
+        Parameters
+        ----------
+        fidelities
+            Edge fidelities keyed by CR label.
+        threshold
+            Minimum fidelity threshold.
+        plot
+            Whether to visualize the graphs.
+        """
         if threshold is None:
             threshold = 0.0
         if plot is None:
@@ -4281,6 +4631,16 @@ class MeasurementService:
         show_labels: bool | None = None,
         show_data: bool | None = None,
     ) -> nx.Graph:
+        """
+        Return the largest connected graph by node count.
+
+        Parameters
+        ----------
+        fidelities
+            Edge fidelities keyed by CR label.
+        threshold
+            Minimum fidelity threshold.
+        """
         if threshold is None:
             threshold = 0.0
         if plot is None:
@@ -4320,14 +4680,6 @@ class MeasurementService:
         show_labels: bool | None = None,
         show_data: bool | None = None,
     ) -> nx.Graph:
-        if threshold is None:
-            threshold = 0.0
-        if plot is None:
-            plot = False
-        if show_labels is None:
-            show_labels = False
-        if show_data is None:
-            show_data = True
         """
         Create the maximum 1D chain in a 2D lattice graph.
 
@@ -4341,6 +4693,14 @@ class MeasurementService:
         nx.Graph
             A graph representing the maximum 1D chain.
         """
+        if threshold is None:
+            threshold = 0.0
+        if plot is None:
+            plot = False
+        if show_labels is None:
+            show_labels = False
+        if show_data is None:
+            show_data = True
         if fidelities is None:
             fidelities = self.ctx.load_property("bell_state_fidelity")
 
@@ -4383,6 +4743,16 @@ class MeasurementService:
         show_labels: bool | None = None,
         show_data: bool | None = None,
     ) -> nx.Graph:
+        """
+        Create a maximum spanning tree from fidelities.
+
+        Parameters
+        ----------
+        fidelities
+            Edge fidelities keyed by CR label.
+        threshold
+            Minimum fidelity threshold.
+        """
         if threshold is None:
             threshold = 0.0
         if plot is None:
@@ -4432,6 +4802,18 @@ class MeasurementService:
         show_labels: bool | None = None,
         show_data: bool | None = None,
     ) -> nx.DiGraph:
+        """
+        Create a directed tree rooted at a specified node.
+
+        Parameters
+        ----------
+        root
+            Root node label.
+        max_depth
+            Maximum depth of the directed tree.
+        max_node
+            Maximum number of nodes to include.
+        """
         if threshold is None:
             threshold = 0.0
         if plot is None:
@@ -4505,6 +4887,16 @@ class MeasurementService:
         *,
         plot: bool | None = None,
     ) -> list[list[tuple[str, str]]]:
+        """
+        Group CZ edges into parallelizable rounds.
+
+        Parameters
+        ----------
+        graph
+            Graph defining CZ edges.
+        plot
+            Whether to visualize the rounds.
+        """
         if plot is None:
             plot = False
         edges = list(graph.edges())
@@ -4561,6 +4953,18 @@ class MeasurementService:
         bases: dict[str, str] | None = None,
         with_readout_pulses: bool | None = None,
     ) -> PulseSchedule:
+        """
+        Create a graph-state preparation sequence.
+
+        Parameters
+        ----------
+        graph
+            Graph defining CZ edges.
+        bases
+            Measurement bases for each node.
+        with_readout_pulses
+            Whether to append readout pulses.
+        """
         if with_readout_pulses is None:
             with_readout_pulses = True
         nodes = list(graph.nodes())
@@ -4604,6 +5008,16 @@ class MeasurementService:
         G: nx.Graph,
         plot: bool | None = None,
     ) -> dict[int, list[tuple[str, str]]]:
+        """
+        Color graph edges into measurement rounds.
+
+        Parameters
+        ----------
+        G
+            Graph defining the edges to color.
+        plot
+            Whether to visualize the rounds.
+        """
         if plot is None:
             plot = False
         chip_graph = self.ctx.quantum_system.chip_graph
@@ -4654,6 +5068,18 @@ class MeasurementService:
         n_bootstrap: int | None = None,
         bootstrap_mle: bool | None = None,
     ):
+        """
+        Measure graph-state properties for specified edges.
+
+        Parameters
+        ----------
+        graph
+            Graph defining the state to measure.
+        target_edges
+            Edges to evaluate for negativity.
+        mle_fit
+            Whether to use MLE reconstruction.
+        """
         if mle_fit is None:
             mle_fit = True
         if use_all_spectator_pattern is None:
@@ -5048,6 +5474,18 @@ class MeasurementService:
         show_labels: bool | None = None,
         show_data: bool | None = None,
     ) -> None:
+        """
+        Visualize a graph with optional edge annotations.
+
+        Parameters
+        ----------
+        G
+            Graph to visualize.
+        property
+            Edge attribute to display.
+        show_labels
+            Whether to show edge labels.
+        """
         if property is None:
             property = "fidelity"
         if show_labels is None:
@@ -5101,6 +5539,18 @@ class MeasurementService:
         n_bootstrap: int | None = None,
         bootstrap_mle: bool | None = None,
     ) -> Result:
+        """
+        Measure graph-state negativities for all edges.
+
+        Parameters
+        ----------
+        graph
+            Graph defining the state to measure.
+        mle_fit
+            Whether to use MLE reconstruction.
+        n_bootstrap
+            Bootstrap sample count for error estimates.
+        """
         if mle_fit is None:
             mle_fit = True
         if use_all_spectator_pattern is None:
@@ -5349,6 +5799,7 @@ class MeasurementService:
         save_data: bool | None = None,
         save_path: Path | str | None = None,
     ) -> Result:
+        """Measure Bell-state fidelities for target pairs."""
         if readout_mitigation is None:
             readout_mitigation = True
         if shots is None:
@@ -5458,6 +5909,7 @@ class MeasurementService:
         reset_awg_and_capunits: bool | None = None,
         reset_awg_and_capunits_each_time: bool | None = None,
     ) -> Result:
+        """Measure Bell-state populations for target pairs."""
         if control_basis is None:
             control_basis = "Z"
         if target_basis is None:
@@ -5728,6 +6180,7 @@ class MeasurementService:
         angle_arr: NDArray | None = None,
         measurement_times: int | None = None,
     ) -> Result:
+        """Estimate RZX gate properties for a qubit pair."""
         if measurement_times is None:
             measurement_times = 10
         if angle_arr is None:

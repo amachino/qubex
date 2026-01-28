@@ -1,3 +1,5 @@
+"""Tests for the DRAG pulse."""
+
 import pytest
 
 import qubex as qx

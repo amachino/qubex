@@ -1,3 +1,5 @@
+"""Pulse optimization utilities for quantum simulation."""
+
 from __future__ import annotations
 
 import logging
@@ -23,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class OptimizationResult:
+    """Optimization outcome with waveforms and metadata."""
+
     params: optax.Params
     infidelity: float
     unitary: qt.Qobj
@@ -32,6 +36,7 @@ class OptimizationResult:
     history: NDArray[np.float64]
 
     def plot_waveforms(self) -> None:
+        """Plot optimized control waveforms."""
         for target, waveform in self.waveforms.items():
             dt = self.times[1] - self.times[0]
             times = np.append(self.times, self.times[-1] + dt)
@@ -67,6 +72,7 @@ class OptimizationResult:
             fig.show()
 
     def plot_history(self) -> None:
+        """Plot optimization loss history."""
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -86,6 +92,8 @@ class OptimizationResult:
 
 
 class PulseOptimizer:
+    """Gradient-based pulse optimizer for target unitaries."""
+
     def __init__(
         self,
         *,
@@ -128,10 +136,12 @@ class PulseOptimizer:
 
     @cached_property
     def system_hamiltonian(self) -> Array:
+        """Return the system Hamiltonian as a JAX array."""
         return jnp.asarray(self.quantum_system.hamiltonian.full())
 
     @cached_property
     def rotating_system_hamiltonian(self) -> Array:
+        """Return the rotating-frame Hamiltonian."""
         H = self.system_hamiltonian
         for target in self.quantum_system.object_labels:
             N = self.number_operator(target)
@@ -140,38 +150,47 @@ class PulseOptimizer:
 
     @cached_property
     def target_unitary_dagger(self) -> Array:
+        """Return the conjugate transpose of the target unitary."""
         return jnp.asarray(self.target_unitary.full()).conj().T
 
     @cached_property
     def target_state(self) -> Array:
+        """Return the target state vector."""
         return jnp.asarray(self.target_unitary @ self.initial_state)
 
     @cached_property
     def dimension(self) -> int:
+        """Return the Hilbert space dimension."""
         return self.system_hamiltonian.shape[0]
 
     @cached_property
     def dimensions(self) -> Any:
+        """Return the subsystem dimensions structure."""
         return self.quantum_system.hamiltonian.dims
 
     @cached_property
     def identity(self) -> Array:
+        """Return the identity operator as a JAX array."""
         return jnp.eye(self.dimension)
 
     @cached_property
     def duration(self) -> float:
+        """Return total control duration."""
         return self.segment_count * self.segment_duration
 
     @cached_property
     def control_qubits(self) -> list[str]:
+        """Return list of control target labels."""
         return list(self.control_frequencies.keys())
 
     @cached_property
     def frame_frequency(self) -> float:
+        """Return the mean control frequency for the rotating frame."""
         return np.mean(list(self.control_frequencies.values())).astype(float)
 
     @cached_property
     def relative_frequencies(self) -> dict[str, float]:
+        """Return per-target frequencies relative to the frame."""
         return {
             target: frequency - self.frame_frequency
             for target, frequency in self.control_frequencies.items()
@@ -179,35 +198,43 @@ class PulseOptimizer:
 
     @cached_property
     def max_rabi_rate(self) -> float:
+        """Return the maximum Rabi rate in rad/ns."""
         return 2 * np.pi * self.max_rabi_frequency
 
     @cached_property
     def lower_bound(self) -> dict[str, float]:
+        """Return lower bounds for control amplitudes."""
         return dict.fromkeys(self.control_frequencies, -self.max_rabi_rate)
 
     @cached_property
     def upper_bound(self) -> dict[str, float]:
+        """Return upper bounds for control amplitudes."""
         return dict.fromkeys(self.control_frequencies, self.max_rabi_rate)
 
     def lowering_operator(self, target: str) -> Array:
+        """Return the lowering operator for a target."""
         a = self.quantum_system.get_lowering_operator(target)
         return jnp.asarray(a.full())
 
     def raising_operator(self, target: str) -> Array:
+        """Return the raising operator for a target."""
         ad = self.quantum_system.get_raising_operator(target)
         return jnp.asarray(ad.full())
 
     def number_operator(self, target: str) -> Array:
+        """Return the number operator for a target."""
         N = self.quantum_system.get_number_operator(target)
         return jnp.asarray(N.full())
 
     @partial(jax.jit, static_argnums=0)
     def loss_fn(self, params: dict[str, Array]) -> Array:
+        """Compute unitary infidelity loss."""
         U = self.evolve(params)
         return self.unitary_infidelity(U)
 
     @partial(jax.jit, static_argnums=0)
     def evolve(self, params: dict[str, Array]) -> Array:
+        """Evolve the system under piecewise-constant controls."""
         dt = self.segment_duration
         U = self.identity
         for index in range(self.segment_count):
@@ -225,16 +252,19 @@ class PulseOptimizer:
 
     @partial(jax.jit, static_argnums=0)
     def unitary_infidelity(self, U: Array) -> Array:
+        """Return unitary infidelity with respect to target unitary."""
         D = self.dimension
         V = self.target_unitary_dagger
         return 1 - jnp.abs((V @ U).trace() / D) ** 2
 
     @partial(jax.jit, static_argnums=0)
     def state_infidelity(self, psi: Array) -> Array:
+        """Return state infidelity with respect to target state."""
         phi = self.target_state
         return 1 - jnp.abs(jnp.vdot(phi, psi)) ** 2
 
     def random_params(self, key: Array) -> dict[str, Array]:
+        """Generate random initial control parameters."""
         return {
             target: jax.random.uniform(
                 key=jax.random.split(key)[0],
@@ -253,6 +283,25 @@ class PulseOptimizer:
         tolerance: float = 1e-6,
         seed: int = 0,
     ) -> OptimizationResult:
+        """
+        Optimize control parameters to minimize infidelity.
+
+        Parameters
+        ----------
+        learning_rate : float, optional
+            Optimizer learning rate.
+        max_iterations : int, optional
+            Maximum number of iterations.
+        tolerance : float, optional
+            Early-stopping tolerance on loss.
+        seed : int, optional
+            Random seed for initialization.
+
+        Returns
+        -------
+        OptimizationResult
+            Optimized parameters and diagnostics.
+        """
         key = jax.random.PRNGKey(seed)
         params = self.random_params(key)
 

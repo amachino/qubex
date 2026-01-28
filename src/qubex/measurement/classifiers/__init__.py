@@ -1,3 +1,5 @@
+"""State classifier implementations."""
+
 from __future__ import annotations
 
 from .state_classifier import StateClassifier

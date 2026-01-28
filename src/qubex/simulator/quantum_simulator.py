@@ -1,3 +1,5 @@
+"""Simulation helpers for quantum systems."""
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +32,8 @@ SubspaceType: TypeAlias = Literal["ge", "ef", "gf"]
 
 
 class Control:
+    """Control signal definition for a target object."""
+
     def __init__(
         self,
         target: Object | str,
@@ -82,22 +86,27 @@ class Control:
 
     @property
     def n_segments(self) -> int:
+        """Return the number of waveform segments."""
         return len(self.waveform)
 
     @property
     def duration(self) -> float:
+        """Return total duration of the control."""
         return float(np.sum(self.durations))
 
     @property
     def times(self) -> npt.NDArray[np.float64]:
+        """Return segment boundary times for the control."""
         return np.concatenate(([0], np.cumsum(self.durations)))
 
     @property
     def values(self) -> npt.NDArray[np.complex128]:
+        """Return waveform values with the last sample repeated."""
         return np.append(self.waveform, self.waveform[-1])
 
     @property
     def interpolator(self) -> interp1d:
+        """Return an interpolator for the waveform samples."""
         return interp1d(
             x=self.times,
             y=self.values,
@@ -110,6 +119,7 @@ class Control:
         self,
         times: npt.NDArray[np.float64],
     ) -> npt.NDArray[np.complex128]:
+        """Return interpolated control samples at given times."""
         return self.interpolator(times)
 
     def plot(
@@ -118,6 +128,7 @@ class Control:
         n_samples: int | None = None,
         line_shape: Literal["hv", "vh", "hvh", "vhv", "spline", "linear"] = "hv",
     ) -> None:
+        """Plot the control waveform as I/Q components."""
         if self.n_segments == 0:
             logger.warning("Waveform is empty.")
             return
@@ -217,14 +228,17 @@ class SimulationResult:
 
     @cached_property
     def control_frequencies(self) -> dict[str, float]:
+        """Return a mapping of target label to control frequency."""
         return {control.target: control.frequency for control in self.controls}
 
     @property
     def initial_state(self) -> qt.Qobj:
+        """Return the initial state of the simulation."""
         return self.states[0]
 
     @property
     def final_state(self) -> qt.Qobj:
+        """Return the final state of the simulation."""
         return self.states[-1]
 
     def _get_subspace_slice(self, subspace: SubspaceType) -> slice:
@@ -458,6 +472,7 @@ class SimulationResult:
         frame_frequency: float | None = None,
         subspace: SubspaceType = "ge",
     ) -> None:
+        """Plot Bloch vectors for a labeled subspace evolution."""
         vectors = self.get_bloch_vectors(
             label,
             n_samples=n_samples,
@@ -725,6 +740,8 @@ class SimulationResult:
 
 
 class QuantumSimulator:
+    """Simulate dynamics of a :class:`QuantumSystem`."""
+
     def __init__(
         self,
         system: QuantumSystem,
@@ -908,6 +925,23 @@ class QuantumSimulator:
         dt: float | None = None,
         options: dict | None = None,
     ) -> qt.Qobj:
+        """
+        Compute the propagator superoperator for the given controls.
+
+        Parameters
+        ----------
+        controls : list[Control] | PulseSchedule
+            Control signals defining the evolution.
+        dt : float | None, optional
+            Time step for discretization.
+        options : dict | None, optional
+            Options passed to QuTiP's propagator.
+
+        Returns
+        -------
+        qt.Qobj
+            The superoperator propagator.
+        """
         if options is None:
             options = {
                 "nsteps": 200000,
@@ -948,6 +982,25 @@ class QuantumSimulator:
         dt: float | None = None,
         options: dict | None = None,
     ) -> float:
+        """
+        Compute average gate fidelity against a target unitary.
+
+        Parameters
+        ----------
+        controls : list[Control] | PulseSchedule
+            Control signals defining the evolution.
+        target_unitary : qt.Qobj
+            Target unitary to compare against.
+        dt : float | None, optional
+            Time step for discretization.
+        options : dict | None, optional
+            Options passed to QuTiP's propagator.
+
+        Returns
+        -------
+        float
+            Average gate fidelity.
+        """
         superop = self.propagator(
             controls=controls,
             dt=dt,
@@ -965,6 +1018,21 @@ class QuantumSimulator:
         *,
         dt: float | None = None,
     ) -> dict:
+        """
+        Build QuTiP-compatible simulation parameters.
+
+        Parameters
+        ----------
+        controls : list[Control] | PulseSchedule
+            Control signals defining the evolution.
+        dt : float | None, optional
+            Time step for discretization.
+
+        Returns
+        -------
+        dict
+            Parameter dictionary containing times, Hamiltonian, and collapse ops.
+        """
         if dt is None:
             dt = TIME_STEP
 
@@ -1037,6 +1105,23 @@ class QuantumSimulator:
         initial_state: qt.Qobj | dict | None = None,
         dt: float | None = None,
     ) -> SimulationModel:
+        """
+        Create a simulation model for QuTiP solvers.
+
+        Parameters
+        ----------
+        controls : list[Control] | PulseSchedule
+            Control signals defining the evolution.
+        initial_state : qt.Qobj | dict | None, optional
+            Initial state specification.
+        dt : float | None, optional
+            Time step for discretization.
+
+        Returns
+        -------
+        SimulationModel
+            The constructed simulation model.
+        """
         if initial_state is None:
             initial_state = self.system.ground_state
         if not isinstance(initial_state, qt.Qobj):
@@ -1109,6 +1194,21 @@ def downsample(
     data: npt.NDArray,
     n_samples: int | None,
 ) -> npt.NDArray:
+    """
+    Downsample an array to a maximum number of samples.
+
+    Parameters
+    ----------
+    data : npt.NDArray
+        Input array.
+    n_samples : int | None
+        Maximum number of samples.
+
+    Returns
+    -------
+    npt.NDArray
+        Downsampled array.
+    """
     if n_samples is None:
         return data
     if len(data) <= n_samples:

@@ -1,3 +1,5 @@
+"""Calibration service for pulse and readout parameters."""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -45,6 +47,7 @@ from .pulse_service import PulseService
 
 
 class CalibrationService:
+    """Service for calibration workflows."""
     def __init__(
         self,
         *,
@@ -58,14 +61,17 @@ class CalibrationService:
 
     @property
     def ctx(self) -> ExperimentContext:
+        """Return the experiment context."""
         return self._experiment_context
 
     @property
     def pulse(self) -> PulseService:
+        """Return the pulse service."""
         return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
+        """Return the measurement service."""
         return self._measurement_service
 
     def correct_rabi_params(
@@ -75,6 +81,7 @@ class CalibrationService:
         reference_phases: dict[str, float] | None = None,
         save: bool | None = None,
     ) -> None:
+        """Correct stored Rabi parameters using reference phases."""
         if save is None:
             save = True
 
@@ -129,6 +136,7 @@ class CalibrationService:
         reference_phases: dict[str, float] | None = None,
         save: bool | None = None,
     ) -> None:
+        """Correct stored state classifiers using reference phases."""
         if save is None:
             save = True
 
@@ -190,6 +198,7 @@ class CalibrationService:
         shots: int | None = None,
         save: bool | None = None,
     ) -> None:
+        """Correct stored CR phase parameters using tomography."""
         if shots is None:
             shots = 10000
         if save is None:
@@ -230,6 +239,7 @@ class CalibrationService:
         *,
         save: bool | None = None,
     ) -> None:
+        """Correct stored calibration data for qubits and CR pairs."""
         if save is None:
             save = False
 
@@ -281,6 +291,7 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        """Calibrate default pulse amplitude for targets."""
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -433,6 +444,7 @@ class CalibrationService:
             shots = CALIBRATION_SHOTS
         if interval is None:
             interval = DEFAULT_INTERVAL
+        """Calibrate a ZX90 gate for a qubit pair."""
 
         return self.calibrate_default_pulse(
             targets=targets,
@@ -500,6 +512,7 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        """Calibrate EF pulse amplitude for targets."""
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -650,6 +663,7 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        """Calibrate EF half-pi pulse amplitude for targets."""
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -688,6 +702,7 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> ExperimentResult[AmplCalibData]:
+        """Calibrate EF pi pulse amplitude for targets."""
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -731,6 +746,7 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """Calibrate DRAG amplitude for targets."""
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -901,6 +917,7 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """Calibrate DRAG beta for targets."""
         if pulse_type is None:
             pulse_type = "hpi"
         if n_turns is None:
@@ -1066,6 +1083,18 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """
+        Calibrate DRAG half-pi pulses for targets.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to calibrate.
+        calibrate_beta
+            Whether to tune DRAG beta.
+        n_iterations
+            Number of calibration iterations.
+        """
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -1178,6 +1207,18 @@ class CalibrationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> Result:
+        """
+        Calibrate DRAG pi pulses for targets.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to calibrate.
+        calibrate_beta
+            Whether to tune DRAG beta.
+        n_iterations
+            Number of calibration iterations.
+        """
         if n_points is None:
             n_points = 20
         if n_rotations is None:
@@ -1299,6 +1340,7 @@ class CalibrationService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Measure CR dynamics for a control/target pair."""
         if echo is None:
             echo = False
         if control_state is None:
@@ -1453,6 +1495,7 @@ class CalibrationService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Run CR Hamiltonian tomography for a qubit pair."""
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -1820,6 +1863,7 @@ class CalibrationService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Update CR calibration parameters for a qubit pair."""
         if update_cr_phase is None:
             update_cr_phase = True
         if update_cancel_pulse is None:
@@ -1956,6 +2000,7 @@ class CalibrationService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Obtain CR parameters for a qubit pair."""
         if n_iterations is None:
             n_iterations = 4
         if n_cycles is None:
@@ -2467,6 +2512,7 @@ class CalibrationService:
         control_qubit: str,
         target_qubit: str,
     ) -> Result:
+        """Estimate the coherence-limited ZX90 fidelity."""
         zx90 = self.pulse.zx90(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -2502,6 +2548,7 @@ class CalibrationService:
         plot: bool | None = None,
         coarse: bool | None = None,
     ) -> Result:
+        """Run one-qubit calibration workflow."""
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -2590,6 +2637,7 @@ class CalibrationService:
         interval: int | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Run two-qubit calibration workflow."""
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -2668,6 +2716,7 @@ class CalibrationService:
         interval: int | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Run one-qubit EF calibration workflow."""
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -2760,6 +2809,7 @@ class CalibrationService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Measure CR crosstalk with spectator qubits."""
         if echo is None:
             echo = False
         if control_state is None:
@@ -2979,6 +3029,7 @@ class CalibrationService:
         reset_awg_and_capunits: bool | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Perform CR crosstalk Hamiltonian tomography."""
         if ramp_type is None:
             ramp_type = "RaisedCosine"
         if shots is None:
@@ -3123,6 +3174,7 @@ class CalibrationService:
         )
         for data in fig_c_0.data:
             data: go.Scatter
+            """Run CR crosstalk Hamiltonian tomography."""
             fig_c.add_trace(
                 go.Scatter(
                     x=data.x,

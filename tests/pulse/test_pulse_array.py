@@ -1,3 +1,5 @@
+"""Tests for PulseArray behavior."""
+
 import numpy as np
 import pytest
 

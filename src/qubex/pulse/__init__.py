@@ -1,3 +1,5 @@
+"""Pulse primitives and scheduling utilities."""
+
 from .blank import Blank
 from .library import (
     CPMG,

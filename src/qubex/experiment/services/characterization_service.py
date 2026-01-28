@@ -1,3 +1,5 @@
+"""Characterization service for measurement experiments."""
+
 from __future__ import annotations
 
 import logging
@@ -65,6 +67,8 @@ logger = logging.getLogger(__name__)
 
 
 class CharacterizationService:
+    """Service for device characterization routines."""
+
     def __init__(
         self,
         *,
@@ -80,18 +84,22 @@ class CharacterizationService:
 
     @property
     def ctx(self) -> ExperimentContext:
+        """Return the experiment context."""
         return self._experiment_context
 
     @property
     def pulse(self) -> PulseService:
+        """Return the pulse service."""
         return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
+        """Return the measurement service."""
         return self._measurement_service
 
     @property
     def calibration_service(self) -> CalibrationService:
+        """Return the calibration service."""
         return self._calibration_service
 
     def measure_readout_snr(
@@ -106,6 +114,7 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Measure readout SNR for targets."""
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -172,6 +181,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Sweep readout amplitude and measure SNR."""
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -292,6 +302,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Sweep readout duration and measure SNR."""
         if initial_state is None:
             initial_state = "0"
         if shots is None:
@@ -408,6 +419,7 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Measure chevron patterns for targets."""
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -591,6 +603,7 @@ class CharacterizationService:
         plot: bool | None = None,
         verbose: bool | None = None,
     ) -> ExperimentResult[FreqRabiData]:
+        """Measure frequency-Rabi relation for targets."""
         if rabi_level is None:
             rabi_level = "ge"
         if shots is None:
@@ -687,6 +700,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> ExperimentResult[AmplRabiData]:
+        """Measure amplitude-Rabi relation for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
@@ -761,6 +775,7 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """Calibrate control frequency for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
@@ -802,6 +817,7 @@ class CharacterizationService:
         plot: bool | None = None,
         verbose: bool | None = None,
     ) -> Result:
+        """Calibrate EF control frequency for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
@@ -874,6 +890,7 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Calibrate readout frequency for targets."""
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
@@ -975,6 +992,18 @@ class CharacterizationService:
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T1Data]:
+        """
+        Perform a T1 decay experiment.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to measure.
+        time_range
+            Delay times for the decay measurement.
+        plot
+            Whether to plot the fitted decay.
+        """
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1088,6 +1117,18 @@ class CharacterizationService:
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T2Data]:
+        """
+        Perform a T2 echo experiment.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to measure.
+        time_range
+            Delay times for the echo measurement.
+        n_cpmg
+            Number of CPMG pulses to use.
+        """
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1243,6 +1284,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
+        """
+        Perform a Ramsey experiment with optional detuning.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to measure.
+        time_range
+            Delay times for the Ramsey sequence.
+        detuning
+            Frequency detuning applied during the experiment.
+        """
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1974,6 +2027,18 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """
+        Estimate effective control frequency via Ramsey experiments.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to analyze.
+        detuning
+            Detuning applied in the Ramsey measurements.
+        time_range
+            Time range used in the sweeps.
+        """
         if detuning is None:
             detuning = 0.001
         if shots is None:
@@ -2051,6 +2116,18 @@ class CharacterizationService:
         rotation_frequency: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """
+        Run a JAZZ experiment to estimate ZZ coupling.
+
+        Parameters
+        ----------
+        target_qubit
+            Target qubit label.
+        spectator_qubit
+            Spectator qubit label.
+        rotation_frequency
+            Reference rotation frequency for phase compensation.
+        """
         if second_rotation_axis is None:
             second_rotation_axis = "Y"
         if shots is None:
@@ -2169,6 +2246,18 @@ class CharacterizationService:
         rotation_frequency: float | None = None,
         plot: bool | None = None,
     ) -> Result:
+        """
+        Estimate coupling strength using the JAZZ experiment.
+
+        Parameters
+        ----------
+        target_qubit
+            Target qubit label.
+        spectator_qubit
+            Spectator qubit label.
+        rotation_frequency
+            Reference rotation frequency for phase compensation.
+        """
         if second_rotation_axis is None:
             second_rotation_axis = "Y"
         if shots is None:
@@ -2233,6 +2322,18 @@ class CharacterizationService:
         interval: float | None = None,
         plot: bool | None = None,
     ) -> float:
+        """
+        Measure phase shift across a frequency sweep.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Frequency sweep range in GHz.
+        amplitude
+            Readout amplitude for the sweep.
+        """
         if subrange_width is None:
             subrange_width = 0.3
         if shots is None:
@@ -2374,6 +2475,18 @@ class CharacterizationService:
         plot: bool | None = None,
         confirm: bool | None = None,
     ) -> float:
+        """
+        Measure electrical delay of the readout path.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        f_start
+            Start frequency for the sweep.
+        n_samples
+            Number of frequency samples.
+        """
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
@@ -2499,6 +2612,18 @@ class CharacterizationService:
         save_image: bool | None = None,
         filter: Literal["gaussian", "savgol"] | None = None,
     ) -> Result:
+        """
+        Scan readout frequencies to locate resonator peaks.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Frequency sweep range in GHz.
+        electrical_delay
+            Electrical delay used for phase correction.
+        """
         if shots is None:
             shots = DEFAULT_SHOTS
         if plot is None:
@@ -2848,6 +2973,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Perform resonator spectroscopy over frequency and power.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Frequency sweep range in GHz.
+        power_range
+            Readout power sweep range in dB.
+        """
         if shots is None:
             shots = DEFAULT_SHOTS
         if interval is None:
@@ -2958,6 +3095,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Measure the reflection coefficient around a center frequency.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        center_frequency
+            Center frequency for the sweep.
+        qubit_state
+            Prepared qubit state during measurement.
+        """
         if qubit_state is None:
             qubit_state = "0"
         if shots is None:
@@ -3080,6 +3229,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Scan control frequencies to locate qubit resonances.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Control frequency sweep range in GHz.
+        control_amplitude
+            Drive amplitude during the sweep.
+        """
         if simultaneous_drive is None:
             simultaneous_drive = True
         if plot is None:
@@ -3343,6 +3504,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> float:
+        """
+        Estimate control amplitude from a resonance scan.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Frequency sweep range in GHz.
+        target_rabi_rate
+            Target Rabi rate used for scaling.
+        """
         if target_rabi_rate is None:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
         if shots is None:
@@ -3425,6 +3598,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Measure qubit resonance and estimate control amplitude.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Control frequency sweep range in GHz.
+        target_rabi_rate
+            Target Rabi rate used for scaling.
+        """
         if target_rabi_rate is None:
             target_rabi_rate = DEFAULT_RABI_FREQUENCY
         if shots is None:
@@ -3533,6 +3718,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Perform qubit spectroscopy over frequency and power.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_range
+            Control frequency sweep range in GHz.
+        power_range
+            Drive power sweep range in dB.
+        """
         if plot is None:
             plot = True
         if save_image is None:
@@ -3624,6 +3821,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Measure dispersive shift between $|0⟩$ and $|1⟩$.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        frequency_width
+            Frequency span for the reflection measurement.
+        threshold
+            Phase unwrapping threshold.
+        """
         if threshold is None:
             threshold = 0.5
         if shots is None:
@@ -3794,6 +4003,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Find readout frequency maximizing state separation.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        df
+            Frequency step in GHz.
+        frequency_width
+            Span around the center frequency.
+        """
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -3899,6 +4120,16 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Find readout amplitude maximizing state separation.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        amplitude_range
+            Readout amplitude sweep range.
+        """
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -4006,6 +4237,18 @@ class CharacterizationService:
         resonator_drive_duration: float | None = None,
         resonator_drive_ramptime: float | None = None,
     ) -> PulseSchedule:
+        """
+        Build a CKP sequence for qubit-resonator interaction.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        qubit_initial_state
+            Initial qubit state for preparation.
+        qubit_drive_detuning
+            Detuning applied to the qubit drive.
+        """
         qubit = self.ctx.qubits[target].label
         resonator = self.ctx.resonators[target].label
 
@@ -4065,6 +4308,18 @@ class CharacterizationService:
         verbose: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Run a CKP measurement over detuning grids.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        qubit_initial_state
+            Initial qubit state for preparation.
+        qubit_detuning_range
+            Qubit drive detuning values.
+        """
         if plot is None:
             plot = True
         if verbose is None:
@@ -4196,6 +4451,18 @@ class CharacterizationService:
         verbose: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Run a CKP experiment and fit dispersive parameters.
+
+        Parameters
+        ----------
+        target
+            Target qubit label.
+        resonator_drive_amplitude
+            Resonator drive amplitude.
+        plot
+            Whether to plot the results.
+        """
         if plot is None:
             plot = True
         if verbose is None:
@@ -4396,6 +4663,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Run basic single-qubit characterization routines.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to characterize.
+        shots
+            Number of shots per experiment.
+        plot
+            Whether to plot results.
+        """
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:
@@ -4501,6 +4780,18 @@ class CharacterizationService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Run basic two-qubit characterization routines.
+
+        Parameters
+        ----------
+        targets
+            Target edges to characterize.
+        shots
+            Number of shots per experiment.
+        plot
+            Whether to plot results.
+        """
         if shots is None:
             shots = CALIBRATION_SHOTS
         if interval is None:

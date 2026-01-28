@@ -1,3 +1,5 @@
+"""Pulse base class and helpers."""
+
 # ruff: noqa: SLF001
 from __future__ import annotations
 
@@ -51,6 +53,7 @@ class Pulse(Waveform):
         self._values = np.asarray(values, dtype=np.complex128)
 
     def __repr__(self) -> str:
+        """Return a concise string representation."""
         return f"{self.name}({self.length})"
 
     @property
@@ -136,6 +139,7 @@ class Pulse(Waveform):
         "The `reversed` method is deprecated, use `inverted` instead.",
     )
     def reversed(self) -> Pulse:
+        """Return a copy of the pulse with the time inverted."""
         return self.inverted()
 
     def inverted(self) -> Pulse:

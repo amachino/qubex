@@ -1,3 +1,5 @@
+"""Plotly styling helpers and templates."""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -101,6 +103,7 @@ pio.templates["square"] = go.layout.Template(
 
 
 def apply_template(template: str) -> None:
+    """Set the default Plotly template."""
     pio.templates.default = template
 
 
@@ -153,6 +156,7 @@ def get_config(
     width: int | None = None,
     height: int | None = None,
 ) -> dict:
+    """Return Plotly export configuration options."""
     options: dict[str, Any] = {
         "format": format,
         "filename": filename,

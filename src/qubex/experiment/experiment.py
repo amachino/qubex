@@ -3942,6 +3942,18 @@ class Experiment:
         ftarget: float | None = None,
         timeout: int | None = None,
     ) -> Waveform:
+        """
+        Optimize a pulse to reach a target state.
+
+        Parameters
+        ----------
+        qubit
+            Target qubit label.
+        pulse
+            Initial pulse to optimize.
+        target_state
+            Target Bloch vector.
+        """
         return self.optimization_service.optimize_pulse(
             qubit=qubit,
             pulse=pulse,
@@ -3975,6 +3987,18 @@ class Experiment:
         shots: int | None = None,
         interval: float | None = None,
     ) -> dict:
+        """
+        Optimize ZX90 gate parameters for a qubit pair.
+
+        Parameters
+        ----------
+        control_qubit
+            Control qubit label.
+        target_qubit
+            Target qubit label.
+        objective_type
+            Optimization objective identifier.
+        """
         return self.optimization_service.optimize_zx90(
             control_qubit=control_qubit,
             target_qubit=target_qubit,

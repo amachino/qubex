@@ -1,3 +1,5 @@
+"""Experiment utility functions and helpers."""
+
 from __future__ import annotations
 
 import contextlib

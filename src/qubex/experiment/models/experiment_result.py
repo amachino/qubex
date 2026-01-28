@@ -1,3 +1,5 @@
+"""Experiment result data models and plotting helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -34,9 +36,11 @@ class TargetData:
     data: NDArray
 
     def plot(self, *args, **kwargs) -> NoReturn:
+        """Plot the target data (to be implemented by subclasses)."""
         raise NotImplementedError
 
     def fit(self, *args, **kwargs) -> NoReturn:
+        """Fit the target data (to be implemented by subclasses)."""
         raise NotImplementedError
 
 
@@ -66,6 +70,7 @@ class ExperimentResult(Generic[T]):
     )
 
     def __repr__(self) -> str:
+        """Return a concise string representation."""
         data_repr = "{" + ", ".join(f"{k}:..." for k in self.data) + "}"
         return f"<ExperimentResult data={data_repr}>"
 
@@ -74,6 +79,7 @@ class ExperimentResult(Generic[T]):
         *args,
         **kwargs,
     ) -> None:
+        """Plot all target datasets."""
         for target in self.data:
             self.data[target].plot(*args, **kwargs)
 
@@ -82,6 +88,7 @@ class ExperimentResult(Generic[T]):
         *args,
         **kwargs,
     ) -> TargetMap[Any]:
+        """Fit all target datasets and return results."""
         return {target: self.data[target].fit(*args, **kwargs) for target in self.data}
 
     def save(
@@ -89,6 +96,7 @@ class ExperimentResult(Generic[T]):
         name: str = "ExperimentResult",
         description: str = "",
     ) -> ExperimentRecord[ExperimentResult[T]]:
+        """Persist the experiment result to disk."""
         return ExperimentRecord.create(
             data=self,
             name=name,
@@ -121,15 +129,18 @@ class RabiData(TargetData):
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
+        """Return data rotated by the fitted phase."""
         angle = self.rabi_param.angle
         return util.rotate(self.data, -angle)
 
     @property
     def normalized(self) -> NDArray[np.float64]:
+        """Return normalized data using the Rabi parameters."""
         return self.rabi_param.normalize(self.data)
 
     @property
     def zvalues(self) -> NDArray[np.float64]:
+        """Return Z-projection values based on state centers."""
         if self.state_centers is None:
             raise ValueError("state_centers must be provided for zvalues.")
         p = np.array(self.data, dtype=np.complex128)
@@ -152,6 +163,18 @@ class RabiData(TargetData):
         return_figure: bool = False,
         images_dir: Path | str | None = None,
     ) -> go.Figure | None:
+        """
+        Plot the Rabi oscillation data.
+
+        Parameters
+        ----------
+        normalize
+            Whether to plot normalized values.
+        use_zvalue
+            Whether to plot Z-projection values.
+        return_figure
+            Whether to return the figure.
+        """
         fig = go.Figure()
 
         fig.update_layout(
@@ -234,6 +257,7 @@ class RabiData(TargetData):
         yaxis_range: tuple[float, float] | None = None,
         **kwargs,
     ) -> FitResult:
+        """Fit the Rabi oscillation data."""
         return fitting.fit_rabi(
             target=self.target,
             times=self.time_range,
@@ -283,6 +307,7 @@ class SweepData(TargetData):
 
     @property
     def rotated(self) -> NDArray[np.complex128]:
+        """Return data rotated by the fitted phase."""
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
@@ -290,6 +315,7 @@ class SweepData(TargetData):
 
     @property
     def normalized(self) -> NDArray[np.float64]:
+        """Return normalized data using the Rabi parameters."""
         param = self.rabi_param
         if param is None:
             raise ValueError("rabi_param must be provided for rotation.")
@@ -297,6 +323,7 @@ class SweepData(TargetData):
 
     @property
     def zvalues(self) -> NDArray[np.float64]:
+        """Return Z-projection values based on state centers."""
         if self.state_centers is None:
             raise ValueError("state_centers must be provided for zvalues.")
         p = np.array(self.data, dtype=np.complex128)
@@ -321,6 +348,18 @@ class SweepData(TargetData):
         return_figure: bool = False,
         images_dir: Path | str | None = None,
     ) -> go.Figure | None:
+        """
+        Plot sweep data with optional normalization.
+
+        Parameters
+        ----------
+        normalize
+            Whether to plot normalized values.
+        use_zvalue
+            Whether to plot Z-projection values.
+        return_figure
+            Whether to return the figure.
+        """
         fig = go.Figure()
 
         fig.update_layout(
@@ -446,6 +485,7 @@ class AmplCalibData(SweepData):
         calib_value: float,
         r2: float,
     ) -> AmplCalibData:
+        """Create calibration data from sweep results."""
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -461,6 +501,7 @@ class AmplCalibData(SweepData):
         )
 
     def fit(self, **kwargs) -> FitResult:
+        """Fit the calibration curve and return fit results."""
         return fitting.fit_ampl_calib_data(
             target=self.target,
             amplitude_range=self.sweep_range,
@@ -514,6 +555,7 @@ class T1Data(SweepData):
         t1_err: float,
         r2: float,
     ) -> T1Data:
+        """Create T1 data from sweep results."""
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -530,6 +572,7 @@ class T1Data(SweepData):
         )
 
     def fit(self, **kwargs) -> FitResult:
+        """Fit exponential decay for T1."""
         return fitting.fit_exp_decay(
             target=self.target,
             x=self.sweep_range,
@@ -588,6 +631,7 @@ class T2Data(SweepData):
         t2_err: float,
         r2: float,
     ) -> T2Data:
+        """Create T2 data from sweep results."""
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -604,6 +648,7 @@ class T2Data(SweepData):
         )
 
     def fit(self, **kwargs) -> FitResult:
+        """Fit exponential decay for T2."""
         return fitting.fit_exp_decay(
             target=self.target,
             x=self.sweep_range,
@@ -666,6 +711,7 @@ class RamseyData(SweepData):
         bare_freq: float,
         r2: float,
     ) -> RamseyData:
+        """Create Ramsey data from sweep results."""
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -683,6 +729,7 @@ class RamseyData(SweepData):
         )
 
     def fit(self, **kwargs) -> FitResult:
+        """Fit Ramsey fringes and return results."""
         return fitting.fit_ramsey(
             target=self.target,
             times=self.sweep_range,
@@ -738,6 +785,7 @@ class RBData(SweepData):
         avg_gate_error: float,
         avg_gate_fidelity: float,
     ) -> RBData:
+        """Create RBData from sweep data and fitted metrics."""
         return cls(
             target=sweep_data.target,
             data=sweep_data.data,
@@ -754,6 +802,7 @@ class RBData(SweepData):
         )
 
     def fit(self, **kwargs) -> FitResult:
+        """Fit randomized benchmarking data and return fit results."""
         return fitting.fit_rb(
             target=self.target,
             x=self.sweep_range,
@@ -783,6 +832,7 @@ class AmplRabiData(TargetData):
     rabi_data: list[RabiData]
 
     def plot(self) -> None:
+        """Plot Rabi rate versus drive amplitude."""
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -798,6 +848,7 @@ class AmplRabiData(TargetData):
         fig.show()
 
     def fit(self, **kwargs) -> FitResult:
+        """Fit a linear relation between amplitude and Rabi rate."""
         return fitting.fit_linear(
             self.sweep_range,
             self.data * 1e3,  # Convert to MHz
@@ -832,6 +883,7 @@ class FreqRabiData(TargetData):
     rabi_data: list[RabiData]
 
     def plot(self) -> None:
+        """Plot Rabi rate versus drive frequency."""
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -847,6 +899,7 @@ class FreqRabiData(TargetData):
         fig.show()
 
     def fit(self, **kwargs) -> FitResult:
+        """Fit detuned Rabi data and return fit results."""
         return fitting.fit_detuned_rabi(
             target=self.target,
             control_frequencies=self.frequency_range,

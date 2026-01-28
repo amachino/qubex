@@ -1,3 +1,5 @@
+"""Tests for backend config loader."""
+
 from __future__ import annotations
 
 import logging

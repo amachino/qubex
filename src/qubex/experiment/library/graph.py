@@ -1,3 +1,5 @@
+"""Graph helper functions for experiment workflows."""
+
 from __future__ import annotations
 
 import itertools
@@ -162,6 +164,7 @@ def strong_edge_coloring(
 
 
 def tree_center(G: nx.Graph) -> list[Any]:
+    """Return the center node(s) of a tree."""
     u = max(
         nx.single_source_shortest_path_length(G, next(iter(G.nodes))).items(),
         key=lambda x: x[1],
@@ -181,6 +184,7 @@ def get_max_undirected_weight(
     edge: tuple[str, str],
     property: str = "fidelity",
 ) -> float:
+    """Return the maximum edge weight between two nodes."""
     u, v = edge
     if G.is_multigraph():
         vals = []

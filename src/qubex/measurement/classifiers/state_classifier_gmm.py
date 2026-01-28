@@ -1,3 +1,5 @@
+"""Gaussian mixture model state classifier."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

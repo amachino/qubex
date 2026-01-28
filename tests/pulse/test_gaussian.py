@@ -1,3 +1,5 @@
+"""Tests for the Gaussian pulse."""
+
 import pytest
 
 import qubex as qx

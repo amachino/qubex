@@ -1,3 +1,5 @@
+"""Optimization service for pulse calibration workflows."""
+
 from __future__ import annotations
 
 import logging
@@ -28,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 class OptimizationService:
+    """Service for automated pulse optimization routines."""
+
     def __init__(
         self,
         *,
@@ -47,26 +51,32 @@ class OptimizationService:
 
     @property
     def ctx(self) -> ExperimentContext:
+        """Return the experiment context."""
         return self._experiment_context
 
     @property
     def pulse(self) -> PulseService:
+        """Return the pulse service."""
         return self._pulse_service
 
     @property
     def calibration_service(self) -> CalibrationService:
+        """Return the calibration service."""
         return self._calibration_service
 
     @property
     def measurement_service(self) -> MeasurementService:
+        """Return the measurement service."""
         return self._measurement_service
 
     @property
     def characterization_service(self) -> CharacterizationService:
+        """Return the characterization service."""
         return self._characterization_service
 
     @property
     def benchmarking_service(self) -> BenchmarkingService:
+        """Return the benchmarking service."""
         return self._benchmarking_service
 
     def optimize_x90(
@@ -78,6 +88,27 @@ class OptimizationService:
         ftarget: float | None = None,
         timeout: int | None = None,
     ) -> Waveform:
+        """
+        Optimize an X pi/2 pulse using CMA-ES.
+
+        Parameters
+        ----------
+        qubit : str
+            Target qubit label.
+        sigma0 : float | None, optional
+            Initial search scale.
+        seed : int | None, optional
+            Random seed for CMA-ES.
+        ftarget : float | None, optional
+            Target objective value.
+        timeout : int | None, optional
+            Timeout in seconds.
+
+        Returns
+        -------
+        Waveform
+            Optimized pulse waveform.
+        """
         if sigma0 is None:
             sigma0 = 0.001
         if seed is None:
@@ -127,6 +158,29 @@ class OptimizationService:
         ftarget: float | None = None,
         timeout: int | None = None,
     ) -> Waveform:
+        """
+        Optimize DRAG X pi/2 parameters using CMA-ES.
+
+        Parameters
+        ----------
+        qubit : str
+            Target qubit label.
+        duration : float | None, optional
+            Pulse duration in ns.
+        sigma0 : float | None, optional
+            Initial search scale.
+        seed : int | None, optional
+            Random seed for CMA-ES.
+        ftarget : float | None, optional
+            Target objective value.
+        timeout : int | None, optional
+            Timeout in seconds.
+
+        Returns
+        -------
+        Waveform
+            Optimized DRAG pulse waveform.
+        """
         if duration is None:
             duration = 16
         if sigma0 is None:
@@ -185,6 +239,33 @@ class OptimizationService:
         ftarget: float | None = None,
         timeout: int | None = None,
     ) -> Waveform:
+        """
+        Optimize a generic pulse to reach a target state.
+
+        Parameters
+        ----------
+        qubit : str
+            Target qubit label.
+        pulse : Waveform
+            Initial pulse waveform.
+        x90 : Waveform
+            Reference X pi/2 pulse.
+        target_state : tuple[float, float, float]
+            Target Bloch vector.
+        sigma0 : float | None, optional
+            Initial search scale.
+        seed : int | None, optional
+            Random seed for CMA-ES.
+        ftarget : float | None, optional
+            Target objective value.
+        timeout : int | None, optional
+            Timeout in seconds.
+
+        Returns
+        -------
+        Waveform
+            Optimized pulse waveform.
+        """
         if sigma0 is None:
             sigma0 = 0.001
         if seed is None:
@@ -244,6 +325,53 @@ class OptimizationService:
         shots: int | None = None,
         interval: float | None = None,
     ) -> dict[str, Any]:
+        """
+        Optimize a ZX90 gate by sweeping control parameters.
+
+        Parameters
+        ----------
+        control_qubit : str
+            Control qubit label.
+        target_qubit : str
+            Target qubit label.
+        objective_type : str | None, optional
+            Objective type (e.g., "st" or "rb").
+        optimize_method : str | None, optional
+            Optimization method (e.g., "cma" or "nm").
+        update_cr_param : bool | None, optional
+            Whether to update CR parameters.
+        opt_params : Collection[str] | None, optional
+            Parameters to optimize.
+        seed : int | None, optional
+            Random seed for the optimizer.
+        ftarget : float | None, optional
+            Target objective value.
+        timeout : int | None, optional
+            Timeout in seconds.
+        maxiter : int | None, optional
+            Maximum number of iterations.
+        n_cliffords : int | None, optional
+            Number of Cliffords for RB.
+        n_trials : int | None, optional
+            Number of trials for RB.
+        duration : float | None, optional
+            Gate duration in ns.
+        ramptime : float | None, optional
+            Ramp time in ns.
+        x180 : TargetMap[Waveform] | None, optional
+            Reference X pi pulses.
+        x180_margin : float | None, optional
+            Margin for X pi pulses.
+        shots : int | None, optional
+            Number of shots.
+        interval : float | None, optional
+            Interval between shots.
+
+        Returns
+        -------
+        dict[str, Any]
+            Optimization results and metadata.
+        """
         if objective_type is None:
             objective_type = "st"
         if optimize_method is None:

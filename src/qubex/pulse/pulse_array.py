@@ -1,3 +1,5 @@
+"""PulseArray container for composite pulses."""
+
 # ruff: noqa: SLF001
 from __future__ import annotations
 
@@ -70,6 +72,7 @@ class PulseArray(Waveform):
         )
 
     def __repr__(self) -> str:
+        """Return a concise string representation."""
         elements = []
         for obj in self._elements:
             if isinstance(obj, (PhaseShift, VirtualZ)):
@@ -291,6 +294,7 @@ class PulseArray(Waveform):
 
     @deprecated("The `reversed` method is deprecated, use `inverted` instead.")
     def reversed(self) -> PulseArray:
+        """Return a copy of the pulse array with the time inverted."""
         return self.inverted()
 
     def inverted(self) -> PulseArray:

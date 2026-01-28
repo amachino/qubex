@@ -1,3 +1,5 @@
+"""Tests for the FlatTop pulse."""
+
 import pytest
 
 import qubex as qx

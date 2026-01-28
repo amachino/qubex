@@ -1,3 +1,5 @@
+"""Pulse construction helpers for experiment workflows."""
+
 from __future__ import annotations
 
 import logging
@@ -32,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 class PulseService:
+    """Service for constructing calibrated pulses."""
+
     def __init__(
         self,
         experiment_context: ExperimentContext,
@@ -40,30 +44,37 @@ class PulseService:
 
     @property
     def ctx(self) -> ExperimentContext:
+        """Return the experiment context."""
         return self._experiment_context
 
     @property
     def readout_duration(self) -> float:
+        """Return the default readout duration."""
         return self.ctx.readout_duration
 
     @property
     def readout_pre_margin(self) -> float:
+        """Return the default pre-readout margin."""
         return self.ctx.readout_pre_margin
 
     @property
     def readout_post_margin(self) -> float:
+        """Return the default post-readout margin."""
         return self.ctx.readout_post_margin
 
     @property
     def drag_hpi_duration(self) -> float:
+        """Return the DRAG half-pi duration."""
         return self.ctx.drag_hpi_duration
 
     @property
     def drag_pi_duration(self) -> float:
+        """Return the DRAG pi duration."""
         return self.ctx.drag_pi_duration
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
+        """Return stored Rabi parameters for available targets."""
         params = {}
         for target in self.ctx.ge_targets | self.ctx.ef_targets:
             param = self.ctx.get_rabi_param(target)
@@ -73,6 +84,7 @@ class PulseService:
 
     @property
     def ge_rabi_params(self) -> dict[str, RabiParam]:
+        """Return Rabi parameters for ge targets."""
         return {
             target: param
             for target, param in self.rabi_params.items()
@@ -81,6 +93,7 @@ class PulseService:
 
     @property
     def ef_rabi_params(self) -> dict[str, RabiParam]:
+        """Return Rabi parameters for ef targets."""
         return {
             Target.ge_label(target): param
             for target, param in self.rabi_params.items()
@@ -91,6 +104,14 @@ class PulseService:
         self,
         targets: Collection[str] | None = None,
     ) -> None:
+        """
+        Validate that Rabi parameters exist for targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Targets to validate. If None, validates all known targets.
+        """
         rabi_params = self.rabi_params
         if len(rabi_params) == 0:
             raise ValueError("Rabi parameters are not stored.")
@@ -110,6 +131,23 @@ class PulseService:
         *,
         rabi_amplitude_ratio: float | None = None,
     ) -> float:
+        """
+        Convert a desired Rabi rate into a control amplitude.
+
+        Parameters
+        ----------
+        target : str
+            Target label.
+        rabi_rate : float
+            Desired Rabi rate.
+        rabi_amplitude_ratio : float | None, optional
+            Optional ratio override.
+
+        Returns
+        -------
+        float
+            Control amplitude.
+        """
         qubit = Target.qubit_label(target)
         if rabi_amplitude_ratio is None:
             rabi_param = self.rabi_params.get(target)
@@ -137,6 +175,25 @@ class PulseService:
         current_rabi_params: dict[str, RabiParam] | None = None,
         print_result: bool | None = None,
     ) -> dict[str, float]:
+        """
+        Calculate control amplitudes for available targets.
+
+        Parameters
+        ----------
+        rabi_rate : float | None, optional
+            Rabi rate to use for all targets.
+        current_amplitudes : dict[str, float] | None, optional
+            Override amplitudes for targets.
+        current_rabi_params : dict[str, RabiParam] | None, optional
+            Override Rabi parameters for targets.
+        print_result : bool | None, optional
+            Whether to log results.
+
+        Returns
+        -------
+        dict[str, float]
+            Calculated control amplitudes.
+        """
         if rabi_rate is None:
             rabi_rate = DEFAULT_RABI_FREQUENCY
         if current_amplitudes is None:
@@ -177,6 +234,7 @@ class PulseService:
         target: str,
         control_amplitude: float,
     ) -> float:
+        """Return the Rabi rate for a control amplitude."""
         # TODO: Support ef targets
         default_amplitude = self.ctx.params.control_amplitude.get(target)
         if default_amplitude is None:
@@ -194,6 +252,7 @@ class PulseService:
         *,
         print_result: bool | None = None,
     ) -> dict[str, float]:
+        """Calculate Rabi rates for available targets."""
         if control_amplitude is None:
             control_amplitude = 1.0
         if print_result is None:
@@ -311,6 +370,7 @@ class PulseService:
         target: str,
         state: str,  # ["0", "1", "+", "-", "+i", "-i"],
     ) -> Waveform:
+        """Return a preparation pulse for a target state label."""
         if state == "0":
             return Blank(0)
         elif state == "1":
@@ -334,6 +394,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return an X pi/2 pulse for the target."""
         try:
             x90 = self.get_drag_hpi_pulse(target)
         except CalibrationMissingError:
@@ -347,6 +408,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return a negative X pi/2 pulse for the target."""
         return self.x90(target, valid_days=valid_days).scaled(-1)
 
     def x180(
@@ -356,6 +418,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return an X pi pulse for the target."""
         try:
             x180 = self.get_drag_pi_pulse(target, valid_days=valid_days)
         except CalibrationMissingError:
@@ -373,6 +436,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return a Y pi/2 pulse for the target."""
         return self.x90(target, valid_days=valid_days).shifted(np.pi / 2)
 
     def y90m(
@@ -382,6 +446,7 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return a negative Y pi/2 pulse for the target."""
         return self.x90(target, valid_days=valid_days).shifted(-np.pi / 2)
 
     def y180(
@@ -391,16 +456,19 @@ class PulseService:
         *,
         valid_days: int | None = None,
     ) -> Waveform:
+        """Return a Y pi pulse for the target."""
         return self.x180(target, valid_days=valid_days).shifted(np.pi / 2)
 
     def z90(
         self,
     ) -> VirtualZ:
+        """Return a virtual Z pi/2 rotation."""
         return VirtualZ(np.pi / 2)
 
     def z180(
         self,
     ) -> VirtualZ:
+        """Return a virtual Z pi rotation."""
         return VirtualZ(np.pi)
 
     def hadamard(
@@ -409,6 +477,7 @@ class PulseService:
         *,
         decomposition: Literal["Z180-Y90", "Y90-X180"] | None = None,
     ) -> PulseArray:
+        """Return a Hadamard pulse sequence for the target."""
         if decomposition is None:
             decomposition = "Z180-Y90"
         if decomposition == "Z180-Y90":
@@ -442,6 +511,7 @@ class PulseService:
         pre_margin: float | None = None,
         post_margin: float | None = None,
     ) -> Waveform:
+        """Return a readout pulse for the target."""
         if duration is None:
             duration = self.readout_duration
         if pre_margin is None:
@@ -478,6 +548,7 @@ class PulseService:
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float | None = None,
     ) -> PulseSchedule:
+        """Return a ZX90 cross-resonance pulse schedule."""
         if echo is None:
             echo = True
         if x180_margin is None:
@@ -554,6 +625,7 @@ class PulseService:
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float | None = None,
     ) -> PulseSchedule:
+        """Return an RZX pulse schedule for a given angle."""
         if echo is None:
             echo = True
         if x180_margin is None:
@@ -623,6 +695,7 @@ class PulseService:
         x90: Waveform | None = None,
         only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
+        """Return a CNOT pulse schedule."""
         if only_low_to_high is None:
             only_low_to_high = False
 
@@ -672,6 +745,7 @@ class PulseService:
         x90: Waveform | None = None,
         only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
+        """Alias for `cnot`."""
         return self.cnot(
             control_qubit=control_qubit,
             target_qubit=target_qubit,
@@ -689,6 +763,7 @@ class PulseService:
         x90: Waveform | None = None,
         only_low_to_high: bool | None = None,
     ) -> PulseSchedule:
+        """Return a CZ pulse schedule."""
         if only_low_to_high is None:
             only_low_to_high = False
 
@@ -738,6 +813,7 @@ class PulseService:
 
     @property
     def ef_hpi_pulse(self) -> dict[str, Waveform]:
+        """Return calibrated EF half-pi pulses."""
         result = {}
         for target in self.ctx.ef_targets:
             param = self.ctx.calib_note.get_hpi_param(
@@ -754,6 +830,7 @@ class PulseService:
 
     @property
     def ef_pi_pulse(self) -> dict[str, Waveform]:
+        """Return calibrated EF pi pulses."""
         result = {}
         for target in self.ctx.ef_targets:
             param = self.ctx.calib_note.get_pi_param(
@@ -770,6 +847,7 @@ class PulseService:
 
     @property
     def cr_pulse(self) -> dict[str, PulseSchedule]:
+        """Return calibrated cross-resonance pulse schedules."""
         result = {}
         for cr_label in self.ctx.cr_targets:
             control_qubit, target_qubit = Target.cr_qubit_pair(cr_label)
@@ -801,6 +879,7 @@ class PulseService:
 
     @property
     def drag_hpi_pulse(self) -> dict[str, Waveform]:
+        """Return calibrated DRAG half-pi pulses."""
         result = {}
         for target in self.ctx.ge_targets:
             param = self.ctx.calib_note.get_drag_hpi_param(
@@ -817,6 +896,7 @@ class PulseService:
 
     @property
     def drag_pi_pulse(self) -> dict[str, Waveform]:
+        """Return calibrated DRAG pi pulses."""
         result = {}
         for target in self.ctx.ge_targets:
             param = self.ctx.calib_note.get_drag_pi_param(
@@ -833,6 +913,7 @@ class PulseService:
 
     @property
     def hpi_pulse(self) -> dict[str, Waveform]:
+        """Return calibrated half-pi pulses."""
         result = {}
         for target in self.ctx.ge_targets:
             param = self.ctx.calib_note.get_hpi_param(
@@ -849,6 +930,7 @@ class PulseService:
 
     @property
     def pi_pulse(self) -> dict[str, Waveform]:
+        """Return calibrated pi pulses."""
         result = {}
         for target in self.ctx.ge_targets:
             param = self.ctx.calib_note.get_pi_param(

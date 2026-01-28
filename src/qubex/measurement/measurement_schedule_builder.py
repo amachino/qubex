@@ -1,12 +1,11 @@
 """
 Build measurement and capture schedules from pulse schedules.
 
-This module provides utilities for augmenting a ``PulseSchedule`` with readout
-and (optionally) pump pulses, and for creating a corresponding
-``CaptureSchedule``.
+This module provides utilities for augmenting a PulseSchedule with readout
+and (optionally) pump pulses, and for creating a corresponding CaptureSchedule.
 
-Timing in this module is expressed in the same units as ``SAMPLING_PERIOD``
-(i.e., sample count multiplied by ``SAMPLING_PERIOD`` yields a time value).
+Timing in this module is expressed in the same units as SAMPLING_PERIOD
+(i.e., sample count multiplied by SAMPLING_PERIOD yields a time value).
 """
 
 from __future__ import annotations
@@ -66,6 +65,8 @@ PumpPulseFactory = Callable[..., FlatTop]
 
 
 class MeasurementScheduleBuilder:
+    """Builder for measurement and capture schedules."""
+
     def __init__(
         self,
         *,

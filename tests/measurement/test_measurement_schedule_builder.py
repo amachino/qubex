@@ -1,3 +1,5 @@
+"""Tests for MeasurementScheduleBuilder helpers."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -10,24 +12,31 @@ from qubex.typing import TargetMap
 
 
 class StubReadoutFactory:
+    """Stub factory that records readout pulse calls."""
+
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
     def __call__(self, **kwargs):
+        """Record call arguments and return a dummy pulse array."""
         self.calls.append(kwargs)
         return PulseArray([Blank(4)])
 
 
 class StubPumpFactory:
+    """Stub factory that records pump pulse calls."""
+
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
     def __call__(self, **kwargs):
+        """Record call arguments and return a dummy flat-top pulse."""
         self.calls.append(kwargs)
         return FlatTop(duration=4, amplitude=0.0, tau=1.0)
 
 
 def test_add_readout_pulses_adds_readout_channel() -> None:
+    """Ensure readout pulses create a readout channel in the schedule."""
     readout_factory = StubReadoutFactory()
     pump_factory = StubPumpFactory()
 
@@ -79,6 +88,7 @@ def test_add_readout_pulses_adds_readout_channel() -> None:
 
 
 def test_add_pump_pulses_adds_mux_channel() -> None:
+    """Ensure pump pulses create a mux channel in the schedule."""
     readout_factory = StubReadoutFactory()
     pump_factory = StubPumpFactory()
 

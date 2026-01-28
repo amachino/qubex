@@ -1,3 +1,5 @@
+"""Cross-resonance pulse helpers."""
+
 from __future__ import annotations
 
 from qubex.pulse.blank import Blank

@@ -1,3 +1,5 @@
+"""Pulse library factory functions and shapes."""
+
 from .bump import Bump
 from .cpmg import CPMG
 from .cross_resonance import CrossResonance, MultiDerivativeCrossResonance

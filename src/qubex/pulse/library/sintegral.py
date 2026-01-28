@@ -1,3 +1,5 @@
+"""Sine power integral helpers."""
+
 from __future__ import annotations
 
 from typing import Final
@@ -128,6 +130,21 @@ def sin_pow_integral(
     x: ArrayLike,
     n: int,
 ) -> NDArray:
+    r"""
+    Compute the integral of $\sin^n(x)$.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Input values.
+    n : int
+        Non-negative integer power.
+
+    Returns
+    -------
+    NDArray
+        Integral values for $\sin^n(x)$.
+    """
     x = np.asarray(x, dtype=float)
 
     if n < 0 or not isinstance(n, int):
@@ -157,6 +174,23 @@ def sin_pow_derivative(
     n: int,
     m: int,
 ) -> NDArray:
+    r"""
+    Compute the $m$-th derivative of $\sin^n(x)$.
+
+    Parameters
+    ----------
+    x : ArrayLike
+        Input values.
+    n : int
+        Non-negative integer power.
+    m : int
+        Non-negative derivative order.
+
+    Returns
+    -------
+    NDArray
+        Derivative values for $\sin^n(x)$.
+    """
     if n < 0 or not isinstance(n, int):
         raise ValueError("n must be a non-negative integer")
     if m < 0 or not isinstance(m, int):

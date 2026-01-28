@@ -1,3 +1,5 @@
+"""Measurement execution utilities."""
+
 from __future__ import annotations
 
 import logging
@@ -47,6 +49,8 @@ logger = logging.getLogger(__name__)
 
 
 class Measurement:
+    """Measurement controller for device execution and analysis."""
+
     def __init__(
         self,
         *,
@@ -192,6 +196,7 @@ class Measurement:
 
     @property
     def schedule_builder(self) -> MeasurementScheduleBuilder:
+        """Return (and lazily build) the measurement schedule builder."""
         builder = getattr(self, "_schedule_builder", None)
         if builder is None:
             builder = MeasurementScheduleBuilder(
@@ -302,6 +307,19 @@ class Measurement:
         self,
         targets: Collection[str],
     ) -> npt.NDArray:
+        """
+        Return the combined confusion matrix for targets.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            Target labels to include.
+
+        Returns
+        -------
+        npt.NDArray
+            Kronecker-product confusion matrix.
+        """
         targets = list(targets)
         confusion_matrices = []
         for target in targets:
@@ -314,6 +332,19 @@ class Measurement:
         self,
         targets: Collection[str],
     ) -> npt.NDArray:
+        """
+        Return the inverse combined confusion matrix.
+
+        Parameters
+        ----------
+        targets : Collection[str]
+            Target labels to include.
+
+        Returns
+        -------
+        npt.NDArray
+            Inverse confusion matrix.
+        """
         targets = list(targets)
         confusion_matrix = self.get_confusion_matrix(targets)
         return np.linalg.inv(confusion_matrix)
@@ -746,6 +777,33 @@ class Measurement:
         pre_margin: float | None = None,
         post_margin: float | None = None,
     ) -> PulseArray:
+        """
+        Build a readout pulse for a target.
+
+        Parameters
+        ----------
+        target : str
+            Target label.
+        duration : float | None, optional
+            Readout duration in ns.
+        amplitude : float | None, optional
+            Readout amplitude.
+        ramptime : float | None, optional
+            Ramp time for the envelope.
+        type : RampType | None, optional
+            Ramp type name.
+        drag_coeff : float | None, optional
+            DRAG coefficient.
+        pre_margin : float | None, optional
+            Pre-readout margin.
+        post_margin : float | None, optional
+            Post-readout margin.
+
+        Returns
+        -------
+        PulseArray
+            Readout pulse array with margins.
+        """
         qubit = Target.qubit_label(target)
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
@@ -786,6 +844,27 @@ class Measurement:
         ramptime: float | None = None,
         type: RampType | None = None,
     ) -> FlatTop:
+        """
+        Build a pump pulse for a target.
+
+        Parameters
+        ----------
+        target : str
+            Target label.
+        duration : float | None, optional
+            Pump duration in ns.
+        amplitude : float | None, optional
+            Pump amplitude.
+        ramptime : float | None, optional
+            Ramp time for the envelope.
+        type : RampType | None, optional
+            Ramp type name.
+
+        Returns
+        -------
+        FlatTop
+            Pump pulse.
+        """
         qubit = Target.qubit_label(target)
         mux = self.mux_dict[qubit]
         if duration is None:

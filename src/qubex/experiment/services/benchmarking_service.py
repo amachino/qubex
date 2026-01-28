@@ -1,3 +1,5 @@
+"""Benchmarking service for randomized benchmarking experiments."""
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +32,8 @@ DEFAULT_MAX_N_CLIFFORDS_2Q = 128
 
 
 class BenchmarkingService:
+    """Service for randomized benchmarking workflows."""
+
     def __init__(
         self,
         *,
@@ -44,24 +48,29 @@ class BenchmarkingService:
 
     @property
     def ctx(self) -> ExperimentContext:
+        """Return the experiment context."""
         return self._experiment_context
 
     @property
     def pulse(self) -> PulseService:
+        """Return the pulse service."""
         return self._pulse_service
 
     @property
     def measurement_service(self) -> MeasurementService:
+        """Return the measurement service."""
         return self._measurement_service
 
     @property
     def clifford_generator(self) -> CliffordGenerator:
+        """Return the Clifford generator instance."""
         if self._clifford_generator is None:
             self._clifford_generator = CliffordGenerator()
         return self._clifford_generator
 
     @property
     def clifford(self) -> dict[str, Clifford]:
+        """Return the Clifford dictionary."""
         return self.clifford_generator.cliffords
 
     def rb_sequence(
@@ -75,6 +84,7 @@ class BenchmarkingService:
         interleaved_clifford: Clifford | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
+        """Build a randomized benchmarking sequence."""
         target_object = self.ctx.experiment_system.get_target(target)
         if target_object.is_cr:
             if isinstance(x90, Waveform):
@@ -120,6 +130,7 @@ class BenchmarkingService:
         interleaved_waveform: Waveform | None = None,
         seed: int | None = None,
     ) -> PulseArray:
+        """Build a single-qubit RB pulse sequence."""
         x90 = x90 or self.pulse.x90(target)
         z90 = VirtualZ(np.pi / 2)
 
@@ -176,6 +187,7 @@ class BenchmarkingService:
         interleaved_waveform: PulseSchedule | None = None,
         seed: int | None = None,
     ) -> PulseSchedule:
+        """Build a two-qubit RB pulse schedule."""
         target_object = self.ctx.experiment_system.get_target(target)
         if not target_object.is_cr:
             raise ValueError(f"`{target}` is not a 2Q target.")
@@ -253,6 +265,7 @@ class BenchmarkingService:
         seed: int | None = None,
         basis: Literal["X", "Y", "Z"] | None = None,
     ) -> PulseArray:
+        """Build a single-qubit purity benchmarking sequence."""
         if basis is None:
             basis = "Z"
 
@@ -334,6 +347,7 @@ class BenchmarkingService:
         ]
         | None = None,
     ) -> PulseSchedule:
+        """Build a two-qubit purity benchmarking sequence."""
         if basis is None:
             basis = "ZZ"
 
@@ -454,6 +468,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run single-qubit randomized benchmarking."""
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -633,6 +648,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run two-qubit randomized benchmarking."""
         if in_parallel is None:
             in_parallel = False
         if mitigate_readout is None:
@@ -845,6 +861,18 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Run single-qubit purity benchmarking.
+
+        Parameters
+        ----------
+        targets
+            Target qubits to benchmark.
+        n_cliffords_range
+            Cliffords count sweep range.
+        n_trials
+            Number of random trials.
+        """
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1024,6 +1052,18 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """
+        Run two-qubit purity benchmarking.
+
+        Parameters
+        ----------
+        targets
+            Target CR labels to benchmark.
+        n_cliffords_range
+            Cliffords count sweep range.
+        n_trials
+            Number of random trials.
+        """
         if in_parallel is None:
             in_parallel = False
         if mitigate_readout is None:
@@ -1238,6 +1278,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run interleaved randomized benchmarking."""
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1449,6 +1490,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Run interleaved purity benchmarking."""
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1657,6 +1699,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Dispatch randomized benchmarking based on target type."""
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1717,6 +1760,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Dispatch interleaved randomized benchmarking."""
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1783,6 +1827,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Dispatch purity benchmarking based on target type."""
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1843,6 +1888,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
+        """Dispatch interleaved purity benchmarking."""
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1903,6 +1949,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> None:
+        """Run standard 1Q benchmarking suite."""
         if targets is None:
             targets = self.ctx.qubit_labels
         elif isinstance(targets, str):
@@ -1975,6 +2022,7 @@ class BenchmarkingService:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> None:
+        """Run standard 2Q benchmarking suite."""
         if targets is None:
             targets = self.ctx.cr_labels
         elif isinstance(targets, str):

@@ -1,3 +1,5 @@
+"""Tests for the Blank pulse."""
+
 import numpy as np
 import pytest
 

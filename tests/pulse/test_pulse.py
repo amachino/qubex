@@ -1,3 +1,5 @@
+"""Tests for the Pulse base class."""
+
 import numpy as np
 import pytest
 

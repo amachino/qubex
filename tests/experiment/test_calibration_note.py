@@ -1,3 +1,5 @@
+"""Tests for calibration note helpers."""
+
 import time
 from datetime import datetime, timedelta
 

@@ -1,3 +1,5 @@
+"""Default values for measurement configuration."""
+
 from __future__ import annotations
 
 from typing import Final

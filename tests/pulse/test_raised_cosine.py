@@ -1,3 +1,5 @@
+"""Tests for the RaisedCosine pulse."""
+
 import numpy as np
 import pytest
 

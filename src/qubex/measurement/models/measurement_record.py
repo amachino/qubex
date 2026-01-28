@@ -1,3 +1,5 @@
+"""Persistence helpers for measurement records."""
+
 from __future__ import annotations
 
 import datetime

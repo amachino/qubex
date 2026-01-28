@@ -1,3 +1,5 @@
+"""Measurement result models and helpers."""
+
 from __future__ import annotations
 
 import gzip
@@ -26,11 +28,14 @@ SAMPLING_PERIOD_AVG = SAMPLING_PERIOD * 4
 
 
 class MeasureMode(Enum):
+    """Measurement mode for result processing."""
+
     SINGLE = "single"
     AVG = "avg"
 
     @cached_property
     def integral_mode(self) -> str:
+        """Return the backend integration mode name."""
         if self == MeasureMode.SINGLE:
             return "single"
         elif self == MeasureMode.AVG:
@@ -41,6 +46,8 @@ class MeasureMode(Enum):
 
 @dataclass(frozen=True)
 class MeasureData:
+    """Per-target measurement data and classifier metadata."""
+
     target: str
     mode: MeasureMode
     raw: NDArray
@@ -48,6 +55,7 @@ class MeasureData:
 
     @cached_property
     def n_states(self) -> int:
+        """Return the number of classifier states."""
         if self.classifier is None:
             raise ValueError("Classifier is not set")
         else:
@@ -57,6 +65,7 @@ class MeasureData:
     def kerneled(
         self,
     ) -> NDArray:
+        """Return kernel-integrated IQ samples."""
         if self.mode == MeasureMode.SINGLE:
             return np.sum(self.raw, axis=1)
         elif self.mode == MeasureMode.AVG:
@@ -66,6 +75,7 @@ class MeasureData:
 
     @cached_property
     def classified(self) -> NDArray:
+        """Return hard-classified labels for each shot."""
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 return self.classifier.predict(self.kerneled)
@@ -76,10 +86,12 @@ class MeasureData:
 
     @cached_property
     def length(self) -> int:
+        """Return the number of raw samples."""
         return len(self.raw)
 
     @cached_property
     def times(self) -> NDArray[np.float64]:
+        """Return capture times for the measurement mode."""
         if self.mode == MeasureMode.SINGLE:
             return np.arange(self.length) * SAMPLING_PERIOD_SINGLE
         elif self.mode == MeasureMode.AVG:
@@ -89,6 +101,7 @@ class MeasureData:
 
     @cached_property
     def counts(self) -> dict[str, int]:
+        """Return per-state counts for classified data."""
         if len(self.classified) == 0:
             raise ValueError("No classification data available")
         classified_labels = self.classified
@@ -98,6 +111,7 @@ class MeasureData:
 
     @cached_property
     def probabilities(self) -> NDArray[np.float64]:
+        """Return per-state probabilities for classified data."""
         if len(self.classified) == 0:
             raise ValueError("No classification data available")
         total = sum(self.counts.values())
@@ -105,6 +119,7 @@ class MeasureData:
 
     @cached_property
     def standard_deviations(self) -> NDArray[np.float64]:
+        """Return binomial standard deviations for probabilities."""
         if len(self.classified) == 0:
             raise ValueError("No classification data available")
         return np.sqrt(
@@ -113,6 +128,7 @@ class MeasureData:
 
     @cached_property
     def confusion_matrix(self) -> NDArray:
+        """Return the normalized confusion matrix."""
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 cm = self.classifier.confusion_matrix
@@ -125,6 +141,7 @@ class MeasureData:
 
     @cached_property
     def inverse_confusion_matrix(self) -> NDArray:
+        """Return the inverse confusion matrix."""
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 cm = self.confusion_matrix
@@ -138,6 +155,7 @@ class MeasureData:
 
     @cached_property
     def mitigated_counts(self) -> dict[str, int]:
+        """Return error-mitigated counts using the inverse confusion matrix."""
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 cm_inv = self.inverse_confusion_matrix
@@ -151,6 +169,7 @@ class MeasureData:
 
     @cached_property
     def mitigated_probabilities(self) -> NDArray:
+        """Return error-mitigated probabilities."""
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 cm_inv = self.inverse_confusion_matrix
@@ -166,6 +185,7 @@ class MeasureData:
     def get_soft_classified_data(
         self,
     ) -> NDArray:
+        """Return soft classification probabilities for each shot."""
         if self.mode == MeasureMode.SINGLE:
             if self.classifier is not None:
                 return self.classifier.predict_proba(self.kerneled)
@@ -178,6 +198,19 @@ class MeasureData:
         self,
         threshold: float | None = None,
     ) -> NDArray:
+        """
+        Return classified labels with an optional confidence threshold.
+
+        Parameters
+        ----------
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        NDArray
+            Classified labels with dropped shots marked as -1.
+        """
         if threshold is None:
             return self.classified
         else:
@@ -195,6 +228,18 @@ class MeasureData:
         return_figure: bool = False,
         save_image: bool = False,
     ) -> Any:
+        """
+        Plot the measurement data.
+
+        Parameters
+        ----------
+        title : str | None, optional
+            Plot title override.
+        return_figure : bool, optional
+            Whether to return the figure object.
+        save_image : bool, optional
+            Whether to save the figure image.
+        """
         if self.mode == MeasureMode.SINGLE:
             return viz.scatter_iq_data(
                 data={self.target: np.asarray(self.kerneled)},
@@ -221,6 +266,18 @@ class MeasureData:
         return_figure: bool = False,
         save_image: bool = False,
     ) -> Any:
+        """
+        Plot the FFT of the measurement signal.
+
+        Parameters
+        ----------
+        title : str | None, optional
+            Plot title override.
+        return_figure : bool, optional
+            Whether to return the figure object.
+        save_image : bool, optional
+            Whether to save the figure image.
+        """
         return viz.plot_fft(
             x=self.times * 1e-3,
             y=self.raw,
@@ -234,38 +291,59 @@ class MeasureData:
 
 @dataclass(frozen=True)
 class MeasureResult:
+    """Aggregate measurement result for multiple targets."""
+
     mode: MeasureMode
     data: dict[str, MeasureData]
     config: dict
 
     def __repr__(self) -> str:
+        """Return a concise representation of the measure result."""
         data_repr = "{" + ", ".join(f"{k}:..." for k in self.data) + "}"
         return f"<MeasureResult mode={self.mode.value}, data={data_repr}>"
 
     @cached_property
     def counts(self) -> dict[str, int]:
+        """Return cached counts for classified data."""
         return self.get_counts()
 
     @cached_property
     def probabilities(self) -> dict[str, float]:
+        """Return cached probabilities for classified data."""
         return self.get_probabilities()
 
     @cached_property
     def standard_deviations(self) -> dict[str, float]:
+        """Return cached standard deviations for probabilities."""
         return self.get_standard_deviations()
 
     @cached_property
     def mitigated_counts(self) -> dict[str, int]:
+        """Return cached error-mitigated counts."""
         return self.get_mitigated_counts()
 
     @cached_property
     def mitigated_probabilities(self) -> dict[str, float]:
+        """Return cached error-mitigated probabilities."""
         return self.get_mitigated_probabilities()
 
     def get_basis_indices(
         self,
         targets: Collection[str] | None = None,
     ) -> list[tuple[int, ...]]:
+        """
+        Return basis indices for selected targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+
+        Returns
+        -------
+        list[tuple[int, ...]]
+            Basis index tuples.
+        """
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         if targets is None:
@@ -277,6 +355,19 @@ class MeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> list[str]:
+        """
+        Return basis labels for selected targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+
+        Returns
+        -------
+        list[str]
+            Basis labels as bitstrings.
+        """
         basis_indices = self.get_basis_indices(targets)
         return ["".join(str(i) for i in basis) for basis in basis_indices]
 
@@ -286,6 +377,21 @@ class MeasureResult:
         *,
         threshold: float | None = None,
     ) -> NDArray:
+        """
+        Return classified labels for selected targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        NDArray
+            Classified labels stacked by target.
+        """
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         if targets is None:
@@ -317,6 +423,21 @@ class MeasureResult:
         *,
         threshold: float | None = None,
     ) -> Counter:
+        """
+        Return counts of classified bitstrings.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        Counter
+            Counts per bitstring.
+        """
         classified_labels = self.get_memory(targets, threshold=threshold)
         return Counter(classified_labels)
 
@@ -326,6 +447,21 @@ class MeasureResult:
         *,
         threshold: float | None = None,
     ) -> dict[str, float]:
+        """
+        Return probabilities of classified bitstrings.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        dict[str, float]
+            Probabilities per bitstring.
+        """
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         counts = self.get_counts(targets, threshold=threshold)
@@ -340,6 +476,21 @@ class MeasureResult:
         *,
         threshold: float | None = None,
     ) -> dict[str, float]:
+        """
+        Return binomial standard deviations for probabilities.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        dict[str, float]
+            Standard deviations per bitstring.
+        """
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         counts = self.get_counts(targets, threshold=threshold)
@@ -355,6 +506,7 @@ class MeasureResult:
         }
 
     def get_classifier(self, target: str) -> StateClassifier:
+        """Return the classifier for a target label."""
         if target not in self.data:
             raise ValueError(f"Target {target} not found in data")
         classifier = self.data[target].classifier
@@ -366,6 +518,7 @@ class MeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> NDArray:
+        """Return the Kronecker-product confusion matrix."""
         if targets is None:
             targets = self.data.keys()
         confusion_matrices = [self.data[target].confusion_matrix for target in targets]
@@ -375,6 +528,7 @@ class MeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> NDArray:
+        """Return the inverse confusion matrix."""
         if targets is None:
             targets = self.data.keys()
         confusion_matrix = self.get_confusion_matrix(targets)
@@ -384,6 +538,19 @@ class MeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> dict[str, int]:
+        """
+        Return error-mitigated counts using inverse confusion matrix.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+
+        Returns
+        -------
+        dict[str, int]
+            Error-mitigated counts.
+        """
         if targets is None:
             targets = self.data.keys()
         raw_counter = self.get_counts(targets)
@@ -401,6 +568,19 @@ class MeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> dict[str, float]:
+        """
+        Return error-mitigated probabilities.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+
+        Returns
+        -------
+        dict[str, float]
+            Error-mitigated probabilities.
+        """
         if targets is None:
             targets = self.data.keys()
         basis_labels = self.get_basis_labels(targets)
@@ -419,6 +599,16 @@ class MeasureResult:
         return_figure: bool = False,
         save_image: bool = False,
     ) -> Any:
+        """
+        Plot measurement data for all targets.
+
+        Parameters
+        ----------
+        return_figure : bool, optional
+            Whether to return the figure object(s).
+        save_image : bool, optional
+            Whether to save the figure image(s).
+        """
         if self.mode == MeasureMode.SINGLE:
             data = {
                 qubit: np.asarray(data.kerneled) for qubit, data in self.data.items()
@@ -446,6 +636,16 @@ class MeasureResult:
         return_figure: bool = False,
         save_image: bool = False,
     ) -> Any:
+        """
+        Plot FFT for each target.
+
+        Parameters
+        ----------
+        return_figure : bool, optional
+            Whether to return the figure object(s).
+        save_image : bool, optional
+            Whether to save the figure image(s).
+        """
         figures = []
         for data in self.data.values():
             fig = data.plot_fft(
@@ -460,6 +660,7 @@ class MeasureResult:
         self,
         data_dir: Path | str | None = None,
     ) -> MeasurementRecord[MeasureResult]:
+        """Persist the measure result to a record directory."""
         return MeasurementRecord.create(data=self, data_dir=data_dir)
 
     # ------------------------------------------------------------------
@@ -700,11 +901,14 @@ class MeasureResult:
 
 @dataclass(frozen=True)
 class MultipleMeasureResult:
+    """Aggregate measurement results across repeated measurements."""
+
     mode: MeasureMode
     data: dict[str, list[MeasureData]]
     config: dict
 
     def __repr__(self) -> str:
+        """Return a concise representation of the multiple results."""
         qubits = ", ".join(self.data.keys())
         return f"<MultipleMeasureResult mode={self.mode.value}, qubits=[{qubits}]>"
 
@@ -712,6 +916,19 @@ class MultipleMeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> list[tuple[int, ...]]:
+        """
+        Return basis indices for selected targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+
+        Returns
+        -------
+        list[tuple[int, ...]]
+            Basis index tuples.
+        """
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         if targets is None:
@@ -723,6 +940,19 @@ class MultipleMeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> list[str]:
+        """
+        Return basis labels for selected targets.
+
+        Parameters
+        ----------
+        targets : Collection[str] | None, optional
+            Target labels to include.
+
+        Returns
+        -------
+        list[str]
+            Basis labels as bitstrings.
+        """
         basis_indices = self.get_basis_indices(targets)
         return ["".join(str(i) for i in basis) for basis in basis_indices]
 
@@ -732,6 +962,21 @@ class MultipleMeasureResult:
         *,
         threshold: float | None = None,
     ) -> NDArray:
+        """
+        Return classified labels for selected targets.
+
+        Parameters
+        ----------
+        targets : Collection[str | tuple[str, int]] | None, optional
+            Target labels or (label, index) tuples to include.
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        NDArray
+            Classified labels stacked by target.
+        """
         if len(self.data) == 0:
             raise ValueError("No classification data available")
 
@@ -760,6 +1005,21 @@ class MultipleMeasureResult:
         *,
         threshold: float | None = None,
     ) -> Counter:
+        """
+        Return counts of classified bitstrings.
+
+        Parameters
+        ----------
+        targets : Collection[str | tuple[str, int]] | None, optional
+            Target labels or (label, index) tuples to include.
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        Counter
+            Counts per bitstring.
+        """
         classified_data = self.get_classified_data(targets, threshold=threshold)
         classified_labels = np.array(
             ["".join(map(str, row)) for row in classified_data]
@@ -772,6 +1032,21 @@ class MultipleMeasureResult:
         *,
         threshold: float | None = None,
     ) -> dict[str, float]:
+        """
+        Return probabilities of classified bitstrings.
+
+        Parameters
+        ----------
+        targets : Collection[str | tuple[str, int]] | None, optional
+            Target labels or (label, index) tuples to include.
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        dict[str, float]
+            Probabilities per bitstring.
+        """
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         counts = self.get_counts(targets, threshold=threshold)
@@ -786,6 +1061,21 @@ class MultipleMeasureResult:
         *,
         threshold: float | None = None,
     ) -> dict[str, float]:
+        """
+        Return binomial standard deviations for probabilities.
+
+        Parameters
+        ----------
+        targets : Collection[str | tuple[str, int]] | None, optional
+            Target labels or (label, index) tuples to include.
+        threshold : float | None, optional
+            Minimum max probability required to keep a label.
+
+        Returns
+        -------
+        dict[str, float]
+            Standard deviations per bitstring.
+        """
         if len(self.data) == 0:
             raise ValueError("No classification data available")
         counts = self.get_counts(targets, threshold=threshold)
@@ -801,6 +1091,7 @@ class MultipleMeasureResult:
         }
 
     def get_classifier(self, target: str) -> StateClassifier:
+        """Return the classifier for a target label."""
         if target not in self.data:
             raise ValueError(f"Target {target} not found in data")
         classifier = self.data[target][0].classifier
@@ -812,6 +1103,7 @@ class MultipleMeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> NDArray:
+        """Return the Kronecker-product confusion matrix."""
         if targets is None:
             targets = self.data.keys()
         confusion_matrices = [
@@ -823,6 +1115,7 @@ class MultipleMeasureResult:
         self,
         targets: Collection[str] | None = None,
     ) -> NDArray:
+        """Return the inverse confusion matrix."""
         if targets is None:
             targets = self.data.keys()
         confusion_matrix = self.get_confusion_matrix(targets)
@@ -832,6 +1125,19 @@ class MultipleMeasureResult:
         self,
         targets: Collection[str | tuple[str, int]] | None = None,
     ) -> dict[str, int]:
+        """
+        Return error-mitigated counts using inverse confusion matrix.
+
+        Parameters
+        ----------
+        targets : Collection[str | tuple[str, int]] | None, optional
+            Target labels or (label, index) tuples to include.
+
+        Returns
+        -------
+        dict[str, int]
+            Error-mitigated counts.
+        """
         if targets is None:
             labels = list(self.data.keys())
         else:
@@ -860,6 +1166,19 @@ class MultipleMeasureResult:
         self,
         targets: Collection[str | tuple[str, int]] | None = None,
     ) -> dict[str, float]:
+        """
+        Return error-mitigated probabilities.
+
+        Parameters
+        ----------
+        targets : Collection[str | tuple[str, int]] | None, optional
+            Target labels or (label, index) tuples to include.
+
+        Returns
+        -------
+        dict[str, float]
+            Error-mitigated probabilities.
+        """
         if targets is None:
             labels = list(self.data.keys())
         else:
@@ -888,6 +1207,16 @@ class MultipleMeasureResult:
         return_figure: bool = False,
         save_image: bool = False,
     ) -> Any:
+        """
+        Plot measurement data for each capture.
+
+        Parameters
+        ----------
+        return_figure : bool, optional
+            Whether to return the figure object(s).
+        save_image : bool, optional
+            Whether to save the figure image(s).
+        """
         for qubit, data_list in self.data.items():
             figures = []
             for capture_index, data in enumerate(data_list):
@@ -906,6 +1235,16 @@ class MultipleMeasureResult:
         return_figure: bool = False,
         save_image: bool = False,
     ) -> Any:
+        """
+        Plot FFT for each capture.
+
+        Parameters
+        ----------
+        return_figure : bool, optional
+            Whether to return the figure object(s).
+        save_image : bool, optional
+            Whether to save the figure image(s).
+        """
         for qubit, data_list in self.data.items():
             figures = []
             for capture_index, data in enumerate(data_list):
@@ -923,6 +1262,7 @@ class MultipleMeasureResult:
         self,
         data_dir: Path | str | None = None,
     ) -> MeasurementRecord[MultipleMeasureResult]:
+        """Persist the multiple measure result to a record directory."""
         return MeasurementRecord.create(data=self, data_dir=data_dir)
 
     # ------------------------------------------------------------------
@@ -944,8 +1284,8 @@ class MultipleMeasureResult:
         """
         Save classified data selecting one capture per target.
 
-        This is analogous to :meth:`MeasureResult.save_classified` but
-        allows specifying which capture index to export for each target.
+        This is analogous to MeasureResult.save_classified but allows
+        specifying which capture index to export for each target.
         If ``capture_indices`` is None, index 0 is used for all targets.
         """
         if format not in {"json", "csv", "npz"}:

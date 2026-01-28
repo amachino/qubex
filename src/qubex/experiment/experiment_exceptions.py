@@ -1,3 +1,5 @@
+"""Custom exceptions for experiment workflows."""
+
 from __future__ import annotations
 
 

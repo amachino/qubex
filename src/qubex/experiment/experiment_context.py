@@ -1,3 +1,5 @@
+"""Experiment context setup and device access helpers."""
+
 from __future__ import annotations
 
 import json
@@ -312,58 +314,72 @@ class ExperimentContext:
 
     @property
     def tool(self) -> Any:
+        """Return the experiment tool module."""
         return experiment_tool
 
     @property
     def util(self) -> Any:
+        """Return the experiment utility class."""
         return ExperimentUtil
 
     @property
     def measurement(self) -> Measurement:
+        """Return the measurement instance."""
         return self._measurement
 
     @property
     def system_manager(self) -> SystemManager:
+        """Return the shared system manager."""
         return SystemManager.shared()
 
     @property
     def config_loader(self) -> ConfigLoader:
+        """Return the configuration loader."""
         return self.system_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
+        """Return the experiment system."""
         return self.system_manager.experiment_system
 
     @property
     def quantum_system(self) -> QuantumSystem:
+        """Return the quantum system."""
         return self.experiment_system.quantum_system
 
     @property
     def control_system(self) -> ControlSystem:
+        """Return the control system."""
         return self.experiment_system.control_system
 
     @property
     def device_controller(self) -> DeviceController:
+        """Return the device controller."""
         return self.system_manager.device_controller
 
     @property
     def params(self) -> ControlParams:
+        """Return the control parameters."""
         return self.experiment_system.control_params
 
     @property
     def chip(self) -> Chip:
+        """Return the chip model."""
         return self.experiment_system.chip
 
     @property
     def chip_id(self) -> str:
+        """Return the chip identifier."""
         return self._chip_id
 
     @property
     def qubit_labels(self) -> list[str]:
+        """Return the list of active qubit labels."""
         return self._qubits
 
     @property
     def mux_labels(self) -> list[str]:
+        """Return the list of mux labels for the active qubits."""
         mux_set = set()
         for qubit in self.qubit_labels:
             mux = self.experiment_system.get_mux_by_qubit(qubit)
@@ -372,6 +388,7 @@ class ExperimentContext:
 
     @property
     def qubits(self) -> dict[str, Qubit]:
+        """Return qubit objects keyed by label."""
         return {
             qubit.label: qubit
             for qubit in self.experiment_system.qubits
@@ -380,6 +397,7 @@ class ExperimentContext:
 
     @property
     def resonators(self) -> dict[str, Resonator]:
+        """Return resonator objects keyed by qubit label."""
         return {
             resonator.qubit: resonator
             for resonator in self.experiment_system.resonators
@@ -388,6 +406,7 @@ class ExperimentContext:
 
     @property
     def targets(self) -> dict[str, Target]:
+        """Return all targets related to active qubits."""
         return {
             target.label: target
             for target in self.experiment_system.targets
@@ -396,6 +415,7 @@ class ExperimentContext:
 
     @property
     def available_targets(self) -> dict[str, Target]:
+        """Return available targets keyed by label."""
         return {
             label: target
             for label, target in self.targets.items()
@@ -404,6 +424,7 @@ class ExperimentContext:
 
     @property
     def ge_targets(self) -> dict[str, Target]:
+        """Return available GE targets."""
         return {
             label: target
             for label, target in self.available_targets.items()
@@ -412,6 +433,7 @@ class ExperimentContext:
 
     @property
     def ef_targets(self) -> dict[str, Target]:
+        """Return available EF targets."""
         return {
             label: target
             for label, target in self.available_targets.items()
@@ -420,6 +442,7 @@ class ExperimentContext:
 
     @property
     def cr_targets(self) -> dict[str, Target]:
+        """Return available CR targets."""
         return {
             label: target
             for label, target in self.available_targets.items()
@@ -428,87 +451,108 @@ class ExperimentContext:
 
     @property
     def cr_labels(self) -> list[str]:
+        """Return CR labels for the current chip."""
         return self.get_cr_labels()
 
     @property
     def cr_pairs(self) -> list[tuple[str, str]]:
+        """Return CR qubit pairs."""
         return self.get_cr_pairs()
 
     @property
     def edge_pairs(self) -> list[tuple[str, str]]:
+        """Return edge pairs in the chip graph."""
         return self.get_edge_pairs()
 
     @property
     def edge_labels(self) -> list[str]:
+        """Return edge labels in the chip graph."""
         return self.get_edge_labels()
 
     @property
     def boxes(self) -> dict[str, Box]:
+        """Return control/readout boxes keyed by ID."""
         boxes = self.experiment_system.get_boxes_for_qubits(self.qubit_labels)
         return {box.id: box for box in boxes}
 
     @property
     def box_ids(self) -> list[str]:
+        """Return the list of box IDs."""
         return list(self.boxes.keys())
 
     @property
     def config_path(self) -> str:
+        """Return the resolved configuration path."""
         return str(Path(self.config_loader.config_path).resolve())
 
     @property
     def params_path(self) -> str:
+        """Return the resolved parameters path."""
         return str(Path(self.config_loader.params_path).resolve())
 
     @property
     def calib_note(self) -> CalibrationNote:
+        """Return the calibration note instance."""
         return self._calib_note
 
     @property
     def note(self) -> ExperimentNote:
+        """Return the user experiment note instance."""
         return self._user_note
 
     @property
     def calibration_valid_days(self) -> int:
+        """Return calibration validity period in days."""
         return self._calibration_valid_days
 
     @property
     def readout_duration(self) -> float:
+        """Return the readout duration."""
         return self._readout_duration
 
     @property
     def readout_pre_margin(self) -> float:
+        """Return the readout pre margin."""
         return self._readout_pre_margin
 
     @property
     def readout_post_margin(self) -> float:
+        """Return the readout post margin."""
         return self._readout_post_margin
 
     @property
     def drag_hpi_duration(self) -> float:
+        """Return the DRAG half-pi duration."""
         return self._drag_hpi_duration
 
     @property
     def drag_pi_duration(self) -> float:
+        """Return the DRAG pi duration."""
         return self._drag_pi_duration
 
     @property
     def property_dir(self) -> Path:
+        """Return the property directory path."""
         return Path(self._property_dir)
 
     @property
     def classifier_dir(self) -> Path:
+        """Return the classifier directory path."""
         return Path(self._classifier_dir)
 
     @property
     def classifier_type(self) -> Literal["kmeans", "gmm"]:
+        """Return the classifier type."""
         return self._classifier_type
 
     @property
     def classifiers(self) -> TargetMap[StateClassifier]:
+        """Return the active state classifiers."""
         return self._measurement.classifiers
 
     @property
     def state_centers(self) -> dict[str, dict[int, complex]]:
+        """Return state centers from calibration notes."""
         result = {}
         for target in self.qubit_labels:
             param = self.calib_note.get_state_param(
@@ -524,10 +568,12 @@ class ExperimentContext:
 
     @property
     def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
+        """Return the configuration mode."""
         return self._configuration_mode
 
     @property
     def reference_phases(self) -> dict[str, float]:
+        """Return reference phases by target."""
         return self.calib_note.reference_phases
 
     def load_property(self, property_name: str) -> dict:

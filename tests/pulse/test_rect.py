@@ -1,3 +1,5 @@
+"""Tests for the Rect pulse."""
+
 import numpy as np
 import pytest
 
