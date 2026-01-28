@@ -801,8 +801,8 @@ class ExperimentContext:
         try:
             self._measurement.connect(sync_clocks=sync_clocks)
             logger.info("Successfully connected.")
-        except Exception as e:
-            logger.error(f"Failed to connect to the devices: {e}")
+        except Exception:
+            logger.exception("Failed to connect to the devices.")
             raise
 
     def linkup(
@@ -849,8 +849,8 @@ class ExperimentContext:
         try:
             self._measurement.reload(configuration_mode=self.configuration_mode)
             logger.info("Successfully reloaded.")
-        except Exception as e:
-            logger.error(f"Failed to reload the devices: {e}")
+        except Exception:
+            logger.exception("Failed to reload the devices.")
             raise
 
     def reset_awg_and_capunits(

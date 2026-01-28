@@ -68,7 +68,7 @@ class Target(Model):
         elif isinstance(self.object, Mux):
             return ""
         else:
-            raise ValueError("Invalid quantum object.")
+            raise TypeError("Invalid quantum object.")
 
     @property
     def sideband(self) -> Literal["U", "L"] | None:
@@ -79,14 +79,14 @@ class Target(Model):
         if isinstance(self.channel, GenChannel):
             return self.channel.coarse_frequency * 1e-9
         else:
-            raise ValueError("Invalid channel.")
+            raise TypeError("Invalid channel.")
 
     @property
     def fine_frequency(self) -> float:
         if isinstance(self.channel, GenChannel):
             return self.channel.fine_frequency * 1e-9
         else:
-            raise ValueError("Invalid channel.")
+            raise TypeError("Invalid channel.")
 
     @property
     def awg_frequency(self) -> float:
@@ -96,7 +96,7 @@ class Target(Model):
             else:
                 return self.frequency - self.fine_frequency
         else:
-            raise ValueError("Invalid channel.")
+            raise TypeError("Invalid channel.")
 
     @property
     def is_available(self) -> bool:
@@ -133,7 +133,7 @@ class Target(Model):
                 for qubit in [resonator.qubit for resonator in self.object.resonators]
             )
         else:
-            raise ValueError("Invalid quantum object.")
+            raise TypeError("Invalid quantum object.")
 
     @classmethod
     def new_target(

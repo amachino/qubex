@@ -282,8 +282,8 @@ class SystemManager:
                 self.device_controller.qubecalib.sysdb.load_skew_yaml(
                     str(skew_file_path)
                 )
-            except Exception as e:
-                logger.error(f"Failed to load the skew file: {e}")
+            except Exception:
+                logger.exception("Failed to load the skew file.")
 
     def pull(
         self,
@@ -358,8 +358,8 @@ This operation will overwrite the existing device settings. Do you want to conti
                                     channel=gen_channel.number,
                                     fnco_freq=gen_channel.fnco_freq,
                                 )
-                        except Exception as e:
-                            logger.error(f"{e} {port.id}")
+                        except Exception:
+                            logger.exception("Failed to configure %s", port.id)
                 elif isinstance(port, CapPort):
                     if port.type in (PortType.READ_IN,):
                         try:
@@ -377,8 +377,8 @@ This operation will overwrite the existing device settings. Do you want to conti
                                     runit=cap_channel.number,
                                     fnco_freq=cap_channel.fnco_freq,
                                 )
-                        except Exception as e:
-                            logger.error(f"{e} {port.id}")
+                        except Exception:
+                            logger.exception("Failed to configure %s", port.id)
 
         self._device_settings = self._fetch_device_settings(box_ids=box_ids)
         self.update_cache()
@@ -507,8 +507,12 @@ This operation will overwrite the existing device settings. Do you want to conti
                         result[box.id]["ports"][port.number] = box_config["ports"][
                             port.number
                         ]
-                    except Exception as e:
-                        logger.error(e)
+                    except Exception:
+                        logger.exception(
+                            "Failed to fetch port %s for box %s",
+                            port.number,
+                            box.id,
+                        )
         return result
 
     def _update_device_controller(

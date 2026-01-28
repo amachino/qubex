@@ -25,11 +25,11 @@ class SequencerMod(Sequencer):
                 if isinstance(m["box"], BoxSetting):
                     box_name = m["box"].box_name
                 else:
-                    raise ValueError("box_name is not defined")
+                    raise TypeError("box_name is not defined")
                 if isinstance(m["port"], PortSetting):
                     port = m["port"].port
                 else:
-                    raise ValueError("port is not defined")
+                    raise TypeError("port is not defined")
                 if (
                     port in boxpool.get_box(box_name)[0].get_input_ports()
                     and target_name in self.cap_sampled_sequence
@@ -59,11 +59,11 @@ class SequencerMod(Sequencer):
                 if isinstance(m["box"], BoxSetting):
                     box_name = m["box"].box_name
                 else:
-                    raise ValueError("box_name is not defined")
+                    raise TypeError("box_name is not defined")
                 if isinstance(m["port"], PortSetting):
                     port = m["port"].port
                 else:
-                    raise ValueError("port is not defined")
+                    raise TypeError("port is not defined")
                 if (
                     port in boxpool.get_box(box_name)[0].get_output_ports()
                     and target_name in self.gen_sampled_sequence

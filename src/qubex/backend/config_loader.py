@@ -206,12 +206,12 @@ class ConfigLoader:
         try:
             with open(path) as file:
                 result = yaml.safe_load(file)
-        except FileNotFoundError as e:
-            logger.error(f"Configuration file not found: {path}\n\n{e}")
-            raise e
-        except yaml.YAMLError as e:
-            logger.error(f"Error loading configuration file: {path}\n\n{e}")
-            raise e
+        except FileNotFoundError:
+            logger.exception(f"Configuration file not found: {path}")
+            raise
+        except yaml.YAMLError:
+            logger.exception(f"Error loading configuration file: {path}")
+            raise
         return result
 
     def _load_legacy_params_file(self, file_name: str) -> dict:
@@ -225,9 +225,9 @@ class ConfigLoader:
             # the monolithic files. Return an empty mapping (no warning).
             logger.debug("Legacy parameter file not found; treating as empty: %s", path)
             return {}
-        except yaml.YAMLError as e:
-            logger.error(f"Error loading parameter file: {path}\n\n{e}")
-            raise e
+        except yaml.YAMLError:
+            logger.exception(f"Error loading parameter file: {path}")
+            raise
         return result
 
     def _load_structured_params_yaml(self, path: Path) -> dict[str, dict]:
@@ -250,9 +250,9 @@ class ConfigLoader:
                 payload = yaml.safe_load(f)
         except FileNotFoundError:
             raise
-        except yaml.YAMLError as e:
-            logger.error(f"Error loading parameter file: {path}\n\n{e}")
-            raise e
+        except yaml.YAMLError:
+            logger.exception(f"Error loading parameter file: {path}")
+            raise
 
         if payload is None:
             return {"data": {}, "meta": {}}

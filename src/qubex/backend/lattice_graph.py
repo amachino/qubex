@@ -389,7 +389,7 @@ class LatticeGraph:
         elif isinstance(target, tuple):
             value = self.qubit_edges[target]["properties"].get(property_type)
         else:
-            raise ValueError("Invalid target type.")
+            raise TypeError("Invalid target type.")
 
         return value
 

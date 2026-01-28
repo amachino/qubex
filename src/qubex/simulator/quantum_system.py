@@ -328,7 +328,7 @@ class QuantumSystem:
         superoperator: qt.Qobj,
     ) -> qt.Qobj:
         if not isinstance(superoperator, qt.Qobj):
-            raise ValueError("Input must be a Qobj.")
+            raise TypeError("Input must be a Qobj.")
 
         choi = qt.to_choi(superoperator)
         n_objects = len(self.objects)
@@ -394,7 +394,7 @@ class QuantumSystem:
                     object_states.append(self.create_state(obj.dimension, default))
             return qt.tensor(*object_states)
         else:
-            raise ValueError("Invalid state input.")
+            raise TypeError("Invalid state input.")
 
     def substate(self, label: str, alias: int | str) -> qt.Qobj:
         obj = self.get_object(label)

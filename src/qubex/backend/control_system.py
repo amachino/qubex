@@ -833,4 +833,4 @@ class ControlSystem:
                 for cap_channel in port.channels:
                     cap_channel.ndelay = ndelay
         else:
-            raise ValueError(f"Invalid port type: {type(port)}")
+            raise TypeError(f"Invalid port type: {type(port)}")

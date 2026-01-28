@@ -72,7 +72,7 @@ class Inspection(ABC):
                 label_1 = self.graph.qubit_nodes[target[1]]["label"]
                 return f"{label_0}-{label_1}"
         else:
-            raise ValueError("Invalid target type.")
+            raise TypeError("Invalid target type.")
 
     def get_property(
         self,

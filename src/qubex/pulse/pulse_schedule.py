@@ -80,9 +80,9 @@ class PulseSchedule:
                     elif isinstance(channel, PulseChannel):
                         self._channels[channel.label] = deepcopy(channel)
                     else:
-                        raise ValueError("Invalid channels.")
+                        raise TypeError("Invalid channels.")
             else:
-                raise ValueError("Invalid channels.")
+                raise TypeError("Invalid channels.")
 
         self._offsets = defaultdict(lambda: 0.0)
         self._global_offset = 0.0

@@ -155,8 +155,8 @@ class ExperimentNote:
                 json.dump(sanitized, file, indent=4)
 
             logger.info(f"ExperimentNote saved to '{target_path}'.")
-        except Exception as e:
-            logger.error(f"Failed to save ExperimentNote: {e}")
+        except Exception:
+            logger.exception("Failed to save ExperimentNote.")
 
     def load(self, file_path: Path | str | None = None) -> None:
         """
@@ -180,8 +180,8 @@ class ExperimentNote:
             logger.warning(
                 f"Error decoding JSON from '{file_path}'. Starting with an empty ExperimentNote."
             )
-        except Exception as e:
-            logger.error(f"Failed to load ExperimentNote: {e}")
+        except Exception:
+            logger.exception("Failed to load ExperimentNote.")
 
     def delete(self, file_path: Path | str | None = None) -> None:
         """
@@ -243,9 +243,10 @@ class ExperimentNote:
         """
         try:
             json.dumps(value)
-            return True
         except (TypeError, ValueError):
             return False
+        else:
+            return True
 
     def _update_dict_recursively(self, old_dict: dict, new_dict: dict):
         """

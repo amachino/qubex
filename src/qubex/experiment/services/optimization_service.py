@@ -330,14 +330,14 @@ class OptimizationService:
 
         for opt_param in opt_params:
             if opt_param not in defaults:
-                raise ValueError(f"Invalid optimization parameter: {opt_param}")
+                raise TypeError(f"Invalid optimization parameter: {opt_param}")
 
         if isinstance(opt_params, list):
             opt_params_dict = {p: defaults[p] for p in opt_params}
         elif isinstance(opt_params, dict):
             opt_params_dict = opt_params
         else:
-            raise ValueError("opt_params must be a list or dictionary.")
+            raise TypeError("opt_params must be a list or dictionary.")
         opt_params = list(opt_params_dict.keys())
         n_opt_params = len(opt_params)
 

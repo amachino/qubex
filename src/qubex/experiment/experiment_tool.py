@@ -7,7 +7,7 @@ import subprocess
 from collections import defaultdict
 from collections.abc import Collection
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NoReturn
 
 import yaml
 
@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 console = Console()
 system_manager = SystemManager.shared()
+
+
+def _raise_unknown_method(method: str) -> NoReturn:
+    raise ValueError(f"Unknown method: {method}")
 
 
 def check_skew(
@@ -409,7 +413,7 @@ def print_chip_info(
                     elif method == "min":
                         result[inv_key] = min(result[inv_key], value)
                     else:
-                        raise ValueError(f"Unknown method: {method}")
+                        _raise_unknown_method(method)
                 else:
                     result[key] = float(value)
             return result
@@ -561,8 +565,8 @@ def print_chip_info(
                     image_name="zx90_gate_fidelity",
                 )
 
-    except Exception as e:
-        logger.error("Error occurred while printing chip info", exc_info=e)
+    except Exception:
+        logger.exception("Error occurred while printing chip info")
 
 
 def print_wiring_info(qubits: Collection[str] | None = None) -> None:
@@ -862,8 +866,8 @@ def _configure_loopback(mux: str | int, *, enable: bool) -> None:
             boxes[box_id].config_rfswitches(confs)
         logger.info(f"Loopback {action} for MUX#{mux} {[q.label for q in qubits]}.")
         logger.info(dict(box_confs))
-    except Exception as e:
-        logger.error(f"Error {action} loopback: {e}")
+    except Exception:
+        logger.exception(f"Error {action} loopback")
 
 
 def enable_loopback(*, mux: str | int) -> None:

@@ -99,8 +99,8 @@ class ChipInspector:
             )
             try:
                 inspection.execute()
-            except Exception as e:
-                logger.error(f"Error in {inspection.name}: {e}")
+            except Exception:
+                logger.exception("Error in %s", inspection.name)
             inspections[type] = inspection
 
         return InspectionSummary(

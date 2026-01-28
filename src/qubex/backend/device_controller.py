@@ -446,8 +446,8 @@ class DeviceController:
             for box_name in box_list:
                 boxes[box_name] = self.linkup(box_name, noise_threshold=noise_threshold)
                 logger.info(f"{box_name:5} : Linked up")
-        except Exception as e:
-            logger.error(f"{box_name:5} : Error {e}")
+        except Exception:
+            logger.exception(f"{box_name:5} : Error during linkup")
         return boxes
 
     def relinkup(self, box_name: str, noise_threshold: int | None = None) -> None:
@@ -569,8 +569,8 @@ class DeviceController:
         try:
             box = self.get_box(box_name)
             box_config = box.dump_box()
-        except Exception as e:
-            logger.error(f"Failed to dump box {box_name}. Error: {e}")
+        except Exception:
+            logger.exception(f"Failed to dump box {box_name}.")
             box_config = {}
         return box_config
 
@@ -598,10 +598,8 @@ class DeviceController:
         try:
             box = self.get_box(box_name)
             port_config = box.dump_port(port_number)
-        except Exception as e:
-            logger.error(
-                f"Failed to dump port {port_number} of box {box_name}. Error: {e}"
-            )
+        except Exception:
+            logger.exception(f"Failed to dump port {port_number} of box {box_name}.")
             port_config = {}
         return port_config
 

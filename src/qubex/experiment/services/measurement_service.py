@@ -556,7 +556,7 @@ class MeasurementService:
                 ]
                 qubits = {Target.qubit_label(target) for target in initial_sequence}
         else:
-            raise ValueError("Invalid sequence.")
+            raise TypeError("Invalid sequence.")
 
         signals = defaultdict(list)
         plotter = IQPlotter(
@@ -731,7 +731,7 @@ class MeasurementService:
             elif isinstance(sequence, PulseSchedule):
                 ps = sequence.repeated(N)
             else:
-                raise ValueError("Invalid sequence.")
+                raise TypeError("Invalid sequence.")
             return ps
 
         result = self.sweep_parameter(
@@ -1972,7 +1972,7 @@ class MeasurementService:
                 elif isinstance(waveform, Sequence):
                     pulse = Pulse(waveform)
                 else:
-                    raise ValueError("Invalid waveform.")
+                    raise TypeError("Invalid waveform.")
                 pulses[target] = pulse
                 pulse_length_set.add(pulse.length)
             if len(pulse_length_set) != 1:

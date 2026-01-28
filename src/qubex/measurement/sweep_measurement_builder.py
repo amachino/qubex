@@ -247,7 +247,7 @@ class SweepMeasurementBuilder:
                 for channel in command.channel_list:
                     schedule.add(channel, obj)
             else:
-                raise ValueError(
+                raise TypeError(
                     f"Unsupported command object type for {name}: {type(obj)}"
                 )
 

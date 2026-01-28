@@ -18,9 +18,10 @@ def get_version() -> str:
             .decode("utf-8")
             .strip()
         )
-        return f"{VERSION}+{commit_hash}"
     except Exception:
         return VERSION
+    else:
+        return f"{VERSION}+{commit_hash}"
 
 
 def get_package_version(package_name: str) -> str:
@@ -39,6 +40,7 @@ def get_package_version(package_name: str) -> str:
     """
     try:
         version = importlib.metadata.version(package_name)
-        return version
     except importlib.metadata.PackageNotFoundError:
         return f"Package '{package_name}' is not installed."
+    else:
+        return version
