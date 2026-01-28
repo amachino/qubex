@@ -69,8 +69,10 @@ typeCheckingMode = "basic"
 
 [tool.ruff.lint]
 select = [
-    "ANN",  # flake8-annotations
-    "B",    # flake8-bugbear
+    "ANN", # flake8-annotations
+    # "S" # flake8-bandit
+    "B", # flake8-bugbear
+    # "BLE", # flake8-blind-except
     "C4",   # flake8-comprehensions
     "SIM",  # flake8-simplify
     "SLF",  # flake8-self
