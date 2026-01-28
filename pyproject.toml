@@ -69,6 +69,7 @@ typeCheckingMode = "basic"
 
 [tool.ruff.lint]
 select = [
+    "ANN",  # flake8-annotations
     "B",    # flake8-bugbear
     "C4",   # flake8-comprehensions
     "SIM",  # flake8-simplify
@@ -89,6 +90,13 @@ select = [
 ]
 
 ignore = [
+    # flake8-annotations
+    "ANN002", # missing-type-args
+    "ANN003", # missing-type-kwargs
+    "ANN202", # missing-return-type-private-function
+    "ANN204", # missing-return-type-special-method
+    "ANN401", # any-type
+
     # flake8-comprehensions
     "C408", # unnecessary-collection-call
 
@@ -101,11 +109,6 @@ ignore = [
     "E731", # lambda-assignment
     "E741", # ambiguous-variable-name
 
-    # ruff-specific (ambiguous unicode in strings/comments/docstrings)
-    "RUF001",
-    "RUF002",
-    "RUF003",
-
     # pydocstyle
     "D100", # undocumented-public-module
     "D101", # undocumented-public-class
@@ -115,12 +118,21 @@ ignore = [
     "D105", # undocumented-magic-method
     "D106", # undocumented-public-nested-class
     "D107", # undocumented-init
+
+    # Ruff-specific rules
+    "RUF001", # ambiguous-unicode-character-string
+    "RUF002", # ambiguous-unicode-character-docstring
+    "RUF003", # ambiguous-unicode-character-comment
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = [
+    "ANN",  # flake8-annotations
+    "F401", # unused-import
+]
+"tests/**/*.py" = [
+    "ANN", # flake8-annotations
 ]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
-
-[tool.ruff.lint.per-file-ignores]
-"*.ipynb" = [
-    "F401", # unused-import
-]
