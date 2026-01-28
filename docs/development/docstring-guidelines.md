@@ -2,6 +2,11 @@
 
 This project uses **NumPy-style docstrings** and Ruff `pydocstyle` checks. Keep docstrings short, precise, and consistent.
 
+## MkDocs-only (no Sphinx)
+
+- Assume MkDocs is the documentation toolchain.
+- Do **not** use Sphinx/reST directives or roles (e.g., `:class:`, `:func:`, ``.. note::``).
+
 ## Format (Ruff + NumPy)
 
 - Use triple double quotes.
