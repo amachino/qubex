@@ -13,6 +13,7 @@ This project uses **NumPy-style docstrings** and Ruff `pydocstyle` checks. Keep 
 - For multi-line docstrings, place the summary on the **second line** (Ruff `D213`).
 - End the summary with a period.
 - Leave one blank line after the summary.
+- For inline code, use single backticks (e.g., `PulseSchedule`). Do not use double-backtick reST literals.
 
 ### Example
 
