@@ -2,6 +2,6 @@
 set -euo pipefail
 
 echo "[postCreate] Syncing dependencies..."
-uv sync --dev --all-extras
+uv sync  --all-groups --all-extras
 
 echo "[postCreate] Done."
