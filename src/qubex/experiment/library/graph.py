@@ -212,23 +212,23 @@ def find_longest_1d_chain(
     """
     Find the longest simple path in a 1D chain graph, maximizing fidelity.
 
-    The search considers connectivity as undirected even when ``G`` is directed,
+    The search considers connectivity as undirected even when `G` is directed,
     and uses an aggregated per-step weight across directions and parallel edges
-    (maximum for ``'fidelity'``, minimum for ``'duration'``).
+    (maximum for `'fidelity'`, minimum for `'duration'`).
 
     Parameters
     ----------
     G : networkx.Graph
-        Input graph. Can be ``nx.Graph``, ``nx.DiGraph``, ``nx.MultiGraph``, or
-        ``nx.MultiDiGraph``.
+        Input graph. Can be `nx.Graph`, `nx.DiGraph`, `nx.MultiGraph`, or
+        `nx.MultiDiGraph`.
     weight_attr : str, default 'fidelity'
         Edge attribute used for tie-breaking among same-length paths. Supported:
-        - ``'fidelity'``: aggregate per-step as the maximum across directions/parallel edges;
-          tie-break cost is the sum of ``-log(fidelity)`` (infidelity in log-sum form).
-        - ``'duration'``: aggregate per-step as the minimum across directions/parallel edges;
-          tie-break cost is the sum of ``duration``.
+        - `'fidelity'`: aggregate per-step as the maximum across directions/parallel edges;
+          tie-break cost is the sum of `-log(fidelity)` (infidelity in log-sum form).
+        - `'duration'`: aggregate per-step as the minimum across directions/parallel edges;
+          tie-break cost is the sum of `duration`.
     time_limit : float or None, default 5.0
-        Time budget (seconds) for the search. ``None`` disables time-based cutoff.
+        Time budget (seconds) for the search. `None` disables time-based cutoff.
     eps : float, default 1e-12
         Lower bound to clip fidelity when using log-based scoring.
 
@@ -237,10 +237,10 @@ def find_longest_1d_chain(
     path_nodes : list
         Node sequence of the best path found.
     path_edges : list of tuple
-        Oriented edges in path order ``(u, v)`` corresponding to ``path_nodes``.
+        Oriented edges in path order `(u, v)` corresponding to `path_nodes`.
     score : float
-        Tie-break cost (lower is better): for fidelity it's ``sum(-log f)``; for duration it's
-        ``sum(duration)``.
+        Tie-break cost (lower is better): for fidelity it's `sum(-log f)`; for duration it's
+        `sum(duration)`.
 
     Notes
     -----

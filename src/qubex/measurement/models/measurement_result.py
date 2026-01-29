@@ -710,9 +710,9 @@ class MeasureResult:
 
         Notes
         -----
-        - Only ``MeasureMode.SINGLE`` is supported (requires shot-wise data).
-        - ``threshold`` filters ambiguous shots (based on soft probabilities).
-        - Large shot counts: prefer ``format='npz'`` for efficiency.
+        - Only `MeasureMode.SINGLE` is supported (requires shot-wise data).
+        - `threshold` filters ambiguous shots (based on soft probabilities).
+        - Large shot counts: prefer `format='npz'` for efficiency.
         """
         if self.mode != MeasureMode.SINGLE:
             raise ValueError(
@@ -1286,7 +1286,7 @@ class MultipleMeasureResult:
 
         This is analogous to MeasureResult.save_classified but allows
         specifying which capture index to export for each target.
-        If ``capture_indices`` is None, index 0 is used for all targets.
+        If `capture_indices` is None, index 0 is used for all targets.
         """
         if format not in {"json", "csv", "npz"}:
             raise ValueError(f"Unsupported format: {format}")

@@ -85,7 +85,7 @@ class Expression:
         Raises
         ------
         ValueError
-            If any required symbol is missing from ``params``.
+            If any required symbol is missing from `params`.
         """
         try:
             values = [params[name] for name in self._symbol_names]

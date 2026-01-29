@@ -67,17 +67,17 @@ class ConfigLoader:
     -------
     ConfigLoader loads configuration and parameter YAML files for a specific
     quantum chip and constructs the corresponding ExperimentSystem. It prefers
-    structured per-file parameter files under ``params/<name>.yaml`` with the
-    shape ``{"meta": ..., "data": ...}``. When a per-file file exists, its
-    ``data`` is MERGED over the legacy maps in ``params.yaml``/``props.yaml``
+    structured per-file parameter files under `params/<name>.yaml` with the
+    shape `{"meta": ..., "data": ...}`. When a per-file file exists, its
+    `data` is MERGED over the legacy maps in `params.yaml`/`props.yaml`
     (per-file entries override legacy values; missing keys fall back to legacy).
     If the per-file is completely absent, the legacy maps are used as-is. When
-    ``meta.unit`` is provided, numeric values in per-file ``data`` are converted
+    `meta.unit` is provided, numeric values in per-file `data` are converted
     to the internal base units (GHz for frequency-like quantities, ns for
-    time-like quantities). ``meta.unit`` must be a string and is applied
-    uniformly to the values in per-file ``data`` only.
+    time-like quantities). `meta.unit` must be a string and is applied
+    uniformly to the values in per-file `data` only.
 
-    The loader passes through ``jpa_params`` as-is; it does not perform key
+    The loader passes through `jpa_params` as-is; it does not perform key
     normalization. Downstream consumers should handle optional keys.
 
     Parameters
@@ -86,12 +86,12 @@ class ConfigLoader:
         The quantum chip identifier (e.g., "64Q"). All configuration is loaded
         for this specific chip.
     config_dir : Path | str | None, optional
-        Directory containing configuration files (``chip.yaml``, ``box.yaml``,
-        ``wiring.yaml``). Defaults to ``DEFAULT_CONFIG_DIR/<chip_id>/config``.
+        Directory containing configuration files (`chip.yaml`, `box.yaml`,
+        `wiring.yaml`). Defaults to `DEFAULT_CONFIG_DIR/<chip_id>/config`.
     params_dir : Path | str | None, optional
-        Directory containing parameter files (``params.yaml`` and per-section
-        files under ``params/``). Defaults to
-        ``DEFAULT_CONFIG_DIR/<chip_id>/params``.
+        Directory containing parameter files (`params.yaml` and per-section
+        files under `params/`). Defaults to
+        `DEFAULT_CONFIG_DIR/<chip_id>/params`.
     chip_file, box_file, wiring_file, props_file, params_file : str, optional
         Filenames for the respective YAMLs. Usually left as defaults.
     targets_to_exclude : list[str] | None, optional
@@ -101,13 +101,13 @@ class ConfigLoader:
 
     Notes
     -----
-    - Per-file parameter YAML must be structured as ``{"meta": ..., "data": ...}``.
-        - ``meta.unit`` is a string (applied to all numeric values in per-file ``data``).
+    - Per-file parameter YAML must be structured as `{"meta": ..., "data": ...}`.
+        - `meta.unit` is a string (applied to all numeric values in per-file `data`).
             Supported units are case-insensitive and include Hz/kHz/MHz/GHz (converted
             to GHz) and s/ms/us/µs/ns (converted to ns).
-    - ``get_experiment_system(chip_id)`` accepts an optional argument for backward
+    - `get_experiment_system(chip_id)` accepts an optional argument for backward
       compatibility, but the argument is deprecated and ignored; call
-      ``get_experiment_system()`` with no arguments.
+      `get_experiment_system()` with no arguments.
 
     Examples
     --------
@@ -172,8 +172,8 @@ class ConfigLoader:
         Parameters
         ----------
         chip_id : str, optional
-            Deprecated and ignored. Use ``get_experiment_system()`` without
-            arguments. A ``DeprecationWarning`` is emitted when provided.
+            Deprecated and ignored. Use `get_experiment_system()` without
+            arguments. A `DeprecationWarning` is emitted when provided.
 
         Returns
         -------
@@ -182,7 +182,7 @@ class ConfigLoader:
 
         Notes
         -----
-        The ``chip_id`` parameter is kept for backward compatibility and will be
+        The `chip_id` parameter is kept for backward compatibility and will be
         removed in a future minor release.
 
         Examples
@@ -335,7 +335,7 @@ class ConfigLoader:
 
         Behavior
         --------
-        - If a per-file YAML exists, load and unit-convert its ``data`` section, then
+        - If a per-file YAML exists, load and unit-convert its `data` section, then
           merge over the legacy map (from props.yaml or params.yaml), so missing keys
           are filled by legacy values. Per-file keys override legacy.
         - If a per-file YAML is absent, return the legacy map as-is (or empty).

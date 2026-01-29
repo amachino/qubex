@@ -51,7 +51,7 @@ class MeasurementScheduleDefaults:
     Notes
     -----
     These defaults are used only when the corresponding argument is passed as
-    ``None`` to schedule-building methods.
+    `None` to schedule-building methods.
     """
 
     readout_duration: float = DEFAULT_READOUT_DURATION
@@ -83,17 +83,17 @@ class MeasurementScheduleBuilder:
         Parameters
         ----------
         targets
-            Mapping from schedule label to ``Target`` metadata.
+            Mapping from schedule label to `Target` metadata.
             Used to identify readout and pump channels.
         mux_dict
-            Mapping from qubit label to ``Mux``.
+            Mapping from qubit label to `Mux`.
             Used to map a target/qubit to its mux index for pump/capture settings.
         control_params
             Control parameters providing default amplitudes and capture delays.
         readout_pulse_factory
-            Factory used to create a readout ``PulseArray``.
+            Factory used to create a readout `PulseArray`.
         pump_pulse_factory
-            Factory used to create a pump ``FlatTop`` pulse.
+            Factory used to create a pump `FlatTop` pulse.
         defaults
             Optional override of default readout timing parameters.
         """
@@ -116,8 +116,8 @@ class MeasurementScheduleBuilder:
         Returns
         -------
         list[str]
-            Labels in ``schedule.labels`` for which the corresponding
-            ``Target`` is a readout target.
+            Labels in `schedule.labels` for which the corresponding
+            `Target` is a readout target.
         """
         return [label for label in schedule.labels if self._targets[label].is_read]
 
@@ -141,15 +141,15 @@ class MeasurementScheduleBuilder:
         schedule
             Schedule to be modified.
         readout_amplitudes
-            Optional per-readout-target amplitude mapping. When ``None``,
-            ``ControlParams.readout_amplitude`` is used.
+            Optional per-readout-target amplitude mapping. When `None`,
+            `ControlParams.readout_amplitude` is used.
         readout_duration
-            Readout duration. When ``None``, the builder default is used.
+            Readout duration. When `None`, the builder default is used.
         readout_pre_margin
-            Time margin inserted before each readout pulse. When ``None``, the
+            Time margin inserted before each readout pulse. When `None`, the
             builder default is used.
         readout_post_margin
-            Time margin inserted after each readout pulse. When ``None``, the
+            Time margin inserted after each readout pulse. When `None`, the
             builder default is used.
         readout_ramptime
             Ramp time forwarded to the readout pulse factory.
@@ -161,7 +161,7 @@ class MeasurementScheduleBuilder:
         Notes
         -----
         This method only adds readout pulses for channels present in
-        ``schedule.labels`` that are not pump targets.
+        `schedule.labels` that are not pump targets.
         """
         if readout_amplitudes is None:
             readout_amplitudes = self._control_params.readout_amplitude
@@ -215,7 +215,7 @@ class MeasurementScheduleBuilder:
             Mapping from readout target label to a list of sample-index ranges
             where readout pulses occur.
         readout_pre_margin
-            Pre-margin used to extend the pump window. When ``None``, the builder
+            Pre-margin used to extend the pump window. When `None`, the builder
             default is used.
         readout_ramptime
             Ramp time forwarded to the pump pulse factory.
@@ -224,8 +224,8 @@ class MeasurementScheduleBuilder:
 
         Notes
         -----
-        Pump amplitude is determined by ``ControlParams.get_pump_amplitude``
-        using the mux index resolved from ``readout_ranges`` keys.
+        Pump amplitude is determined by `ControlParams.get_pump_amplitude`
+        using the mux index resolved from `readout_ranges` keys.
         """
         if readout_pre_margin is None:
             readout_pre_margin = self._defaults.readout_pre_margin
@@ -290,8 +290,8 @@ class MeasurementScheduleBuilder:
             representing readout pulses.
         capture_delays
             Optional mapping from mux index to capture delay, expressed in
-            words. When ``None``,
-            ``ControlParams.capture_delay_word`` is used.
+            words. When `None`,
+            `ControlParams.capture_delay_word` is used.
 
         Returns
         -------
@@ -303,7 +303,7 @@ class MeasurementScheduleBuilder:
         ------
         ValueError
             If any capture range start or duration is not aligned to
-            ``WORD_LENGTH`` samples,
+            `WORD_LENGTH` samples,
             if readout pulses do not provide sufficient post-blank time between
             consecutive ranges, or if the last range extends beyond the schedule.
         """
@@ -393,23 +393,23 @@ class MeasurementScheduleBuilder:
         capture_delays: dict[int, int] | None = None,
     ) -> MeasurementSchedule:
         """
-        Build a ``MeasurementSchedule``.
+        Build a `MeasurementSchedule`.
 
         Parameters
         ----------
         schedule
             Base schedule to use and (optionally) modify.
         add_last_measurement
-            If ``True``, readout pulses are appended to the schedule.
+            If `True`, readout pulses are appended to the schedule.
         add_pump_pulses
-            If ``True``, pump pulses are added based on detected readout ranges.
+            If `True`, pump pulses are added based on detected readout ranges.
         readout_amplitudes, readout_duration, readout_pre_margin, readout_post_margin
             Optional overrides for readout pulse construction. Any value passed
-            as ``None`` falls back to builder defaults.
+            as `None` falls back to builder defaults.
         readout_ramptime, readout_drag_coeff, readout_ramp_type
             Parameters forwarded to the readout (and/or pump) pulse factories.
         capture_delays
-            Optional capture delay mapping; see ``create_capture_schedule``.
+            Optional capture delay mapping; see `create_capture_schedule`.
 
         Returns
         -------
