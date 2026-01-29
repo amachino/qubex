@@ -22,7 +22,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
-from qubex.backend.quel_instrument_executor import QuelInstrumentExecutor
+from qubex.backend.quel_device_executor import QuelDeviceExecutor
 from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
@@ -93,7 +93,7 @@ class Measurement:
         self._chip_id: Final = chip_id
         self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
-        self._instrument_executor: QuelInstrumentExecutor | None = None
+        self._device_executor: QuelDeviceExecutor | None = None
         self._schedule_builder: MeasurementScheduleBuilder | None = None
         self._system_manager = SystemManager.shared()
         if load_configs:
@@ -183,16 +183,16 @@ class Measurement:
         return self._system_manager
 
     @property
-    def instrument_executor(self) -> QuelInstrumentExecutor:
-        """Get the instrument executor."""
-        if self._instrument_executor is None:
-            self._instrument_executor = QuelInstrumentExecutor(
+    def device_executor(self) -> QuelDeviceExecutor:
+        """Get the device executor."""
+        if self._device_executor is None:
+            self._device_executor = QuelDeviceExecutor(
                 system_manager=self.system_manager,
                 device_controller=self.device_controller,
                 experiment_system=self.experiment_system,
                 classifiers=self._classifiers,
             )
-        return self._instrument_executor
+        return self._device_executor
 
     @property
     def schedule_builder(self) -> MeasurementScheduleBuilder:
@@ -729,7 +729,7 @@ class Measurement:
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
-        self.instrument_executor.pad_schedule_for_capture(schedule)
+        self.device_executor.adjust_schedule_for_device(schedule)
 
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
         if add_pump_pulses:
@@ -752,7 +752,7 @@ class Measurement:
             readout_ranges=readout_ranges,
         )
 
-        return self.instrument_executor.execute(
+        return self.device_executor.execute(
             schedule=schedule,
             capture_schedule=capture_schedule,
             measure_mode=measure_mode,

@@ -36,8 +36,8 @@ EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # sam
 EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
 
 
-class QuelInstrumentExecutor:
-    """Execute pulse schedules on QUEL instruments."""
+class QuelDeviceExecutor:
+    """Execute pulse schedules on QuEL electronic devices."""
 
     def __init__(
         self,
@@ -90,8 +90,8 @@ class QuelInstrumentExecutor:
         self._save_if_needed(result)
         return result
 
-    def pad_schedule_for_capture(self, schedule: PulseSchedule) -> None:
-        """Pad a schedule to accommodate capture duration and alignment."""
+    def adjust_schedule_for_device(self, schedule: PulseSchedule) -> None:
+        """Adjust the pulse schedule to meet device requirements."""
         schedule.pad(
             total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
             pad_side="left",

@@ -8,7 +8,7 @@ from typing import cast
 import pytest
 
 from qubex.backend import SAMPLING_PERIOD, ControlParams, Mux, Target
-from qubex.backend.quel_instrument_executor import (
+from qubex.backend.quel_device_executor import (
     EXTRA_SUM_SECTION_LENGTH,
     WORD_LENGTH,
 )
