@@ -951,8 +951,18 @@ class ExperimentSystem:
                 f_coarse=f_coarse,
                 f_CRs=f_CRs_valid,
             )
-            fnco_ge, _ = MixingUtil.calc_fnco(f=f_ge, ssb=ssb, lo=lo, cnco=cnco)
-            fnco_CR, _ = MixingUtil.calc_fnco(f=f_CR, ssb=ssb, lo=lo, cnco=cnco)
+            fnco_ge, _ = MixingUtil.calc_fnco(
+                f=(f_ge + f_ef) * 0.5,
+                ssb=ssb,
+                lo=lo,
+                cnco=cnco,
+            )
+            fnco_CR, _ = MixingUtil.calc_fnco(
+                f=f_CR,
+                ssb=ssb,
+                lo=lo,
+                cnco=cnco,
+            )
             return {
                 "lo": lo,
                 "cnco": cnco,
@@ -1158,16 +1168,13 @@ class ExperimentSystem:
             NCO_STEP,
         )
         # count the number of CR frequencies within the range of each search point
-        center_freqs_by_count = [
-            (
-                np.sum([1 for f_CR in f_CRs if f - AWG_MAX <= f_CR <= f + AWG_MAX]),
-                np.median(
-                    [f_CR for f_CR in f_CRs if f - AWG_MAX <= f_CR <= f + AWG_MAX]
-                    or [0]
-                ),
-            )
-            for f in search_range
-        ]
+        center_freqs_by_count = []
+        for f in search_range:
+            valid_f_CRs = [f_CR for f_CR in f_CRs if f - AWG_MAX <= f_CR <= f + AWG_MAX]
+            if not valid_f_CRs:
+                continue
+            center = (min(valid_f_CRs) + max(valid_f_CRs)) / 2
+            center_freqs_by_count.append((len(valid_f_CRs), center))
         if not center_freqs_by_count:
             return f_coarse
         # sort by count and then by frequency
