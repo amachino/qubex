@@ -43,4 +43,21 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Getting Started:
+      - Overview: user-guide/getting-started/index.md
+      - Installation: user-guide/getting-started/installation.md
+      - Quickstart: user-guide/getting-started/quickstart.md
+  - Concepts:
+      - Overview: user-guide/concepts/overview.md
+      - Terminology: user-guide/concepts/terminology.md
+  - How-to Guides:
+      - Overview: user-guide/how-to/index.md
+      - Basic Measurement: user-guide/how-to/basic-measurement.md
+  - Tutorials:
+      - Overview: user-guide/tutorials/index.md
+      - First Experiment: user-guide/tutorials/first-experiment.md
+  - Developer Guide:
+      - Overview: developer-guide/index.md
+      - Docstring Guidelines: developer-guide/docstring-guidelines.md
+      - Test Guidelines: developer-guide/test-guidelines.md
   - API Reference: api-reference/qubex/
