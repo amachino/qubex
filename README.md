@@ -14,14 +14,21 @@
 ## Requirements
 
 - Python 3.10 or higher
-- pip 24.0
 
 ## Installation
 
 ### Install latest release
 
+#### Using pip
+
 ```bash
 pip install git+https://github.com/amachino/qubex.git
+```
+
+#### Using uv
+
+```bash
+uv pip install git+https://github.com/amachino/qubex.git
 ```
 
 ### Install with backend support (Linux only)
@@ -29,6 +36,14 @@ pip install git+https://github.com/amachino/qubex.git
 ```bash
 pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
+
+### Install specific version
+
+```bash
+pip install "git+https://github.com/amachino/qubex.git@<version>"
+```
+
+Check available versions on the [Release Page](https://github.com/amachino/qubex/releases).
 
 ### Install for development
 
@@ -41,8 +56,6 @@ uv sync --dev
 pip install -e .
 ```
 
-Check available versions on the [Release Page](https://github.com/amachino/qubex/releases).
+## Documentation
 
-## Usage
-
-See the [examples](https://github.com/amachino/qubex/tree/main/docs/examples) folder for usage examples.
+The documentation is available at [https://amachino.github.io/qubex/](https://amachino.github.io/qubex/).
