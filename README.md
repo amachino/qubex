@@ -19,28 +19,32 @@
 
 ### Install latest release
 
-#### Using pip
-
 ```bash
+# pip
 pip install git+https://github.com/amachino/qubex.git
-```
 
-#### Using uv
-
-```bash
+# uv
 uv pip install git+https://github.com/amachino/qubex.git
 ```
 
 ### Install with backend support (Linux only)
 
 ```bash
+# pip
 pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
+
+# uv
+uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
 ```
 
 ### Install specific version
 
 ```bash
+# pip
 pip install "git+https://github.com/amachino/qubex.git@<version>"
+
+# uv
+uv pip install "git+https://github.com/amachino/qubex.git@<version>"
 ```
 
 Check available versions on the [Release Page](https://github.com/amachino/qubex/releases).
@@ -50,12 +54,15 @@ Check available versions on the [Release Page](https://github.com/amachino/qubex
 ```bash
 git clone https://github.com/amachino/qubex.git
 cd qubex
+
+# uv
 uv sync --dev
 
-# Or, without uv
+# pip
 pip install -e .
 ```
 
 ## Documentation
 
 The documentation is available at [https://amachino.github.io/qubex/](https://amachino.github.io/qubex/).
+The source files live in [docs](https://github.com/amachino/qubex/tree/main/docs).
