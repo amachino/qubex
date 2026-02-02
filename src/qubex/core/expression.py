@@ -59,7 +59,7 @@ class Expression:
         self._symbol_names = [s.name for s in self._symbols]
         self._func = lambdify(self._symbols, self._expr, modules=modules)
 
-    def _repr_latex_(self):
+    def _repr_latex_(self) -> str:
         """Return LaTeX representation for rich display."""
         return self._expr._repr_latex_()
 

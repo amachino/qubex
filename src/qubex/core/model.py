@@ -1,4 +1,4 @@
-"""Core Pydantic models and JSON helpers."""
+"""Seralizable base model with NumPy and tunits support."""
 
 from __future__ import annotations
 
@@ -20,14 +20,17 @@ from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from tunits.proto import tunits_pb2
 from typing_extensions import Self
 
-_TYPE_KEY = "__type__"
+SERIALIZATION_VERSION = 0
 
-_NUMPY_PREFIX = "numpy."
-_TUNITS_PREFIX = "tunits."
-_PYTHON_PREFIX = "python."
+_META_KEY = "__meta__"
+_META_VERSION_KEY = "version"
 
-_COMPLEX_REAL_KEY = "real"
-_COMPLEX_IMAG_KEY = "imag"
+_DATA_TYPE_KEY = "__type__"
+_DATA_NUMPY_PREFIX = "numpy."
+_DATA_TUNITS_PREFIX = "tunits."
+_DATA_PYTHON_PREFIX = "python."
+_DATA_COMPLEX_REAL_KEY = "real"
+_DATA_COMPLEX_IMAG_KEY = "imag"
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +50,9 @@ def _is_complex(value: Any) -> TypeGuard[complex]:
 def _complex_to_dict(value: complex) -> dict[str, Any]:
     class_name = value.__class__.__name__
     return {
-        _COMPLEX_REAL_KEY: float(value.real),
-        _COMPLEX_IMAG_KEY: float(value.imag),
-        _TYPE_KEY: f"{_PYTHON_PREFIX}{class_name}",
+        _DATA_COMPLEX_REAL_KEY: float(value.real),
+        _DATA_COMPLEX_IMAG_KEY: float(value.imag),
+        _DATA_TYPE_KEY: f"{_DATA_PYTHON_PREFIX}{class_name}",
     }
 
 
@@ -57,7 +60,7 @@ def _tunits_to_dict(value: tunits.Value | tunits.ValueArray) -> dict[str, Any]:
     class_name = value.__class__.__name__
     message = value.to_proto()
     data = MessageToDict(message, preserving_proto_field_name=True)
-    data[_TYPE_KEY] = f"{_TUNITS_PREFIX}{class_name}"
+    data[_DATA_TYPE_KEY] = f"{_DATA_TUNITS_PREFIX}{class_name}"
     return data
 
 
@@ -69,15 +72,15 @@ def _numpy_to_dict(value: np.ndarray | np.generic) -> dict[str, Any]:
     class_name = value.__class__.__name__
     message = value_tunits.to_proto()
     data = MessageToDict(message, preserving_proto_field_name=True)
-    data[_TYPE_KEY] = f"{_NUMPY_PREFIX}{class_name}"
+    data[_DATA_TYPE_KEY] = f"{_DATA_NUMPY_PREFIX}{class_name}"
     return data
 
 
 def _serialize(obj: Any) -> Any:
-    if _is_complex(obj):
-        return _complex_to_dict(obj)
     if _is_numpy(obj):
         return _numpy_to_dict(obj)
+    if _is_complex(obj):
+        return _complex_to_dict(obj)
     if _is_tunits(obj):
         return _tunits_to_dict(obj)
     if isinstance(obj, Mapping):
@@ -89,8 +92,8 @@ def _serialize(obj: Any) -> Any:
 
 def _numpy_from_dict(value: dict[str, Any]) -> np.ndarray | np.generic:
     payload = dict(value)  # make a copy to avoid modifying the original
-    type_name: str = payload.pop(_TYPE_KEY)
-    class_name = type_name.removeprefix(_NUMPY_PREFIX)
+    type_name: str = payload.pop(_DATA_TYPE_KEY)
+    class_name = type_name.removeprefix(_DATA_NUMPY_PREFIX)
     try:
         cls = getattr(np, class_name)
     except AttributeError as exc:
@@ -112,8 +115,8 @@ def _numpy_from_dict(value: dict[str, Any]) -> np.ndarray | np.generic:
 
 def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray:
     payload = dict(value)  # make a copy to avoid modifying the original
-    type_name: str = payload.pop(_TYPE_KEY)
-    class_name = type_name.removeprefix(_TUNITS_PREFIX)
+    type_name: str = payload.pop(_DATA_TYPE_KEY)
+    class_name = type_name.removeprefix(_DATA_TUNITS_PREFIX)
     try:
         cls = getattr(tunits, class_name)
     except AttributeError as exc:
@@ -132,23 +135,23 @@ def _tunits_from_dict(value: dict[str, Any]) -> tunits.Value | tunits.ValueArray
 
 def _complex_from_dict(value: dict[str, Any]) -> complex:
     payload = dict(value)  # make a copy to avoid modifying the original
-    type_name: str = payload.pop(_TYPE_KEY)
-    class_name = type_name.removeprefix(_PYTHON_PREFIX)
+    type_name: str = payload.pop(_DATA_TYPE_KEY)
+    class_name = type_name.removeprefix(_DATA_PYTHON_PREFIX)
     if class_name == "complex":
-        return complex(payload[_COMPLEX_REAL_KEY], payload[_COMPLEX_IMAG_KEY])
+        return complex(payload[_DATA_COMPLEX_REAL_KEY], payload[_DATA_COMPLEX_IMAG_KEY])
     raise TypeError(f"Unknown complex class: {type_name}")
 
 
 def _deserialize(obj: Any) -> Any:
     if isinstance(obj, Mapping):
-        type_tag = obj.get(_TYPE_KEY)
+        type_tag = obj.get(_DATA_TYPE_KEY)
         if isinstance(type_tag, str):
             payload = dict(obj)
-            if type_tag.startswith(_NUMPY_PREFIX):
+            if type_tag.startswith(_DATA_NUMPY_PREFIX):
                 return _numpy_from_dict(payload)
-            elif type_tag.startswith(_TUNITS_PREFIX):
+            elif type_tag.startswith(_DATA_TUNITS_PREFIX):
                 return _tunits_from_dict(payload)
-            elif type_tag.startswith(_PYTHON_PREFIX):
+            elif type_tag.startswith(_DATA_PYTHON_PREFIX):
                 return _complex_from_dict(payload)
             else:
                 logger.warning(f"Unknown type during deserialization: {type_tag}")
@@ -199,7 +202,7 @@ class Model(BaseModel):
     def _serialize_model(
         self,
         handler: SerializerFunctionWrapHandler,
-    ):
+    ) -> Any:
         """Serialize the model with custom value handling."""
         data = handler(self)
         return _serialize(data)
@@ -213,22 +216,31 @@ class Model(BaseModel):
     @classmethod
     def from_dict(cls, data: dict) -> Self:
         """Create a model instance from a dictionary."""
-        return cls.model_validate(_deserialize(data))
+        payload = dict(data)
+        payload.pop(_META_KEY, None)
+        return cls.model_validate(_deserialize(payload))
 
     @classmethod
     def from_json(cls, data: str) -> Self:
         """Create a model instance from a JSON string."""
-        return cls.model_validate(_deserialize(json.loads(data)))
+        payload = json.loads(data)
+        if isinstance(payload, dict):
+            payload = dict(payload)
+            payload.pop(_META_KEY, None)
+        return cls.model_validate(_deserialize(payload))
 
     def to_dict(self) -> dict:
         """Serialize the model to a dictionary."""
-        return self.model_dump()
+        data = self.model_dump()
+        if isinstance(data, dict):
+            data[_META_KEY] = {_META_VERSION_KEY: SERIALIZATION_VERSION}
+        return data
 
     def to_json(self, indent: int | None = None) -> str:
         """Serialize the model to a JSON string."""
         # NOTE: Pydantic's built-in model_dump_json does not support custom serialization well.
         # return self.model_dump_json(indent=indent)
-        data = self.model_dump()
+        data = self.to_dict()
         return json.dumps(data, ensure_ascii=False, indent=indent)
 
 

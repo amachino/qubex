@@ -144,12 +144,6 @@ ignore = [
     # flake8-bandit
     "S101", # assert
 ]
-"docs/examples/core/model.ipynb" = [
-    "D204", # class docstring spacing
-]
-"docs/examples/simulator/8_cr_calibration.ipynb" = [
-    "D103", # docstring false positives
-]
 "tests/**/*.py" = [
     "ANN", # flake8-annotations
 
