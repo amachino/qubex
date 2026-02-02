@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools >= 61.0"]
+requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -21,7 +21,7 @@ dependencies = [
     "kaleido == 0.2.1",
     "matplotlib ~= 3.0",
     "networkx ~= 3.0",
-    "numpy ~= 1.0",
+    "numpy >= 1.23.5",
     "optax ~= 0.0",
     "plotly ~= 5.23",
     "protobuf ~= 6.0",
@@ -36,6 +36,7 @@ dependencies = [
     "sympy ~= 1.0",
     "typedunits ~= 0.0",
     "tqdm ~= 4.0",
+    "measurement_config @ git+https://github.com/amachino/measurement_config.git@v0.1.0",
 ]
 
 [project.optional-dependencies]
