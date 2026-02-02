@@ -43,9 +43,8 @@ type-check:
 
 # Remove caches and build artifacts
 clean:
-	rm -rf dist build *.egg-info
+	rm -rf dist site .venv src/*.egg-info .pytest_cache .ruff_cache .coverage
 	find . -type d -name "__pycache__" -exec rm -rf {} +
-	rm -rf .pytest_cache .ruff_cache .mypy_cache
 
 # Build distribution artifacts
 build:
