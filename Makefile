@@ -2,6 +2,9 @@
 
 # Install dependencies
 sync:
+	@if [ ! -d .venv ]; then \
+		uv venv; \
+	fi
 	uv sync --all-groups --all-extras
 
 # Run unit tests
