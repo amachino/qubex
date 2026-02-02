@@ -268,7 +268,7 @@ class Experiment:
         return self._optimization_service
 
     @property
-    def tool(self) -> Any:
+    def tool(self):  # noqa: ANN201
         """Return the experiment tool module."""
         return self.ctx.tool
 

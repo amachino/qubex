@@ -313,7 +313,7 @@ class ExperimentContext:
         console.print(table)
 
     @property
-    def tool(self) -> Any:
+    def tool(self):  # noqa: ANN201
         """Return the experiment tool module."""
         return experiment_tool
 
