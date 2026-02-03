@@ -24,6 +24,7 @@ from qubex.measurement.models.measure_result import (
 class PulseScheduleSnapshot(Model):
     """Serializable snapshot of a pulse schedule used in a run."""
 
+    schema_version: int = 1
     channel_labels: list[str]
     total_duration: float
     total_length: int
@@ -192,6 +193,7 @@ class MeasurementResult(Model):
             else:
                 ds.pulse_schedule_metadata_json = json.dumps(
                     {
+                        "schema_version": self.pulse_schedule.schema_version,
                         "channel_labels": self.pulse_schedule.channel_labels,
                         "total_duration": self.pulse_schedule.total_duration,
                         "total_length": self.pulse_schedule.total_length,
@@ -341,6 +343,7 @@ class MeasurementResult(Model):
                         else json.loads(pulse_schedule_metadata_json)
                     )
                     pulse_schedule = PulseScheduleSnapshot(
+                        schema_version=metadata.get("schema_version", 1),
                         channel_labels=metadata.get(
                             "channel_labels",
                             metadata.get("target_labels", list(waveforms.keys())),

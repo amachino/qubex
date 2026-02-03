@@ -100,6 +100,9 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
     assert restored.pulse_schedule is not None
     assert original.pulse_schedule is not None
     assert (
+        restored.pulse_schedule.schema_version == original.pulse_schedule.schema_version
+    )
+    assert (
         restored.pulse_schedule.channel_labels == original.pulse_schedule.channel_labels
     )
     assert (
@@ -151,6 +154,9 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
     assert restored.measurement_config == original.measurement_config
     assert restored.pulse_schedule is not None
     assert original.pulse_schedule is not None
+    assert (
+        restored.pulse_schedule.schema_version == original.pulse_schedule.schema_version
+    )
     assert restored.pulse_schedule.waveforms is not None
     assert original.pulse_schedule.waveforms is not None
     assert np.array_equal(
