@@ -47,7 +47,6 @@ from .models.measurement_result import (
 logger = logging.getLogger(__name__)
 
 try:
-    from qubecalib import Sequencer
     from qubecalib import neopulse as pls
 
     from qubex.backend.sequencer_mod import SequencerMod
@@ -689,11 +688,13 @@ class Measurement:
 
         if shots is None:
             shots = DEFAULT_SHOTS
+        if interval is None:
+            interval = DEFAULT_INTERVAL
 
         measure_mode = MeasureMode(mode)
-        sequencer = self._create_sequencer_from_schedule(
+
+        schedule = self._complete_pulse_schedule(
             schedule=schedule,
-            interval=interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -705,6 +706,25 @@ class Measurement:
             add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
+
+        gen_sequences, cap_sequences = self._create_sampled_sequences(schedule=schedule)
+
+        backend_interval = (
+            math.ceil((schedule.duration + interval) / BLOCK_DURATION) * BLOCK_DURATION
+        )
+
+        targets = list(gen_sequences.keys() | cap_sequences.keys())
+        resource_map = self.device_controller.get_resource_map(targets)
+
+        sequencer = SequencerMod(
+            gen_sampled_sequence=gen_sequences,
+            cap_sampled_sequence=cap_sequences,
+            resource_map=resource_map,  # type: ignore
+            interval=backend_interval,
+            sysdb=self.device_controller.qubecalib.sysdb,
+            driver=self.device_controller.quel1system,
+        )
+
         backend_result = self.device_controller.execute_sequencer(
             sequencer=sequencer,
             repeats=shots,
@@ -715,17 +735,20 @@ class Measurement:
             line_param0=line_param0,
             line_param1=line_param1,
         )
+
         result = self._create_multiple_measure_result(
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=shots,
         )
+
         rawdata_dir = self.system_manager.rawdata_dir
         if rawdata_dir is not None:
             result.save(data_dir=rawdata_dir)
+
         return result
 
-    def _create_sampled_sequences_from_schedule(
+    def _complete_pulse_schedule(
         self,
         schedule: PulseSchedule,
         readout_amplitudes: dict[str, float] | None = None,
@@ -735,11 +758,10 @@ class Measurement:
         readout_ramptime: float | None = None,
         readout_ramp_type: RampType | None = None,
         readout_drag_coeff: float | None = None,
-        capture_delays: dict[int, int] | None = None,
         add_last_measurement: bool = False,
         add_pump_pulses: bool = False,
         plot: bool = False,
-    ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
+    ) -> PulseSchedule:
         if readout_amplitudes is None:
             readout_amplitudes = self.control_params.readout_amplitude
         if readout_duration is None:
@@ -748,8 +770,6 @@ class Measurement:
             readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
         if readout_post_margin is None:
             readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-        if capture_delays is None:
-            capture_delays = self.control_params.capture_delay_word
 
         # add last readout pulse if necessary
         if add_last_measurement:
@@ -818,14 +838,6 @@ class Measurement:
         # get readout ranges
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
 
-        capture_delay_sample = {}
-        for target in readout_targets:
-            mux = self.mux_dict[Target.qubit_label(target)]
-            capture_delay_word = capture_delays.get(mux.index)
-            if capture_delay_word is None:
-                capture_delay_word = 0
-            capture_delay_sample[target] = capture_delay_word * WORD_LENGTH
-
         # add pump pulses if necessary
         if add_pump_pulses:
             # TODO: There is a bug where, when pumping while simultaneously reading out multiple resonators in the same MUX, multiple pump pulses are placed in series.
@@ -882,6 +894,31 @@ class Measurement:
 
         if plot:
             schedule.plot()
+
+        return schedule
+
+    def _create_sampled_sequences(
+        self,
+        schedule: PulseSchedule,
+        capture_delays: dict[int, int] | None = None,
+    ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
+        if capture_delays is None:
+            capture_delays = self.control_params.capture_delay_word
+
+        readout_targets = [
+            label for label in schedule.labels if self.targets[label].is_read
+        ]
+
+        # get readout ranges
+        readout_ranges = schedule.get_pulse_ranges(readout_targets)
+
+        capture_delay_sample = {}
+        for target in readout_targets:
+            mux = self.mux_dict[Target.qubit_label(target)]
+            capture_delay_word = capture_delays.get(mux.index)
+            if capture_delay_word is None:
+                capture_delay_word = 0
+            capture_delay_sample[target] = capture_delay_word * WORD_LENGTH
 
         # get sampled sequences
         sampled_sequences = schedule.get_sampled_sequences(copy=False)
@@ -1015,54 +1052,6 @@ class Measurement:
             cap_sequences[target] = cap_sequence
 
         return gen_sequences, cap_sequences
-
-    def _create_sequencer_from_schedule(
-        self,
-        schedule: PulseSchedule,
-        interval: float | None = None,
-        readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | None = None,
-        readout_pre_margin: float | None = None,
-        readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
-        readout_drag_coeff: float | None = None,
-        readout_ramp_type: RampType | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        plot: bool = False,
-    ) -> Sequencer:
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-
-        gen_sequences, cap_sequences = self._create_sampled_sequences_from_schedule(
-            schedule=schedule,
-            readout_amplitudes=readout_amplitudes,
-            readout_duration=readout_duration,
-            readout_pre_margin=readout_pre_margin,
-            readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
-            readout_drag_coeff=readout_drag_coeff,
-            readout_ramp_type=readout_ramp_type,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
-            plot=plot,
-        )
-
-        backend_interval = (
-            math.ceil((schedule.duration + interval) / BLOCK_DURATION) * BLOCK_DURATION
-        )
-
-        targets = list(gen_sequences.keys() | cap_sequences.keys())
-        resource_map = self.device_controller.get_resource_map(targets)
-
-        return SequencerMod(
-            gen_sampled_sequence=gen_sequences,
-            cap_sampled_sequence=cap_sequences,
-            resource_map=resource_map,  # type: ignore
-            interval=backend_interval,
-            sysdb=self.device_controller.qubecalib.sysdb,
-            driver=self.device_controller.quel1system,
-        )
 
     def _create_multiple_measure_result(
         self,
