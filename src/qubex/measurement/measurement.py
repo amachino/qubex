@@ -1139,7 +1139,7 @@ class Measurement:
             ),
             pulse_schedule=(
                 PulseScheduleSnapshot(
-                    target_labels=measurement_schedule.pulse_schedule.labels,
+                    channel_labels=measurement_schedule.pulse_schedule.labels,
                     total_duration=measurement_schedule.pulse_schedule.duration,
                     total_length=measurement_schedule.pulse_schedule.length,
                     waveforms=measurement_schedule.pulse_schedule.get_sampled_sequences(
@@ -1149,7 +1149,7 @@ class Measurement:
                 if save_waveforms and measurement_schedule is not None
                 else (
                     PulseScheduleSnapshot(
-                        target_labels=measurement_schedule.pulse_schedule.labels,
+                        channel_labels=measurement_schedule.pulse_schedule.labels,
                         total_duration=measurement_schedule.pulse_schedule.duration,
                         total_length=measurement_schedule.pulse_schedule.length,
                         waveforms=None,

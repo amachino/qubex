@@ -78,7 +78,7 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
         device_config={"shots": 2},
         measurement_config={"mode": "avg", "shots": 2},
         pulse_schedule=PulseScheduleSnapshot(
-            target_labels=["RQ00"],
+            channel_labels=["RQ00"],
             total_duration=256.0,
             total_length=128,
             waveforms={"RQ00": np.array([0.1 + 0.2j, 0.2 + 0.3j])},
@@ -100,7 +100,7 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
     assert restored.pulse_schedule is not None
     assert original.pulse_schedule is not None
     assert (
-        restored.pulse_schedule.target_labels == original.pulse_schedule.target_labels
+        restored.pulse_schedule.channel_labels == original.pulse_schedule.channel_labels
     )
     assert (
         restored.pulse_schedule.total_duration == original.pulse_schedule.total_duration
@@ -127,7 +127,7 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
         device_config={"shots": 2},
         measurement_config={"mode": "single", "shots": 2},
         pulse_schedule=PulseScheduleSnapshot(
-            target_labels=["RQ00", "RQ01"],
+            channel_labels=["RQ00", "RQ01"],
             total_duration=512.0,
             total_length=256,
             waveforms={
