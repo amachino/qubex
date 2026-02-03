@@ -12,9 +12,14 @@ from qubex.backend.quel_device_executor import (
     EXTRA_SUM_SECTION_LENGTH,
     WORD_LENGTH,
 )
-from qubex.measurement.measurement_schedule_builder import MeasurementScheduleBuilder
+from qubex.measurement.measurement_schedule_builder import (
+    MeasurementScheduleBuilder,
+    MeasurementScheduleDefaults,
+)
 from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule
 from qubex.typing import TargetMap
+
+DEFAULTS = MeasurementScheduleDefaults()
 
 
 class StubReadoutFactory:
@@ -44,7 +49,6 @@ class StubPumpFactory:
 def test_add_readout_pulses_adds_readout_channel() -> None:
     """Ensure readout pulses create a readout channel in the schedule."""
     readout_factory = StubReadoutFactory()
-    pump_factory = StubPumpFactory()
 
     targets = cast(
         TargetMap[Target],
@@ -58,17 +62,15 @@ def test_add_readout_pulses_adds_readout_channel() -> None:
         SimpleNamespace(readout_amplitude={"RQ00": 0.2}),
     )
 
-    builder = MeasurementScheduleBuilder(
-        targets=targets,
-        mux_dict={},
-        control_params=control_params,
-        readout_pulse_factory=readout_factory,
-        pump_pulse_factory=pump_factory,
-    )
+    builder = MeasurementScheduleBuilder()
 
     schedule = PulseSchedule(["Q00"])
     builder.add_readout_pulses(
         schedule=schedule,
+        targets=targets,
+        control_params=control_params,
+        readout_pulse_factory=readout_factory,
+        defaults=DEFAULTS,
         readout_amplitudes=None,
         readout_duration=12,
         readout_pre_margin=1,
@@ -95,30 +97,22 @@ def test_add_readout_pulses_adds_readout_channel() -> None:
 
 def test_add_pump_pulses_adds_mux_channel() -> None:
     """Ensure pump pulses create a mux channel in the schedule."""
-    readout_factory = StubReadoutFactory()
     pump_factory = StubPumpFactory()
-
-    targets = cast(
-        TargetMap[Target],
-        {"RQ00": SimpleNamespace(is_pump=False, is_read=True)},
-    )
     mux = cast(Mux, SimpleNamespace(index=0, label="MX0"))
     control_params = cast(
         ControlParams,
         SimpleNamespace(get_pump_amplitude=lambda _: 0.3),
     )
 
-    builder = MeasurementScheduleBuilder(
-        targets=targets,
-        mux_dict=cast(dict[str, Mux], {"Q00": mux}),
-        control_params=control_params,
-        readout_pulse_factory=readout_factory,
-        pump_pulse_factory=pump_factory,
-    )
+    builder = MeasurementScheduleBuilder()
 
     schedule = PulseSchedule([])
     builder.add_pump_pulses(
         schedule=schedule,
+        mux_dict=cast(dict[str, Mux], {"Q00": mux}),
+        control_params=control_params,
+        pump_pulse_factory=pump_factory,
+        defaults=DEFAULTS,
         readout_ranges={"RQ00": [range(4, 8)]},
         readout_pre_margin=0,
         readout_ramptime=2,
@@ -144,13 +138,7 @@ def test_build_measurement_schedule_requires_readout_targets() -> None:
         SimpleNamespace(readout_amplitude={}, capture_delay_word={}),
     )
 
-    builder = MeasurementScheduleBuilder(
-        targets=targets,
-        mux_dict={},
-        control_params=control_params,
-        readout_pulse_factory=readout_factory,
-        pump_pulse_factory=pump_factory,
-    )
+    builder = MeasurementScheduleBuilder()
 
     schedule = PulseSchedule(["Q00"])
     schedule.add("Q00", Blank(4))
@@ -158,6 +146,11 @@ def test_build_measurement_schedule_requires_readout_targets() -> None:
     with pytest.raises(ValueError, match="No readout targets"):
         builder.build_measurement_schedule(
             schedule=schedule,
+            targets=targets,
+            mux_dict={},
+            control_params=control_params,
+            readout_pulse_factory=readout_factory,
+            pump_pulse_factory=pump_factory,
             add_last_measurement=False,
             add_pump_pulses=False,
         )
@@ -165,26 +158,13 @@ def test_build_measurement_schedule_requires_readout_targets() -> None:
 
 def test_create_capture_schedule_rejects_misaligned_ranges() -> None:
     """Given misaligned range, when capturing, then raise a ValueError."""
-    readout_factory = StubReadoutFactory()
-    pump_factory = StubPumpFactory()
-
-    targets = cast(
-        TargetMap[Target],
-        {"RQ00": SimpleNamespace(is_pump=False, is_read=True)},
-    )
     mux = cast(Mux, SimpleNamespace(index=0, label="MX0"))
     control_params = cast(
         ControlParams,
         SimpleNamespace(capture_delay_word={}),
     )
 
-    builder = MeasurementScheduleBuilder(
-        targets=targets,
-        mux_dict=cast(dict[str, Mux], {"Q00": mux}),
-        control_params=control_params,
-        readout_pulse_factory=readout_factory,
-        pump_pulse_factory=pump_factory,
-    )
+    builder = MeasurementScheduleBuilder()
 
     schedule = PulseSchedule(["RQ00"])
     schedule.add("RQ00", Blank(8))
@@ -192,32 +172,21 @@ def test_create_capture_schedule_rejects_misaligned_ranges() -> None:
     with pytest.raises(ValueError, match="Capture range should start"):
         builder.create_capture_schedule(
             schedule=schedule,
+            mux_dict=cast(dict[str, Mux], {"Q00": mux}),
+            control_params=control_params,
             readout_ranges={"RQ00": [range(2, 6)]},
         )
 
 
 def test_create_capture_schedule_constructs_expected_captures() -> None:
     """Ensure capture schedule contains extra-sum and per-range captures."""
-    readout_factory = StubReadoutFactory()
-    pump_factory = StubPumpFactory()
-
-    targets = cast(
-        TargetMap[Target],
-        {"RQ00": SimpleNamespace(is_pump=False, is_read=True)},
-    )
     mux = cast(Mux, SimpleNamespace(index=1, label="MX1"))
     control_params = cast(
         ControlParams,
         SimpleNamespace(capture_delay_word={1: 2}),
     )
 
-    builder = MeasurementScheduleBuilder(
-        targets=targets,
-        mux_dict=cast(dict[str, Mux], {"Q00": mux}),
-        control_params=control_params,
-        readout_pulse_factory=readout_factory,
-        pump_pulse_factory=pump_factory,
-    )
+    builder = MeasurementScheduleBuilder()
 
     schedule = PulseSchedule(["RQ00"])
     schedule.add("RQ00", Blank(duration=100))
@@ -226,6 +195,8 @@ def test_create_capture_schedule_constructs_expected_captures() -> None:
     second_range = range(WORD_LENGTH * 2, WORD_LENGTH * 3)
     capture_schedule = builder.create_capture_schedule(
         schedule=schedule,
+        mux_dict=cast(dict[str, Mux], {"Q00": mux}),
+        control_params=control_params,
         readout_ranges={"RQ00": [first_range, second_range]},
     )
 
@@ -251,26 +222,13 @@ def test_create_capture_schedule_constructs_expected_captures() -> None:
 
 def test_create_capture_schedule_rejects_consecutive_ranges_without_blank() -> None:
     """Reject capture creation when readout pulses lack required post blank."""
-    readout_factory = StubReadoutFactory()
-    pump_factory = StubPumpFactory()
-
-    targets = cast(
-        TargetMap[Target],
-        {"RQ00": SimpleNamespace(is_pump=False, is_read=True)},
-    )
     mux = cast(Mux, SimpleNamespace(index=0, label="MX0"))
     control_params = cast(
         ControlParams,
         SimpleNamespace(capture_delay_word={}),
     )
 
-    builder = MeasurementScheduleBuilder(
-        targets=targets,
-        mux_dict=cast(dict[str, Mux], {"Q00": mux}),
-        control_params=control_params,
-        readout_pulse_factory=readout_factory,
-        pump_pulse_factory=pump_factory,
-    )
+    builder = MeasurementScheduleBuilder()
 
     schedule = PulseSchedule(["RQ00"])
     schedule.add("RQ00", Blank(duration=100))
@@ -278,6 +236,8 @@ def test_create_capture_schedule_rejects_consecutive_ranges_without_blank() -> N
     with pytest.raises(ValueError, match="post-blank time"):
         builder.create_capture_schedule(
             schedule=schedule,
+            mux_dict=cast(dict[str, Mux], {"Q00": mux}),
+            control_params=control_params,
             readout_ranges={
                 "RQ00": [
                     range(0, WORD_LENGTH),

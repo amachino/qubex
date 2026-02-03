@@ -68,44 +68,12 @@ ScheduleAdjuster = Callable[[PulseSchedule], None]
 class MeasurementScheduleBuilder:
     """Builder for measurement and capture schedules."""
 
-    def __init__(
+    def get_readout_targets(
         self,
         *,
+        schedule: PulseSchedule,
         targets: TargetMap[Target],
-        mux_dict: Mapping[str, Mux],
-        control_params: ControlParams,
-        readout_pulse_factory: ReadoutPulseFactory,
-        pump_pulse_factory: PumpPulseFactory,
-        defaults: MeasurementScheduleDefaults | None = None,
-    ) -> None:
-        """
-        Initialize a schedule builder.
-
-        Parameters
-        ----------
-        targets
-            Mapping from schedule label to `Target` metadata.
-            Used to identify readout and pump channels.
-        mux_dict
-            Mapping from qubit label to `Mux`.
-            Used to map a target/qubit to its mux index for pump/capture settings.
-        control_params
-            Control parameters providing default amplitudes and capture delays.
-        readout_pulse_factory
-            Factory used to create a readout `PulseArray`.
-        pump_pulse_factory
-            Factory used to create a pump `FlatTop` pulse.
-        defaults
-            Optional override of default readout timing parameters.
-        """
-        self._targets = targets
-        self._mux_dict = mux_dict
-        self._control_params = control_params
-        self._readout_pulse_factory = readout_pulse_factory
-        self._pump_pulse_factory = pump_pulse_factory
-        self._defaults = defaults or MeasurementScheduleDefaults()
-
-    def get_readout_targets(self, schedule: PulseSchedule) -> list[str]:
+    ) -> list[str]:
         """
         Return schedule labels that correspond to readout targets.
 
@@ -120,12 +88,16 @@ class MeasurementScheduleBuilder:
             Labels in `schedule.labels` for which the corresponding
             `Target` is a readout target.
         """
-        return [label for label in schedule.labels if self._targets[label].is_read]
+        return [label for label in schedule.labels if targets[label].is_read]
 
     def add_readout_pulses(
         self,
         *,
         schedule: PulseSchedule,
+        targets: TargetMap[Target],
+        control_params: ControlParams,
+        readout_pulse_factory: ReadoutPulseFactory,
+        defaults: MeasurementScheduleDefaults,
         readout_amplitudes: dict[str, float] | None,
         readout_duration: float | None,
         readout_pre_margin: float | None,
@@ -165,26 +137,26 @@ class MeasurementScheduleBuilder:
         `schedule.labels` that are not pump targets.
         """
         if readout_amplitudes is None:
-            readout_amplitudes = self._control_params.readout_amplitude
+            readout_amplitudes = control_params.readout_amplitude
         if readout_duration is None:
-            readout_duration = self._defaults.readout_duration
+            readout_duration = defaults.readout_duration
         if readout_pre_margin is None:
-            readout_pre_margin = self._defaults.readout_pre_margin
+            readout_pre_margin = defaults.readout_pre_margin
         if readout_post_margin is None:
-            readout_post_margin = self._defaults.readout_post_margin
+            readout_post_margin = defaults.readout_post_margin
 
         readout_targets = list(
             {
                 Target.read_label(label)
                 for label in schedule.labels
-                if not self._targets[label].is_pump
+                if not targets[label].is_pump
             }
         )
         with schedule:
             for target in readout_targets:
                 schedule.add(
                     target,
-                    self._readout_pulse_factory(
+                    readout_pulse_factory(
                         target=target,
                         duration=readout_duration,
                         amplitude=readout_amplitudes.get(target),
@@ -200,6 +172,10 @@ class MeasurementScheduleBuilder:
         self,
         *,
         schedule: PulseSchedule,
+        mux_dict: Mapping[str, Mux],
+        control_params: ControlParams,
+        pump_pulse_factory: PumpPulseFactory,
+        defaults: MeasurementScheduleDefaults,
         readout_ranges: dict[str, list[range]],
         readout_pre_margin: float | None,
         readout_ramptime: float | None,
@@ -229,13 +205,13 @@ class MeasurementScheduleBuilder:
         using the mux index resolved from `readout_ranges` keys.
         """
         if readout_pre_margin is None:
-            readout_pre_margin = self._defaults.readout_pre_margin
+            readout_pre_margin = defaults.readout_pre_margin
 
         with schedule:
             for target, ranges in readout_ranges.items():
                 if not ranges:
                     continue
-                mux = self._mux_dict[Target.qubit_label(target)]
+                mux = mux_dict[Target.qubit_label(target)]
                 for i in range(len(ranges)):
                     current_range = ranges[i]
 
@@ -253,14 +229,14 @@ class MeasurementScheduleBuilder:
                         current_range.stop - current_range.start
                     ) * SAMPLING_PERIOD + readout_pre_margin
 
-                    pump_amplitude = self._control_params.get_pump_amplitude(mux.index)
+                    pump_amplitude = control_params.get_pump_amplitude(mux.index)
 
                     schedule.add(
                         mux.label,
                         PulseArray(
                             [
                                 Blank(blank_duration),
-                                self._pump_pulse_factory(
+                                pump_pulse_factory(
                                     target=target,
                                     duration=pump_duration,
                                     amplitude=pump_amplitude,
@@ -275,6 +251,8 @@ class MeasurementScheduleBuilder:
         self,
         *,
         schedule: PulseSchedule,
+        mux_dict: Mapping[str, Mux],
+        control_params: ControlParams,
         readout_ranges: dict[str, list[range]],
         capture_delays: dict[int, int] | None = None,
     ) -> CaptureSchedule:
@@ -309,7 +287,7 @@ class MeasurementScheduleBuilder:
             consecutive ranges, or if the last range extends beyond the schedule.
         """
         if capture_delays is None:
-            capture_delays = self._control_params.capture_delay_word
+            capture_delays = control_params.capture_delay_word
 
         captures: list[Capture] = []
         for target, ranges in readout_ranges.items():
@@ -321,7 +299,7 @@ class MeasurementScheduleBuilder:
                     f"({WORD_DURATION} ns)."
                 )
 
-            mux = self._mux_dict[Target.qubit_label(target)]
+            mux = mux_dict[Target.qubit_label(target)]
             capture_delay_word = capture_delays.get(mux.index)
             if capture_delay_word is None:
                 capture_delay_word = 0
@@ -382,8 +360,14 @@ class MeasurementScheduleBuilder:
         self,
         *,
         schedule: PulseSchedule,
+        targets: TargetMap[Target],
+        mux_dict: Mapping[str, Mux],
+        control_params: ControlParams,
+        readout_pulse_factory: ReadoutPulseFactory,
+        pump_pulse_factory: PumpPulseFactory,
         add_last_measurement: bool,
         add_pump_pulses: bool,
+        defaults: MeasurementScheduleDefaults | None = None,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -405,6 +389,12 @@ class MeasurementScheduleBuilder:
             If `True`, readout pulses are appended to the schedule.
         add_pump_pulses
             If `True`, pump pulses are added based on detected readout ranges.
+        targets, mux_dict, control_params
+            Context mappings and parameters used for readout/pump/capture settings.
+        readout_pulse_factory, pump_pulse_factory
+            Factory callbacks used to create readout and pump pulses.
+        defaults
+            Optional override of default readout timing parameters.
         readout_amplitudes, readout_duration, readout_pre_margin, readout_post_margin
             Optional overrides for readout pulse construction. Any value passed
             as `None` falls back to builder defaults.
@@ -428,9 +418,14 @@ class MeasurementScheduleBuilder:
             If there are no readout targets in the pulse schedule, or if capture
             schedule creation fails due to invalid alignment/spacing constraints.
         """
+        defaults = defaults or MeasurementScheduleDefaults()
         if add_last_measurement:
             self.add_readout_pulses(
                 schedule=schedule,
+                targets=targets,
+                control_params=control_params,
+                readout_pulse_factory=readout_pulse_factory,
+                defaults=defaults,
                 readout_amplitudes=readout_amplitudes,
                 readout_duration=readout_duration,
                 readout_pre_margin=readout_pre_margin,
@@ -440,7 +435,7 @@ class MeasurementScheduleBuilder:
                 readout_ramp_type=readout_ramp_type,
             )
 
-        readout_targets = self.get_readout_targets(schedule)
+        readout_targets = self.get_readout_targets(schedule=schedule, targets=targets)
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
 
@@ -451,6 +446,10 @@ class MeasurementScheduleBuilder:
         if add_pump_pulses:
             self.add_pump_pulses(
                 schedule=schedule,
+                mux_dict=mux_dict,
+                control_params=control_params,
+                pump_pulse_factory=pump_pulse_factory,
+                defaults=defaults,
                 readout_ranges=readout_ranges,
                 readout_pre_margin=readout_pre_margin,
                 readout_ramptime=readout_ramptime,
@@ -459,6 +458,8 @@ class MeasurementScheduleBuilder:
 
         capture_schedule = self.create_capture_schedule(
             schedule=schedule,
+            mux_dict=mux_dict,
+            control_params=control_params,
             readout_ranges=readout_ranges,
             capture_delays=capture_delays,
         )

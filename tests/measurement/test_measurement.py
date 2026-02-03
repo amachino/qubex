@@ -74,6 +74,33 @@ class _MeasurementForTest(Measurement):
         """Return the injected schedule builder."""
         return self._test_schedule_builder
 
+    @property
+    def targets(self) -> dict[str, Any]:
+        """Return a minimal target map for execute tests."""
+        return {"RQ00": SimpleNamespace(is_read=True, is_pump=False)}
+
+    @property
+    def mux_dict(self) -> dict[str, Any]:
+        """Return a minimal mux map for execute tests."""
+        return {"Q00": SimpleNamespace(index=0, label="MX0")}
+
+    @property
+    def control_params(self) -> Any:
+        """Return minimal control params for execute tests."""
+        return SimpleNamespace(
+            readout_amplitude={"RQ00": 0.2},
+            capture_delay_word={},
+            get_pump_amplitude=lambda _: 0.3,
+        )
+
+    @property
+    def pulse_factory(self) -> Any:
+        """Return a minimal pulse factory for execute tests."""
+        return SimpleNamespace(
+            readout_pulse=lambda **_: Blank(4),
+            pump_pulse=lambda **_: Blank(4),
+        )
+
 
 def _make_schedule() -> PulseSchedule:
     """Create a minimal valid schedule containing one readout pulse."""
