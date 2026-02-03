@@ -23,7 +23,7 @@ from qubex.backend import (
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.backend.quel_device_executor import QuelDeviceExecutor
-from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
+from qubex.pulse import FlatTop, PulseArray, PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers import StateClassifier
@@ -35,6 +35,7 @@ from .defaults import (
     DEFAULT_READOUT_RAMPTIME,
     DEFAULT_SHOTS,
 )
+from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_schedule_builder import (
     MeasurementScheduleBuilder,
     MeasurementScheduleDefaults,
@@ -200,14 +201,22 @@ class Measurement:
             targets=self.targets,
             mux_dict=self.mux_dict,
             control_params=self.control_params,
-            readout_pulse_factory=self.readout_pulse,
-            pump_pulse_factory=self.pump_pulse,
+            readout_pulse_factory=self.pulse_factory.readout_pulse,
+            pump_pulse_factory=self.pulse_factory.pump_pulse,
             defaults=MeasurementScheduleDefaults(
                 readout_duration=DEFAULT_READOUT_DURATION,
                 readout_ramptime=DEFAULT_READOUT_RAMPTIME,
                 readout_pre_margin=DEFAULT_READOUT_PRE_MARGIN,
                 readout_post_margin=DEFAULT_READOUT_POST_MARGIN,
             ),
+        )
+
+    @property
+    def pulse_factory(self) -> MeasurementPulseFactory:
+        """Create a pulse factory from current system state."""
+        return MeasurementPulseFactory(
+            control_params=self.control_params,
+            mux_dict=self.mux_dict,
         )
 
     @property
@@ -781,36 +790,15 @@ class Measurement:
         PulseArray
             Readout pulse array with margins.
         """
-        qubit = Target.qubit_label(target)
-        if duration is None:
-            duration = DEFAULT_READOUT_DURATION
-        if amplitude is None:
-            amplitude = self.control_params.get_readout_amplitude(qubit)
-        if ramptime is None:
-            ramptime = DEFAULT_READOUT_RAMPTIME
-        if type is None:
-            type = "RaisedCosine"
-        if drag_coeff is None:
-            drag_coeff = 0.0
-        if pre_margin is None:
-            pre_margin = DEFAULT_READOUT_PRE_MARGIN
-        if post_margin is None:
-            post_margin = DEFAULT_READOUT_POST_MARGIN
-        pulse = FlatTop(
+        return self.pulse_factory.readout_pulse(
+            target=target,
             duration=duration,
             amplitude=amplitude,
-            tau=ramptime,
-            beta=drag_coeff,
+            ramptime=ramptime,
             type=type,
-        )
-        return PulseArray(
-            [
-                Blank(pre_margin),
-                pulse.padded(
-                    total_duration=duration + post_margin,
-                    pad_side="right",
-                ),
-            ]
+            drag_coeff=drag_coeff,
+            pre_margin=pre_margin,
+            post_margin=post_margin,
         )
 
     def pump_pulse(
@@ -842,19 +830,10 @@ class Measurement:
         FlatTop
             Pump pulse.
         """
-        qubit = Target.qubit_label(target)
-        mux = self.mux_dict[qubit]
-        if duration is None:
-            duration = DEFAULT_READOUT_DURATION
-        if amplitude is None:
-            amplitude = self.control_params.get_pump_amplitude(mux.index)
-        if ramptime is None:
-            ramptime = DEFAULT_READOUT_RAMPTIME
-        if type is None:
-            type = "RaisedCosine"
-        return FlatTop(
+        return self.pulse_factory.pump_pulse(
+            target=target,
             duration=duration,
             amplitude=amplitude,
-            tau=ramptime,
+            ramptime=ramptime,
             type=type,
         )
