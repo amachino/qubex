@@ -110,19 +110,19 @@ class MeasurementPulseFactory:
 
     def pump_pulse(
         self,
-        target: str,
+        mux_index: int,
         duration: float | None = None,
         amplitude: float | None = None,
         ramptime: float | None = None,
         type: RampType | None = None,
     ) -> FlatTop:
         """
-        Build a pump pulse for a target.
+        Build a pump pulse for a mux.
 
         Parameters
         ----------
-        target : str
-            Target label.
+        mux_index : int
+            Mux index.
         duration : float | None, optional
             Pump duration in ns.
         amplitude : float | None, optional
@@ -137,12 +137,10 @@ class MeasurementPulseFactory:
         FlatTop
             Pump pulse.
         """
-        qubit = Target.qubit_label(target)
-        mux = self._mux_dict[qubit]
         if duration is None:
             duration = DEFAULT_READOUT_DURATION
         if amplitude is None:
-            amplitude = self._control_params.get_pump_amplitude(mux.index)
+            amplitude = self._control_params.get_pump_amplitude(mux_index)
         if ramptime is None:
             ramptime = DEFAULT_READOUT_RAMPTIME
         if type is None:

@@ -31,7 +31,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
-from qubex.pulse import Blank, PulseArray, PulseSchedule, RampType
+from qubex.pulse import PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
@@ -693,7 +693,7 @@ class Measurement:
 
         measure_mode = MeasureMode(mode)
 
-        schedule = self._complete_pulse_schedule(
+        schedule = self._build_pulse_schedule(
             schedule=schedule,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
@@ -748,7 +748,7 @@ class Measurement:
 
         return result
 
-    def _complete_pulse_schedule(
+    def _build_pulse_schedule(
         self,
         schedule: PulseSchedule,
         readout_amplitudes: dict[str, float] | None = None,
@@ -835,56 +835,29 @@ class Measurement:
             pad_side="right",
         )
 
-        # get readout ranges
-        readout_ranges = schedule.get_pulse_ranges(readout_targets)
-
         # add pump pulses if necessary
         if add_pump_pulses:
-            # TODO: There is a bug where, when pumping while simultaneously reading out multiple resonators in the same MUX, multiple pump pulses are placed in series.
+            muxes = []
+            for target in readout_targets:
+                qubit_label = Target.qubit_label(target)
+                mux = self.mux_dict[qubit_label]
+                if mux not in muxes:
+                    muxes.append(mux)
             with PulseSchedule() as ps_with_pumps:
                 ps_with_pumps.call(schedule)
-                for target, ranges in readout_ranges.items():
-                    if not ranges:
-                        continue
-                    mux = self.mux_dict[Target.qubit_label(target)]
-                    # add pump pulses to overlap with the readout pulses
-                    for i in range(len(ranges)):
-                        current_range = ranges[i]
+                for mux in muxes:
+                    pump_amplitude = self.control_params.get_pump_amplitude(mux.index)
 
-                        if i == 0:
-                            blank_duration = current_range.start * SAMPLING_PERIOD
-                        else:
-                            prev_range = ranges[i - 1]
-                            blank_duration = (
-                                current_range.start - prev_range.stop
-                            ) * SAMPLING_PERIOD
-
-                        # start the pump pulse before the readout pulse if there is a pre-margin
-                        blank_duration -= readout_pre_margin
-
-                        pump_duration = (
-                            current_range.stop - current_range.start
-                        ) * SAMPLING_PERIOD + readout_pre_margin
-
-                        pump_amplitude = self.control_params.get_pump_amplitude(
-                            mux.index
-                        )
-
-                        ps_with_pumps.add(
-                            mux.label,
-                            PulseArray(
-                                [
-                                    Blank(blank_duration),
-                                    self.pulse_factory.pump_pulse(
-                                        target=target,
-                                        duration=pump_duration,
-                                        amplitude=pump_amplitude,
-                                        ramptime=readout_ramptime,
-                                        type=readout_ramp_type,
-                                    ),
-                                ]
-                            ),
-                        )
+                    ps_with_pumps.add(
+                        mux.label,
+                        self.pulse_factory.pump_pulse(
+                            mux_index=mux.index,
+                            duration=schedule.duration,
+                            amplitude=pump_amplitude,
+                            ramptime=readout_ramptime,
+                            type=readout_ramp_type,
+                        ),
+                    )
 
             if not ps_with_pumps.is_valid():
                 raise ValueError("Invalid pulse schedule with pump pulses.")
