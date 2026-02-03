@@ -558,6 +558,8 @@ class Measurement:
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=config.shots,
+            measurement_config=config,
+            measurement_schedule=schedule,
         )
 
         rawdata_dir = self.system_manager.rawdata_dir
@@ -1082,6 +1084,8 @@ class Measurement:
         backend_result: RawResult,
         measure_mode: MeasureMode,
         shots: int,
+        measurement_config: MeasurementConfig | None = None,
+        measurement_schedule: MeasurementSchedule | None = None,
     ) -> MeasurementResult:
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
@@ -1118,6 +1122,23 @@ class Measurement:
             mode=measure_mode.value,
             data=dict(measure_data),
             config=self.device_controller.box_config,
+            measurement_config=(
+                measurement_config.to_dict() if measurement_config is not None else {}
+            ),
+            pulse_metadata=(
+                {
+                    "labels": measurement_schedule.pulse_schedule.labels,
+                    "duration": measurement_schedule.pulse_schedule.duration,
+                    "length": measurement_schedule.pulse_schedule.length,
+                }
+                if measurement_schedule is not None
+                else {}
+            ),
+            capture_schedule=(
+                measurement_schedule.capture_schedule
+                if measurement_schedule is not None
+                else None
+            ),
         )
 
     def _to_multiple_measure_result(

@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from qubex.measurement.models import MeasurementResult
+from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.measurement.models.measure_result import (
     MeasureData,
     MeasureMode,
@@ -69,9 +70,25 @@ def test_to_measure_result_raises_for_invalid_index() -> None:
 
 def test_json_roundtrip_preserves_raw_arrays() -> None:
     """Given serialized measurement result, when deserializing, then raw arrays are preserved."""
-    original = MeasurementResult.from_multiple(_make_multiple_measure_result())
+    original = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
+        config={"shots": 2},
+        measurement_config={"mode": "avg", "shots": 2},
+        pulse_metadata={"labels": ["RQ00"], "duration": 256.0, "length": 128},
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(channels=["RQ00"], start_time=0.0, duration=32.0),
+                Capture(channels=["RQ00"], start_time=64.0, duration=32.0),
+            ]
+        ),
+    )
 
     restored = MeasurementResult.from_json(original.to_json())
 
     assert restored.mode == original.mode
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
+    assert restored.measurement_config == original.measurement_config
+    assert restored.pulse_metadata == original.pulse_metadata
+    assert restored.capture_schedule is not None
+    assert len(restored.capture_schedule.captures) == 2

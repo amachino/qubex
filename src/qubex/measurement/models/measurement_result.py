@@ -8,6 +8,7 @@ import numpy as np
 from pydantic import Field
 
 from qubex.core.model import Model
+from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
     MeasureData,
     MeasureMode,
@@ -22,6 +23,9 @@ class MeasurementResult(Model):
     mode: Literal["single", "avg"]
     data: dict[str, list[np.ndarray]]
     config: dict[str, Any] = Field(default_factory=dict)
+    measurement_config: dict[str, Any] = Field(default_factory=dict)
+    pulse_metadata: dict[str, Any] = Field(default_factory=dict)
+    capture_schedule: CaptureSchedule | None = None
 
     @property
     def measure_mode(self) -> MeasureMode:
