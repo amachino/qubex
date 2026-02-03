@@ -63,7 +63,7 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
     ) -> MeasurementResult:
         called["run_schedule"] = schedule
         called["run_config"] = config
-        return MeasurementResult(multiple=multiple)
+        return MeasurementResult.from_multiple(multiple)
 
     measurement._build_measurement_schedule = MethodType(  # noqa: SLF001
         fake_build, measurement
@@ -72,7 +72,8 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
 
     result = measurement.execute(schedule=pulse_schedule, add_last_measurement=True)
 
-    assert result is multiple
+    assert result.mode == multiple.mode
+    assert np.array_equal(result.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
     assert called["build_schedule"] is pulse_schedule
     assert called["run_schedule"] is built_schedule
     assert called["build_kwargs"]["add_last_measurement"] is True

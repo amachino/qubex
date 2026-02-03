@@ -564,7 +564,7 @@ class Measurement:
         if rawdata_dir is not None:
             multiple.save(data_dir=rawdata_dir)
 
-        return MeasurementResult(multiple=multiple)
+        return MeasurementResult.from_multiple(multiple)
 
     def measure_noise(
         self,
