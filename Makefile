@@ -2,10 +2,12 @@
 
 # Install dependencies
 sync:
-	@if [ ! -d .venv ]; then \
-		uv venv; \
-	fi
-	uv sync --all-groups --all-extras
+# 	@if [ ! -d .venv ]; then \
+# 		uv venv; \
+# 	fi
+# 	uv sync --all-groups --all-extras
+# WORKAROUND: Directly install in editable mode to avoid issues with uv sync
+	uv pip install -e .
 
 # Run unit tests
 test:
