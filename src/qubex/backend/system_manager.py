@@ -243,8 +243,8 @@ class SystemManager:
         self,
         *,
         chip_id: str,
-        config_dir: Path | str | None,
-        params_dir: Path | str | None,
+        config_dir: Path | str | None = None,
+        params_dir: Path | str | None = None,
         targets_to_exclude: list[str] | None = None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
         mock_mode: bool = False,
@@ -256,9 +256,9 @@ class SystemManager:
         ----------
         chip_id : str
             Chip ID.
-        config_dir : str, optional
+        config_dir : Path | str, optional
             Configuration directory.
-        params_dir : str, optional
+        params_dir : Path | str, optional
             Parameters directory.
         targets_to_exclude : list[str], optional
             List of target labels to exclude, by default None.

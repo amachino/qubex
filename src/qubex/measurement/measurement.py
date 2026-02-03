@@ -1,4 +1,9 @@
-"""Measurement execution utilities."""
+"""
+High-level measurement orchestration API.
+
+This module exposes `Measurement`, a facade that composes device setup,
+schedule construction, and execution components for measurement runs.
+"""
 
 from __future__ import annotations
 
@@ -38,7 +43,16 @@ from .models import (
 
 
 class Measurement:
-    """Measurement controller for device execution and analysis."""
+    """
+    Coordinate end-to-end measurement workflows.
+
+    `Measurement` owns the high-level workflow while delegating concrete
+    responsibilities to focused collaborators: configuration/device lifecycle
+    (`MeasurementDeviceManager`), schedule assembly
+    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`), and backend
+    execution (`MeasurementRunner`/`QuelDeviceExecutor`). It also keeps optional
+    state classifiers used during readout post-processing.
+    """
 
     def __init__(
         self,
@@ -48,7 +62,7 @@ class Measurement:
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         load_configs: bool = True,
-        connect_devices: bool = True,
+        connect_devices: bool = False,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
     ):
         """
@@ -67,7 +81,7 @@ class Measurement:
         load_configs : bool, optional
             Whether to load the configurations, by default True.
         connect_devices : bool, optional
-            Whether to connect the devices, by default True.
+            Whether to connect the devices, by default False.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
 
@@ -497,6 +511,7 @@ class Measurement:
     def measure_noise(
         self,
         targets: Collection[str],
+        *,
         duration: float,
     ) -> MeasureResult:
         """
