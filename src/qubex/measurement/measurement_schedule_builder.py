@@ -68,6 +68,30 @@ ScheduleAdjuster = Callable[[PulseSchedule], None]
 class MeasurementScheduleBuilder:
     """Builder for measurement and capture schedules."""
 
+    @staticmethod
+    def _resolve_readout_timing(
+        *,
+        defaults: MeasurementScheduleDefaults,
+        readout_duration: float | None,
+        readout_pre_margin: float | None,
+        readout_post_margin: float | None,
+    ) -> tuple[float, float, float]:
+        """Resolve duration and margins using explicit values or defaults."""
+        duration = (
+            defaults.readout_duration if readout_duration is None else readout_duration
+        )
+        pre_margin = (
+            defaults.readout_pre_margin
+            if readout_pre_margin is None
+            else readout_pre_margin
+        )
+        post_margin = (
+            defaults.readout_post_margin
+            if readout_post_margin is None
+            else readout_post_margin
+        )
+        return duration, pre_margin, post_margin
+
     def get_readout_targets(
         self,
         *,
@@ -138,12 +162,14 @@ class MeasurementScheduleBuilder:
         """
         if readout_amplitudes is None:
             readout_amplitudes = control_params.readout_amplitude
-        if readout_duration is None:
-            readout_duration = defaults.readout_duration
-        if readout_pre_margin is None:
-            readout_pre_margin = defaults.readout_pre_margin
-        if readout_post_margin is None:
-            readout_post_margin = defaults.readout_post_margin
+        readout_duration, readout_pre_margin, readout_post_margin = (
+            self._resolve_readout_timing(
+                defaults=defaults,
+                readout_duration=readout_duration,
+                readout_pre_margin=readout_pre_margin,
+                readout_post_margin=readout_post_margin,
+            )
+        )
 
         readout_targets = list(
             {
@@ -204,24 +230,21 @@ class MeasurementScheduleBuilder:
         Pump amplitude is determined by `ControlParams.get_pump_amplitude`
         using the mux index resolved from `readout_ranges` keys.
         """
-        if readout_pre_margin is None:
-            readout_pre_margin = defaults.readout_pre_margin
+        _, readout_pre_margin, _ = self._resolve_readout_timing(
+            defaults=defaults,
+            readout_duration=None,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=None,
+        )
 
         with schedule:
             for target, ranges in readout_ranges.items():
                 if not ranges:
                     continue
                 mux = mux_dict[Target.qubit_label(target)]
-                for i in range(len(ranges)):
-                    current_range = ranges[i]
-
-                    if i == 0:
-                        blank_duration = current_range.start * SAMPLING_PERIOD
-                    else:
-                        prev_range = ranges[i - 1]
-                        blank_duration = (
-                            current_range.start - prev_range.stop
-                        ) * SAMPLING_PERIOD
+                prev_stop = 0
+                for current_range in ranges:
+                    blank_duration = (current_range.start - prev_stop) * SAMPLING_PERIOD
 
                     blank_duration -= readout_pre_margin
 
@@ -246,6 +269,7 @@ class MeasurementScheduleBuilder:
                             ]
                         ),
                     )
+                    prev_stop = current_range.stop
 
     def create_capture_schedule(
         self,
@@ -293,12 +317,6 @@ class MeasurementScheduleBuilder:
         for target, ranges in readout_ranges.items():
             if not ranges:
                 continue
-            if ranges[0].start % WORD_LENGTH != 0:
-                raise ValueError(
-                    "Capture range should start at a multiple of 4 samples "
-                    f"({WORD_DURATION} ns)."
-                )
-
             mux = mux_dict[Target.qubit_label(target)]
             capture_delay_word = capture_delays.get(mux.index)
             if capture_delay_word is None:

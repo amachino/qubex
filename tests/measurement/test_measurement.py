@@ -65,14 +65,14 @@ class StubDeviceExecutor:
 
 
 class _MeasurementForTest(Measurement):
-    """Expose injectable schedule builder for orchestration tests."""
+    """Expose injectable schedule builder behavior for orchestration tests."""
 
-    _test_schedule_builder: Any
+    _test_schedule_builder: StubScheduleBuilder
 
-    @property
-    def schedule_builder(self) -> Any:
-        """Return the injected schedule builder."""
-        return self._test_schedule_builder
+    def _build_measurement_schedule(self, **kwargs: Any) -> Any:
+        """Route schedule building through an injected stub builder."""
+        kwargs["schedule_adjuster"] = self.device_executor.adjust_schedule_for_device
+        return self._test_schedule_builder.build_measurement_schedule(**kwargs)
 
     @property
     def targets(self) -> dict[str, Any]:

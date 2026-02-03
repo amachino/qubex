@@ -195,16 +195,51 @@ class Measurement:
         return self._device_executor
 
     @property
-    def schedule_builder(self) -> MeasurementScheduleBuilder:
-        """Create a stateless measurement schedule builder."""
-        return MeasurementScheduleBuilder()
-
-    @property
     def pulse_factory(self) -> MeasurementPulseFactory:
         """Create a pulse factory from current system state."""
         return MeasurementPulseFactory(
             control_params=self.control_params,
             mux_dict=self.mux_dict,
+        )
+
+    def _build_measurement_schedule(
+        self,
+        *,
+        schedule: PulseSchedule,
+        add_last_measurement: bool,
+        add_pump_pulses: bool,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_drag_coeff: float | None = None,
+        readout_ramp_type: RampType | None = None,
+    ):
+        """Build a measurement schedule from a pulse schedule."""
+        return MeasurementScheduleBuilder().build_measurement_schedule(
+            schedule=schedule,
+            targets=self.targets,
+            mux_dict=self.mux_dict,
+            control_params=self.control_params,
+            readout_pulse_factory=self.pulse_factory.readout_pulse,
+            pump_pulse_factory=self.pulse_factory.pump_pulse,
+            add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
+            defaults=MeasurementScheduleDefaults(
+                readout_duration=DEFAULT_READOUT_DURATION,
+                readout_ramptime=DEFAULT_READOUT_RAMPTIME,
+                readout_pre_margin=DEFAULT_READOUT_PRE_MARGIN,
+                readout_post_margin=DEFAULT_READOUT_POST_MARGIN,
+            ),
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
+            schedule_adjuster=self.device_executor.adjust_schedule_for_device,
         )
 
     @property
@@ -704,21 +739,10 @@ class Measurement:
 
         measure_mode = MeasureMode(mode)
 
-        measurement_schedule = self.schedule_builder.build_measurement_schedule(
+        measurement_schedule = self._build_measurement_schedule(
             schedule=schedule,
-            targets=self.targets,
-            mux_dict=self.mux_dict,
-            control_params=self.control_params,
-            readout_pulse_factory=self.pulse_factory.readout_pulse,
-            pump_pulse_factory=self.pulse_factory.pump_pulse,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
-            defaults=MeasurementScheduleDefaults(
-                readout_duration=DEFAULT_READOUT_DURATION,
-                readout_ramptime=DEFAULT_READOUT_RAMPTIME,
-                readout_pre_margin=DEFAULT_READOUT_PRE_MARGIN,
-                readout_post_margin=DEFAULT_READOUT_POST_MARGIN,
-            ),
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -726,7 +750,6 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
-            schedule_adjuster=self.device_executor.adjust_schedule_for_device,
         )
         pulse_schedule = measurement_schedule.pulse_schedule
         capture_schedule = measurement_schedule.capture_schedule
