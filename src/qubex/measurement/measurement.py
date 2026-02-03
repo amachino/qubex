@@ -94,7 +94,6 @@ class Measurement:
         self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
         self._device_executor: QuelDeviceExecutor | None = None
-        self._schedule_builder: MeasurementScheduleBuilder | None = None
         self._system_manager = SystemManager.shared()
         if load_configs:
             self.load(
@@ -196,24 +195,20 @@ class Measurement:
 
     @property
     def schedule_builder(self) -> MeasurementScheduleBuilder:
-        """Return (and lazily build) the measurement schedule builder."""
-        builder = getattr(self, "_schedule_builder", None)
-        if builder is None:
-            builder = MeasurementScheduleBuilder(
-                targets=self.targets,
-                mux_dict=self.mux_dict,
-                control_params=self.control_params,
-                readout_pulse_factory=self.readout_pulse,
-                pump_pulse_factory=self.pump_pulse,
-                defaults=MeasurementScheduleDefaults(
-                    readout_duration=DEFAULT_READOUT_DURATION,
-                    readout_ramptime=DEFAULT_READOUT_RAMPTIME,
-                    readout_pre_margin=DEFAULT_READOUT_PRE_MARGIN,
-                    readout_post_margin=DEFAULT_READOUT_POST_MARGIN,
-                ),
-            )
-            self._schedule_builder = builder
-        return builder
+        """Create a measurement schedule builder from current system state."""
+        return MeasurementScheduleBuilder(
+            targets=self.targets,
+            mux_dict=self.mux_dict,
+            control_params=self.control_params,
+            readout_pulse_factory=self.readout_pulse,
+            pump_pulse_factory=self.pump_pulse,
+            defaults=MeasurementScheduleDefaults(
+                readout_duration=DEFAULT_READOUT_DURATION,
+                readout_ramptime=DEFAULT_READOUT_RAMPTIME,
+                readout_pre_margin=DEFAULT_READOUT_PRE_MARGIN,
+                readout_post_margin=DEFAULT_READOUT_POST_MARGIN,
+            ),
+        )
 
     @property
     def config_loader(self) -> ConfigLoader:
@@ -712,48 +707,30 @@ class Measurement:
 
         measure_mode = MeasureMode(mode)
 
-        builder = self.schedule_builder
-        if add_last_measurement:
-            builder.add_readout_pulses(
-                schedule=schedule,
-                readout_amplitudes=readout_amplitudes,
-                readout_duration=readout_duration,
-                readout_pre_margin=readout_pre_margin,
-                readout_post_margin=readout_post_margin,
-                readout_ramptime=readout_ramptime,
-                readout_drag_coeff=readout_drag_coeff,
-                readout_ramp_type=readout_ramp_type,
-            )
+        measurement_schedule = self.schedule_builder.build_measurement_schedule(
+            schedule=schedule,
+            add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramptime=readout_ramptime,
+            readout_drag_coeff=readout_drag_coeff,
+            readout_ramp_type=readout_ramp_type,
+            schedule_adjuster=self.device_executor.adjust_schedule_for_device,
+        )
+        pulse_schedule = measurement_schedule.pulse_schedule
+        capture_schedule = measurement_schedule.capture_schedule
 
-        readout_targets = builder.get_readout_targets(schedule)
-        if not readout_targets:
-            raise ValueError("No readout targets in the pulse schedule.")
-
-        self.device_executor.adjust_schedule_for_device(schedule)
-
-        readout_ranges = schedule.get_pulse_ranges(readout_targets)
-        if add_pump_pulses:
-            builder.add_pump_pulses(
-                schedule=schedule,
-                readout_ranges=readout_ranges,
-                readout_pre_margin=readout_pre_margin,
-                readout_ramptime=readout_ramptime,
-                readout_ramp_type=readout_ramp_type,
-            )
-
-        if not schedule.is_valid():
+        if not pulse_schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
 
         if plot:
-            schedule.plot()
-
-        capture_schedule = builder.create_capture_schedule(
-            schedule=schedule,
-            readout_ranges=readout_ranges,
-        )
+            pulse_schedule.plot()
 
         return self.device_executor.execute(
-            schedule=schedule,
+            schedule=pulse_schedule,
             capture_schedule=capture_schedule,
             measure_mode=measure_mode,
             shots=shots,

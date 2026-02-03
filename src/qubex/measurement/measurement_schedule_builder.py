@@ -62,6 +62,7 @@ class MeasurementScheduleDefaults:
 
 ReadoutPulseFactory = Callable[..., PulseArray]
 PumpPulseFactory = Callable[..., FlatTop]
+ScheduleAdjuster = Callable[[PulseSchedule], None]
 
 
 class MeasurementScheduleBuilder:
@@ -391,6 +392,7 @@ class MeasurementScheduleBuilder:
         readout_drag_coeff: float | None = None,
         readout_ramp_type: RampType | None = None,
         capture_delays: dict[int, int] | None = None,
+        schedule_adjuster: ScheduleAdjuster | None = None,
     ) -> MeasurementSchedule:
         """
         Build a `MeasurementSchedule`.
@@ -410,6 +412,9 @@ class MeasurementScheduleBuilder:
             Parameters forwarded to the readout (and/or pump) pulse factories.
         capture_delays
             Optional capture delay mapping; see `create_capture_schedule`.
+        schedule_adjuster
+            Optional callback to adjust the pulse schedule before extracting
+            readout ranges and generating capture settings.
 
         Returns
         -------
@@ -438,6 +443,9 @@ class MeasurementScheduleBuilder:
         readout_targets = self.get_readout_targets(schedule)
         if not readout_targets:
             raise ValueError("No readout targets in the pulse schedule.")
+
+        if schedule_adjuster is not None:
+            schedule_adjuster(schedule)
 
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
         if add_pump_pulses:

@@ -29,26 +29,21 @@ class StubScheduleBuilder:
     ) -> None:
         self._readout_targets = readout_targets
         self._capture_schedule = capture_schedule
-        self.add_readout_calls: list[dict[str, Any]] = []
-        self.add_pump_calls: list[dict[str, Any]] = []
-        self.capture_calls: list[dict[str, Any]] = []
+        self.build_calls: list[dict[str, Any]] = []
 
-    def add_readout_pulses(self, **kwargs: Any) -> None:
-        """Record readout pulse insertion calls."""
-        self.add_readout_calls.append(kwargs)
-
-    def get_readout_targets(self, schedule: PulseSchedule) -> list[str]:
-        """Return configured readout targets."""
-        return self._readout_targets
-
-    def add_pump_pulses(self, **kwargs: Any) -> None:
-        """Record pump pulse insertion calls."""
-        self.add_pump_calls.append(kwargs)
-
-    def create_capture_schedule(self, **kwargs: Any) -> Any:
-        """Record capture schedule build calls."""
-        self.capture_calls.append(kwargs)
-        return self._capture_schedule
+    def build_measurement_schedule(self, **kwargs: Any) -> Any:
+        """Record schedule build calls and return a synthetic schedule bundle."""
+        self.build_calls.append(kwargs)
+        schedule = kwargs["schedule"]
+        if not self._readout_targets:
+            raise ValueError("No readout targets in the pulse schedule.")
+        adjuster = kwargs.get("schedule_adjuster")
+        if adjuster is not None:
+            adjuster(schedule)
+        return SimpleNamespace(
+            pulse_schedule=schedule,
+            capture_schedule=self._capture_schedule,
+        )
 
 
 class StubDeviceExecutor:
@@ -69,6 +64,17 @@ class StubDeviceExecutor:
         return self._execute_result
 
 
+class _MeasurementForTest(Measurement):
+    """Expose injectable schedule builder for orchestration tests."""
+
+    _test_schedule_builder: Any
+
+    @property
+    def schedule_builder(self) -> Any:
+        """Return the injected schedule builder."""
+        return self._test_schedule_builder
+
+
 def _make_schedule() -> PulseSchedule:
     """Create a minimal valid schedule containing one readout pulse."""
     schedule = PulseSchedule(["RQ00"])
@@ -81,8 +87,8 @@ def _make_measurement(
     executor: StubDeviceExecutor,
 ) -> Measurement:
     """Create a Measurement instance with stub dependencies."""
-    measurement = object.__new__(Measurement)
-    object.__setattr__(measurement, "_schedule_builder", builder)
+    measurement = object.__new__(_MeasurementForTest)
+    object.__setattr__(measurement, "_test_schedule_builder", builder)
     object.__setattr__(measurement, "_device_executor", executor)
     object.__setattr__(measurement, "_classifiers", {})
     object.__setattr__(measurement, "_system_manager", SimpleNamespace())
@@ -111,9 +117,9 @@ def test_execute_delegates_schedule_and_execution_steps() -> None:
     )
 
     assert result is expected_result
-    assert len(builder.add_readout_calls) == 1
-    assert len(builder.add_pump_calls) == 1
-    assert len(builder.capture_calls) == 1
+    assert len(builder.build_calls) == 1
+    assert builder.build_calls[0]["add_last_measurement"] is True
+    assert builder.build_calls[0]["add_pump_pulses"] is True
     assert executor.adjust_calls == [schedule]
     assert len(executor.execute_calls) == 1
     assert executor.execute_calls[0]["schedule"] is schedule
