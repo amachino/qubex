@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from functools import cached_property, reduce
@@ -35,6 +34,7 @@ from .defaults import (
     DEFAULT_READOUT_RAMPTIME,
     DEFAULT_SHOTS,
 )
+from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_runner import MeasurementRunner
 from .measurement_schedule_builder import (
@@ -46,8 +46,6 @@ from .models import (
     MeasureResult,
     MultipleMeasureResult,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class Measurement:
@@ -97,6 +95,10 @@ class Measurement:
         self._classifiers: TargetMap[StateClassifier] = {}
         self._device_executor: QuelDeviceExecutor | None = None
         self._system_manager = SystemManager.shared()
+        self._device_manager = MeasurementDeviceManager(
+            system_manager=self._system_manager,
+            qubits=self._qubits,
+        )
         if load_configs:
             self.load(
                 config_dir=config_dir,
@@ -124,13 +126,12 @@ class Measurement:
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
         """
-        self.system_manager.load(
+        self.device_manager.load(
             chip_id=self._chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
         )
-        self.system_manager.load_skew_file(self.box_ids)
 
     def connect(
         self,
@@ -138,13 +139,7 @@ class Measurement:
         sync_clocks: bool = True,
     ) -> None:
         """Connect to the devices."""
-        if len(self.box_ids) == 0:
-            logger.warning("No boxes are selected. Please check the configuration.")
-            return
-        self.device_controller.connect(self.box_ids)
-        self.system_manager.pull(self.box_ids)
-        if sync_clocks:
-            self.device_controller.resync_clocks(self.box_ids)
+        self.device_manager.connect(sync_clocks=sync_clocks)
 
     def reload(
         self,
@@ -167,21 +162,22 @@ class Measurement:
     @cached_property
     def box_ids(self) -> list[str]:
         """Get the list of box IDs."""
-        boxes = self.experiment_system.get_boxes_for_qubits(self._qubits)
-        return [box.id for box in boxes]
+        return self.device_manager.box_ids
 
     @cached_property
     def mux_dict(self) -> dict[str, Mux]:
         """Get a dictionary of Mux objects indexed by qubit labels."""
-        return {
-            qubit: self.experiment_system.get_mux_by_qubit(qubit)
-            for qubit in self._qubits
-        }
+        return self.device_manager.mux_dict
 
     @property
     def system_manager(self) -> SystemManager:
         """Get the state manager."""
         return self._system_manager
+
+    @property
+    def device_manager(self) -> MeasurementDeviceManager:
+        """Return the device/config manager."""
+        return self._device_manager
 
     @property
     def device_executor(self) -> QuelDeviceExecutor:
@@ -256,17 +252,17 @@ class Measurement:
     @property
     def config_loader(self) -> ConfigLoader:
         """Get the configuration loader."""
-        return self._system_manager.config_loader
+        return self.device_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
         """Get the experiment system."""
-        return self._system_manager.experiment_system
+        return self.device_manager.experiment_system
 
     @property
     def device_controller(self) -> DeviceController:
         """Get the device controller."""
-        return self._system_manager.device_controller
+        return self.device_manager.device_controller
 
     @property
     def control_params(self) -> ControlParams:
@@ -396,7 +392,7 @@ class Measurement:
         bool
             True if connected, False otherwise.
         """
-        return self.device_controller.is_connected
+        return self.device_manager.is_connected()
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """
@@ -416,14 +412,7 @@ class Measurement:
         --------
         >>> meas.check_link_status(["Q73A", "U10B"])
         """
-        link_statuses = {
-            box: self.device_controller.link_status(box) for box in box_list
-        }
-        is_linkedup = all(all(status.values()) for status in link_statuses.values())
-        return {
-            "status": is_linkedup,
-            "links": link_statuses,
-        }
+        return self.device_manager.check_link_status(box_list)
 
     def check_clock_status(self, box_list: list[str]) -> dict:
         """
@@ -443,19 +432,7 @@ class Measurement:
         --------
         >>> meas.check_clock_status(["Q73A", "U10B"])
         """
-        clocks = self.device_controller.read_clocks(box_list)
-        clock_statuses = dict(
-            zip(
-                box_list,
-                clocks,
-                strict=True,
-            )
-        )
-        is_synced = self.device_controller.check_clocks(box_list)
-        return {
-            "status": is_synced,
-            "clocks": clock_statuses,
-        }
+        return self.device_manager.check_clock_status(box_list)
 
     def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
         """
@@ -470,8 +447,7 @@ class Measurement:
         --------
         >>> meas.linkup(["Q73A", "U10B"])
         """
-        self.device_controller.linkup_boxes(box_list, noise_threshold=noise_threshold)
-        self.device_controller.sync_clocks(box_list)
+        self.device_manager.linkup(box_list, noise_threshold=noise_threshold)
 
     def relinkup(self, box_list: list[str]) -> None:
         """
@@ -486,8 +462,7 @@ class Measurement:
         --------
         >>> meas.relinkup(["Q73A", "U10B"])
         """
-        self.device_controller.relinkup_boxes(box_list)
-        self.device_controller.sync_clocks(box_list)
+        self.device_manager.relinkup(box_list)
 
     @contextmanager
     def modified_frequencies(
@@ -510,11 +485,8 @@ class Measurement:
         ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ...     })
         """
-        if target_frequencies is None:
+        with self.device_manager.modified_frequencies(target_frequencies):
             yield
-        else:
-            with self.system_manager.modified_frequencies(target_frequencies):
-                yield
 
     @contextmanager
     def apply_dc_voltages(self, targets: str | Collection[str]) -> Iterator[None]:

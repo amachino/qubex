@@ -2,6 +2,7 @@
 
 from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
 from .measurement import Measurement
+from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_runner import MeasurementRunner
 from .measurement_schedule_builder import MeasurementScheduleBuilder
@@ -18,6 +19,7 @@ __all__ = [
     "MeasureMode",
     "MeasureResult",
     "Measurement",
+    "MeasurementDeviceManager",
     "MeasurementPulseFactory",
     "MeasurementRunner",
     "MeasurementScheduleBuilder",

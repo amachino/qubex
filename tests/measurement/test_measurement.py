@@ -225,6 +225,16 @@ def test_reload_uses_loaded_config_paths() -> None:
             )
         ),
     )
+    object.__setattr__(
+        measurement,
+        "_device_manager",
+        SimpleNamespace(
+            config_loader=SimpleNamespace(
+                config_path=config_path,
+                params_path=params_path,
+            )
+        ),
+    )
     calls: dict[str, Any] = {}
 
     def _load_stub(
