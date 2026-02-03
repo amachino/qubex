@@ -32,7 +32,10 @@ from qubex.backend import (
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.measurement.models.measurement_config import MeasurementConfig
-from qubex.measurement.models.measurement_result import MeasurementResult
+from qubex.measurement.models.measurement_result import (
+    MeasurementResult,
+    PulseScheduleSnapshot,
+)
 from qubex.pulse import PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
@@ -1130,13 +1133,30 @@ class Measurement:
         return MeasurementResult(
             mode=measure_mode.value,
             data=dict(measure_data),
+            device_config=self.device_controller.box_config,
             measurement_config=(
                 measurement_config.to_dict() if measurement_config is not None else {}
             ),
             pulse_schedule=(
-                measurement_schedule.pulse_schedule.get_sampled_sequences(copy=True)
+                PulseScheduleSnapshot(
+                    target_labels=measurement_schedule.pulse_schedule.labels,
+                    total_duration=measurement_schedule.pulse_schedule.duration,
+                    total_length=measurement_schedule.pulse_schedule.length,
+                    waveforms=measurement_schedule.pulse_schedule.get_sampled_sequences(
+                        copy=True
+                    ),
+                )
                 if save_waveforms and measurement_schedule is not None
-                else None
+                else (
+                    PulseScheduleSnapshot(
+                        target_labels=measurement_schedule.pulse_schedule.labels,
+                        total_duration=measurement_schedule.pulse_schedule.duration,
+                        total_length=measurement_schedule.pulse_schedule.length,
+                        waveforms=None,
+                    )
+                    if measurement_schedule is not None
+                    else None
+                )
             ),
             capture_schedule=(
                 measurement_schedule.capture_schedule

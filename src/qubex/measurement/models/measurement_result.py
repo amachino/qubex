@@ -21,13 +21,23 @@ from qubex.measurement.models.measure_result import (
 )
 
 
+class PulseScheduleSnapshot(Model):
+    """Serializable snapshot of a pulse schedule used in a run."""
+
+    target_labels: list[str]
+    total_duration: float
+    total_length: int
+    waveforms: dict[str, np.ndarray] | None = None
+
+
 class MeasurementResult(Model):
     """Canonical serializable result of a measurement run."""
 
     mode: Literal["single", "avg"]
     data: dict[str, list[np.ndarray]]
+    device_config: dict[str, Any] = Field(default_factory=dict)
     measurement_config: dict[str, Any] = Field(default_factory=dict)
-    pulse_schedule: dict[str, np.ndarray] | None = None
+    pulse_schedule: PulseScheduleSnapshot | None = None
     capture_schedule: CaptureSchedule | None = None
 
     @property
@@ -60,6 +70,7 @@ class MeasurementResult(Model):
         return cls(
             mode=multiple.mode.value,
             data=data,
+            device_config=multiple.config,
         )
 
     def to_multiple_measure_result(
@@ -75,7 +86,9 @@ class MeasurementResult(Model):
         MultipleMeasureResult
             Legacy multi-capture result.
         """
-        resolved_config: dict[str, Any] = {} if config is None else config
+        resolved_config: dict[str, Any] = (
+            self.device_config if config is None else config
+        )
         legacy_data = {
             target: [
                 MeasureData(
@@ -136,7 +149,7 @@ class MeasurementResult(Model):
         return MeasureResult(
             mode=self.measure_mode,
             data=single_data,
-            config={} if config is None else config,
+            config=self.device_config if config is None else config,
         )
 
     def save_netcdf(
@@ -162,6 +175,7 @@ class MeasurementResult(Model):
 
         with netcdf_file(path_obj, mode="w") as ds:
             ds.result_mode = self.mode
+            ds.device_config_json = json.dumps(self.device_config, ensure_ascii=False)
             ds.measurement_config_json = json.dumps(
                 self.measurement_config,
                 ensure_ascii=False,
@@ -176,10 +190,21 @@ class MeasurementResult(Model):
             if self.pulse_schedule is None:
                 ds.pulse_schedule_index_json = json.dumps(None)
             else:
+                ds.pulse_schedule_metadata_json = json.dumps(
+                    {
+                        "target_labels": self.pulse_schedule.target_labels,
+                        "total_duration": self.pulse_schedule.total_duration,
+                        "total_length": self.pulse_schedule.total_length,
+                    },
+                    ensure_ascii=False,
+                )
                 pulse_index_map: dict[str, dict[str, Any]] = {}
-                for pulse_idx, (target, waveform) in enumerate(
-                    self.pulse_schedule.items()
-                ):
+                waveforms = (
+                    {}
+                    if self.pulse_schedule.waveforms is None
+                    else self.pulse_schedule.waveforms
+                )
+                for pulse_idx, (target, waveform) in enumerate(waveforms.items()):
                     values = np.asarray(waveform)
                     dim = f"p_t{pulse_idx}"
                     real_name = f"pulse_real_t{pulse_idx}"
@@ -281,10 +306,12 @@ class MeasurementResult(Model):
                 mode = mode_attr.decode()
             else:
                 mode = str(mode_attr)
+            device_config = json.loads(attrs["device_config_json"])
             measurement_config = json.loads(attrs["measurement_config_json"])
             index_map = json.loads(attrs["index_map_json"])
             capture_schedule_payload = json.loads(attrs["capture_schedule_json"])
             pulse_schedule_index_json = attrs.get("pulse_schedule_index_json")
+            pulse_schedule_metadata_json = attrs.get("pulse_schedule_metadata_json")
 
             data: dict[str, list[np.ndarray]] = {}
             for target, entries in index_map.items():
@@ -296,21 +323,36 @@ class MeasurementResult(Model):
                     shape = tuple(entry["shape"])
                     captures.append(flat.reshape(shape))
                 data[target] = captures
-            pulse_schedule: dict[str, np.ndarray] | None = None
+            pulse_schedule: PulseScheduleSnapshot | None = None
             if pulse_schedule_index_json is not None:
                 pulse_index_map = json.loads(pulse_schedule_index_json)
                 if pulse_index_map is not None:
-                    pulse_schedule = {}
+                    waveforms: dict[str, np.ndarray] = {}
                     for target, entry in pulse_index_map.items():
                         real = np.copy(ds.variables[entry["real_var"]].data)
                         imag = np.copy(ds.variables[entry["imag_var"]].data)
                         flat = real + 1j * imag
                         shape = tuple(entry["shape"])
-                        pulse_schedule[target] = flat.reshape(shape)
+                        waveforms[target] = flat.reshape(shape)
+
+                    metadata = (
+                        {}
+                        if pulse_schedule_metadata_json is None
+                        else json.loads(pulse_schedule_metadata_json)
+                    )
+                    pulse_schedule = PulseScheduleSnapshot(
+                        target_labels=metadata.get(
+                            "target_labels", list(waveforms.keys())
+                        ),
+                        total_duration=metadata.get("total_duration", 0.0),
+                        total_length=metadata.get("total_length", 0),
+                        waveforms=waveforms,
+                    )
 
         return cls(
             mode=mode,  # type: ignore[arg-type]
             data=data,
+            device_config=device_config,
             measurement_config=measurement_config,
             pulse_schedule=pulse_schedule,
             capture_schedule=(
