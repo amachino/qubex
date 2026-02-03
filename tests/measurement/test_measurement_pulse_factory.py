@@ -57,7 +57,7 @@ def test_pump_pulse_uses_mux_index_to_resolve_amplitude() -> None:
         mux_dict={"Q00": mux},
     )
 
-    pulse = factory.pump_pulse(target="RQ00")
+    pulse = factory.pump_pulse(mux_index=mux.index)
 
     assert isinstance(pulse, FlatTop)
     assert pulse.duration == DEFAULT_READOUT_DURATION

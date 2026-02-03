@@ -18,6 +18,7 @@ from typing import Final, Literal
 
 import numpy as np
 import numpy.typing as npt
+from typing_extensions import deprecated
 
 from qubex.backend import (
     SAMPLING_PERIOD,
@@ -31,18 +32,21 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
+from qubex.measurement.models.measurement_config import MeasurementConfig
+from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.pulse import PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
-from .models.measurement_result import (
+from .models.measure_result import (
     MeasureData,
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
 )
+from .models.measurement_schedule import MeasurementSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -484,6 +488,29 @@ class Measurement:
         with dc_voltage(voltages):
             yield
 
+    def run(
+        self,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
+    ) -> MeasurementResult:
+        """
+        Run the measurement with the given schedule and configuration.
+
+        Parameters
+        ----------
+        schedule : MeasurementSchedule
+            The measurement schedule.
+        config : MeasurementConfig
+            The measurement configuration.
+
+        Returns
+        -------
+        MeasurementResult
+            The measurement result.
+        """
+        ...
+
     def measure_noise(
         self,
         targets: Collection[str],
@@ -517,6 +544,7 @@ class Measurement:
             readout_amplitudes=dict.fromkeys(targets, 0),
         )
 
+    @deprecated("Use run() method instead.")
     def measure(
         self,
         waveforms: Mapping[str, IQArray],
@@ -612,6 +640,7 @@ class Measurement:
             config=result.config,
         )
 
+    @deprecated("Use run() method instead.")
     def execute(
         self,
         schedule: PulseSchedule | TargetMap[IQArray],
