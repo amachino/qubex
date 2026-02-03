@@ -18,7 +18,6 @@ from typing import Final, Literal
 
 import numpy as np
 import numpy.typing as npt
-from typing_extensions import deprecated
 
 from qubex.backend import (
     SAMPLING_PERIOD,
@@ -40,6 +39,12 @@ from qubex.typing import IQArray, TargetMap
 from .classifiers.state_classifier import StateClassifier
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
+from .measurement_schedule_builder import (
+    BLOCK_DURATION,
+    EXTRA_SUM_SECTION_LENGTH,
+    MeasurementScheduleBuilder,
+)
+from .models.capture_schedule import CaptureSchedule
 from .models.measure_result import (
     MeasureData,
     MeasureMode,
@@ -65,13 +70,6 @@ DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
 DEFAULT_READOUT_POST_MARGIN: Final = 128  # ns
 WORD_LENGTH: Final = 4  # samples
 WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
-BLOCK_LENGTH: Final = WORD_LENGTH * 16  # samples
-BLOCK_DURATION: Final = BLOCK_LENGTH * SAMPLING_PERIOD  # ns
-
-EXTRA_SUM_SECTION_LENGTH = WORD_LENGTH * 4  # samples
-EXTRA_POST_BLANK_LENGTH = WORD_LENGTH  # samples
-EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # samples
-EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * SAMPLING_PERIOD  # ns
 
 
 class Measurement:
@@ -218,6 +216,16 @@ class Measurement:
         """Create a pulse factory from current system state."""
         return MeasurementPulseFactory(
             control_params=self.control_params,
+            mux_dict=self.mux_dict,
+        )
+
+    @property
+    def schedule_builder(self) -> MeasurementScheduleBuilder:
+        """Create a measurement schedule builder from current system state."""
+        return MeasurementScheduleBuilder(
+            control_params=self.control_params,
+            pulse_factory=self.pulse_factory,
+            targets=self.targets,
             mux_dict=self.mux_dict,
         )
 
@@ -509,7 +517,54 @@ class Measurement:
         MeasurementResult
             The measurement result.
         """
-        ...
+        self._validate_measurement_schedule(schedule)
+        pulse_schedule = schedule.pulse_schedule
+
+        measure_mode = MeasureMode(config.mode)
+        gen_sequences, cap_sequences = self._create_sampled_sequences(
+            schedule=pulse_schedule,
+            capture_schedule=schedule.capture_schedule,
+        )
+
+        backend_interval = (
+            math.ceil((pulse_schedule.duration + config.interval) / BLOCK_DURATION)
+            * BLOCK_DURATION
+        )
+
+        targets = list(gen_sequences.keys() | cap_sequences.keys())
+        resource_map = self.device_controller.get_resource_map(targets)
+
+        sequencer = SequencerMod(
+            gen_sampled_sequence=gen_sequences,
+            cap_sampled_sequence=cap_sequences,
+            resource_map=resource_map,  # type: ignore
+            interval=backend_interval,
+            sysdb=self.device_controller.qubecalib.sysdb,
+            driver=self.device_controller.quel1system,
+        )
+
+        backend_result = self.device_controller.execute_sequencer(
+            sequencer=sequencer,
+            repeats=config.shots,
+            integral_mode=measure_mode.integral_mode,
+            dsp_demodulation=config.dsp.enable_dsp_demodulation,
+            enable_sum=config.dsp.enable_dsp_sum,
+            enable_classification=config.dsp.enable_dsp_classification,
+            line_param0=config.dsp.line_param0,
+            line_param1=config.dsp.line_param1,
+        )
+
+        multiple = self._create_multiple_measure_result(
+            backend_result=backend_result,
+            measure_mode=measure_mode,
+            shots=config.shots,
+        )
+
+        rawdata_dir = self.system_manager.rawdata_dir
+        if rawdata_dir is not None:
+            multiple.save(data_dir=rawdata_dir)
+
+        return MeasurementResult(multiple=multiple)
 
     def measure_noise(
         self,
@@ -544,7 +599,6 @@ class Measurement:
             readout_amplitudes=dict.fromkeys(targets, 0),
         )
 
-    @deprecated("Use run() method instead.")
     def measure(
         self,
         waveforms: Mapping[str, IQArray],
@@ -640,7 +694,6 @@ class Measurement:
             config=result.config,
         )
 
-    @deprecated("Use run() method instead.")
     def execute(
         self,
         schedule: PulseSchedule | TargetMap[IQArray],
@@ -712,18 +765,10 @@ class Measurement:
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
 
-        if not schedule.is_valid():
-            raise ValueError("Invalid pulse schedule.")
-
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-
-        measure_mode = MeasureMode(mode)
-
-        schedule = self._build_pulse_schedule(
-            schedule=schedule,
+        run_config = MeasurementConfig.from_execute_args(
+            mode=mode,
+            shots=shots,
+            interval=interval,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -731,51 +776,61 @@ class Measurement:
             readout_ramptime=readout_ramptime,
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+        )
+
+        measurement_schedule = self._build_measurement_schedule(
+            schedule=schedule,
+            readout_amplitudes=run_config.readout.readout_amplitudes,
+            readout_duration=run_config.readout.readout_duration,
+            readout_pre_margin=run_config.readout.readout_pre_margin,
+            readout_post_margin=run_config.readout.readout_post_margin,
+            readout_ramptime=run_config.readout.readout_ramptime,
+            readout_drag_coeff=run_config.readout.readout_drag_coeff,
+            readout_ramp_type=run_config.readout.readout_ramp_type,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
 
-        gen_sequences, cap_sequences = self._create_sampled_sequences(schedule=schedule)
+        return self.run(
+            schedule=measurement_schedule,
+            config=run_config,
+        ).to_multiple_measure_result()
 
-        backend_interval = (
-            math.ceil((schedule.duration + interval) / BLOCK_DURATION) * BLOCK_DURATION
+    def _build_measurement_schedule(
+        self,
+        schedule: PulseSchedule,
+        readout_amplitudes: dict[str, float] | None = None,
+        readout_duration: float | None = None,
+        readout_pre_margin: float | None = None,
+        readout_post_margin: float | None = None,
+        readout_ramptime: float | None = None,
+        readout_ramp_type: RampType | None = None,
+        readout_drag_coeff: float | None = None,
+        add_last_measurement: bool = False,
+        add_pump_pulses: bool = False,
+        plot: bool = False,
+    ) -> MeasurementSchedule:
+        """Build a `MeasurementSchedule` from a pulse schedule and options."""
+        built_schedule = self.schedule_builder.build(
+            schedule=schedule,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramptime=readout_ramptime,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
+            plot=plot,
         )
-
-        targets = list(gen_sequences.keys() | cap_sequences.keys())
-        resource_map = self.device_controller.get_resource_map(targets)
-
-        sequencer = SequencerMod(
-            gen_sampled_sequence=gen_sequences,
-            cap_sampled_sequence=cap_sequences,
-            resource_map=resource_map,  # type: ignore
-            interval=backend_interval,
-            sysdb=self.device_controller.qubecalib.sysdb,
-            driver=self.device_controller.quel1system,
-        )
-
-        backend_result = self.device_controller.execute_sequencer(
-            sequencer=sequencer,
-            repeats=shots,
-            integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=enable_dsp_demodulation,
-            enable_sum=enable_dsp_sum,
-            enable_classification=enable_dsp_classification,
-            line_param0=line_param0,
-            line_param1=line_param1,
-        )
-
-        result = self._create_multiple_measure_result(
-            backend_result=backend_result,
-            measure_mode=measure_mode,
-            shots=shots,
-        )
-
-        rawdata_dir = self.system_manager.rawdata_dir
-        if rawdata_dir is not None:
-            result.save(data_dir=rawdata_dir)
-
-        return result
+        return built_schedule
 
     def _build_pulse_schedule(
         self,
@@ -791,125 +846,31 @@ class Measurement:
         add_pump_pulses: bool = False,
         plot: bool = False,
     ) -> PulseSchedule:
-        if readout_amplitudes is None:
-            readout_amplitudes = self.control_params.readout_amplitude
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
-        if readout_pre_margin is None:
-            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
-        if readout_post_margin is None:
-            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
-
-        # add last readout pulse if necessary
-        if add_last_measurement:
-            # ensure the schedule duration is a multiple of WORD_DURATION by right padding
-            sequence_duration = (
-                math.ceil(schedule.duration / WORD_DURATION) * WORD_DURATION
-            )
-            schedule.pad(
-                total_duration=sequence_duration,
-                pad_side="right",
-            )
-
-            # register all readout targets for the last measurement
-            readout_targets = list(
-                {
-                    Target.read_label(label)
-                    for label in schedule.labels
-                    if not self.targets[label].is_pump
-                }
-            )
-            # create a new schedule with the last readout pulse
-            with PulseSchedule(schedule.labels + readout_targets) as ps:
-                ps.call(schedule)
-                ps.barrier()
-                for target in readout_targets:
-                    ps.add(
-                        target,
-                        self.pulse_factory.readout_pulse(
-                            target=target,
-                            duration=readout_duration,
-                            amplitude=readout_amplitudes.get(target),
-                            ramptime=readout_ramptime,
-                            type=readout_ramp_type,
-                            drag_coeff=readout_drag_coeff,
-                            pre_margin=readout_pre_margin,
-                            post_margin=readout_post_margin,
-                        ),
-                    )
-            # update the schedule
-            schedule = ps
-        else:
-            # readout targets in the provided schedule
-            readout_targets = [
-                label for label in schedule.labels if self.targets[label].is_read
-            ]
-
-        # check the readout targets
-        if not readout_targets:
-            raise ValueError("No readout targets in the pulse schedule.")
-
-        # WORKAROUND: add some blank for the first extra capture by left padding
-        schedule.pad(
-            total_duration=schedule.duration + EXTRA_CAPTURE_DURATION,
-            pad_side="left",
-        )
-
-        # ensure the schedule duration is a multiple of MIN_DURATION by right padding
-        sequence_duration = (
-            math.ceil(schedule.duration / BLOCK_DURATION + 1) * BLOCK_DURATION
-        )
-        schedule.pad(
-            total_duration=sequence_duration,
-            pad_side="right",
-        )
-
-        # add pump pulses if necessary
-        if add_pump_pulses:
-            muxes = []
-            for target in readout_targets:
-                qubit_label = Target.qubit_label(target)
-                mux = self.mux_dict[qubit_label]
-                if mux not in muxes:
-                    muxes.append(mux)
-            with PulseSchedule() as ps_with_pumps:
-                ps_with_pumps.call(schedule)
-                for mux in muxes:
-                    pump_amplitude = self.control_params.get_pump_amplitude(mux.index)
-
-                    ps_with_pumps.add(
-                        mux.label,
-                        self.pulse_factory.pump_pulse(
-                            mux_index=mux.index,
-                            duration=schedule.duration,
-                            amplitude=pump_amplitude,
-                            ramptime=readout_ramptime,
-                            type=readout_ramp_type,
-                        ),
-                    )
-
-            if not ps_with_pumps.is_valid():
-                raise ValueError("Invalid pulse schedule with pump pulses.")
-
-            # update the schedule
-            schedule = ps_with_pumps
-
-        if plot:
-            schedule.plot()
-
-        return schedule
+        """Build a pulse schedule via `MeasurementScheduleBuilder`."""
+        return self._build_measurement_schedule(
+            schedule=schedule,
+            readout_amplitudes=readout_amplitudes,
+            readout_duration=readout_duration,
+            readout_pre_margin=readout_pre_margin,
+            readout_post_margin=readout_post_margin,
+            readout_ramptime=readout_ramptime,
+            readout_ramp_type=readout_ramp_type,
+            readout_drag_coeff=readout_drag_coeff,
+            add_last_measurement=add_last_measurement,
+            add_pump_pulses=add_pump_pulses,
+            plot=plot,
+        ).pulse_schedule
 
     def _create_sampled_sequences(
         self,
         schedule: PulseSchedule,
+        capture_schedule: CaptureSchedule,
         capture_delays: dict[int, int] | None = None,
     ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
         if capture_delays is None:
             capture_delays = self.control_params.capture_delay_word
 
-        readout_targets = [
-            label for label in schedule.labels if self.targets[label].is_read
-        ]
+        readout_targets = list(capture_schedule.channels.keys())
 
         # get readout ranges
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
@@ -963,14 +924,10 @@ class Measurement:
 
         # create CapSampledSequence
         cap_sequences: dict[str, pls.CapSampledSequence] = {}
-        for target, ranges in readout_ranges.items():
-            if not ranges:
+        for target, captures in capture_schedule.channels.items():
+            sorted_captures = sorted(captures, key=lambda c: c.start_time)
+            if not sorted_captures:
                 continue
-
-            if ranges[0].start % WORD_LENGTH != 0:
-                raise ValueError(
-                    f"Capture range should start at a multiple of 4 samples ({WORD_DURATION} ns)."
-                )
 
             delay = capture_delay_sample[target]
 
@@ -983,40 +940,21 @@ class Measurement:
                 original_post_blank=None,
             )
 
-            # WORKAROUND: add an extra capture to ensure the first capture begins at a multiple of 64 samples
-            post_blank_to_first_readout = ranges[0].start - EXTRA_SUM_SECTION_LENGTH
-            cap_sub_sequence.capture_slots.append(
-                pls.CaptureSlots(
-                    duration=EXTRA_SUM_SECTION_LENGTH,
-                    post_blank=post_blank_to_first_readout,
-                    original_duration=None,  # type: ignore
-                    original_post_blank=None,  # type: ignore
-                )
-            )
+            for i, current_capture in enumerate(sorted_captures):
+                current_start = round(current_capture.start_time / SAMPLING_PERIOD)
+                capture_range_length = round(current_capture.duration / SAMPLING_PERIOD)
+                if i + 1 < len(sorted_captures):
+                    next_start = round(
+                        sorted_captures[i + 1].start_time / SAMPLING_PERIOD
+                    )
+                    post_blank_length = next_start - (
+                        current_start + capture_range_length
+                    )
+                else:
+                    post_blank_length = schedule.length - (
+                        current_start + capture_range_length
+                    )
 
-            for i in range(len(ranges) - 1):
-                current_range = ranges[i]
-                next_range = ranges[i + 1]
-                capture_range_length = len(current_range)
-                # post_blank_length is the number of samples to the next readout pulse
-                post_blank_length = next_range.start - current_range.stop
-
-                if current_range.start % WORD_LENGTH != 0:
-                    raise ValueError(
-                        f"Capture range should start at a multiple of 4 samples ({WORD_DURATION} ns)."
-                    )
-                if capture_range_length % WORD_LENGTH != 0:
-                    raise ValueError(
-                        f"Capture duration should be a multiple of 4 samples ({WORD_DURATION} ns)."
-                    )
-                if post_blank_length < WORD_LENGTH:
-                    raise ValueError(
-                        f"Readout pulses must have at least {WORD_DURATION} ns post-blank time."
-                    )
-                if post_blank_length % WORD_LENGTH != 0:
-                    raise ValueError(
-                        f"Post-blank time should be a multiple of 4 samples ({WORD_DURATION} ns)."
-                    )
                 cap_sub_sequence.capture_slots.append(
                     pls.CaptureSlots(
                         duration=capture_range_length,
@@ -1025,19 +963,6 @@ class Measurement:
                         original_post_blank=None,  # type: ignore
                     )
                 )
-            last_capture_range = ranges[-1]
-            last_capture_range_length = len(last_capture_range)
-            # last_post_blank_length is the number of samples to the end of the schedule
-            last_post_blank_length = schedule.length - last_capture_range.stop
-
-            cap_sub_sequence.capture_slots.append(
-                pls.CaptureSlots(
-                    duration=last_capture_range_length,
-                    post_blank=last_post_blank_length,
-                    original_duration=None,  # type: ignore
-                    original_post_blank=None,  # type: ignore,
-                )
-            )
             cap_sequence = pls.CapSampledSequence(
                 target_name=target,
                 repeats=None,
@@ -1054,6 +979,102 @@ class Measurement:
             cap_sequences[target] = cap_sequence
 
         return gen_sequences, cap_sequences
+
+    def _validate_measurement_schedule(self, schedule: MeasurementSchedule) -> None:
+        """Validate pulse/capture schedule constraints required by the device."""
+        pulse_schedule = schedule.pulse_schedule
+        if not pulse_schedule.is_valid():
+            raise ValueError("Invalid pulse schedule.")
+        if not self._is_multiple(pulse_schedule.duration, BLOCK_DURATION):
+            raise ValueError(
+                f"Pulse sequence duration must be a multiple of {BLOCK_DURATION} ns."
+            )
+
+        channel_captures = schedule.capture_schedule.channels
+        if len(channel_captures) == 0:
+            raise ValueError("Capture schedule must not be empty.")
+
+        readout_ranges = pulse_schedule.get_pulse_ranges(list(channel_captures.keys()))
+        for channel, captures in channel_captures.items():
+            sorted_captures = sorted(captures, key=lambda c: c.start_time)
+            if not sorted_captures:
+                raise ValueError(f"No capture windows for channel {channel}.")
+
+            first_capture = sorted_captures[0]
+            if not self._is_multiple(first_capture.start_time, BLOCK_DURATION):
+                raise ValueError(
+                    "The first capture start time must be a multiple of "
+                    f"{BLOCK_DURATION} ns."
+                )
+            if not self._is_multiple(first_capture.duration, WORD_DURATION):
+                raise ValueError(
+                    f"Capture duration must be a multiple of {WORD_DURATION} ns."
+                )
+            workaround_duration = EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD
+            if not np.isclose(first_capture.duration, workaround_duration):
+                raise ValueError(
+                    "The first capture must be the workaround capture with duration "
+                    f"{workaround_duration} ns."
+                )
+
+            for capture in sorted_captures:
+                if not self._is_multiple(capture.start_time, WORD_DURATION):
+                    raise ValueError(
+                        f"Capture start time must be a multiple of {WORD_DURATION} ns."
+                    )
+                if not self._is_multiple(capture.duration, WORD_DURATION):
+                    raise ValueError(
+                        f"Capture duration must be a multiple of {WORD_DURATION} ns."
+                    )
+
+            ranges = readout_ranges.get(channel, [])
+            if len(sorted_captures) != len(ranges) + 1:
+                raise ValueError(
+                    f"Capture schedule mismatch for {channel}: expected {len(ranges) + 1} captures."
+                )
+            for capture, rng in zip(sorted_captures[1:], ranges, strict=True):
+                expected_start = rng.start * SAMPLING_PERIOD
+                expected_duration = len(rng) * SAMPLING_PERIOD
+                if not np.isclose(capture.start_time, expected_start):
+                    raise ValueError(
+                        f"Capture start mismatch for {channel}: {capture.start_time} != {expected_start}."
+                    )
+                if not np.isclose(capture.duration, expected_duration):
+                    raise ValueError(
+                        f"Capture duration mismatch for {channel}: {capture.duration} != {expected_duration}."
+                    )
+
+        for captures in channel_captures.values():
+            sorted_captures = sorted(captures, key=lambda c: c.start_time)
+            for idx in range(len(sorted_captures) - 1):
+                current = sorted_captures[idx]
+                nxt = sorted_captures[idx + 1]
+                gap = nxt.start_time - (current.start_time + current.duration)
+                if gap < WORD_DURATION:
+                    raise ValueError(
+                        f"Capture post-blank must be at least {WORD_DURATION} ns."
+                    )
+                if not self._is_multiple(gap, WORD_DURATION):
+                    raise ValueError(
+                        f"Capture post-blank must be a multiple of {WORD_DURATION} ns."
+                    )
+
+            last = sorted_captures[-1]
+            tail_blank = pulse_schedule.duration - (last.start_time + last.duration)
+            if tail_blank < 0:
+                raise ValueError("Capture schedule exceeds pulse schedule duration.")
+            if not self._is_multiple(tail_blank, WORD_DURATION):
+                raise ValueError(
+                    f"Final post-blank must be a multiple of {WORD_DURATION} ns."
+                )
+
+    @staticmethod
+    def _is_multiple(value: float, base: float, *, atol: float = 1e-9) -> bool:
+        """Return True if `value` is a near-integer multiple of `base`."""
+        if base == 0:
+            return False
+        quotient = value / base
+        return abs(quotient - round(quotient)) <= atol
 
     def _create_multiple_measure_result(
         self,
