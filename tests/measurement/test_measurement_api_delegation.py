@@ -61,9 +61,11 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
+        save_waveforms: bool = False,
     ) -> MeasurementResult:
         called["run_schedule"] = schedule
         called["run_config"] = config
+        called["run_save_waveforms"] = save_waveforms
         return MeasurementResult.from_multiple(multiple)
 
     measurement._build_measurement_schedule = MethodType(  # noqa: SLF001
@@ -71,12 +73,17 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
     )
     measurement.run = MethodType(fake_run, measurement)
 
-    result = measurement.execute(schedule=pulse_schedule, add_last_measurement=True)
+    result = measurement.execute(
+        schedule=pulse_schedule,
+        add_last_measurement=True,
+        save_waveforms=True,
+    )
 
     assert result.mode == multiple.mode
     assert np.array_equal(result.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
     assert called["build_schedule"] is pulse_schedule
     assert called["run_schedule"] is built_schedule
+    assert called["run_save_waveforms"] is True
     assert called["build_kwargs"]["add_last_measurement"] is True
     assert called["run_config"].mode == "avg"
 
@@ -96,4 +103,5 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     result = measurement.measure(waveforms={"Q00": np.array([0.0 + 0.0j])})
 
     assert called["kwargs"]["add_last_measurement"] is True
+    assert called["kwargs"]["save_waveforms"] is False
     assert result.data["Q00"] is multiple.data["Q00"][0]

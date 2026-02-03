@@ -43,6 +43,7 @@ def test_to_multiple_measure_result_returns_wrapped_result() -> None:
 
     assert restored.mode == multiple.mode
     assert restored.config == multiple.config
+    assert result.device_config == multiple.config
     assert np.array_equal(restored.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
     assert result.mode == "avg"
     assert result.measure_mode == MeasureMode.AVG
@@ -73,9 +74,9 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
     original = MeasurementResult(
         mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
-        config={"shots": 2},
+        device_config={"shots": 2},
         measurement_config={"mode": "avg", "shots": 2},
-        pulse_metadata={"labels": ["RQ00"], "duration": 256.0, "length": 128},
+        pulse_schedule={"RQ00": np.array([0.1 + 0.2j, 0.2 + 0.3j])},
         capture_schedule=CaptureSchedule(
             captures=[
                 Capture(channels=["RQ00"], start_time=0.0, duration=32.0),
@@ -89,7 +90,11 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
     assert restored.mode == original.mode
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
     assert restored.measurement_config == original.measurement_config
-    assert restored.pulse_metadata == original.pulse_metadata
+    assert restored.pulse_schedule is not None
+    assert np.array_equal(
+        restored.pulse_schedule["RQ00"],
+        original.pulse_schedule["RQ00"],  # type: ignore[index]
+    )
     assert restored.capture_schedule is not None
     assert len(restored.capture_schedule.captures) == 2
 
@@ -102,9 +107,12 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
             "Q00": [np.array([[1.0 + 2.0j], [3.0 + 4.0j]])],
             "Q01": [np.array([5.0 + 6.0j]), np.array([7.0 + 8.0j])],
         },
-        config={"shots": 2},
+        device_config={"shots": 2},
         measurement_config={"mode": "single", "shots": 2},
-        pulse_metadata={"labels": ["RQ00", "RQ01"], "duration": 512.0, "length": 256},
+        pulse_schedule={
+            "RQ00": np.array([0.1 + 0.2j, 0.2 + 0.3j]),
+            "RQ01": np.array([0.3 + 0.4j, 0.4 + 0.5j]),
+        },
         capture_schedule=CaptureSchedule(
             captures=[
                 Capture(channels=["RQ00", "RQ01"], start_time=0.0, duration=32.0),
@@ -117,9 +125,18 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
     restored = MeasurementResult.load_netcdf(saved)
 
     assert restored.mode == original.mode
-    assert restored.config == original.config
+    assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
-    assert restored.pulse_metadata == original.pulse_metadata
+    assert restored.pulse_schedule is not None
+    assert original.pulse_schedule is not None
+    assert np.array_equal(
+        restored.pulse_schedule["RQ00"],
+        original.pulse_schedule["RQ00"],
+    )
+    assert np.array_equal(
+        restored.pulse_schedule["RQ01"],
+        original.pulse_schedule["RQ01"],
+    )
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
     assert np.array_equal(restored.data["Q01"][0], original.data["Q01"][0])
     assert np.array_equal(restored.data["Q01"][1], original.data["Q01"][1])
