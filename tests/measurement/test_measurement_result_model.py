@@ -92,3 +92,34 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
     assert restored.pulse_metadata == original.pulse_metadata
     assert restored.capture_schedule is not None
     assert len(restored.capture_schedule.captures) == 2
+
+
+def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
+    """Given NetCDF save/load, when round-tripping, then raw data and metadata are preserved."""
+    original = MeasurementResult(
+        mode="single",
+        data={
+            "Q00": [np.array([[1.0 + 2.0j], [3.0 + 4.0j]])],
+            "Q01": [np.array([5.0 + 6.0j]), np.array([7.0 + 8.0j])],
+        },
+        config={"shots": 2},
+        measurement_config={"mode": "single", "shots": 2},
+        pulse_metadata={"labels": ["RQ00", "RQ01"], "duration": 512.0, "length": 256},
+        capture_schedule=CaptureSchedule(
+            captures=[
+                Capture(channels=["RQ00", "RQ01"], start_time=0.0, duration=32.0),
+            ]
+        ),
+    )
+    path = tmp_path / "measurement_result.nc"
+
+    saved = original.save_netcdf(path)
+    restored = MeasurementResult.load_netcdf(saved)
+
+    assert restored.mode == original.mode
+    assert restored.config == original.config
+    assert restored.measurement_config == original.measurement_config
+    assert restored.pulse_metadata == original.pulse_metadata
+    assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
+    assert np.array_equal(restored.data["Q01"][0], original.data["Q01"][0])
+    assert np.array_equal(restored.data["Q01"][1], original.data["Q01"][1])
