@@ -519,7 +519,7 @@ class PulseService:
         if post_margin is None:
             post_margin = self.readout_post_margin
 
-        return self.ctx.measurement.readout_pulse(
+        return self.ctx.measurement.pulse_factory.readout_pulse(
             target=target,
             duration=duration,
             amplitude=amplitude,

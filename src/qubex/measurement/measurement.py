@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from functools import cached_property, reduce
@@ -786,6 +787,12 @@ class Measurement:
         PulseArray
             Readout pulse array with margins.
         """
+        warnings.warn(
+            "Measurement.readout_pulse() is deprecated. "
+            "Use Measurement.pulse_factory.readout_pulse() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.pulse_factory.readout_pulse(
             target=target,
             duration=duration,
@@ -826,6 +833,12 @@ class Measurement:
         FlatTop
             Pump pulse.
         """
+        warnings.warn(
+            "Measurement.pump_pulse() is deprecated. "
+            "Use Measurement.pulse_factory.pump_pulse() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.pulse_factory.pump_pulse(
             target=target,
             duration=duration,
