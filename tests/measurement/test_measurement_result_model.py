@@ -39,11 +39,10 @@ def test_to_multiple_measure_result_returns_wrapped_result() -> None:
     """Given legacy multiple result, when converting round-trip, then mode and config are preserved."""
     multiple = _make_multiple_measure_result()
     result = MeasurementResult.from_multiple(multiple)
-    restored = result.to_multiple_measure_result()
+    restored = result.to_multiple_measure_result(config=multiple.config)
 
     assert restored.mode == multiple.mode
     assert restored.config == multiple.config
-    assert result.device_config == multiple.config
     assert np.array_equal(restored.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
     assert result.mode == "avg"
     assert result.measure_mode == MeasureMode.AVG
@@ -54,7 +53,7 @@ def test_to_measure_result_selects_requested_index() -> None:
     multiple = _make_multiple_measure_result()
     result = MeasurementResult.from_multiple(multiple)
 
-    single: MeasureResult = result.to_measure_result(index=1)
+    single: MeasureResult = result.to_measure_result(index=1, config=multiple.config)
 
     assert single.mode == MeasureMode.AVG
     assert np.array_equal(single.data["Q00"].raw, multiple.data["Q00"][1].raw)
@@ -74,7 +73,6 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
     original = MeasurementResult(
         mode="avg",
         data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
-        device_config={"shots": 2},
         measurement_config={"mode": "avg", "shots": 2},
         pulse_schedule={"RQ00": np.array([0.1 + 0.2j, 0.2 + 0.3j])},
         capture_schedule=CaptureSchedule(
@@ -107,7 +105,6 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
             "Q00": [np.array([[1.0 + 2.0j], [3.0 + 4.0j]])],
             "Q01": [np.array([5.0 + 6.0j]), np.array([7.0 + 8.0j])],
         },
-        device_config={"shots": 2},
         measurement_config={"mode": "single", "shots": 2},
         pulse_schedule={
             "RQ00": np.array([0.1 + 0.2j, 0.2 + 0.3j]),
@@ -125,7 +122,6 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
     restored = MeasurementResult.load_netcdf(saved)
 
     assert restored.mode == original.mode
-    assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
     assert restored.pulse_schedule is not None
     assert original.pulse_schedule is not None

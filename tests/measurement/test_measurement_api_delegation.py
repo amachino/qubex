@@ -68,10 +68,18 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
         called["run_save_waveforms"] = save_waveforms
         return MeasurementResult.from_multiple(multiple)
 
+    def fake_to_multiple(
+        self: Measurement, result: MeasurementResult
+    ) -> MultipleMeasureResult:
+        return result.to_multiple_measure_result(config={"shots": 1})
+
     measurement._build_measurement_schedule = MethodType(  # noqa: SLF001
         fake_build, measurement
     )
     measurement.run = MethodType(fake_run, measurement)
+    measurement._to_multiple_measure_result = MethodType(  # noqa: SLF001
+        fake_to_multiple, measurement
+    )
 
     result = measurement.execute(
         schedule=pulse_schedule,

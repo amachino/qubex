@@ -1130,7 +1130,6 @@ class Measurement:
         return MeasurementResult(
             mode=measure_mode.value,
             data=dict(measure_data),
-            device_config=self.device_controller.box_config,
             measurement_config=(
                 measurement_config.to_dict() if measurement_config is not None else {}
             ),
@@ -1149,6 +1148,7 @@ class Measurement:
     def _to_multiple_measure_result(
         self,
         result: MeasurementResult,
+        config: dict[str, object] | None = None,
     ) -> MultipleMeasureResult:
         """Convert canonical `MeasurementResult` to legacy multiple result."""
         measure_data = defaultdict(list)
@@ -1166,7 +1166,7 @@ class Measurement:
         return MultipleMeasureResult(
             mode=result.measure_mode,
             data=dict(measure_data),
-            config=result.config,
+            config=self.device_controller.box_config if config is None else config,
         )
 
     def _create_multiple_measure_result(

@@ -26,7 +26,6 @@ class MeasurementResult(Model):
 
     mode: Literal["single", "avg"]
     data: dict[str, list[np.ndarray]]
-    device_config: dict[str, Any] = Field(default_factory=dict)
     measurement_config: dict[str, Any] = Field(default_factory=dict)
     pulse_schedule: dict[str, np.ndarray] | None = None
     capture_schedule: CaptureSchedule | None = None
@@ -35,11 +34,6 @@ class MeasurementResult(Model):
     def measure_mode(self) -> MeasureMode:
         """Return the mode as `MeasureMode` enum."""
         return MeasureMode(self.mode)
-
-    @property
-    def config(self) -> dict[str, Any]:
-        """Backward-compatible alias for device configuration."""
-        return self.device_config
 
     @classmethod
     def from_multiple(
@@ -66,10 +60,13 @@ class MeasurementResult(Model):
         return cls(
             mode=multiple.mode.value,
             data=data,
-            device_config=multiple.config,
         )
 
-    def to_multiple_measure_result(self) -> MultipleMeasureResult:
+    def to_multiple_measure_result(
+        self,
+        *,
+        config: dict[str, Any] | None = None,
+    ) -> MultipleMeasureResult:
         """
         Convert to the legacy multi-capture result type.
 
@@ -78,6 +75,7 @@ class MeasurementResult(Model):
         MultipleMeasureResult
             Legacy multi-capture result.
         """
+        resolved_config: dict[str, Any] = {} if config is None else config
         legacy_data = {
             target: [
                 MeasureData(
@@ -93,13 +91,14 @@ class MeasurementResult(Model):
         return MultipleMeasureResult(
             mode=self.measure_mode,
             data=legacy_data,
-            config=self.device_config,
+            config=resolved_config,
         )
 
     def to_measure_result(
         self,
         *,
         index: int = 0,
+        config: dict[str, Any] | None = None,
     ) -> MeasureResult:
         """
         Convert one capture index to a `MeasureResult`.
@@ -108,6 +107,8 @@ class MeasurementResult(Model):
         ----------
         index : int, optional
             Capture index in each target's result list.
+        config : dict[str, Any] | None, optional
+            Optional legacy configuration to attach.
 
         Returns
         -------
@@ -135,7 +136,7 @@ class MeasurementResult(Model):
         return MeasureResult(
             mode=self.measure_mode,
             data=single_data,
-            config=self.device_config,
+            config={} if config is None else config,
         )
 
     def save_netcdf(
@@ -161,7 +162,6 @@ class MeasurementResult(Model):
 
         with netcdf_file(path_obj, mode="w") as ds:
             ds.result_mode = self.mode
-            ds.device_config_json = json.dumps(self.device_config, ensure_ascii=False)
             ds.measurement_config_json = json.dumps(
                 self.measurement_config,
                 ensure_ascii=False,
@@ -281,7 +281,6 @@ class MeasurementResult(Model):
                 mode = mode_attr.decode()
             else:
                 mode = str(mode_attr)
-            device_config = json.loads(attrs["device_config_json"])
             measurement_config = json.loads(attrs["measurement_config_json"])
             index_map = json.loads(attrs["index_map_json"])
             capture_schedule_payload = json.loads(attrs["capture_schedule_json"])
@@ -312,7 +311,6 @@ class MeasurementResult(Model):
         return cls(
             mode=mode,  # type: ignore[arg-type]
             data=data,
-            device_config=device_config,
             measurement_config=measurement_config,
             pulse_schedule=pulse_schedule,
             capture_schedule=(
