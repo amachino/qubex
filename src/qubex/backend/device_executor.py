@@ -1,4 +1,4 @@
-"""Device execution abstraction and QUEL implementation."""
+"""Device execution abstraction and QuEL implementation."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class DeviceExecutor(Protocol):
 
 
 class QuelDeviceExecutor:
-    """QUEL-specific executor using `SequencerMod` and `DeviceController`."""
+    """QuEL-specific executor using `SequencerMod` and `DeviceController`."""
 
     def __init__(self, *, device_controller: DeviceController) -> None:
         self._device_controller = device_controller
