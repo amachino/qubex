@@ -3,6 +3,7 @@
 from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
 from .measurement import Measurement
 from .measurement_pulse_factory import MeasurementPulseFactory
+from .measurement_runner import MeasurementRunner
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models import (
     MeasureData,
@@ -18,6 +19,7 @@ __all__ = [
     "MeasureResult",
     "Measurement",
     "MeasurementPulseFactory",
+    "MeasurementRunner",
     "MeasurementScheduleBuilder",
     "MultipleMeasureResult",
     "StateClassifier",

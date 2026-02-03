@@ -36,6 +36,7 @@ from .defaults import (
     DEFAULT_SHOTS,
 )
 from .measurement_pulse_factory import MeasurementPulseFactory
+from .measurement_runner import MeasurementRunner
 from .measurement_schedule_builder import (
     MeasurementScheduleBuilder,
     MeasurementScheduleDefaults,
@@ -226,12 +227,7 @@ class Measurement:
             pump_pulse_factory=self.pulse_factory.pump_pulse,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
-            defaults=MeasurementScheduleDefaults(
-                readout_duration=DEFAULT_READOUT_DURATION,
-                readout_ramptime=DEFAULT_READOUT_RAMPTIME,
-                readout_pre_margin=DEFAULT_READOUT_PRE_MARGIN,
-                readout_post_margin=DEFAULT_READOUT_POST_MARGIN,
-            ),
+            defaults=self.schedule_defaults,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -241,6 +237,21 @@ class Measurement:
             readout_ramp_type=readout_ramp_type,
             schedule_adjuster=self.device_executor.adjust_schedule_for_device,
         )
+
+    @property
+    def schedule_defaults(self) -> MeasurementScheduleDefaults:
+        """Return default timing parameters for measurement schedule building."""
+        return MeasurementScheduleDefaults(
+            readout_duration=DEFAULT_READOUT_DURATION,
+            readout_ramptime=DEFAULT_READOUT_RAMPTIME,
+            readout_pre_margin=DEFAULT_READOUT_PRE_MARGIN,
+            readout_post_margin=DEFAULT_READOUT_POST_MARGIN,
+        )
+
+    @property
+    def runner(self) -> MeasurementRunner:
+        """Return a runner bound to the current device executor."""
+        return MeasurementRunner(device_executor=self.device_executor)
 
     @property
     def config_loader(self) -> ConfigLoader:
@@ -751,18 +762,8 @@ class Measurement:
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
         )
-        pulse_schedule = measurement_schedule.pulse_schedule
-        capture_schedule = measurement_schedule.capture_schedule
-
-        if not pulse_schedule.is_valid():
-            raise ValueError("Invalid pulse schedule.")
-
-        if plot:
-            pulse_schedule.plot()
-
-        return self.device_executor.execute(
-            schedule=pulse_schedule,
-            capture_schedule=capture_schedule,
+        return self.runner.run(
+            measurement_schedule=measurement_schedule,
             measure_mode=measure_mode,
             shots=shots,
             interval=interval,
@@ -771,6 +772,7 @@ class Measurement:
             enable_dsp_classification=enable_dsp_classification,
             line_param0=line_param0,
             line_param1=line_param1,
+            plot=plot,
         )
 
     def readout_pulse(
