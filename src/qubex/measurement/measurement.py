@@ -564,7 +564,7 @@ class Measurement:
 
         rawdata_dir = self.system_manager.rawdata_dir
         if rawdata_dir is not None:
-            self._to_multiple_measure_result(result).save(data_dir=rawdata_dir)
+            result.save(data_dir=rawdata_dir)
 
         return result
 

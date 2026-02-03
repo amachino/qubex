@@ -123,3 +123,17 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
     assert np.array_equal(restored.data["Q01"][0], original.data["Q01"][0])
     assert np.array_equal(restored.data["Q01"][1], original.data["Q01"][1])
+
+
+def test_save_writes_netcdf_file(tmp_path) -> None:
+    """Given save(), when called, then it writes a readable NetCDF file."""
+    result = MeasurementResult(
+        mode="avg",
+        data={"Q00": [np.array([1.0 + 0.0j])]},
+    )
+
+    path = result.save(tmp_path, file_name="result.nc")
+    restored = MeasurementResult.load_netcdf(path)
+
+    assert path.name == "result.nc"
+    assert np.array_equal(restored.data["Q00"][0], np.array([1.0 + 0.0j]))
