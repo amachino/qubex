@@ -554,7 +554,7 @@ class Measurement:
             line_param1=config.dsp.line_param1,
         )
 
-        multiple = self._create_multiple_measure_result(
+        result = self._create_measurement_result(
             backend_result=backend_result,
             measure_mode=measure_mode,
             shots=config.shots,
@@ -562,9 +562,9 @@ class Measurement:
 
         rawdata_dir = self.system_manager.rawdata_dir
         if rawdata_dir is not None:
-            multiple.save(data_dir=rawdata_dir)
+            self._to_multiple_measure_result(result).save(data_dir=rawdata_dir)
 
-        return MeasurementResult.from_multiple(multiple)
+        return result
 
     def measure_noise(
         self,
@@ -797,10 +797,11 @@ class Measurement:
             plot=plot,
         )
 
-        return self.run(
+        result = self.run(
             schedule=measurement_schedule,
             config=run_config,
-        ).to_multiple_measure_result()
+        )
+        return self._to_multiple_measure_result(result)
 
     def _build_measurement_schedule(
         self,
@@ -1076,12 +1077,12 @@ class Measurement:
         quotient = value / base
         return abs(quotient - round(quotient)) <= atol
 
-    def _create_multiple_measure_result(
+    def _create_measurement_result(
         self,
         backend_result: RawResult,
         measure_mode: MeasureMode,
         shots: int,
-    ) -> MultipleMeasureResult:
+    ) -> MeasurementResult:
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
 
@@ -1101,14 +1102,7 @@ class Measurement:
                     if idx == 0:
                         # skip the first extra capture
                         continue
-                    measure_data[qubit].append(
-                        MeasureData(
-                            target=qubit,
-                            mode=measure_mode,
-                            raw=iq * norm_factor,
-                            classifier=self.classifiers.get(qubit),
-                        )
-                    )
+                    measure_data[qubit].append(iq * norm_factor)
         elif measure_mode == MeasureMode.AVG:
             for target, iqs in iq_data.items():
                 qubit = target[label_slice]
@@ -1116,18 +1110,49 @@ class Measurement:
                     if idx == 0:
                         # skip the first extra capture
                         continue
-                    measure_data[qubit].append(
-                        MeasureData(
-                            target=qubit,
-                            mode=measure_mode,
-                            raw=iq.squeeze() * norm_factor / shots,
-                        )
-                    )
+                    measure_data[qubit].append(iq.squeeze() * norm_factor / shots)
         else:
             raise ValueError(f"Invalid measure mode: {measure_mode}")
 
-        return MultipleMeasureResult(
-            mode=measure_mode,
+        return MeasurementResult(
+            mode=measure_mode.value,
             data=dict(measure_data),
             config=self.device_controller.box_config,
         )
+
+    def _to_multiple_measure_result(
+        self,
+        result: MeasurementResult,
+    ) -> MultipleMeasureResult:
+        """Convert canonical `MeasurementResult` to legacy multiple result."""
+        measure_data = defaultdict(list)
+        for qubit, captures in result.data.items():
+            for raw in captures:
+                measure_data[qubit].append(
+                    MeasureData(
+                        target=qubit,
+                        mode=result.measure_mode,
+                        raw=np.asarray(raw),
+                        classifier=self.classifiers.get(qubit),
+                    )
+                )
+
+        return MultipleMeasureResult(
+            mode=result.measure_mode,
+            data=dict(measure_data),
+            config=result.config,
+        )
+
+    def _create_multiple_measure_result(
+        self,
+        backend_result: RawResult,
+        measure_mode: MeasureMode,
+        shots: int,
+    ) -> MultipleMeasureResult:
+        """Create legacy `MultipleMeasureResult` from backend output."""
+        result = self._create_measurement_result(
+            backend_result=backend_result,
+            measure_mode=measure_mode,
+            shots=shots,
+        )
+        return self._to_multiple_measure_result(result)

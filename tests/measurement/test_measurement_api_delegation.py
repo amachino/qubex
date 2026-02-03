@@ -36,6 +36,7 @@ def _make_multiple_result() -> MultipleMeasureResult:
 def test_execute_delegates_to_run_with_built_schedule() -> None:
     """Given execute inputs, when execute is called, then it builds schedule and delegates to run."""
     measurement = object.__new__(Measurement)
+    measurement.__dict__["_classifiers"] = {}
     pulse_schedule = PulseSchedule(["Q00"])
     built_schedule = MeasurementSchedule(
         pulse_schedule=PulseSchedule(["RQ00"]),
