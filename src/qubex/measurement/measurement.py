@@ -24,8 +24,10 @@ from qubex.backend import (
     ConfigLoader,
     ControlParams,
     DeviceController,
+    DeviceExecutor,
     ExperimentSystem,
     Mux,
+    QuelDeviceExecutor,
     RawResult,
     SystemManager,
     Target,
@@ -60,8 +62,6 @@ logger = logging.getLogger(__name__)
 
 try:
     from qubecalib import neopulse as pls
-
-    from qubex.backend.sequencer_mod import SequencerMod
 except ImportError as e:
     logger.info(e)
 
@@ -97,6 +97,7 @@ class Measurement:
         load_configs: bool = True,
         connect_devices: bool = False,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        device_executor: DeviceExecutor | None = None,
     ):
         """
         Initialize the Measurement.
@@ -130,6 +131,7 @@ class Measurement:
         self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
         self._system_manager = SystemManager.shared()
+        self._device_executor = device_executor
         self._device_manager = MeasurementDeviceManager(
             system_manager=self._system_manager,
             qubits=self._qubits,
@@ -246,6 +248,13 @@ class Measurement:
     def device_controller(self) -> DeviceController:
         """Get the device controller."""
         return self.device_manager.device_controller
+
+    @property
+    def device_executor(self) -> DeviceExecutor:
+        """Return the device executor implementation."""
+        if self._device_executor is not None:
+            return self._device_executor
+        return QuelDeviceExecutor(device_controller=self.device_controller)
 
     @property
     def control_params(self) -> ControlParams:
@@ -540,17 +549,11 @@ class Measurement:
         targets = list(gen_sequences.keys() | cap_sequences.keys())
         resource_map = self.device_controller.get_resource_map(targets)
 
-        sequencer = SequencerMod(
+        backend_result = self.device_executor.execute(
             gen_sampled_sequence=gen_sequences,
             cap_sampled_sequence=cap_sequences,
-            resource_map=resource_map,  # type: ignore
+            resource_map=resource_map,
             interval=backend_interval,
-            sysdb=self.device_controller.qubecalib.sysdb,
-            driver=self.device_controller.quel1system,
-        )
-
-        backend_result = self.device_controller.execute_sequencer(
-            sequencer=sequencer,
             repeats=config.shots,
             integral_mode=measure_mode.integral_mode,
             dsp_demodulation=config.dsp.enable_dsp_demodulation,
