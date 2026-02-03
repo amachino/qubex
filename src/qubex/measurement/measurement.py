@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from functools import cached_property, reduce
@@ -23,7 +22,7 @@ from qubex.backend import (
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.backend.quel_device_executor import QuelDeviceExecutor
-from qubex.pulse import FlatTop, PulseArray, PulseSchedule, RampType
+from qubex.pulse import PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers import StateClassifier
@@ -719,105 +718,6 @@ class Measurement:
             line_param0=line_param0,
             line_param1=line_param1,
             plot=plot,
-        )
-
-    def readout_pulse(
-        self,
-        target: str,
-        *,
-        duration: float | None = None,
-        amplitude: float | None = None,
-        ramptime: float | None = None,
-        type: RampType | None = None,
-        drag_coeff: float | None = None,
-        pre_margin: float | None = None,
-        post_margin: float | None = None,
-    ) -> PulseArray:
-        """
-        Build a readout pulse for a target.
-
-        Parameters
-        ----------
-        target : str
-            Target label.
-        duration : float | None, optional
-            Readout duration in ns.
-        amplitude : float | None, optional
-            Readout amplitude.
-        ramptime : float | None, optional
-            Ramp time for the envelope.
-        type : RampType | None, optional
-            Ramp type name.
-        drag_coeff : float | None, optional
-            DRAG coefficient.
-        pre_margin : float | None, optional
-            Pre-readout margin.
-        post_margin : float | None, optional
-            Post-readout margin.
-
-        Returns
-        -------
-        PulseArray
-            Readout pulse array with margins.
-        """
-        warnings.warn(
-            "Measurement.readout_pulse() is deprecated. "
-            "Use Measurement.pulse_factory.readout_pulse() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.pulse_factory.readout_pulse(
-            target=target,
-            duration=duration,
-            amplitude=amplitude,
-            ramptime=ramptime,
-            type=type,
-            drag_coeff=drag_coeff,
-            pre_margin=pre_margin,
-            post_margin=post_margin,
-        )
-
-    def pump_pulse(
-        self,
-        target: str,
-        duration: float | None = None,
-        amplitude: float | None = None,
-        ramptime: float | None = None,
-        type: RampType | None = None,
-    ) -> FlatTop:
-        """
-        Build a pump pulse for a target.
-
-        Parameters
-        ----------
-        target : str
-            Target label.
-        duration : float | None, optional
-            Pump duration in ns.
-        amplitude : float | None, optional
-            Pump amplitude.
-        ramptime : float | None, optional
-            Ramp time for the envelope.
-        type : RampType | None, optional
-            Ramp type name.
-
-        Returns
-        -------
-        FlatTop
-            Pump pulse.
-        """
-        warnings.warn(
-            "Measurement.pump_pulse() is deprecated. "
-            "Use Measurement.pulse_factory.pump_pulse() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.pulse_factory.pump_pulse(
-            target=target,
-            duration=duration,
-            amplitude=amplitude,
-            ramptime=ramptime,
-            type=type,
         )
 
 
