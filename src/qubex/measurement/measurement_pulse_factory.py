@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from qubex.backend import ControlParams, Mux, Target
 from qubex.pulse import Blank, FlatTop, PulseArray, RampType
 
-from .defaults import (
+from .measurement_defaults import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,

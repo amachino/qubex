@@ -11,7 +11,7 @@ import numpy as np
 import scipy.optimize
 
 from qubex.experiment.experiment_context import ExperimentContext
-from qubex.measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.pulse import (
     CrossResonance,
     Drag,

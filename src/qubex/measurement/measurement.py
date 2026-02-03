@@ -27,21 +27,10 @@ from qubex.pulse import FlatTop, PulseArray, PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers import StateClassifier
-from .defaults import (
-    DEFAULT_INTERVAL,
-    DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_POST_MARGIN,
-    DEFAULT_READOUT_PRE_MARGIN,
-    DEFAULT_READOUT_RAMPTIME,
-    DEFAULT_SHOTS,
-)
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_runner import MeasurementRunner
-from .measurement_schedule_builder import (
-    MeasurementScheduleBuilder,
-    MeasurementScheduleDefaults,
-)
+from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models import (
     MeasureMode,
     MeasureResult,
@@ -224,7 +213,6 @@ class Measurement:
             pump_pulse_factory=self.pulse_factory.pump_pulse,
             add_last_measurement=add_last_measurement,
             add_pump_pulses=add_pump_pulses,
-            defaults=self.schedule_defaults,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
@@ -233,16 +221,6 @@ class Measurement:
             readout_drag_coeff=readout_drag_coeff,
             readout_ramp_type=readout_ramp_type,
             schedule_adjuster=self.device_executor.adjust_schedule_for_device,
-        )
-
-    @property
-    def schedule_defaults(self) -> MeasurementScheduleDefaults:
-        """Return default timing parameters for measurement schedule building."""
-        return MeasurementScheduleDefaults(
-            readout_duration=DEFAULT_READOUT_DURATION,
-            readout_ramptime=DEFAULT_READOUT_RAMPTIME,
-            readout_pre_margin=DEFAULT_READOUT_PRE_MARGIN,
-            readout_post_margin=DEFAULT_READOUT_POST_MARGIN,
         )
 
     @property
@@ -716,11 +694,6 @@ class Measurement:
         if not schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
 
-        if shots is None:
-            shots = DEFAULT_SHOTS
-        if interval is None:
-            interval = DEFAULT_INTERVAL
-
         measure_mode = MeasureMode(mode)
 
         measurement_schedule = self._build_measurement_schedule(
@@ -846,3 +819,8 @@ class Measurement:
             ramptime=ramptime,
             type=type,
         )
+
+
+__all__ = [
+    "Measurement",
+]

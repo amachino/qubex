@@ -1,15 +1,15 @@
-"""Default values for measurement configuration."""
+"""Backward-compatible exports for measurement defaults."""
 
 from __future__ import annotations
 
-from typing import Final
-
-DEFAULT_SHOTS: Final = 1024
-DEFAULT_INTERVAL: Final = 150 * 1024  # ns
-DEFAULT_READOUT_DURATION: Final = 384  # ns
-DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
-DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
-DEFAULT_READOUT_POST_MARGIN: Final = 128  # ns
+from .measurement_defaults import (
+    DEFAULT_INTERVAL,
+    DEFAULT_READOUT_DURATION,
+    DEFAULT_READOUT_POST_MARGIN,
+    DEFAULT_READOUT_PRE_MARGIN,
+    DEFAULT_READOUT_RAMPTIME,
+    DEFAULT_SHOTS,
+)
 
 __all__ = [
     "DEFAULT_INTERVAL",

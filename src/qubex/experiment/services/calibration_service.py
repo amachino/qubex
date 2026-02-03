@@ -29,7 +29,7 @@ from qubex.experiment.experiment_constants import (
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.experiment_result import AmplCalibData, ExperimentResult
 from qubex.experiment.models.result import Result
-from qubex.measurement.measurement import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.pulse import (
     CrossResonance,
     Drag,

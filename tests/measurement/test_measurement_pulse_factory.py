@@ -9,7 +9,7 @@ import pytest
 
 from qubex.backend import ControlParams, Mux
 from qubex.measurement import MeasurementPulseFactory
-from qubex.measurement.defaults import (
+from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,

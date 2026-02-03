@@ -9,11 +9,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from qubex.measurement.measurement import (
-    DEFAULT_INTERVAL,
-    DEFAULT_SHOTS,
-    Measurement,
-)
+from qubex.measurement.measurement import Measurement
+from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.measurement.models import MeasureData, MeasureMode, MultipleMeasureResult
 from qubex.pulse import Blank, PulseSchedule
 

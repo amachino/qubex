@@ -55,7 +55,7 @@ from qubex.measurement import (
     StateClassifierGMM,
     StateClassifierKMeans,
 )
-from qubex.measurement.defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.pulse import (
     CPMG,
     Blank,

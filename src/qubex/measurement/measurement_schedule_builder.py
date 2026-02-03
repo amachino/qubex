@@ -22,7 +22,7 @@ from qubex.backend.quel_device_executor import (
 from qubex.pulse import Blank, FlatTop, PulseArray, PulseSchedule, RampType
 from qubex.typing import TargetMap
 
-from .defaults import (
+from .measurement_defaults import (
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,

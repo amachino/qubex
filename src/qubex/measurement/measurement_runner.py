@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from qubex.backend.quel_device_executor import QuelDeviceExecutor
 
+from .measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from .models import MeasureMode, MultipleMeasureResult
 from .models.measurement_schedule import MeasurementSchedule
 
@@ -15,14 +16,16 @@ class MeasurementRunner:
     """Run prepared measurement schedules through a device executor."""
 
     device_executor: QuelDeviceExecutor
+    default_shots: int = DEFAULT_SHOTS
+    default_interval: float = DEFAULT_INTERVAL
 
     def run(
         self,
         *,
         measurement_schedule: MeasurementSchedule,
         measure_mode: MeasureMode,
-        shots: int,
-        interval: float,
+        shots: int | None = None,
+        interval: float | None = None,
         enable_dsp_demodulation: bool = True,
         enable_dsp_sum: bool = False,
         enable_dsp_classification: bool = False,
@@ -39,10 +42,10 @@ class MeasurementRunner:
             Prepared pulse and capture schedule pair.
         measure_mode : MeasureMode
             Measurement mode forwarded to the backend executor.
-        shots : int
-            Number of shots.
-        interval : float
-            Interval in ns.
+        shots : int | None, optional
+            Number of shots. If omitted, `default_shots` is used.
+        interval : float | None, optional
+            Interval in ns. If omitted, `default_interval` is used.
         enable_dsp_demodulation : bool, optional
             Whether DSP demodulation is enabled.
         enable_dsp_sum : bool, optional
@@ -61,6 +64,10 @@ class MeasurementRunner:
         """
         pulse_schedule = measurement_schedule.pulse_schedule
         capture_schedule = measurement_schedule.capture_schedule
+        if shots is None:
+            shots = self.default_shots
+        if interval is None:
+            interval = self.default_interval
 
         if not pulse_schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
