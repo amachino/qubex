@@ -29,7 +29,11 @@ from .json_serializer import (
     serialize_tunits,
     serialize_value,
 )
-from .netcdf_serializer import deserialize_tunits_value_array
+from .netcdf_serializer import (
+    deserialize_tunits_value_array,
+    load_netcdf_file,
+    save_netcdf_file,
+)
 
 __all__ = [
     "DATA_COMPLEX_IMAG_KEY",
@@ -54,6 +58,8 @@ __all__ = [
     "is_custom_serializable_class",
     "is_numpy",
     "is_tunits",
+    "load_netcdf_file",
+    "save_netcdf_file",
     "serialize_complex",
     "serialize_numpy",
     "serialize_tunits",
