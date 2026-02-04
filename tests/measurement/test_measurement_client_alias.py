@@ -10,5 +10,5 @@ from qubex.measurement.measurement import (
 
 def test_measurement_alias_points_to_measurement_client() -> None:
     """Given public aliases, when imported, then they point to MeasurementClient."""
-    assert Measurement is MeasurementClient
-    assert MeasurementFromLegacyModule is MeasurementClient
+    assert Measurement is MeasurementFromLegacyModule
+    assert issubclass(Measurement, MeasurementClient)

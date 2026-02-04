@@ -1205,7 +1205,3 @@ class MeasurementClient:
             shots=shots,
         )
         return self._to_multiple_measure_result(result)
-
-
-# Backward-compatible alias.
-Measurement = MeasurementClient
