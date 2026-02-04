@@ -37,13 +37,12 @@ from .measurement_backend_adapter import (
     MeasurementBackendAdapter,
     QuelMeasurementBackendAdapter,
 )
-from .measurement_device_manager import MeasurementDeviceManager
+from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models.measure_result import (
     MeasureData,
-    MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
 )
@@ -64,11 +63,12 @@ class MeasurementClient:
     Client class for end-to-end measurement workflows.
 
     `MeasurementClient` owns the high-level workflow while delegating concrete
-    responsibilities to focused collaborators: configuration/device lifecycle
-    (`MeasurementDeviceManager`), schedule assembly
+    responsibilities to focused collaborators: configuration/backend lifecycle
+    (`MeasurementBackendManager`), schedule assembly
     (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`), and backend
-    execution (`DeviceExecutor`/`QuelDeviceExecutor`). It also keeps optional
-    state classifiers used during readout post-processing.
+    execution (`BackendExecutor`, via `MeasurementBackendAdapter`), and result
+    construction (`MeasurementResultFactory`). It also keeps optional state
+    classifiers used during readout post-processing.
 
     Notes
     -----
@@ -86,7 +86,7 @@ class MeasurementClient:
         load_configs: bool = True,
         connect_devices: bool = False,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        device_executor: BackendExecutor | None = None,
+        backend_executor: BackendExecutor | None = None,
         measurement_backend_adapter: MeasurementBackendAdapter | None = None,
         measurement_result_factory: MeasurementResultFactory | None = None,
     ):
@@ -99,9 +99,9 @@ class MeasurementClient:
             The quantum chip ID (e.g., "64Q").
         qubits : Sequence[str]
             The list of qubit labels.
-        config_dir : str, optional
+        config_dir : Path | str, optional
             The configuration directory.
-        params_dir : str, optional
+        params_dir : Path | str, optional
             The parameters directory.
         load_configs : bool, optional
             Whether to load the configurations, by default True.
@@ -109,6 +109,12 @@ class MeasurementClient:
             Whether to connect the devices, by default False.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
+        backend_executor : BackendExecutor, optional
+            Backend executor implementation used by `run()`.
+        measurement_backend_adapter : MeasurementBackendAdapter, optional
+            Adapter from measurement models to backend execution requests.
+        measurement_result_factory : MeasurementResultFactory, optional
+            Factory that builds `MeasurementResult` from backend output.
 
         Examples
         --------
@@ -122,10 +128,10 @@ class MeasurementClient:
         self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
         self._system_manager = SystemManager.shared()
-        self._device_executor = device_executor
+        self._backend_executor = backend_executor
         self._measurement_backend_adapter = measurement_backend_adapter
         self._measurement_result_factory = measurement_result_factory
-        self._device_manager = MeasurementDeviceManager(
+        self._backend_manager = MeasurementBackendManager(
             system_manager=self._system_manager,
             qubits=self._qubits,
         )
@@ -156,7 +162,7 @@ class MeasurementClient:
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
         """
-        self.device_manager.load(
+        self.backend_manager.load(
             chip_id=self._chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
@@ -169,7 +175,7 @@ class MeasurementClient:
         sync_clocks: bool = True,
     ) -> None:
         """Connect to the devices."""
-        self.device_manager.connect(sync_clocks=sync_clocks)
+        self.backend_manager.connect(sync_clocks=sync_clocks)
 
     def reload(
         self,
@@ -192,12 +198,12 @@ class MeasurementClient:
     @cached_property
     def box_ids(self) -> list[str]:
         """Get the list of box IDs."""
-        return self.device_manager.box_ids
+        return self.backend_manager.box_ids
 
     @cached_property
     def mux_dict(self) -> dict[str, Mux]:
         """Get a dictionary of Mux objects indexed by qubit labels."""
-        return self.device_manager.mux_dict
+        return self.backend_manager.mux_dict
 
     @property
     def system_manager(self) -> SystemManager:
@@ -205,9 +211,9 @@ class MeasurementClient:
         return self._system_manager
 
     @property
-    def device_manager(self) -> MeasurementDeviceManager:
-        """Return the device/config manager."""
-        return self._device_manager
+    def backend_manager(self) -> MeasurementBackendManager:
+        """Return the backend/config manager."""
+        return self._backend_manager
 
     @property
     def pulse_factory(self) -> MeasurementPulseFactory:
@@ -230,23 +236,23 @@ class MeasurementClient:
     @property
     def config_loader(self) -> ConfigLoader:
         """Get the configuration loader."""
-        return self.device_manager.config_loader
+        return self.backend_manager.config_loader
 
     @property
     def experiment_system(self) -> ExperimentSystem:
         """Get the experiment system."""
-        return self.device_manager.experiment_system
+        return self.backend_manager.experiment_system
 
     @property
     def device_controller(self) -> DeviceController:
         """Get the device controller."""
-        return self.device_manager.device_controller
+        return self.backend_manager.device_controller
 
     @property
-    def device_executor(self) -> BackendExecutor:
-        """Return the device executor implementation."""
-        if self._device_executor is not None:
-            return self._device_executor
+    def backend_executor(self) -> BackendExecutor:
+        """Return the backend executor implementation."""
+        if self._backend_executor is not None:
+            return self._backend_executor
         return QuelBackendExecutor(
             device_controller=self.device_controller,
         )
@@ -398,7 +404,7 @@ class MeasurementClient:
         bool
             True if connected, False otherwise.
         """
-        return self.device_manager.is_connected()
+        return self.backend_manager.is_connected()
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """
@@ -418,7 +424,7 @@ class MeasurementClient:
         --------
         >>> cli.check_link_status(["Q73A", "U10B"])
         """
-        return self.device_manager.check_link_status(box_list)
+        return self.backend_manager.check_link_status(box_list)
 
     def check_clock_status(self, box_list: list[str]) -> dict:
         """
@@ -438,7 +444,7 @@ class MeasurementClient:
         --------
         >>> cli.check_clock_status(["Q73A", "U10B"])
         """
-        return self.device_manager.check_clock_status(box_list)
+        return self.backend_manager.check_clock_status(box_list)
 
     def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
         """
@@ -453,7 +459,7 @@ class MeasurementClient:
         --------
         >>> cli.linkup(["Q73A", "U10B"])
         """
-        self.device_manager.linkup(box_list, noise_threshold=noise_threshold)
+        self.backend_manager.linkup(box_list, noise_threshold=noise_threshold)
 
     def relinkup(self, box_list: list[str]) -> None:
         """
@@ -468,7 +474,7 @@ class MeasurementClient:
         --------
         >>> cli.relinkup(["Q73A", "U10B"])
         """
-        self.device_manager.relinkup(box_list)
+        self.backend_manager.relinkup(box_list)
 
     @contextmanager
     def modified_frequencies(
@@ -491,7 +497,7 @@ class MeasurementClient:
         ...         "Q01": [0.2 + 0.3j, 0.3 + 0.4j, 0.4 + 0.5j],
         ...     })
         """
-        with self.device_manager.modified_frequencies(target_frequencies):
+        with self.backend_manager.modified_frequencies(target_frequencies):
             yield
 
     @contextmanager
@@ -545,18 +551,17 @@ class MeasurementClient:
         """
         self.measurement_backend_adapter.validate_schedule(schedule)
 
-        measure_mode = MeasureMode(config.mode)
         request = self.measurement_backend_adapter.build_execution_request(
             schedule=schedule,
             config=config,
         )
-        backend_result = self.device_executor.execute(
+
+        backend_result = self.backend_executor.execute(
             request=request,
         )
 
         result = self.measurement_result_factory.create(
             backend_result=backend_result,
-            measure_mode=measure_mode,
             measurement_config=config,
             device_config=self.device_controller.box_config,
         )
@@ -766,7 +771,7 @@ class MeasurementClient:
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
 
-        run_config = MeasurementConfig.from_execute_args(
+        run_config = MeasurementConfig.create(
             mode=mode,
             shots=shots,
             interval=interval,

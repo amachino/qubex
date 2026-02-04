@@ -6,8 +6,8 @@ from .measurement_backend_adapter import (
     MeasurementBackendAdapter,
     QuelMeasurementBackendAdapter,
 )
+from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_client import MeasurementClient
-from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
@@ -26,8 +26,8 @@ __all__ = [
     "MeasureResult",
     "Measurement",
     "MeasurementBackendAdapter",
+    "MeasurementBackendManager",
     "MeasurementClient",
-    "MeasurementDeviceManager",
     "MeasurementPulseFactory",
     "MeasurementResultFactory",
     "MeasurementSchedule",

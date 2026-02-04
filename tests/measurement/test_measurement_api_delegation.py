@@ -113,10 +113,10 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
 
 
 def test_run_delegates_schedule_execution_to_executor() -> None:
-    """Given run inputs, when run is called, then it validates and executes via DeviceExecutor."""
+    """Given run inputs, when run is called, then it validates and executes via BackendExecutor."""
     measurement = object.__new__(MeasurementClient)
     measurement.__dict__["_system_manager"] = type("_SM", (), {"rawdata_dir": None})()
-    measurement.__dict__["_device_manager"] = type(
+    measurement.__dict__["_backend_manager"] = type(
         "_DM",
         (),
         {"device_controller": type("_DC", (), {"box_config": {"shots": 2}})()},
@@ -127,7 +127,7 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
         pulse_schedule=pulse_schedule,
         capture_schedule=CaptureSchedule(captures=[]),
     )
-    config = MeasurementConfig.from_execute_args(mode="avg", shots=2, interval=100.0)
+    config = MeasurementConfig.create(mode="avg", shots=2, interval=100.0)
     expected = MeasurementResult.from_multiple(_make_multiple_result())
     called: dict[str, Any] = {}
 
@@ -152,7 +152,7 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
             return expected
 
     measurement.__dict__["_measurement_backend_adapter"] = _Adapter()
-    measurement.__dict__["_device_executor"] = _Exec()
+    measurement.__dict__["_backend_executor"] = _Exec()
     measurement.__dict__["_measurement_result_factory"] = _ResultFactory()
 
     result = measurement.run(schedule=schedule, config=config)

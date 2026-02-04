@@ -63,8 +63,3 @@ class QuelBackendExecutor:
             line_param0=payload.line_param0,
             line_param1=payload.line_param1,
         )
-
-
-# Backward-compatible aliases.
-DeviceExecutor = BackendExecutor
-QuelDeviceExecutor = QuelBackendExecutor

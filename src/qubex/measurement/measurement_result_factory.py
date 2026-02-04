@@ -8,7 +8,6 @@ import numpy as np
 
 from qubex.backend import ExperimentSystem, RawResult
 
-from .models.measure_result import MeasureMode
 from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult
 
@@ -23,7 +22,6 @@ class MeasurementResultFactory:
         self,
         *,
         backend_result: RawResult,
-        measure_mode: MeasureMode,
         measurement_config: MeasurementConfig,
         device_config: dict,
     ) -> MeasurementResult:
@@ -34,8 +32,6 @@ class MeasurementResultFactory:
         ----------
         backend_result : RawResult
             Raw status/data/config returned by backend execution.
-        measure_mode : MeasureMode
-            Measurement mode used during execution.
         measurement_config : MeasurementConfig
             Configuration used for the run.
         device_config : dict
@@ -46,6 +42,7 @@ class MeasurementResultFactory:
         MeasurementResult
             Canonical measurement result.
         """
+        measure_mode = measurement_config.mode
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
 
@@ -58,7 +55,7 @@ class MeasurementResultFactory:
                 iq_data[target] = iqs
 
         measure_data = defaultdict(list)
-        if measure_mode == MeasureMode.SINGLE:
+        if measure_mode == "single":
             for target, iqs in iq_data.items():
                 qubit = target[label_slice]
                 for idx, iq in enumerate(iqs):
@@ -66,7 +63,7 @@ class MeasurementResultFactory:
                         # skip the first extra capture
                         continue
                     measure_data[qubit].append(iq * norm_factor)
-        elif measure_mode == MeasureMode.AVG:
+        elif measure_mode == "avg":
             for target, iqs in iq_data.items():
                 qubit = target[label_slice]
                 for idx, iq in enumerate(iqs):
@@ -80,7 +77,7 @@ class MeasurementResultFactory:
             raise ValueError(f"Invalid measure mode: {measure_mode}")
 
         return MeasurementResult(
-            mode=measure_mode.value,
+            mode=measure_mode,
             data=dict(measure_data),
             device_config=device_config,
             measurement_config=measurement_config.to_dict(),

@@ -7,9 +7,7 @@ from .device_executor import (
     BackendExecutionRequest,
     BackendExecutor,
     BackendResult,
-    DeviceExecutor,
     QuelBackendExecutor,
-    QuelDeviceExecutor,
     QuelExecutionPayload,
 )
 from .experiment_system import ControlParams, ExperimentSystem, MixingUtil, WiringInfo
@@ -32,7 +30,6 @@ __all__ = [
     "ControlParams",
     "ControlSystem",
     "DeviceController",
-    "DeviceExecutor",
     "ExperimentSystem",
     "LatticeGraph",
     "MixingUtil",
@@ -42,7 +39,6 @@ __all__ = [
     "QuantumSystem",
     "Qubit",
     "QuelBackendExecutor",
-    "QuelDeviceExecutor",
     "QuelExecutionPayload",
     "RawResult",
     "Resonator",

@@ -6,9 +6,9 @@ from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHO
 from qubex.measurement.models import MeasurementConfig
 
 
-def test_from_execute_args_applies_legacy_defaults() -> None:
+def test_create_applies_legacy_defaults() -> None:
     """Given omitted shots/interval, when building config, then legacy defaults are applied."""
-    config = MeasurementConfig.from_execute_args()
+    config = MeasurementConfig.create()
 
     assert config.mode == "avg"
     assert config.shots == DEFAULT_SHOTS
@@ -17,9 +17,9 @@ def test_from_execute_args_applies_legacy_defaults() -> None:
     assert config.dsp.enable_dsp_demodulation is True
 
 
-def test_from_measure_args_maps_dsp_and_line_params() -> None:
-    """Given measure args, when building config, then DSP and line params are set in dsp config."""
-    config = MeasurementConfig.from_measure_args(
+def test_create_maps_dsp_and_line_params() -> None:
+    """Given dsp args, when building config, then DSP and line params are set in dsp config."""
+    config = MeasurementConfig.create(
         enable_dsp_demodulation=False,
         enable_dsp_sum=True,
         enable_dsp_classification=True,

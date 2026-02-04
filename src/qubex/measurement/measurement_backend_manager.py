@@ -20,7 +20,7 @@ from qubex.backend import (
 logger = logging.getLogger(__name__)
 
 
-class MeasurementDeviceManager:
+class MeasurementBackendManager:
     """Handle config loading and hardware connectivity for measurement."""
 
     def __init__(
