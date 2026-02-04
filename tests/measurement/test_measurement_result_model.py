@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
+from scipy.io import netcdf_file
 
 from qubex.measurement.models import MeasurementResult
 from qubex.measurement.models.measure_result import (
@@ -121,3 +124,29 @@ def test_save_writes_netcdf_file(tmp_path) -> None:
 
     assert path.name == "result.nc"
     assert np.array_equal(restored.data["Q00"][0], np.array([1.0 + 0.0j]))
+
+
+def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:
+    """Given NetCDF save, when opening the file, then codec metadata attributes are present."""
+    result = MeasurementResult(
+        mode="single",
+        data={"Q00": [np.array([1.0 + 2.0j])]},
+        device_config={"backend": "quel"},
+        measurement_config={"mode": "single", "shots": 1},
+    )
+    path = result.save_netcdf(tmp_path / "metadata.nc")
+
+    with netcdf_file(path, mode="r") as ds:
+        attrs = ds.__dict__
+        format_name = attrs["qubex_format"]
+        if isinstance(format_name, bytes):
+            format_name = format_name.decode()
+        format_version = attrs["qubex_format_version"]
+
+        assert format_name == "measurement_result_netcdf"
+        assert int(format_version) == 1
+
+        index_map = attrs["index_map_json"]
+        if isinstance(index_map, bytes):
+            index_map = index_map.decode()
+        assert "Q00" in json.loads(index_map)

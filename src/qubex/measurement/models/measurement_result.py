@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import Field
-from scipy.io import netcdf_file
 
 from qubex.core.model import Model
 from qubex.measurement.models.measure_result import (
@@ -17,6 +15,9 @@ from qubex.measurement.models.measure_result import (
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
+)
+from qubex.measurement.models.measurement_result_netcdf_codec import (
+    MeasurementResultNetCDFCodec,
 )
 
 
@@ -27,6 +28,9 @@ class MeasurementResult(Model):
     data: dict[str, list[np.ndarray]]
     device_config: dict[str, Any] = Field(default_factory=dict)
     measurement_config: dict[str, Any] = Field(default_factory=dict)
+    _netcdf_codec: ClassVar[MeasurementResultNetCDFCodec] = (
+        MeasurementResultNetCDFCodec()
+    )
 
     @property
     def measure_mode(self) -> MeasureMode:
@@ -157,44 +161,7 @@ class MeasurementResult(Model):
         Path
             Saved path.
         """
-        path_obj = Path(path)
-        target_names = list(self.data.keys())
-        index_map: dict[str, list[dict[str, Any]]] = {}
-
-        with netcdf_file(path_obj, mode="w") as ds:
-            ds.result_mode = self.mode
-            ds.device_config_json = json.dumps(self.device_config, ensure_ascii=False)
-            ds.measurement_config_json = json.dumps(
-                self.measurement_config,
-                ensure_ascii=False,
-            )
-            ds.targets_json = json.dumps(target_names, ensure_ascii=False)
-
-            for target_idx, target in enumerate(target_names):
-                index_map[target] = []
-                for capture_idx, raw in enumerate(self.data[target]):
-                    values = np.asarray(raw)
-                    dim = f"n_t{target_idx}_c{capture_idx}"
-                    real_name = f"raw_real_t{target_idx}_c{capture_idx}"
-                    imag_name = f"raw_imag_t{target_idx}_c{capture_idx}"
-                    ds.createDimension(dim, values.size)
-                    real_var = ds.createVariable(real_name, "f8", (dim,))
-                    imag_var = ds.createVariable(imag_name, "f8", (dim,))
-                    flat = values.reshape(-1)
-                    real_var[:] = np.real(flat)
-                    imag_var[:] = np.imag(flat)
-                    index_map[target].append(
-                        {
-                            "capture_idx": capture_idx,
-                            "shape": list(values.shape),
-                            "real_var": real_name,
-                            "imag_var": imag_name,
-                        }
-                    )
-
-            ds.index_map_json = json.dumps(index_map, ensure_ascii=False)
-
-        return path_obj
+        return self._netcdf_codec.save(self, path)
 
     def save(
         self,
@@ -243,31 +210,4 @@ class MeasurementResult(Model):
         MeasurementResult
             Restored measurement result.
         """
-        path_obj = Path(path)
-        with netcdf_file(path_obj, mode="r") as ds:
-            attrs = ds.__dict__
-            mode_attr = attrs["result_mode"]
-            if isinstance(mode_attr, bytes):
-                mode = mode_attr.decode()
-            else:
-                mode = str(mode_attr)
-            device_config = json.loads(attrs["device_config_json"])
-            measurement_config = json.loads(attrs["measurement_config_json"])
-            index_map = json.loads(attrs["index_map_json"])
-
-            data: dict[str, list[np.ndarray]] = {}
-            for target, entries in index_map.items():
-                captures: list[np.ndarray] = []
-                for entry in entries:
-                    real = np.copy(ds.variables[entry["real_var"]].data)
-                    imag = np.copy(ds.variables[entry["imag_var"]].data)
-                    flat = real + 1j * imag
-                    shape = tuple(entry["shape"])
-                    captures.append(flat.reshape(shape))
-                data[target] = captures
-        return cls(
-            mode=mode,  # type: ignore[arg-type]
-            data=data,
-            device_config=device_config,
-            measurement_config=measurement_config,
-        )
+        return cls._netcdf_codec.load(path)
