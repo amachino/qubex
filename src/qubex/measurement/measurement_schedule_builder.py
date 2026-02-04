@@ -119,7 +119,7 @@ class MeasurementScheduleBuilder:
         )
 
         sequence_duration = (
-            math.ceil(schedule.duration / BLOCK_DURATION + 1) * BLOCK_DURATION
+            math.ceil(schedule.duration / BLOCK_DURATION) * BLOCK_DURATION
         )
         schedule.pad(total_duration=sequence_duration, pad_side="right")
 

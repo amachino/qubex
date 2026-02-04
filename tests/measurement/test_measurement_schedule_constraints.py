@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from qubex.backend import SAMPLING_PERIOD
-from qubex.measurement.measurement import Measurement
+from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_schedule_builder import (
     BLOCK_DURATION,
     EXTRA_SUM_SECTION_LENGTH,
@@ -45,7 +45,7 @@ class _FakePulseSchedule:
 
 def test_validate_measurement_schedule_accepts_device_constraints() -> None:
     """Given aligned pulse/capture windows, when validating, then no error is raised."""
-    measurement = object.__new__(Measurement)
+    measurement = object.__new__(MeasurementClient)
     target = "RQ00"
     pulse_schedule = _FakePulseSchedule(
         duration=2 * BLOCK_DURATION,
@@ -78,7 +78,7 @@ def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture()
     None
 ):
     """Given first capture not block-aligned, when validating, then it raises ValueError."""
-    measurement = object.__new__(Measurement)
+    measurement = object.__new__(MeasurementClient)
     target = "RQ00"
     pulse_schedule = _FakePulseSchedule(
         duration=2 * BLOCK_DURATION,

@@ -32,7 +32,7 @@ from qubex.backend import (
 )
 from qubex.clifford.clifford import Clifford
 from qubex.measurement import (
-    Measurement,
+    MeasurementClient,
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
@@ -278,7 +278,7 @@ class Experiment:
         return self.ctx.util
 
     @property
-    def measurement(self) -> Measurement:
+    def measurement(self) -> MeasurementClient:
         """Return the measurement instance."""
         return self.ctx.measurement
 

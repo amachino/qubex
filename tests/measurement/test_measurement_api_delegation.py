@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from qubex.measurement.measurement import Measurement
+from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.models import MeasurementConfig, MeasurementSchedule
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
@@ -35,7 +35,7 @@ def _make_multiple_result() -> MultipleMeasureResult:
 
 def test_execute_delegates_to_run_with_built_schedule() -> None:
     """Given execute inputs, when execute is called, then it builds schedule and delegates to run."""
-    measurement = object.__new__(Measurement)
+    measurement = object.__new__(MeasurementClient)
     measurement.__dict__["_classifiers"] = {}
     pulse_schedule = PulseSchedule(["Q00"])
     built_schedule = MeasurementSchedule(
@@ -47,7 +47,7 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
     called: dict[str, Any] = {}
 
     def fake_build(
-        self: Measurement,
+        self: MeasurementClient,
         *,
         schedule: PulseSchedule,
         **kwargs: object,
@@ -57,7 +57,7 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
         return built_schedule
 
     def fake_run(
-        self: Measurement,
+        self: MeasurementClient,
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
@@ -69,7 +69,7 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
         return MeasurementResult.from_multiple(multiple)
 
     def fake_to_multiple(
-        self: Measurement, result: MeasurementResult
+        self: MeasurementClient, result: MeasurementResult
     ) -> MultipleMeasureResult:
         return result.to_multiple_measure_result(config={"shots": 1})
 
@@ -98,11 +98,13 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
 
 def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     """Given measure inputs, when measure is called, then it delegates to execute and flattens first capture."""
-    measurement = object.__new__(Measurement)
+    measurement = object.__new__(MeasurementClient)
     multiple = _make_multiple_result()
     called: dict[str, Any] = {}
 
-    def fake_execute(self: Measurement, **kwargs: object) -> MultipleMeasureResult:
+    def fake_execute(
+        self: MeasurementClient, **kwargs: object
+    ) -> MultipleMeasureResult:
         called["kwargs"] = kwargs
         return multiple
 

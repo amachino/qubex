@@ -34,7 +34,7 @@ from qubex.backend import (
     TargetType,
 )
 from qubex.measurement import (
-    Measurement,
+    MeasurementClient,
     StateClassifier,
 )
 from qubex.measurement.measurement_defaults import (
@@ -190,7 +190,7 @@ class ExperimentContext:
         self._classifier_type: Final = classifier_type
         self._configuration_mode: Final = configuration_mode
         self._calibration_valid_days: Final = calibration_valid_days
-        self._measurement = Measurement(
+        self._measurement = MeasurementClient(
             chip_id=chip_id,
             qubits=qubits,
             load_configs=False,
@@ -323,7 +323,7 @@ class ExperimentContext:
         return ExperimentUtil
 
     @property
-    def measurement(self) -> Measurement:
+    def measurement(self) -> MeasurementClient:
         """Return the measurement instance."""
         return self._measurement
 

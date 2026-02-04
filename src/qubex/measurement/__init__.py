@@ -1,7 +1,7 @@
 """Measurement API exports."""
 
 from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
-from .measurement import Measurement
+from .measurement_client import Measurement, MeasurementClient
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
@@ -18,6 +18,7 @@ __all__ = [
     "MeasureMode",
     "MeasureResult",
     "Measurement",
+    "MeasurementClient",
     "MeasurementDeviceManager",
     "MeasurementPulseFactory",
     "MeasurementScheduleBuilder",
