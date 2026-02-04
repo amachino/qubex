@@ -783,7 +783,11 @@ class MeasurementClient:
             save_result=save_result,
             save_path=save_path,
         )
-        return self._to_multiple_measure_result(result)
+        return MeasurementResultConverter.to_multiple_measure_result(
+            result,
+            config=self.device_controller.box_config,
+            classifiers=self.classifiers,
+        )
 
     def _save_measurement_result(
         self,
@@ -836,15 +840,3 @@ class MeasurementClient:
             plot=plot,
         )
         return built_schedule
-
-    def _to_multiple_measure_result(
-        self,
-        result: MeasurementResult,
-        config: dict[str, object] | None = None,
-    ) -> MultipleMeasureResult:
-        """Convert canonical `MeasurementResult` to legacy multiple result."""
-        return MeasurementResultConverter.to_multiple_measure_result(
-            result,
-            config=self.device_controller.box_config if config is None else config,
-            classifiers=self.classifiers,
-        )

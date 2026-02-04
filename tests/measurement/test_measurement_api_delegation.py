@@ -50,10 +50,10 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     def fake_build(
         self: MeasurementClient,
         *,
-        schedule: PulseSchedule,
+        pulse_schedule: PulseSchedule,
         **kwargs: object,
     ) -> MeasurementSchedule:
-        called["build_schedule"] = schedule
+        called["build_schedule"] = pulse_schedule
         called["build_kwargs"] = kwargs
         return built_schedule
 
@@ -67,21 +67,15 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
         called["run_config"] = config
         return MeasurementResultConverter.from_multiple(multiple)
 
-    def fake_to_multiple(
-        self: MeasurementClient, result: MeasurementResult
-    ) -> MultipleMeasureResult:
-        return MeasurementResultConverter.to_multiple_measure_result(
-            result,
-            config={"shots": 1},
-        )
-
     measurement.build_measurement_schedule = MethodType(fake_build, measurement)
     measurement.execute_measurement_schedule = MethodType(
         fake_execute_measurement_schedule, measurement
     )
-    measurement._to_multiple_measure_result = MethodType(  # noqa: SLF001
-        fake_to_multiple, measurement
-    )
+    measurement.__dict__["_backend_manager"] = type(
+        "_BM",
+        (),
+        {"device_controller": type("_DC", (), {"box_config": {"shots": 1}})()},
+    )()
 
     result = measurement.execute(
         schedule=pulse_schedule,
