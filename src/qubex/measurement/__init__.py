@@ -9,6 +9,7 @@ from .measurement_backend_adapter import (
 from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_client import MeasurementClient
 from .measurement_pulse_factory import MeasurementPulseFactory
+from .measurement_result_converter import MeasurementResultConverter
 from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models import (
@@ -31,6 +32,7 @@ __all__ = [
     "MeasurementClient",
     "MeasurementPulseFactory",
     "MeasurementResult",
+    "MeasurementResultConverter",
     "MeasurementResultFactory",
     "MeasurementSchedule",
     "MeasurementScheduleBuilder",

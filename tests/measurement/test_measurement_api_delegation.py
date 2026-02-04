@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from qubex.measurement.measurement_client import MeasurementClient
+from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.models import MeasurementConfig, MeasurementSchedule
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
@@ -64,12 +65,15 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
     ) -> MeasurementResult:
         called["run_schedule"] = schedule
         called["run_config"] = config
-        return MeasurementResult.from_multiple(multiple)
+        return MeasurementResultConverter.from_multiple(multiple)
 
     def fake_to_multiple(
         self: MeasurementClient, result: MeasurementResult
     ) -> MultipleMeasureResult:
-        return result.to_multiple_measure_result(config={"shots": 1})
+        return MeasurementResultConverter.to_multiple_measure_result(
+            result,
+            config={"shots": 1},
+        )
 
     measurement._build_measurement_schedule = MethodType(  # noqa: SLF001
         fake_build, measurement
@@ -129,7 +133,7 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
         capture_schedule=CaptureSchedule(captures=[]),
     )
     config = MeasurementConfig.create(mode="avg", shots=2, interval=100.0)
-    expected = MeasurementResult.from_multiple(_make_multiple_result())
+    expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
     called: dict[str, Any] = {}
 
     request_obj = object()

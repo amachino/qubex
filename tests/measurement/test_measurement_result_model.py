@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from netCDF4 import Dataset
 
+from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.models import MeasurementResult
 from qubex.measurement.models.measure_result import (
     MeasureData,
@@ -40,23 +41,29 @@ def _make_multiple_measure_result() -> MultipleMeasureResult:
 def test_to_multiple_measure_result_returns_wrapped_result() -> None:
     """Given legacy multiple result, when converting round-trip, then mode and config are preserved."""
     multiple = _make_multiple_measure_result()
-    result = MeasurementResult.from_multiple(multiple)
-    restored = result.to_multiple_measure_result(config=multiple.config)
+    result = MeasurementResultConverter.from_multiple(multiple)
+    restored = MeasurementResultConverter.to_multiple_measure_result(
+        result,
+        config=multiple.config,
+    )
 
     assert restored.mode == multiple.mode
     assert restored.config == multiple.config
     assert result.device_config == multiple.config
     assert np.array_equal(restored.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
     assert result.mode == "avg"
-    assert result.measure_mode == MeasureMode.AVG
 
 
 def test_to_measure_result_selects_requested_index() -> None:
     """Given wrapped multiple result, when converting with an index, then selected capture is returned."""
     multiple = _make_multiple_measure_result()
-    result = MeasurementResult.from_multiple(multiple)
+    result = MeasurementResultConverter.from_multiple(multiple)
 
-    single: MeasureResult = result.to_measure_result(index=1, config=multiple.config)
+    single: MeasureResult = MeasurementResultConverter.to_measure_result(
+        result,
+        index=1,
+        config=multiple.config,
+    )
 
     assert single.mode == MeasureMode.AVG
     assert np.array_equal(single.data["Q00"].raw, multiple.data["Q00"][1].raw)
@@ -65,10 +72,10 @@ def test_to_measure_result_selects_requested_index() -> None:
 
 def test_to_measure_result_raises_for_invalid_index() -> None:
     """Given wrapped multiple result, when index is out of range, then IndexError is raised."""
-    result = MeasurementResult.from_multiple(_make_multiple_measure_result())
+    result = MeasurementResultConverter.from_multiple(_make_multiple_measure_result())
 
     with pytest.raises(IndexError):
-        result.to_measure_result(index=10)
+        MeasurementResultConverter.to_measure_result(result, index=10)
 
 
 def test_json_roundtrip_preserves_raw_arrays() -> None:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from functools import cached_property, reduce
@@ -39,10 +38,10 @@ from .measurement_backend_adapter import (
 )
 from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_pulse_factory import MeasurementPulseFactory
+from .measurement_result_converter import MeasurementResultConverter
 from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models.measure_result import (
-    MeasureData,
     MeasureResult,
     MultipleMeasureResult,
 )
@@ -887,20 +886,8 @@ class MeasurementClient:
         config: dict[str, object] | None = None,
     ) -> MultipleMeasureResult:
         """Convert canonical `MeasurementResult` to legacy multiple result."""
-        measure_data = defaultdict(list)
-        for qubit, captures in result.data.items():
-            for raw in captures:
-                measure_data[qubit].append(
-                    MeasureData(
-                        target=qubit,
-                        mode=result.measure_mode,
-                        raw=np.asarray(raw),
-                        classifier=self.classifiers.get(qubit),
-                    )
-                )
-
-        return MultipleMeasureResult(
-            mode=result.measure_mode,
-            data=dict(measure_data),
+        return MeasurementResultConverter.to_multiple_measure_result(
+            result,
             config=self.device_controller.box_config if config is None else config,
+            classifiers=self.classifiers,
         )
