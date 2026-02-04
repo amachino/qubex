@@ -122,6 +122,7 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
     measurement = object.__new__(MeasurementClient)
     measurement.__dict__["_system_manager"] = type("_SM", (), {"rawdata_dir": None})()
     measurement.__dict__["_device_executor"] = type("_Exec", (), {})()
+    measurement.__dict__["_measurement_backend_adapter"] = type("_Adapter", (), {})()
 
     pulse_schedule = PulseSchedule(["RQ00"])
     schedule = MeasurementSchedule(
@@ -132,22 +133,34 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
     expected = MeasurementResult.from_multiple(_make_multiple_result())
     called: dict[str, Any] = {}
 
+    request_obj = object()
+
     def fake_validate(self: object, schedule_arg: MeasurementSchedule) -> None:
         called["validated"] = schedule_arg
 
-    def fake_execute_schedule(self: object, **kwargs: object) -> dict[str, object]:
+    def fake_build_request(self: object, **kwargs: object) -> object:
+        called["request_kwargs"] = kwargs
+        return request_obj
+
+    def fake_execute(self: object, **kwargs: object) -> dict[str, object]:
         called["execute_kwargs"] = kwargs
         return {"data": {}, "status": {}, "config": {}}
 
     def fake_create_result(self: MeasurementClient, **_: object) -> MeasurementResult:
         return expected
 
-    measurement.__dict__["_device_executor"].validate_schedule = MethodType(
+    measurement.__dict__["_measurement_backend_adapter"].validate_schedule = MethodType(
         fake_validate,
-        measurement.__dict__["_device_executor"],
+        measurement.__dict__["_measurement_backend_adapter"],
     )
-    measurement.__dict__["_device_executor"].execute_schedule = MethodType(
-        fake_execute_schedule,
+    measurement.__dict__[
+        "_measurement_backend_adapter"
+    ].build_execution_request = MethodType(
+        fake_build_request,
+        measurement.__dict__["_measurement_backend_adapter"],
+    )
+    measurement.__dict__["_device_executor"].execute = MethodType(
+        fake_execute,
         measurement.__dict__["_device_executor"],
     )
     measurement._create_measurement_result = MethodType(  # noqa: SLF001
@@ -158,6 +171,7 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
     result = measurement.run(schedule=schedule, config=config)
 
     assert called["validated"] is schedule
-    assert called["execute_kwargs"]["schedule"] is schedule
-    assert called["execute_kwargs"]["interval"] == config.interval
+    assert called["request_kwargs"]["schedule"] is schedule
+    assert called["request_kwargs"]["config"] is config
+    assert called["execute_kwargs"]["request"] is request_obj
     assert result is expected

@@ -14,13 +14,13 @@ import numpy as np
 import numpy.typing as npt
 
 from qubex.backend import (
+    BackendExecutor,
     ConfigLoader,
     ControlParams,
     DeviceController,
-    DeviceExecutor,
     ExperimentSystem,
     Mux,
-    QuelDeviceExecutor,
+    QuelBackendExecutor,
     RawResult,
     SystemManager,
     Target,
@@ -35,6 +35,10 @@ from qubex.pulse import PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
+from .measurement_backend_adapter import (
+    MeasurementBackendAdapter,
+    QuelMeasurementBackendAdapter,
+)
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
@@ -83,7 +87,8 @@ class MeasurementClient:
         load_configs: bool = True,
         connect_devices: bool = False,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        device_executor: DeviceExecutor | None = None,
+        device_executor: BackendExecutor | None = None,
+        measurement_backend_adapter: MeasurementBackendAdapter | None = None,
     ):
         """
         Initialize the MeasurementClient.
@@ -118,6 +123,7 @@ class MeasurementClient:
         self._classifiers: TargetMap[StateClassifier] = {}
         self._system_manager = SystemManager.shared()
         self._device_executor = device_executor
+        self._measurement_backend_adapter = measurement_backend_adapter
         self._device_manager = MeasurementDeviceManager(
             system_manager=self._system_manager,
             qubits=self._qubits,
@@ -236,11 +242,20 @@ class MeasurementClient:
         return self.device_manager.device_controller
 
     @property
-    def device_executor(self) -> DeviceExecutor:
+    def device_executor(self) -> BackendExecutor:
         """Return the device executor implementation."""
         if self._device_executor is not None:
             return self._device_executor
-        return QuelDeviceExecutor(
+        return QuelBackendExecutor(
+            device_controller=self.device_controller,
+        )
+
+    @property
+    def measurement_backend_adapter(self) -> MeasurementBackendAdapter:
+        """Return schedule-to-backend adapter implementation."""
+        if self._measurement_backend_adapter is not None:
+            return self._measurement_backend_adapter
+        return QuelMeasurementBackendAdapter(
             device_controller=self.device_controller,
             experiment_system=self.experiment_system,
         )
@@ -521,20 +536,15 @@ class MeasurementClient:
         MeasurementResult
             The measurement result.
         """
-        self._validate_measurement_schedule(schedule)
+        self.measurement_backend_adapter.validate_schedule(schedule)
 
         measure_mode = MeasureMode(config.mode)
-
-        backend_result = self.device_executor.execute_schedule(
+        request = self.measurement_backend_adapter.build_execution_request(
             schedule=schedule,
-            interval=config.interval,
-            repeats=config.shots,
-            integral_mode=measure_mode.integral_mode,
-            dsp_demodulation=config.dsp.enable_dsp_demodulation,
-            enable_sum=config.dsp.enable_dsp_sum,
-            enable_classification=config.dsp.enable_dsp_classification,
-            line_param0=config.dsp.line_param0,
-            line_param1=config.dsp.line_param1,
+            config=config,
+        )
+        backend_result = self.device_executor.execute(
+            request=request,
         )
 
         result = self._create_measurement_result(
@@ -822,39 +832,6 @@ class MeasurementClient:
             plot=plot,
         )
         return built_schedule
-
-    def _build_pulse_schedule(
-        self,
-        schedule: PulseSchedule,
-        readout_amplitudes: dict[str, float] | None = None,
-        readout_duration: float | None = None,
-        readout_pre_margin: float | None = None,
-        readout_post_margin: float | None = None,
-        readout_ramptime: float | None = None,
-        readout_ramp_type: RampType | None = None,
-        readout_drag_coeff: float | None = None,
-        add_last_measurement: bool = False,
-        add_pump_pulses: bool = False,
-        plot: bool = False,
-    ) -> PulseSchedule:
-        """Build a pulse schedule via `MeasurementScheduleBuilder`."""
-        return self._build_measurement_schedule(
-            schedule=schedule,
-            readout_amplitudes=readout_amplitudes,
-            readout_duration=readout_duration,
-            readout_pre_margin=readout_pre_margin,
-            readout_post_margin=readout_post_margin,
-            readout_ramptime=readout_ramptime,
-            readout_ramp_type=readout_ramp_type,
-            readout_drag_coeff=readout_drag_coeff,
-            add_last_measurement=add_last_measurement,
-            add_pump_pulses=add_pump_pulses,
-            plot=plot,
-        ).pulse_schedule
-
-    def _validate_measurement_schedule(self, schedule: MeasurementSchedule) -> None:
-        """Validate pulse/capture schedule constraints with the backend executor."""
-        self.device_executor.validate_schedule(schedule)
 
     def _create_measurement_result(
         self,

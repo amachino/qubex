@@ -2,6 +2,10 @@
 
 from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMeans
 from .measurement import Measurement
+from .measurement_backend_adapter import (
+    MeasurementBackendAdapter,
+    QuelMeasurementBackendAdapter,
+)
 from .measurement_client import MeasurementClient
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
@@ -20,12 +24,14 @@ __all__ = [
     "MeasureMode",
     "MeasureResult",
     "Measurement",
+    "MeasurementBackendAdapter",
     "MeasurementClient",
     "MeasurementDeviceManager",
     "MeasurementPulseFactory",
     "MeasurementSchedule",
     "MeasurementScheduleBuilder",
     "MultipleMeasureResult",
+    "QuelMeasurementBackendAdapter",
     "StateClassifier",
     "StateClassifierGMM",
     "StateClassifierKMeans",
