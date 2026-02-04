@@ -11,7 +11,6 @@ from .measure_result import (
 from .measurement_config import MeasurementConfig
 from .measurement_record import MeasurementRecord
 from .measurement_result import MeasurementResult
-from .measurement_result_netcdf_codec import MeasurementResultNetCDFCodec
 from .measurement_schedule import MeasurementSchedule
 
 __all__ = [
@@ -21,7 +20,6 @@ __all__ = [
     "MeasurementConfig",
     "MeasurementRecord",
     "MeasurementResult",
-    "MeasurementResultNetCDFCodec",
     "MeasurementSchedule",
     "MultipleMeasureResult",
 ]

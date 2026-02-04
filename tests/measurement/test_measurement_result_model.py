@@ -6,7 +6,7 @@ import json
 
 import numpy as np
 import pytest
-from scipy.io import netcdf_file
+from netCDF4 import Dataset
 
 from qubex.measurement.models import MeasurementResult
 from qubex.measurement.models.measure_result import (
@@ -79,9 +79,12 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
         device_config={"shots": 2},
         measurement_config={"mode": "avg", "shots": 2},
     )
+    serialized = original.to_dict()
 
     restored = MeasurementResult.from_json(original.to_json())
 
+    assert serialized["__meta__"]["format"] == "qxdata"
+    assert serialized["__meta__"]["version"] == 1
     assert restored.mode == original.mode
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
     assert restored.device_config == original.device_config
@@ -136,17 +139,15 @@ def test_netcdf_writes_codec_metadata_attributes(tmp_path) -> None:
     )
     path = result.save_netcdf(tmp_path / "metadata.nc")
 
-    with netcdf_file(path, mode="r") as ds:
-        attrs = ds.__dict__
-        format_name = attrs["qubex_format"]
-        if isinstance(format_name, bytes):
-            format_name = format_name.decode()
-        format_version = attrs["qubex_format_version"]
+    with Dataset(path, mode="r") as ds:
+        format_name = ds.getncattr("format")
+        format_version = ds.getncattr("format_version")
+        model_class = ds.getncattr("model_class")
+        payload_json = ds.getncattr("payload_json")
 
-        assert format_name == "measurement_result_netcdf"
+        assert format_name == "qxdata"
         assert int(format_version) == 1
+        assert model_class.endswith(".MeasurementResult")
 
-        index_map = attrs["index_map_json"]
-        if isinstance(index_map, bytes):
-            index_map = index_map.decode()
-        assert "Q00" in json.loads(index_map)
+        payload = json.loads(payload_json)
+        assert "Q00" in payload["data"]

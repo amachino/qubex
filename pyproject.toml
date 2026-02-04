@@ -21,6 +21,7 @@ dependencies = [
     "kaleido == 0.2.1",
     "matplotlib ~= 3.0",
     "networkx ~= 3.0",
+    "netCDF4 ~= 1.0",
     "numpy >= 1.23.5",
     "optax ~= 0.0",
     "plotly ~= 5.23",

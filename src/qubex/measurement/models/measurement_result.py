@@ -4,33 +4,27 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import Field
 
-from qubex.core.model import Model
+from qubex.core.model import DataModel
 from qubex.measurement.models.measure_result import (
     MeasureData,
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
 )
-from qubex.measurement.models.measurement_result_netcdf_codec import (
-    MeasurementResultNetCDFCodec,
-)
 
 
-class MeasurementResult(Model):
+class MeasurementResult(DataModel):
     """Canonical serializable result of a measurement run."""
 
     mode: Literal["single", "avg"]
     data: dict[str, list[np.ndarray]]
     device_config: dict[str, Any] = Field(default_factory=dict)
     measurement_config: dict[str, Any] = Field(default_factory=dict)
-    _netcdf_codec: ClassVar[MeasurementResultNetCDFCodec] = (
-        MeasurementResultNetCDFCodec()
-    )
 
     @property
     def measure_mode(self) -> MeasureMode:
@@ -144,25 +138,6 @@ class MeasurementResult(Model):
             config=self.device_config if config is None else config,
         )
 
-    def save_netcdf(
-        self,
-        path: str | Path,
-    ) -> Path:
-        """
-        Save measurement result raw data and metadata in NetCDF format.
-
-        Parameters
-        ----------
-        path : str | Path
-            Output `.nc` path.
-
-        Returns
-        -------
-        Path
-            Saved path.
-        """
-        return self._netcdf_codec.save(self, path)
-
     def save(
         self,
         data_dir: str | Path | None = None,
@@ -191,23 +166,3 @@ class MeasurementResult(Model):
             file_name = f"{timestamp}.nc"
         path = output_dir / file_name
         return self.save_netcdf(path)
-
-    @classmethod
-    def load_netcdf(
-        cls,
-        path: str | Path,
-    ) -> MeasurementResult:
-        """
-        Load a measurement result from a NetCDF file.
-
-        Parameters
-        ----------
-        path : str | Path
-            Input `.nc` path.
-
-        Returns
-        -------
-        MeasurementResult
-            Restored measurement result.
-        """
-        return cls._netcdf_codec.load(path)
