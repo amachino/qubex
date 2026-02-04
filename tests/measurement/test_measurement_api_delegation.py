@@ -82,6 +82,7 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
     result = measurement.execute(
         schedule=pulse_schedule,
         add_last_measurement=True,
+        save_result=False,
     )
 
     assert result.mode == multiple.mode

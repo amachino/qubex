@@ -565,11 +565,6 @@ class MeasurementClient:
             measurement_config=config,
             device_config=self.device_controller.box_config,
         )
-
-        rawdata_dir = self.system_manager.rawdata_dir
-        if rawdata_dir is not None:
-            result.save(data_dir=rawdata_dir)
-
         return result
 
     def measure_noise(
@@ -626,6 +621,8 @@ class MeasurementClient:
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
+        save_result: bool = True,
+        save_path: str | Path | None = None,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -659,6 +656,13 @@ class MeasurementClient:
             The readout ramp type.
         add_pump_pulses : bool, optional
             Whether to add pump pulses, by default False.
+        save_result : bool, optional
+            Whether to persist canonical result, by default True.
+        save_path : str | Path | None, optional
+            Save destination for canonical result. If None, use configured
+            rawdata directory. If a directory path is given, save with an
+            auto-generated file name. If a `.nc` path is given, save to that
+            file.
 
         Returns
         -------
@@ -692,6 +696,8 @@ class MeasurementClient:
             line_param0=line_param0,
             line_param1=line_param1,
             plot=plot,
+            save_result=save_result,
+            save_path=save_path,
         )
         data = {target: measures[0] for target, measures in result.data.items()}
         return MeasureResult(
@@ -722,6 +728,8 @@ class MeasurementClient:
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
+        save_result: bool = True,
+        save_path: str | Path | None = None,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -762,6 +770,13 @@ class MeasurementClient:
             Whether to enable DSP classification, by default False.
         plot : bool, optional
             Whether to plot the results, by default False.
+        save_result : bool, optional
+            Whether to persist canonical result, by default True.
+        save_path : str | Path | None, optional
+            Save destination for canonical result. If None, use configured
+            rawdata directory. If a directory path is given, save with an
+            auto-generated file name. If a `.nc` path is given, save to that
+            file.
 
         Returns
         -------
@@ -807,7 +822,34 @@ class MeasurementClient:
             schedule=measurement_schedule,
             config=run_config,
         )
+        self._save_measurement_result(
+            result=result,
+            save_result=save_result,
+            save_path=save_path,
+        )
         return self._to_multiple_measure_result(result)
+
+    def _save_measurement_result(
+        self,
+        *,
+        result: MeasurementResult,
+        save_result: bool,
+        save_path: str | Path | None,
+    ) -> None:
+        """Persist result according to `save_path` policy."""
+        if not save_result:
+            return
+        if save_path is None:
+            rawdata_dir = self.system_manager.rawdata_dir
+            if rawdata_dir is not None:
+                result.save(data_dir=rawdata_dir)
+            return
+
+        path = Path(save_path)
+        if path.suffix == ".nc":
+            result.save(data_dir=path.parent, file_name=path.name)
+            return
+        result.save(data_dir=path)
 
     def _build_measurement_schedule(
         self,
