@@ -153,3 +153,6 @@ ignore = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
+
+[tool.uv]
+cache-dir = ".cache/uv"

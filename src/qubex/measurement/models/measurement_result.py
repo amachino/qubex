@@ -12,23 +12,12 @@ from pydantic import Field
 from scipy.io import netcdf_file
 
 from qubex.core.model import Model
-from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
     MeasureData,
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
 )
-
-
-class PulseScheduleSnapshot(Model):
-    """Serializable snapshot of a pulse schedule used in a run."""
-
-    schema_version: int = 1
-    channel_labels: list[str]
-    total_duration: float
-    total_length: int
-    waveforms: dict[str, np.ndarray] | None = None
 
 
 class MeasurementResult(Model):
@@ -38,8 +27,6 @@ class MeasurementResult(Model):
     data: dict[str, list[np.ndarray]]
     device_config: dict[str, Any] = Field(default_factory=dict)
     measurement_config: dict[str, Any] = Field(default_factory=dict)
-    pulse_schedule: PulseScheduleSnapshot | None = None
-    capture_schedule: CaptureSchedule | None = None
 
     @property
     def measure_mode(self) -> MeasureMode:
@@ -182,50 +169,6 @@ class MeasurementResult(Model):
                 ensure_ascii=False,
             )
             ds.targets_json = json.dumps(target_names, ensure_ascii=False)
-            ds.capture_schedule_json = json.dumps(
-                self.capture_schedule.to_dict()
-                if self.capture_schedule is not None
-                else None,
-                ensure_ascii=False,
-            )
-            if self.pulse_schedule is None:
-                ds.pulse_schedule_index_json = json.dumps(None)
-            else:
-                ds.pulse_schedule_metadata_json = json.dumps(
-                    {
-                        "schema_version": self.pulse_schedule.schema_version,
-                        "channel_labels": self.pulse_schedule.channel_labels,
-                        "total_duration": self.pulse_schedule.total_duration,
-                        "total_length": self.pulse_schedule.total_length,
-                    },
-                    ensure_ascii=False,
-                )
-                pulse_index_map: dict[str, dict[str, Any]] = {}
-                waveforms = (
-                    {}
-                    if self.pulse_schedule.waveforms is None
-                    else self.pulse_schedule.waveforms
-                )
-                for pulse_idx, (target, waveform) in enumerate(waveforms.items()):
-                    values = np.asarray(waveform)
-                    dim = f"p_t{pulse_idx}"
-                    real_name = f"pulse_real_t{pulse_idx}"
-                    imag_name = f"pulse_imag_t{pulse_idx}"
-                    ds.createDimension(dim, values.size)
-                    real_var = ds.createVariable(real_name, "f8", (dim,))
-                    imag_var = ds.createVariable(imag_name, "f8", (dim,))
-                    flat = values.reshape(-1)
-                    real_var[:] = np.real(flat)
-                    imag_var[:] = np.imag(flat)
-                    pulse_index_map[target] = {
-                        "shape": list(values.shape),
-                        "real_var": real_name,
-                        "imag_var": imag_name,
-                    }
-                ds.pulse_schedule_index_json = json.dumps(
-                    pulse_index_map,
-                    ensure_ascii=False,
-                )
 
             for target_idx, target in enumerate(target_names):
                 index_map[target] = []
@@ -311,9 +254,6 @@ class MeasurementResult(Model):
             device_config = json.loads(attrs["device_config_json"])
             measurement_config = json.loads(attrs["measurement_config_json"])
             index_map = json.loads(attrs["index_map_json"])
-            capture_schedule_payload = json.loads(attrs["capture_schedule_json"])
-            pulse_schedule_index_json = attrs.get("pulse_schedule_index_json")
-            pulse_schedule_metadata_json = attrs.get("pulse_schedule_metadata_json")
 
             data: dict[str, list[np.ndarray]] = {}
             for target, entries in index_map.items():
@@ -325,43 +265,9 @@ class MeasurementResult(Model):
                     shape = tuple(entry["shape"])
                     captures.append(flat.reshape(shape))
                 data[target] = captures
-            pulse_schedule: PulseScheduleSnapshot | None = None
-            if pulse_schedule_index_json is not None:
-                pulse_index_map = json.loads(pulse_schedule_index_json)
-                if pulse_index_map is not None:
-                    waveforms: dict[str, np.ndarray] = {}
-                    for target, entry in pulse_index_map.items():
-                        real = np.copy(ds.variables[entry["real_var"]].data)
-                        imag = np.copy(ds.variables[entry["imag_var"]].data)
-                        flat = real + 1j * imag
-                        shape = tuple(entry["shape"])
-                        waveforms[target] = flat.reshape(shape)
-
-                    metadata = (
-                        {}
-                        if pulse_schedule_metadata_json is None
-                        else json.loads(pulse_schedule_metadata_json)
-                    )
-                    pulse_schedule = PulseScheduleSnapshot(
-                        schema_version=metadata.get("schema_version", 1),
-                        channel_labels=metadata.get(
-                            "channel_labels",
-                            metadata.get("target_labels", list(waveforms.keys())),
-                        ),
-                        total_duration=metadata.get("total_duration", 0.0),
-                        total_length=metadata.get("total_length", 0),
-                        waveforms=waveforms,
-                    )
-
         return cls(
             mode=mode,  # type: ignore[arg-type]
             data=data,
             device_config=device_config,
             measurement_config=measurement_config,
-            pulse_schedule=pulse_schedule,
-            capture_schedule=(
-                CaptureSchedule.from_dict(capture_schedule_payload)
-                if capture_schedule_payload is not None
-                else None
-            ),
         )

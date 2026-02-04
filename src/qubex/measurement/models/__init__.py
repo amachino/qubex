@@ -10,7 +10,7 @@ from .measure_result import (
 )
 from .measurement_config import MeasurementConfig
 from .measurement_record import MeasurementRecord
-from .measurement_result import MeasurementResult, PulseScheduleSnapshot
+from .measurement_result import MeasurementResult
 from .measurement_schedule import MeasurementSchedule
 
 __all__ = [
@@ -22,5 +22,4 @@ __all__ = [
     "MeasurementResult",
     "MeasurementSchedule",
     "MultipleMeasureResult",
-    "PulseScheduleSnapshot",
 ]

@@ -6,14 +6,12 @@ import numpy as np
 import pytest
 
 from qubex.measurement.models import MeasurementResult
-from qubex.measurement.models.capture_schedule import Capture, CaptureSchedule
 from qubex.measurement.models.measure_result import (
     MeasureData,
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
 )
-from qubex.measurement.models.measurement_result import PulseScheduleSnapshot
 
 
 def _make_multiple_measure_result() -> MultipleMeasureResult:
@@ -77,18 +75,6 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
         data={"Q00": [np.array([1.0 + 0.0j]), np.array([2.0 + 0.0j])]},
         device_config={"shots": 2},
         measurement_config={"mode": "avg", "shots": 2},
-        pulse_schedule=PulseScheduleSnapshot(
-            channel_labels=["RQ00"],
-            total_duration=256.0,
-            total_length=128,
-            waveforms={"RQ00": np.array([0.1 + 0.2j, 0.2 + 0.3j])},
-        ),
-        capture_schedule=CaptureSchedule(
-            captures=[
-                Capture(channels=["RQ00"], start_time=0.0, duration=32.0),
-                Capture(channels=["RQ00"], start_time=64.0, duration=32.0),
-            ]
-        ),
     )
 
     restored = MeasurementResult.from_json(original.to_json())
@@ -97,26 +83,6 @@ def test_json_roundtrip_preserves_raw_arrays() -> None:
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
     assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
-    assert restored.pulse_schedule is not None
-    assert original.pulse_schedule is not None
-    assert (
-        restored.pulse_schedule.schema_version == original.pulse_schedule.schema_version
-    )
-    assert (
-        restored.pulse_schedule.channel_labels == original.pulse_schedule.channel_labels
-    )
-    assert (
-        restored.pulse_schedule.total_duration == original.pulse_schedule.total_duration
-    )
-    assert restored.pulse_schedule.total_length == original.pulse_schedule.total_length
-    assert restored.pulse_schedule.waveforms is not None
-    assert original.pulse_schedule.waveforms is not None
-    assert np.array_equal(
-        restored.pulse_schedule.waveforms["RQ00"],
-        original.pulse_schedule.waveforms["RQ00"],
-    )
-    assert restored.capture_schedule is not None
-    assert len(restored.capture_schedule.captures) == 2
 
 
 def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
@@ -129,20 +95,6 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
         },
         device_config={"shots": 2},
         measurement_config={"mode": "single", "shots": 2},
-        pulse_schedule=PulseScheduleSnapshot(
-            channel_labels=["RQ00", "RQ01"],
-            total_duration=512.0,
-            total_length=256,
-            waveforms={
-                "RQ00": np.array([0.1 + 0.2j, 0.2 + 0.3j]),
-                "RQ01": np.array([0.3 + 0.4j, 0.4 + 0.5j]),
-            },
-        ),
-        capture_schedule=CaptureSchedule(
-            captures=[
-                Capture(channels=["RQ00", "RQ01"], start_time=0.0, duration=32.0),
-            ]
-        ),
     )
     path = tmp_path / "measurement_result.nc"
 
@@ -152,21 +104,6 @@ def test_netcdf_roundtrip_preserves_raw_arrays(tmp_path) -> None:
     assert restored.mode == original.mode
     assert restored.device_config == original.device_config
     assert restored.measurement_config == original.measurement_config
-    assert restored.pulse_schedule is not None
-    assert original.pulse_schedule is not None
-    assert (
-        restored.pulse_schedule.schema_version == original.pulse_schedule.schema_version
-    )
-    assert restored.pulse_schedule.waveforms is not None
-    assert original.pulse_schedule.waveforms is not None
-    assert np.array_equal(
-        restored.pulse_schedule.waveforms["RQ00"],
-        original.pulse_schedule.waveforms["RQ00"],
-    )
-    assert np.array_equal(
-        restored.pulse_schedule.waveforms["RQ01"],
-        original.pulse_schedule.waveforms["RQ01"],
-    )
     assert np.array_equal(restored.data["Q00"][0], original.data["Q00"][0])
     assert np.array_equal(restored.data["Q01"][0], original.data["Q01"][0])
     assert np.array_equal(restored.data["Q01"][1], original.data["Q01"][1])

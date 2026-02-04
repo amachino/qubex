@@ -29,7 +29,6 @@ from qubex.backend.dc_voltage_controller import dc_voltage
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
     MeasurementResult,
-    PulseScheduleSnapshot,
 )
 from qubex.pulse import PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
@@ -517,7 +516,6 @@ class MeasurementClient:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
-        save_waveforms: bool = False,
     ) -> MeasurementResult:
         """
         Run the measurement with the given schedule and configuration.
@@ -528,8 +526,6 @@ class MeasurementClient:
             The measurement schedule.
         config : MeasurementConfig
             The measurement configuration.
-        save_waveforms : bool, optional
-            Whether to store sampled pulse waveforms in the result.
 
         Returns
         -------
@@ -552,8 +548,6 @@ class MeasurementClient:
             measure_mode=measure_mode,
             shots=config.shots,
             measurement_config=config,
-            measurement_schedule=schedule,
-            save_waveforms=save_waveforms,
         )
 
         rawdata_dir = self.system_manager.rawdata_dir
@@ -616,7 +610,6 @@ class MeasurementClient:
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
-        save_waveforms: bool = False,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -683,7 +676,6 @@ class MeasurementClient:
             line_param0=line_param0,
             line_param1=line_param1,
             plot=plot,
-            save_waveforms=save_waveforms,
         )
         data = {target: measures[0] for target, measures in result.data.items()}
         return MeasureResult(
@@ -714,7 +706,6 @@ class MeasurementClient:
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
-        save_waveforms: bool = False,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -799,7 +790,6 @@ class MeasurementClient:
         result = self.run(
             schedule=measurement_schedule,
             config=run_config,
-            save_waveforms=save_waveforms,
         )
         return self._to_multiple_measure_result(result)
 
@@ -839,8 +829,6 @@ class MeasurementClient:
         measure_mode: MeasureMode,
         shots: int,
         measurement_config: MeasurementConfig | None = None,
-        measurement_schedule: MeasurementSchedule | None = None,
-        save_waveforms: bool = False,
     ) -> MeasurementResult:
         label_slice = slice(1, None)  # remove the resonator prefix "R"
         norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
@@ -879,32 +867,6 @@ class MeasurementClient:
             device_config=self.device_controller.box_config,
             measurement_config=(
                 measurement_config.to_dict() if measurement_config is not None else {}
-            ),
-            pulse_schedule=(
-                PulseScheduleSnapshot(
-                    channel_labels=measurement_schedule.pulse_schedule.labels,
-                    total_duration=measurement_schedule.pulse_schedule.duration,
-                    total_length=measurement_schedule.pulse_schedule.length,
-                    waveforms=measurement_schedule.pulse_schedule.get_sampled_sequences(
-                        copy=True
-                    ),
-                )
-                if save_waveforms and measurement_schedule is not None
-                else (
-                    PulseScheduleSnapshot(
-                        channel_labels=measurement_schedule.pulse_schedule.labels,
-                        total_duration=measurement_schedule.pulse_schedule.duration,
-                        total_length=measurement_schedule.pulse_schedule.length,
-                        waveforms=None,
-                    )
-                    if measurement_schedule is not None
-                    else None
-                )
-            ),
-            capture_schedule=(
-                measurement_schedule.capture_schedule
-                if measurement_schedule is not None
-                else None
             ),
         )
 

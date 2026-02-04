@@ -61,11 +61,9 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
         *,
         schedule: MeasurementSchedule,
         config: MeasurementConfig,
-        save_waveforms: bool = False,
     ) -> MeasurementResult:
         called["run_schedule"] = schedule
         called["run_config"] = config
-        called["run_save_waveforms"] = save_waveforms
         return MeasurementResult.from_multiple(multiple)
 
     def fake_to_multiple(
@@ -84,14 +82,12 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
     result = measurement.execute(
         schedule=pulse_schedule,
         add_last_measurement=True,
-        save_waveforms=True,
     )
 
     assert result.mode == multiple.mode
     assert np.array_equal(result.data["Q00"][0].raw, multiple.data["Q00"][0].raw)
     assert called["build_schedule"] is pulse_schedule
     assert called["run_schedule"] is built_schedule
-    assert called["run_save_waveforms"] is True
     assert called["build_kwargs"]["add_last_measurement"] is True
     assert called["run_config"].mode == "avg"
 
@@ -113,7 +109,6 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     result = measurement.measure(waveforms={"Q00": np.array([0.0 + 0.0j])})
 
     assert called["kwargs"]["add_last_measurement"] is True
-    assert called["kwargs"]["save_waveforms"] is False
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
@@ -121,8 +116,6 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
     """Given run inputs, when run is called, then it validates and executes via DeviceExecutor."""
     measurement = object.__new__(MeasurementClient)
     measurement.__dict__["_system_manager"] = type("_SM", (), {"rawdata_dir": None})()
-    measurement.__dict__["_device_executor"] = type("_Exec", (), {})()
-    measurement.__dict__["_measurement_backend_adapter"] = type("_Adapter", (), {})()
 
     pulse_schedule = PulseSchedule(["RQ00"])
     schedule = MeasurementSchedule(
@@ -135,34 +128,24 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
 
     request_obj = object()
 
-    def fake_validate(self: object, schedule_arg: MeasurementSchedule) -> None:
-        called["validated"] = schedule_arg
+    class _Adapter:
+        def validate_schedule(self, schedule_arg: MeasurementSchedule) -> None:
+            called["validated"] = schedule_arg
 
-    def fake_build_request(self: object, **kwargs: object) -> object:
-        called["request_kwargs"] = kwargs
-        return request_obj
+        def build_execution_request(self, **kwargs: object) -> object:
+            called["request_kwargs"] = kwargs
+            return request_obj
 
-    def fake_execute(self: object, **kwargs: object) -> dict[str, object]:
-        called["execute_kwargs"] = kwargs
-        return {"data": {}, "status": {}, "config": {}}
+    class _Exec:
+        def execute(self, **kwargs: object) -> dict[str, object]:
+            called["execute_kwargs"] = kwargs
+            return {"data": {}, "status": {}, "config": {}}
 
     def fake_create_result(self: MeasurementClient, **_: object) -> MeasurementResult:
         return expected
 
-    measurement.__dict__["_measurement_backend_adapter"].validate_schedule = MethodType(
-        fake_validate,
-        measurement.__dict__["_measurement_backend_adapter"],
-    )
-    measurement.__dict__[
-        "_measurement_backend_adapter"
-    ].build_execution_request = MethodType(
-        fake_build_request,
-        measurement.__dict__["_measurement_backend_adapter"],
-    )
-    measurement.__dict__["_device_executor"].execute = MethodType(
-        fake_execute,
-        measurement.__dict__["_device_executor"],
-    )
+    measurement.__dict__["_measurement_backend_adapter"] = _Adapter()
+    measurement.__dict__["_device_executor"] = _Exec()
     measurement._create_measurement_result = MethodType(  # noqa: SLF001
         fake_create_result,
         measurement,
