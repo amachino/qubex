@@ -115,3 +115,49 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert called["kwargs"]["add_last_measurement"] is True
     assert called["kwargs"]["save_waveforms"] is False
     assert result.data["Q00"] is multiple.data["Q00"][0]
+
+
+def test_run_delegates_schedule_execution_to_executor() -> None:
+    """Given run inputs, when run is called, then it validates and executes via DeviceExecutor."""
+    measurement = object.__new__(MeasurementClient)
+    measurement.__dict__["_system_manager"] = type("_SM", (), {"rawdata_dir": None})()
+    measurement.__dict__["_device_executor"] = type("_Exec", (), {})()
+
+    pulse_schedule = PulseSchedule(["RQ00"])
+    schedule = MeasurementSchedule(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=CaptureSchedule(captures=[]),
+    )
+    config = MeasurementConfig.from_execute_args(mode="avg", shots=2, interval=100.0)
+    expected = MeasurementResult.from_multiple(_make_multiple_result())
+    called: dict[str, Any] = {}
+
+    def fake_validate(self: object, schedule_arg: MeasurementSchedule) -> None:
+        called["validated"] = schedule_arg
+
+    def fake_execute_schedule(self: object, **kwargs: object) -> dict[str, object]:
+        called["execute_kwargs"] = kwargs
+        return {"data": {}, "status": {}, "config": {}}
+
+    def fake_create_result(self: MeasurementClient, **_: object) -> MeasurementResult:
+        return expected
+
+    measurement.__dict__["_device_executor"].validate_schedule = MethodType(
+        fake_validate,
+        measurement.__dict__["_device_executor"],
+    )
+    measurement.__dict__["_device_executor"].execute_schedule = MethodType(
+        fake_execute_schedule,
+        measurement.__dict__["_device_executor"],
+    )
+    measurement._create_measurement_result = MethodType(  # noqa: SLF001
+        fake_create_result,
+        measurement,
+    )
+
+    result = measurement.run(schedule=schedule, config=config)
+
+    assert called["validated"] is schedule
+    assert called["execute_kwargs"]["schedule"] is schedule
+    assert called["execute_kwargs"]["interval"] == config.interval
+    assert result is expected

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from collections import defaultdict
 from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
@@ -15,7 +14,6 @@ import numpy as np
 import numpy.typing as npt
 
 from qubex.backend import (
-    SAMPLING_PERIOD,
     ConfigLoader,
     ControlParams,
     DeviceController,
@@ -39,12 +37,7 @@ from qubex.typing import IQArray, TargetMap
 from .classifiers.state_classifier import StateClassifier
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
-from .measurement_schedule_builder import (
-    BLOCK_DURATION,
-    EXTRA_SUM_SECTION_LENGTH,
-    MeasurementScheduleBuilder,
-)
-from .models.capture_schedule import CaptureSchedule
+from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models.measure_result import (
     MeasureData,
     MeasureMode,
@@ -55,19 +48,12 @@ from .models.measurement_schedule import MeasurementSchedule
 
 logger = logging.getLogger(__name__)
 
-try:
-    from qubecalib import neopulse as pls
-except ImportError as e:
-    logger.info(e)
-
 DEFAULT_SHOTS: Final = 1024
 DEFAULT_INTERVAL: Final = 150 * 1024  # ns
 DEFAULT_READOUT_DURATION: Final = 384  # ns
 DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
 DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
 DEFAULT_READOUT_POST_MARGIN: Final = 128  # ns
-WORD_LENGTH: Final = 4  # samples
-WORD_DURATION: Final = WORD_LENGTH * SAMPLING_PERIOD  # ns
 
 
 class MeasurementClient:
@@ -254,7 +240,10 @@ class MeasurementClient:
         """Return the device executor implementation."""
         if self._device_executor is not None:
             return self._device_executor
-        return QuelDeviceExecutor(device_controller=self.device_controller)
+        return QuelDeviceExecutor(
+            device_controller=self.device_controller,
+            experiment_system=self.experiment_system,
+        )
 
     @property
     def control_params(self) -> ControlParams:
@@ -533,27 +522,12 @@ class MeasurementClient:
             The measurement result.
         """
         self._validate_measurement_schedule(schedule)
-        pulse_schedule = schedule.pulse_schedule
 
         measure_mode = MeasureMode(config.mode)
-        gen_sequences, cap_sequences = self._create_sampled_sequences(
-            schedule=pulse_schedule,
-            capture_schedule=schedule.capture_schedule,
-        )
 
-        backend_interval = (
-            math.ceil((pulse_schedule.duration + config.interval) / BLOCK_DURATION)
-            * BLOCK_DURATION
-        )
-
-        targets = list(gen_sequences.keys() | cap_sequences.keys())
-        resource_map = self.device_controller.get_resource_map(targets)
-
-        backend_result = self.device_executor.execute(
-            gen_sampled_sequence=gen_sequences,
-            cap_sampled_sequence=cap_sequences,
-            resource_map=resource_map,
-            interval=backend_interval,
+        backend_result = self.device_executor.execute_schedule(
+            schedule=schedule,
+            interval=config.interval,
             repeats=config.shots,
             integral_mode=measure_mode.integral_mode,
             dsp_demodulation=config.dsp.enable_dsp_demodulation,
@@ -878,220 +852,9 @@ class MeasurementClient:
             plot=plot,
         ).pulse_schedule
 
-    def _create_sampled_sequences(
-        self,
-        schedule: PulseSchedule,
-        capture_schedule: CaptureSchedule,
-        capture_delays: dict[int, int] | None = None,
-    ) -> tuple[dict[str, pls.GenSampledSequence], dict[str, pls.CapSampledSequence]]:
-        if capture_delays is None:
-            capture_delays = self.control_params.capture_delay_word
-
-        readout_targets = list(capture_schedule.channels.keys())
-
-        # get readout ranges
-        readout_ranges = schedule.get_pulse_ranges(readout_targets)
-
-        capture_delay_sample = {}
-        for target in readout_targets:
-            mux = self.mux_dict[Target.qubit_label(target)]
-            capture_delay_word = capture_delays.get(mux.index)
-            if capture_delay_word is None:
-                capture_delay_word = 0
-            capture_delay_sample[target] = capture_delay_word * WORD_LENGTH
-
-        # get sampled sequences
-        sampled_sequences = schedule.get_sampled_sequences(copy=False)
-
-        # adjust the phase of the readout pulses
-        for target, ranges in readout_ranges.items():
-            if not ranges:
-                continue
-            seq = sampled_sequences[target]
-            # use diff_frequency instead of awg_frequency since the envelope will be adjusted by conjugation later
-            omega = 2 * np.pi * self.get_diff_frequency(target)
-            delay = capture_delay_sample[target]
-            for rng in ranges:
-                offset = (rng.start + delay) * SAMPLING_PERIOD
-                seq[rng] *= np.exp(1j * omega * offset)
-
-        # create GenSampledSequence
-        gen_sequences: dict[str, pls.GenSampledSequence] = {}
-        for target, waveform in sampled_sequences.items():
-            if self.experiment_system.get_target(target).sideband != "L":
-                waveform = np.conj(waveform)
-            gen_sequences[target] = pls.GenSampledSequence(
-                target_name=target,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=self.get_awg_frequency(target),
-                sub_sequences=[
-                    # has only one GenSampledSubSequence
-                    pls.GenSampledSubSequence(
-                        real=np.real(waveform),
-                        imag=np.imag(waveform),
-                        repeats=1,
-                        post_blank=None,
-                        original_post_blank=None,
-                    )
-                ],
-            )
-
-        # create CapSampledSequence
-        cap_sequences: dict[str, pls.CapSampledSequence] = {}
-        for target, captures in capture_schedule.channels.items():
-            sorted_captures = sorted(captures, key=lambda c: c.start_time)
-            if not sorted_captures:
-                continue
-
-            delay = capture_delay_sample[target]
-
-            cap_sub_sequence = pls.CapSampledSubSequence(
-                capture_slots=[],
-                repeats=None,
-                prev_blank=delay,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-            )
-
-            for i, current_capture in enumerate(sorted_captures):
-                current_start = round(current_capture.start_time / SAMPLING_PERIOD)
-                capture_range_length = round(current_capture.duration / SAMPLING_PERIOD)
-                if i + 1 < len(sorted_captures):
-                    next_start = round(
-                        sorted_captures[i + 1].start_time / SAMPLING_PERIOD
-                    )
-                    post_blank_length = next_start - (
-                        current_start + capture_range_length
-                    )
-                else:
-                    post_blank_length = schedule.length - (
-                        current_start + capture_range_length
-                    )
-
-                cap_sub_sequence.capture_slots.append(
-                    pls.CaptureSlots(
-                        duration=capture_range_length,
-                        post_blank=post_blank_length,
-                        original_duration=None,  # type: ignore
-                        original_post_blank=None,  # type: ignore
-                    )
-                )
-            cap_sequence = pls.CapSampledSequence(
-                target_name=target,
-                repeats=None,
-                prev_blank=0,
-                post_blank=None,
-                original_prev_blank=0,
-                original_post_blank=None,
-                modulation_frequency=self.get_awg_frequency(target),
-                sub_sequences=[
-                    # has only one CapSampledSubSequence
-                    cap_sub_sequence,
-                ],
-            )
-            cap_sequences[target] = cap_sequence
-
-        return gen_sequences, cap_sequences
-
     def _validate_measurement_schedule(self, schedule: MeasurementSchedule) -> None:
-        """Validate pulse/capture schedule constraints required by the device."""
-        pulse_schedule = schedule.pulse_schedule
-        if not pulse_schedule.is_valid():
-            raise ValueError("Invalid pulse schedule.")
-        if not self._is_multiple(pulse_schedule.duration, BLOCK_DURATION):
-            raise ValueError(
-                f"Pulse sequence duration must be a multiple of {BLOCK_DURATION} ns."
-            )
-
-        channel_captures = schedule.capture_schedule.channels
-        if len(channel_captures) == 0:
-            raise ValueError("Capture schedule must not be empty.")
-
-        readout_ranges = pulse_schedule.get_pulse_ranges(list(channel_captures.keys()))
-        for channel, captures in channel_captures.items():
-            sorted_captures = sorted(captures, key=lambda c: c.start_time)
-            if not sorted_captures:
-                raise ValueError(f"No capture windows for channel {channel}.")
-
-            first_capture = sorted_captures[0]
-            if not self._is_multiple(first_capture.start_time, BLOCK_DURATION):
-                raise ValueError(
-                    "The first capture start time must be a multiple of "
-                    f"{BLOCK_DURATION} ns."
-                )
-            if not self._is_multiple(first_capture.duration, WORD_DURATION):
-                raise ValueError(
-                    f"Capture duration must be a multiple of {WORD_DURATION} ns."
-                )
-            workaround_duration = EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD
-            if not np.isclose(first_capture.duration, workaround_duration):
-                raise ValueError(
-                    "The first capture must be the workaround capture with duration "
-                    f"{workaround_duration} ns."
-                )
-
-            for capture in sorted_captures:
-                if not self._is_multiple(capture.start_time, WORD_DURATION):
-                    raise ValueError(
-                        f"Capture start time must be a multiple of {WORD_DURATION} ns."
-                    )
-                if not self._is_multiple(capture.duration, WORD_DURATION):
-                    raise ValueError(
-                        f"Capture duration must be a multiple of {WORD_DURATION} ns."
-                    )
-
-            ranges = readout_ranges.get(channel, [])
-            if len(sorted_captures) != len(ranges) + 1:
-                raise ValueError(
-                    f"Capture schedule mismatch for {channel}: expected {len(ranges) + 1} captures."
-                )
-            for capture, rng in zip(sorted_captures[1:], ranges, strict=True):
-                expected_start = rng.start * SAMPLING_PERIOD
-                expected_duration = len(rng) * SAMPLING_PERIOD
-                if not np.isclose(capture.start_time, expected_start):
-                    raise ValueError(
-                        f"Capture start mismatch for {channel}: {capture.start_time} != {expected_start}."
-                    )
-                if not np.isclose(capture.duration, expected_duration):
-                    raise ValueError(
-                        f"Capture duration mismatch for {channel}: {capture.duration} != {expected_duration}."
-                    )
-
-        for captures in channel_captures.values():
-            sorted_captures = sorted(captures, key=lambda c: c.start_time)
-            for idx in range(len(sorted_captures) - 1):
-                current = sorted_captures[idx]
-                nxt = sorted_captures[idx + 1]
-                gap = nxt.start_time - (current.start_time + current.duration)
-                if gap < WORD_DURATION:
-                    raise ValueError(
-                        f"Capture post-blank must be at least {WORD_DURATION} ns."
-                    )
-                if not self._is_multiple(gap, WORD_DURATION):
-                    raise ValueError(
-                        f"Capture post-blank must be a multiple of {WORD_DURATION} ns."
-                    )
-
-            last = sorted_captures[-1]
-            tail_blank = pulse_schedule.duration - (last.start_time + last.duration)
-            if tail_blank < 0:
-                raise ValueError("Capture schedule exceeds pulse schedule duration.")
-            if not self._is_multiple(tail_blank, WORD_DURATION):
-                raise ValueError(
-                    f"Final post-blank must be a multiple of {WORD_DURATION} ns."
-                )
-
-    @staticmethod
-    def _is_multiple(value: float, base: float, *, atol: float = 1e-9) -> bool:
-        """Return True if `value` is a near-integer multiple of `base`."""
-        if base == 0:
-            return False
-        quotient = value / base
-        return abs(quotient - round(quotient)) <= atol
+        """Validate pulse/capture schedule constraints with the backend executor."""
+        self.device_executor.validate_schedule(schedule)
 
     def _create_measurement_result(
         self,

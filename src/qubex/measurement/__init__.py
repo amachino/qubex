@@ -8,6 +8,7 @@ from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models import (
     MeasureData,
+    MeasurementSchedule,
     MeasureMode,
     MeasureResult,
     MultipleMeasureResult,
@@ -22,6 +23,7 @@ __all__ = [
     "MeasurementClient",
     "MeasurementDeviceManager",
     "MeasurementPulseFactory",
+    "MeasurementSchedule",
     "MeasurementScheduleBuilder",
     "MultipleMeasureResult",
     "StateClassifier",

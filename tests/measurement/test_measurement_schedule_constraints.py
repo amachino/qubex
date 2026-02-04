@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from qubex.backend import SAMPLING_PERIOD
+from qubex.backend import SAMPLING_PERIOD, QuelDeviceExecutor
 from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_schedule_builder import (
     BLOCK_DURATION,
@@ -45,7 +45,6 @@ class _FakePulseSchedule:
 
 def test_validate_measurement_schedule_accepts_device_constraints() -> None:
     """Given aligned pulse/capture windows, when validating, then no error is raised."""
-    measurement = object.__new__(MeasurementClient)
     target = "RQ00"
     pulse_schedule = _FakePulseSchedule(
         duration=2 * BLOCK_DURATION,
@@ -71,14 +70,14 @@ def test_validate_measurement_schedule_accepts_device_constraints() -> None:
         capture_schedule=capture_schedule,
     )
 
-    measurement._validate_measurement_schedule(schedule)  # noqa: SLF001
+    executor = object.__new__(QuelDeviceExecutor)
+    executor.validate_schedule(schedule)
 
 
 def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture() -> (
     None
 ):
     """Given first capture not block-aligned, when validating, then it raises ValueError."""
-    measurement = object.__new__(MeasurementClient)
     target = "RQ00"
     pulse_schedule = _FakePulseSchedule(
         duration=2 * BLOCK_DURATION,
@@ -103,6 +102,47 @@ def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture()
         pulse_schedule=pulse_schedule,
         capture_schedule=capture_schedule,
     )
+    executor = object.__new__(QuelDeviceExecutor)
 
     with pytest.raises(ValueError, match="first capture start"):
-        measurement._validate_measurement_schedule(schedule)  # noqa: SLF001
+        executor.validate_schedule(schedule)
+
+
+def test_validate_measurement_schedule_delegates_to_injected_executor() -> None:
+    """Given injected executor validator, when validating, then MeasurementClient delegates to it."""
+    target = "RQ00"
+    pulse_schedule = _FakePulseSchedule(
+        duration=2 * BLOCK_DURATION,
+        length=round((2 * BLOCK_DURATION) / SAMPLING_PERIOD),
+        ranges={target: [_FakeRange(start=64, stop=80)]},
+    )
+    capture_schedule = CaptureSchedule(
+        captures=[
+            Capture(
+                channels=[target],
+                start_time=0.0,
+                duration=EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD,
+            ),
+            Capture(
+                channels=[target],
+                start_time=64 * SAMPLING_PERIOD,
+                duration=16 * SAMPLING_PERIOD,
+            ),
+        ]
+    )
+    schedule = MeasurementSchedule.model_construct(
+        pulse_schedule=pulse_schedule,
+        capture_schedule=capture_schedule,
+    )
+    measurement = object.__new__(MeasurementClient)
+    called: dict[str, object] = {}
+
+    class _FakeExecutor:
+        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+            called["schedule"] = schedule
+
+    measurement.__dict__["_device_executor"] = _FakeExecutor()
+
+    measurement._validate_measurement_schedule(schedule)  # noqa: SLF001
+
+    assert called["schedule"] is schedule
