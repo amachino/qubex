@@ -1,4 +1,4 @@
-"""Tests for legacy API delegation to `run()`."""
+"""Tests for legacy API delegation to schedule execution APIs."""
 
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ def _make_multiple_result() -> MultipleMeasureResult:
     )
 
 
-def test_execute_delegates_to_run_with_built_schedule() -> None:
-    """Given execute inputs, when execute is called, then it builds schedule and delegates to run."""
+def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
+    """Given execute inputs, when execute is called, then it builds schedule and delegates to schedule execution."""
     measurement = object.__new__(MeasurementClient)
     measurement.__dict__["_classifiers"] = {}
     pulse_schedule = PulseSchedule(["Q00"])
@@ -57,7 +57,7 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
         called["build_kwargs"] = kwargs
         return built_schedule
 
-    def fake_run(
+    def fake_execute_measurement_schedule(
         self: MeasurementClient,
         *,
         schedule: MeasurementSchedule,
@@ -75,10 +75,10 @@ def test_execute_delegates_to_run_with_built_schedule() -> None:
             config={"shots": 1},
         )
 
-    measurement._build_measurement_schedule = MethodType(  # noqa: SLF001
-        fake_build, measurement
+    measurement.build_measurement_schedule = MethodType(fake_build, measurement)
+    measurement.execute_measurement_schedule = MethodType(
+        fake_execute_measurement_schedule, measurement
     )
-    measurement.run = MethodType(fake_run, measurement)
     measurement._to_multiple_measure_result = MethodType(  # noqa: SLF001
         fake_to_multiple, measurement
     )
@@ -117,15 +117,9 @@ def test_measure_delegates_to_execute_and_returns_first_capture() -> None:
     assert result.data["Q00"] is multiple.data["Q00"][0]
 
 
-def test_run_delegates_schedule_execution_to_executor() -> None:
-    """Given run inputs, when run is called, then it validates and executes via BackendExecutor."""
+def test_execute_measurement_schedule_delegates_to_executor() -> None:
+    """Given schedule execution inputs, when method is called, then it delegates to executor."""
     measurement = object.__new__(MeasurementClient)
-    measurement.__dict__["_system_manager"] = type("_SM", (), {"rawdata_dir": None})()
-    measurement.__dict__["_backend_manager"] = type(
-        "_DM",
-        (),
-        {"device_controller": type("_DC", (), {"box_config": {"shots": 2}})()},
-    )()
 
     pulse_schedule = PulseSchedule(["RQ00"])
     schedule = MeasurementSchedule(
@@ -136,35 +130,21 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
     expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
     called: dict[str, Any] = {}
 
-    request_obj = object()
-
-    class _Adapter:
-        def validate_schedule(self, schedule_arg: MeasurementSchedule) -> None:
-            called["validated"] = schedule_arg
-
-        def build_execution_request(self, **kwargs: object) -> object:
-            called["request_kwargs"] = kwargs
-            return request_obj
-
-    class _Exec:
-        def execute(self, **kwargs: object) -> dict[str, object]:
-            called["execute_kwargs"] = kwargs
-            return {"data": {}, "status": {}, "config": {}}
-
-    class _ResultFactory:
-        def create(self, **kwargs: object) -> MeasurementResult:
-            called["result_kwargs"] = kwargs
+    class _Executor:
+        def execute(
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
+        ) -> MeasurementResult:
+            called["schedule"] = schedule
+            called["config"] = config
             return expected
 
-    measurement.__dict__["_measurement_backend_adapter"] = _Adapter()
-    measurement.__dict__["_backend_executor"] = _Exec()
-    measurement.__dict__["_measurement_result_factory"] = _ResultFactory()
+    measurement.__dict__["_measurement_schedule_executor"] = _Executor()
 
-    result = measurement.run(schedule=schedule, config=config)
+    result = measurement.execute_measurement_schedule(schedule=schedule, config=config)
 
-    assert called["validated"] is schedule
-    assert called["request_kwargs"]["schedule"] is schedule
-    assert called["request_kwargs"]["config"] is config
-    assert called["execute_kwargs"]["request"] is request_obj
-    assert called["result_kwargs"]["measurement_config"] is config
+    assert called["schedule"] is schedule
+    assert called["config"] is config
     assert result is expected

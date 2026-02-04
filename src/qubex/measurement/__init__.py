@@ -12,6 +12,7 @@ from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
 from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
+from .measurement_schedule_executor import MeasurementScheduleExecutor
 from .models import (
     MeasureData,
     MeasurementResult,
@@ -36,6 +37,7 @@ __all__ = [
     "MeasurementResultFactory",
     "MeasurementSchedule",
     "MeasurementScheduleBuilder",
+    "MeasurementScheduleExecutor",
     "MultipleMeasureResult",
     "QuelMeasurementBackendAdapter",
     "StateClassifier",

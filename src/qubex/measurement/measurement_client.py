@@ -13,13 +13,11 @@ import numpy as np
 import numpy.typing as npt
 
 from qubex.backend import (
-    BackendExecutor,
     ConfigLoader,
     ControlParams,
     DeviceController,
     ExperimentSystem,
     Mux,
-    QuelBackendExecutor,
     SystemManager,
     Target,
 )
@@ -32,15 +30,11 @@ from qubex.pulse import PulseSchedule, RampType
 from qubex.typing import IQArray, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
-from .measurement_backend_adapter import (
-    MeasurementBackendAdapter,
-    QuelMeasurementBackendAdapter,
-)
 from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
-from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
+from .measurement_schedule_executor import MeasurementScheduleExecutor
 from .models.measure_result import (
     MeasureResult,
     MultipleMeasureResult,
@@ -64,10 +58,9 @@ class MeasurementClient:
     `MeasurementClient` owns the high-level workflow while delegating concrete
     responsibilities to focused collaborators: configuration/backend lifecycle
     (`MeasurementBackendManager`), schedule assembly
-    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`), and backend
-    execution (`BackendExecutor`, via `MeasurementBackendAdapter`), and result
-    construction (`MeasurementResultFactory`). It also keeps optional state
-    classifiers used during readout post-processing.
+    (`MeasurementScheduleBuilder` and `MeasurementPulseFactory`) and delegates
+    schedule execution to `MeasurementScheduleExecutor`. It also keeps optional
+    state classifiers used during readout post-processing.
 
     Notes
     -----
@@ -85,9 +78,7 @@ class MeasurementClient:
         load_configs: bool = True,
         connect_devices: bool = False,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
-        backend_executor: BackendExecutor | None = None,
-        measurement_backend_adapter: MeasurementBackendAdapter | None = None,
-        measurement_result_factory: MeasurementResultFactory | None = None,
+        measurement_schedule_executor: MeasurementScheduleExecutor | None = None,
     ):
         """
         Initialize the MeasurementClient.
@@ -108,12 +99,8 @@ class MeasurementClient:
             Whether to connect the devices, by default False.
         configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
             The configuration mode, by default "ge-cr-cr".
-        backend_executor : BackendExecutor, optional
-            Backend executor implementation used by `run()`.
-        measurement_backend_adapter : MeasurementBackendAdapter, optional
-            Adapter from measurement models to backend execution requests.
-        measurement_result_factory : MeasurementResultFactory, optional
-            Factory that builds `MeasurementResult` from backend output.
+        measurement_schedule_executor : MeasurementScheduleExecutor, optional
+            Executor used by `execute_measurement_schedule()`.
 
         Examples
         --------
@@ -127,9 +114,7 @@ class MeasurementClient:
         self._qubits: Final = list(qubits)
         self._classifiers: TargetMap[StateClassifier] = {}
         self._system_manager = SystemManager.shared()
-        self._backend_executor = backend_executor
-        self._measurement_backend_adapter = measurement_backend_adapter
-        self._measurement_result_factory = measurement_result_factory
+        self._measurement_schedule_executor = measurement_schedule_executor
         self._backend_manager = MeasurementBackendManager(
             system_manager=self._system_manager,
             qubits=self._qubits,
@@ -248,32 +233,16 @@ class MeasurementClient:
         return self.backend_manager.device_controller
 
     @property
-    def backend_executor(self) -> BackendExecutor:
-        """Return the backend executor implementation."""
-        if self._backend_executor is not None:
-            return self._backend_executor
-        return QuelBackendExecutor(
-            device_controller=self.device_controller,
-        )
-
-    @property
-    def measurement_backend_adapter(self) -> MeasurementBackendAdapter:
-        """Return schedule-to-backend adapter implementation."""
-        if self._measurement_backend_adapter is not None:
-            return self._measurement_backend_adapter
-        return QuelMeasurementBackendAdapter(
-            device_controller=self.device_controller,
-            experiment_system=self.experiment_system,
-        )
-
-    @property
-    def measurement_result_factory(self) -> MeasurementResultFactory:
-        """Return result factory implementation."""
-        if self._measurement_result_factory is not None:
-            return self._measurement_result_factory
-        return MeasurementResultFactory(
-            experiment_system=self.experiment_system,
-        )
+    def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:
+        """Return executor implementation used by schedule execution APIs."""
+        if self._measurement_schedule_executor is None:
+            self._measurement_schedule_executor = (
+                MeasurementScheduleExecutor.create_default(
+                    device_controller=self.device_controller,
+                    experiment_system=self.experiment_system,
+                )
+            )
+        return self._measurement_schedule_executor
 
     @property
     def control_params(self) -> ControlParams:
@@ -527,7 +496,7 @@ class MeasurementClient:
         with dc_voltage(voltages):
             yield
 
-    def run(
+    def execute_measurement_schedule(
         self,
         *,
         schedule: MeasurementSchedule,
@@ -548,21 +517,9 @@ class MeasurementClient:
         MeasurementResult
             The measurement result.
         """
-        self.measurement_backend_adapter.validate_schedule(schedule)
-
-        request = self.measurement_backend_adapter.build_execution_request(
+        result = self.measurement_schedule_executor.execute(
             schedule=schedule,
             config=config,
-        )
-
-        backend_result = self.backend_executor.execute(
-            request=request,
-        )
-
-        result = self.measurement_result_factory.create(
-            backend_result=backend_result,
-            measurement_config=config,
-            device_config=self.device_controller.box_config,
         )
         return result
 
@@ -803,8 +760,8 @@ class MeasurementClient:
             line_param1=line_param1,
         )
 
-        measurement_schedule = self._build_measurement_schedule(
-            schedule=schedule,
+        measurement_schedule = self.build_measurement_schedule(
+            pulse_schedule=schedule,
             readout_amplitudes=run_config.readout.readout_amplitudes,
             readout_duration=run_config.readout.readout_duration,
             readout_pre_margin=run_config.readout.readout_pre_margin,
@@ -817,7 +774,7 @@ class MeasurementClient:
             plot=plot,
         )
 
-        result = self.run(
+        result = self.execute_measurement_schedule(
             schedule=measurement_schedule,
             config=run_config,
         )
@@ -850,9 +807,9 @@ class MeasurementClient:
             return
         result.save(data_dir=path)
 
-    def _build_measurement_schedule(
+    def build_measurement_schedule(
         self,
-        schedule: PulseSchedule,
+        pulse_schedule: PulseSchedule,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -866,7 +823,7 @@ class MeasurementClient:
     ) -> MeasurementSchedule:
         """Build a `MeasurementSchedule` from a pulse schedule and options."""
         built_schedule = self.schedule_builder.build(
-            schedule=schedule,
+            schedule=pulse_schedule,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
             readout_pre_margin=readout_pre_margin,
