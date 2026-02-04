@@ -116,6 +116,11 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
     """Given run inputs, when run is called, then it validates and executes via DeviceExecutor."""
     measurement = object.__new__(MeasurementClient)
     measurement.__dict__["_system_manager"] = type("_SM", (), {"rawdata_dir": None})()
+    measurement.__dict__["_device_manager"] = type(
+        "_DM",
+        (),
+        {"device_controller": type("_DC", (), {"box_config": {"shots": 2}})()},
+    )()
 
     pulse_schedule = PulseSchedule(["RQ00"])
     schedule = MeasurementSchedule(
@@ -141,15 +146,14 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
             called["execute_kwargs"] = kwargs
             return {"data": {}, "status": {}, "config": {}}
 
-    def fake_create_result(self: MeasurementClient, **_: object) -> MeasurementResult:
-        return expected
+    class _ResultFactory:
+        def create(self, **kwargs: object) -> MeasurementResult:
+            called["result_kwargs"] = kwargs
+            return expected
 
     measurement.__dict__["_measurement_backend_adapter"] = _Adapter()
     measurement.__dict__["_device_executor"] = _Exec()
-    measurement._create_measurement_result = MethodType(  # noqa: SLF001
-        fake_create_result,
-        measurement,
-    )
+    measurement.__dict__["_measurement_result_factory"] = _ResultFactory()
 
     result = measurement.run(schedule=schedule, config=config)
 
@@ -157,4 +161,5 @@ def test_run_delegates_schedule_execution_to_executor() -> None:
     assert called["request_kwargs"]["schedule"] is schedule
     assert called["request_kwargs"]["config"] is config
     assert called["execute_kwargs"]["request"] is request_obj
+    assert called["result_kwargs"]["measurement_config"] is config
     assert result is expected

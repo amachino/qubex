@@ -9,6 +9,7 @@ from .measurement_backend_adapter import (
 from .measurement_client import MeasurementClient
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
+from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models import (
     MeasureData,
@@ -28,6 +29,7 @@ __all__ = [
     "MeasurementClient",
     "MeasurementDeviceManager",
     "MeasurementPulseFactory",
+    "MeasurementResultFactory",
     "MeasurementSchedule",
     "MeasurementScheduleBuilder",
     "MultipleMeasureResult",

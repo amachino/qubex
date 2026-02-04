@@ -21,7 +21,6 @@ from qubex.backend import (
     ExperimentSystem,
     Mux,
     QuelBackendExecutor,
-    RawResult,
     SystemManager,
     Target,
 )
@@ -40,6 +39,7 @@ from .measurement_backend_adapter import (
 )
 from .measurement_device_manager import MeasurementDeviceManager
 from .measurement_pulse_factory import MeasurementPulseFactory
+from .measurement_result_factory import MeasurementResultFactory
 from .measurement_schedule_builder import MeasurementScheduleBuilder
 from .models.measure_result import (
     MeasureData,
@@ -88,6 +88,7 @@ class MeasurementClient:
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
         device_executor: BackendExecutor | None = None,
         measurement_backend_adapter: MeasurementBackendAdapter | None = None,
+        measurement_result_factory: MeasurementResultFactory | None = None,
     ):
         """
         Initialize the MeasurementClient.
@@ -123,6 +124,7 @@ class MeasurementClient:
         self._system_manager = SystemManager.shared()
         self._device_executor = device_executor
         self._measurement_backend_adapter = measurement_backend_adapter
+        self._measurement_result_factory = measurement_result_factory
         self._device_manager = MeasurementDeviceManager(
             system_manager=self._system_manager,
             qubits=self._qubits,
@@ -256,6 +258,15 @@ class MeasurementClient:
             return self._measurement_backend_adapter
         return QuelMeasurementBackendAdapter(
             device_controller=self.device_controller,
+            experiment_system=self.experiment_system,
+        )
+
+    @property
+    def measurement_result_factory(self) -> MeasurementResultFactory:
+        """Return result factory implementation."""
+        if self._measurement_result_factory is not None:
+            return self._measurement_result_factory
+        return MeasurementResultFactory(
             experiment_system=self.experiment_system,
         )
 
@@ -543,11 +554,11 @@ class MeasurementClient:
             request=request,
         )
 
-        result = self._create_measurement_result(
+        result = self.measurement_result_factory.create(
             backend_result=backend_result,
             measure_mode=measure_mode,
-            shots=config.shots,
             measurement_config=config,
+            device_config=self.device_controller.box_config,
         )
 
         rawdata_dir = self.system_manager.rawdata_dir
@@ -823,53 +834,6 @@ class MeasurementClient:
         )
         return built_schedule
 
-    def _create_measurement_result(
-        self,
-        backend_result: RawResult,
-        measure_mode: MeasureMode,
-        shots: int,
-        measurement_config: MeasurementConfig | None = None,
-    ) -> MeasurementResult:
-        label_slice = slice(1, None)  # remove the resonator prefix "R"
-        norm_factor = 2 ** (-32)  # normalization factor for 32-bit data
-
-        iq_data = {}
-        for target, iqs in sorted(backend_result.data.items()):
-            sideband = self.experiment_system.get_target(target).sideband
-            if sideband == "L":
-                iq_data[target] = [np.conjugate(iq) for iq in iqs]
-            else:
-                iq_data[target] = iqs
-
-        measure_data = defaultdict(list)
-        if measure_mode == MeasureMode.SINGLE:
-            for target, iqs in iq_data.items():
-                qubit = target[label_slice]
-                for idx, iq in enumerate(iqs):
-                    if idx == 0:
-                        # skip the first extra capture
-                        continue
-                    measure_data[qubit].append(iq * norm_factor)
-        elif measure_mode == MeasureMode.AVG:
-            for target, iqs in iq_data.items():
-                qubit = target[label_slice]
-                for idx, iq in enumerate(iqs):
-                    if idx == 0:
-                        # skip the first extra capture
-                        continue
-                    measure_data[qubit].append(iq.squeeze() * norm_factor / shots)
-        else:
-            raise ValueError(f"Invalid measure mode: {measure_mode}")
-
-        return MeasurementResult(
-            mode=measure_mode.value,
-            data=dict(measure_data),
-            device_config=self.device_controller.box_config,
-            measurement_config=(
-                measurement_config.to_dict() if measurement_config is not None else {}
-            ),
-        )
-
     def _to_multiple_measure_result(
         self,
         result: MeasurementResult,
@@ -893,17 +857,3 @@ class MeasurementClient:
             data=dict(measure_data),
             config=self.device_controller.box_config if config is None else config,
         )
-
-    def _create_multiple_measure_result(
-        self,
-        backend_result: RawResult,
-        measure_mode: MeasureMode,
-        shots: int,
-    ) -> MultipleMeasureResult:
-        """Create legacy `MultipleMeasureResult` from backend output."""
-        result = self._create_measurement_result(
-            backend_result=backend_result,
-            measure_mode=measure_mode,
-            shots=shots,
-        )
-        return self._to_multiple_measure_result(result)
