@@ -2358,29 +2358,29 @@ class CalibrationMixin(
         target_states = []
         spectators_states = defaultdict(list)
 
-        with self.modified_frequencies(
-            frequencies={
-                spectator_qubit: self.targets[cr_label].frequency
-                for spectator_qubit in spectator_qubits
-            }
-        ):
-            for T in time_range:
-                result = self.state_tomography(
-                    sequence=sequence_func(
-                        targets=[control_qubit, target_qubit] + spectator_qubits, T=T
-                    ),
-                    x90=x90,
-                    initial_state={control_qubit: control_state},
-                    shots=shots,
-                    interval=interval,
-                    reset_awg_and_capunits=False,
-                    plot=False,
-                )
-                control_states.append(np.array(result[control_qubit]))
-                target_states.append(np.array(result[target_qubit]))
+        # with self.modified_frequencies(
+        #     frequencies={
+        #         spectator_qubit: self.targets[cr_label].frequency
+        #         for spectator_qubit in spectator_qubits
+        #     }
+        # ):
+        for T in time_range:
+            result = self.state_tomography(
+                sequence=sequence_func(
+                    targets=[control_qubit, target_qubit] + spectator_qubits, T=T
+                ),
+                x90=x90,
+                initial_state={control_qubit: control_state},
+                shots=shots,
+                interval=interval,
+                reset_awg_and_capunits=False,
+                plot=False,
+            )
+            control_states.append(np.array(result[control_qubit]))
+            target_states.append(np.array(result[target_qubit]))
 
-                for spectator in spectator_qubits:
-                    spectators_states[spectator].append(np.array(result[spectator]))
+            for spectator in spectator_qubits:
+                spectators_states[spectator].append(np.array(result[spectator]))
 
         control_states = np.array(control_states)
         target_states = np.array(target_states)
@@ -2390,6 +2390,52 @@ class CalibrationMixin(
         }
 
         effective_drive_range = time_range + ramptime
+
+        def _frame_change(
+            effective_drive_range: np.ndarray,
+            states: np.ndarray,
+            frame_frequency: float,
+        ) -> np.ndarray:
+            """
+            Docstring for _frame_change
+
+            Apply a frame change to the given states based on the frame frequency.
+
+            Parameters:
+            - effective_drive_range (np.ndarray): The effective drive times.
+            - states (np.ndarray): The Bloch sphere states to be transformed.
+            - frame_frequency (float): The frequency of the rotating frame.
+
+            Returns:
+            - np.ndarray: The transformed states after applying the frame change.
+
+            note:
+            Rz = [[cos(theta), -sin(theta), 0],
+                 [sin(theta),  cos(theta), 0],
+                 [0,           0,          1]]
+            """
+            omega = 2 * np.pi * frame_frequency
+            theta = omega * effective_drive_range
+            c = np.cos(theta)
+            s = np.sin(theta)
+
+            x = states[:, 0]
+            y = states[:, 1]
+            z = states[:, 2]
+
+            x2 = c * x - s * y
+            y2 = s * x + c * y
+            vectors_rot = np.stack([x2, y2, z], axis=1)
+            return vectors_rot
+
+        frame_changed_spectator_states = {
+            spectator: _frame_change(
+                effective_drive_range,
+                states,
+                frame_frequency=self.targets[spectator].frequency,
+            )
+            for spectator, states in spectators_states.items()
+        }
 
         fit_result = fitting.fit_rotation(
             effective_drive_range,
@@ -2401,7 +2447,7 @@ class CalibrationMixin(
         )
 
         spectators_fit_result = {}
-        for spectator, states in spectators_states.items():
+        for spectator, states in frame_changed_spectator_states.items():
             fit_spectator = fitting.fit_rotation(
                 effective_drive_range,
                 states,
@@ -2429,7 +2475,7 @@ class CalibrationMixin(
             for spectator, fit_spectator in spectators_fit_result.items():
                 fit_spectator["fig"].show()
                 fit_spectator["fig3d"].show()
-                viz.display_bloch_sphere(spectators_states[spectator])
+                viz.display_bloch_sphere(frame_changed_spectator_states[spectator])
 
         return Result(
             data={
@@ -2438,6 +2484,7 @@ class CalibrationMixin(
                 "control_states": control_states,
                 "target_states": target_states,
                 "spectators_states": spectators_states,
+                "frame_changed_spectator_states": frame_changed_spectator_states,
                 "fit_result": fit_result,
                 "spectators_fit_result": spectators_fit_result,
                 "cr_amplitude": cr_amplitude,
