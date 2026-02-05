@@ -1,22 +1,20 @@
-"""Backend execution abstraction and QuEL implementation."""
+"""QuEL backend execution implementation."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
-from .device_controller import DeviceController, RawResult
+from qubex.backend.backend_executor import (
+    BackendExecutionRequest,
+    BackendExecutionResult,
+)
 
-
-@dataclass(frozen=True)
-class BackendExecutionRequest:
-    """Backend-neutral execution request."""
-
-    payload: Any
+from .quel1_backend_controller import Quel1BackendController
 
 
 @dataclass(frozen=True)
-class QuelExecutionPayload:
+class Quel1ExecutionPayload:
     """QuEL-specific execution payload for backend request."""
 
     sequencer: Any
@@ -29,29 +27,18 @@ class QuelExecutionPayload:
     line_param1: tuple[float, float, float]
 
 
-BackendResult = RawResult
+class Quel1BackendExecutor:
+    """QuEL backend executor using `Quel1BackendController.execute_sequencer`."""
 
-
-class BackendExecutor(Protocol):
-    """Protocol for backend execution of prepared requests."""
-
-    def execute(self, *, request: BackendExecutionRequest) -> BackendResult:
-        """Execute a prepared backend request."""
-        ...
-
-
-class QuelBackendExecutor:
-    """QuEL backend executor using `DeviceController.execute_sequencer`."""
-
-    def __init__(self, *, device_controller: DeviceController) -> None:
+    def __init__(self, *, device_controller: Quel1BackendController) -> None:
         self._device_controller = device_controller
 
-    def execute(self, *, request: BackendExecutionRequest) -> BackendResult:
+    def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
         """Execute a prepared request on QuEL hardware."""
         payload = request.payload
-        if not isinstance(payload, QuelExecutionPayload):
+        if not isinstance(payload, Quel1ExecutionPayload):
             raise TypeError(
-                "QuelBackendExecutor expects `QuelExecutionPayload` payload."
+                "Quel1BackendExecutor expects `Quel1ExecutionPayload` payload."
             )
         return self._device_controller.execute_sequencer(
             sequencer=payload.sequencer,

@@ -53,7 +53,7 @@ class RawResult:
     config: dict
 
 
-class DeviceController:
+class Quel1BackendController:
     """Control and query device state through QubeCalib."""
 
     def __init__(
@@ -204,7 +204,7 @@ class DeviceController:
         """
         return hash(self.qubecalib.system_config_database.asjson())
 
-    def _check_box_availabilty(self, box_name: str):
+    def _check_box_availability(self, box_name: str):
         if box_name not in self.available_boxes:
             raise ValueError(
                 f"Box {box_name} not in available boxes: {self.available_boxes}"
@@ -328,7 +328,7 @@ class DeviceController:
         ValueError
             If the box is not in the available boxes.
         """
-        self._check_box_availabilty(box_name)
+        self._check_box_availability(box_name)
         box = self.qubecalib.create_box(box_name, reconnect=False)
         return box.link_status()
 
@@ -369,7 +369,7 @@ class DeviceController:
         ValueError
             If the box is not in the available boxes.
         """
-        self._check_box_availabilty(box_name)
+        self._check_box_availability(box_name)
         if self._boxpool is None or box_name not in self._boxpool._boxes:
             box = self.qubecalib.create_box(box_name, reconnect=reconnect)
         else:
@@ -391,7 +391,7 @@ class DeviceController:
         if isinstance(box_names, str):
             box_names = [box_names]
         for box_name in box_names:
-            self._check_box_availabilty(box_name)
+            self._check_box_availability(box_name)
             box = self.get_box(box_name, reconnect=False)
             box.initialize_all_awgs()
             box.initialize_all_capunits()
@@ -420,7 +420,7 @@ class DeviceController:
             If the box is not in the available boxes.
         """
         # check if the box is available
-        self._check_box_availabilty(box_name)
+        self._check_box_availability(box_name)
         # connect to the box
         box = self.qubecalib.create_box(box_name, reconnect=False)
         # relinkup the box if any of the links are down
@@ -1014,3 +1014,7 @@ class DeviceController:
             channel_name=channel_name,
             target_frequency=target_frequency,
         )
+
+
+# TODO: Remove this alias in future versions.
+DeviceController = Quel1BackendController

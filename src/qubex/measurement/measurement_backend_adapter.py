@@ -16,7 +16,7 @@ from qubex.backend import (
     BackendExecutionRequest,
     DeviceController,
     ExperimentSystem,
-    QuelExecutionPayload,
+    Quel1ExecutionPayload,
     Target,
 )
 from qubex.measurement.models.measure_result import MeasureMode
@@ -158,9 +158,9 @@ class QuelMeasurementBackendAdapter:
         targets = list(gen_sampled_sequence.keys() | cap_sampled_sequence.keys())
         resource_map = self._device_controller.get_resource_map(targets)
 
-        from qubex.backend.sequencer_mod import SequencerMod
+        from qubex.backend.quel1.quel1_sequencer import Quel1Sequencer
 
-        sequencer = SequencerMod(
+        sequencer = Quel1Sequencer(
             gen_sampled_sequence=gen_sampled_sequence,
             cap_sampled_sequence=cap_sampled_sequence,
             resource_map=resource_map,  # type: ignore[arg-type]
@@ -168,7 +168,7 @@ class QuelMeasurementBackendAdapter:
             sysdb=self._device_controller.qubecalib.sysdb,
             driver=self._device_controller.quel1system,
         )
-        payload = QuelExecutionPayload(
+        payload = Quel1ExecutionPayload(
             sequencer=sequencer,
             repeats=config.shots,
             integral_mode=measure_mode.integral_mode,

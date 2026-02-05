@@ -6,7 +6,7 @@ from qubex.backend import (
     BackendExecutor,
     DeviceController,
     ExperimentSystem,
-    QuelBackendExecutor,
+    Quel1BackendExecutor,
 )
 
 from .measurement_backend_adapter import (
@@ -44,7 +44,7 @@ class MeasurementScheduleExecutor:
     ) -> MeasurementScheduleExecutor:
         """Create the default QuEL-backed schedule executor."""
         return cls(
-            backend_executor=QuelBackendExecutor(
+            backend_executor=Quel1BackendExecutor(
                 device_controller=device_controller,
             ),
             measurement_backend_adapter=QuelMeasurementBackendAdapter(

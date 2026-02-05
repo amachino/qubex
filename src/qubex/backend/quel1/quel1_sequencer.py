@@ -19,7 +19,7 @@ from qubecalib.qubecalib import (
 )
 
 
-class SequencerMod(Sequencer):
+class Quel1Sequencer(Sequencer):
     """Sequencer with helper methods for QUEL resource maps."""
 
     def generate_cap_resource_map(self, boxpool: BoxPool) -> dict[str, Any]:
@@ -170,3 +170,7 @@ class SequencerMod(Sequencer):
             )
         )
         return cap_e7_settings, gen_e7_settings, cap_resource_map
+
+
+# TODO: Remove this alias in future versions.
+SequencerMod = Quel1Sequencer

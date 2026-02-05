@@ -17,8 +17,8 @@ from rich.table import Table
 
 from .config_loader import ConfigLoader
 from .control_system import CapPort, GenPort, PortType
-from .device_controller import DeviceController
 from .experiment_system import ExperimentSystem
+from .quel1.quel1_backend_controller import Quel1BackendController
 
 logger = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ class SystemManager:
         if self._initialized:
             return
         self._experiment_system = None
-        self._device_controller = DeviceController()
+        self._backend_controller = Quel1BackendController()
         self._device_settings = {}
         self._cached_state = StateHash(0, 0, 0)
         self._rawdata_dir = None
@@ -135,9 +135,15 @@ class SystemManager:
         return self._experiment_system
 
     @property
-    def device_controller(self) -> DeviceController:
-        """Get the device controller."""
-        return self._device_controller
+    def backend_controller(self) -> Quel1BackendController:
+        """Get the backend controller."""
+        return self._backend_controller
+
+    # TODO: Remove this alias in future versions.
+    @property
+    def device_controller(self) -> Quel1BackendController:
+        """Get the device controller (backward-compatible alias)."""
+        return self.backend_controller
 
     @property
     def device_settings(self) -> dict:
@@ -149,7 +155,7 @@ class SystemManager:
         """Get the current state."""
         return StateHash(
             experiment_system=self.experiment_system.hash,
-            device_controller=self.device_controller.hash,
+            device_controller=self.backend_controller.hash,
             device_settings=hash(str(self.device_settings)),
         )
 
@@ -286,7 +292,7 @@ class SystemManager:
             logger.warning(f"Skew file not found: {skew_file_path}")
         else:
             try:
-                self.device_controller.qubecalib.sysdb.load_skew_yaml(
+                self.backend_controller.qubecalib.sysdb.load_skew_yaml(
                     str(skew_file_path)
                 )
             except Exception:
@@ -348,7 +354,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                 if isinstance(port, GenPort):
                     if port.type in (PortType.CTRL, PortType.READ_OUT, PortType.PUMP):
                         try:
-                            self.device_controller.config_port(
+                            self.backend_controller.config_port(
                                 box_name=box.id,
                                 port=port.number,
                                 lo_freq=port.lo_freq,
@@ -359,7 +365,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                                 rfswitch=port.rfswitch,
                             )
                             for gen_channel in port.channels:
-                                self.device_controller.config_channel(
+                                self.backend_controller.config_channel(
                                     box_name=box.id,
                                     port=port.number,
                                     channel=gen_channel.number,
@@ -370,7 +376,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                 elif isinstance(port, CapPort):
                     if port.type in (PortType.READ_IN,):
                         try:
-                            self.device_controller.config_port(
+                            self.backend_controller.config_port(
                                 box_name=box.id,
                                 port=port.number,
                                 lo_freq=port.lo_freq,
@@ -378,7 +384,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                                 rfswitch=port.rfswitch,
                             )
                             for cap_channel in port.channels:
-                                self.device_controller.config_runit(
+                                self.backend_controller.config_runit(
                                     box_name=box.id,
                                     port=port.number,
                                     runit=cap_channel.number,
@@ -494,7 +500,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         path = Path(path_to_save)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
-            f.write(self.device_controller.system_config_json)
+            f.write(self.backend_controller.system_config_json)
         logger.info(f"Qubecalib configuration saved to {path}.")
 
     def _fetch_device_settings(
@@ -505,8 +511,8 @@ This operation will overwrite the existing device settings. Do you want to conti
         result: dict = {}
         for box in boxes:
             # TODO: run this in a separate thread
-            box_config = self.device_controller.dump_box(box.id)
-            self.device_controller.boxpool._box_config_cache[box.id] = box_config  # noqa: SLF001
+            box_config = self.backend_controller.dump_box(box.id)
+            self.backend_controller.boxpool._box_config_cache[box.id] = box_config  # noqa: SLF001
             result[box.id] = {"ports": {}}
             for port in box.ports:
                 if port.type not in (PortType.NOT_AVAILABLE, PortType.MNTR_OUT):
@@ -529,7 +535,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         control_system = experiment_system.control_system
         control_params = experiment_system.control_params
 
-        qc = self.device_controller.qubecalib
+        qc = self.backend_controller.qubecalib
 
         qc.define_clockmaster(
             ipaddr=control_system.clock_master_address,
@@ -587,7 +593,7 @@ This operation will overwrite the existing device settings. Do you want to conti
 
         # reset the cache
         qc.clear_command_queue()
-        self.device_controller.clear_cache()
+        self.backend_controller.clear_cache()
 
     def _create_experiment_system(
         self,
@@ -643,12 +649,12 @@ This operation will overwrite the existing device settings. Do you want to conti
             if target.label in target_frequencies
         }
         self.experiment_system.modify_target_frequencies(target_frequencies)
-        self.device_controller.modify_target_frequencies(target_frequencies)
+        self.backend_controller.modify_target_frequencies(target_frequencies)
         try:
             yield
         finally:
             self.experiment_system.modify_target_frequencies(original_frequencies)
-            self.device_controller.modify_target_frequencies(original_frequencies)
+            self.backend_controller.modify_target_frequencies(original_frequencies)
 
     @contextmanager
     def modified_device_settings(
@@ -680,20 +686,20 @@ This operation will overwrite the existing device settings. Do you want to conti
         target = self.experiment_system.get_target(label)
         channel = target.channel
         port = channel.port
-        box_cache = self.device_controller.boxpool._box_config_cache  # noqa: SLF001
+        box_cache = self.backend_controller.boxpool._box_config_cache  # noqa: SLF001
 
         original_lo_freq = port.lo_freq
         original_cnco_freq = port.cnco_freq
         original_fnco_freq = channel.fnco_freq
         original_box_cache = deepcopy(box_cache)
 
-        self.device_controller.config_port(
+        self.backend_controller.config_port(
             box_name=port.box_id,
             port=port.number,
             lo_freq=lo_freq,
             cnco_freq=cnco_freq,
         )
-        self.device_controller.config_channel(
+        self.backend_controller.config_channel(
             box_name=port.box_id,
             port=port.number,
             channel=channel.number,
@@ -703,18 +709,18 @@ This operation will overwrite the existing device settings. Do you want to conti
         port_cache["lo_freq"] = lo_freq
         port_cache["cnco_freq"] = cnco_freq
         port_cache["channels"][channel.number]["fnco_freq"] = fnco_freq
-        self.device_controller.initialize_awg_and_capunits(port.box_id)
+        self.backend_controller.initialize_awg_and_capunits(port.box_id)
 
         if target.is_read:
             cap_channel = self.experiment_system.get_cap_target(label).channel
             cap_port = cap_channel.port
-            self.device_controller.config_port(
+            self.backend_controller.config_port(
                 box_name=cap_port.box_id,
                 port=cap_port.number,
                 lo_freq=lo_freq,
                 cnco_freq=cnco_freq,
             )
-            self.device_controller.config_runit(
+            self.backend_controller.config_runit(
                 box_name=cap_port.box_id,
                 port=cap_port.number,
                 runit=cap_channel.number,
@@ -724,7 +730,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             cap_port_cache["lo_freq"] = lo_freq
             cap_port_cache["cnco_freq"] = cnco_freq
             cap_port_cache["runits"][cap_channel.number]["fnco_freq"] = fnco_freq
-            self.device_controller.initialize_awg_and_capunits(cap_port.box_id)
+            self.backend_controller.initialize_awg_and_capunits(cap_port.box_id)
 
         self.experiment_system.update_port_params(
             label,
@@ -742,26 +748,26 @@ This operation will overwrite the existing device settings. Do you want to conti
                 cnco_freq=original_cnco_freq,
                 fnco_freq=original_fnco_freq,
             )
-            self.device_controller.config_port(
+            self.backend_controller.config_port(
                 box_name=port.box_id,
                 port=port.number,
                 lo_freq=original_lo_freq,
                 cnco_freq=original_cnco_freq,
             )
-            self.device_controller.config_channel(
+            self.backend_controller.config_channel(
                 box_name=port.box_id,
                 port=port.number,
                 channel=channel.number,
                 fnco_freq=original_fnco_freq,
             )
             if target.is_read:
-                self.device_controller.config_port(
+                self.backend_controller.config_port(
                     box_name=cap_port.box_id,
                     port=cap_port.number,
                     lo_freq=original_lo_freq,
                     cnco_freq=original_cnco_freq,
                 )
-                self.device_controller.config_runit(
+                self.backend_controller.config_runit(
                     box_name=cap_port.box_id,
                     port=cap_port.number,
                     runit=cap_channel.number,
@@ -769,7 +775,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                 )
 
             # restore the original box config
-            self.device_controller.boxpool._box_config_cache = original_box_cache  # noqa: SLF001
+            self.backend_controller.boxpool._box_config_cache = original_box_cache  # noqa: SLF001
 
     @contextmanager
     def save_rawdata(
