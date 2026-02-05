@@ -1072,7 +1072,7 @@ class MeasurementService:
         *,
         time_range: ArrayLike | None = None,
         shots: int | None = None,
-        interval: int | None = None,
+        interval: float | None = None,
         store_params: bool | None = None,
         rabi_level: Literal["ge", "ef"] | None = None,
         plot: bool | None = None,
@@ -1088,7 +1088,7 @@ class MeasurementService:
             Time range of the experiment in ns. Defaults to RABI_TIME_RANGE.
         shots : int, optional
             Number of shots. Defaults to DEFAULT_SHOTS.
-        interval : int, optional
+        interval : float, optional
             Interval between shots. Defaults to DEFAULT_INTERVAL.
         store_params : bool, optional
             Whether to store the Rabi parameters. Defaults to False.

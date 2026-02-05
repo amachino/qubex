@@ -4659,7 +4659,7 @@ class CharacterizationService:
         targets: Collection[str] | str | None = None,
         *,
         shots: int | None = None,
-        interval: int | None = None,
+        interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
@@ -4776,7 +4776,7 @@ class CharacterizationService:
         targets: Collection[str] | str | None = None,
         *,
         shots: int | None = None,
-        interval: int | None = None,
+        interval: float | None = None,
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:

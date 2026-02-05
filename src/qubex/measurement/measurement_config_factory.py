@@ -13,6 +13,8 @@ from .measurement_defaults import (
     DEFAULT_ENABLE_DSP_DEMODULATION,
     DEFAULT_ENABLE_DSP_SUM,
     DEFAULT_INTERVAL,
+    DEFAULT_LINE_PARAM0,
+    DEFAULT_LINE_PARAM1,
     DEFAULT_READOUT_DRAG_COEFF,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
@@ -114,8 +116,14 @@ class MeasurementConfigFactory:
                 enable_dsp_classification,
                 DEFAULT_ENABLE_DSP_CLASSIFICATION,
             ),
-            line_param0=line_param0,
-            line_param1=line_param1,
+            line_param0=_or_default(
+                line_param0,
+                DEFAULT_LINE_PARAM0,
+            ),
+            line_param1=_or_default(
+                line_param1,
+                DEFAULT_LINE_PARAM1,
+            ),
         )
 
     def create(

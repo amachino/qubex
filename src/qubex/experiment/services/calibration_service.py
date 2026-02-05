@@ -2548,7 +2548,7 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         *,
         shots: int | None = None,
-        interval: int | None = None,
+        interval: float | None = None,
         plot: bool | None = None,
         coarse: bool | None = None,
     ) -> Result:
@@ -2638,7 +2638,7 @@ class CalibrationService:
         *,
         cr_calib_params: dict | None = None,
         shots: int | None = None,
-        interval: int | None = None,
+        interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Run two-qubit calibration workflow."""
@@ -2717,7 +2717,7 @@ class CalibrationService:
         targets: Collection[str] | str | None = None,
         *,
         shots: int | None = None,
-        interval: int | None = None,
+        interval: float | None = None,
         plot: bool | None = None,
     ) -> Result:
         """Run one-qubit EF calibration workflow."""
