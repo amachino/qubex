@@ -1,4 +1,4 @@
-"""QuEL1-specific backend components."""
+"""QuEL-1 specific backend components."""
 
 from .quel1_backend_constants import (
     BLOCK_DURATION,

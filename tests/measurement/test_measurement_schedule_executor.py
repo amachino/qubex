@@ -10,7 +10,7 @@ from qubex.backend import (
     BackendExecutionRequest,
     BackendExecutor,
 )
-from qubex.backend.quel1 import DeviceController, RawResult
+from qubex.backend.quel1 import Quel1BackendController, RawResult
 from qubex.measurement.measurement_backend_adapter import MeasurementBackendAdapter
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_result_factory import MeasurementResultFactory
@@ -90,12 +90,12 @@ def test_execute_validates_builds_executes_and_creates_result() -> None:
             called["result_kwargs"] = kwargs
             return expected
 
-    device_controller = type("_DC", (), {"box_config": {"shots": 2}})()
+    backend_controller = type("_BC", (), {"box_config": {"shots": 2}})()
     executor = MeasurementScheduleExecutor(
         backend_executor=cast(BackendExecutor, _Executor()),
         measurement_backend_adapter=cast(MeasurementBackendAdapter, _Adapter()),
         measurement_result_factory=cast(MeasurementResultFactory, _ResultFactory()),
-        device_controller=cast(DeviceController, device_controller),
+        backend_controller=cast(Quel1BackendController, backend_controller),
     )
 
     schedule = MeasurementSchedule(

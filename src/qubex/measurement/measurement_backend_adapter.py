@@ -18,7 +18,7 @@ from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
     WORD_DURATION,
     WORD_LENGTH,
-    DeviceController,
+    Quel1BackendController,
     Quel1ExecutionPayload,
 )
 from qubex.measurement.models.measure_result import MeasureMode
@@ -43,20 +43,20 @@ class MeasurementBackendAdapter(Protocol):
         ...
 
 
-class QuelMeasurementBackendAdapter:
-    """QuEL-specific adapter from measurement models to backend request."""
+class Quel1MeasurementBackendAdapter:
+    """QuEL-1 specific adapter from measurement models to backend request."""
 
     def __init__(
         self,
         *,
-        device_controller: DeviceController,
+        backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
     ) -> None:
-        self._device_controller = device_controller
+        self._backend_controller = backend_controller
         self._experiment_system = experiment_system
 
     def validate_schedule(self, schedule: MeasurementSchedule) -> None:
-        """Validate QuEL-specific pulse/capture constraints."""
+        """Validate QuEL-1 specific pulse/capture constraints."""
         pulse_schedule = schedule.pulse_schedule
         if not pulse_schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
@@ -144,7 +144,10 @@ class QuelMeasurementBackendAdapter:
                 )
 
     def build_execution_request(
-        self, *, schedule: MeasurementSchedule, config: MeasurementConfig
+        self,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
     ) -> BackendExecutionRequest:
         """Build a QuEL backend execution request from measurement inputs."""
         measure_mode = MeasureMode(config.mode)
@@ -158,7 +161,7 @@ class QuelMeasurementBackendAdapter:
             schedule=schedule
         )
         targets = list(gen_sampled_sequence.keys() | cap_sampled_sequence.keys())
-        resource_map = self._device_controller.get_resource_map(targets)
+        resource_map = self._backend_controller.get_resource_map(targets)
 
         from qubex.backend.quel1.quel1_sequencer import Quel1Sequencer
 
@@ -167,8 +170,8 @@ class QuelMeasurementBackendAdapter:
             cap_sampled_sequence=cap_sampled_sequence,
             resource_map=resource_map,  # type: ignore[arg-type]
             interval=interval,
-            sysdb=self._device_controller.qubecalib.sysdb,
-            driver=self._device_controller.quel1system,
+            sysdb=self._backend_controller.qubecalib.sysdb,
+            driver=self._backend_controller.quel1system,
         )
         payload = Quel1ExecutionPayload(
             sequencer=sequencer,
@@ -294,7 +297,12 @@ class QuelMeasurementBackendAdapter:
         return gen_sequences, cap_sequences
 
     @staticmethod
-    def _is_multiple(value: float, base: float, *, atol: float = 1e-9) -> bool:
+    def _is_multiple(
+        value: float,
+        base: float,
+        *,
+        atol: float = 1e-9,
+    ) -> bool:
         """Return True if value is a near-integer multiple of base."""
         if base == 0:
             return False

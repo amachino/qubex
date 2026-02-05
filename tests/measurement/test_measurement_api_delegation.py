@@ -104,9 +104,14 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
         "_BM",
         (),
         {
-            "device_controller": type("_DC", (), {"box_config": {"shots": 1}})(),
+            "backend_controller": type("_BC", (), {"box_config": {"shots": 1}})(),
             "experiment_system": experiment_system,
         },
+    )()
+    measurement.__dict__["_system_manager"] = type(
+        "_SM",
+        (),
+        {"rawdata_dir": None},
     )()
 
     result = measurement.execute(

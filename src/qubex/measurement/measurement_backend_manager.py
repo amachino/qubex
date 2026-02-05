@@ -15,7 +15,7 @@ from qubex.backend import (
     Mux,
     SystemManager,
 )
-from qubex.backend.quel1 import DeviceController
+from qubex.backend.quel1 import Quel1BackendController
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +45,9 @@ class MeasurementBackendManager:
         return self._system_manager.experiment_system
 
     @property
-    def device_controller(self) -> DeviceController:
-        """Return the device controller."""
-        return self._system_manager.device_controller
+    def backend_controller(self) -> Quel1BackendController:
+        """Return the backend controller."""
+        return self._system_manager.backend_controller
 
     @cached_property
     def box_ids(self) -> list[str]:
@@ -85,19 +85,19 @@ class MeasurementBackendManager:
         if len(self.box_ids) == 0:
             logger.warning("No boxes are selected. Please check the configuration.")
             return
-        self.device_controller.connect(self.box_ids)
+        self.backend_controller.connect(self.box_ids)
         self.system_manager.pull(self.box_ids)
         if sync_clocks:
-            self.device_controller.resync_clocks(self.box_ids)
+            self.backend_controller.resync_clocks(self.box_ids)
 
     def is_connected(self) -> bool:
         """Return True if device controller is connected."""
-        return self.device_controller.is_connected
+        return self.backend_controller.is_connected
 
     def check_link_status(self, box_list: list[str]) -> dict:
         """Check link status for the provided box list."""
         link_statuses = {
-            box: self.device_controller.link_status(box) for box in box_list
+            box: self.backend_controller.link_status(box) for box in box_list
         }
         is_linkedup = all(all(status.values()) for status in link_statuses.values())
         return {
@@ -107,7 +107,7 @@ class MeasurementBackendManager:
 
     def check_clock_status(self, box_list: list[str]) -> dict:
         """Check clock synchronization status for the provided box list."""
-        clocks = self.device_controller.read_clocks(box_list)
+        clocks = self.backend_controller.read_clocks(box_list)
         clock_statuses = dict(
             zip(
                 box_list,
@@ -115,7 +115,7 @@ class MeasurementBackendManager:
                 strict=True,
             )
         )
-        is_synced = self.device_controller.check_clocks(box_list)
+        is_synced = self.backend_controller.check_clocks(box_list)
         return {
             "status": is_synced,
             "clocks": clock_statuses,
@@ -123,13 +123,13 @@ class MeasurementBackendManager:
 
     def linkup(self, box_list: list[str], noise_threshold: int | None = None) -> None:
         """Link up boxes and synchronize clocks."""
-        self.device_controller.linkup_boxes(box_list, noise_threshold=noise_threshold)
-        self.device_controller.sync_clocks(box_list)
+        self.backend_controller.linkup_boxes(box_list, noise_threshold=noise_threshold)
+        self.backend_controller.sync_clocks(box_list)
 
     def relinkup(self, box_list: list[str]) -> None:
         """Relink up boxes and synchronize clocks."""
-        self.device_controller.relinkup_boxes(box_list)
-        self.device_controller.sync_clocks(box_list)
+        self.backend_controller.relinkup_boxes(box_list)
+        self.backend_controller.sync_clocks(box_list)
 
     @contextmanager
     def modified_frequencies(

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from qubex.backend.quel1 import SAMPLING_PERIOD
-from qubex.measurement.measurement_backend_adapter import QuelMeasurementBackendAdapter
+from qubex.measurement.measurement_backend_adapter import Quel1MeasurementBackendAdapter
 from qubex.measurement.measurement_schedule_builder import (
     BLOCK_DURATION,
     EXTRA_SUM_SECTION_LENGTH,
@@ -70,7 +70,7 @@ def test_validate_measurement_schedule_accepts_device_constraints() -> None:
         capture_schedule=capture_schedule,
     )
 
-    adapter = object.__new__(QuelMeasurementBackendAdapter)
+    adapter = object.__new__(Quel1MeasurementBackendAdapter)
     adapter.validate_schedule(schedule)
 
 
@@ -102,7 +102,7 @@ def test_validate_measurement_schedule_rejects_non_block_aligned_first_capture()
         pulse_schedule=pulse_schedule,
         capture_schedule=capture_schedule,
     )
-    adapter = object.__new__(QuelMeasurementBackendAdapter)
+    adapter = object.__new__(Quel1MeasurementBackendAdapter)
 
     with pytest.raises(ValueError, match="first capture start"):
         adapter.validate_schedule(schedule)

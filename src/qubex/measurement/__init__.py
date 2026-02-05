@@ -4,7 +4,7 @@ from .classifiers import StateClassifier, StateClassifierGMM, StateClassifierKMe
 from .measurement import Measurement
 from .measurement_backend_adapter import (
     MeasurementBackendAdapter,
-    QuelMeasurementBackendAdapter,
+    Quel1MeasurementBackendAdapter,
 )
 from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_client import MeasurementClient
@@ -41,7 +41,7 @@ __all__ = [
     "MeasurementScheduleBuilder",
     "MeasurementScheduleExecutor",
     "MultipleMeasureResult",
-    "QuelMeasurementBackendAdapter",
+    "Quel1MeasurementBackendAdapter",
     "StateClassifier",
     "StateClassifierGMM",
     "StateClassifierKMeans",

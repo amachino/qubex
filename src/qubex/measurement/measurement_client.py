@@ -21,7 +21,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
-from qubex.backend.quel1 import DeviceController
+from qubex.backend.quel1 import Quel1BackendController
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
@@ -229,9 +229,9 @@ class MeasurementClient:
         return self.backend_manager.experiment_system
 
     @property
-    def device_controller(self) -> DeviceController:
-        """Get the device controller."""
-        return self.backend_manager.device_controller
+    def backend_controller(self) -> Quel1BackendController:
+        """Get the backend controller."""
+        return self.backend_manager.backend_controller
 
     @property
     def measurement_schedule_executor(self) -> MeasurementScheduleExecutor:
@@ -239,7 +239,7 @@ class MeasurementClient:
         if self._measurement_schedule_executor is None:
             self._measurement_schedule_executor = (
                 MeasurementScheduleExecutor.create_default(
-                    device_controller=self.device_controller,
+                    backend_controller=self.backend_controller,
                     experiment_system=self.experiment_system,
                 )
             )
@@ -760,7 +760,7 @@ class MeasurementClient:
 
         return MeasurementResultConverter.to_multiple_measure_result(
             result,
-            config=self.device_controller.box_config,
+            config=self.backend_controller.box_config,
             classifiers=self.classifiers,
         )
 

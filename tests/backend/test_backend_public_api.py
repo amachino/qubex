@@ -13,7 +13,7 @@ from qubex.backend.quel1 import (
 
 
 def test_backend_module_hides_quel1_specific_symbols() -> None:
-    """Given backend module, when checking QuEL1 symbols, then they are not re-exported."""
+    """Given backend module, when checking QuEL-1 symbols, then they are not re-exported."""
     assert not hasattr(backend, "DeviceController")
     assert not hasattr(backend, "Quel1BackendExecutor")
     assert not hasattr(backend, "Quel1ExecutionPayload")
@@ -22,7 +22,7 @@ def test_backend_module_hides_quel1_specific_symbols() -> None:
 
 
 def test_backend_quel1_module_exposes_quel1_specific_symbols() -> None:
-    """Given backend.quel1 module, when importing symbols, then QuEL1 symbols are exposed."""
+    """Given backend.quel1 module, when importing symbols, then QuEL-1 symbols are exposed."""
     assert DeviceController.__name__ == "Quel1BackendController"
     assert Quel1BackendExecutor.__name__ == "Quel1BackendExecutor"
     assert Quel1ExecutionPayload.__name__ == "Quel1ExecutionPayload"

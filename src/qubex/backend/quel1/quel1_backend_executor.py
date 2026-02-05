@@ -15,7 +15,7 @@ from .quel1_backend_controller import Quel1BackendController
 
 @dataclass(frozen=True)
 class Quel1ExecutionPayload:
-    """QuEL-specific execution payload for backend request."""
+    """QuEL-1 specific execution payload for backend request."""
 
     sequencer: Any
     repeats: int
@@ -28,19 +28,19 @@ class Quel1ExecutionPayload:
 
 
 class Quel1BackendExecutor:
-    """QuEL backend executor using `Quel1BackendController.execute_sequencer`."""
+    """QuEL-1 backend executor using `Quel1BackendController.execute_sequencer`."""
 
-    def __init__(self, *, device_controller: Quel1BackendController) -> None:
-        self._device_controller = device_controller
+    def __init__(self, *, backend_controller: Quel1BackendController) -> None:
+        self._backend_controller = backend_controller
 
     def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
-        """Execute a prepared request on QuEL hardware."""
+        """Execute a prepared request on QuEL-1 hardware."""
         payload = request.payload
         if not isinstance(payload, Quel1ExecutionPayload):
             raise TypeError(
                 "Quel1BackendExecutor expects `Quel1ExecutionPayload` payload."
             )
-        return self._device_controller.execute_sequencer(
+        return self._backend_controller.execute_sequencer(
             sequencer=payload.sequencer,
             repeats=payload.repeats,
             integral_mode=payload.integral_mode,
