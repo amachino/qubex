@@ -33,11 +33,13 @@ class Pulse(Waveform):
         scale: float | None = None,
         detuning: float | None = None,
         phase: float | None = None,
+        **kwargs,
     ):
         super().__init__(
             scale=scale,
             detuning=detuning,
             phase=phase,
+            **kwargs,
         )
         self._values = np.array(values, dtype=np.complex128)
 

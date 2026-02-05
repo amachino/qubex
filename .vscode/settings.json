@@ -5,6 +5,7 @@
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "python.testing.pytestArgs": [
+        "--import-mode=importlib",
         "tests"
     ],
     "[python]": {
@@ -15,6 +16,8 @@
         },
         "editor.defaultFormatter": "charliermarsh.ruff"
     },
+    "ruff.path": ["${workspaceFolder}/.venv/bin/ruff"],
+    "ruff.configuration": "${workspaceFolder}/pyproject.toml",
     "notebook.formatOnSave.enabled": true,
     "notebook.codeActionsOnSave": {
         "notebook.source.fixAll": "explicit",

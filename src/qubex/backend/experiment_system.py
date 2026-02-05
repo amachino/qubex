@@ -541,6 +541,26 @@ class ExperimentSystem:
                 channel=port.channels[0],
             )
             self._gen_target_dict[ge_target.label] = ge_target
+        elif port.n_channels == 2:
+            # ge
+            ge_target = Target.new_ge_target(
+                qubit=qubit,
+                channel=port.channels[0],
+            )
+            self._gen_target_dict[ge_target.label] = ge_target
+            # cr
+            cr_target = Target.new_cr_target(
+                control_qubit=qubit,
+                channel=port.channels[1],
+            )
+            self._gen_target_dict[cr_target.label] = cr_target
+            for spectator in self.get_spectator_qubits(qubit.label):
+                cr_target = Target.new_cr_target(
+                    control_qubit=qubit,
+                    target_qubit=spectator,
+                    channel=port.channels[1],
+                )
+                self._gen_target_dict[cr_target.label] = cr_target
         elif port.n_channels == 3:
             if mode == "ge-ef-cr":
                 # ge
@@ -821,9 +841,72 @@ class ExperimentSystem:
                     },
                 },
             }
+        elif n_channels == 2:
+            f_ge = qubit.frequency * 1e9
+            f_ef = qubit.control_frequency_ef * 1e9
+            spectators = self.get_spectator_qubits(qubit.label)
+            f_CRs = [
+                spectator.frequency * 1e9
+                for spectator in spectators
+                if spectator.frequency > 0
+                and spectator.label not in self._targets_to_exclude
+                and f"{qubit.label}-{spectator.label}" not in self._targets_to_exclude
+            ]
+            if not f_CRs:
+                f_CRs = [f_ge]
 
-        elif n_channels != 3:
-            raise ValueError("Invalid number of channels.")
+            f_CR_max = max(f_CRs)
+            if f_CR_max > f_ge:
+                # if any CR is larger than GE, then let EF be the smallest
+                if f_ef < min_frequency:
+                    f_ef = f_ge
+                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
+                    f=f_ef + FNCO_MAX,
+                    ssb=ssb,
+                    cnco_center=cnco_center,
+                )
+                f_CRs_valid = [f for f in f_CRs if f < f_coarse + FNCO_MAX + AWG_MAX]
+            else:
+                # if all CRs are smaller than GE, then let GE be the largest
+                lo, cnco, f_coarse = MixingUtil.calc_lo_cnco(
+                    f=f_ge - FNCO_MAX,
+                    ssb=ssb,
+                    cnco_center=cnco_center,
+                )
+                f_CRs_valid = [f for f in f_CRs if f > f_coarse - FNCO_MAX - AWG_MAX]
+            f_CR = self._find_center_freq_for_cr(
+                f_coarse=f_coarse,
+                f_CRs=f_CRs_valid,
+            )
+            fnco_ge, _ = MixingUtil.calc_fnco(
+                f=(f_ge + f_ef) * 0.5,
+                ssb=ssb,
+                lo=lo,
+                cnco=cnco,
+            )
+            fnco_CR, _ = MixingUtil.calc_fnco(
+                f=f_CR,
+                ssb=ssb,
+                lo=lo,
+                cnco=cnco,
+            )
+            return {
+                "lo": lo,
+                "cnco": cnco,
+                "channels": {
+                    0: {
+                        "fnco": fnco_ge,
+                        "targets": [qubit.label],
+                    },
+                    1: {
+                        "fnco": fnco_CR,
+                        "targets": [
+                            f"{qubit.label}-{spectator.label}"
+                            for spectator in self.get_spectator_qubits(qubit.label)
+                        ],
+                    },
+                },
+            }
 
         if mode == "ge-ef-cr":
             f_ge = qubit.frequency * 1e9
@@ -1012,22 +1095,19 @@ class ExperimentSystem:
             NCO_STEP,
         )
         # count the number of CR frequencies within the range of each search point
-        center_freqs_by_count = [
-            (
-                np.sum([1 for f_CR in f_CRs if f - AWG_MAX <= f_CR <= f + AWG_MAX]),
-                np.median(
-                    [f_CR for f_CR in f_CRs if f - AWG_MAX <= f_CR <= f + AWG_MAX]
-                    or [0]
-                ),
-            )
-            for f in search_range
-        ]
+        center_freqs_by_count = []
+        for f in search_range:
+            valid_f_CRs = [f_CR for f_CR in f_CRs if f - AWG_MAX <= f_CR <= f + AWG_MAX]
+            if not valid_f_CRs:
+                continue
+            center = (min(valid_f_CRs) + max(valid_f_CRs)) / 2
+            center_freqs_by_count.append((len(valid_f_CRs), center))
         if not center_freqs_by_count:
             return f_coarse
         # sort by count and then by frequency
         center_freqs_by_count.sort(key=lambda x: (x[0], x[1]), reverse=True)
         # choose the one with the highest count and frequency
-        center_freq = center_freqs_by_count[0][1].astype(int)
+        center_freq = int(center_freqs_by_count[0][1])
         # round to the nearest NCO step
         center_freq = round(center_freq / NCO_STEP) * NCO_STEP
         # clip to the possible range

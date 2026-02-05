@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Final, Literal
+from typing import Final
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -9,6 +9,7 @@ from ..pulse import Pulse
 from .bump import Bump
 from .gaussian import Gaussian
 from .raised_cosine import RaisedCosine
+from .ramp_type import RampType
 from .sintegral import Sintegral
 
 
@@ -24,7 +25,7 @@ class Drag(Pulse):
         Amplitude of the DRAG pulse.
     beta : float
         DRAG correction coefficient.
-    type : Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"], optional
+    type : RampType | None
         Type of the pulse. Default is "Gaussian".
 
     Examples
@@ -42,7 +43,7 @@ class Drag(Pulse):
         duration: float,
         amplitude: float,
         beta: float,
-        type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "Gaussian",
+        type: RampType | None = None,
         **kwargs,
     ):
         self.amplitude: Final = amplitude
@@ -69,7 +70,7 @@ class Drag(Pulse):
         duration: float,
         amplitude: float,
         beta: float,
-        type: Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"] = "Gaussian",
+        type: RampType | None = None,
     ) -> NDArray:
         """
         DRAG pulse function.
@@ -84,9 +85,12 @@ class Drag(Pulse):
             Amplitude of the DRAG pulse.
         beta : float
             DRAG correction coefficient.
-        type : Literal["Gaussian", "RaisedCosine", "Sintegral", "Bump"]
-            Type of the pulse. Default is "gaussian".
+        type : RampType | None
+            Type of the pulse. Default is "Gaussian".
         """
+        if type is None:
+            type = "Gaussian"
+
         if type == "Gaussian":
             return Gaussian.func(
                 t=t,

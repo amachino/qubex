@@ -1,6 +1,6 @@
 from .bump import Bump
 from .cpmg import CPMG
-from .cross_resonance import CrossResonance
+from .cross_resonance import CrossResonance, MultiDerivativeCrossResonance
 from .drag import Drag
 from .flat_top import FlatTop, RampType
 from .gaussian import Gaussian
@@ -16,6 +16,7 @@ __all__ = [
     "Drag",
     "FlatTop",
     "Gaussian",
+    "MultiDerivativeCrossResonance",
     "RaisedCosine",
     "RampType",
     "Rect",

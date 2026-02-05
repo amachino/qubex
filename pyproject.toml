@@ -38,7 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 backend = [
-    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.15",
+    "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.16beta1",
 ]
 dev = ["pyinstrument", "pytest", "pytest-cov", "ruff"]
 

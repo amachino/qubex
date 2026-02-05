@@ -33,6 +33,7 @@ class Waveform(ABC):
         scale: float | None = None,
         detuning: float | None = None,
         phase: float | None = None,
+        **kwargs,
     ):
         if scale is None:
             scale = 1.0

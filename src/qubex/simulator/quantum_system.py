@@ -488,3 +488,19 @@ class QuantumSystem:
         alpha_1 = obj_1.anharmonicity
         xi = g**2 * (alpha_0 + alpha_1) / ((delta + alpha_0) * (delta - alpha_1))
         return xi
+
+    def get_rotation_matrix(
+        self,
+        angles: dict[str, float],
+    ) -> qt.Qobj:
+        U = qt.tensor(
+            *[
+                qt.qeye(self.get_object(label).dimension)
+                if label not in angles
+                else (
+                    1j * angles[label] * qt.num(self.get_object(label).dimension)
+                ).expm()
+                for label in self.object_labels
+            ]
+        )
+        return U

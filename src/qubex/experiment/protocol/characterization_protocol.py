@@ -322,6 +322,8 @@ class CharacterizationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         save_image : bool, optional
             Whether to save the images. Defaults to False.
+        xaxis_type : Literal["linear", "log"], optional
+            Type of x-axis scale for plotting. Defaults to "log".
 
         Returns
         -------
@@ -349,6 +351,7 @@ class CharacterizationProtocol(Protocol):
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
+        xaxis_type: Literal["linear", "log"] = "log",
     ) -> ExperimentResult[T2Data]:
         """
         Conducts a T2 experiment in series.
@@ -371,6 +374,8 @@ class CharacterizationProtocol(Protocol):
             Whether to plot the measured signals. Defaults to True.
         save_image : bool, optional
             Whether to save the images. Defaults to False.
+        xaxis_type : Literal["linear", "log"], optional
+            Type of x-axis scale for plotting. Defaults to "log".
 
         Returns
         -------
@@ -434,6 +439,179 @@ class CharacterizationProtocol(Protocol):
         >>> result = ex.ramsey_experiment(
         ...     targets=["Q00", "Q01", "Q02", "Q03"]
         ...     time_range=range(0, 10_000, 100),
+        ...     shots=1024,
+        ... )
+        """
+        ...
+
+    def _simultaneous_measurement_coherence(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> dict[str, ExperimentResult]:
+        """
+        Performs simultaneous T1, T2 echo, and Ramsey experiments.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target labels to check the coherence times.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns. Defaults to np.arange(0, 50_001, 1000).
+        detuning : float, optional
+            Detuning of the control frequency. Defaults to 0.001 GHz.
+        second_rotation_axis : Literal["X", "Y"], optional
+            Axis of the second rotation pulse. Defaults to "Y".
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to False.
+
+        Returns
+        -------
+        dict[str, ExperimentResult]
+            Dictionary containing the results of each experiment.
+            The keys are:
+                - "T1": ExperimentResult[T1Data]
+                - "T2": ExperimentResult[T2Data]
+                - "Ramsey": ExperimentResult[RamseyData]
+            Each ExperimentResult holds a mapping from target label to the
+            corresponding data object.
+
+        Examples
+        --------
+        >>> result = ex._simultaneous_measurement_coherence(
+        ...     targets=["Q00", "Q01", "Q02"],
+        ...     time_range=np.arange(0, 50_001, 1000),
+        ...     detuning=0.001,
+        ...     shots=2048,
+        ... )
+        >>> t1_result = result["T1"]
+        >>> t2_result = result["T2"]
+        >>> ramsey_result = result["Ramsey"]
+
+        """
+        ...
+
+    def _stark_t1_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        stark_detuning: float | dict[str, float] | None = None,
+        stark_amplitude: float | dict[str, float] | None = None,
+        stark_ramptime: float | dict[str, float] | None = None,
+        time_range: ArrayLike | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+        xaxis_type: Literal["linear", "log"] = "log",
+    ) -> ExperimentResult[T1Data]:
+        """
+        Conducts a T1 experiment under an off resonance tone(a stark tone) in series.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Collection of qubits to check the Stark-driven T1 decay.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns.
+        stark_detuning : float | dict[str, float], optional
+            Frequency offset of the Stark tone from the qubit frequency. Defaults to 0.15 GHz (Blue detuning).
+        stark_amplitude : float| dict[str, float], optional
+            Drive amplitude of the Stark tone expressed as the on-resonance Rabi rate Ω. Defaults to 0.1 GHz.
+        stark_ramptime : float| dict[str, float], optional
+            Ramp time of the stark tone. Defaults to 10 ns.
+        shots : int, optional
+            Number of shots. Defaults to DEFAULT_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to False.
+
+        Returns
+        -------
+        ExperimentResult[T1Data]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.stark_t1_experiment(
+        ...     targets=["Q00", "Q01", "Q02", "Q03"]
+        ...     time_range=2 ** np.arange(1, 19),
+        ...     shots=1024,
+        ... )
+        """
+        ...
+
+    def _stark_ramsey_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        stark_detuning: float | dict[str, float] | None = None,
+        stark_amplitude: float | dict[str, float] | None = None,
+        stark_ramptime: float | dict[str, float] | None = None,
+        time_range: ArrayLike | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        envelope_region: Literal["full", "flat"] = "full",
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> ExperimentResult[RamseyData]:
+        """
+        Conducts a Ramsey experiment under an off resonance tone(a stark tone) in series.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target labels to check the Stark-driven Ramsey oscillation.
+        time_range : ArrayLike, optional
+            Time range of the experiment in ns. Defaults to np.arange(0, 401, 4).
+        stark_detuning : float| dict[str, float], optional
+            Frequency offset of the Stark tone from the qubit frequency. Defaults to 0.15 GHz (Blue detuning).
+        stark_amplitude : float| dict[str, float], optional
+            Drive amplitude of the Stark tone expressed as the on-resonance Rabi rate Ω. Defaults to 0.1 GHz.
+        stark_ramptime : float| dict[str, float], optional
+            Ramp time of the stark tone. Defaults to 10 ns.
+        second_rotation_axis : Literal["X", "Y"], optional
+            Axis of the second rotation pulse. Defaults to "Y".
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        envelope_region : Literal["full", "flat"] = "full", optional
+            Defines how the AC stark shift is estimated.
+            "full" integrates the accumulated phase over the entire envelope, including the ramp-up/down segments.
+            "flat" fits only the flat-top portion (ramps excluded) to extract the shift.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        save_image : bool, optional
+            Whether to save the images. Defaults to False.
+
+        Returns
+        -------
+        ExperimentResult[RamseyData]
+            Result of the experiment.
+
+        Examples
+        --------
+        >>> result = ex.stark_ramsey_experiment(
+        ...     targets=["Q00", "Q01", "Q02", "Q03"]
+        ...     time_range=range(0, 401, 4),
         ...     shots=1024,
         ... )
         """

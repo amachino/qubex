@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Final, Literal, Optional, TypeAlias
+from typing import Final, Literal, Optional, Sequence, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
@@ -32,6 +32,7 @@ class Control:
         durations: list | npt.NDArray | None = None,
         frequency: float | None = None,
         interpolation: str = "previous",
+        final_frame_shift: float = 0.0,
     ):
         """
         A control signal for a quantum system.
@@ -69,6 +70,7 @@ class Control:
             else np.full(len(self.waveform), Waveform.SAMPLING_PERIOD)
         )
         self.interpolation = interpolation
+        self.final_frame_shift = final_frame_shift
 
         if len(self.waveform) != len(self.durations):
             raise ValueError("The lengths of rabi_rates and durations do not match.")
@@ -235,6 +237,7 @@ class SimulationResult:
         self,
         label: str,
         frame: FrameType | None = None,
+        frame_frequency: float | None = None,
     ) -> npt.NDArray:
         """
         Extract the substates of a qubit from the states.
@@ -243,13 +246,16 @@ class SimulationResult:
         ----------
         label : str
             The label of the qubit.
+        frame : FrameType | None, optional
+            The frame of the substates, by default "qubit"
+        frame_frequency : float | None, optional
+            The frequency of the frame, by default None.
+            If specified, this takes precedence over `frame`.
 
         Returns
         -------
         list[qt.Qobj]
             The substates of the qubit.
-        frame : FrameType | None, optional
-            The frame of the substates, by default "qubit"
         """
         if frame is None:
             frame = "qubit"
@@ -257,13 +263,17 @@ class SimulationResult:
         index = self.system.get_index(label)
         substates = np.array([state.ptrace(index) for state in self.states])
 
-        if frame == "drive":
-            # rotate the states to the drive frame
+        target_frequency = None
+        if frame_frequency is not None:
+            target_frequency = frame_frequency
+        elif frame == "drive":
+            target_frequency = self.control_frequencies[label]
+
+        if target_frequency is not None:
             times = self.get_times()
             qubit = self.system.get_object(label)
-            f_drive = self.control_frequencies[label]
             f_qubit = qubit.frequency
-            delta = 2 * np.pi * (f_drive - f_qubit)
+            delta = 2 * np.pi * (target_frequency - f_qubit)
             dim = qubit.dimension
             N = qt.num(dim)
             U = lambda t: (-1j * delta * N * t).expm()
@@ -277,6 +287,7 @@ class SimulationResult:
         self,
         label: str,
         frame: FrameType | None = None,
+        frame_frequency: float | None = None,
     ) -> qt.Qobj:
         """
         Extract the initial substate of a qubit from the states.
@@ -287,18 +298,23 @@ class SimulationResult:
             The label of the qubit.
         frame : FrameType | None, optional
             The frame of the substates, by default "qubit"
+        frame_frequency : float | None, optional
+            The frequency of the frame, by default None.
 
         Returns
         -------
         qt.Qobj
             The initial substate of the qubit.
         """
-        return self.get_substates(label, frame=frame)[0]
+        return self.get_substates(label, frame=frame, frame_frequency=frame_frequency)[
+            0
+        ]
 
     def get_final_substate(
         self,
         label: str,
         frame: FrameType | None = None,
+        frame_frequency: float | None = None,
     ) -> qt.Qobj:
         """
         Extract the final substate of a qubit from the states.
@@ -309,13 +325,17 @@ class SimulationResult:
             The label of the qubit.
         frame : FrameType | None, optional
             The frame of the substates, by default "qubit"
+        frame_frequency : float | None, optional
+            The frequency of the frame, by default None.
 
         Returns
         -------
         qt.Qobj
             The final substate of the qubit.
         """
-        return self.get_substates(label, frame=frame)[-1]
+        return self.get_substates(label, frame=frame, frame_frequency=frame_frequency)[
+            -1
+        ]
 
     def get_times(
         self,
@@ -339,6 +359,7 @@ class SimulationResult:
         *,
         n_samples: int | None = None,
         frame: FrameType | None = None,
+        frame_frequency: float | None = None,
         subspace: SubspaceType = "ge",
     ) -> npt.NDArray:
         """
@@ -352,6 +373,8 @@ class SimulationResult:
             The number of samples to return, by default None
         frame : FrameType | None, optional
             The frame of the substates, by default None
+        frame_frequency : float | None, optional
+            The frequency of the frame, by default None.
 
         Returns
         -------
@@ -361,7 +384,9 @@ class SimulationResult:
         X = qt.sigmax()
         Y = qt.sigmay()
         Z = qt.sigmaz()
-        substates = self.get_substates(label, frame=frame)
+        substates = self.get_substates(
+            label, frame=frame, frame_frequency=frame_frequency
+        )
         buffer = []
         level = self._get_subspace_slice(subspace)
         for substate in substates:
@@ -380,6 +405,7 @@ class SimulationResult:
         *,
         n_samples: int | None = None,
         frame: FrameType | None = None,
+        frame_frequency: float | None = None,
         subspace: SubspaceType = "ge",
     ) -> npt.NDArray:
         """
@@ -395,13 +421,17 @@ class SimulationResult:
             The number of samples to return, by default None
         frame : FrameType | None, optional
             The frame of the substates, by default None
+        frame_frequency : float | None, optional
+            The frequency of the frame, by default None.
 
         Returns
         -------
         list[qt.Qobj]
             The density matrices of the qubit.
         """
-        substates = self.get_substates(label, frame=frame)
+        substates = self.get_substates(
+            label, frame=frame, frame_frequency=frame_frequency
+        )
         level = self._get_subspace_slice(subspace)
         rho = np.array([substate.full() for substate in substates])[:, level, level]
         rho = downsample(rho, n_samples)
@@ -413,12 +443,14 @@ class SimulationResult:
         *,
         n_samples: int | None = None,
         frame: FrameType | None = None,
+        frame_frequency: float | None = None,
         subspace: SubspaceType = "ge",
     ) -> None:
         vectors = self.get_bloch_vectors(
             label,
             n_samples=n_samples,
             frame=frame,
+            frame_frequency=frame_frequency,
             subspace=subspace,
         )
         times = self.get_times(
@@ -437,6 +469,7 @@ class SimulationResult:
         *,
         n_samples: int | None = None,
         frame: FrameType | None = None,
+        frame_frequency: float | None = None,
         subspace: SubspaceType = "ge",
     ) -> None:
         """
@@ -450,14 +483,161 @@ class SimulationResult:
             The number of samples to return, by default None
         frame : FrameType | None, optional
             The frame of the substates, by default None
+        frame_frequency : float | None, optional
+            The frequency of the frame, by default None.
         """
         rho = self.get_density_matrices(
             label,
             n_samples=n_samples,
             frame=frame,
+            frame_frequency=frame_frequency,
             subspace=subspace,
         )
         qv.display_bloch_sphere_from_density_matrices(rho)
+
+    def _get_general_substates(
+        self,
+        labels: Sequence[str],
+        *,
+        frame_frequencies: dict[str, float] | None = None,
+    ) -> npt.NDArray:
+        # 1. Extract substates (ptrace)
+        # Note: qutip.ptrace always sorts the indices, so the order of subsystems
+        # in the result might differ from 'labels'.
+        target_indices = [self.system.get_index(label) for label in labels]
+        substates = np.array([state.ptrace(target_indices) for state in self.states])
+
+        # 2. Restore the order of subsystems if necessary
+        sorted_indices = sorted(target_indices)
+        if target_indices != sorted_indices:
+            # Calculate permutation to match the requested 'labels' order
+            perm_order = [sorted_indices.index(i) for i in target_indices]
+            substates = np.array([rho.permute(perm_order) for rho in substates])
+
+        # 3. Apply frame transformation if requested
+        if frame_frequencies is not None:
+            substates = self._apply_frame_transformation(
+                substates, labels, frame_frequencies
+            )
+
+        return substates
+
+    def _apply_frame_transformation(
+        self,
+        substates: npt.NDArray,
+        labels: Sequence[str],
+        frame_frequencies: dict[str, float],
+    ) -> npt.NDArray:
+        times = self.get_times()
+        dims = [self.system.get_object(label).dimension for label in labels]
+
+        # Construct the effective Hamiltonian for the frame change
+        # H_frame = sum( delta_i * n_i )
+        H_frame = qt.qzero(dims)
+        for i, label in enumerate(labels):
+            if label not in frame_frequencies:
+                continue
+
+            target_freq = frame_frequencies[label]
+            qubit_freq = self.system.get_object(label).frequency
+            delta = 2 * np.pi * (target_freq - qubit_freq)
+
+            if delta == 0:
+                continue
+
+            # Operator for the i-th subsystem: I x ... x n_i x ... x I
+            ops = [qt.qeye(d) for d in dims]
+            ops[i] = qt.num(dims[i])
+            H_frame += delta * qt.tensor(*ops)
+
+        if H_frame.norm() == 0:
+            return substates
+
+        # Apply unitary transformation: rho' = U rho U^dagger
+        # U(t) = exp(i * H_frame * t)
+        transformed_substates = []
+        for t, rho in zip(times, substates):
+            U = (1j * H_frame * t).expm()
+            transformed_substates.append(rho.transform(U))
+
+        return np.array(transformed_substates)
+
+    def _get_general_bloch_vectors(
+        self,
+        labels: Sequence[str],
+        *,
+        basis_set: tuple[Sequence[int], Sequence[int]],
+        frame_frequencies: dict[str, float] | None = None,
+        n_samples: int | None = None,
+    ) -> npt.NDArray:
+        dimensions = [self.system.get_object(label).dimension for label in labels]
+        ket0 = qt.tensor(
+            *[qt.basis(dim, basis) for dim, basis in zip(dimensions, basis_set[0])]
+        )
+        ket1 = qt.tensor(
+            *[qt.basis(dim, basis) for dim, basis in zip(dimensions, basis_set[1])]
+        )
+        bra0 = ket0.dag()
+        bra1 = ket1.dag()
+
+        X: qt.Qobj = ket0 @ bra1 + ket1 @ bra0
+        Y: qt.Qobj = -1j * ket0 @ bra1 + 1j * ket1 @ bra0
+        Z: qt.Qobj = ket0 @ bra0 - ket1 @ bra1
+
+        buffer = []
+        states = self._get_general_substates(
+            labels=labels,
+            frame_frequencies=frame_frequencies,
+        )
+        for rho in states:
+            x = qt.expect(X, rho)
+            y = qt.expect(Y, rho)
+            z = qt.expect(Z, rho)
+            buffer.append([x, y, z])
+
+        vectors = np.real(buffer)
+        vectors = downsample(vectors, n_samples)
+        return vectors
+
+    def _plot_general_bloch_vectors(
+        self,
+        labels: Sequence[str],
+        *,
+        basis_set: tuple[Sequence[int], Sequence[int]],
+        frame_frequencies: dict[str, float] | None = None,
+        n_samples: int | None = None,
+    ) -> None:
+        vectors = self._get_general_bloch_vectors(
+            labels,
+            basis_set=basis_set,
+            frame_frequencies=frame_frequencies,
+            n_samples=n_samples,
+        )
+        times = self.get_times(
+            n_samples=n_samples,
+        )
+        plot_bloch_vectors(
+            times=times,
+            bloch_vectors=vectors,
+            mode="lines",
+            title=f"State evolution : {', '.join(labels)}",
+        )
+
+    def _display_general_bloch_sphere(
+        self,
+        labels: Sequence[str],
+        *,
+        basis_set: tuple[Sequence[int], Sequence[int]],
+        frame_frequencies: dict[str, float] | None = None,
+        n_samples: int | None = None,
+    ) -> None:
+        vectors = self._get_general_bloch_vectors(
+            labels,
+            basis_set=basis_set,
+            frame_frequencies=frame_frequencies,
+            n_samples=n_samples,
+        )
+        qv.display_bloch_sphere_from_bloch_vectors(vectors)
 
     def show_last_population(
         self,
@@ -553,6 +733,7 @@ class QuantumSimulator:
     def simulate(
         self,
         controls: list[Control] | PulseSchedule,
+        *,
         initial_state: qt.Qobj | dict | None = None,
         dt: float = TIME_STEP,
         n_samples: int | None = None,
@@ -590,8 +771,7 @@ class QuantumSimulator:
             initial_state = self.system.ground_state
 
         control = controls[0]
-        N = int(control.duration / dt)
-        times = np.linspace(0, control.duration, N + 1)
+        times = self._generate_simulation_times(control.duration, dt)
 
         if control.n_segments == 0:
             return SimulationResult(
@@ -605,7 +785,7 @@ class QuantumSimulator:
         control_samples = [control.get_samples(times) for control in controls]
 
         U_list = [self.system.identity_matrix]
-        for idx in range(N):
+        for idx, delta_t in enumerate(np.diff(times)):
             t = times[idx]
             H = self.system.get_rotating_hamiltonian(t)
             for control, samples in zip(controls, control_samples):
@@ -618,7 +798,7 @@ class QuantumSimulator:
                 gamma = Omega * np.exp(-1j * delta * t)  # continuous
                 H_ctrl = gamma * ad + np.conj(gamma) * a
                 H += H_ctrl
-            U = (-1j * H * dt).expm() @ U_list[-1]
+            U = (-1j * H * delta_t).expm() @ U_list[-1]
             U_list.append(U)
 
         rho0 = qt.ket2dm(initial_state)
@@ -641,6 +821,7 @@ class QuantumSimulator:
     def mesolve(
         self,
         controls: list[Control] | PulseSchedule,
+        *,
         initial_state: qt.Qobj | dict | None = None,
         dt: float | None = None,
         n_samples: int | None = None,
@@ -705,6 +886,7 @@ class QuantumSimulator:
     def propagator(
         self,
         controls: list[Control] | PulseSchedule,
+        *,
         dt: float | None = None,
         options: dict | None = None,
     ) -> qt.Qobj:
@@ -716,13 +898,16 @@ class QuantumSimulator:
                 "method": "bdf",
             }
 
+        if isinstance(controls, PulseSchedule):
+            controls = self._convert_pulse_schedule_to_controls(controls)
+        self._validate_controls(controls)
+
         params = self.create_simulation_parameters(
             controls=controls,
             dt=dt,
         )
 
-        # Run the simulation
-        return qt.propagator(
+        S: qt.Qobj = qt.propagator(
             H=params["hamiltonian"],
             tlist=params["times"],
             c_ops=params["collapse_operators"],
@@ -730,10 +915,18 @@ class QuantumSimulator:
             options=options,
         )  # type: ignore
 
+        R = self.system.get_rotation_matrix(
+            {control.target: -control.final_frame_shift for control in controls},
+        )
+        SR = qt.to_super(R)
+
+        return SR @ S
+
     def gate_fidelity(
         self,
-        target_unitary: qt.Qobj,
         controls: list[Control] | PulseSchedule,
+        target_unitary: qt.Qobj,
+        *,
         dt: float | None = None,
         options: dict | None = None,
     ) -> float:
@@ -751,6 +944,7 @@ class QuantumSimulator:
     def create_simulation_parameters(
         self,
         controls: list[Control] | PulseSchedule,
+        *,
         dt: float | None = None,
     ) -> dict:
         if dt is None:
@@ -761,8 +955,7 @@ class QuantumSimulator:
         self._validate_controls(controls)
 
         control = controls[0]
-        n_steps = int(control.duration / dt)
-        times = np.linspace(0, control.duration, n_steps + 1)
+        times = self._generate_simulation_times(control.duration, dt)
 
         static_hamiltonian = self.system.zero_matrix
         coupling_hamiltonian: list = []
@@ -818,6 +1011,7 @@ class QuantumSimulator:
     def create_simulation_model(
         self,
         controls: list[Control] | PulseSchedule,
+        *,
         initial_state: qt.Qobj | dict | None = None,
         dt: float | None = None,
     ) -> SimulationModel:
@@ -839,6 +1033,24 @@ class QuantumSimulator:
             times=params["times"],
             collapse_operators=params["collapse_operators"],
         )
+
+    @staticmethod
+    def _generate_simulation_times(
+        duration: float,
+        dt: float,
+    ) -> npt.NDArray:
+        times = np.arange(0, duration, dt)
+
+        # Handle potential floating point overshoot from arange
+        if len(times) > 0 and times[-1] > duration:
+            times = times[:-1]
+
+        if len(times) == 0 or not np.isclose(times[-1], duration, atol=1e-12):
+            times = np.append(times, duration)
+        else:
+            times[-1] = duration
+
+        return times
 
     @staticmethod
     def _convert_pulse_schedule_to_controls(
@@ -865,6 +1077,7 @@ class QuantumSimulator:
                     frequency=frequencies[label],
                     waveform=waveform,
                     durations=durations,
+                    final_frame_shift=pulse_schedule.get_final_frame_shift(label),
                 )
             )
         return controls

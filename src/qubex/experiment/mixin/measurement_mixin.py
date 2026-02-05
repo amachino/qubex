@@ -4920,3 +4920,88 @@ class MeasurementMixin(
                 "figure": fig,
             }
         )
+
+    def rzx_gate_property(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        angle_arr: np.ndarray = np.linspace(np.pi / 18, 4 * np.pi / 9, 8),
+        measurement_times: int = 10,
+    ) -> Result:
+        RAD_TO_DEG = 180 / np.pi
+
+        def cartesian_to_spherical(x, y, z):
+            r = np.sqrt(x**2 + y**2 + z**2)
+            theta = np.arctan2(y, x) * RAD_TO_DEG
+            phi = np.arccos(z / r) * RAD_TO_DEG if r != 0 else 0
+            return r, theta, phi
+
+        result_rzx_angle = []
+        for angle in tqdm(angle_arr, leave=False):
+            results = []
+            for _ in tqdm(range(measurement_times), leave=False):
+                result = self.state_tomography(
+                    self.rzx(
+                        control_qubit=control_qubit,
+                        target_qubit=target_qubit,
+                        angle=angle,
+                    )
+                )
+                x, y, z = result[target_qubit]
+                r, theta, phi = cartesian_to_spherical(x, y, z)
+                results.append([r, theta, phi])
+            result_array = np.array(results)
+            mean = np.mean(result_array[:, 2])
+            std = np.std(result_array[:, 2])
+            result_rzx_angle.append([angle, mean, std])
+
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(
+                x=np.array(result_rzx_angle).T[0] * RAD_TO_DEG,
+                y=np.array(result_rzx_angle).T[1],
+                marker=dict(color=COLORS[1]),
+                error_y=dict(
+                    type="data", array=np.array(result_rzx_angle).T[2], color=COLORS[1]
+                ),
+                name="Measured",
+            ),
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[0, 90],
+                y=[0, 90],
+                mode="lines",
+                line=dict(color=COLORS[0], dash="dash"),
+                name="Ideal",
+            )
+        )
+        fig.update_layout(
+            title=f"Sweep result : {control_qubit}-{target_qubit}",
+            xaxis=dict(
+                title="Angle (deg)",
+                range=(0, 90),
+                tickvals=angle_arr * RAD_TO_DEG,
+                dtick=5,
+                gridcolor="gray",
+                gridwidth=3,
+                griddash="dot",
+            ),
+            yaxis=dict(
+                title="Z Angle (deg)",
+                range=(0, 90),
+                tickvals=angle_arr * RAD_TO_DEG,
+                dtick=5,
+                gridcolor="gray",
+                gridwidth=3,
+                griddash="dot",
+            ),
+        )
+        fig.show()
+        return Result(
+            data={
+                "data": results,
+                "figure": fig,
+            }
+        )

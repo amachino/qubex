@@ -247,9 +247,10 @@ def find_longest_1d_chain(
     """
 
     # Basic validation and setup
-    assert weight_attr in {"fidelity", "duration"}, (
-        "weight_attr must be 'fidelity' or 'duration'"
-    )
+    assert weight_attr in {
+        "fidelity",
+        "duration",
+    }, "weight_attr must be 'fidelity' or 'duration'"
     # Treat connectivity as undirected even if G is DiGraph/MultiDiGraph.
     is_digraph = isinstance(G, (nx.DiGraph, nx.MultiDiGraph))
 

@@ -31,6 +31,7 @@ from ...pulse import (
     PulseSchedule,
     RampType,
     Rect,
+    VirtualZ,
     Waveform,
 )
 from ...style import COLORS
@@ -41,6 +42,7 @@ from ..experiment_constants import (
     DEFAULT_RABI_TIME_RANGE,
 )
 from ..experiment_result import (
+    SweepData,
     AmplRabiData,
     ExperimentResult,
     FreqRabiData,
@@ -389,6 +391,7 @@ class CharacterizationMixin(
 
         print(f"Targets : {targets}")
         subgroups = self.util.create_qubit_subgroups(targets)
+        figs = {}
         for idx, subgroup in enumerate(subgroups):
             if len(subgroup) == 0:
                 continue
@@ -458,6 +461,7 @@ class CharacterizationMixin(
                     height=400,
                     margin=dict(t=80),
                 )
+                figs[target] = fig
                 if plot:
                     fig.show()
 
@@ -497,6 +501,7 @@ class CharacterizationMixin(
                 "chevron_data": chevron_data,
                 "rabi_rates": rabi_rates,
                 "resonant_frequencies": resonant_frequencies,
+                "fig": figs,
             }
         )
 
@@ -722,13 +727,11 @@ class CharacterizationMixin(
             plot=False,
             verbose=verbose,
         )
+        fit_data = {
+            target: data.fit()["f_resonance"] for target, data in result.data.items()
+        }
 
         if plot:
-            fit_data = {
-                target: data.fit()["f_resonance"]
-                for target, data in result.data.items()
-            }
-
             print("\nResults\n-------")
             print("ef frequency (GHz):")
             for target, fit in fit_data.items():
@@ -936,6 +939,7 @@ class CharacterizationMixin(
         interval: float = DEFAULT_INTERVAL,
         plot: bool = True,
         save_image: bool = False,
+        xaxis_type: Literal["linear", "log"] = "log",
     ) -> ExperimentResult[T2Data]:
         if targets is None:
             targets = self.qubit_labels
@@ -1023,6 +1027,7 @@ class CharacterizationMixin(
                 shots=shots,
                 interval=interval,
                 plot=plot,
+                xaxis_type=xaxis_type,
             )
 
             for target, sweep_data in sweep_result.data.items():
@@ -1034,6 +1039,8 @@ class CharacterizationMixin(
                     title="T2 echo",
                     xlabel="Time (μs)",
                     ylabel="Normalized signal",
+                    xaxis_type=xaxis_type,
+                    yaxis_type="linear",
                 )
                 if fit_result["status"] == "success":
                     t2 = fit_result["tau"]
@@ -1190,6 +1197,537 @@ class CharacterizationMixin(
 
         return ExperimentResult(data=data)
 
+    def _simultaneous_measurement_coherence(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        time_range: ArrayLike | None = None,
+        detuning: float | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> dict[str, ExperimentResult]:
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if time_range is None:
+            time_range = np.arange(0, 50_001, 1000)
+
+        time_range = self.util.discretize_time_range(
+            time_range=np.asarray(time_range),
+            sampling_period=2 * SAMPLING_PERIOD,
+        )
+
+        if detuning is None:
+            detuning = 0.001
+
+        self.validate_rabi_params(targets)
+
+        modes = ("T1", "T2", "Ramsey")
+
+        signals: dict[str, defaultdict[str, list[float]]] = {
+            mode: defaultdict(list) for mode in modes
+        }
+
+        data_t1: dict[str, T1Data] = {}
+        data_t2: dict[str, T2Data] = {}
+        data_ramsey: dict[str, RamseyData] = {}
+
+        x90_pulses = {target: self.get_hpi_pulse(target) for target in targets}
+
+        def t1_sequence(target, T: int) -> PulseSchedule:
+            with PulseSchedule([target]) as ps:
+                ps.add(target, x90_pulses[target].repeated(2))
+                ps.add(target, Blank(T))
+            return ps
+
+        def t2_sequence(target, T: int) -> PulseSchedule:
+            half_T = T // 2
+            with PulseSchedule([target]) as ps:
+                ps.add(target, x90_pulses[target])
+                ps.add(target, Blank(half_T))
+                ps.add(target, x90_pulses[target].repeated(2).shifted(np.pi / 2))
+                ps.add(target, Blank(half_T))
+                ps.add(target, x90_pulses[target].scaled(-1))
+            return ps
+
+        def ramsey_sequence(target, T: int) -> PulseSchedule:
+            with PulseSchedule([target]) as ps:
+                x90 = x90_pulses[target]
+                ps.add(target, x90)
+                ps.add(target, Blank(T))
+                if second_rotation_axis == "X":
+                    ps.add(target, x90.shifted(np.pi))
+                else:
+                    ps.add(target, x90.shifted(-np.pi / 2))
+            return ps
+
+        for target in targets:
+            for T in time_range:
+                t1_schedules = t1_sequence(target, T)
+                t2_schedules = t2_sequence(target, T)
+                ramsey_schedules = ramsey_sequence(target, T)
+
+                detuned_frequencies = {
+                    target: self.qubits[target].frequency + detuning
+                    for target in targets
+                }
+                measurements = {
+                    "T1": self.measure(
+                        sequence=t1_schedules,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    ),
+                    "T2": self.measure(
+                        sequence=t2_schedules,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    ),
+                    "Ramsey": self.measure(
+                        sequence=ramsey_schedules,
+                        frequencies=detuned_frequencies,
+                        shots=shots,
+                        interval=interval,
+                        plot=False,
+                    ),
+                }
+                for mode in modes:
+                    for measured_target, data in measurements[mode].data.items():
+                        signals[mode][measured_target].append(data.kerneled)
+
+        sweep_data: dict[str, dict[str, SweepData]] = {
+            mode: {
+                target: SweepData(
+                    target=target,
+                    data=np.asarray(values),
+                    sweep_range=time_range,
+                    rabi_param=self.rabi_params.get(target),
+                    state_centers=self.state_centers.get(target),
+                    title="Sweep result",
+                    xlabel="Sweep value",
+                    ylabel="Measured value",
+                    xaxis_type="linear",
+                    yaxis_type="linear",
+                )
+                for target, values in signals[mode].items()
+            }
+            for mode in modes
+        }
+
+        for target, sweep_result in sweep_data["T1"].items():
+            fit_result_t1 = fitting.fit_exp_decay(
+                target=target,
+                x=sweep_result.sweep_range,
+                y=0.5 * (1 - sweep_result.normalized),
+                plot=plot,
+                title="T1",
+                xlabel="Time (μs)",
+                ylabel="Normalized signal",
+                xaxis_type="linear",
+            )
+            if fit_result_t1["status"] == "success":
+                t1 = fit_result_t1["tau"]
+                t1_err = fit_result_t1["tau_err"]
+                r2 = fit_result_t1["r2"]
+
+                t1_data = T1Data.new(
+                    sweep_result,
+                    t1=t1,
+                    t1_err=t1_err,
+                    r2=r2,
+                )
+                data_t1[target] = t1_data
+
+                fig = fit_result_t1["fig"]
+
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"t1_{target}",
+                    )
+
+        for target, sweep_result in sweep_data["T2"].items():
+            fit_result_t2 = fitting.fit_exp_decay(
+                target=target,
+                x=sweep_result.sweep_range,
+                y=0.5 * (1 + sweep_result.normalized),
+                plot=plot,
+                title="T2 echo",
+                xlabel="Time (μs)",
+                ylabel="Normalized signal",
+                xaxis_type="linear",
+            )
+            if fit_result_t2["status"] == "success":
+                t2 = fit_result_t2["tau"]
+                t2_err = fit_result_t2["tau_err"]
+                r2 = fit_result_t2["r2"]
+
+                t2_data = T2Data.new(
+                    sweep_result,
+                    t2=t2,
+                    t2_err=t2_err,
+                    r2=r2,
+                )
+                data_t2[target] = t2_data
+
+                fig = fit_result_t2["fig"]
+
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"t2_echo_{target}",
+                    )
+
+        for target, sweep_result in sweep_data["Ramsey"].items():
+            fit_result_ramsey = fitting.fit_ramsey(
+                target=target,
+                times=sweep_result.sweep_range,
+                data=sweep_result.normalized,
+                amplitude_est=1.0,
+                offset_est=0.0,
+                plot=plot,
+            )
+            if fit_result_ramsey["status"] == "success":
+                f = self.qubits[target].frequency
+                t2 = fit_result_ramsey["tau"]
+                ramsey_freq = fit_result_ramsey["f"]
+                phi = fit_result_ramsey["phi"]
+                if second_rotation_axis == "Y":
+                    if phi > 0:
+                        bare_freq = f + detuning + ramsey_freq
+                    else:
+                        bare_freq = f + detuning - ramsey_freq
+                else:
+                    bare_freq = f + detuning - ramsey_freq
+                r2 = fit_result_ramsey["r2"]
+                ramsey_data = RamseyData.new(
+                    sweep_result,
+                    t2=t2,
+                    ramsey_freq=ramsey_freq,
+                    bare_freq=bare_freq,
+                    r2=r2,
+                )
+                data_ramsey[target] = ramsey_data
+
+                fig = fit_result_ramsey["fig"]
+
+                if save_image:
+                    viz.save_figure_image(
+                        fig,
+                        name=f"ramsey_{target}",
+                    )
+
+        exp_t1 = ExperimentResult(data=data_t1)
+        exp_t2 = ExperimentResult(data=data_t2)
+        exp_ramsey = ExperimentResult(data=data_ramsey)
+
+        return {
+            "T1": exp_t1,
+            "T2": exp_t2,
+            "Ramsey": exp_ramsey,
+        }
+
+    def _stark_t1_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        stark_detuning: float | dict[str, float] | None = None,
+        stark_amplitude: float | dict[str, float] | None = None,
+        stark_ramptime: float | dict[str, float] | None = None,
+        time_range: ArrayLike | None = None,
+        shots: int = DEFAULT_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        plot: bool = True,
+        save_image: bool = False,
+        xaxis_type: Literal["linear", "log"] = "log",
+    ) -> ExperimentResult[T1Data]:
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if stark_detuning is None:
+            stark_detuning = {target: 0.15 for target in targets}
+        elif isinstance(stark_detuning, float):
+            detuning = stark_detuning
+            if abs(detuning) > 0.2:
+                raise ValueError(
+                    "Detuning of a stark tone must not exceed 0.2 GHz: the guard-banded AWG baseband limit."
+                )
+            stark_detuning = {target: detuning for target in targets}
+        else:
+            for target in targets:
+                detuning = stark_detuning[target]
+                if abs(detuning) > 0.2:
+                    raise ValueError(
+                        "Detuning of a stark tone must not exceed 0.2 GHz: the guard-banded AWG baseband limit."
+                    )
+
+        if stark_amplitude is None:
+            stark_amplitude = {target: 0.1 for target in targets}
+        elif isinstance(stark_amplitude, float):
+            stark_amplitude = {target: stark_amplitude for target in targets}
+
+        if stark_ramptime is None:
+            stark_ramptime = {target: 10 for target in targets}
+        elif isinstance(stark_ramptime, float):
+            stark_ramptime = {target: stark_ramptime for target in targets}
+
+        self.validate_rabi_params(targets)
+
+        if time_range is None:
+            time_range = np.logspace(
+                np.log10(100),
+                np.log10(200 * 1000),
+                51,
+            )
+        time_range = self.util.discretize_time_range(np.asarray(time_range))
+
+        data: dict[str, T1Data] = {}
+
+        for target in targets:
+            power = self.calc_control_amplitude(
+                target=target, rabi_rate=stark_amplitude[target]
+            )
+            if power > 1:
+                raise ValueError("Drive amplitude of a stark tone must not exceed 1")
+            ramptime = stark_ramptime[target]
+            detuning = stark_detuning[target]
+
+            def stark_t1_sequence(T: int) -> PulseSchedule:
+                with PulseSchedule([target]) as ps:
+                    ps.add(target, self.get_hpi_pulse(target).repeated(2))
+                    ps.add(
+                        target,
+                        FlatTop(
+                            duration=T + ramptime * 2,
+                            amplitude=power,
+                            tau=ramptime,
+                        ).detuned(detuning=detuning),
+                    )
+                return ps
+
+            sweep_result = self.sweep_parameter(
+                sequence=stark_t1_sequence,
+                sweep_range=time_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+                title="Stark-driven T1 decay",
+                xlabel="Time (μs)",
+                ylabel="Measured value",
+                xaxis_type=xaxis_type,
+            )
+
+            for qubit, sweep_data in sweep_result.data.items():
+                fit_result = fitting.fit_exp_decay(
+                    target=qubit,
+                    x=sweep_data.sweep_range,
+                    y=0.5 * (1 - sweep_data.normalized),
+                    plot=plot,
+                    title="Stark-driven T1",
+                    xlabel="Time (μs)",
+                    ylabel="Normalized signal",
+                    xaxis_type=xaxis_type,
+                    yaxis_type="linear",
+                )
+                if fit_result["status"] == "success":
+                    t1 = fit_result["tau"]
+                    t1_err = fit_result["tau_err"]
+                    r2 = fit_result["r2"]
+
+                    t1_data = T1Data.new(
+                        sweep_data,
+                        t1=t1,
+                        t1_err=t1_err,
+                        r2=r2,
+                    )
+                    data[qubit] = t1_data
+
+                    fig = fit_result["fig"]
+
+                    if save_image:
+                        viz.save_figure_image(
+                            fig,
+                            name=f"t1_{qubit}",
+                        )
+
+        return ExperimentResult(data=data)
+
+    def _stark_ramsey_experiment(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        stark_detuning: float | dict[str, float] | None = None,
+        stark_amplitude: float | dict[str, float] | None = None,
+        stark_ramptime: float | dict[str, float] | None = None,
+        time_range: ArrayLike | None = None,
+        second_rotation_axis: Literal["X", "Y"] = "Y",
+        shots: int = CALIBRATION_SHOTS,
+        interval: float = DEFAULT_INTERVAL,
+        envelope_region: Literal["full", "flat"] = "full",
+        plot: bool = True,
+        save_image: bool = False,
+    ) -> ExperimentResult[RamseyData]:
+        if targets is None:
+            targets = self.qubit_labels
+        elif isinstance(targets, str):
+            targets = [targets]
+        else:
+            targets = list(targets)
+
+        if stark_detuning is None:
+            stark_detuning = {target: 0.15 for target in targets}
+        elif isinstance(stark_detuning, float):
+            detuning = stark_detuning
+            if abs(detuning) > 0.2:
+                raise ValueError(
+                    "Detuning of a stark tone must not exceed 0.2 GHz: the guard-banded AWG baseband limit."
+                )
+            stark_detuning = {target: detuning for target in targets}
+        else:
+            for target in targets:
+                detuning = stark_detuning[target]
+                if abs(detuning) > 0.2:
+                    raise ValueError(
+                        "Detuning of a stark tone must not exceed 0.2 GHz: the guard-banded AWG baseband limit."
+                    )
+
+        if stark_amplitude is None:
+            stark_amplitude = {target: 0.1 for target in targets}
+        elif isinstance(stark_amplitude, float):
+            stark_amplitude = {target: stark_amplitude for target in targets}
+
+        if stark_ramptime is None:
+            stark_ramptime = {target: 10 for target in targets}
+        elif isinstance(stark_ramptime, float):
+            stark_ramptime = {target: stark_ramptime for target in targets}
+
+        if time_range is None:
+            time_range = np.arange(0, 401, 4)
+        else:
+            time_range = self.util.discretize_time_range(time_range)
+
+        self.validate_rabi_params(targets)
+
+        data: dict[str, RamseyData] = {}
+
+        for target in targets:
+            power = self.calc_control_amplitude(
+                target=target, rabi_rate=stark_amplitude[target]
+            )
+            if power > 1:
+                raise ValueError("Drive amplitude of a stark tone must not exceed 1")
+            ramptime = stark_ramptime[target]
+            detuning = stark_detuning[target]
+
+            def stark_ramsey_sequence(T: int) -> PulseSchedule:
+                x90 = self.get_hpi_pulse(target=target)
+                with PulseSchedule([target]) as ps:
+                    ps.add(target, x90)
+                    if envelope_region == "full":
+                        ps.add(
+                            target,
+                            FlatTop(
+                                duration=T + ramptime * 2,
+                                amplitude=power,
+                                tau=ramptime,
+                            ).detuned(detuning=detuning),
+                        )
+                        if second_rotation_axis == "X":
+                            ps.add(target, x90.shifted(np.pi))
+                        else:
+                            ps.add(target, x90.shifted(-np.pi / 2))
+                    else:
+                        ps.add(
+                            target,
+                            FlatTop(
+                                duration=ramptime * 2,
+                                amplitude=power,
+                                tau=ramptime,
+                            ).detuned(detuning=detuning),
+                        )
+                        ps.add(target, x90.repeated(2))
+                        ps.add(
+                            target,
+                            FlatTop(
+                                duration=T + ramptime * 2,
+                                amplitude=power,
+                                tau=ramptime,
+                            ).detuned(detuning=detuning),
+                        )
+                        if second_rotation_axis == "X":
+                            ps.add(target, VirtualZ(theta=-np.pi))
+                            ps.add(target, x90)
+                        else:
+                            ps.add(target, VirtualZ(theta=np.pi / 2))
+                            ps.add(target, x90)
+                return ps
+
+            sweep_result = self.sweep_parameter(
+                sequence=stark_ramsey_sequence,
+                sweep_range=time_range,
+                shots=shots,
+                interval=interval,
+                plot=plot,
+            )
+
+            for qubit, sweep_data in sweep_result.data.items():
+                fit_result = fitting.fit_ramsey(
+                    target=qubit,
+                    times=sweep_data.sweep_range,
+                    data=sweep_data.normalized,
+                    title="Stark-driven Ramsey fringe",
+                    amplitude_est=1.0,
+                    offset_est=0.0,
+                    plot=plot,
+                )
+                if fit_result["status"] == "success":
+                    f = self.qubits[qubit].frequency
+                    t2 = fit_result["tau"]
+                    ramsey_freq = fit_result["f"]
+                    if stark_detuning[qubit] > 0:
+                        dressed_freq = f - ramsey_freq
+                    else:
+                        dressed_freq = f + ramsey_freq
+
+                    r2 = fit_result["r2"]
+                    ramsey_data = RamseyData.new(
+                        sweep_data=sweep_data,
+                        t2=t2,
+                        ramsey_freq=ramsey_freq,
+                        bare_freq=dressed_freq,
+                        r2=r2,
+                    )
+                    data[qubit] = ramsey_data
+
+                    sign = 1 if stark_detuning[qubit] > 0 else -1
+                    ac_stark_shift = sign * ramsey_data.ramsey_freq
+
+                    print("AC stark shift :")
+                    print(f"{qubit}: {ac_stark_shift:.6f}")
+                    print("")
+
+                    fig = fit_result["fig"]
+
+                    if save_image:
+                        viz.save_figure_image(
+                            fig,
+                            name=f"stark_ramsey_{qubit}",
+                        )
+
+        return ExperimentResult(data=data)
+
     def obtain_effective_control_frequency(
         self,
         targets: Collection[str] | str | None = None,
@@ -1266,6 +1804,7 @@ class CharacterizationMixin(
         second_rotation_axis: Literal["X", "Y"] = "Y",
         shots: int = DEFAULT_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        rotation_frequency: float = 0.0002,
         plot: bool = True,
     ) -> Result:
         if time_range is None:
@@ -1291,6 +1830,10 @@ class CharacterizationMixin(
                 spectator_qubit: x180,
             }
 
+        # Raise an error when rotation_frequency is negative
+        if rotation_frequency < 0:
+            raise ValueError("rotation_frequency must be non-negative.")
+
         def jazz_sequence(tau: float) -> PulseSchedule:
             with PulseSchedule([target_qubit, spectator_qubit]) as ps:
                 ps.add(target_qubit, x90[target_qubit])
@@ -1300,9 +1843,19 @@ class CharacterizationMixin(
                 ps.add(spectator_qubit, x180[spectator_qubit])
                 ps.add(target_qubit, Blank(tau))
                 if second_rotation_axis == "X":
-                    ps.add(target_qubit, x90[target_qubit].shifted(np.pi))
+                    ps.add(
+                        target_qubit,
+                        x90[target_qubit].shifted(
+                            np.pi - rotation_frequency * 2 * tau * 2 * np.pi
+                        ),
+                    )
                 else:
-                    ps.add(target_qubit, x90[target_qubit].shifted(-np.pi / 2))
+                    ps.add(
+                        target_qubit,
+                        x90[target_qubit].shifted(
+                            -np.pi / 2 - rotation_frequency * 2 * tau * 2 * np.pi
+                        ),
+                    )
             return ps
 
         time_range = np.asarray(time_range)
@@ -1334,7 +1887,7 @@ class CharacterizationMixin(
         if fit_result["status"] != "success":
             raise RuntimeError("Fitting failed in JAZZ experiment.")
 
-        xi = fit_result["f"] * 1e-3
+        xi = fit_result["f"] * 1e-3 - rotation_frequency
         zeta = 2 * xi
 
         print(f"ξ: {xi * 1e6:.2f} kHz")
@@ -1359,6 +1912,7 @@ class CharacterizationMixin(
         second_rotation_axis: Literal["X", "Y"] = "Y",
         shots: int = CALIBRATION_SHOTS,
         interval: float = DEFAULT_INTERVAL,
+        rotation_frequency: float = 0.0002,
         plot: bool = True,
     ) -> Result:
         qubit_1 = target_qubit
@@ -1373,11 +1927,11 @@ class CharacterizationMixin(
             second_rotation_axis=second_rotation_axis,
             shots=shots,
             interval=interval,
+            rotation_frequency=rotation_frequency,
             plot=plot,
         )
 
         xi = result["xi"]
-        zeta = result["zeta"]
 
         f_1 = self.qubits[qubit_1].frequency
         f_2 = self.qubits[qubit_2].frequency
@@ -1389,8 +1943,8 @@ class CharacterizationMixin(
 
         g = np.sqrt(np.abs((xi * (Delta_12 + a_1) * (Delta_12 - a_2)) / (a_1 + a_2)))
 
-        print(f"frequency_1: {f_1:.2f} GHz")
-        print(f"frequency_2: {f_2:.2f} GHz")
+        print(f"frequency_1: {f_1:.5f} GHz")
+        print(f"frequency_2: {f_2:.5f} GHz")
         print(f"Delta_12: {Delta_12 * 1e3:.2f} MHz")
         print(f"anharmonicity_1: {a_1 * 1e3:.2f} MHz")
         print(f"anharmonicity_2: {a_2 * 1e3:.2f} MHz")
@@ -1398,9 +1952,8 @@ class CharacterizationMixin(
 
         return Result(
             data={
-                "xi": xi,
-                "zeta": zeta,
                 "g": g,
+                **result.data,
             }
         )
 
@@ -1567,7 +2120,7 @@ class CharacterizationMixin(
         frequency_range = np.arange(f_start, f_start + df * n_samples, df)
 
         def _execute():
-            self.reset_awg_and_capunits(qubits=[qubit_label])
+            self.reset_awg_and_capunits(box_ids=[read_box.id])
             phases = []
             for freq in frequency_range:
                 with self.modified_frequencies({read_label: freq}):
@@ -1730,7 +2283,7 @@ class CharacterizationMixin(
             cnco_center = CNCO_CETNER_READ
 
         for subrange in subranges:
-            self.reset_awg_and_capunits(qubits=[qubit_label])
+            self.reset_awg_and_capunits(box_ids=[read_box.id])
 
             f_center = (subrange[0] + subrange[-1]) / 2
             lo, cnco, _ = MixingUtil.calc_lo_cnco(

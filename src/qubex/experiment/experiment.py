@@ -169,12 +169,14 @@ class Experiment(
         classifier_dir: Path | str = CLASSIFIER_DIR,
         classifier_type: Literal["kmeans", "gmm"] = "gmm",
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        mock_mode: bool = False,
     ):
         self._load_config(
             chip_id=chip_id,
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            mock_mode=mock_mode,
         )
         qubits = self._create_qubit_labels(
             muxes=muxes,
@@ -224,6 +226,7 @@ class Experiment(
         config_dir: Path | str | None,
         params_dir: Path | str | None,
         configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
+        mock_mode: bool = False,
     ):
         """Load the configuration files."""
         self.system_manager.load(
@@ -231,6 +234,7 @@ class Experiment(
             config_dir=config_dir,
             params_dir=params_dir,
             configuration_mode=configuration_mode,
+            mock_mode=mock_mode,
         )
 
     def _create_qubit_labels(
@@ -615,11 +619,13 @@ class Experiment(
 
     @property
     def rabi_params(self) -> dict[str, RabiParam]:
-        params = {}
-        for target in self.ge_targets | self.ef_targets:
-            param = self.get_rabi_param(target)
+        params: dict[str, RabiParam] = {}
+        for label, target in self.targets.items():
+            if not (target.is_ge or target.is_ef):
+                continue
+            param = self.get_rabi_param(label)
             if param is not None:
-                params[target] = param
+                params[label] = param
         return params
 
     @property
@@ -1626,7 +1632,7 @@ class Experiment(
     ) -> float:
         qubit = Target.qubit_label(target)
         if rabi_amplitude_ratio is None:
-            rabi_param = self.rabi_params.get(target)
+            rabi_param = self.get_rabi_param(target)
             if self.targets[target].type == TargetType.CTRL_EF:
                 default_amplitude = self.params.get_ef_control_amplitude(qubit)
             else:
