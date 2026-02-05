@@ -10,7 +10,8 @@ from contextlib import contextmanager
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from qubex.backend import SAMPLING_PERIOD, SystemManager
+from qubex.backend import SystemManager
+from qubex.backend.quel1 import SAMPLING_PERIOD
 
 
 class ExperimentUtil:

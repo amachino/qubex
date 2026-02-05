@@ -23,7 +23,6 @@ from qubex.backend import (
     ConfigLoader,
     ControlParams,
     ControlSystem,
-    DeviceController,
     ExperimentSystem,
     MixingUtil,
     QuantumSystem,
@@ -33,6 +32,7 @@ from qubex.backend import (
     Target,
     TargetType,
 )
+from qubex.backend.quel1 import DeviceController
 from qubex.measurement import (
     MeasurementClient,
     StateClassifier,

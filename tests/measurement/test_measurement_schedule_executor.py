@@ -9,9 +9,8 @@ import numpy as np
 from qubex.backend import (
     BackendExecutionRequest,
     BackendExecutor,
-    DeviceController,
-    RawResult,
 )
+from qubex.backend.quel1 import DeviceController, RawResult
 from qubex.measurement.measurement_backend_adapter import MeasurementBackendAdapter
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_result_factory import MeasurementResultFactory

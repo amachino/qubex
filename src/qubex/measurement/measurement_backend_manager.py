@@ -11,11 +11,11 @@ from typing import Literal
 
 from qubex.backend import (
     ConfigLoader,
-    DeviceController,
     ExperimentSystem,
     Mux,
     SystemManager,
 )
+from qubex.backend.quel1 import DeviceController
 
 logger = logging.getLogger(__name__)
 

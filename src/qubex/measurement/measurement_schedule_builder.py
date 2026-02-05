@@ -6,14 +6,16 @@ import math
 from collections.abc import Mapping
 
 from qubex.backend import (
+    ControlParams,
+    Mux,
+    Target,
+)
+from qubex.backend.quel1 import (
     BLOCK_DURATION,
     EXTRA_CAPTURE_DURATION,
     EXTRA_SUM_SECTION_LENGTH,
     SAMPLING_PERIOD,
     WORD_DURATION,
-    ControlParams,
-    Mux,
-    Target,
 )
 from qubex.pulse import PulseSchedule, RampType
 

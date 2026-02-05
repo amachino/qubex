@@ -16,6 +16,7 @@ from .quel1_backend_controller import (
     Quel1BackendController,
     RawResult,
 )
+from .quel1_backend_executor import Quel1BackendExecutor, Quel1ExecutionPayload
 from .quel1_sequencer import Quel1Sequencer, SequencerMod
 
 __all__ = [
@@ -30,6 +31,8 @@ __all__ = [
     "WORD_LENGTH",
     "DeviceController",  # TODO: Remove this alias in future versions.
     "Quel1BackendController",
+    "Quel1BackendExecutor",
+    "Quel1ExecutionPayload",
     "Quel1Sequencer",
     "RawResult",
     "SequencerMod",  # TODO: Remove this alias in future versions.

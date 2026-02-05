@@ -19,12 +19,13 @@ from typing_extensions import deprecated
 
 from qubex.analysis import fitting
 from qubex.analysis import visualization as viz
-from qubex.backend import SAMPLING_PERIOD, BoxType, MixingUtil, Target
+from qubex.backend import BoxType, MixingUtil, Target
 from qubex.backend.experiment_system import (
     CNCO_CENTER_CTRL,
     CNCO_CETNER_READ,
     CNCO_CETNER_READ_R8,
 )
+from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_RABI_FREQUENCY,

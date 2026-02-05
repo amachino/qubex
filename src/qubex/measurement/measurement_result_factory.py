@@ -6,7 +6,8 @@ from collections import defaultdict
 
 import numpy as np
 
-from qubex.backend import ExperimentSystem, RawResult
+from qubex.backend import ExperimentSystem
+from qubex.backend.quel1 import RawResult
 
 from .models.measurement_config import MeasurementConfig
 from .models.measurement_result import MeasurementResult

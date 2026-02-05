@@ -13,7 +13,8 @@ from plotly.subplots import make_subplots
 
 from qubex.analysis import FitResult, fitting, util
 from qubex.analysis import visualization as viz
-from qubex.backend import SAMPLING_PERIOD, Target
+from qubex.backend import Target
+from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_CR_RAMPTIME,

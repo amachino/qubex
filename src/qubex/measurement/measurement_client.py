@@ -15,13 +15,13 @@ import numpy.typing as npt
 from qubex.backend import (
     ConfigLoader,
     ControlParams,
-    DeviceController,
     ExperimentSystem,
     Mux,
     SystemManager,
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
+from qubex.backend.quel1 import DeviceController
 from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (

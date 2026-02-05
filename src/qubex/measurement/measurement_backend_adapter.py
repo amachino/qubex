@@ -8,16 +8,18 @@ from typing import Any, Protocol
 import numpy as np
 
 from qubex.backend import (
+    BackendExecutionRequest,
+    ExperimentSystem,
+    Target,
+)
+from qubex.backend.quel1 import (
     BLOCK_DURATION,
     EXTRA_SUM_SECTION_LENGTH,
     SAMPLING_PERIOD,
     WORD_DURATION,
     WORD_LENGTH,
-    BackendExecutionRequest,
     DeviceController,
-    ExperimentSystem,
     Quel1ExecutionPayload,
-    Target,
 )
 from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig

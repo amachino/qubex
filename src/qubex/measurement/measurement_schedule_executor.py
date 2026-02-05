@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from qubex.backend import (
     BackendExecutor,
-    DeviceController,
     ExperimentSystem,
-    Quel1BackendExecutor,
 )
+from qubex.backend.quel1 import DeviceController, Quel1BackendExecutor
 
 from .measurement_backend_adapter import (
     MeasurementBackendAdapter,

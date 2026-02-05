@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from qubex.backend import SAMPLING_PERIOD
+from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.measurement.measurement_backend_adapter import QuelMeasurementBackendAdapter
 from qubex.measurement.measurement_schedule_builder import (
     BLOCK_DURATION,

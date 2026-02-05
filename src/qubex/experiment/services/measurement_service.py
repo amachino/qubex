@@ -26,7 +26,8 @@ from qubex.analysis.state_tomography import (
     mle_fit_density_matrix,
     plot_ghz_state_tomography,
 )
-from qubex.backend import SAMPLING_PERIOD, Target
+from qubex.backend import Target
+from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
