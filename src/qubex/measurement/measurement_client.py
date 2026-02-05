@@ -578,8 +578,6 @@ class MeasurementClient:
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
-        save_result: bool = True,
-        save_path: str | Path | None = None,
     ) -> MeasureResult:
         """
         Measure with the given control waveforms.
@@ -613,13 +611,6 @@ class MeasurementClient:
             The readout ramp type.
         add_pump_pulses : bool, optional
             Whether to add pump pulses, by default False.
-        save_result : bool, optional
-            Whether to persist canonical result, by default True.
-        save_path : str | Path | None, optional
-            Save destination for canonical result. If None, use configured
-            rawdata directory. If a directory path is given, save with an
-            auto-generated file name. If a `.nc` path is given, save to that
-            file.
 
         Returns
         -------
@@ -653,8 +644,6 @@ class MeasurementClient:
             line_param0=line_param0,
             line_param1=line_param1,
             plot=plot,
-            save_result=save_result,
-            save_path=save_path,
         )
         data = {target: measures[0] for target, measures in result.data.items()}
         return MeasureResult(
@@ -686,7 +675,6 @@ class MeasurementClient:
         line_param1: tuple[float, float, float] | None = None,
         plot: bool = False,
         save_result: bool = True,
-        save_path: str | Path | None = None,
     ) -> MultipleMeasureResult:
         """
         Measure with the given control waveforms.
@@ -727,13 +715,6 @@ class MeasurementClient:
             Whether to enable DSP classification, by default False.
         plot : bool, optional
             Whether to plot the results, by default False.
-        save_result : bool, optional
-            Whether to persist canonical result, by default True.
-        save_path : str | Path | None, optional
-            Save destination for canonical result. If None, use configured
-            rawdata directory. If a directory path is given, save with an
-            auto-generated file name. If a `.nc` path is given, save to that
-            file.
 
         Returns
         -------
@@ -772,42 +753,76 @@ class MeasurementClient:
             schedule=measurement_schedule,
             config=run_config,
         )
-        self._save_measurement_result(
-            result=result,
-            save_result=save_result,
-            save_path=save_path,
-        )
+
+        rawdata_dir = self.system_manager.rawdata_dir
+        if rawdata_dir is not None:
+            result.save(rawdata_dir)
+
         return MeasurementResultConverter.to_multiple_measure_result(
             result,
             config=self.device_controller.box_config,
             classifiers=self.classifiers,
         )
 
-    def _save_measurement_result(
+    def create_measurement_config(
         self,
         *,
-        result: MeasurementResult,
-        save_result: bool,
-        save_path: str | Path | None,
-    ) -> None:
-        """Persist result according to `save_path` policy."""
-        if not save_result:
-            return
-        if save_path is None:
-            rawdata_dir = self.system_manager.rawdata_dir
-            if rawdata_dir is not None:
-                result.save(data_dir=rawdata_dir)
-            return
+        mode: MeasurementMode = "avg",
+        shots: int | None = None,
+        interval: float | None = None,
+        frequencies: dict[str, float] | None = None,
+        enable_dsp_demodulation: bool | None = None,
+        enable_dsp_sum: bool | None = None,
+        enable_dsp_classification: bool | None = None,
+        line_param0: tuple[float, float, float] | None = None,
+        line_param1: tuple[float, float, float] | None = None,
+    ) -> MeasurementConfig:
+        """
+        Create a `MeasurementConfig` from optional runtime overrides.
 
-        path = Path(save_path)
-        if path.suffix == ".nc":
-            result.save(data_dir=path.parent, file_name=path.name)
-            return
-        result.save(data_dir=path)
+        Parameters
+        ----------
+        mode : MeasurementMode, optional
+            The measurement mode, by default "avg".
+        shots : int | None, optional
+            The number of shots, by default None.
+        interval : float | None, optional
+            The interval in ns, by default None.
+        frequencies : dict[str, float] | None, optional
+            The target frequencies in Hz, by default None.
+        enable_dsp_demodulation : bool | None, optional
+            Whether to enable DSP demodulation, by default None.
+        enable_dsp_sum : bool | None, optional
+            Whether to enable DSP summation, by default None.
+        enable_dsp_classification : bool | None, optional
+            Whether to enable DSP classification, by default None.
+        line_param0 : tuple[float, float, float] | None, optional
+            The DSP line parameter 0, by default None.
+        line_param1 : tuple[float, float, float] | None, optional
+            The DSP line parameter 1, by default None.
+
+        Returns
+        -------
+        MeasurementConfig
+            The created measurement configuration.
+        """
+        measurement_config = self.measurement_config_factory.create(
+            mode=mode,
+            shots=shots,
+            interval=interval,
+            frequencies=frequencies,
+            enable_dsp_demodulation=enable_dsp_demodulation,
+            enable_dsp_sum=enable_dsp_sum,
+            enable_dsp_classification=enable_dsp_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+        )
+        return measurement_config
 
     def build_measurement_schedule(
         self,
         pulse_schedule: PulseSchedule,
+        *,
         readout_amplitudes: dict[str, float] | None = None,
         readout_duration: float | None = None,
         readout_pre_margin: float | None = None,
@@ -820,7 +835,7 @@ class MeasurementClient:
         plot: bool = False,
     ) -> MeasurementSchedule:
         """Build a `MeasurementSchedule` from a pulse schedule and options."""
-        built_schedule = self.schedule_builder.build(
+        measurement_schedule = self.schedule_builder.build(
             schedule=pulse_schedule,
             readout_amplitudes=readout_amplitudes,
             readout_duration=readout_duration,
@@ -833,4 +848,4 @@ class MeasurementClient:
             add_pump_pulses=add_pump_pulses,
             plot=plot,
         )
-        return built_schedule
+        return measurement_schedule
