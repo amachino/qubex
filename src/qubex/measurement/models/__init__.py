@@ -8,13 +8,18 @@ from .measure_result import (
     MeasureResult,
     MultipleMeasureResult,
 )
-from .measurement_config import DspConfig, MeasurementConfig, ReadoutConfig
+from .measurement_config import (
+    DspConfig,
+    FrequencyConfig,
+    MeasurementConfig,
+)
 from .measurement_record import MeasurementRecord
 from .measurement_result import MeasurementResult
 from .measurement_schedule import MeasurementSchedule
 
 __all__ = [
     "DspConfig",
+    "FrequencyConfig",
     "MeasureData",
     "MeasureMode",
     "MeasureResult",
@@ -23,5 +28,4 @@ __all__ = [
     "MeasurementResult",
     "MeasurementSchedule",
     "MultipleMeasureResult",
-    "ReadoutConfig",
 ]

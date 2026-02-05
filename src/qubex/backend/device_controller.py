@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Literal
 
 from typing_extensions import deprecated
 
@@ -42,9 +42,6 @@ try:
     from quel_ic_config import Quel1Box
 except ImportError as e:
     logger.info(e)
-
-
-SAMPLING_PERIOD: Final[float] = 2.0  # ns
 
 
 @dataclass

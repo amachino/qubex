@@ -11,9 +11,9 @@ from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.models import (
     DspConfig,
+    FrequencyConfig,
     MeasurementConfig,
     MeasurementSchedule,
-    ReadoutConfig,
 )
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
@@ -30,15 +30,7 @@ def _make_config() -> MeasurementConfig:
         mode="avg",
         shots=2,
         interval=100.0,
-        readout=ReadoutConfig(
-            readout_amplitudes={},
-            readout_duration=384.0,
-            readout_pre_margin=32.0,
-            readout_post_margin=128.0,
-            readout_ramptime=32.0,
-            readout_drag_coeff=0.0,
-            readout_ramp_type="RaisedCosine",
-        ),
+        frequency=FrequencyConfig(frequencies={}),
         dsp=DspConfig(
             enable_dsp_demodulation=True,
             enable_dsp_sum=False,

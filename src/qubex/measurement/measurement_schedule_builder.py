@@ -4,30 +4,22 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import Final
 
-from qubex.backend import SAMPLING_PERIOD as _SAMPLING_PERIOD
-from qubex.backend import ControlParams, Mux, Target
+from qubex.backend import (
+    BLOCK_DURATION,
+    EXTRA_CAPTURE_DURATION,
+    EXTRA_SUM_SECTION_LENGTH,
+    SAMPLING_PERIOD,
+    WORD_DURATION,
+    ControlParams,
+    Mux,
+    Target,
+)
 from qubex.pulse import PulseSchedule, RampType
 
-from .measurement_defaults import (
-    DEFAULT_READOUT_DURATION,
-    DEFAULT_READOUT_POST_MARGIN,
-    DEFAULT_READOUT_PRE_MARGIN,
-)
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .models.capture_schedule import Capture, CaptureSchedule
 from .models.measurement_schedule import MeasurementSchedule
-
-WORD_LENGTH: Final = 4  # samples
-WORD_DURATION: Final = WORD_LENGTH * _SAMPLING_PERIOD  # ns
-BLOCK_LENGTH: Final = WORD_LENGTH * 16  # samples
-BLOCK_DURATION: Final = BLOCK_LENGTH * _SAMPLING_PERIOD  # ns
-
-EXTRA_SUM_SECTION_LENGTH = WORD_LENGTH * 4  # samples
-EXTRA_POST_BLANK_LENGTH = WORD_LENGTH  # samples
-EXTRA_CAPTURE_LENGTH = EXTRA_SUM_SECTION_LENGTH + EXTRA_POST_BLANK_LENGTH  # samples
-EXTRA_CAPTURE_DURATION = EXTRA_CAPTURE_LENGTH * _SAMPLING_PERIOD  # ns
 
 
 class MeasurementScheduleBuilder:
@@ -67,12 +59,6 @@ class MeasurementScheduleBuilder:
 
         if readout_amplitudes is None:
             readout_amplitudes = self._control_params.readout_amplitude
-        if readout_duration is None:
-            readout_duration = DEFAULT_READOUT_DURATION
-        if readout_pre_margin is None:
-            readout_pre_margin = DEFAULT_READOUT_PRE_MARGIN
-        if readout_post_margin is None:
-            readout_post_margin = DEFAULT_READOUT_POST_MARGIN
 
         if add_last_measurement:
             sequence_duration = (
@@ -171,7 +157,7 @@ class MeasurementScheduleBuilder:
         """Build a capture schedule aligned to readout windows and workaround capture."""
         captures: list[Capture] = []
         readout_ranges = schedule.get_pulse_ranges(readout_targets)
-        workaround_duration = EXTRA_SUM_SECTION_LENGTH * _SAMPLING_PERIOD
+        workaround_duration = EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD
 
         for target in readout_targets:
             ranges = readout_ranges.get(target, [])
@@ -190,8 +176,8 @@ class MeasurementScheduleBuilder:
                 [
                     Capture(
                         channels=[target],
-                        start_time=rng.start * _SAMPLING_PERIOD,
-                        duration=len(rng) * _SAMPLING_PERIOD,
+                        start_time=rng.start * SAMPLING_PERIOD,
+                        duration=len(rng) * SAMPLING_PERIOD,
                     )
                     for rng in ranges
                 ]

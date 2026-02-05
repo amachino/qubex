@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from qubex.core.model import Model
-from qubex.pulse import RampType
 from qubex.typing import MeasurementMode
 
 
@@ -17,16 +16,10 @@ class DspConfig(Model):
     line_param1: tuple[float, float, float]
 
 
-class ReadoutConfig(Model):
-    """Readout pulse configuration model."""
+class FrequencyConfig(Model):
+    """Frequency configuration model."""
 
-    readout_amplitudes: dict[str, float]
-    readout_duration: float
-    readout_pre_margin: float
-    readout_post_margin: float
-    readout_ramptime: float
-    readout_drag_coeff: float
-    readout_ramp_type: RampType
+    frequencies: dict[str, float]
 
 
 class MeasurementConfig(Model):
@@ -36,4 +29,4 @@ class MeasurementConfig(Model):
     shots: int
     interval: float
     dsp: DspConfig
-    readout: ReadoutConfig
+    frequency: FrequencyConfig

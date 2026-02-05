@@ -8,7 +8,11 @@ from typing import Any, Protocol
 import numpy as np
 
 from qubex.backend import (
+    BLOCK_DURATION,
+    EXTRA_SUM_SECTION_LENGTH,
     SAMPLING_PERIOD,
+    WORD_DURATION,
+    WORD_LENGTH,
     BackendExecutionRequest,
     DeviceController,
     ExperimentSystem,
@@ -19,12 +23,6 @@ from qubex.measurement.models.measure_result import MeasureMode
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_schedule import MeasurementSchedule
 
-_WORD_LENGTH = 4  # samples
-_BLOCK_LENGTH = _WORD_LENGTH * 16  # samples
-_EXTRA_SUM_SECTION_LENGTH = _WORD_LENGTH * 4  # samples
-_WORD_DURATION = _WORD_LENGTH * SAMPLING_PERIOD  # ns
-_BLOCK_DURATION = _BLOCK_LENGTH * SAMPLING_PERIOD  # ns
-
 
 class MeasurementBackendAdapter(Protocol):
     """Protocol for converting measurement requests into backend requests."""
@@ -34,7 +32,10 @@ class MeasurementBackendAdapter(Protocol):
         ...
 
     def build_execution_request(
-        self, *, schedule: MeasurementSchedule, config: MeasurementConfig
+        self,
+        *,
+        schedule: MeasurementSchedule,
+        config: MeasurementConfig,
     ) -> BackendExecutionRequest:
         """Build backend execution request from measurement schedule/config."""
         ...
@@ -57,9 +58,9 @@ class QuelMeasurementBackendAdapter:
         pulse_schedule = schedule.pulse_schedule
         if not pulse_schedule.is_valid():
             raise ValueError("Invalid pulse schedule.")
-        if not self._is_multiple(pulse_schedule.duration, _BLOCK_DURATION):
+        if not self._is_multiple(pulse_schedule.duration, BLOCK_DURATION):
             raise ValueError(
-                f"Pulse sequence duration must be a multiple of {_BLOCK_DURATION} ns."
+                f"Pulse sequence duration must be a multiple of {BLOCK_DURATION} ns."
             )
 
         channel_captures = schedule.capture_schedule.channels
@@ -73,16 +74,16 @@ class QuelMeasurementBackendAdapter:
                 raise ValueError(f"No capture windows for channel {channel}.")
 
             first_capture = sorted_captures[0]
-            if not self._is_multiple(first_capture.start_time, _BLOCK_DURATION):
+            if not self._is_multiple(first_capture.start_time, BLOCK_DURATION):
                 raise ValueError(
                     "The first capture start time must be a multiple of "
-                    f"{_BLOCK_DURATION} ns."
+                    f"{BLOCK_DURATION} ns."
                 )
-            if not self._is_multiple(first_capture.duration, _WORD_DURATION):
+            if not self._is_multiple(first_capture.duration, WORD_DURATION):
                 raise ValueError(
-                    f"Capture duration must be a multiple of {_WORD_DURATION} ns."
+                    f"Capture duration must be a multiple of {WORD_DURATION} ns."
                 )
-            workaround_duration = _EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD
+            workaround_duration = EXTRA_SUM_SECTION_LENGTH * SAMPLING_PERIOD
             if not np.isclose(first_capture.duration, workaround_duration):
                 raise ValueError(
                     "The first capture must be the workaround capture with duration "
@@ -90,13 +91,13 @@ class QuelMeasurementBackendAdapter:
                 )
 
             for capture in sorted_captures:
-                if not self._is_multiple(capture.start_time, _WORD_DURATION):
+                if not self._is_multiple(capture.start_time, WORD_DURATION):
                     raise ValueError(
-                        f"Capture start time must be a multiple of {_WORD_DURATION} ns."
+                        f"Capture start time must be a multiple of {WORD_DURATION} ns."
                     )
-                if not self._is_multiple(capture.duration, _WORD_DURATION):
+                if not self._is_multiple(capture.duration, WORD_DURATION):
                     raise ValueError(
-                        f"Capture duration must be a multiple of {_WORD_DURATION} ns."
+                        f"Capture duration must be a multiple of {WORD_DURATION} ns."
                     )
 
             ranges = readout_ranges.get(channel, [])
@@ -122,22 +123,22 @@ class QuelMeasurementBackendAdapter:
                 current = sorted_captures[idx]
                 nxt = sorted_captures[idx + 1]
                 gap = nxt.start_time - (current.start_time + current.duration)
-                if gap < _WORD_DURATION:
+                if gap < WORD_DURATION:
                     raise ValueError(
-                        f"Capture post-blank must be at least {_WORD_DURATION} ns."
+                        f"Capture post-blank must be at least {WORD_DURATION} ns."
                     )
-                if not self._is_multiple(gap, _WORD_DURATION):
+                if not self._is_multiple(gap, WORD_DURATION):
                     raise ValueError(
-                        f"Capture post-blank must be a multiple of {_WORD_DURATION} ns."
+                        f"Capture post-blank must be a multiple of {WORD_DURATION} ns."
                     )
 
             last = sorted_captures[-1]
             tail_blank = pulse_schedule.duration - (last.start_time + last.duration)
             if tail_blank < 0:
                 raise ValueError("Capture schedule exceeds pulse schedule duration.")
-            if not self._is_multiple(tail_blank, _WORD_DURATION):
+            if not self._is_multiple(tail_blank, WORD_DURATION):
                 raise ValueError(
-                    f"Final post-blank must be a multiple of {_WORD_DURATION} ns."
+                    f"Final post-blank must be a multiple of {WORD_DURATION} ns."
                 )
 
     def build_execution_request(
@@ -147,9 +148,9 @@ class QuelMeasurementBackendAdapter:
         measure_mode = MeasureMode(config.mode)
         interval = (
             math.ceil(
-                (schedule.pulse_schedule.duration + config.interval) / _BLOCK_DURATION
+                (schedule.pulse_schedule.duration + config.interval) / BLOCK_DURATION
             )
-            * _BLOCK_DURATION
+            * BLOCK_DURATION
         )
         gen_sampled_sequence, cap_sampled_sequence = self._create_sampled_sequences(
             schedule=schedule
@@ -203,7 +204,7 @@ class QuelMeasurementBackendAdapter:
         for target in readout_targets:
             mux = self._experiment_system.get_mux_by_qubit(Target.qubit_label(target))
             capture_delay_word = capture_delays.get(mux.index, 0)
-            capture_delay_sample[target] = capture_delay_word * _WORD_LENGTH
+            capture_delay_sample[target] = capture_delay_word * WORD_LENGTH
 
         sampled_sequences = pulse_schedule.get_sampled_sequences(copy=False)
         for target, ranges in readout_ranges.items():

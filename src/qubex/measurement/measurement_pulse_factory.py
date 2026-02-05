@@ -8,9 +8,11 @@ from qubex.backend import ControlParams, Mux, Target
 from qubex.pulse import Blank, FlatTop, PulseArray, RampType
 
 from .measurement_defaults import (
+    DEFAULT_READOUT_DRAG_COEFF,
     DEFAULT_READOUT_DURATION,
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
+    DEFAULT_READOUT_RAMP_TYPE,
     DEFAULT_READOUT_RAMPTIME,
 )
 
@@ -84,9 +86,9 @@ class MeasurementPulseFactory:
         if ramptime is None:
             ramptime = DEFAULT_READOUT_RAMPTIME
         if type is None:
-            type = "RaisedCosine"
+            type = DEFAULT_READOUT_RAMP_TYPE
         if drag_coeff is None:
-            drag_coeff = 0.0
+            drag_coeff = DEFAULT_READOUT_DRAG_COEFF
         if pre_margin is None:
             pre_margin = DEFAULT_READOUT_PRE_MARGIN
         if post_margin is None:
@@ -144,7 +146,7 @@ class MeasurementPulseFactory:
         if ramptime is None:
             ramptime = DEFAULT_READOUT_RAMPTIME
         if type is None:
-            type = "RaisedCosine"
+            type = DEFAULT_READOUT_RAMP_TYPE
         return FlatTop(
             duration=duration,
             amplitude=amplitude,
