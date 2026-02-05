@@ -8,6 +8,7 @@ from .measurement_backend_adapter import (
 )
 from .measurement_backend_manager import MeasurementBackendManager
 from .measurement_client import MeasurementClient
+from .measurement_config_factory import MeasurementConfigFactory
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .measurement_result_converter import MeasurementResultConverter
 from .measurement_result_factory import MeasurementResultFactory
@@ -31,6 +32,7 @@ __all__ = [
     "MeasurementBackendAdapter",
     "MeasurementBackendManager",
     "MeasurementClient",
+    "MeasurementConfigFactory",
     "MeasurementPulseFactory",
     "MeasurementResult",
     "MeasurementResultConverter",

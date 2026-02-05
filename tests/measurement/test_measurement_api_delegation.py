@@ -9,7 +9,12 @@ import numpy as np
 
 from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
-from qubex.measurement.models import MeasurementConfig, MeasurementSchedule
+from qubex.measurement.models import (
+    DspConfig,
+    MeasurementConfig,
+    MeasurementSchedule,
+    ReadoutConfig,
+)
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
     MeasureData,
@@ -18,6 +23,30 @@ from qubex.measurement.models.measure_result import (
 )
 from qubex.measurement.models.measurement_result import MeasurementResult
 from qubex.pulse import PulseSchedule
+
+
+def _make_config() -> MeasurementConfig:
+    return MeasurementConfig(
+        mode="avg",
+        shots=2,
+        interval=100.0,
+        readout=ReadoutConfig(
+            readout_amplitudes={},
+            readout_duration=384.0,
+            readout_pre_margin=32.0,
+            readout_post_margin=128.0,
+            readout_ramptime=32.0,
+            readout_drag_coeff=0.0,
+            readout_ramp_type="RaisedCosine",
+        ),
+        dsp=DspConfig(
+            enable_dsp_demodulation=True,
+            enable_dsp_sum=False,
+            enable_dsp_classification=False,
+            line_param0=None,
+            line_param1=None,
+        ),
+    )
 
 
 def _make_multiple_result() -> MultipleMeasureResult:
@@ -71,10 +100,21 @@ def test_execute_delegates_to_schedule_executor_with_built_schedule() -> None:
     measurement.execute_measurement_schedule = MethodType(
         fake_execute_measurement_schedule, measurement
     )
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
     measurement.__dict__["_backend_manager"] = type(
         "_BM",
         (),
-        {"device_controller": type("_DC", (), {"box_config": {"shots": 1}})()},
+        {
+            "device_controller": type("_DC", (), {"box_config": {"shots": 1}})(),
+            "experiment_system": experiment_system,
+        },
     )()
 
     result = measurement.execute(
@@ -120,7 +160,7 @@ def test_execute_measurement_schedule_delegates_to_executor() -> None:
         pulse_schedule=pulse_schedule,
         capture_schedule=CaptureSchedule(captures=[]),
     )
-    config = MeasurementConfig.create(mode="avg", shots=2, interval=100.0)
+    config = _make_config()
     expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
     called: dict[str, Any] = {}
 

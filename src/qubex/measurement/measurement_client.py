@@ -22,6 +22,7 @@ from qubex.backend import (
     Target,
 )
 from qubex.backend.dc_voltage_controller import dc_voltage
+from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
 from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
     MeasurementResult,
@@ -42,13 +43,6 @@ from .models.measure_result import (
 from .models.measurement_schedule import MeasurementSchedule
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_SHOTS: Final = 1024
-DEFAULT_INTERVAL: Final = 150 * 1024  # ns
-DEFAULT_READOUT_DURATION: Final = 384  # ns
-DEFAULT_READOUT_RAMPTIME: Final = 32  # ns
-DEFAULT_READOUT_PRE_MARGIN: Final = 32  # ns
-DEFAULT_READOUT_POST_MARGIN: Final = 128  # ns
 
 
 class MeasurementClient:
@@ -215,6 +209,13 @@ class MeasurementClient:
             pulse_factory=self.pulse_factory,
             targets=self.targets,
             mux_dict=self.mux_dict,
+        )
+
+    @cached_property
+    def measurement_config_factory(self) -> MeasurementConfigFactory:
+        """Create a measurement config factory from current system state."""
+        return MeasurementConfigFactory(
+            experiment_system=self.experiment_system,
         )
 
     @property
@@ -742,7 +743,7 @@ class MeasurementClient:
         if not isinstance(schedule, PulseSchedule):
             schedule = PulseSchedule.from_waveforms(schedule)
 
-        run_config = MeasurementConfig.create(
+        run_config = self.measurement_config_factory.create(
             mode=mode,
             shots=shots,
             interval=interval,

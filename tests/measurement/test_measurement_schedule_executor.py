@@ -18,7 +18,12 @@ from qubex.measurement.measurement_result_factory import MeasurementResultFactor
 from qubex.measurement.measurement_schedule_executor import (
     MeasurementScheduleExecutor,
 )
-from qubex.measurement.models import MeasurementConfig, MeasurementSchedule
+from qubex.measurement.models import (
+    DspConfig,
+    MeasurementConfig,
+    MeasurementSchedule,
+    ReadoutConfig,
+)
 from qubex.measurement.models.capture_schedule import CaptureSchedule
 from qubex.measurement.models.measure_result import (
     MeasureData,
@@ -26,6 +31,30 @@ from qubex.measurement.models.measure_result import (
     MultipleMeasureResult,
 )
 from qubex.pulse import PulseSchedule
+
+
+def _make_config() -> MeasurementConfig:
+    return MeasurementConfig(
+        mode="avg",
+        shots=2,
+        interval=100.0,
+        readout=ReadoutConfig(
+            readout_amplitudes={},
+            readout_duration=384.0,
+            readout_pre_margin=32.0,
+            readout_post_margin=128.0,
+            readout_ramptime=32.0,
+            readout_drag_coeff=0.0,
+            readout_ramp_type="RaisedCosine",
+        ),
+        dsp=DspConfig(
+            enable_dsp_demodulation=True,
+            enable_dsp_sum=False,
+            enable_dsp_classification=False,
+            line_param0=None,
+            line_param1=None,
+        ),
+    )
 
 
 def _make_multiple_result() -> MultipleMeasureResult:
@@ -82,7 +111,7 @@ def test_execute_validates_builds_executes_and_creates_result() -> None:
         pulse_schedule=PulseSchedule(["RQ00"]),
         capture_schedule=CaptureSchedule(captures=[]),
     )
-    config = MeasurementConfig.create(mode="avg", shots=2, interval=100.0)
+    config = _make_config()
 
     result = executor.execute(schedule=schedule, config=config)
 

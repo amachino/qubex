@@ -2,24 +2,74 @@
 
 from __future__ import annotations
 
-from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
+from typing import cast
+
+import pytest
+from pydantic import ValidationError
+
+from qubex.backend import ExperimentSystem
+from qubex.measurement.measurement_config_factory import MeasurementConfigFactory
+from qubex.measurement.measurement_defaults import (
+    DEFAULT_INTERVAL,
+    DEFAULT_READOUT_DURATION,
+    DEFAULT_READOUT_POST_MARGIN,
+    DEFAULT_READOUT_PRE_MARGIN,
+    DEFAULT_READOUT_RAMPTIME,
+    DEFAULT_SHOTS,
+)
 from qubex.measurement.models import MeasurementConfig
 
 
-def test_create_applies_legacy_defaults() -> None:
-    """Given omitted shots/interval, when building config, then legacy defaults are applied."""
-    config = MeasurementConfig.create()
+def test_model_requires_all_fields() -> None:
+    """Given missing fields, when creating config directly, then validation fails."""
+    with pytest.raises(ValidationError):
+        MeasurementConfig.model_validate({"mode": "avg", "shots": 1, "interval": 100.0})
+
+
+def test_factory_applies_context_defaults() -> None:
+    """Given omitted fields, when factory builds config, then context-aware defaults are applied."""
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type(
+                "_CP", (), {"readout_amplitude": {"RQ00": 0.25, "RQ01": 0.3}}
+            )(),
+            "measurement_defaults": {},
+        },
+    )()
+    factory = MeasurementConfigFactory(
+        experiment_system=cast(ExperimentSystem, experiment_system)
+    )
+    config = factory.create()
 
     assert config.mode == "avg"
     assert config.shots == DEFAULT_SHOTS
     assert config.interval == DEFAULT_INTERVAL
-    assert config.readout.readout_duration is None
+    assert config.readout.readout_amplitudes == {"RQ00": 0.25, "RQ01": 0.3}
+    assert config.readout.readout_duration == DEFAULT_READOUT_DURATION
+    assert config.readout.readout_pre_margin == DEFAULT_READOUT_PRE_MARGIN
+    assert config.readout.readout_post_margin == DEFAULT_READOUT_POST_MARGIN
+    assert config.readout.readout_ramptime == DEFAULT_READOUT_RAMPTIME
+    assert config.readout.readout_drag_coeff == 0.0
+    assert config.readout.readout_ramp_type == "RaisedCosine"
     assert config.dsp.enable_dsp_demodulation is True
 
 
-def test_create_maps_dsp_and_line_params() -> None:
-    """Given dsp args, when building config, then DSP and line params are set in dsp config."""
-    config = MeasurementConfig.create(
+def test_factory_maps_dsp_and_line_params() -> None:
+    """Given dsp args, when factory builds config, then DSP and line params are set in dsp config."""
+    experiment_system = type(
+        "_ES",
+        (),
+        {
+            "control_params": type("_CP", (), {"readout_amplitude": {}})(),
+            "measurement_defaults": {},
+        },
+    )()
+    factory = MeasurementConfigFactory(
+        experiment_system=cast(ExperimentSystem, experiment_system)
+    )
+    config = factory.create(
         enable_dsp_demodulation=False,
         enable_dsp_sum=True,
         enable_dsp_classification=True,
