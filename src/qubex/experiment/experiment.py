@@ -46,6 +46,7 @@ from qubex.pulse import (
 )
 from qubex.typing import (
     IQArray,
+    MeasurementMode,
     ParametricPulseSchedule,
     ParametricWaveformDict,
     TargetMap,
@@ -1284,7 +1285,7 @@ class Experiment:
         schedule: PulseSchedule,
         *,
         frequencies: dict[str, float] | None = None,
-        mode: Literal["single", "avg"] | None = None,
+        mode: MeasurementMode | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -1311,7 +1312,7 @@ class Experiment:
         ----------
         schedule : PulseSchedule
             Schedule to execute.
-        mode : Literal["single", "avg"], optional
+        mode : MeasurementMode, optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
             Number of shots
@@ -1395,7 +1396,7 @@ class Experiment:
         *,
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
-        mode: Literal["single", "avg"] | None = None,
+        mode: MeasurementMode | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -1425,7 +1426,7 @@ class Experiment:
             Frequencies of the qubits.
         initial_states : dict[str, str], optional
             Initial states of the qubits.
-        mode : Literal["single", "avg"], optional
+        mode : MeasurementMode, optional
             Measurement mode. Defaults to "avg".
         shots : int, optional
             Number of shots.
@@ -1503,7 +1504,7 @@ class Experiment:
             str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]
         ],
         *,
-        mode: Literal["single", "avg"] | None = None,
+        mode: MeasurementMode | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -1520,7 +1521,7 @@ class Experiment:
         ----------
         states : dict[str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]]
             States to prepare.
-        mode : Literal["single", "avg"], optional
+        mode : MeasurementMode, optional
             Measurement mode. Defaults to "single".
         shots : int, optional
             Number of shots.

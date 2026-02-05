@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -21,3 +21,5 @@ IQArray: TypeAlias = (
 
 ParametricWaveformDict: TypeAlias = Callable[..., TargetMap["Waveform"]]
 ParametricPulseSchedule: TypeAlias = Callable[..., "PulseSchedule"]
+
+MeasurementMode: TypeAlias = Literal["single", "avg"]

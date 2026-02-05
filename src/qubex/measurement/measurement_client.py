@@ -27,7 +27,7 @@ from qubex.measurement.models.measurement_result import (
     MeasurementResult,
 )
 from qubex.pulse import PulseSchedule, RampType
-from qubex.typing import IQArray, TargetMap
+from qubex.typing import IQArray, MeasurementMode, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
 from .measurement_backend_manager import MeasurementBackendManager
@@ -560,7 +560,7 @@ class MeasurementClient:
         self,
         waveforms: Mapping[str, IQArray],
         *,
-        mode: Literal["single", "avg"] = "avg",
+        mode: MeasurementMode = "avg",
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -588,7 +588,7 @@ class MeasurementClient:
         waveforms : Mapping[str, IQArray]
             The control waveforms for each target.
             Waveforms are complex I/Q arrays with the sampling period of 2 ns.
-        mode : Literal["single", "avg"], optional
+        mode : MeasurementMode, optional
             The measurement mode, by default "single".
             - "single": Measure once.
             - "avg": Measure multiple times and average the results.
@@ -666,7 +666,7 @@ class MeasurementClient:
         self,
         schedule: PulseSchedule | TargetMap[IQArray],
         *,
-        mode: Literal["single", "avg"] = "avg",
+        mode: MeasurementMode = "avg",
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -694,7 +694,7 @@ class MeasurementClient:
         ----------
         schedule : PulseSchedule | TargetMap[IQArray]
             The pulse schedule or control waveforms.
-        mode : Literal["single", "avg"], optional
+        mode : MeasurementMode, optional
             The measurement mode, by default "single".
             - "single": Measure once.
             - "avg": Measure multiple times and average the results.

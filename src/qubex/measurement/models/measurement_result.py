@@ -4,18 +4,19 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 from pydantic import Field
 
 from qubex.core.model import DataModel
+from qubex.typing import MeasurementMode
 
 
 class MeasurementResult(DataModel):
     """Canonical serializable result of a measurement run."""
 
-    mode: Literal["single", "avg"]
+    mode: MeasurementMode
     data: dict[str, list[np.ndarray]]
     device_config: dict[str, Any] = Field(default_factory=dict)
     measurement_config: dict[str, Any] = Field(default_factory=dict)

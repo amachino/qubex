@@ -71,6 +71,7 @@ from qubex.pulse import (
 from qubex.style import COLORS
 from qubex.typing import (
     IQArray,
+    MeasurementMode,
     ParametricPulseSchedule,
     ParametricWaveformDict,
     TargetMap,
@@ -136,7 +137,7 @@ class MeasurementService:
         schedule: PulseSchedule,
         *,
         frequencies: dict[str, float] | None = None,
-        mode: Literal["single", "avg"] | None = None,
+        mode: MeasurementMode | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -218,7 +219,7 @@ class MeasurementService:
         *,
         frequencies: dict[str, float] | None = None,
         initial_states: dict[str, str] | None = None,
-        mode: Literal["single", "avg"] | None = None,
+        mode: MeasurementMode | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
@@ -341,7 +342,7 @@ class MeasurementService:
             str, Literal["0", "1", "+", "-", "+i", "-i"] | Literal["g", "e", "f"]
         ],
         *,
-        mode: Literal["single", "avg"] | None = None,
+        mode: MeasurementMode | None = None,
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,

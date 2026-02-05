@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import Field
 
 from qubex.core.model import Model
 from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.pulse import RampType
+from qubex.typing import MeasurementMode
 
 
 class ReadoutConfig(Model):
@@ -36,7 +35,7 @@ class DspConfig(Model):
 class MeasurementConfig(Model):
     """Execution configuration for a measurement run."""
 
-    mode: Literal["single", "avg"] = "avg"
+    mode: MeasurementMode = "avg"
     shots: int = DEFAULT_SHOTS
     interval: float = DEFAULT_INTERVAL
     readout: ReadoutConfig = Field(default_factory=ReadoutConfig)
@@ -46,7 +45,7 @@ class MeasurementConfig(Model):
     def create(
         cls,
         *,
-        mode: Literal["single", "avg"] = "avg",
+        mode: MeasurementMode = "avg",
         shots: int | None = None,
         interval: float | None = None,
         readout_amplitudes: dict[str, float] | None = None,
