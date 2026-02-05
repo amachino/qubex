@@ -283,6 +283,8 @@ class PulseSchedule:
             )
         for channel in self._channels.values():
             channel.sequence.pad(total_duration, pad_side)
+            self._offsets[channel.label] = total_duration
+        self._global_offset = total_duration
 
     def scaled(self, scale: float) -> PulseSchedule:
         """
