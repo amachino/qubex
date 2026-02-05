@@ -32,7 +32,7 @@ from qubex.backend import (
     Target,
     TargetType,
 )
-from qubex.backend.quel1 import DeviceController
+from qubex.backend.quel1 import DeviceController, Quel1BackendController
 from qubex.measurement import (
     MeasurementClient,
     StateClassifier,
@@ -353,9 +353,15 @@ class ExperimentContext:
         return self.experiment_system.control_system
 
     @property
+    @deprecated("Use `backend_controller` instead.")
     def device_controller(self) -> DeviceController:
         """Return the device controller."""
         return self.system_manager.device_controller
+
+    @property
+    def backend_controller(self) -> Quel1BackendController:
+        """Return the backend controller."""
+        return self.system_manager.backend_controller
 
     @property
     def params(self) -> ControlParams:
@@ -878,7 +884,7 @@ class ExperimentContext:
         """Resynchronize clocks for the specified boxes."""
         if box_ids is None:
             box_ids = self.box_ids
-        self.device_controller.resync_clocks(box_ids)
+        self.backend_controller.resync_clocks(box_ids)
 
     def configure(
         self,
@@ -926,7 +932,7 @@ class ExperimentContext:
         if len(box_ids) == 0:
             box_ids = self.box_ids
 
-        self.device_controller.initialize_awg_and_capunits(box_ids)
+        self.backend_controller.initialize_awg_and_capunits(box_ids)
 
     @deprecated("This method is tentative. It may be removed in the future.")
     def register_custom_target(
@@ -961,7 +967,7 @@ class ExperimentContext:
             type=target_type,
         )
         self.experiment_system.add_target(target)
-        self.device_controller.define_target(
+        self.backend_controller.define_target(
             target_name=target.label,
             channel_name=target.channel.id,
             target_frequency=target.frequency,

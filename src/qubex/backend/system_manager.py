@@ -14,6 +14,7 @@ from typing import Literal
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
+from typing_extensions import deprecated
 
 from .config_loader import ConfigLoader
 from .control_system import CapPort, GenPort, PortType
@@ -139,8 +140,8 @@ class SystemManager:
         """Get the backend controller."""
         return self._backend_controller
 
-    # TODO: Remove this alias in future versions.
     @property
+    @deprecated("Use `backend_controller` property instead.")
     def device_controller(self) -> Quel1BackendController:
         """Get the device controller (backward-compatible alias)."""
         return self.backend_controller
@@ -184,7 +185,7 @@ class SystemManager:
                 "Experiment system created in mock mode (device controller updates bypassed)"
             )
             return
-        self._update_device_controller(experiment_system)
+        self._update_backend_controller(experiment_system)
         self.update_cache()
 
     def set_device_settings(self, device_settings: dict) -> None:
@@ -528,7 +529,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                         )
         return result
 
-    def _update_device_controller(
+    def _update_backend_controller(
         self,
         experiment_system: ExperimentSystem,
     ):

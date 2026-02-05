@@ -107,12 +107,12 @@ Do you want to continue?
 
 def get_qubecalib() -> QubeCalib:
     """Get the QubeCalib instance."""
-    return system_manager.device_controller.qubecalib
+    return system_manager.backend_controller.qubecalib
 
 
 def get_quel1_box(box_id: str) -> Quel1Box:
     """Get the Quel1Box instance."""
-    qc = system_manager.device_controller.qubecalib
+    qc = system_manager.backend_controller.qubecalib
     box = qc.create_box(box_id, reconnect=False)
     # TODO: use appropriate noise threshold
     box.reconnect(background_noise_threshold=10000)
@@ -121,12 +121,12 @@ def get_quel1_box(box_id: str) -> Quel1Box:
 
 def dump_box(box_id: str) -> dict:
     """Dump the information of a box."""
-    return system_manager.device_controller.dump_box(box_id)
+    return system_manager.backend_controller.dump_box(box_id)
 
 
 def dump_port(box_id: str, port_number: int) -> dict:
     """Dump the information of a port."""
-    return system_manager.device_controller.dump_port(box_id, port_number)
+    return system_manager.backend_controller.dump_port(box_id, port_number)
 
 
 def reboot_fpga(box_id: str) -> None:
@@ -162,11 +162,11 @@ This operation will reset LO/NCO settings. Do you want to continue?
         return
 
     logger.info("Relinking up the boxes...")
-    system_manager.device_controller.relinkup_boxes(
+    system_manager.backend_controller.relinkup_boxes(
         box_ids,
         noise_threshold=noise_threshold,
     )
-    system_manager.device_controller.sync_clocks(box_ids)
+    system_manager.backend_controller.sync_clocks(box_ids)
     logger.info("Operation completed.")
 
 
@@ -182,7 +182,7 @@ def reset_clockmaster(
 
 def resync_clocks(box_ids: Collection[str]) -> bool:
     """Resync the clocks of the boxes."""
-    return system_manager.device_controller.resync_clocks(list(box_ids))
+    return system_manager.backend_controller.resync_clocks(list(box_ids))
 
 
 def print_chip_info(

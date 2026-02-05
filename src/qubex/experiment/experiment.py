@@ -29,7 +29,7 @@ from qubex.backend import (
     Target,
     TargetType,
 )
-from qubex.backend.quel1 import DeviceController
+from qubex.backend.quel1 import DeviceController, Quel1BackendController
 from qubex.clifford.clifford import Clifford
 from qubex.measurement import (
     MeasurementClient,
@@ -309,9 +309,15 @@ class Experiment:
         return self.ctx.control_system
 
     @property
+    @deprecated("Use `backend_controller` instead.")
     def device_controller(self) -> DeviceController:
         """Return the device controller."""
         return self.ctx.device_controller
+
+    @property
+    def backend_controller(self) -> Quel1BackendController:
+        """Return the backend controller."""
+        return self.ctx.backend_controller
 
     @property
     def params(self) -> ControlParams:
