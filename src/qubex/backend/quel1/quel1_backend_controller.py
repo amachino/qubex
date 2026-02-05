@@ -45,7 +45,7 @@ except ImportError as e:
 
 
 @dataclass
-class RawResult:
+class Quel1BackendRawResult:
     """Raw status, data, and config returned from devices."""
 
     status: dict
@@ -746,7 +746,7 @@ class Quel1BackendController:
         integral_mode: str = "integral",
         dsp_demodulation: bool = True,
         software_demodulation: bool = False,
-    ) -> Iterator[RawResult]:
+    ) -> Iterator[Quel1BackendRawResult]:
         """
         Execute the queue and yield measurement results.
 
@@ -772,7 +772,7 @@ class Quel1BackendController:
             dsp_demodulation=dsp_demodulation,
             software_demodulation=software_demodulation,
         ):
-            result = RawResult(
+            result = Quel1BackendRawResult(
                 status=status,
                 data=data,
                 config=config,
@@ -791,7 +791,7 @@ class Quel1BackendController:
         enable_classification: bool = False,
         line_param0: tuple[float, float, float] | None = None,
         line_param1: tuple[float, float, float] | None = None,
-    ) -> RawResult:
+    ) -> Quel1BackendRawResult:
         """
         Execute a single sequence and return the measurement result.
 
@@ -829,7 +829,7 @@ class Quel1BackendController:
             line_param1=line_param1,
         )
         status, data, config = sequencer.execute(self.boxpool)
-        return RawResult(
+        return Quel1BackendRawResult(
             status=status,
             data=data,
             config=config,
@@ -845,7 +845,7 @@ class Quel1BackendController:
         dsp_demodulation: bool = True,
         capture_delay_words: int | None = None,
         wait_words: int = 0,
-    ) -> RawResult:
+    ) -> Quel1BackendRawResult:
         # TODO: support skew adjustment
 
         if repeats is None:
@@ -960,7 +960,7 @@ class Quel1BackendController:
             crmap=self.get_cap_resource_map(sequencer.cap_sampled_sequence.keys()),
         )
 
-        return RawResult(
+        return Quel1BackendRawResult(
             status=status,
             data=data,
             config=config,

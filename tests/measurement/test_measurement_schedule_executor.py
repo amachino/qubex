@@ -10,7 +10,7 @@ from qubex.backend import (
     BackendExecutionRequest,
     BackendExecutor,
 )
-from qubex.backend.quel1 import Quel1BackendController, RawResult
+from qubex.backend.quel1 import Quel1BackendController, Quel1BackendRawResult
 from qubex.measurement.measurement_backend_adapter import MeasurementBackendAdapter
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
 from qubex.measurement.measurement_result_factory import MeasurementResultFactory
@@ -66,22 +66,28 @@ def test_execute_validates_builds_executes_and_creates_result() -> None:
     """Given executor inputs, when execute is called, then it validates, runs backend, and builds result."""
     called: dict[str, object] = {}
     request = BackendExecutionRequest(payload=object())
-    backend_result = RawResult(status={}, data={}, config={})
+    backend_result = Quel1BackendRawResult(status={}, data={}, config={})
     expected = MeasurementResultConverter.from_multiple(_make_multiple_result())
 
     class _Adapter:
-        def validate_schedule(self, schedule: MeasurementSchedule) -> None:
+        def validate_schedule(
+            self,
+            schedule: MeasurementSchedule,
+        ) -> None:
             called["validated"] = schedule
 
         def build_execution_request(
-            self, *, schedule: MeasurementSchedule, config: MeasurementConfig
+            self,
+            *,
+            schedule: MeasurementSchedule,
+            config: MeasurementConfig,
         ) -> BackendExecutionRequest:
             called["request_schedule"] = schedule
             called["request_config"] = config
             return request
 
     class _Executor:
-        def execute(self, *, request: BackendExecutionRequest) -> RawResult:
+        def execute(self, *, request: BackendExecutionRequest) -> Quel1BackendRawResult:
             called["execute_request"] = request
             return backend_result
 
