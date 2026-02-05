@@ -11,6 +11,7 @@ from pydantic.dataclasses import dataclass
 
 from .model import Model
 
+# TODO: Remove hardcoded defaults
 DEFAULT_CLOCK_MASTER_ADDRESS: Final = "10.3.0.255"
 DEFAULT_LO_FREQ: Final = 9_000_000_000
 DEFAULT_CNCO_FREQ: Final = 1_500_000_000

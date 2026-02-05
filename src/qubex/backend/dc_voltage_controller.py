@@ -9,6 +9,7 @@ from typing import Any, Final
 
 from qubex.third_party.ons61797 import ONS61797
 
+# TODO: Make port configurable
 PORT: Final = "/dev/ttyACM0"
 
 

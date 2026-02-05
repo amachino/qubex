@@ -1,11 +1,13 @@
 """Backend system models and controllers."""
 
+from qubex.constants import DEFAULT_CONFIG_DIR
+
 from .backend_executor import (
     BackendExecutionRequest,
     BackendExecutionResult,
     BackendExecutor,
 )
-from .config_loader import DEFAULT_CONFIG_DIR, ConfigLoader
+from .config_loader import ConfigLoader
 from .control_system import Box, BoxType, Channel, ControlSystem, Port, PortType
 from .experiment_system import ControlParams, ExperimentSystem, MixingUtil, WiringInfo
 from .lattice_graph import LatticeGraph

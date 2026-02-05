@@ -1,6 +1,6 @@
 # ruff: noqa: SLF001
 
-"""Device controller for QUEL hardware and configuration access."""
+"""QuEL-1 backend controller using qube-calib."""
 
 from __future__ import annotations
 
@@ -43,10 +43,13 @@ try:
 except ImportError as e:
     logger.info(e)
 
+# TODO: use appropriate noise threshold
+_RELAXED_NOISE_THRESHOLD = 10000
+
 
 @dataclass
 class Quel1BackendRawResult:
-    """Raw status, data, and config returned from devices."""
+    """Raw status, data, and config returned from qube-calib execution."""
 
     status: dict
     data: dict
@@ -54,7 +57,7 @@ class Quel1BackendRawResult:
 
 
 class Quel1BackendController:
-    """Control and query device state through QubeCalib."""
+    """Control and query device state through qube-calib."""
 
     def __init__(
         self,
@@ -400,6 +403,7 @@ class Quel1BackendController:
         self,
         box_name: str,
         noise_threshold: int | None = None,
+        **kwargs: Any,
     ) -> Quel1Box:
         """
         Linkup a box and return the box object.
@@ -423,12 +427,18 @@ class Quel1BackendController:
         self._check_box_availability(box_name)
         # connect to the box
         box = self.qubecalib.create_box(box_name, reconnect=False)
-        # relinkup the box if any of the links are down
 
-        # TODO: use appropriate noise threshold
+        if noise_threshold is not None:
+            noise_threshold = _RELAXED_NOISE_THRESHOLD
+
+        # relinkup the box if any of the links are down
         if not all(box.link_status().values()):
-            box.relinkup(use_204b=False, background_noise_threshold=10000)
-        box.reconnect(background_noise_threshold=10000)
+            box.relinkup(
+                use_204b=False,
+                background_noise_threshold=noise_threshold,
+                **kwargs,
+            )
+        box.reconnect(background_noise_threshold=noise_threshold)
 
         # check if all links are up
         status = box.link_status()
@@ -469,11 +479,10 @@ class Quel1BackendController:
             Name of the box to relinkup.
         """
         if noise_threshold is None:
-            noise_threshold = 10000
+            noise_threshold = _RELAXED_NOISE_THRESHOLD
         box = self.qubecalib.create_box(box_name, reconnect=False)
         box.relinkup(use_204b=False, background_noise_threshold=noise_threshold)
-        # TODO: use appropriate noise threshold
-        box.reconnect(background_noise_threshold=10000)
+        box.reconnect(background_noise_threshold=noise_threshold)
 
     def relinkup_boxes(
         self,
@@ -846,6 +855,7 @@ class Quel1BackendController:
         capture_delay_words: int | None = None,
         wait_words: int = 0,
     ) -> Quel1BackendRawResult:
+        """WIP: Direct execution of a sequencer using qube-calib low-level API."""
         # TODO: support skew adjustment
 
         if repeats is None:

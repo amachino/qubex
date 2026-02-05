@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import warnings
 from collections import defaultdict
-from logging import getLogger
 from pathlib import Path
 from typing import Any, Final, Literal
 
 import yaml
 from typing_extensions import deprecated
 
+from qubex.constants import DEFAULT_CONFIG_DIR
+
 from .control_system import Box, ControlSystem
 from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
 from .quantum_system import Chip, QuantumSystem
 
-logger = getLogger(__name__)
-
-DEFAULT_CONFIG_DIR: Final = "/home/shared/qubex-config"
+logger = logging.getLogger(__name__)
 
 CHIP_FILE: Final = "chip.yaml"
 BOX_FILE: Final = "box.yaml"

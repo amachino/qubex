@@ -13,6 +13,8 @@ from .control_system import CapChannel, GenChannel
 from .model import Model
 from .quantum_system import Mux, Qubit, Resonator
 
+# TODO: Make target label formats configurable
+
 
 class TargetType(Enum):
     """Enumerate supported target types."""

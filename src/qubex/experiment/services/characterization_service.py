@@ -22,8 +22,8 @@ from qubex.analysis import visualization as viz
 from qubex.backend import BoxType, MixingUtil, Target
 from qubex.backend.experiment_system import (
     CNCO_CENTER_CTRL,
-    CNCO_CETNER_READ,
-    CNCO_CETNER_READ_R8,
+    CNCO_CENTER_READ,
+    CNCO_CENTER_READ_R8,
 )
 from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.experiment.experiment_constants import (
@@ -2374,9 +2374,9 @@ class CharacterizationService:
         phase_offset = 0.0
 
         if read_box.type == BoxType.QUEL1SE_R8:
-            cnco_center = CNCO_CETNER_READ_R8
+            cnco_center = CNCO_CENTER_READ_R8
         else:
-            cnco_center = CNCO_CETNER_READ
+            cnco_center = CNCO_CENTER_READ
 
         for subrange in subranges:
             # change LO/NCO frequency to the center of the subrange
@@ -2543,9 +2543,9 @@ class CharacterizationService:
                     return  # type: ignore
 
             if read_box.type == BoxType.QUEL1SE_R8:
-                cnco_center = CNCO_CETNER_READ_R8
+                cnco_center = CNCO_CENTER_READ_R8
             else:
-                cnco_center = CNCO_CETNER_READ
+                cnco_center = CNCO_CENTER_READ
             lo, cnco, _ = MixingUtil.calc_lo_cnco(
                 f_start * 1e9,
                 ssb=ssb,
@@ -2692,10 +2692,10 @@ class CharacterizationService:
 
         if read_box.type == BoxType.QUEL1SE_R8:
             ssb = "L"
-            cnco_center = CNCO_CETNER_READ_R8
+            cnco_center = CNCO_CENTER_READ_R8
         else:
             ssb = "U"
-            cnco_center = CNCO_CETNER_READ
+            cnco_center = CNCO_CENTER_READ
 
         for subrange in subranges:
             self.ctx.reset_awg_and_capunits(qubits=[qubit_label])

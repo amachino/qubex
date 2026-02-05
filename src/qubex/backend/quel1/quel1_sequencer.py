@@ -1,4 +1,4 @@
-"""Sequencer extensions for resource map generation."""
+"""Modified qube-calib Sequencer class."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from qubecalib.qubecalib import (
 
 
 class Quel1Sequencer(Sequencer):
-    """Sequencer with helper methods for QUEL resource maps."""
+    """Modified qube-calib Sequencer class."""
 
     def generate_cap_resource_map(self, boxpool: BoxPool) -> dict[str, Any]:
         """Generate capture resource mappings for the box pool."""

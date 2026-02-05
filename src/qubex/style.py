@@ -16,7 +16,7 @@ COLORS = [
     "#474747",
     "#9e9e9e",
 ]
-FONT_FAMILY = "Times New Roman"
+FONT_FAMILY = "Times New Roman, Times, serif"
 WIDTH = 600
 HEIGHT = 300
 MARGIN_L = 70
