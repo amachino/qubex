@@ -12,11 +12,11 @@ class Expression:
 
     Parameters
     ----------
-    string
+    string : str
         Expression string to parse.
-    symbol_dict
+    symbol_dict : dict[str, Symbol] | None
         Optional symbol table used during parsing.
-    modules
+    modules : str | list[str] | None
         Backend modules passed to `sympy.lambdify`.
     """
 
@@ -31,11 +31,11 @@ class Expression:
 
         Parameters
         ----------
-        string
+        string : str
             Expression string to parse.
-        symbol_dict
+        symbol_dict : dict[str, Symbol] | None
             Optional symbol table used during parsing.
-        modules
+        modules : str | list[str] | None
             Backend modules passed to `sympy.lambdify`.
 
         Raises
@@ -60,12 +60,26 @@ class Expression:
         self._func = lambdify(self._symbols, self._expr, modules=modules)
 
     def _repr_latex_(self) -> str:
-        """Return LaTeX representation for rich display."""
+        """
+        Return LaTeX representation for rich display.
+
+        Returns
+        -------
+        str
+            LaTeX string for rich notebook rendering.
+        """
         return self._expr._repr_latex_()
 
     @property
     def symbols(self) -> tuple[Symbol, ...]:
-        """Symbols appearing in the expression, sorted by name."""
+        """
+        Symbols appearing in the expression, sorted by name.
+
+        Returns
+        -------
+        tuple[Symbol, ...]
+            Sorted symbols referenced in the expression.
+        """
         return self._symbols
 
     def resolve(self, params: Mapping[str, Any]) -> Any:

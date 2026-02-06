@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Literal, TypedDict, TypeGuard
+from typing import Any, Final, Literal, TypedDict, TypeGuard
 
 import numpy as np
+import tunits
+from netCDF4 import Dataset
 
 from .constants import (
     DATA_TYPE_KEY,
@@ -29,9 +31,6 @@ _ATTR_FORMAT: Final[str] = "format"
 _ATTR_FORMAT_VERSION: Final[str] = "format_version"
 _ATTR_MODEL_CLASS: Final[str] = "model_class"
 _ATTR_PAYLOAD_JSON: Final[str] = "payload_json"
-
-if TYPE_CHECKING:
-    from netCDF4 import Dataset
 
 
 class _VariableRef(TypedDict):
@@ -56,7 +55,26 @@ def deserialize_tunits_value_array(
     units: list[dict[str, Any]],
     values: np.ndarray,
 ) -> Any:
-    """Deserialize a tunits.ValueArray from units metadata and numeric values."""
+    """
+    Deserialize a tunits.ValueArray from NetCDF metadata.
+
+    Parameters
+    ----------
+    units : list[dict[str, Any]]
+        Serialized unit metadata produced by `serialize_tunits`.
+    values : np.ndarray
+        Numeric values stored in the NetCDF variable.
+
+    Returns
+    -------
+    Any
+        Restored `tunits.ValueArray` instance.
+
+    Raises
+    ------
+    TypeError
+        If the payload cannot be restored to a `tunits.ValueArray`.
+    """
     payload: dict[str, Any] = {
         DATA_TYPE_KEY: TYPE_TUNITS_VALUE_ARRAY,
         "units": units,
@@ -86,7 +104,23 @@ def save_netcdf_file(
     data: dict[str, Any],
     path: str | Path,
 ) -> Path:
-    """Save model field data as a NetCDF file."""
+    """
+    Save model field data as a NetCDF file.
+
+    Parameters
+    ----------
+    model : Any
+        Model instance providing format metadata.
+    data : dict[str, Any]
+        Field data payload to serialize.
+    path : str | Path
+        Destination path for the NetCDF file.
+
+    Returns
+    -------
+    Path
+        Path to the written NetCDF file.
+    """
     path_obj = Path(path)
     arrays: list[_EncodedArray] = []
     payload = _encode_value(data, arrays, path=())
@@ -113,7 +147,28 @@ def load_netcdf_file(
     model_cls: type[Any],
     path: str | Path,
 ) -> dict[str, Any]:
-    """Load model field data from a NetCDF file."""
+    """
+    Load model field data from a NetCDF file.
+
+    Parameters
+    ----------
+    model_cls : type[Any]
+        Model class providing format metadata.
+    path : str | Path
+        Source NetCDF path.
+
+    Returns
+    -------
+    dict[str, Any]
+        Restored field data.
+
+    Raises
+    ------
+    TypeError
+        If the decoded payload is not a mapping.
+    ValueError
+        If the NetCDF format metadata is incompatible.
+    """
     path_obj = Path(path)
     with _open_netcdf(path_obj, mode="r") as ds:
         _validate_netcdf_format(
@@ -136,6 +191,23 @@ def _encode_value(
     *,
     path: tuple[str, ...],
 ) -> Any:
+    """
+    Encode a nested value for NetCDF storage.
+
+    Parameters
+    ----------
+    value : Any
+        Value to encode.
+    arrays : list[_EncodedArray]
+        Accumulator for array payloads to store as NetCDF variables.
+    path : tuple[str, ...]
+        Path segments used to generate stable variable names.
+
+    Returns
+    -------
+    Any
+        Encoded payload with array references where applicable.
+    """
     if isinstance(value, np.ndarray):
         name = _path_name(path, fallback=f"field_{len(arrays)}")
         arrays.append(
@@ -186,6 +258,21 @@ def _encode_value(
 
 
 def _decode_value(value: Any, ds: Dataset) -> Any:
+    """
+    Decode a NetCDF payload into Python values.
+
+    Parameters
+    ----------
+    value : Any
+        Encoded payload to decode.
+    ds : Dataset
+        Open NetCDF dataset containing array variables.
+
+    Returns
+    -------
+    Any
+        Decoded value with arrays restored.
+    """
     if isinstance(value, dict):
         ref = value.get(_VARIABLE_REF_KEY)
         if _is_variable_ref(ref):
@@ -206,7 +293,19 @@ def _decode_value(value: Any, ds: Dataset) -> Any:
 
 
 def _is_variable_ref(value: Any) -> TypeGuard[_VariableRef]:
-    """Return whether a value is a variable-reference payload."""
+    """
+    Return whether a value is a variable-reference payload.
+
+    Parameters
+    ----------
+    value : Any
+        Candidate payload to inspect.
+
+    Returns
+    -------
+    bool
+        `True` if the payload matches the variable-reference shape.
+    """
     if not isinstance(value, dict):
         return False
     return (
@@ -218,6 +317,16 @@ def _is_variable_ref(value: Any) -> TypeGuard[_VariableRef]:
 
 
 def _write_array(ds: Dataset, item: _EncodedArray) -> None:
+    """
+    Write an encoded array as a NetCDF variable.
+
+    Parameters
+    ----------
+    ds : Dataset
+        Open NetCDF dataset to write into.
+    item : _EncodedArray
+        Encoded array payload to persist.
+    """
     values = np.asarray(item["values"])
     base_name = str(item["name"])
     dim_names = _dimension_names(base_name, values.ndim)
@@ -234,7 +343,25 @@ def _create_variable(
     values: np.ndarray,
     dim_names: tuple[str, ...],
 ) -> tuple[Any, np.ndarray]:
-    """Create a NetCDF variable and return normalized write values."""
+    """
+    Create a NetCDF variable and return normalized write values.
+
+    Parameters
+    ----------
+    ds : Dataset
+        Open NetCDF dataset.
+    name : str
+        Variable name to create.
+    values : np.ndarray
+        Array values to store.
+    dim_names : tuple[str, ...]
+        Dimension names for the variable.
+
+    Returns
+    -------
+    tuple[Any, np.ndarray]
+        Newly created variable and array values to write.
+    """
     if np.iscomplexobj(values):
         typecode = "c8" if np.dtype(values.dtype) == np.dtype(np.complex64) else "c16"
         return ds.createVariable(name, typecode, dim_names), values
@@ -250,6 +377,23 @@ def _create_variable(
 
 
 def _read_array(ds: Dataset, name: str, shape: tuple[int, ...]) -> np.ndarray:
+    """
+    Read a NetCDF variable and reshape it to the expected shape.
+
+    Parameters
+    ----------
+    ds : Dataset
+        Open NetCDF dataset.
+    name : str
+        Base variable name.
+    shape : tuple[int, ...]
+        Expected shape of the array.
+
+    Returns
+    -------
+    np.ndarray
+        Restored array values.
+    """
     var_name = _variable_name(name)
     data = np.asarray(ds.variables[var_name][:]).copy()
     if data.shape == shape:
@@ -258,12 +402,40 @@ def _read_array(ds: Dataset, name: str, shape: tuple[int, ...]) -> np.ndarray:
 
 
 def _path_name(path: tuple[str, ...], *, fallback: str) -> str:
+    """
+    Build a deterministic variable name from a path tuple.
+
+    Parameters
+    ----------
+    path : tuple[str, ...]
+        Path segments used to build the name.
+    fallback : str
+        Name to use when the path is empty.
+
+    Returns
+    -------
+    str
+        Sanitized variable name.
+    """
     if not path:
         return fallback
     return "_".join(_sanitize_name(part) for part in path)
 
 
 def _sanitize_name(name: str) -> str:
+    """
+    Sanitize a string to be a valid NetCDF identifier.
+
+    Parameters
+    ----------
+    name : str
+        Raw name to sanitize.
+
+    Returns
+    -------
+    str
+        Name containing only alphanumerics and underscores.
+    """
     sanitized = re.sub(r"[^0-9A-Za-z_]", "_", name)
     if not sanitized:
         return "field"
@@ -271,10 +443,38 @@ def _sanitize_name(name: str) -> str:
 
 
 def _variable_name(base_name: str) -> str:
+    """
+    Return the NetCDF variable name for a base name.
+
+    Parameters
+    ----------
+    base_name : str
+        Base name derived from the payload path.
+
+    Returns
+    -------
+    str
+        Variable name used in the dataset.
+    """
     return base_name
 
 
 def _dimension_names(base_name: str, ndim: int) -> tuple[str, ...]:
+    """
+    Build dimension names for a variable.
+
+    Parameters
+    ----------
+    base_name : str
+        Base variable name.
+    ndim : int
+        Number of dimensions in the array.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Dimension names in axis order.
+    """
     if ndim == 0:
         return ()
     return tuple(f"{base_name}_d{axis}" for axis in range(ndim))
@@ -286,6 +486,23 @@ def _validate_netcdf_format(
     expected_format: str,
     expected_version: int,
 ) -> None:
+    """
+    Validate NetCDF format metadata against expected values.
+
+    Parameters
+    ----------
+    ds : Dataset
+        Open NetCDF dataset.
+    expected_format : str
+        Required format name.
+    expected_version : int
+        Maximum supported format version.
+
+    Raises
+    ------
+    ValueError
+        If the dataset uses an unsupported format or version.
+    """
     format_name = _as_str(ds.getncattr(_ATTR_FORMAT))
     if format_name and format_name != expected_format:
         raise ValueError("Unsupported NetCDF format.")
@@ -296,20 +513,41 @@ def _validate_netcdf_format(
 
 
 def _open_netcdf(path: Path, mode: Literal["r", "w"]) -> Dataset:
-    """Open a NetCDF4 dataset."""
-    try:
-        from netCDF4 import Dataset
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "Optional dependency 'netCDF4' is required. Install extras: [netcdf4]."
-        ) from exc
+    """
+    Open a NetCDF4 dataset.
 
+    Parameters
+    ----------
+    path : Path
+        Path to the NetCDF file.
+    mode : Literal["r", "w"]
+        Open mode (`"r"` for read, `"w"` for write).
+
+    Returns
+    -------
+    Dataset
+        Open NetCDF dataset instance.
+
+    """
     if mode == "w":
         return Dataset(path, mode=mode, format="NETCDF4", auto_complex=True)
     return Dataset(path, mode=mode, auto_complex=True)
 
 
 def _as_str(value: Any) -> str:
+    """
+    Coerce NetCDF attribute values to text.
+
+    Parameters
+    ----------
+    value : Any
+        Attribute value to convert.
+
+    Returns
+    -------
+    str
+        Text representation of the attribute value.
+    """
     if isinstance(value, bytes):
         return value.decode()
     if hasattr(value, "item"):
@@ -321,8 +559,17 @@ def _as_str(value: Any) -> str:
 
 
 def _is_tunits_value_array(value: Any) -> bool:
-    try:
-        import tunits
-    except ModuleNotFoundError:
-        return False
+    """
+    Return whether a value is a tunits ValueArray instance.
+
+    Parameters
+    ----------
+    value : Any
+        Candidate value to inspect.
+
+    Returns
+    -------
+    bool
+        `True` if the value is a tunits `ValueArray`.
+    """
     return isinstance(value, tunits.ValueArray)

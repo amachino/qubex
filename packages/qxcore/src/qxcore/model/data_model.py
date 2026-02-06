@@ -54,7 +54,14 @@ class DataModel(Model):
         return cls.model_validate(data)
 
     def _raw_field_data(self) -> dict[str, Any]:
-        """Return raw model fields without custom serializer transformation."""
+        """
+        Return raw model fields without custom serializer transformation.
+
+        Returns
+        -------
+        dict[str, Any]
+            Field values mapped by field name.
+        """
         return {
             field_name: getattr(self, field_name)
             for field_name in self.__class__.model_fields
