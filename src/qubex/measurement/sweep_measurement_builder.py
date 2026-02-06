@@ -9,8 +9,8 @@ from typing import Any
 
 import numpy as np
 import tunits
+from qxcore import Expression
 
-from qubex.core.expression import Expression
 from qubex.pulse import (
     Blank,
     Drag,

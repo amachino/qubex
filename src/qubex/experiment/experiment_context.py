@@ -43,7 +43,7 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_PRE_MARGIN,
 )
 from qubex.typing import TargetMap
-from qubex.version import get_package_version
+from qubex.version import get_version
 
 from . import experiment_tool
 from .experiment_constants import (
@@ -282,13 +282,11 @@ class ExperimentContext:
         logger.info(f"date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         logger.info(f"python: {sys.version.split()[0]}")
         if verbose:
-            logger.info(f"numpy: {get_package_version('numpy')}")
-            logger.info(f"quel_ic_config: {get_package_version('quel_ic_config')}")
-            logger.info(
-                f"quel_clock_master: {get_package_version('quel_clock_master')}"
-            )
-            logger.info(f"qubecalib: {get_package_version('qubecalib')}")
-        logger.info(f"qubex: {get_package_version('qubex')}")
+            logger.info(f"numpy: {get_version('numpy')}")
+            logger.info(f"quel_ic_config: {get_version('quel_ic_config')}")
+            logger.info(f"quel_clock_master: {get_version('quel_clock_master')}")
+            logger.info(f"qubecalib: {get_version('qubecalib')}")
+        logger.info(f"qubex: {get_version('qubex')}")
         logger.info(f"env: {sys.prefix}")
         logger.info(f"config: {self.config_path}")
         logger.info(f"params: {self.params_path}")

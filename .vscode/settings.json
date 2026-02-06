@@ -22,6 +22,7 @@
     "notebook.source.fixAll": "explicit",
     "notebook.source.organizeImports": "explicit"
   },
+  "notebook.defaultFormatter": "charliermarsh.ruff",
   "notebook.formatOnSave.enabled": true,
   "python.analysis.diagnosticMode": "openFilesOnly",
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",

@@ -15,7 +15,7 @@ from pydantic import (
 from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from typing_extensions import Self
 
-from qubex.core.serialization import (
+from qxcore.serialization import (
     FORMAT_NAME,
     FORMAT_VERSION,
     META_FORMAT_KEY,

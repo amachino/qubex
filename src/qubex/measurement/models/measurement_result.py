@@ -8,8 +8,8 @@ from typing import Any
 
 import numpy as np
 from pydantic import Field
+from qxcore.model import DataModel
 
-from qubex.core.model import DataModel
 from qubex.typing import MeasurementMode
 
 

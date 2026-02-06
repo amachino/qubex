@@ -1,0 +1,21 @@
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+[project]
+name = "qxcore"
+version = "1.5.0a1"
+requires-python = ">=3.10"
+authors = [{ name = "Akinori Machino" }]
+description = "Qubex core data models and utilities"
+readme = "README.md"
+license = { file = "LICENSE" }
+dependencies = [
+    "netCDF4 ~= 1.0",
+    "numpy >= 1.23.5",
+    "protobuf ~= 6.0",
+    "pydantic ~= 2.0",
+    "sympy ~= 1.0",
+    "typedunits ~= 0.0",
+    "typing_extensions",
+]

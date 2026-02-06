@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from numpy.typing import NDArray
-
-from qubex.core.model import Model
+from qxcore.model import Model
 
 
 class SweepMeasurementResult(Model):

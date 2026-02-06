@@ -7,7 +7,7 @@ from typing import Any
 
 from typing_extensions import Self
 
-from qubex.core.serialization import load_netcdf_file, save_netcdf_file
+from qxcore.serialization import load_netcdf_file, save_netcdf_file
 
 from .model import Model
 

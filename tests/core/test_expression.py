@@ -2,8 +2,7 @@
 
 import numpy as np
 import pytest
-
-from qubex.core.expression import Expression
+from qxcore import Expression
 
 
 def test_expression_basic():

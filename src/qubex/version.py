@@ -1,35 +1,23 @@
 """Version helpers for Qubex."""
 
+from __future__ import annotations
+
 import importlib.metadata
+import json
 import shutil
 import subprocess
-
-from typing_extensions import deprecated
-
-VERSION = "1.5.0a1"
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 
-@deprecated("get_version is deprecated, use VERSION constant instead.")
-def get_version() -> str:
-    """Return the package version with an optional git suffix."""
-    try:
-        git_path = shutil.which("git")
-        if git_path is None:
-            return VERSION
-        commit_hash = (
-            subprocess.check_output([git_path, "rev-parse", "--short", "HEAD"])  # noqa: S603
-            .decode("utf-8")
-            .strip()
-        )
-    except Exception:
-        return VERSION
-    else:
-        return f"{VERSION}+{commit_hash}"
+def _get_installed_version(package_name: str) -> str:
+    """Get the installed version for the given package."""
+    return importlib.metadata.version(package_name)
 
 
-def get_package_version(package_name: str) -> str:
+def _get_editable_source_dir(package_name: str) -> Path | None:
     """
-    Get the installed version of a specific package using the standard library.
+    Return the editable source directory for a package if available.
 
     Parameters
     ----------
@@ -38,12 +26,98 @@ def get_package_version(package_name: str) -> str:
 
     Returns
     -------
-    str
-        The installed version of the package.
+    Path | None
+        The editable source directory when installed in editable mode.
     """
     try:
-        version = importlib.metadata.version(package_name)
+        dist = importlib.metadata.distribution(package_name)
     except importlib.metadata.PackageNotFoundError:
-        return f"Package '{package_name}' is not installed."
-    else:
+        return None
+
+    if dist.files is None:
+        return None
+
+    for file in dist.files:
+        if file.name != "direct_url.json":
+            continue
+        direct_url_path = dist.locate_file(file)
+        try:
+            data = json.loads(direct_url_path.read_text())
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        dir_info = data.get("dir_info", {})
+        if not dir_info.get("editable", False):
+            return None
+
+        url = data.get("url", "")
+        if not url:
+            return None
+
+        parsed = urlparse(url)
+        if parsed.scheme and parsed.scheme != "file":
+            return None
+
+        return Path(unquote(parsed.path))
+
+    return None
+
+
+def _get_git_commit(source_dir: Path) -> str | None:
+    """
+    Return the short git commit hash for a source directory.
+
+    Parameters
+    ----------
+    source_dir : Path
+        Source directory to resolve the git repository.
+
+    Returns
+    -------
+    str | None
+        Short git commit hash if available.
+    """
+    git_path = shutil.which("git")
+    if git_path is None:
+        return None
+
+    try:
+        return (
+            subprocess.check_output(  # noqa: S603
+                [git_path, "-C", str(source_dir), "rev-parse", "--short", "HEAD"]
+            )
+            .decode("utf-8")
+            .strip()
+        )
+    except Exception:
+        return None
+
+
+def get_version(package_name: str | None = None) -> str:
+    """
+    Return the package version, appending a git hash for editable installs.
+
+    Parameters
+    ----------
+    package_name : str | None
+        The package name. If None, defaults to ``qubex``.
+
+    Returns
+    -------
+    str
+        Version string with a local git hash suffix when available.
+    """
+    name = package_name or "qubex"
+    try:
+        version = _get_installed_version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return f"Package '{name}' is not installed."
+    source_dir = _get_editable_source_dir(name)
+    if source_dir is None:
         return version
+
+    commit_hash = _get_git_commit(source_dir)
+    if commit_hash is None:
+        return version
+
+    return f"{version}+g{commit_hash}"

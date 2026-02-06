@@ -5,8 +5,7 @@ from __future__ import annotations
 import numpy as np
 import tunits
 from netCDF4 import Dataset
-
-from qubex.core.model import DataModel
+from qxcore.model import DataModel
 
 
 class _DemoDataModel(DataModel):

@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Literal
 
 import tunits
-
-from qubex.core.model import Model
-from qubex.core.typing import ValueArrayLike
+from qxcore.model import Model
+from qxcore.typing import ValueArrayLike
 
 
 class ParametricSequencePulseCommand(Model):
