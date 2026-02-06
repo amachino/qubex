@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qubex"
-version = "1.5.0a1"
+version = "0.1.0"
 requires-python = ">=3.10"
 authors = [{ name = "Akinori Machino" }]
 description = "Qubex: Qubit experiment framework"
@@ -20,8 +20,8 @@ dependencies = [
     "jupyter ~= 1.0",
     "kaleido == 0.2.1",
     "matplotlib ~= 3.0",
-    "networkx ~= 3.0",
     "netCDF4 ~= 1.0",
+    "networkx ~= 3.0",
     "numpy >= 1.23.5",
     "optax",
     "plotly ~= 5.23",
@@ -29,17 +29,18 @@ dependencies = [
     "pydantic ~= 2.0",
     "pyserial ~= 3.5",
     "pyyaml ~= 6.0",
+    "qctrl-visualizer ~= 8.0",
     "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore",
     "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
-    "qctrl-visualizer ~= 8.0",
+    "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxsimulator",
     "qutip ~= 5.0",
     "rich ~= 13.0",
     "scikit-learn ~= 1.0",
     "scipy ~= 1.0",
     "sympy ~= 1.0",
+    "tqdm ~= 4.0",
     "typedunits",
     "typing_extensions",
-    "tqdm ~= 4.0",
 ]
 
 [project.optional-dependencies]
@@ -76,9 +77,10 @@ cache-dir = ".cache/uv"
 [tool.uv.sources]
 qxcore = { workspace = true }
 qxpulse = { workspace = true }
+qxsimulator = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/qxcore", "packages/qxpulse"]
+members = ["packages/qxcore", "packages/qxpulse", "packages/qxsimulator"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"

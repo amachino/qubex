@@ -19,6 +19,7 @@ members = [
     "qubex",
     "qxcore",
     "qxpulse",
+    "qxsimulator",
 ]
 
 [[package]]
@@ -3583,7 +3584,7 @@ dependencies = [
 
 [[package]]
 name = "qubex"
-version = "1.5.0a1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cma" },
@@ -3612,6 +3613,7 @@ dependencies = [
     { name = "qutip" },
     { name = "qxcore" },
     { name = "qxpulse" },
+    { name = "qxsimulator" },
     { name = "rich" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -3672,6 +3674,7 @@ requires-dist = [
     { name = "qutip", specifier = "~=5.0" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxpulse", editable = "packages/qxpulse" },
+    { name = "qxsimulator", editable = "packages/qxsimulator" },
     { name = "rich", specifier = "~=13.0" },
     { name = "scikit-learn", specifier = "~=1.0" },
     { name = "scipy", specifier = "~=1.0" },
@@ -3798,6 +3801,41 @@ dependencies = [
 requires-dist = [
     { name = "numpy", specifier = ">=1.23.5" },
     { name = "plotly", specifier = "~=5.23" },
+    { name = "scipy", specifier = "~=1.0" },
+    { name = "typing-extensions" },
+]
+
+[[package]]
+name = "qxsimulator"
+version = "0.1.0"
+source = { editable = "packages/qxsimulator" }
+dependencies = [
+    { name = "jax", version = "0.4.30", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or python_full_version >= '3.13'" },
+    { name = "jax", version = "0.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and python_full_version < '3.13'" },
+    { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "numpy" },
+    { name = "optax", version = "0.2.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or python_full_version >= '3.13'" },
+    { name = "optax", version = "0.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and python_full_version < '3.13'" },
+    { name = "plotly" },
+    { name = "qctrl-visualizer" },
+    { name = "qutip" },
+    { name = "qxpulse" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "typing-extensions" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jax" },
+    { name = "networkx", specifier = "~=3.0" },
+    { name = "numpy", specifier = ">=1.23.5" },
+    { name = "optax" },
+    { name = "plotly", specifier = "~=5.23" },
+    { name = "qctrl-visualizer", specifier = "~=8.0" },
+    { name = "qutip", specifier = "~=5.0" },
+    { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "scipy", specifier = "~=1.0" },
     { name = "typing-extensions" },
 ]
