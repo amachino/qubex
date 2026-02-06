@@ -1180,7 +1180,7 @@ class ExperimentSystem:
         # sort by count and then by frequency
         center_freqs_by_count.sort(key=lambda x: (x[0], x[1]), reverse=True)
         # choose the one with the highest count and frequency
-        center_freq = center_freqs_by_count[0][1].astype(int)
+        center_freq = int(center_freqs_by_count[0][1])
         # round to the nearest NCO step
         center_freq = round(center_freq / NCO_STEP) * NCO_STEP
         # clip to the possible range
