@@ -22,9 +22,9 @@ Qubex automatically loads available classifiers into `Experiment.classifiers` an
 ## Using classification in results
 
 ```python
-result = ex.measure(sequence, mode="single", shots=4096)
+result = exp.measure(sequence, mode="single", shots=4096)
 
-measure_data = result.data[ex.qubit_labels[0]]
+measure_data = result.data[exp.qubit_labels[0]]
 probs = measure_data.probabilities
 counts = measure_data.counts
 ```

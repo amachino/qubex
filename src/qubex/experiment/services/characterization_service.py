@@ -24,7 +24,6 @@ from qxpulse import (
     Waveform,
 )
 from rich.prompt import Confirm
-from scipy.signal import find_peaks
 from tqdm import tqdm
 from typing_extensions import deprecated
 
@@ -2757,7 +2756,8 @@ class CharacterizationService:
         phases_unwrap = np.unwrap(phases)
         phases_diff = np.diff(phases_unwrap)
         if filter == "gaussian":
-            from scipy.ndimage import gaussian_filter1d
+            from scipy.ndimage import gaussian_filter1d  # lazy import
+            from scipy.signal import find_peaks  # lazy import
 
             phases_unwrap_for_peak = gaussian_filter1d(phases_unwrap, sigma=2.0)
             phases_diff_for_peak = np.diff(phases_unwrap_for_peak)
@@ -2774,7 +2774,7 @@ class CharacterizationService:
             top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
             peaks = [idx for _, idx in top_peaks]
         elif filter == "savgol":
-            from scipy.signal import savgol_filter
+            from scipy.signal import find_peaks, savgol_filter  # lazy import
 
             # window_length: around 5% of the data length
             window_frac = 0.05
@@ -2798,6 +2798,8 @@ class CharacterizationService:
             top_peaks = sorted(sorted_peaks[:num_resonators], key=lambda x: x[1])
             peaks = [idx for _, idx in top_peaks]
         else:
+            from scipy.signal import find_peaks  # lazy import
+
             peaks, _ = find_peaks(
                 np.abs(phases_diff),
                 height=peak_height or 0.5,
@@ -3358,6 +3360,8 @@ class CharacterizationService:
         phases -= np.pi
         phases_std = np.std(phases)
         # phases[phases > 3 * phases_std] -= 2 * np.pi
+
+        from scipy.signal import find_peaks  # lazy import
 
         peaks, _ = find_peaks(
             np.abs(phases),

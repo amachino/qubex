@@ -8,7 +8,6 @@ from functools import reduce
 from itertools import product
 from typing import Any
 
-import cvxpy as cp
 import numpy as np
 import plotly.graph_objs as go
 from numpy.typing import NDArray
@@ -84,6 +83,8 @@ def mle_fit_density_matrix(
     expected_values: dict[str, float],
 ) -> NDArray:
     """Estimate a physical density matrix via MLE fitting."""
+    import cvxpy as cp  # lazy import
+
     paulis = {
         "I": np.array([[1, 0], [0, 1]], dtype=complex),
         "X": np.array([[0, 1], [1, 0]], dtype=complex),

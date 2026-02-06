@@ -24,7 +24,7 @@ loaded_result = record.data
 ## Save an experiment result
 
 ```python
-sweep = ex.sweep_parameter(
+sweep = exp.sweep_parameter(
     lambda amp: {"Q00": [amp + 0.01j] * 16},
     sweep_range=[0.5, 1.0, 1.5],
 )
@@ -37,13 +37,13 @@ Experiment records are saved under `data/` by default.
 ## Load an experiment record
 
 ```python
-loaded = ex.load_record(record.file_name)
+loaded = exp.load_record(record.file_name)
 print(loaded.data)
 ```
 
 ## Persist metadata
 
 ```python
-ex.note.put("calibration_id", "cal-2025-01")
-ex.note.save()
+exp.note.put("calibration_id", "cal-2025-01")
+exp.note.save()
 ```

@@ -7,7 +7,7 @@ This quickstart shows a minimal measurement using the high-level `Experiment` AP
 ```python
 import qubex as qx
 
-ex = qx.Experiment(
+exp = qx.Experiment(
     chip_id="64Q",
     qubits=["Q00", "Q01"],
     config_dir="/path/to/config",
@@ -20,8 +20,8 @@ ex = qx.Experiment(
 
 ```python
 # Required for real hardware. Skip in mock mode.
-ex.connect()
-# ex.configure()  # optional, if you need to push settings to devices
+exp.connect()
+# exp.configure()  # optional, if you need to push settings to devices
 ```
 
 ## 3. Run a simple measurement
@@ -29,10 +29,10 @@ ex.connect()
 ```python
 waveform = [0.01 + 0.01j] * 16
 
-result = ex.measure(
+result = exp.measure(
     sequence={
-        ex.qubit_labels[0]: waveform,
-        ex.qubit_labels[1]: waveform,
+        exp.qubit_labels[0]: waveform,
+        exp.qubit_labels[1]: waveform,
     },
     mode="avg",
     shots=1024,

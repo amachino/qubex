@@ -29,17 +29,17 @@ Experiments can store higher-level results such as sweeps or calibrations using 
 
 ```python
 record = sweep.save("amplitude_sweep", "flat-top sweep on Q00")
-loaded = ex.load_record(record.file_name)
+loaded = exp.load_record(record.file_name)
 ```
 
 Experiment records are stored under `data/` by default.
 
 ## Notes and metadata
 
-- **`ExperimentNote`**: Key-value store for metadata (`ex.note`).
+- **`ExperimentNote`**: Key-value store for metadata (`exp.note`).
 - **`CalibrationNote`**: Stores calibration parameters and validity windows.
 
 ```python
-ex.note.put("operator", "lab-user")
-ex.note.save()
+exp.note.put("operator", "lab-user")
+exp.note.save()
 ```

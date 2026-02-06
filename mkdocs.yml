@@ -69,7 +69,12 @@ nav:
       - Save and Load Results: user-guide/how-to/save-and-load-results.md
   - Tutorials:
       - Overview: user-guide/tutorials/index.md
-      - First Experiment: user-guide/tutorials/first-experiment.md
+      - 1. Basic Measurement with Experiment: user-guide/tutorials/1_basic-measurement.md
+      - 2. Qubit and Resonator Spectroscopy: user-guide/tutorials/2_spectroscopy.md
+      - 3. 1Q Calibration: user-guide/tutorials/3_1q-calibration.md
+      - 4. 1Q Characterization: user-guide/tutorials/4_1q-characterization.md
+      - 5. 1Q Benchmarking: user-guide/tutorials/5_1q-benchmarking.md
+      - 6. 2Q Calibration and Benchmarking: user-guide/tutorials/6_2q-calibration-benchmarking.md
   - Reference:
       - Overview: user-guide/reference/index.md
       - Configuration: user-guide/reference/configuration.md

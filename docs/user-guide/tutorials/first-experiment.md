@@ -8,7 +8,7 @@ This tutorial walks through an end-to-end experiment: setup, measurement, pulse 
 import numpy as np
 import qubex as qx
 
-ex = qx.Experiment(
+exp = qx.Experiment(
     chip_id="64Q",
     qubits=["Q00", "Q01"],
     config_dir="/path/to/config",
@@ -20,18 +20,18 @@ ex = qx.Experiment(
 ## 2. Connect and inspect the system
 
 ```python
-ex.connect()
+exp.connect()
 
-ex.tool.print_chip_info()
-ex.tool.print_wiring_info(ex.qubits)
-ex.tool.print_target_frequencies(ex.qubits)
+exp.tool.print_chip_info()
+exp.tool.print_wiring_info(exp.qubits)
+exp.tool.print_target_frequencies(exp.qubits)
 ```
 
 ## 3. Validate readout
 
 ```python
-ex.check_noise()
-ex.check_waveform()
+exp.check_noise()
+exp.check_waveform()
 ```
 
 ## 4. Run a basic measurement
@@ -39,10 +39,10 @@ ex.check_waveform()
 ```python
 waveform = [0.01 + 0.01j] * 16
 
-result = ex.measure(
+result = exp.measure(
     sequence={
-        ex.qubit_labels[0]: waveform,
-        ex.qubit_labels[1]: waveform,
+        exp.qubit_labels[0]: waveform,
+        exp.qubit_labels[1]: waveform,
     },
     mode="avg",
     shots=1024,
@@ -56,8 +56,8 @@ result.plot()
 ```python
 pulse = qx.pulse.FlatTop(duration=30, amplitude=0.02, tau=10)
 
-sweep = ex.sweep_parameter(
-    lambda amp: {ex.qubit_labels[0]: pulse.scaled(amp)},
+sweep = exp.sweep_parameter(
+    lambda amp: {exp.qubit_labels[0]: pulse.scaled(amp)},
     sweep_range=np.linspace(0.0, 2.0, 30),
 )
 
@@ -68,8 +68,8 @@ sweep.plot(normalize=True)
 
 ```python
 record = sweep.save("amplitude_sweep", "flat-top sweep on Q00")
-ex.note.put("operator", "lab-user")
-ex.note.save()
+exp.note.put("operator", "lab-user")
+exp.note.save()
 ```
 
 ## Next steps

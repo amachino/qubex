@@ -6,9 +6,7 @@ import logging
 from collections.abc import Collection
 from typing import Any
 
-import cma
 import numpy as np
-import scipy.optimize
 from qxpulse import (
     CrossResonance,
     Drag,
@@ -27,6 +25,18 @@ from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
+
+
+def _load_cma():
+    import cma  # lazy import
+
+    return cma
+
+
+def _load_scipy_optimize():
+    import scipy.optimize  # lazy import
+
+    return scipy.optimize
 
 
 class OptimizationService:
@@ -118,6 +128,7 @@ class OptimizationService:
         if timeout is None:
             timeout = 300
 
+        cma = _load_cma()
         pulse = self.pulse.get_drag_hpi_pulse(qubit)
         N = pulse.length
         initial_params = list(pulse.real) + list(pulse.imag)
@@ -192,6 +203,7 @@ class OptimizationService:
         if timeout is None:
             timeout = 300
 
+        cma = _load_cma()
         param = self.ctx.calib_note.get_drag_hpi_param(qubit)
         if param is None:
             raise ValueError("DRAG HPI parameters are not stored.")
@@ -275,6 +287,7 @@ class OptimizationService:
         if timeout is None:
             timeout = 300
 
+        cma = _load_cma()
         N = pulse.length
         initial_params = list(pulse.real) + list(pulse.imag)
         es = cma.CMAEvolutionStrategy(
@@ -606,6 +619,7 @@ class OptimizationService:
 
         try:
             if optimize_method == "nm":
+                scipy_optimize = _load_scipy_optimize()
 
                 def nm_callback(xk: np.ndarray) -> None:
                     current_loss = objective_func(xk)
@@ -616,7 +630,7 @@ class OptimizationService:
                 if maxiter is None:
                     maxiter = 100
 
-                result = scipy.optimize.minimize(
+                result = scipy_optimize.minimize(
                     objective_func,
                     x0=initial_params,
                     method="Nelder-Mead",
@@ -630,6 +644,7 @@ class OptimizationService:
                 best_params = result.x
 
             elif optimize_method == "cma":
+                cma = _load_cma()
                 if ftarget is None:
                     ftarget = 1e-2
                 if timeout is None:

@@ -9,13 +9,13 @@ from collections import defaultdict
 from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from typing_extensions import deprecated
 
 logger = logging.getLogger(__name__)
 
-try:
+if TYPE_CHECKING:
     from qubecalib import QubeCalib, Sequencer
     from qubecalib.instrument.quel.quel1 import Quel1System
     from qubecalib.instrument.quel.quel1.driver import (
@@ -40,8 +40,58 @@ try:
     )
     from quel_clock_master import QuBEMasterClient
     from quel_ic_config import Quel1Box, Quel1ConfigOption
-except ImportError as e:
-    logger.info(e)
+
+_QUBECALIB_IMPORT_DONE = False
+_QUBECALIB_IMPORT_ERROR: ImportError | None = None
+
+
+def _ensure_qubecalib_imports() -> None:
+    """Import qubecalib/quel dependencies on demand."""
+    global _QUBECALIB_IMPORT_DONE, _QUBECALIB_IMPORT_ERROR
+    global QubeCalib, Sequencer, Quel1System
+    global Action, AwgId, AwgSetting, RunitId, RunitSetting, TriggerSetting
+    global Skew
+    global DEFAULT_SAMPLING_PERIOD, CapSampledSequence, GenSampledSequence
+    global BoxPool, CaptureParamTools, Converter, WaveSequenceTools
+    global QuBEMasterClient, Quel1Box, Quel1ConfigOption
+
+    if _QUBECALIB_IMPORT_DONE:
+        return
+    if _QUBECALIB_IMPORT_ERROR is not None:
+        raise _QUBECALIB_IMPORT_ERROR
+
+    try:
+        from qubecalib import QubeCalib, Sequencer  # lazy import
+        from qubecalib.instrument.quel.quel1 import Quel1System  # lazy import
+        from qubecalib.instrument.quel.quel1.driver import (  # lazy import
+            Action,
+            AwgId,
+            AwgSetting,
+            RunitId,
+            RunitSetting,
+            TriggerSetting,
+        )
+        from qubecalib.instrument.quel.quel1.tool import Skew  # lazy import
+        from qubecalib.neopulse import (  # lazy import
+            DEFAULT_SAMPLING_PERIOD,
+            CapSampledSequence,
+            GenSampledSequence,
+        )
+        from qubecalib.qubecalib import (  # lazy import
+            BoxPool,
+            CaptureParamTools,
+            Converter,
+            WaveSequenceTools,
+        )
+        from quel_clock_master import QuBEMasterClient  # lazy import
+        from quel_ic_config import Quel1Box, Quel1ConfigOption  # lazy import
+    except ImportError as e:
+        _QUBECALIB_IMPORT_ERROR = e
+        logger.info(e)
+        raise
+
+    _QUBECALIB_IMPORT_DONE = True
+
 
 # TODO: use appropriate noise threshold
 _RELAXED_NOISE_THRESHOLD = 10000
@@ -64,6 +114,7 @@ class Quel1BackendController:
         config_path: str | Path | None = None,
     ):
         try:
+            _ensure_qubecalib_imports()
             if config_path is None:
                 self._qubecalib = QubeCalib()
             else:
