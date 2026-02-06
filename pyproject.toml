@@ -40,6 +40,9 @@ backend = [
     "qubecalib @ git+https://github.com/qiqb-osaka/qube-calib.git@3.1.16beta1",
 ]
 
+[project.scripts]
+qubex = "qubex.cli:main"
+
 [dependency-groups]
 dev = [
     "pyinstrument",

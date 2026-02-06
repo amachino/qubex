@@ -12,8 +12,6 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
-from scipy.optimize import curve_fit, least_squares, minimize
-from sklearn.decomposition import PCA
 
 COLORS = [
     "#0C5DA5",
@@ -26,6 +24,30 @@ COLORS = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _curve_fit(*args, **kwargs):
+    from scipy.optimize import curve_fit as scipy_curve_fit  # lazy import
+
+    return scipy_curve_fit(*args, **kwargs)
+
+
+def _least_squares(*args, **kwargs):
+    from scipy.optimize import least_squares as scipy_least_squares  # lazy import
+
+    return scipy_least_squares(*args, **kwargs)
+
+
+def _minimize(*args, **kwargs):
+    from scipy.optimize import minimize as scipy_minimize  # lazy import
+
+    return scipy_minimize(*args, **kwargs)
+
+
+def _PCA(*args, **kwargs):
+    from sklearn.decomposition import PCA as sklearn_pca  # lazy import
+
+    return sklearn_pca(*args, **kwargs)
 
 
 class FitStatus(Enum):
@@ -357,14 +379,14 @@ def fit_linear(
         return a * x + b
 
     if not intercept:
-        popt, pcov = curve_fit(func_linear, x, y)
+        popt, pcov = _curve_fit(func_linear, x, y)
         a = popt[0]
         a_err = np.sqrt(np.diag(pcov))[0]
         r2 = 1 - np.sum((y - func_linear(x, *popt)) ** 2) / np.sum(
             (y - np.mean(y)) ** 2
         )
     else:
-        popt, pcov = curve_fit(func_linear_with_intercept, x, y)
+        popt, pcov = _curve_fit(func_linear_with_intercept, x, y)
         a, b = popt
         a_err, b_err = np.sqrt(np.diag(pcov))
         r2 = 1 - np.sum((y - func_linear_with_intercept(x, *popt)) ** 2) / np.sum(
@@ -639,14 +661,14 @@ def fit_cosine(
                 (0, 0, -np.pi, -bound_max, 0),
                 (bound_max, np.inf, np.pi, bound_max, np.inf),
             )
-            popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+            popt, pcov = _curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
                 (0, 0, -np.pi, -bound_max),
                 (bound_max, np.inf, np.pi, bound_max),
             )
-            popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+            popt, pcov = _curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -833,7 +855,7 @@ def fit_delayed_cosine(
         )
 
     try:
-        popt, pcov = curve_fit(func_delayed_cos, x, y, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_delayed_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -997,7 +1019,7 @@ def fit_exp_decay(
         )
 
     try:
-        popt, pcov = curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_exp_decay, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -1147,7 +1169,7 @@ def fit_lorentzian(
         )
 
     try:
-        popt, pcov = curve_fit(func_lorentzian, x, y, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_lorentzian, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -1310,7 +1332,7 @@ def fit_sqrt_lorentzian(
         )
 
     try:
-        popt, pcov = curve_fit(
+        popt, pcov = _curve_fit(
             func_sqrt_lorentzian,
             x,
             y,
@@ -1457,7 +1479,7 @@ def fit_rabi(
 
     # Rotate the data to align the Q axis (|g>: +Q, |e>: -Q)
     data_vec = np.column_stack([data.real, data.imag])
-    pca = PCA(n_components=2).fit(data_vec)
+    pca = _PCA(n_components=2).fit(data_vec)
 
     if reference_point is not None:
         # If a reference point is provided, use it to determine the initial point
@@ -1506,14 +1528,14 @@ def fit_rabi(
                 (0, 0, -np.inf, -np.inf, 0),
                 (np.inf, np.inf, np.pi, np.inf, np.inf),
             )
-            popt, pcov = curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
+            popt, pcov = _curve_fit(func_damped_cos, x, y, p0=p0, bounds=bounds)
         else:
             p0 = (amplitude_est, omega_est, phase_est, offset_est)
             bounds = (
                 (0, 0, -np.inf, -np.inf),
                 (np.inf, np.inf, np.pi, np.inf),
             )
-            popt, pcov = curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
+            popt, pcov = _curve_fit(func_cos, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -1670,7 +1692,7 @@ def fit_detuned_rabi(
         return np.sqrt(f_rabi**2 + (f_control - f_resonance) ** 2)
 
     try:
-        popt, pcov = curve_fit(func, control_frequencies, rabi_frequencies)
+        popt, pcov = _curve_fit(func, control_frequencies, rabi_frequencies)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -1838,7 +1860,7 @@ def fit_ramsey(
         )
 
     try:
-        popt, pcov = curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_damped_cos, times, data, p0=p0, bounds=bounds)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -1995,7 +2017,7 @@ def fit_rb(
         return A * p**n + C
 
     try:
-        popt, pcov = curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
+        popt, pcov = _curve_fit(func_rb, x, y, p0=p0, bounds=bounds)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -2293,7 +2315,7 @@ def fit_ampl_calib_data(
         p0 = (amplitude_est, omega_est, phase_est, a_est, b_est)
 
     try:
-        popt, pcov = curve_fit(cos_func, x, y, p0=p0)
+        popt, pcov = _curve_fit(cos_func, x, y, p0=p0)
     except RuntimeError:
         logger.warning(f"Failed to fit the data for {target}.")
         return FitResult(
@@ -2305,7 +2327,7 @@ def fit_ampl_calib_data(
             },
         )
 
-    result = minimize(
+    result = _minimize(
         cos_func,
         x0=np.mean(x),
         args=tuple(popt),
@@ -2433,7 +2455,7 @@ def fit_reflection_coefficient(
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
     try:
-        result = least_squares(
+        result = _least_squares(
             residuals,
             p0,
             bounds=bounds,
@@ -2687,7 +2709,7 @@ def fit_reflection_coefficient_double(
         return np.hstack([np.real(y_model - y), np.imag(y_model - y)])
 
     try:
-        result = least_squares(
+        result = _least_squares(
             residuals,
             p0,
             bounds=bounds,
@@ -3024,7 +3046,7 @@ def fit_rotation(
     logger.debug("Fitting rotation data.")
     logger.debug(f"Initial guess: {p0}")
 
-    result = least_squares(
+    result = _least_squares(
         residuals,
         p0,
         bounds=bounds,

@@ -6,7 +6,6 @@ from typing import Final
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy.special import comb
 
 from qxpulse.pulse import Pulse
 
@@ -146,6 +145,7 @@ def sin_pow_integral(
         Integral values for $\sin^n(x)$.
     """
     x = np.asarray(x, dtype=float)
+    from scipy.special import comb  # lazy import
 
     if n < 0 or not isinstance(n, int):
         raise ValueError("n must be a non-negative integer")

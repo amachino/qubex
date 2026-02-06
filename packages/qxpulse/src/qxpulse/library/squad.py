@@ -6,7 +6,6 @@ from typing import Final, Literal
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from scipy.special import betainc
 
 from qxpulse.pulse import Pulse
 
@@ -155,6 +154,8 @@ class Squad(Pulse):
         elif window == "beta":
             # Beta-shaped smooth ramp:
             # use regularized incomplete beta I_u(α,β) as g(u)
+            from scipy.special import betainc  # lazy import
+
             alpha = beta_mode * (beta_sum - 2.0) + 1.0
             beta_param = beta_sum - alpha
             g_u = betainc(alpha, beta_param, u_sel)
