@@ -3555,6 +3555,7 @@ dependencies = [
     { name = "cma" },
     { name = "cvxpy" },
     { name = "ipykernel" },
+    { name = "ipywidgets" },
     { name = "jsonpickle" },
     { name = "kaleido" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -3604,28 +3605,29 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cma", specifier = "~=4.0" },
-    { name = "cvxpy", specifier = "~=1.6" },
-    { name = "ipykernel" },
-    { name = "jsonpickle", specifier = "~=3.0" },
-    { name = "kaleido", specifier = "==0.2.1" },
-    { name = "networkx", specifier = "~=3.0" },
-    { name = "numpy", specifier = ">=1.23.5" },
-    { name = "plotly", specifier = "~=5.23" },
-    { name = "pydantic", specifier = "~=2.0" },
-    { name = "pyserial", specifier = "~=3.5" },
-    { name = "pyyaml", specifier = "~=6.0" },
-    { name = "qctrl-visualizer", specifier = "~=8.0" },
+    { name = "cma", specifier = ">=4.0" },
+    { name = "cvxpy", specifier = ">=1.6" },
+    { name = "ipykernel", specifier = ">=6.0" },
+    { name = "ipywidgets", specifier = ">=7.7" },
+    { name = "jsonpickle", specifier = ">=3.0" },
+    { name = "kaleido", specifier = ">=0.2" },
+    { name = "networkx", specifier = ">=2.7" },
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "plotly", specifier = ">=5.23" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pyserial", specifier = ">=3.5" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "qctrl-visualizer", specifier = ">=8.0" },
     { name = "qubecalib", marker = "extra == 'backend'", git = "https://github.com/qiqb-osaka/qube-calib.git?rev=3.1.16beta1" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "qxsimulator", editable = "packages/qxsimulator" },
-    { name = "rich", specifier = "~=13.0" },
-    { name = "scikit-learn", specifier = "~=1.0" },
-    { name = "scipy", specifier = "~=1.0" },
-    { name = "tqdm", specifier = "~=4.0" },
-    { name = "typedunits" },
-    { name = "typing-extensions" },
+    { name = "rich", specifier = ">=13.0" },
+    { name = "scikit-learn", specifier = ">=1.0" },
+    { name = "scipy", specifier = ">=1.0" },
+    { name = "tqdm", specifier = ">=4.0" },
+    { name = "typedunits", specifier = ">=0.0" },
+    { name = "typing-extensions", specifier = ">=4.5" },
 ]
 provides-extras = ["backend"]
 
@@ -3720,13 +3722,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "netcdf4", specifier = "~=1.0" },
-    { name = "numpy", specifier = ">=1.23.5" },
-    { name = "protobuf", specifier = "~=6.0" },
-    { name = "pydantic", specifier = "~=2.0" },
-    { name = "sympy", specifier = "~=1.0" },
-    { name = "typedunits", specifier = "~=0.0" },
-    { name = "typing-extensions" },
+    { name = "netcdf4", specifier = ">=1.0" },
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "protobuf", specifier = ">=6.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "sympy", specifier = ">=1.0" },
+    { name = "typedunits", specifier = ">=0.0" },
+    { name = "typing-extensions", specifier = ">=4.5" },
 ]
 
 [[package]]
@@ -3743,10 +3745,10 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "numpy", specifier = ">=1.23.5" },
-    { name = "plotly", specifier = "~=5.23" },
-    { name = "scipy", specifier = "~=1.0" },
-    { name = "typing-extensions" },
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "plotly", specifier = ">=5.23" },
+    { name = "scipy", specifier = ">=1.0" },
+    { name = "typing-extensions", specifier = ">=4.5" },
 ]
 
 [[package]]
@@ -3773,16 +3775,16 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ipython" },
-    { name = "jax" },
-    { name = "networkx", specifier = "~=3.0" },
-    { name = "numpy", specifier = ">=1.23.5" },
-    { name = "optax" },
-    { name = "plotly", specifier = "~=5.23" },
-    { name = "qctrl-visualizer", specifier = "~=8.0" },
-    { name = "qutip", specifier = "~=5.0" },
+    { name = "ipython", specifier = ">=7.0" },
+    { name = "jax", specifier = ">=0.4" },
+    { name = "networkx", specifier = ">=2.7" },
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "optax", specifier = ">=0.2" },
+    { name = "plotly", specifier = ">=5.23" },
+    { name = "qctrl-visualizer", specifier = ">=8.0" },
+    { name = "qutip", specifier = ">=5.0" },
     { name = "qxpulse", editable = "packages/qxpulse" },
-    { name = "scipy", specifier = "~=1.0" },
+    { name = "scipy", specifier = ">=1.0" },
 ]
 
 [[package]]

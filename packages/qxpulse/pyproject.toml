@@ -11,10 +11,10 @@ description = "Qubex pulse primitives and scheduling utilities"
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
-    "numpy >= 1.23.5",
-    "plotly ~= 5.23",
-    "scipy ~= 1.0",
-    "typing_extensions",
+    "numpy >= 1.22",
+    "plotly >= 5.23",
+    "scipy >= 1.0",
+    "typing_extensions >= 4.5",
 ]
 
 [tool.setuptools.package-data]
