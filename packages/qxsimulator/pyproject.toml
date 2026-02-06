@@ -15,12 +15,12 @@ dependencies = [
     "networkx ~= 3.0",
     "numpy >= 1.23.5",
     "optax",
+    "ipython",
     "plotly ~= 5.23",
     "qctrl-visualizer ~= 8.0",
     "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
     "qutip ~= 5.0",
     "scipy ~= 1.0",
-    "typing_extensions",
 ]
 
 [tool.setuptools.package-data]
