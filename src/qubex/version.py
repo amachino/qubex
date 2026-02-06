@@ -121,3 +121,6 @@ def get_version(package_name: str | None = None) -> str:
         return version
 
     return f"{version}+g{commit_hash}"
+
+
+VERSION = get_version()

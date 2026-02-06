@@ -1,6 +1,6 @@
 [build-system]
-requires = ["uv_build>=0.9.18,<0.10.0"]
-build-backend = "uv_build"
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "qubex"
@@ -65,6 +65,9 @@ docs = [
     "mkdocs-autorefs",
     "pymdown-extensions",
 ]
+
+[tool.setuptools.package-data]
+qubex = ["py.typed", "clifford/**/*.json"]
 
 [tool.uv]
 cache-dir = ".cache/uv"
