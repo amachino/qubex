@@ -2348,6 +2348,82 @@ class Experiment:
             save=save,
         )
 
+    def calibrate_1q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        coarse: bool | None = None,
+    ) -> Result:
+        """
+        Run the one-qubit calibration workflow.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to calibrate.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+        coarse : bool, optional
+            Whether to skip fine DRAG calibrations. Defaults to False.
+
+        Returns
+        -------
+        Result
+            Result of the calibration workflow.
+        """
+        return self.calibration_service.calibrate_1q(
+            targets=targets,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            coarse=coarse,
+        )
+
+    def calibrate_2q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        cr_calib_params: dict | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """
+        Run the two-qubit calibration workflow.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target CR labels to calibrate.
+        cr_calib_params : dict, optional
+            Per-CR calibration parameters.
+        shots : int, optional
+            Number of shots. Defaults to CALIBRATION_SHOTS.
+        interval : float, optional
+            Interval between shots. Defaults to DEFAULT_INTERVAL.
+        plot : bool, optional
+            Whether to plot the measured signals. Defaults to True.
+
+        Returns
+        -------
+        Result
+            Result of the calibration workflow.
+        """
+        return self.calibration_service.calibrate_2q(
+            targets=targets,
+            cr_calib_params=cr_calib_params,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+        )
+
     def calibrate_default_pulse(
         self,
         targets: Collection[str] | str | None = None,
@@ -3890,6 +3966,88 @@ class Experiment:
     # endregion
 
     # region benchmarking_service methods
+
+    def benchmark_1q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        n_trials: int | None = None,
+        in_parallel: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> None:
+        """
+        Run the standard 1Q benchmarking suite.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target qubits to benchmark.
+        n_trials : int, optional
+            Number of trials for benchmarking.
+        in_parallel : bool, optional
+            Whether to run targets in parallel.
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots.
+        plot : bool, optional
+            Whether to plot the results.
+        save_image : bool, optional
+            Whether to save plots as images.
+        """
+        return self.benchmarking_service.benchmark_1q(
+            targets=targets,
+            n_trials=n_trials,
+            in_parallel=in_parallel,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
+
+    def benchmark_2q(
+        self,
+        targets: Collection[str] | str | None = None,
+        *,
+        n_trials: int | None = None,
+        in_parallel: bool | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        plot: bool | None = None,
+        save_image: bool | None = None,
+    ) -> None:
+        """
+        Run the standard 2Q benchmarking suite.
+
+        Parameters
+        ----------
+        targets : Collection[str] | str, optional
+            Target CR labels to benchmark.
+        n_trials : int, optional
+            Number of trials for benchmarking.
+        in_parallel : bool, optional
+            Whether to run targets in parallel.
+        shots : int, optional
+            Number of shots.
+        interval : float, optional
+            Interval between shots.
+        plot : bool, optional
+            Whether to plot the results.
+        save_image : bool, optional
+            Whether to save plots as images.
+        """
+        return self.benchmarking_service.benchmark_2q(
+            targets=targets,
+            n_trials=n_trials,
+            in_parallel=in_parallel,
+            shots=shots,
+            interval=interval,
+            plot=plot,
+            save_image=save_image,
+        )
 
     def rb_sequence(
         self,
