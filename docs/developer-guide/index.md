@@ -1,4 +1,4 @@
-# Developer Guide
+# Developer guide
 
 This section contains contributor-facing guidelines and internal development notes.
 

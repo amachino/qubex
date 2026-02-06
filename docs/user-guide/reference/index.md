@@ -1,5 +1,7 @@
 # Reference
 
-Reference material for configuration and interfaces.
+Authoritative details about configuration, data formats, and system behavior.
 
 - [Configuration](configuration.md)
+- [Results and Records](results-and-records.md)
+- [State Classification](state-classification.md)

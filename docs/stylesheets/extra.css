@@ -2,14 +2,49 @@
   display: none;
 }
 
+.md-typeset {
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.md-typeset p,
+.md-typeset li {
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
 .md-typeset h1,
 .md-typeset h2,
 .md-typeset h3,
-.md-typeset h4 {
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6 {
   color: #181818;
   font-weight: 600;
+  line-height: 1.2;
 }
 
 .md-typeset h1 {
-  font-weight: 650;
+  font-size: 1.8rem;
+}
+
+.md-typeset h2 {
+  font-size: 1.4rem;
+}
+
+.md-typeset h3 {
+  font-size: 1.1rem;
+}
+
+.md-typeset h4 {
+  font-size: 0.9rem;
+}
+
+.md-typeset h5 {
+  font-size: 0.8rem;
+}
+
+.md-typeset h6 {
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
 }

@@ -8,15 +8,17 @@ site_dir: site
 
 theme:
   name: material
-  features:
-    - navigation.instant
-    - content.code.copy
+  icon:
+    logo: material/book 
   font:
     text: Noto Sans
     code: Noto Sans Mono
   palette:
     - scheme: default
       primary: white
+  features:
+    - navigation.instant
+    - content.code.copy
 
 plugins:
   - search
@@ -45,6 +47,9 @@ markdown_extensions:
   - pymdownx.highlight
   - pymdownx.inlinehilite
 
+extra:
+  generator: false
+
 extra_css:
   - stylesheets/extra.css
 
@@ -60,11 +65,19 @@ nav:
   - How-to Guides:
       - Overview: user-guide/how-to/index.md
       - Basic Measurement: user-guide/how-to/basic-measurement.md
+      - Run a Pulse Schedule: user-guide/how-to/run-pulse-schedule.md
+      - Save and Load Results: user-guide/how-to/save-and-load-results.md
   - Tutorials:
       - Overview: user-guide/tutorials/index.md
       - First Experiment: user-guide/tutorials/first-experiment.md
+  - Reference:
+      - Overview: user-guide/reference/index.md
+      - Configuration: user-guide/reference/configuration.md
+      - Results and Records: user-guide/reference/results-and-records.md
+      - State Classification: user-guide/reference/state-classification.md
   - Developer Guide:
       - Overview: developer-guide/index.md
       - Docstring Guidelines: developer-guide/docstring-guidelines.md
       - Test Guidelines: developer-guide/test-guidelines.md
+  - Examples: examples/index.md
   - API Reference: api-reference/qubex/
