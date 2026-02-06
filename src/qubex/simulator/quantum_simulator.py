@@ -15,10 +15,10 @@ import plotly.graph_objects as go
 import qctrlvisualizer as qv
 import qutip as qt
 import qutip.typing as qtt
+from qxpulse import PulseSchedule, Waveform
 from scipy.interpolate import interp1d
 
 from qubex.analysis.visualization import plot_bloch_vectors
-from qubex.pulse import PulseSchedule, Waveform
 
 from .quantum_system import Object, QuantumSystem
 

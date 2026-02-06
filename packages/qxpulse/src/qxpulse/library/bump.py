@@ -1,4 +1,4 @@
-"""Vertical ramp pulse shape helpers."""
+"""Bump pulse shape utilities."""
 
 from __future__ import annotations
 
@@ -6,28 +6,26 @@ from typing import Final
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from typing_extensions import deprecated
 
-from qubex.pulse.pulse import Pulse
+from qxpulse.pulse import Pulse
 
 
-@deprecated(
-    "The 'VertRamp' class is deprecated and will be removed in a future release."
-)
-class VertRamp(Pulse):
+class Bump(Pulse):
     """
-    A class to represent a vertical ramp pulse.
+    A class to represent a bump (smooth compactly supported) pulse.
 
     Parameters
     ----------
     duration : float
-        Duration of the pulse in ns.
+        Duration of the bump pulse in ns.
     amplitude : float
-        Amplitude of the pulse.
+        Amplitude of the bump pulse.
+    beta : float or None, optional
+        DRAG coefficient. If None, no imaginary component is added.
 
     Examples
     --------
-    >>> pulse = VertRamp(
+    >>> pulse = Bump(
     ...     duration=100,
     ...     amplitude=1.0,
     ... )
@@ -53,6 +51,7 @@ class VertRamp(Pulse):
                 t=self._sampling_points(duration),
                 duration=duration,
                 amplitude=amplitude,
+                beta=beta,
             )
         self._values = np.array(values, dtype=np.complex128)
 
@@ -62,31 +61,41 @@ class VertRamp(Pulse):
         *,
         duration: float,
         amplitude: float,
+        beta: float | None = None,
     ) -> NDArray:
         """
-        Vertical ramp pulse function.
+        Bump pulse function using a smooth compact support function.
 
         Parameters
         ----------
         t : ArrayLike
             Time points at which to evaluate the pulse.
         duration : float
-            Duration of the pulse in ns.
+            Duration of the bump pulse in ns.
         amplitude : float
-            Amplitude of the pulse.
+            Amplitude of the bump pulse.
+        beta : float or None
+            DRAG coefficient. If None, no imaginary component is added.
+
+        Returns
+        -------
+        NDArray
+            Bump pulse values.
         """
         t = np.asarray(t)
+        mu = duration * 0.5
+        u = 2 * (t - mu) / duration
+        Omega = np.exp(1) * np.exp(-1 / (1 - u**2))
 
-        if duration == 0:
-            return np.zeros_like(t, dtype=np.complex128)
+        dOmega = np.zeros_like(t)
+        if beta is None:
+            values = amplitude * Omega
+        else:
+            dOmega = -4 * u / duration / (1 - u**2) ** 2 * Omega
+            values = amplitude * (Omega + 1j * beta * dOmega)
 
-        # Compute only on the valid domain to avoid sqrt of negative numbers
-        mask = (t >= 0) & (t <= duration)
-        out = np.zeros_like(t, dtype=np.float64)
-        if np.any(mask):
-            u = t[mask] / duration
-            # Clip for numerical stability at the boundary (e.g., u ~ 1 +/- eps)
-            arg = np.clip(1.0 - u**2, 0.0, 1.0)
-            out[mask] = amplitude * (1.0 - np.sqrt(arg))
-
-        return out.astype(np.complex128)
+        return np.where(
+            (t >= 0) & (t <= duration),
+            values,
+            0,
+        ).astype(np.complex128)

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Final
 
-from qubex.pulse.blank import Blank
-from qubex.pulse.pulse_array import PulseArray
-from qubex.pulse.waveform import Waveform
+from qxpulse.blank import Blank
+from qxpulse.pulse_array import PulseArray
+from qxpulse.waveform import Waveform
 
 
 class CPMG(PulseArray):

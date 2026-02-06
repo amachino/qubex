@@ -3,9 +3,9 @@
 # ruff: noqa: SLF001
 import numpy as np
 import pytest
+from qxpulse import Pulse, PulseSchedule
 
 import qubex as qx
-from qubex.pulse import Pulse, PulseSchedule
 
 dt = qx.pulse.get_sampling_period()
 

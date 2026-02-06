@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import numpy as np
+from qxpulse import PulseSchedule
 
 from qubex.backend import (
     BackendExecutionRequest,
@@ -29,7 +30,6 @@ from qubex.measurement.models.measure_result import (
     MeasureMode,
     MultipleMeasureResult,
 )
-from qubex.pulse import PulseSchedule
 
 
 def _make_config() -> MeasurementConfig:

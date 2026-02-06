@@ -5,14 +5,13 @@ from typing import cast
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
-
-from qubex.pulse.library.sintegral import (
+from qxpulse.library.sintegral import (
     MultiDerivativeSintegral,
     Sintegral,
     sin_pow_derivative,
     sin_pow_integral,
 )
-from qubex.pulse.pulse import Pulse
+from qxpulse.pulse import Pulse
 
 
 def test_sin_pow_integral_derivative_matches():

@@ -1,10 +1,9 @@
 """Tests for the XY4 dynamical decoupling sequence."""
 
 import pytest
-
-from qubex.pulse.blank import Blank
-from qubex.pulse.library.xy4 import XY4
-from qubex.pulse.pulse import Pulse
+from qxpulse.blank import Blank
+from qxpulse.library.xy4 import XY4
+from qxpulse.pulse import Pulse
 
 
 def test_xy4_requires_multiple_of_sampling_period():

@@ -10,8 +10,7 @@ from typing import Any
 import numpy as np
 import tunits
 from qxcore import Expression
-
-from qubex.pulse import (
+from qxpulse import (
     Blank,
     Drag,
     FlatTop,

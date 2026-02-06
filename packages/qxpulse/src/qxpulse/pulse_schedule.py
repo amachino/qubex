@@ -24,8 +24,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from typing_extensions import deprecated
 
-from qubex.style import COLORS
-from qubex.typing import IQArray
+from qxpulse.style import COLORS
+from qxpulse.typing import IQArray
 
 from .blank import Blank
 from .pulse import Pulse

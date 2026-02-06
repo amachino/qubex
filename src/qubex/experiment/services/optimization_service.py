@@ -9,15 +9,15 @@ from typing import Any
 import cma
 import numpy as np
 import scipy.optimize
-
-from qubex.experiment.experiment_context import ExperimentContext
-from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from qubex.pulse import (
+from qxpulse import (
     CrossResonance,
     Drag,
     Pulse,
     Waveform,
 )
+
+from qubex.experiment.experiment_context import ExperimentContext
+from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.typing import TargetMap
 
 from .benchmarking_service import BenchmarkingService

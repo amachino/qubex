@@ -1,9 +1,9 @@
 """Tests for the Gaussian pulse."""
 
 import pytest
+from qxpulse import Gaussian, Pulse
 
 import qubex as qx
-from qubex.pulse import Gaussian, Pulse
 
 dt = qx.pulse.get_sampling_period()
 

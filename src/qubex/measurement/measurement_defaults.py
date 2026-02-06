@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from qubex.pulse import RampType
+from qxpulse import RampType
 
 DEFAULT_SHOTS: Final[int] = 1024
 DEFAULT_INTERVAL: Final[float] = 150.0 * 1024.0  # ns

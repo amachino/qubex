@@ -9,6 +9,7 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike
+from qxpulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 
 from qubex.analysis import fitting
 from qubex.analysis import visualization as viz
@@ -18,7 +19,6 @@ from qubex.clifford.clifford_generator import CliffordGenerator
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.result import Result
 from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from qubex.pulse import PulseArray, PulseSchedule, VirtualZ, Waveform
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService

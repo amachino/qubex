@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import qxcore as core
+import qxpulse as pulse
 from qxcore import quantities, units
+from qxpulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
 
 import qubex.patches.quel_ic_config.linkup_fpga_mxfe_patch  # noqa: F401
 
-from . import pulse
 from .analysis import fitting as fit
 from .analysis import visualization as viz
 from .experiment import Experiment
 from .logging import set_log_level
-from .pulse import Blank, Pulse, PulseArray, PulseChannel, PulseSchedule, VirtualZ
+from .measurement import MeasurementClient
 from .style import apply_template
 
 # Set default log level to INFO
@@ -24,11 +26,13 @@ apply_template("qubex")
 __all__ = [
     "Blank",
     "Experiment",
+    "MeasurementClient",
     "Pulse",
     "PulseArray",
     "PulseChannel",
     "PulseSchedule",
     "VirtualZ",
+    "core",
     "fit",
     "pulse",
     "quantities",

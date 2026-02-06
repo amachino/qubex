@@ -1,9 +1,9 @@
 """Tests for the FlatTop pulse."""
 
 import pytest
+from qxpulse import FlatTop, Pulse
 
 import qubex as qx
-from qubex.pulse import FlatTop, Pulse
 
 dt = qx.pulse.get_sampling_period()
 

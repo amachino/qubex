@@ -2,9 +2,9 @@
 
 import numpy as np
 import pytest
+from qxpulse import Pulse, PulseArray, Waveform
 
 import qubex as qx
-from qubex.pulse import Pulse, PulseArray, Waveform
 
 dt = qx.pulse.get_sampling_period()
 

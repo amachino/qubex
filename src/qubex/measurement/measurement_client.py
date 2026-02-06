@@ -11,6 +11,7 @@ from typing import Final, Literal
 
 import numpy as np
 import numpy.typing as npt
+from qxpulse import PulseSchedule, RampType
 
 from qubex.backend import (
     ConfigLoader,
@@ -27,7 +28,6 @@ from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
     MeasurementResult,
 )
-from qubex.pulse import PulseSchedule, RampType
 from qubex.typing import IQArray, MeasurementMode, TargetMap
 
 from .classifiers.state_classifier import StateClassifier

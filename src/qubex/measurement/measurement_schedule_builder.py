@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 
+from qxpulse import PulseSchedule, RampType
+
 from qubex.backend import (
     ControlParams,
     Mux,
@@ -17,7 +19,6 @@ from qubex.backend.quel1 import (
     SAMPLING_PERIOD,
     WORD_DURATION,
 )
-from qubex.pulse import PulseSchedule, RampType
 
 from .measurement_pulse_factory import MeasurementPulseFactory
 from .models.capture_schedule import Capture, CaptureSchedule

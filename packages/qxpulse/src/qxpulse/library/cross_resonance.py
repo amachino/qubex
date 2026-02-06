@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from qubex.pulse.blank import Blank
-from qubex.pulse.pulse_array import PulseArray
-from qubex.pulse.pulse_schedule import PulseSchedule
-from qubex.pulse.waveform import Waveform
+from qxpulse.blank import Blank
+from qxpulse.pulse_array import PulseArray
+from qxpulse.pulse_schedule import PulseSchedule
+from qxpulse.waveform import Waveform
 
 from .flat_top import FlatTop, MultiDerivativeFlatTop
 from .ramp_type import RampType

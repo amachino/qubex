@@ -5,19 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Literal, TypeAlias, TypeVar
 
-import numpy as np
-from numpy.typing import NDArray
+from qxpulse.typing import IQArray as _IQArray
 
 if TYPE_CHECKING:
-    from qubex.pulse import PulseSchedule, Waveform
+    from qxpulse import PulseSchedule, Waveform
 
 T_co = TypeVar("T_co", covariant=True)
 
 TargetMap: TypeAlias = Mapping[str, T_co]
 
-IQArray: TypeAlias = (
-    list[complex] | list[float] | NDArray[np.complexfloating] | NDArray[np.floating]
-)
+IQArray: TypeAlias = _IQArray
 
 ParametricWaveformDict: TypeAlias = Callable[..., TargetMap["Waveform"]]
 ParametricPulseSchedule: TypeAlias = Callable[..., "PulseSchedule"]

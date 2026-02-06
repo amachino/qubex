@@ -1,0 +1,13 @@
+"""Shared styling constants for pulse visualizations."""
+
+from __future__ import annotations
+
+COLORS = [
+    "#0C5DA5",
+    "#00B945",
+    "#FF9500",
+    "#FF2C00",
+    "#845B97",
+    "#474747",
+    "#9e9e9e",
+]

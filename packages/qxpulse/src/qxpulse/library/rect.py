@@ -1,4 +1,4 @@
-"""Bump pulse shape utilities."""
+"""Rectangular pulse shape helpers."""
 
 from __future__ import annotations
 
@@ -7,28 +7,23 @@ from typing import Final
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from qubex.pulse.pulse import Pulse
+from qxpulse.pulse import Pulse
 
 
-class Bump(Pulse):
+class Rect(Pulse):
     """
-    A class to represent a bump (smooth compactly supported) pulse.
+    A class to represent a rectangular pulse.
 
     Parameters
     ----------
     duration : float
-        Duration of the bump pulse in ns.
+        Duration of the rectangular pulse in ns.
     amplitude : float
-        Amplitude of the bump pulse.
-    beta : float or None, optional
-        DRAG coefficient. If None, no imaginary component is added.
+        Amplitude of the rectangular pulse.
 
     Examples
     --------
-    >>> pulse = Bump(
-    ...     duration=100,
-    ...     amplitude=1.0,
-    ... )
+    >>> pulse = Rect(duration=100, amplitude=0.1)
     """
 
     def __init__(
@@ -36,13 +31,11 @@ class Bump(Pulse):
         *,
         duration: float,
         amplitude: float,
-        beta: float | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
         self.amplitude: Final = amplitude
-        self.beta: Final = beta
 
         if duration == 0:
             values = np.array([], dtype=np.complex128)
@@ -51,7 +44,6 @@ class Bump(Pulse):
                 t=self._sampling_points(duration),
                 duration=duration,
                 amplitude=amplitude,
-                beta=beta,
             )
         self._values = np.array(values, dtype=np.complex128)
 
@@ -61,41 +53,27 @@ class Bump(Pulse):
         *,
         duration: float,
         amplitude: float,
-        beta: float | None = None,
     ) -> NDArray:
         """
-        Bump pulse function using a smooth compact support function.
+        Rectangular pulse function.
 
         Parameters
         ----------
         t : ArrayLike
             Time points at which to evaluate the pulse.
         duration : float
-            Duration of the bump pulse in ns.
+            Duration of the rectangular pulse in ns.
         amplitude : float
-            Amplitude of the bump pulse.
-        beta : float or None
-            DRAG coefficient. If None, no imaginary component is added.
+            Amplitude of the rectangular pulse.
 
         Returns
         -------
         NDArray
-            Bump pulse values.
+            Rectangular pulse values.
         """
         t = np.asarray(t)
-        mu = duration * 0.5
-        u = 2 * (t - mu) / duration
-        Omega = np.exp(1) * np.exp(-1 / (1 - u**2))
-
-        dOmega = np.zeros_like(t)
-        if beta is None:
-            values = amplitude * Omega
-        else:
-            dOmega = -4 * u / duration / (1 - u**2) ** 2 * Omega
-            values = amplitude * (Omega + 1j * beta * dOmega)
-
         return np.where(
             (t >= 0) & (t <= duration),
-            values,
+            amplitude,
             0,
         ).astype(np.complex128)

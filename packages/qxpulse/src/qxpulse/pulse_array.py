@@ -13,7 +13,7 @@ import numpy.typing as npt
 import plotly.graph_objects as go
 from typing_extensions import deprecated
 
-from qubex.style import COLORS
+from qxpulse.style import COLORS
 
 from .blank import Blank
 from .phase_shift import PhaseShift, VirtualZ

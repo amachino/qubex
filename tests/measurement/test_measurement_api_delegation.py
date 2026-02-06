@@ -6,6 +6,7 @@ from types import MethodType
 from typing import Any
 
 import numpy as np
+from qxpulse import PulseSchedule
 
 from qubex.measurement.measurement_client import MeasurementClient
 from qubex.measurement.measurement_result_converter import MeasurementResultConverter
@@ -22,7 +23,6 @@ from qubex.measurement.models.measure_result import (
     MultipleMeasureResult,
 )
 from qubex.measurement.models.measurement_result import MeasurementResult
-from qubex.pulse import PulseSchedule
 
 
 def _make_config() -> MeasurementConfig:

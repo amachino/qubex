@@ -12,6 +12,17 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
+from qxpulse import (
+    CPMG,
+    Blank,
+    FlatTop,
+    Gaussian,
+    PulseSchedule,
+    RampType,
+    Rect,
+    VirtualZ,
+    Waveform,
+)
 from rich.prompt import Confirm
 from scipy.signal import find_peaks
 from tqdm import tqdm
@@ -46,17 +57,6 @@ from qubex.experiment.models.experiment_result import (
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
 from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from qubex.pulse import (
-    CPMG,
-    Blank,
-    FlatTop,
-    Gaussian,
-    PulseSchedule,
-    RampType,
-    Rect,
-    VirtualZ,
-    Waveform,
-)
 from qubex.style import COLORS
 from qubex.typing import TargetMap
 

@@ -30,6 +30,7 @@ dependencies = [
     "pyserial ~= 3.5",
     "pyyaml ~= 6.0",
     "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore",
+    "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
     "qctrl-visualizer ~= 8.0",
     "qutip ~= 5.0",
     "rich ~= 13.0",
@@ -74,9 +75,10 @@ cache-dir = ".cache/uv"
 
 [tool.uv.sources]
 qxcore = { workspace = true }
+qxpulse = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/qxcore"]
+members = ["packages/qxcore", "packages/qxpulse"]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"

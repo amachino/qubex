@@ -10,6 +10,16 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
+from qxpulse import (
+    CrossResonance,
+    Drag,
+    FlatTop,
+    MultiDerivativeCrossResonance,
+    PulseArray,
+    PulseSchedule,
+    RampType,
+    Waveform,
+)
 
 from qubex.analysis import FitResult, fitting, util
 from qubex.analysis import visualization as viz
@@ -31,16 +41,6 @@ from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.experiment_result import AmplCalibData, ExperimentResult
 from qubex.experiment.models.result import Result
 from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from qubex.pulse import (
-    CrossResonance,
-    Drag,
-    FlatTop,
-    MultiDerivativeCrossResonance,
-    PulseArray,
-    PulseSchedule,
-    RampType,
-    Waveform,
-)
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService

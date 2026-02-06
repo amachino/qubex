@@ -7,7 +7,7 @@ from typing import Final
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from qubex.pulse.pulse import Pulse
+from qxpulse.pulse import Pulse
 
 from .sintegral import MultiDerivativeSintegral
 

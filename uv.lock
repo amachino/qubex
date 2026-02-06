@@ -18,6 +18,7 @@ resolution-markers = [
 members = [
     "qubex",
     "qxcore",
+    "qxpulse",
 ]
 
 [[package]]
@@ -3610,6 +3611,7 @@ dependencies = [
     { name = "qctrl-visualizer" },
     { name = "qutip" },
     { name = "qxcore" },
+    { name = "qxpulse" },
     { name = "rich" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scikit-learn", version = "1.8.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -3669,6 +3671,7 @@ requires-dist = [
     { name = "qubecalib", marker = "extra == 'backend'", git = "https://github.com/qiqb-osaka/qube-calib.git?rev=3.1.16beta1" },
     { name = "qutip", specifier = "~=5.0" },
     { name = "qxcore", editable = "packages/qxcore" },
+    { name = "qxpulse", editable = "packages/qxpulse" },
     { name = "rich", specifier = "~=13.0" },
     { name = "scikit-learn", specifier = "~=1.0" },
     { name = "scipy", specifier = "~=1.0" },
@@ -3776,6 +3779,26 @@ requires-dist = [
     { name = "pydantic", specifier = "~=2.0" },
     { name = "sympy", specifier = "~=1.0" },
     { name = "typedunits", specifier = "~=0.0" },
+    { name = "typing-extensions" },
+]
+
+[[package]]
+name = "qxpulse"
+version = "1.5.0a1"
+source = { editable = "packages/qxpulse" }
+dependencies = [
+    { name = "numpy" },
+    { name = "plotly" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "typing-extensions" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.23.5" },
+    { name = "plotly", specifier = "~=5.23" },
+    { name = "scipy", specifier = "~=1.0" },
     { name = "typing-extensions" },
 ]
 

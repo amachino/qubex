@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from qxpulse import Blank, FlatTop
 
 from qubex.backend import ControlParams, Mux
 from qubex.measurement import MeasurementPulseFactory
@@ -15,7 +16,6 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_PRE_MARGIN,
     DEFAULT_READOUT_RAMPTIME,
 )
-from qubex.pulse import Blank, FlatTop
 
 
 def test_readout_pulse_uses_defaults_from_control_params() -> None:

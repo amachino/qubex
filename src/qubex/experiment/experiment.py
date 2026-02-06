@@ -13,6 +13,13 @@ from typing import Any, Literal, TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from qxpulse import (
+    PulseArray,
+    PulseSchedule,
+    RampType,
+    VirtualZ,
+    Waveform,
+)
 from typing_extensions import deprecated
 
 from qubex.backend import (
@@ -36,13 +43,6 @@ from qubex.measurement import (
     MeasureResult,
     MultipleMeasureResult,
     StateClassifier,
-)
-from qubex.pulse import (
-    PulseArray,
-    PulseSchedule,
-    RampType,
-    VirtualZ,
-    Waveform,
 )
 from qubex.typing import (
     IQArray,

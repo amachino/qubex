@@ -16,6 +16,18 @@ import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import ArrayLike, NDArray
 from plotly.subplots import make_subplots
+from qxpulse import (
+    CPMG,
+    Blank,
+    FlatTop,
+    PhaseShift,
+    Pulse,
+    PulseArray,
+    PulseSchedule,
+    RampType,
+    VirtualZ,
+    Waveform,
+)
 from rich.console import Console
 from tqdm import tqdm
 
@@ -57,18 +69,6 @@ from qubex.measurement import (
     StateClassifierKMeans,
 )
 from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
-from qubex.pulse import (
-    CPMG,
-    Blank,
-    FlatTop,
-    PhaseShift,
-    Pulse,
-    PulseArray,
-    PulseSchedule,
-    RampType,
-    VirtualZ,
-    Waveform,
-)
 from qubex.style import COLORS
 from qubex.typing import (
     IQArray,
