@@ -277,7 +277,7 @@ def _variable_name(base_name: str) -> str:
 def _dimension_names(base_name: str, ndim: int) -> tuple[str, ...]:
     if ndim == 0:
         return ()
-    return tuple(f"dim_{base_name}_{axis}" for axis in range(ndim))
+    return tuple(f"{base_name}_d{axis}" for axis in range(ndim))
 
 
 def _validate_netcdf_format(
