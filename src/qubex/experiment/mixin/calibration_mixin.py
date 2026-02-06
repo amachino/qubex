@@ -1583,6 +1583,7 @@ class CalibrationMixin(
         ]
 
         coeffs_history = defaultdict(list)
+        figs_history = []
 
         print(f"Conducting CR Hamiltonian tomography for {cr_label}...")
         for i in range(n_iterations):
@@ -1612,6 +1613,12 @@ class CalibrationMixin(
                     "cr_phase": result["cr_param"]["cr_phase"],
                     "cancel_amplitude": result["cr_param"]["cancel_amplitude"],
                     "cancel_phase": result["cr_param"]["cancel_phase"],
+                }
+            )
+            figs_history.append(
+                {
+                    "fig_c": result["fig_c"],
+                    "fig_t": result["fig_t"],
                 }
             )
             for key, value in result["coeffs"].items():
@@ -1662,6 +1669,7 @@ class CalibrationMixin(
             data={
                 "params_history": params_history,
                 "coeffs_history": hamiltonian_coeffs,
+                "figs_history": figs_history,
             }
         )
 
