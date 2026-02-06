@@ -2358,12 +2358,6 @@ class CalibrationMixin(
         target_states = []
         spectators_states = defaultdict(list)
 
-        # with self.modified_frequencies(
-        #     frequencies={
-        #         spectator_qubit: self.targets[cr_label].frequency
-        #         for spectator_qubit in spectator_qubits
-        #     }
-        # ):
         for T in time_range:
             result = self.state_tomography(
                 sequence=sequence_func(
@@ -2392,13 +2386,11 @@ class CalibrationMixin(
         effective_drive_range = time_range + ramptime
 
         def _frame_change(
-            effective_drive_range: np.ndarray,
+            time_range: np.ndarray,
             states: np.ndarray,
             frame_frequency: float,
         ) -> np.ndarray:
             """
-            Docstring for _frame_change
-
             Apply a frame change to the given states based on the frame frequency.
 
             Parameters:
@@ -2415,7 +2407,7 @@ class CalibrationMixin(
                  [0,           0,          1]]
             """
             omega = 2 * np.pi * frame_frequency
-            theta = omega * effective_drive_range
+            theta = omega * time_range
             c = np.cos(theta)
             s = np.sin(theta)
 
@@ -2423,8 +2415,8 @@ class CalibrationMixin(
             y = states[:, 1]
             z = states[:, 2]
 
-            x2 = c * x - s * y
-            y2 = s * x + c * y
+            x2 = c * x + s * y
+            y2 = -s * x + c * y
             vectors_rot = np.stack([x2, y2, z], axis=1)
             return vectors_rot
 
@@ -2432,7 +2424,9 @@ class CalibrationMixin(
             spectator: _frame_change(
                 effective_drive_range,
                 states,
-                frame_frequency=self.targets[spectator].frequency,
+                frame_frequency=(
+                    self.targets[cr_label].frequency - self.targets[spectator].frequency
+                ),
             )
             for spectator, states in spectators_states.items()
         }
