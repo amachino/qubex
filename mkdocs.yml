@@ -10,9 +10,13 @@ theme:
   name: material
   features:
     - navigation.instant
-    - navigation.tabs
-    - navigation.sections
     - content.code.copy
+  font:
+    text: Noto Sans
+    code: Noto Sans Mono
+  palette:
+    - scheme: default
+      primary: white
 
 plugins:
   - search
@@ -40,6 +44,9 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.highlight
   - pymdownx.inlinehilite
+
+extra_css:
+  - stylesheets/extra.css
 
 nav:
   - Home: index.md

@@ -1,0 +1,15 @@
+.md-footer {
+  display: none;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4 {
+  color: #181818;
+  font-weight: 600;
+}
+
+.md-typeset h1 {
+  font-weight: 650;
+}
