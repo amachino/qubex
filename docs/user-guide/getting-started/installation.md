@@ -35,12 +35,12 @@ Use this option when you want the newest Qubex features from the repository.
 
 === "uv"
     ```bash
-    uv pip install git+https://github.com/amachino/qubex.git
+    uv pip install "qubex @ git+https://github.com/amachino/qubex.git@main"
     ```
 
 === "pip"
     ```bash
-    pip install git+https://github.com/amachino/qubex.git
+    pip install "qubex @ git+https://github.com/amachino/qubex.git@main"
     ```
 
 ### Install with backend support (Linux)
@@ -49,12 +49,12 @@ Use this variant when you need hardware backend dependencies on Linux hosts.
 
 === "uv"
     ```bash
-    uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
+    uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
     ```
 
 === "pip"
     ```bash
-    pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
+    pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@main"
     ```
 
 ### Install specific version
