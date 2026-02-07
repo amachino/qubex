@@ -2254,6 +2254,18 @@ wheels = [
 ]
 
 [[package]]
+name = "mkdocs-github-admonitions-plugin"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mkdocs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/62/37f2080af26ec1d569bb21eb2a4d54f5ea54d36a92938abbbc37c6ab671b/mkdocs_github_admonitions_plugin-0.1.1.tar.gz", hash = "sha256:7f81520a0681b9955952d73b21ce99b923921830b6b6d1ace9b3fb95cd1fb61f", size = 5151, upload-time = "2025-06-02T09:45:12.321Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e8/a3/8cfd5d9a651612b0d2a15176341b040d43d27b063e17684cb353ec7ce789/mkdocs_github_admonitions_plugin-0.1.1-py3-none-any.whl", hash = "sha256:824dc821764171943c1043c88218d4af0329693870ba9be657f890d484a0aa85", size = 5493, upload-time = "2025-06-02T09:45:11.068Z" },
+]
+
+[[package]]
 name = "mkdocs-jupyter"
 version = "0.25.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3597,6 +3609,7 @@ docs = [
     { name = "mkdocs" },
     { name = "mkdocs-autoapi", extra = ["python"] },
     { name = "mkdocs-autorefs" },
+    { name = "mkdocs-github-admonitions-plugin" },
     { name = "mkdocs-jupyter" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
@@ -3644,6 +3657,7 @@ docs = [
     { name = "mkdocs" },
     { name = "mkdocs-autoapi", extras = ["python"] },
     { name = "mkdocs-autorefs" },
+    { name = "mkdocs-github-admonitions-plugin" },
     { name = "mkdocs-jupyter" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extras = ["python"] },

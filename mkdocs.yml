@@ -15,13 +15,14 @@ theme:
     code: Noto Sans Mono
   palette:
     - scheme: default
-      primary: white
+      primary: black
   features:
     - navigation.instant
+    - navigation.footer
     - content.code.copy
 
 plugins:
-  - search
+  - gh-admonitions
   - mkdocs-autoapi:
       autoapi_dir: src
       autoapi_root: api-reference
@@ -39,13 +40,15 @@ plugins:
             docstring_style: numpy
             allow_inspection: false
             show_source: false
+  - search
 
 markdown_extensions:
   - admonition
-  - pymdownx.details
-  - pymdownx.superfences
   - pymdownx.highlight
   - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
 
 extra:
   generator: false
@@ -56,7 +59,6 @@ extra_css:
 nav:
   - Home: index.md
   - Getting Started:
-      - Overview: user-guide/getting-started/index.md
       - Installation: user-guide/getting-started/installation.md
       - Quickstart: user-guide/getting-started/quickstart.md
   - Concepts:

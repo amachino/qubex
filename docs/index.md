@@ -1,6 +1,6 @@
 # Qubex
 
-Qubex brings pulse-level workflows into a single framework for configuring heterogeneous devices, building and running arbitrary pulse sequences, applying standard characterization, calibration, and benchmarking routines, and iterating offline with a Hamiltonian-level simulator.
+Qubex brings pulse-level workflows into a single framework for configuring heterogeneous devices, building and running arbitrary pulse sequences, applying standard characterization, calibration, and benchmarking routines, and iterating offline with a Pulse-level simulator.
 
 ## Key features
 
@@ -12,10 +12,10 @@ Qubex brings pulse-level workflows into a single framework for configuring heter
 
 ## Documentation map
 
-- [Getting Started](user-guide/getting-started/index.md)
-- [Concepts](user-guide/concepts/index.md)
+- [Getting Started](user-guide/getting-started/installation.md)
+- [Concepts](user-guide/concepts/overview.md)
 - [How-to Guides](user-guide/how-to/index.md)
 - [Tutorials](user-guide/tutorials/index.md)
 - [Reference](user-guide/reference/index.md)
 - [Examples](examples/index.md)
-- [API Reference](api-reference/qubex/)
+- [API Reference](api-reference/qubex/index.md)

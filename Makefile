@@ -53,7 +53,7 @@ docs: docs-build
 
 # Serve documentation locally
 docs-serve:
-	uv run mkdocs serve
+	uv run mkdocs serve --livereload --dirty
 
 # Build documentation into the site/ directory
 docs-build:

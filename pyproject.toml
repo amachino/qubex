@@ -56,10 +56,11 @@ dev = [
 docs = [
     "mkdocs",
     "mkdocs-autoapi[python]",
-    "mkdocs-material",
-    "mkdocs-jupyter",
-    "mkdocstrings[python]",
     "mkdocs-autorefs",
+    "mkdocs-github-admonitions-plugin",
+    "mkdocs-jupyter",
+    "mkdocs-material",
+    "mkdocstrings[python]",
     "pymdown-extensions",
 ]
 

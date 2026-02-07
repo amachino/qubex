@@ -2,6 +2,13 @@
 
 This quickstart shows a minimal measurement using the high-level `Experiment` API. It assumes you already have configuration and parameter files for your chip.
 
+> [!NOTE]
+> Qubex loads configuration and parameter files that describe your chip, wiring, and control settings.
+>
+> - Default location: `/home/shared/qubex-config/<chip_id>/`.
+> - Custom locations can be passed via `config_dir` and `params_dir` when creating an `Experiment` object.
+> See [Configuration](../reference/configuration.md) for details.
+
 ## 1. Create an experiment
 
 ```python

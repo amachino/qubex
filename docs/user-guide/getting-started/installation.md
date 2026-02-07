@@ -2,44 +2,91 @@
 
 Qubex runs on Python 3.10+ and supports macOS and Linux. Hardware backends require additional dependencies and are typically Linux-only.
 
-## Install latest version
+## Prepare Python environment
 
-```bash
-# pip
-python -m pip install git+https://github.com/amachino/qubex.git
+We recommend using [uv](https://docs.astral.sh/uv/) to manage your Python installation and virtual environments. `uv` is a fast, standalone tool that helps keep environments reproducible.
 
-# uv
-uv pip install git+https://github.com/amachino/qubex.git
-```
+Install Python first if it is not already available on your system.
 
-## Install with backend support (Linux)
+## Create virtual environment
 
-```bash
-# pip
-python -m pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
+It is best practice to install Qubex in a dedicated virtual environment to prevent conflicts with system packages or other projects.
 
-# uv
-uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
-```
+Run one of the following commands in your project directory.
 
-## Development install
+=== "uv"
+    ```bash
+    uv venv
+    ```
 
-```bash
-git clone https://github.com/amachino/qubex.git
-cd qubex
+=== "venv"
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate
+    ```
 
-# uv
-uv sync --dev
+## Install Qubex
 
-# pip
-python -m pip install -e .
-```
+This section introduces installation options for standard use, backend-enabled setups, pinned versions, and development workflows.
 
-## Configuration prerequisites
+### Install latest version
 
-Qubex loads configuration and parameter files that describe your chip, wiring, and control settings.
+Use this option when you want the newest Qubex features from the repository.
 
-- Default location: `/home/shared/qubex-config/<chip_id>/`.
-- Custom locations can be passed via `config_dir` and `params_dir` when creating an `Experiment` object.
+=== "uv"
+    ```bash
+    uv pip install git+https://github.com/amachino/qubex.git
+    ```
 
-See [Configuration](../reference/configuration.md) for details.
+=== "pip"
+    ```bash
+    pip install git+https://github.com/amachino/qubex.git
+    ```
+
+### Install with backend support (Linux)
+
+Use this variant when you need hardware backend dependencies on Linux hosts.
+
+=== "uv"
+    ```bash
+    uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
+    ```
+
+=== "pip"
+    ```bash
+    pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git"
+    ```
+
+### Install specific version
+
+Use this option when you need a pinned version for reproducibility.
+
+=== "uv"
+    ```bash
+    uv pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@<version>"
+    ```
+
+=== "pip"
+    ```bash
+    pip install "qubex[backend] @ git+https://github.com/amachino/qubex.git@<version>"
+    ```
+
+### Install for development
+
+Use this setup to prepare a local environment for developing and testing Qubex.
+
+=== "uv"
+    ```bash
+    git clone https://github.com/amachino/qubex.git
+    cd qubex
+
+    uv sync --dev
+    ```
+
+=== "pip"
+    ```bash
+    git clone https://github.com/amachino/qubex.git
+    cd qubex
+
+    pip install -e .
+    ```
