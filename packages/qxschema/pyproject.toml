@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qxschema"
+version = "0.0.0"
+requires-python = ">=3.10"
+authors = [{ name = "Yasunari Suzuki" }, { name = "Akinori Machino" }]
+description = "A common schema definitions for quantum experiments"
+readme = "README.md"
+license = { file = "LICENSE" }
+dependencies = [
+    "numpy >= 1.22",
+    "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore",
+]
+
+[tool.setuptools.package-data]
+qxschema = ["py.typed"]

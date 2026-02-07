@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-import tunits
-from qxcore.model import Model
-from qxcore.typing import ValueArrayLike
+from qxcore import Frequency, Model, Time, ValueArrayLike
 
 
 class ParametricSequencePulseCommand(Model):
@@ -20,7 +18,7 @@ class ParametricSequencePulseCommand(Model):
 class ParametricSequenceConfig(Model):
     """Sequence configuration with variable parameters."""
 
-    delta_time: tunits.Time
+    delta_time: Time
     variable_list: list[str]
     command_list: list[ParametricSequencePulseCommand]
 
@@ -28,9 +26,9 @@ class ParametricSequenceConfig(Model):
 class FrequencyConfig(Model):
     """Frequency configuration for channels."""
 
-    channel_to_frequency: dict[str, tunits.Frequency]
+    channel_to_frequency: dict[str, Frequency]
     channel_to_frequency_reference: dict[str, str]
-    channel_to_frequency_shift: dict[str, tunits.Frequency]
+    channel_to_frequency_shift: dict[str, Frequency]
     keep_oscillator_relative_phase: bool
 
 
@@ -38,14 +36,14 @@ class DataAcquisitionConfig(Model):
     """Data acquisition configuration for sweep measurements."""
 
     shot_count: int
-    shot_repetition_margin: tunits.Time
-    data_acquisition_duration: tunits.Time
-    data_acquisition_delay: tunits.Time
-    data_acquisition_timeout: tunits.Time
+    shot_repetition_margin: Time
+    data_acquisition_duration: Time
+    data_acquisition_delay: Time
+    data_acquisition_timeout: Time
     flag_average_waveform: bool
     flag_average_shots: bool
-    delta_time: tunits.Time
-    channel_to_averaging_time: dict[str, tunits.Time]
+    delta_time: Time
+    channel_to_averaging_time: dict[str, Time]
     channel_to_averaging_window: dict[str, ValueArrayLike]
 
 

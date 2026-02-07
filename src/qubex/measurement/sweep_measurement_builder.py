@@ -24,8 +24,7 @@ from qxpulse import (
     Waveform,
     set_sampling_period,
 )
-
-from .models.sweep_measurement_config import (
+from qxschema import (
     ParameterSweepConfig,
     ParametricSequencePulseCommand,
     SweepMeasurementConfig,

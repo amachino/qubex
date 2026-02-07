@@ -19,6 +19,7 @@ members = [
     "qubex",
     "qxcore",
     "qxpulse",
+    "qxschema",
     "qxsimulator",
 ]
 
@@ -3580,6 +3581,7 @@ dependencies = [
     { name = "qctrl-visualizer" },
     { name = "qxcore" },
     { name = "qxpulse" },
+    { name = "qxschema" },
     { name = "qxsimulator" },
     { name = "rich" },
     { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -3634,6 +3636,7 @@ requires-dist = [
     { name = "qubecalib", marker = "extra == 'backend'", git = "https://github.com/qiqb-osaka/qube-calib.git?rev=3.1.16beta1" },
     { name = "qxcore", editable = "packages/qxcore" },
     { name = "qxpulse", editable = "packages/qxpulse" },
+    { name = "qxschema", editable = "packages/qxschema" },
     { name = "qxsimulator", editable = "packages/qxsimulator" },
     { name = "rich", specifier = ">=13.0" },
     { name = "scikit-learn", specifier = ">=1.0" },
@@ -3763,6 +3766,21 @@ requires-dist = [
     { name = "plotly", specifier = ">=5.23" },
     { name = "scipy", specifier = ">=1.0" },
     { name = "typing-extensions", specifier = ">=4.5" },
+]
+
+[[package]]
+name = "qxschema"
+version = "0.0.0"
+source = { editable = "packages/qxschema" }
+dependencies = [
+    { name = "numpy" },
+    { name = "qxcore" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=1.22" },
+    { name = "qxcore", editable = "packages/qxcore" },
 ]
 
 [[package]]

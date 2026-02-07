@@ -1,4 +1,4 @@
-# qxpulse: Qubex Pulse
+# qxpulse
 
 `qxpulse` is the pulse primitives and scheduling layer extracted from the Qubex project. It contains waveforms, pulse libraries, and scheduling utilities that higher-level packages like `qubex` build on.
 
@@ -14,59 +14,29 @@
 
 ## Installation
 
-`qxpulse` is not on PyPI yet. Install from the Qubex GitHub repository using the subdirectory.
-
-### Install latest
-
 ```bash
 # pip
-pip install "qxpulse @ git+https://github.com/amachino/qubex.git#subdirectory=packages/qxpulse"
+pip install "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse"
 
 # uv
-uv pip install "qxpulse @ git+https://github.com/amachino/qubex.git#subdirectory=packages/qxpulse"
+uv pip install "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse"
 ```
-
-### Install specific version
-
-```bash
-# pip
-pip install "qxpulse @ git+https://github.com/amachino/qubex.git@<version>#subdirectory=packages/qxpulse"
-
-# uv
-uv pip install "qxpulse @ git+https://github.com/amachino/qubex.git@<version>#subdirectory=packages/qxpulse"
-```
-
-Check available versions on the [Release Page](https://github.com/amachino/qubex/releases).
 
 ## pyproject.toml
 
-Add the GitHub dependency with a subdirectory reference:
-
 ```toml
 [project]
 dependencies = [
-  "qxpulse @ git+https://github.com/amachino/qubex.git#subdirectory=packages/qxpulse",
-]
-```
-
-For a pinned version:
-
-```toml
-[project]
-dependencies = [
-  "qxpulse @ git+https://github.com/amachino/qubex.git@<version>#subdirectory=packages/qxpulse",
+  "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
 ]
 ```
 
 ## Development
 
 ```bash
-git clone https://github.com/amachino/qubex.git
-cd qubex
+git clone -b develop-next https://github.com/amachino/qubex.git
 
-# uv
-uv sync --all-groups
+cd qubex/packages/qxpulse
 
-# editable install for qxpulse
-uv pip install -e packages/qxpulse
+uv sync
 ```

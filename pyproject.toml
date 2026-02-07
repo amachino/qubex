@@ -26,6 +26,7 @@ dependencies = [
     "qctrl-visualizer >= 8.0",
     "qxcore @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxcore",
     "qxpulse @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxpulse",
+    "qxschema @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxschema",
     "qxsimulator @ git+https://github.com/amachino/qubex.git@develop-next#subdirectory=packages/qxsimulator",
     "rich >= 13.0",
     "scikit-learn >= 1.0",
@@ -73,10 +74,16 @@ cache-dir = ".cache/uv"
 [tool.uv.sources]
 qxcore = { workspace = true }
 qxpulse = { workspace = true }
+qxschema = { workspace = true }
 qxsimulator = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/qxcore", "packages/qxpulse", "packages/qxsimulator"]
+members = [
+    "packages/qxcore",
+    "packages/qxpulse",
+    "packages/qxschema",
+    "packages/qxsimulator",
+]
 
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
