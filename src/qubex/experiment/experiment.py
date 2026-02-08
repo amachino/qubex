@@ -3326,8 +3326,9 @@ class Experiment:
             save_image=save_image,
         )
 
-    # TODO: Implement SimultaneousCoherenceMeasurementTask and remove this deprecated method.
-    @deprecated("Use SimultaneousCoherenceMeasurementTask instead.")
+    @deprecated(
+        "This API is moved to `qubex.contrib.simultaneous_coherence_measurement`."
+    )
     def _simultaneous_measurement_coherence(
         self,
         targets: Collection[str] | str | None = None,
@@ -3340,20 +3341,18 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> dict[str, ExperimentResult]:
-        return self.characterization_service._simultaneous_measurement_coherence(  # noqa: SLF001
-            targets=targets,
-            time_range=time_range,
-            detuning=detuning,
-            second_rotation_axis=second_rotation_axis,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-            save_image=save_image,
+        """Warn that simultaneous coherence moved to contrib and stop execution."""
+        warnings.warn(
+            "Moved to `qubex.contrib.simultaneous_coherence_measurement`."
+            " Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
+        raise NotImplementedError(
+            "Moved to `qubex.contrib.simultaneous_coherence_measurement`."
         )
 
-    @deprecated(
-        "This API is deprecated and moved to `qubex.contrib.stark_characterization`."
-    )
+    @deprecated("This API is moved to `qubex.contrib.stark_characterization`.")
     def _stark_t1_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -3377,9 +3376,7 @@ class Experiment:
         )
         raise NotImplementedError("Moved to `qubex.contrib.stark_characterization`.")
 
-    @deprecated(
-        "This API is deprecated and moved to `qubex.contrib.stark_characterization`."
-    )
+    @deprecated("This API is moved to `qubex.contrib.stark_characterization`.")
     def _stark_ramsey_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -3980,9 +3977,7 @@ class Experiment:
             save_image=save_image,
         )
 
-    @deprecated(
-        "This API is deprecated and moved to `qubex.contrib.purity_benchmarking`."
-    )
+    @deprecated("This API is moved to `qubex.contrib.purity_benchmarking`.")
     def purity_benchmarking(
         self,
         targets: Collection[str] | str,
@@ -4009,9 +4004,7 @@ class Experiment:
         )
         raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
 
-    @deprecated(
-        "This API is deprecated and moved to `qubex.contrib.purity_benchmarking`."
-    )
+    @deprecated("This API is moved to `qubex.contrib.purity_benchmarking`.")
     def interleaved_purity_benchmarking(
         self,
         targets: Collection[str] | str,
