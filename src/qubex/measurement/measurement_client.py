@@ -150,7 +150,7 @@ class MeasurementClient:
     def connect(
         self,
         *,
-        sync_clocks: bool = True,
+        sync_clocks: bool | None = None,
         parallel: bool | None = None,
     ) -> None:
         """
@@ -158,7 +158,7 @@ class MeasurementClient:
 
         Parameters
         ----------
-        sync_clocks : bool, optional
+        sync_clocks : bool | None, optional
             Whether to resync clocks, by default True.
         parallel : bool | None, optional
             Whether to fetch backend settings in parallel, by default True.

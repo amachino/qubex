@@ -83,7 +83,7 @@ class MeasurementBackendManager:
     def connect(
         self,
         *,
-        sync_clocks: bool = True,
+        sync_clocks: bool | None = None,
         parallel: bool | None = None,
     ) -> None:
         """
@@ -91,13 +91,13 @@ class MeasurementBackendManager:
 
         Parameters
         ----------
-        sync_clocks : bool, optional
+        sync_clocks : bool | None, optional
             Whether to resync clocks, by default True.
         parallel : bool | None, optional
             Whether to fetch backend settings in parallel, by default True.
         """
-        if parallel is None:
-            parallel = True
+        if sync_clocks is None:
+            sync_clocks = True
         if len(self.box_ids) == 0:
             logger.warning("No boxes are selected. Please check the configuration.")
             return

@@ -323,8 +323,6 @@ class SystemManager:
         parallel : bool | None, optional
             Whether to fetch backend settings in parallel, by default True.
         """
-        if parallel is None:
-            parallel = True
         backend_settings = self._fetch_backend_settings(
             box_ids=box_ids,
             parallel=parallel,

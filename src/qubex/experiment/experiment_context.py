@@ -866,10 +866,6 @@ class ExperimentContext:
         parallel : bool | None, optional
             Whether to fetch backend settings in parallel, by default True.
         """
-        if sync_clocks is None:
-            sync_clocks = True
-        if parallel is None:
-            parallel = True
         try:
             self._measurement.connect(sync_clocks=sync_clocks, parallel=parallel)
             logger.info("Successfully connected.")
