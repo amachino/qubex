@@ -5,11 +5,11 @@ from __future__ import annotations
 import numpy as np
 import plotly.graph_objects as go
 from numpy.typing import NDArray
-from qxpulse import CrossResonance, PulseSchedule, Waveform
 from tqdm import tqdm
 
 from qubex.experiment import Experiment
-from qubex.experiment.models.result import Result
+from qubex.experiment.models import Result
+from qubex.pulse import CrossResonance, PulseSchedule, Waveform
 from qubex.style import COLORS
 from qubex.typing import TargetMap
 

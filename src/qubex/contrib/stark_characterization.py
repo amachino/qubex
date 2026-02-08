@@ -7,7 +7,6 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike
-from qxpulse import FlatTop, PulseSchedule, VirtualZ
 
 from qubex.analysis import fitting
 from qubex.analysis import visualization as viz
@@ -22,6 +21,7 @@ from qubex.experiment.models.experiment_result import (
     RamseyData,
     T1Data,
 )
+from qubex.pulse import FlatTop, PulseSchedule, VirtualZ
 
 
 def _normalize_targets(

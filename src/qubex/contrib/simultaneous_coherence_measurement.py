@@ -8,7 +8,6 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import ArrayLike
-from qxpulse import Blank, PulseSchedule
 
 from qubex.analysis import fitting
 from qubex.analysis import visualization as viz
@@ -25,6 +24,7 @@ from qubex.experiment.models.experiment_result import (
     T1Data,
     T2Data,
 )
+from qubex.pulse import Blank, PulseSchedule
 
 
 def simultaneous_coherence_measurement(
