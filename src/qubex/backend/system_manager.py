@@ -491,6 +491,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
         console.print(table1)
         console.print(table2)
 
+    @deprecated("This method will be removed in future versions.")
     def save_qubecalib_config(
         self,
         path_to_save: str = "./qubecalib.json",
@@ -783,7 +784,7 @@ This operation will overwrite the existing backend settings. Do you want to cont
             # restore the original box config
             self.backend_controller.boxpool._box_config_cache = original_box_cache  # noqa: SLF001
 
-    @deprecated("Use `modified_backend_settings` method instead.")
+    @deprecated("This method will be removed in future versions.")
     @contextmanager
     def modified_device_settings(
         self,
