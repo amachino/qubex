@@ -3351,8 +3351,9 @@ class Experiment:
             save_image=save_image,
         )
 
-    # TODO: Implement StarkT1ExperimentTask and remove this deprecated method.
-    @deprecated("Use StarkT1ExperimentTask instead.")
+    @deprecated(
+        "This API is deprecated and moved to `qubex.contrib.stark_characterization`."
+    )
     def _stark_t1_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -3367,20 +3368,18 @@ class Experiment:
         save_image: bool | None = None,
         xaxis_type: Literal["linear", "log"] | None = None,
     ) -> ExperimentResult[T1Data]:
-        return self.characterization_service._stark_t1_experiment(  # noqa: SLF001
-            targets=targets,
-            stark_detuning=stark_detuning,
-            stark_amplitude=stark_amplitude,
-            stark_ramptime=stark_ramptime,
-            time_range=time_range,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-            save_image=save_image,
-            xaxis_type=xaxis_type,
+        """Warn that stark T1 moved to contrib and stop execution."""
+        warnings.warn(
+            "Moved to `qubex.contrib.stark_characterization`."
+            " Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
         )
+        raise NotImplementedError("Moved to `qubex.contrib.stark_characterization`.")
 
-    # TODO: Implement StarkRamseyExperimentTask and remove this deprecated method.
+    @deprecated(
+        "This API is deprecated and moved to `qubex.contrib.stark_characterization`."
+    )
     def _stark_ramsey_experiment(
         self,
         targets: Collection[str] | str | None = None,
@@ -3396,19 +3395,14 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> ExperimentResult[RamseyData]:
-        return self.characterization_service._stark_ramsey_experiment(  # noqa: SLF001
-            targets=targets,
-            stark_detuning=stark_detuning,
-            stark_amplitude=stark_amplitude,
-            stark_ramptime=stark_ramptime,
-            time_range=time_range,
-            second_rotation_axis=second_rotation_axis,
-            shots=shots,
-            interval=interval,
-            envelope_region=envelope_region,
-            plot=plot,
-            save_image=save_image,
+        """Warn that stark Ramsey moved to contrib and stop execution."""
+        warnings.warn(
+            "Moved to `qubex.contrib.stark_characterization`."
+            " Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
         )
+        raise NotImplementedError("Moved to `qubex.contrib.stark_characterization`.")
 
     def obtain_effective_control_frequency(
         self,
