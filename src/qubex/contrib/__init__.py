@@ -15,6 +15,7 @@ from .purity_benchmarking import (
     purity_sequence_1q,
     purity_sequence_2q,
 )
+from .rzx_gate import rzx, rzx_gate_property
 from .simultaneous_coherence_measurement import simultaneous_coherence_measurement
 from .stark_characterization import stark_ramsey_experiment, stark_t1_experiment
 
@@ -28,6 +29,8 @@ __all__ = [
     "purity_benchmarking",
     "purity_sequence_1q",
     "purity_sequence_2q",
+    "rzx",
+    "rzx_gate_property",
     "simultaneous_coherence_measurement",
     "stark_ramsey_experiment",
     "stark_t1_experiment",

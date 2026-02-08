@@ -1044,6 +1044,7 @@ class Experiment:
             x180_margin=x180_margin,
         )
 
+    @deprecated("This API is moved to `qubex.contrib.rzx_gate`.")
     def rzx(
         self,
         control_qubit: str,
@@ -1063,24 +1064,30 @@ class Experiment:
         x180: TargetMap[Waveform] | Waveform | None = None,
         x180_margin: float | None = None,
     ) -> PulseSchedule:
-        """Return an RZX pulse schedule for a qubit pair."""
-        return self.pulse.rzx(
-            control_qubit,
-            target_qubit,
-            angle,
-            cr_duration=cr_duration,
-            cr_ramptime=cr_ramptime,
-            cr_amplitude=cr_amplitude,
-            cr_phase=cr_phase,
-            cr_beta=cr_beta,
-            cancel_amplitude=cancel_amplitude,
-            cancel_phase=cancel_phase,
-            cancel_beta=cancel_beta,
-            rotary_amplitude=rotary_amplitude,
-            echo=echo,
-            x180=x180,
-            x180_margin=x180_margin,
+        """Warn that RZX pulse API moved to contrib and stop execution."""
+        warnings.warn(
+            "Moved to `qubex.contrib.rzx_gate`. Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
         )
+        raise NotImplementedError("Moved to `qubex.contrib.rzx_gate`.")
+
+    @deprecated("This API is moved to `qubex.contrib.rzx_gate`.")
+    def rzx_gate_property(
+        self,
+        control_qubit: str,
+        target_qubit: str,
+        *,
+        angle_arr: NDArray | None = None,
+        measurement_times: int | None = None,
+    ) -> Result:
+        """Warn that RZX gate property API moved to contrib and stop execution."""
+        warnings.warn(
+            "Moved to `qubex.contrib.rzx_gate`. Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
+        raise NotImplementedError("Moved to `qubex.contrib.rzx_gate`.")
 
     def cnot(
         self,
@@ -2871,9 +2878,7 @@ class Experiment:
             plot=plot,
         )
 
-    @deprecated(
-        "This API is deprecated and moved to `qubex.contrib.crosstalk_cross_resonance`."
-    )
+    @deprecated("This API is moved to `qubex.contrib.crosstalk_cross_resonance`.")
     def measure_cr_crosstalk(
         self,
         *,
@@ -2910,9 +2915,7 @@ class Experiment:
         )
         raise NotImplementedError("Moved to `qubex.contrib.crosstalk_cross_resonance`.")
 
-    @deprecated(
-        "This API is deprecated and moved to `qubex.contrib.crosstalk_cross_resonance`."
-    )
+    @deprecated("This API is moved to `qubex.contrib.crosstalk_cross_resonance`.")
     def cr_crosstalk_hamiltonian_tomography(
         self,
         *,
