@@ -62,5 +62,5 @@ print(loaded.data)
 ## Next steps
 
 - Learn how configuration and targets are modeled: [Concepts](../concepts/overview.md)
-- Execute measurements with lower-level control: [Basic Measurement](../how-to/basic-measurement.md)
+- Execute measurements with lower-level control: [Basic measurement](../how-to/basic-measurement.md)
 - Explore notebooks: [Examples](../../examples/index.md)

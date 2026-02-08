@@ -1,4 +1,4 @@
-# Commit Message Guidelines
+# Commit message guidelines
 
 Qubex prefers Conventional Commits style prefixes.
 
@@ -15,7 +15,7 @@ Examples:
 - `docs: clarify local quality gate commands`
 - `test: add regression test for state tomography output shape`
 
-## Recommended Types
+## Recommended types
 
 - `feat` for new user-facing behavior.
 - `fix` for bug fixes.
@@ -24,7 +24,7 @@ Examples:
 - `test` for test additions/updates.
 - `chore` for maintenance tasks.
 
-## Good Commit Messages
+## Good commit messages
 
 - Use imperative mood.
 - Keep summary concise and specific.

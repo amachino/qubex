@@ -1,4 +1,4 @@
-# Docstring Guidelines
+# Docstring guidelines
 
 This project uses **NumPy-style docstrings** and Ruff `pydocstyle` checks. Keep docstrings short, precise, and consistent.
 
@@ -53,7 +53,7 @@ Order: Parameters → Returns/Yields → Raises → Notes → Examples → See A
 - Document units and valid ranges.
 - Mention optional values and defaults.
 
-## Returns / Yields
+## Returns / yields
 
 - Describe value meaning and units.
 - For tuples, describe each element.
@@ -63,7 +63,7 @@ Order: Parameters → Returns/Yields → Raises → Notes → Examples → See A
 - Only list exceptions callers should handle.
 - State the exact condition.
 
-## Side Effects
+## Side effects
 
 If the function mutates inputs, touches hardware, writes files, or changes global state, note it in `Notes`.
 

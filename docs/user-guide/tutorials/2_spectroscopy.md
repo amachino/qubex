@@ -1,4 +1,4 @@
-# Qubit and Resonator Spectroscopy
+# Qubit and resonator spectroscopy
 
 This tutorial covers a practical spectroscopy sequence:
 

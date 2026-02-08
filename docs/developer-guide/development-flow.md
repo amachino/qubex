@@ -1,4 +1,4 @@
-# Development Flow
+# Development flow
 
 This page defines the standard contribution flow for Qubex.
 
@@ -12,7 +12,7 @@ This page defines the standard contribution flow for Qubex.
   - `docs/<short-name>`
   - `refactor/<short-name>`
 
-## Recommended Steps
+## Recommended steps
 
 1. Sync your local default branch.
 2. Create a topic branch.
@@ -25,7 +25,7 @@ This page defines the standard contribution flow for Qubex.
    - `uv run pytest`
 6. Open a pull request with context, impact, and verification results.
 
-## Keep Changes Reviewable
+## Keep changes reviewable
 
 - Keep pull requests small and focused.
 - Split unrelated refactors from behavior changes.

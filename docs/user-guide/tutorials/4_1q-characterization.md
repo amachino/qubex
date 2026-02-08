@@ -1,4 +1,4 @@
-# 1Q Characterization
+# 1Q characterization
 
 This tutorial measures coherence and detuning indicators using:
 

@@ -1,8 +1,8 @@
-# Code of Conduct
+# Code of conduct
 
 This project adopts the [Contributor Covenant](https://www.contributor-covenant.org/) version 2.1.
 
-## Our Pledge
+## Our pledge
 
 We as members, contributors, and leaders pledge to make participation in our
 community a harassment-free experience for everyone, regardless of age, body
@@ -14,7 +14,7 @@ identity and orientation.
 We pledge to act and interact in ways that contribute to an open, welcoming,
 diverse, inclusive, and healthy community.
 
-## Our Standards
+## Our standards
 
 Examples of behavior that contributes to a positive environment include:
 
@@ -36,7 +36,7 @@ Examples of unacceptable behavior include:
 - Other conduct which could reasonably be considered inappropriate in a
   professional setting
 
-## Enforcement Responsibilities
+## Enforcement responsibilities
 
 Community leaders are responsible for clarifying and enforcing our standards of
 acceptable behavior and will take appropriate and fair corrective action in
@@ -66,7 +66,7 @@ private channel, use GitHub Security Advisories.
 
 All complaints will be reviewed and investigated promptly and fairly.
 
-## Enforcement Guidelines
+## Enforcement guidelines
 
 Community leaders will follow the Contributor Covenant
 [Enforcement Guidelines](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html#enforcement-guidelines).

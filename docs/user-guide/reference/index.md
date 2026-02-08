@@ -3,5 +3,5 @@
 Authoritative details about configuration, data formats, and system behavior.
 
 - [Configuration](configuration.md)
-- [Results and Records](results-and-records.md)
-- [State Classification](state-classification.md)
+- [Results and records](results-and-records.md)
+- [State classification](state-classification.md)

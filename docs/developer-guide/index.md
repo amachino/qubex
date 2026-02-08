@@ -2,11 +2,12 @@
 
 This section contains contributor-facing guidelines and internal development notes.
 
-- [Development Flow](development-flow.md)
-- [Docstring Guidelines](docstring-guidelines.md)
-- [Dependency Guidelines](dependency-guidelines.md)
-- [Test Guidelines](test-guidelines.md)
-- [Contrib Module Guidelines](contrib-guidelines.md)
-- [Issue Guidelines](issue-guidelines.md)
-- [Pull Request Guidelines](pull-request-guidelines.md)
-- [Commit Message Guidelines](commit-guidelines.md)
+- [Development flow](development-flow.md)
+- [Document guidelines](document-guidelines.md)
+- [Docstring guidelines](docstring-guidelines.md)
+- [Dependency guidelines](dependency-guidelines.md)
+- [Test guidelines](test-guidelines.md)
+- [Contrib module guidelines](contrib-guidelines.md)
+- [Issue guidelines](issue-guidelines.md)
+- [Pull request guidelines](pull-request-guidelines.md)
+- [Commit message guidelines](commit-guidelines.md)

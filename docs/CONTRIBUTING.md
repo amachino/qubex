@@ -3,7 +3,7 @@
 Thank you for contributing to Qubex.
 This page is a short entry point for contributors. Detailed standards live in the Developer Guide pages linked below.
 
-## Quick Start
+## Quick start
 
 1. Create a feature/fix branch.
 2. Make your change.
@@ -11,11 +11,11 @@ This page is a short entry point for contributors. Detailed standards live in th
 4. Run quality checks locally.
 5. Open a pull request with clear context and validation results.
 
-## Code of Conduct
+## Code of conduct
 
-This project adopts a [Code of Conduct](CODE_OF_CONDUCT.md). Please follow it in all project interactions.
+This project adopts a [Code of conduct](CODE_OF_CONDUCT.md). Please follow it in all project interactions.
 
-## Reporting Bugs
+## Reporting bugs
 
 Open an issue with:
 
@@ -24,7 +24,7 @@ Open an issue with:
 - Environment details (OS, Python version, package version).
 - Logs, stack traces, and screenshots if relevant.
 
-See: [Issue Guidelines](developer-guide/issue-guidelines.md)
+See: [Issue guidelines](developer-guide/issue-guidelines.md)
 
 ## Questions
 
@@ -34,9 +34,9 @@ Open an issue and include:
 - What you already checked.
 - Related code snippets or links.
 
-See: [Issue Guidelines](developer-guide/issue-guidelines.md)
+See: [Issue guidelines](developer-guide/issue-guidelines.md)
 
-## Feature Requests
+## Feature requests
 
 Open an issue and include:
 
@@ -44,9 +44,9 @@ Open an issue and include:
 - Proposed API/behavior.
 - Alternatives considered and trade-offs.
 
-See: [Issue Guidelines](developer-guide/issue-guidelines.md)
+See: [Issue guidelines](developer-guide/issue-guidelines.md)
 
-## Required Local Checks
+## Required local checks
 
 Run all checks in the project environment:
 
@@ -57,28 +57,28 @@ uv run pyright
 uv run pytest
 ```
 
-## Developer Guide (Detailed)
+## Developer guide (detailed)
 
-- [Developer Guide index](developer-guide/index.md)
-- [Development Flow](developer-guide/development-flow.md)
-- [Docstring Guidelines](developer-guide/docstring-guidelines.md)
-- [Dependency Guidelines](developer-guide/dependency-guidelines.md)
-- [Test Guidelines](developer-guide/test-guidelines.md)
-- [Contrib Module Guidelines](developer-guide/contrib-guidelines.md)
-- [Issue Guidelines](developer-guide/issue-guidelines.md)
-- [Pull Request Guidelines](developer-guide/pull-request-guidelines.md)
-- [Commit Message Guidelines](developer-guide/commit-guidelines.md)
+- [Developer guide index](developer-guide/index.md)
+- [Development flow](developer-guide/development-flow.md)
+- [Docstring guidelines](developer-guide/docstring-guidelines.md)
+- [Dependency guidelines](developer-guide/dependency-guidelines.md)
+- [Test guidelines](developer-guide/test-guidelines.md)
+- [Contrib module guidelines](developer-guide/contrib-guidelines.md)
+- [Issue guidelines](developer-guide/issue-guidelines.md)
+- [Pull request guidelines](developer-guide/pull-request-guidelines.md)
+- [Commit message guidelines](developer-guide/commit-guidelines.md)
 
-## Pull Request Expectations
+## Pull request expectations
 
 - Explain why the change is needed.
 - Summarize user-facing and API impacts.
 - Include the test/verification results you ran.
 - Update docs when behavior, APIs, or setup expectations change.
 
-## Security and Conduct
+## Security and conduct
 
 - Do not commit secrets, private keys, or credentials.
 - Report vulnerabilities privately via GitHub Security Advisories.
   - <https://github.com/amachino/qubex/security/advisories>
-- For community standards, see [Code of Conduct](CODE_OF_CONDUCT.md).
+- For community standards, see [Code of conduct](CODE_OF_CONDUCT.md).

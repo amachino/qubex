@@ -1,4 +1,4 @@
-# 1Q Benchmarking
+# 1Q benchmarking
 
 This tutorial evaluates single-qubit gate quality using:
 

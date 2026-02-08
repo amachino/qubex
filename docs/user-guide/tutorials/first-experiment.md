@@ -75,5 +75,5 @@ exp.note.save()
 ## Next steps
 
 - Explore more experiments in [Examples](../../examples/index.md)
-- Dive into the measurement pipeline: [Basic Measurement](../how-to/basic-measurement.md)
+- Dive into the measurement pipeline: [Basic measurement](../how-to/basic-measurement.md)
 - Review configuration requirements: [Configuration](../reference/configuration.md)

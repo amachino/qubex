@@ -1,11 +1,11 @@
-# Pull Request Guidelines
+# Pull request guidelines
 
 ## Scope
 
 - Keep each pull request focused on one concern.
 - Separate behavior changes from broad refactors when possible.
 
-## What To Include
+## What to include
 
 - Background and why the change is needed.
 - Summary of changes.
@@ -13,7 +13,7 @@
 - Risks and compatibility notes.
 - Validation results (commands and outcomes).
 
-## Required Checks
+## Required checks
 
 Run these in the project environment before opening or updating a PR:
 
@@ -24,7 +24,7 @@ uv run pyright
 uv run pytest
 ```
 
-## Documentation Updates
+## Documentation updates
 
 Update docs when you change:
 
@@ -32,7 +32,7 @@ Update docs when you change:
 - Behavioral semantics.
 - Setup, dependency, or workflow instructions.
 
-## Review Readiness
+## Review readiness
 
 - Ensure tests are deterministic.
 - Avoid unrelated formatting-only noise.

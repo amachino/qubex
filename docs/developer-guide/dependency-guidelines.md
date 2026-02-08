@@ -1,15 +1,15 @@
-# Dependency Guidelines
+# Dependency guidelines
 
 This project aims to keep dependencies minimal, explicit, and stable for library users. Use these guidelines when adding or modifying dependencies in `pyproject.toml`.
 
-## Where To Declare Dependencies
+## Where to declare dependencies
 
 - **Runtime dependencies**: `dependencies` in the `[project]` section.
 - **Optional features**: `[project.optional-dependencies]` with clear extra names.
 - **Tooling / development**: `[dependency-groups].dev`.
 - **Documentation**: `[dependency-groups].docs`.
 
-## Adding A Dependency
+## Adding a dependency
 
 Only add a dependency when at least one of the following is true:
 
@@ -24,7 +24,7 @@ Avoid adding dependencies for:
 - Usage limited to notebooks, demos, or experiments.
 - Optional visualization or UI features.
 
-## Version Pinning Policy
+## Version pinning policy
 
 We prefer **loose constraints** for libraries while staying safe:
 
@@ -39,7 +39,7 @@ Examples:
 - `plotly >= 5.23, <6` (only when needed to avoid a known break)
 - `kaleido == 0.2.1` (exact pin for stable exports)
 
-## Documentation Updates
+## Documentation updates
 
 Whenever you add, remove, or move a dependency:
 

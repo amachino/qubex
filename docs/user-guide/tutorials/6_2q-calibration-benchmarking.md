@@ -1,4 +1,4 @@
-# 2Q Calibration and Benchmarking
+# 2Q calibration and benchmarking
 
 This tutorial shows a common two-qubit flow for CR-based `ZX90`:
 

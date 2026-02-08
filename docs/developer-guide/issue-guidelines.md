@@ -1,8 +1,8 @@
-# Issue Guidelines
+# Issue guidelines
 
 Use issues for bugs, questions, and feature requests.
 
-## Bug Report
+## Bug report
 
 Include the following:
 
@@ -20,7 +20,7 @@ Include the following:
 - What you already checked.
 - Related code snippets, links, or error messages.
 
-## Feature Request
+## Feature request
 
 Include the following:
 
@@ -29,7 +29,7 @@ Include the following:
 - Alternatives considered.
 - Expected impact on users and compatibility.
 
-## Before Opening
+## Before opening
 
 - Search existing issues to avoid duplicates.
 - Prefer a minimal reproducible example.

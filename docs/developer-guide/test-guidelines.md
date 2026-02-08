@@ -1,4 +1,4 @@
-# Test Guidelines
+# Test guidelines
 
 This project uses **pytest**. Tests are required for all code changes and new features. Follow **test‑first development**: write a failing test, implement the behavior to pass, then refactor.
 
@@ -16,7 +16,7 @@ This project uses **pytest**. Tests are required for all code changes and new fe
 - **Small & fast**: keep unit tests quick and deterministic.
 - **Lightweight BDD**: use a 1‑line spec docstring and clear test names.
 
-## Structure & Naming
+## Structure & naming
 
 - Place tests under `tests/` and mirror the `src/` layout where appropriate.
 - File names: `test_*.py`
@@ -24,7 +24,7 @@ This project uses **pytest**. Tests are required for all code changes and new fe
 - Class names (if used): `Test*`
 - One behavior per test; keep assertions focused and readable.
 
-## Arrange‑Act‑Assert
+## Arrange‑act‑assert
 
 Structure each test clearly:
 
@@ -41,7 +41,7 @@ def test_example():
     assert result == 42
 ```
 
-## Assertions & Numeric Tolerances
+## Assertions & numeric tolerances
 
 - Use plain `assert` (pytest rewrites for better diffs).
 - For floating‑point comparisons, use `numpy.testing` or `pytest.approx`.
@@ -53,7 +53,7 @@ from numpy.testing import assert_allclose
 assert_allclose(actual, expected, rtol=1e-7, atol=1e-9)
 ```
 
-## Parameterization & Edge Cases
+## Parameterization & edge cases
 
 - Prefer `@pytest.mark.parametrize` to reduce duplication.
 - Cover normal cases, boundaries, and invalid inputs.
@@ -65,12 +65,12 @@ assert_allclose(actual, expected, rtol=1e-7, atol=1e-9)
 - Keep fixture scope as small as possible.
 - Keep randomness deterministic (seed RNGs inside fixtures).
 
-## Errors, Warnings, and Logging
+## Errors, warnings, and logging
 
 - Use `pytest.raises` and `pytest.warns` for error paths.
 - Use `caplog` for log assertions and `capsys` for stdout/stderr.
 
-## IO, Network, and Hardware
+## IO, network, and hardware
 
 - Prefer `tmp_path` for file IO and avoid writing to the repo.
 - Tests should not rely on network or hardware by default.
@@ -82,11 +82,11 @@ import pytest
 pytest.skip("requires hardware")
 ```
 
-## Import Behavior
+## Import behavior
 
 Pytest runs with `--import-mode=importlib`. Avoid sys.path hacks and rely on package imports from `src/`.
 
-## Minimal Test Template
+## Minimal test template
 
 ```python
 def test_behavior_name():

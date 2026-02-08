@@ -1,4 +1,4 @@
-# 1Q Calibration
+# 1Q calibration
 
 This tutorial calibrates key single-qubit parameters:
 

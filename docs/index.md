@@ -12,10 +12,10 @@ Qubex brings pulse-level workflows into a single framework for configuring heter
 
 ## Documentation map
 
-- [Getting Started](user-guide/getting-started/installation.md)
+- [Getting started](user-guide/getting-started/installation.md)
 - [Concepts](user-guide/concepts/overview.md)
-- [How-to Guides](user-guide/how-to/index.md)
+- [How-to guides](user-guide/how-to/index.md)
 - [Tutorials](user-guide/tutorials/index.md)
 - [Reference](user-guide/reference/index.md)
 - [Examples](examples/index.md)
-- [API Reference](api-reference/qubex/index.md)
+- [API reference](api-reference/qubex/index.md)

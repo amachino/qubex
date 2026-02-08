@@ -1,4 +1,4 @@
-# Basic Measurement with `Experiment`
+# Basic measurement with `Experiment`
 
 This tutorial shows the basic measurement flow with `Experiment`:
 
