@@ -1,9 +1,10 @@
 {
     "recommendations": [
+        "davidanson.vscode-markdownlint",
         "ms-python.python",
-        "ms-toolsai.jupyter",
         "ms-rliermarsh.ruff",
+        "ms-toolsai.jupyter",
         "tamasfe.even-better-toml",
-        "davidanson.vscode-markdownlint"
+        "tekumara.typos-vscode"
     ]
 }
