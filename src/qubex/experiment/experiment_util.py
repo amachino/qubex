@@ -11,7 +11,8 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from qubex.backend import SystemManager
-from qubex.backend.quel1 import SAMPLING_PERIOD
+
+from .experiment_constants import SAMPLING_PERIOD
 
 
 class ExperimentUtil:

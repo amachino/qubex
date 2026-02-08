@@ -23,6 +23,8 @@ from qxpulse import (
     Sintegral,
     VirtualZ,
     Waveform,
+    get_sampling_period,
+    set_sampling_period,
 )
 
 __all__ = [
@@ -46,4 +48,6 @@ __all__ = [
     "Sintegral",
     "VirtualZ",
     "Waveform",
+    "get_sampling_period",
+    "set_sampling_period",
 ]

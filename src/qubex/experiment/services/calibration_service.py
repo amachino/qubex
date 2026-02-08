@@ -24,11 +24,12 @@ from qxpulse import (
 from qubex.analysis import FitResult, fitting, util
 from qubex.analysis import visualization as viz
 from qubex.backend import Target
-from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     DEFAULT_CR_RAMPTIME,
     DEFAULT_CR_TIME_RANGE,
+    DEFAULT_INTERVAL,
+    DEFAULT_SHOTS,
     DRAG_COEFF,
     DRAG_HPI_DURATION,
     DRAG_PI_DURATION,
@@ -36,11 +37,11 @@ from qubex.experiment.experiment_constants import (
     HPI_RAMPTIME,
     PI_DURATION,
     PI_RAMPTIME,
+    SAMPLING_PERIOD,
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.experiment_result import AmplCalibData, ExperimentResult
 from qubex.experiment.models.result import Result
-from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService

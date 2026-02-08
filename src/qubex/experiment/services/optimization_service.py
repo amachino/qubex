@@ -14,8 +14,8 @@ from qxpulse import (
     Waveform,
 )
 
+from qubex.experiment.experiment_constants import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.experiment.experiment_context import ExperimentContext
-from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.typing import TargetMap
 
 from .benchmarking_service import BenchmarkingService

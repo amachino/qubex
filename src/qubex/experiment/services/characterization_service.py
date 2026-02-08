@@ -35,11 +35,13 @@ from qubex.backend.experiment_system import (
     CNCO_CENTER_READ,
     CNCO_CENTER_READ_R8,
 )
-from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
+    DEFAULT_INTERVAL,
     DEFAULT_RABI_FREQUENCY,
     DEFAULT_RABI_TIME_RANGE,
+    DEFAULT_SHOTS,
+    SAMPLING_PERIOD,
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.experiment_util import ExperimentUtil
@@ -55,7 +57,6 @@ from qubex.experiment.models.experiment_result import (
 )
 from qubex.experiment.models.rabi_param import RabiParam
 from qubex.experiment.models.result import Result
-from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.style import COLORS
 from qubex.typing import TargetMap
 

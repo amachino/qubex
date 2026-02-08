@@ -39,13 +39,15 @@ from qubex.analysis.state_tomography import (
     plot_ghz_state_tomography,
 )
 from qubex.backend import Target
-from qubex.backend.quel1 import SAMPLING_PERIOD
 from qubex.experiment.experiment_constants import (
     CALIBRATION_SHOTS,
     CLASSIFIER_DIR,
+    DEFAULT_INTERVAL,
     DEFAULT_RABI_TIME_RANGE,
+    DEFAULT_SHOTS,
     HPI_DURATION,
     HPI_RAMPTIME,
+    SAMPLING_PERIOD,
 )
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.library.graph import (
@@ -68,7 +70,6 @@ from qubex.measurement import (
     StateClassifierGMM,
     StateClassifierKMeans,
 )
-from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.style import COLORS
 from qubex.typing import (
     IQArray,

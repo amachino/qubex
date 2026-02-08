@@ -6,6 +6,7 @@ It manages which methods act as the public interface for conducting experiments.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -3985,6 +3986,9 @@ class Experiment:
             save_image=save_image,
         )
 
+    @deprecated(
+        "This API is deprecated and moved to `qubex.contrib.purity_benchmarking`."
+    )
     def purity_benchmarking(
         self,
         targets: Collection[str] | str,
@@ -4002,23 +4006,18 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Run purity benchmarking for the specified targets."""
-        return self.benchmarking_service.purity_benchmarking(
-            targets=targets,
-            n_cliffords_range=n_cliffords_range,
-            n_trials=n_trials,
-            seeds=seeds,
-            max_n_cliffords=max_n_cliffords,
-            x90=x90,
-            zx90=zx90,
-            in_parallel=in_parallel,
-            xaxis_type=xaxis_type,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-            save_image=save_image,
+        """Warn that purity benchmarking moved to contrib and stop execution."""
+        warnings.warn(
+            "Moved to `qubex.contrib.purity_benchmarking`."
+            " Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
         )
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
 
+    @deprecated(
+        "This API is deprecated and moved to `qubex.contrib.purity_benchmarking`."
+    )
     def interleaved_purity_benchmarking(
         self,
         targets: Collection[str] | str,
@@ -4039,23 +4038,14 @@ class Experiment:
         plot: bool | None = None,
         save_image: bool | None = None,
     ) -> Result:
-        """Run interleaved purity benchmarking for the specified targets."""
-        return self.benchmarking_service.interleaved_purity_benchmarking(
-            targets=targets,
-            interleaved_clifford=interleaved_clifford,
-            interleaved_waveform=interleaved_waveform,
-            n_cliffords_range=n_cliffords_range,
-            n_trials=n_trials,
-            seeds=seeds,
-            max_n_cliffords=max_n_cliffords,
-            x90=x90,
-            zx90=zx90,
-            in_parallel=in_parallel,
-            shots=shots,
-            interval=interval,
-            plot=plot,
-            save_image=save_image,
+        """Warn that interleaved purity benchmarking moved to contrib and stop."""
+        warnings.warn(
+            "Moved to `qubex.contrib.purity_benchmarking`."
+            " Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
         )
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
 
     # endregion
 

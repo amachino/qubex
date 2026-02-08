@@ -16,19 +16,21 @@ from qubex.analysis import visualization as viz
 from qubex.backend import Target
 from qubex.clifford.clifford import Clifford
 from qubex.clifford.clifford_generator import CliffordGenerator
+from qubex.experiment.experiment_constants import (
+    DEFAULT_INTERVAL,
+    DEFAULT_MAX_N_CLIFFORDS_1Q,
+    DEFAULT_MAX_N_CLIFFORDS_2Q,
+    DEFAULT_RB_N_TRIALS,
+    DEFAULT_SHOTS,
+)
 from qubex.experiment.experiment_context import ExperimentContext
 from qubex.experiment.models.result import Result
-from qubex.measurement.measurement_defaults import DEFAULT_INTERVAL, DEFAULT_SHOTS
 from qubex.typing import TargetMap
 
 from .measurement_service import MeasurementService
 from .pulse_service import PulseService
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_RB_N_TRIALS = 30
-DEFAULT_MAX_N_CLIFFORDS_1Q = 2048
-DEFAULT_MAX_N_CLIFFORDS_2Q = 128
 
 
 class BenchmarkingService:
@@ -266,6 +268,7 @@ class BenchmarkingService:
         basis: Literal["X", "Y", "Z"] | None = None,
     ) -> PulseArray:
         """Build a single-qubit purity benchmarking sequence."""
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
         if basis is None:
             basis = "Z"
 
@@ -348,6 +351,7 @@ class BenchmarkingService:
         | None = None,
     ) -> PulseSchedule:
         """Build a two-qubit purity benchmarking sequence."""
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
         if basis is None:
             basis = "ZZ"
 
@@ -873,6 +877,7 @@ class BenchmarkingService:
         n_trials
             Number of random trials.
         """
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1064,6 +1069,7 @@ class BenchmarkingService:
         n_trials
             Number of random trials.
         """
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
         if in_parallel is None:
             in_parallel = False
         if mitigate_readout is None:
@@ -1491,6 +1497,7 @@ class BenchmarkingService:
         save_image: bool | None = None,
     ) -> Result:
         """Run interleaved purity benchmarking."""
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1828,6 +1835,7 @@ class BenchmarkingService:
         save_image: bool | None = None,
     ) -> Result:
         """Dispatch purity benchmarking based on target type."""
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
         if isinstance(targets, str):
             targets = [targets]
         else:
@@ -1889,6 +1897,7 @@ class BenchmarkingService:
         save_image: bool | None = None,
     ) -> Result:
         """Dispatch interleaved purity benchmarking."""
+        raise NotImplementedError("Moved to `qubex.contrib.purity_benchmarking`.")
         if isinstance(targets, str):
             targets = [targets]
         else:
