@@ -20,3 +20,4 @@ ParametricWaveformDict: TypeAlias = Callable[..., TargetMap["Waveform"]]
 ParametricPulseSchedule: TypeAlias = Callable[..., "PulseSchedule"]
 
 MeasurementMode: TypeAlias = Literal["single", "avg"]
+ConfigurationMode: TypeAlias = Literal["ge-ef-cr", "ge-cr-cr"]

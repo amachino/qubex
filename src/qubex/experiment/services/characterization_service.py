@@ -1804,7 +1804,7 @@ class CharacterizationService:
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.ctx.system_manager.modified_device_settings(
+            with self.ctx.system_manager.modified_backend_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -1969,7 +1969,7 @@ class CharacterizationService:
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.ctx.system_manager.modified_device_settings(
+            with self.ctx.system_manager.modified_backend_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -2124,7 +2124,7 @@ class CharacterizationService:
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.ctx.system_manager.modified_device_settings(
+            with self.ctx.system_manager.modified_backend_settings(
                 label=read_label,
                 lo_freq=lo,
                 cnco_freq=cnco,
@@ -2727,7 +2727,7 @@ class CharacterizationService:
                 ssb=ssb,
                 cnco_center=cnco_center,
             )
-            with self.ctx.system_manager.modified_device_settings(
+            with self.ctx.system_manager.modified_backend_settings(
                 label=qubit,
                 lo_freq=lo,
                 cnco_freq=cnco,

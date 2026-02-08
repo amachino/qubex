@@ -7,7 +7,7 @@ from collections.abc import Collection, Iterator, Mapping
 from contextlib import contextmanager
 from functools import cached_property, reduce
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final
 
 import numpy as np
 import numpy.typing as npt
@@ -28,7 +28,7 @@ from qubex.measurement.models.measurement_config import MeasurementConfig
 from qubex.measurement.models.measurement_result import (
     MeasurementResult,
 )
-from qubex.typing import IQArray, MeasurementMode, TargetMap
+from qubex.typing import ConfigurationMode, IQArray, MeasurementMode, TargetMap
 
 from .classifiers.state_classifier import StateClassifier
 from .measurement_backend_manager import MeasurementBackendManager
@@ -71,7 +71,7 @@ class MeasurementClient:
         params_dir: Path | str | None = None,
         load_configs: bool = True,
         connect_devices: bool = False,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        configuration_mode: ConfigurationMode = "ge-cr-cr",
         measurement_schedule_executor: MeasurementScheduleExecutor | None = None,
     ):
         """
@@ -91,7 +91,7 @@ class MeasurementClient:
             Whether to load the configurations, by default True.
         connect_devices : bool, optional
             Whether to connect the devices, by default False.
-        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+        configuration_mode : ConfigurationMode, optional
             The configuration mode, by default "ge-cr-cr".
         measurement_schedule_executor : MeasurementScheduleExecutor, optional
             Executor used by `execute_measurement_schedule()`.
@@ -126,7 +126,7 @@ class MeasurementClient:
         self,
         config_dir: Path | str | None,
         params_dir: Path | str | None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        configuration_mode: ConfigurationMode | None = None,
     ) -> None:
         """
         Load the measurement settings.
@@ -137,7 +137,7 @@ class MeasurementClient:
             The configuration directory.
         params_dir : Path | str | None
             The parameters directory.
-        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+        configuration_mode : ConfigurationMode, optional
             The configuration mode, by default "ge-cr-cr".
         """
         self.backend_manager.load(
@@ -158,7 +158,7 @@ class MeasurementClient:
     def reload(
         self,
         *,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        configuration_mode: ConfigurationMode | None = None,
     ) -> None:
         """Reload the measuremnt settings."""
         self.load(

@@ -42,7 +42,7 @@ from qubex.measurement.measurement_defaults import (
     DEFAULT_READOUT_POST_MARGIN,
     DEFAULT_READOUT_PRE_MARGIN,
 )
-from qubex.typing import TargetMap
+from qubex.typing import ConfigurationMode, TargetMap
 from qubex.version import get_version
 
 from . import experiment_tool
@@ -109,7 +109,7 @@ class ExperimentContext:
         Directory of the state classifiers.
     classifier_type : Literal["kmeans", "gmm"], optional
         Type of the state classifier. Defaults to "gmm".
-    configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+    configuration_mode : ConfigurationMode, optional
         Configuration mode of the experiment. Defaults to "ge-cr-cr".
 
     Examples
@@ -140,7 +140,7 @@ class ExperimentContext:
         property_dir: Path | str | None = None,
         classifier_dir: Path | str | None = None,
         classifier_type: Literal["kmeans", "gmm"] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        configuration_mode: ConfigurationMode | None = None,
         mock_mode: bool | None = None,
     ):
         if calibration_valid_days is None:
@@ -219,7 +219,7 @@ class ExperimentContext:
         chip_id: str,
         config_dir: Path | str | None,
         params_dir: Path | str | None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"],
+        configuration_mode: ConfigurationMode,
         mock_mode: bool | None = None,
     ):
         """Load the configuration files."""
@@ -571,7 +571,7 @@ class ExperimentContext:
         return result
 
     @property
-    def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
+    def configuration_mode(self) -> ConfigurationMode:
         """Return the configuration mode."""
         return self._configuration_mode
 
@@ -848,7 +848,7 @@ class ExperimentContext:
             logger.info("Config status: OK")
         else:
             logger.warning("Config status: NG")
-        logger.info(self.system_manager.device_settings)
+        logger.info(self.system_manager.backend_settings)
 
     def connect(
         self,
@@ -888,7 +888,7 @@ class ExperimentContext:
         self,
         box_ids: str | list[str] | None = None,
         exclude: str | list[str] | None = None,
-        mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        mode: ConfigurationMode | None = None,
     ) -> None:
         """Configure hardware targets and push settings to devices."""
         if isinstance(box_ids, str):

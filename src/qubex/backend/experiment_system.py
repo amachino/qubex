@@ -11,6 +11,8 @@ import numpy as np
 from pydantic.dataclasses import dataclass
 from typing_extensions import TypedDict
 
+from qubex.typing import ConfigurationMode
+
 from .control_system import (
     Box,
     BoxType,
@@ -171,7 +173,7 @@ class ExperimentSystem:
         wiring_info: WiringInfo,
         control_params: ControlParams,
         targets_to_exclude: list[str] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        configuration_mode: ConfigurationMode = "ge-cr-cr",
     ):
         self._quantum_system: Final = quantum_system
         self._control_system: Final = control_system
@@ -530,7 +532,7 @@ class ExperimentSystem:
 
     def configure(
         self,
-        mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        mode: ConfigurationMode = "ge-cr-cr",
     ) -> None:
         """Configure target mappings for the specified mode."""
         params = self.control_params
@@ -577,7 +579,7 @@ class ExperimentSystem:
         box: Box,
         port: GenPort,
         params: ControlParams,
-        mode: Literal["ge-ef-cr", "ge-cr-cr"],
+        mode: ConfigurationMode,
     ) -> None:
         qubit = self.get_qubit_by_control_port(port)
         if qubit is None or not qubit.is_valid:
@@ -865,7 +867,7 @@ class ExperimentSystem:
         qubit: Qubit,
         n_channels: int,
         *,
-        mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        mode: ConfigurationMode = "ge-cr-cr",
         ssb: Literal["U", "L"] | None = "L",
         cnco_center: int = CNCO_CENTER_CTRL,
         min_frequency: float = 6.5e9,
@@ -875,7 +877,7 @@ class ExperimentSystem:
 
         Parameters
         ----------
-        mode : Literal["ge-ef-cr", "ge-cr-cr"]
+        mode : ConfigurationMode
             The mode to configure the control qubit.
         qubit : Qubit
             The control qubit.

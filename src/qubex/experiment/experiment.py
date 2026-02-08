@@ -46,6 +46,7 @@ from qubex.measurement import (
     StateClassifier,
 )
 from qubex.typing import (
+    ConfigurationMode,
     IQArray,
     MeasurementMode,
     ParametricPulseSchedule,
@@ -125,7 +126,7 @@ class Experiment:
         Directory of the state classifiers.
     classifier_type : Literal["kmeans", "gmm"], optional
         Type of the state classifier. Defaults to "gmm".
-    configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+    configuration_mode : ConfigurationMode, optional
         Configuration mode of the experiment. Defaults to "ge-cr-cr".
 
     Examples
@@ -156,7 +157,7 @@ class Experiment:
         property_dir: Path | str | None = None,
         classifier_dir: Path | str | None = None,
         classifier_type: Literal["kmeans", "gmm"] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        configuration_mode: ConfigurationMode | None = None,
         mock_mode: bool | None = None,
     ):
         experiment_context = ExperimentContext(
@@ -456,7 +457,7 @@ class Experiment:
         return self.ctx.state_centers
 
     @property
-    def configuration_mode(self) -> Literal["ge-ef-cr", "ge-cr-cr"]:
+    def configuration_mode(self) -> ConfigurationMode:
         """Return the configuration mode."""
         return self.ctx.configuration_mode
 
@@ -702,7 +703,7 @@ class Experiment:
         self,
         box_ids: str | list[str] | None = None,
         exclude: str | list[str] | None = None,
-        mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        mode: ConfigurationMode | None = None,
     ) -> None:
         """Configure hardware targets and push settings to devices."""
         return self.ctx.configure(

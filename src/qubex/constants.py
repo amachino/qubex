@@ -3,3 +3,4 @@
 from typing import Final
 
 DEFAULT_CONFIG_DIR: Final = "/home/shared/qubex-config"
+DEFAULT_RAWDATA_DIR: Final = ".rawdata"

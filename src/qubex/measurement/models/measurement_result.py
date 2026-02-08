@@ -10,6 +10,7 @@ import numpy as np
 from pydantic import Field
 from qxcore.model import DataModel
 
+from qubex.constants import DEFAULT_RAWDATA_DIR
 from qubex.typing import MeasurementMode
 
 
@@ -42,7 +43,7 @@ class MeasurementResult(DataModel):
         Path
             Saved file path.
         """
-        output_dir = Path(".rawdata" if data_dir is None else data_dir)
+        output_dir = Path(DEFAULT_RAWDATA_DIR if data_dir is None else data_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         if file_name is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")

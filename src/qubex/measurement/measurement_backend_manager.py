@@ -7,7 +7,6 @@ from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from functools import cached_property
 from pathlib import Path
-from typing import Literal
 
 from qubex.backend import (
     ConfigLoader,
@@ -16,6 +15,7 @@ from qubex.backend import (
     SystemManager,
 )
 from qubex.backend.quel1 import Quel1BackendController
+from qubex.typing import ConfigurationMode
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class MeasurementBackendManager:
         chip_id: str,
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        configuration_mode: ConfigurationMode | None = None,
     ) -> None:
         """Load configuration and skew settings."""
         self.system_manager.load(

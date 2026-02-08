@@ -7,12 +7,13 @@ import math
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 import yaml
 from typing_extensions import deprecated
 
 from qubex.constants import DEFAULT_CONFIG_DIR
+from qubex.typing import ConfigurationMode
 
 from .control_system import Box, ControlSystem
 from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
@@ -96,7 +97,7 @@ class ConfigLoader:
         Filenames for the respective YAMLs. Usually left as defaults.
     targets_to_exclude : list[str] | None, optional
         Qubit/resonator labels to exclude when assembling the ExperimentSystem.
-    configuration_mode : {"ge-ef-cr", "ge-cr-cr"} | None, optional
+    configuration_mode : ConfigurationMode | None, optional
         Control configuration style. Defaults to "ge-cr-cr" if not provided.
 
     Notes
@@ -128,7 +129,7 @@ class ConfigLoader:
         props_file: str = PROPS_FILE,
         params_file: str = PARAMS_FILE,
         targets_to_exclude: list[str] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        configuration_mode: ConfigurationMode | None = None,
     ):
         if config_dir is None:
             config_dir = Path(DEFAULT_CONFIG_DIR) / chip_id / "config"
@@ -567,7 +568,7 @@ class ConfigLoader:
     def _load_experiment_system(
         self,
         targets_to_exclude: list[str] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] = "ge-cr-cr",
+        configuration_mode: ConfigurationMode = "ge-cr-cr",
     ) -> ExperimentSystem | None:
         if (
             self._quantum_system is None

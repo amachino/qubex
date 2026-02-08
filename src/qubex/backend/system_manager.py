@@ -9,12 +9,15 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any
 
 from rich.console import Console
 from rich.prompt import Confirm
 from rich.table import Table
-from typing_extensions import deprecated
+from typing_extensions import Self, deprecated
+
+from qubex.constants import DEFAULT_RAWDATA_DIR
+from qubex.typing import ConfigurationMode
 
 from .config_loader import ConfigLoader
 from .control_system import CapPort, GenPort, PortType
@@ -27,21 +30,21 @@ console = Console()
 
 
 @dataclass
-class StateHash:
+class _SystemState:
     """Hash values for system state components."""
 
     experiment_system: int
-    device_controller: int
-    device_settings: int
+    backend_controller: int
+    backend_settings: int
 
-    def __eq__(self, other: object) -> bool:
+    def __eq__(self, other: Self) -> bool:
         """Return equality based on hash components."""
-        if not isinstance(other, StateHash):
+        if not isinstance(other, _SystemState):
             return NotImplemented
         return (
             self.experiment_system == other.experiment_system
-            and self.device_controller == other.device_controller
-            and self.device_settings == other.device_settings
+            and self.backend_controller == other.backend_controller
+            and self.backend_settings == other.backend_settings
         )
 
 
@@ -92,8 +95,8 @@ class SystemManager:
             return
         self._experiment_system = None
         self._backend_controller = Quel1BackendController()
-        self._device_settings = {}
-        self._cached_state = StateHash(0, 0, 0)
+        self._backend_settings: dict[str, Any] = {}
+        self._cached_state = _SystemState(0, 0, 0)
         self._rawdata_dir = None
         self._initialized = True
 
@@ -101,22 +104,6 @@ class SystemManager:
     def rawdata_dir(self) -> Path | None:
         """Get the directory for raw data."""
         return self._rawdata_dir
-
-    @rawdata_dir.setter
-    def rawdata_dir(self, value: Path | str | None):
-        """
-        Set the directory for raw data.
-
-        Parameters
-        ----------
-        value : Path | str | None
-            The directory path for raw data.
-        """
-        if value is None:
-            self._rawdata_dir = None
-        else:
-            self._rawdata_dir = Path(value)
-            self._rawdata_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def config_loader(self) -> ConfigLoader:
@@ -147,23 +134,44 @@ class SystemManager:
         return self.backend_controller
 
     @property
-    def device_settings(self) -> dict:
-        """Get the device settings."""
-        return self._device_settings or {}
+    def backend_settings(self) -> dict:
+        """Get the backend settings."""
+        return self._backend_settings or {}
 
     @property
-    def state(self) -> StateHash:
+    @deprecated("Use `backend_settings` property instead.")
+    def device_settings(self) -> dict:
+        """Get the device settings (backward-compatible alias)."""
+        return self.backend_settings
+
+    @property
+    def state(self) -> _SystemState:
         """Get the current state."""
-        return StateHash(
+        return _SystemState(
             experiment_system=self.experiment_system.hash,
-            device_controller=self.backend_controller.hash,
-            device_settings=hash(str(self.device_settings)),
+            backend_controller=self.backend_controller.hash,
+            backend_settings=hash(str(self.backend_settings)),
         )
 
     @property
-    def cached_state(self) -> StateHash:
+    def cached_state(self) -> _SystemState:
         """Get the cached state."""
         return self._cached_state
+
+    def set_rawdata_dir(self, value: Path | str | None) -> None:
+        """
+        Update the directory for raw data.
+
+        Parameters
+        ----------
+        value : Path | str | None
+            The directory path for raw data.
+        """
+        if value is None:
+            self._rawdata_dir = None
+        else:
+            self._rawdata_dir = Path(value)
+            self._rawdata_dir.mkdir(parents=True, exist_ok=True)
 
     def set_experiment_system(self, experiment_system: ExperimentSystem) -> None:
         """
@@ -176,34 +184,32 @@ class SystemManager:
 
         Notes
         -----
-        This method also updates the device controller to reflect the new experiment system.
+        This method also updates the backend controller to reflect the new experiment system.
         """
         self._experiment_system = experiment_system
-        # update device controller to reflect the new experiment system
+        # update backend controller to reflect the new experiment system
         if self._mock_mode:
-            logger.info(
-                "Experiment system created in mock mode (device controller updates bypassed)"
-            )
+            # skip updating backend controller in mock mode
             return
         self._update_backend_controller(experiment_system)
         self.update_cache()
 
-    def set_device_settings(self, device_settings: dict) -> None:
+    def set_backend_settings(self, backend_settings: dict) -> None:
         """
-        Set the device settings.
+        Set the backend settings.
 
         Parameters
         ----------
-        device_settings : dict
-            Device settings to set.
+        backend_settings : dict
+            Backend settings to set.
 
         Notes
         -----
-        This method also updates the experiment system to reflect the new device settings.
+        This method also updates the experiment system to reflect the new backend settings.
         """
-        self._device_settings = device_settings
-        # update experiment system to reflect the new device settings
-        self._experiment_system = self._create_experiment_system(device_settings)
+        self._backend_settings = backend_settings
+        # update experiment system to reflect the new backend settings
+        self._experiment_system = self._create_experiment_system(backend_settings)
         self.update_cache()
 
     def update_cache(self) -> None:
@@ -229,17 +235,16 @@ class SystemManager:
             Whether the state is synced.
         """
         if self.state != self.cached_state:
-            # Provide explicit category and stacklevel so users can trace call site.
             warnings.warn(
                 "The current state is different from the cached state. ",
                 category=UserWarning,
                 stacklevel=2,
             )
             return False
-        device_settings = self._fetch_device_settings(box_ids=box_ids)
-        if self.device_settings != device_settings:
+        backend_settings = self._fetch_backend_settings(box_ids=box_ids)
+        if self.backend_settings != backend_settings:
             warnings.warn(
-                "The current device settings are different from the fetched device settings. ",
+                "The current backend settings are different from the fetched backend settings. ",
                 category=UserWarning,
                 stacklevel=2,
             )
@@ -253,7 +258,7 @@ class SystemManager:
         config_dir: Path | str | None = None,
         params_dir: Path | str | None = None,
         targets_to_exclude: list[str] | None = None,
-        configuration_mode: Literal["ge-ef-cr", "ge-cr-cr"] | None = None,
+        configuration_mode: ConfigurationMode | None = None,
         mock_mode: bool = False,
     ) -> None:
         """
@@ -269,7 +274,7 @@ class SystemManager:
             Parameters directory.
         targets_to_exclude : list[str], optional
             List of target labels to exclude, by default None.
-        configuration_mode : Literal["ge-ef-cr", "ge-cr-cr"], optional
+        configuration_mode : ConfigurationMode, optional
             Configuration mode, by default "ge-cr-cr".
         """
         self._config_loader = ConfigLoader(
@@ -311,10 +316,10 @@ class SystemManager:
         Parameters
         ----------
         box_ids : Sequence[str]
-            Box IDs to fetch the device settings for.
+            Box IDs to fetch the backend settings for.
         """
-        device_settings = self._fetch_device_settings(box_ids=box_ids)
-        self.set_device_settings(device_settings)
+        backend_settings = self._fetch_backend_settings(box_ids=box_ids)
+        self.set_backend_settings(backend_settings)
 
     def push(
         self,
@@ -343,7 +348,7 @@ You are going to configure the following boxes:
 
 [bold bright_green]{boxes_str}[/bold bright_green]
 
-This operation will overwrite the existing device settings. Do you want to continue?
+This operation will overwrite the existing backend settings. Do you want to continue?
 """
             )
             if not confirmed:
@@ -394,7 +399,7 @@ This operation will overwrite the existing device settings. Do you want to conti
                         except Exception:
                             logger.exception("Failed to configure %s", port.id)
 
-        self._device_settings = self._fetch_device_settings(box_ids=box_ids)
+        self._backend_settings = self._fetch_backend_settings(box_ids=box_ids)
         self.update_cache()
 
     def print_box_info(
@@ -411,11 +416,11 @@ This operation will overwrite the existing device settings. Do you want to conti
         box_id : str
             Box ID.
         fetch : bool, optional
-            Whether to fetch the device settings, by default False.
+            Whether to fetch the backend settings, by default False.
         """
         if fetch:
-            device_settings = self._fetch_device_settings([box_id])
-            experiment_system = self._create_experiment_system(device_settings)
+            backend_settings = self._fetch_backend_settings([box_id])
+            experiment_system = self._create_experiment_system(backend_settings)
         else:
             experiment_system = self.experiment_system
 
@@ -504,7 +509,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             f.write(self.backend_controller.system_config_json)
         logger.info(f"Qubecalib configuration saved to {path}.")
 
-    def _fetch_device_settings(
+    def _fetch_backend_settings(
         self,
         box_ids: Sequence[str],
     ):
@@ -598,11 +603,11 @@ This operation will overwrite the existing device settings. Do you want to conti
 
     def _create_experiment_system(
         self,
-        device_settings: dict,
+        backend_settings: dict,
     ) -> ExperimentSystem:
         experiment_system = deepcopy(self.experiment_system)
         control_system = experiment_system.control_system
-        for box_id, box in device_settings.items():
+        for box_id, box in backend_settings.items():
             for port_number, port in box["ports"].items():
                 direction = port["direction"]
                 lo_freq = port.get("lo_freq")
@@ -658,7 +663,7 @@ This operation will overwrite the existing device settings. Do you want to conti
             self.backend_controller.modify_target_frequencies(original_frequencies)
 
     @contextmanager
-    def modified_device_settings(
+    def modified_backend_settings(
         self,
         label: str,
         *,
@@ -667,16 +672,16 @@ This operation will overwrite the existing device settings. Do you want to conti
         fnco_freq: int,
     ) -> Iterator[None]:
         """
-        Temporarily modify the device settings.
+        Temporarily modify the backend settings.
 
         Parameters
         ----------
-        device_settings : dict[str, Any]
-            The device settings to be modified.
+        backend_settings : dict[str, Any]
+            The backend settings to be modified.
 
         Examples
         --------
-        >>> with system_manager.modified_device_settings(
+        >>> with system_manager.modified_backend_settings(
         ...     "Q00",
         ...     lo_freq=10_000_000_000,
         ...     cnco_freq=1_500,
@@ -742,7 +747,7 @@ This operation will overwrite the existing device settings. Do you want to conti
         try:
             yield
         finally:
-            # restore the original device settings
+            # restore the original backend settings
             self.experiment_system.update_port_params(
                 label,
                 lo_freq=original_lo_freq,
@@ -778,11 +783,30 @@ This operation will overwrite the existing device settings. Do you want to conti
             # restore the original box config
             self.backend_controller.boxpool._box_config_cache = original_box_cache  # noqa: SLF001
 
+    @deprecated("Use `modified_backend_settings` method instead.")
+    @contextmanager
+    def modified_device_settings(
+        self,
+        label: str,
+        *,
+        lo_freq: int | None,
+        cnco_freq: int,
+        fnco_freq: int,
+    ) -> Iterator[None]:
+        """Temporarily modify the device settings (backward-compatible alias)."""
+        with self.modified_backend_settings(
+            label,
+            lo_freq=lo_freq,
+            cnco_freq=cnco_freq,
+            fnco_freq=fnco_freq,
+        ):
+            yield
+
     @contextmanager
     def save_rawdata(
         self,
         *,
-        rawdata_dir: Path | str = ".rawdata",
+        rawdata_dir: Path | str = DEFAULT_RAWDATA_DIR,
         tag: str | None = None,
     ) -> Iterator[None]:
         """
@@ -799,8 +823,8 @@ This operation will overwrite the existing device settings. Do you want to conti
         rawdata_dir = Path(rawdata_dir)
         if tag is not None:
             rawdata_dir = rawdata_dir / tag
-        self.rawdata_dir = rawdata_dir
+        self.set_rawdata_dir(rawdata_dir)
         try:
             yield
         finally:
-            self.rawdata_dir = original_rawdata_dir
+            self.set_rawdata_dir(original_rawdata_dir)
