@@ -151,9 +151,19 @@ class MeasurementClient:
         self,
         *,
         sync_clocks: bool = True,
+        parallel: bool | None = None,
     ) -> None:
-        """Connect to the devices."""
-        self.backend_manager.connect(sync_clocks=sync_clocks)
+        """
+        Connect to the devices.
+
+        Parameters
+        ----------
+        sync_clocks : bool, optional
+            Whether to resync clocks, by default True.
+        parallel : bool | None, optional
+            Whether to fetch backend settings in parallel, by default True.
+        """
+        self.backend_manager.connect(sync_clocks=sync_clocks, parallel=parallel)
 
     def reload(
         self,

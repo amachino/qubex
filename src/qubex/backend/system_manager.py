@@ -308,6 +308,8 @@ class SystemManager:
     def pull(
         self,
         box_ids: Sequence[str],
+        *,
+        parallel: bool | None = None,
     ) -> None:
         """
         Pull the hardware state to the software state.
@@ -318,8 +320,15 @@ class SystemManager:
         ----------
         box_ids : Sequence[str]
             Box IDs to fetch the backend settings for.
+        parallel : bool | None, optional
+            Whether to fetch backend settings in parallel, by default True.
         """
-        backend_settings = self._fetch_backend_settings(box_ids=box_ids)
+        if parallel is None:
+            parallel = True
+        backend_settings = self._fetch_backend_settings(
+            box_ids=box_ids,
+            parallel=parallel,
+        )
         self.set_backend_settings(backend_settings)
 
     def push(
@@ -515,8 +524,10 @@ This operation will overwrite the existing backend settings. Do you want to cont
         self,
         box_ids: Sequence[str],
         *,
-        parallel: bool = True,
+        parallel: bool | None = None,
     ):
+        if parallel is None:
+            parallel = True
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         result: dict = {}
         if not boxes:

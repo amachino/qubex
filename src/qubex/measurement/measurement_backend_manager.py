@@ -80,13 +80,29 @@ class MeasurementBackendManager:
         )
         self.system_manager.load_skew_file(self.box_ids)
 
-    def connect(self, *, sync_clocks: bool = True) -> None:
-        """Connect to configured devices and optionally resync clocks."""
+    def connect(
+        self,
+        *,
+        sync_clocks: bool = True,
+        parallel: bool | None = None,
+    ) -> None:
+        """
+        Connect to configured devices and optionally resync clocks.
+
+        Parameters
+        ----------
+        sync_clocks : bool, optional
+            Whether to resync clocks, by default True.
+        parallel : bool | None, optional
+            Whether to fetch backend settings in parallel, by default True.
+        """
+        if parallel is None:
+            parallel = True
         if len(self.box_ids) == 0:
             logger.warning("No boxes are selected. Please check the configuration.")
             return
         self.backend_controller.connect(self.box_ids)
-        self.system_manager.pull(self.box_ids)
+        self.system_manager.pull(self.box_ids, parallel=parallel)
         if sync_clocks:
             self.backend_controller.resync_clocks(self.box_ids)
 

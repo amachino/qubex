@@ -854,12 +854,24 @@ class ExperimentContext:
         self,
         *,
         sync_clocks: bool | None = None,
+        parallel: bool | None = None,
     ) -> None:
-        """Connect to the measurement backend and optionally sync clocks."""
+        """
+        Connect to the measurement backend and optionally sync clocks.
+
+        Parameters
+        ----------
+        sync_clocks : bool | None, optional
+            Whether to resync clocks, by default True.
+        parallel : bool | None, optional
+            Whether to fetch backend settings in parallel, by default True.
+        """
         if sync_clocks is None:
             sync_clocks = True
+        if parallel is None:
+            parallel = True
         try:
-            self._measurement.connect(sync_clocks=sync_clocks)
+            self._measurement.connect(sync_clocks=sync_clocks, parallel=parallel)
             logger.info("Successfully connected.")
         except Exception:
             logger.exception("Failed to connect to the devices.")

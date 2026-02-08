@@ -677,9 +677,19 @@ class Experiment:
         self,
         *,
         sync_clocks: bool | None = None,
+        parallel: bool | None = None,
     ) -> None:
-        """Connect to the measurement backend and optionally sync clocks."""
-        return self.ctx.connect(sync_clocks=sync_clocks)
+        """
+        Connect to the measurement backend and optionally sync clocks.
+
+        Parameters
+        ----------
+        sync_clocks : bool | None, optional
+            Whether to resync clocks, by default True.
+        parallel : bool | None, optional
+            Whether to fetch backend settings in parallel, by default True.
+        """
+        return self.ctx.connect(sync_clocks=sync_clocks, parallel=parallel)
 
     def linkup(
         self,
