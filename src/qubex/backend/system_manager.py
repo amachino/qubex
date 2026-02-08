@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
@@ -20,7 +21,7 @@ from qubex.constants import DEFAULT_RAWDATA_DIR
 from qubex.typing import ConfigurationMode
 
 from .config_loader import ConfigLoader
-from .control_system import CapPort, GenPort, PortType
+from .control_system import Box, CapPort, GenPort, PortType
 from .experiment_system import ExperimentSystem
 from .quel1.quel1_backend_controller import Quel1BackendController
 
@@ -513,12 +514,18 @@ This operation will overwrite the existing backend settings. Do you want to cont
     def _fetch_backend_settings(
         self,
         box_ids: Sequence[str],
+        *,
+        parallel: bool = True,
     ):
         boxes = [self.experiment_system.get_box(box_id) for box_id in box_ids]
         result: dict = {}
-        for box in boxes:
-            # TODO: run this in a separate thread
-            box_config = self.backend_controller.dump_box(box.id)
+        if not boxes:
+            return result
+
+        def _dump_box(box: Box) -> dict:
+            return self.backend_controller.dump_box(box.id)
+
+        def _collect_ports(box: Box, box_config: dict) -> None:
             self.backend_controller.boxpool._box_config_cache[box.id] = box_config  # noqa: SLF001
             result[box.id] = {"ports": {}}
             for port in box.ports:
@@ -533,6 +540,24 @@ This operation will overwrite the existing backend settings. Do you want to cont
                             port.number,
                             box.id,
                         )
+
+        if not parallel:
+            for box in boxes:
+                box_config = self.backend_controller.dump_box(box.id)
+                _collect_ports(box, box_config)
+            return result
+
+        max_workers = min(32, len(boxes))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_box = {executor.submit(_dump_box, box): box for box in boxes}
+            for future in as_completed(future_to_box):
+                box = future_to_box[future]
+                try:
+                    box_config = future.result()
+                except Exception:
+                    logger.exception("Failed to dump box %s", box.id)
+                    box_config = {}
+                _collect_ports(box, box_config)
         return result
 
     def _update_backend_controller(
