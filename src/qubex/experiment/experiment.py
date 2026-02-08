@@ -2871,6 +2871,81 @@ class Experiment:
             plot=plot,
         )
 
+    @deprecated(
+        "This API is deprecated and moved to `qubex.contrib.crosstalk_cross_resonance`."
+    )
+    def measure_cr_crosstalk(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        spectator_qubits: list[str],
+        time_range: ArrayLike | None = None,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cr_betas: dict[int, float] | None = None,
+        cr_power: int | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        cancel_betas: dict[int, float] | None = None,
+        cancel_power: int | None = None,
+        echo: bool | None = None,
+        control_state: str | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        x180: TargetMap[Waveform] | None = None,
+        ramp_type: RampType | None = None,
+        x180_margin: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """Warn that CR crosstalk measurement moved to contrib and stop execution."""
+        warnings.warn(
+            "Moved to `qubex.contrib.crosstalk_cross_resonance`."
+            " Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
+        raise NotImplementedError("Moved to `qubex.contrib.crosstalk_cross_resonance`.")
+
+    @deprecated(
+        "This API is deprecated and moved to `qubex.contrib.crosstalk_cross_resonance`."
+    )
+    def cr_crosstalk_hamiltonian_tomography(
+        self,
+        *,
+        control_qubit: str,
+        target_qubit: str,
+        spectator_qubits: list[str] | None = None,
+        time_range: ArrayLike | None = None,
+        ramptime: float | None = None,
+        cr_amplitude: float | None = None,
+        cr_phase: float | None = None,
+        cr_betas: dict[int, float] | None = None,
+        cr_power: int | None = None,
+        cancel_amplitude: float | None = None,
+        cancel_phase: float | None = None,
+        cancel_betas: dict[int, float] | None = None,
+        cancel_power: int | None = None,
+        ramp_type: RampType | None = None,
+        x90: TargetMap[Waveform] | None = None,
+        x180_margin: float | None = None,
+        shots: int | None = None,
+        interval: float | None = None,
+        reset_awg_and_capunits: bool | None = None,
+        plot: bool | None = None,
+    ) -> Result:
+        """Warn that CR crosstalk tomography moved to contrib and stop execution."""
+        warnings.warn(
+            "Moved to `qubex.contrib.crosstalk_cross_resonance`."
+            " Use contrib function APIs instead.",
+            category=FutureWarning,
+            stacklevel=2,
+        )
+        raise NotImplementedError("Moved to `qubex.contrib.crosstalk_cross_resonance`.")
+
     def cr_hamiltonian_tomography(
         self,
         *,
