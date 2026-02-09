@@ -1019,7 +1019,8 @@ class MeasurementService:
             targets = list(targets)
 
         if readout_amplitude is not None:
-            readout_amplitudes = dict.fromkeys(targets, readout_amplitude)
+            readout_targets = [Target.read_label(target) for target in targets]
+            readout_amplitudes = dict.fromkeys(readout_targets, readout_amplitude)
         else:
             readout_amplitudes = None
 
