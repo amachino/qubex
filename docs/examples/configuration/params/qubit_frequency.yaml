@@ -1,0 +1,92 @@
+# Example qubit frequency configuration file.
+#
+# Format
+# ------
+# meta:
+#   description: <description>
+#   unit: <unit>
+# data:
+#   <qubit_label>: <frequency>
+#
+# Fields
+# ------
+# description : str
+#     Human-readable description of this parameter section.
+# unit : str
+#     Unit string consumed by ConfigLoader (converted to internal units).
+# qubit_label : str
+#     Qubit label with zero padding determined by n_qubits.
+#     Example: n_qubits=64 -> Q00..Q63, n_qubits=144 -> Q000..Q143.
+# frequency : float
+#     Qubit resonance frequency.
+
+
+meta:
+  description: Example qubit frequencies for 64Q chip
+  unit: GHz
+
+data:
+  Q00: 7.758193
+  Q01: 8.411199
+  Q02: 8.418525
+  Q03: 8.368067
+  Q04: 8.690101
+  Q05: 8.009022
+  Q06: 7.933080
+  Q07: 8.796791
+  Q08: 8.437190
+  Q09: 8.904275
+  Q10: 8.931438
+  Q11: 8.096222
+  Q12: 7.768161
+  Q13: 7.856796
+  Q14: 8.041906
+  Q15: 7.977072
+  Q16: 8.725847
+  Q17: 9.051358
+  Q18: 8.417030
+  Q19: 8.991460
+  Q20: 8.301717
+  Q21: 7.620205
+  Q22: 9.111584
+  Q23: 8.249533
+  Q24: 8.696839
+  Q25: 7.809120
+  Q26: 8.304368
+  Q27: 7.953729
+  Q28: 8.798472
+  Q29: 7.932106
+  Q30: 8.765424
+  Q31: 9.069020
+  Q32: 8.604357
+  Q33: 7.763104
+  Q34: 9.126481
+  Q35: 7.945567
+  Q36: 7.983887
+  Q37: 7.842680
+  Q38: 7.609656
+  Q39: 8.119987
+  Q40: 8.781723
+  Q41: 8.596248
+  Q42: 9.086600
+  Q43: 8.523819
+  Q44: 8.666673
+  Q45: 8.954491
+  Q46: 8.823354
+  Q47: 8.248702
+  Q48: 8.471551
+  Q49: 9.126578
+  Q50: 8.249339
+  Q51: 9.038968
+  Q52: 8.951664
+  Q53: 8.763774
+  Q54: 8.772335
+  Q55: 8.184337
+  Q56: 9.028929
+  Q57: 7.672956
+  Q58: 8.957669
+  Q59: 8.908573
+  Q60: 8.825532
+  Q61: 8.097058
+  Q62: 9.065001
+  Q63: 8.052530
