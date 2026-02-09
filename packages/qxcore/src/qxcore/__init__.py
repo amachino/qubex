@@ -5,7 +5,7 @@ from __future__ import annotations
 from . import units
 from .expression import Expression
 from .model import DataModel, Model, MutableModel
-from .quantities import Frequency, FrequencyArray, Time, TimeArray
+from .quantities import Frequency, FrequencyArray, Time, TimeArray, Value, ValueArray
 from .typing import ValueArrayLike
 
 __all__ = [
@@ -17,6 +17,8 @@ __all__ = [
     "MutableModel",
     "Time",
     "TimeArray",
+    "Value",
+    "ValueArray",
     "ValueArrayLike",
     "units",
 ]

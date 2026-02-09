@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import cached_property
 
-from qxcore.model import Model
+from qubex.core import Model
 
 
 class Capture(Model):

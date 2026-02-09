@@ -8,9 +8,9 @@ from typing import Any
 
 import numpy as np
 from pydantic import Field
-from qxcore.model import DataModel
 
 from qubex.constants import DEFAULT_RAWDATA_DIR
+from qubex.core import DataModel
 from qubex.typing import MeasurementMode
 
 

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from qxcore.model import Model
-
+from qubex.core import Model
 from qubex.typing import MeasurementMode
 
 

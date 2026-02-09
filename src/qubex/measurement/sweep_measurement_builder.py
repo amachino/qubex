@@ -8,8 +8,6 @@ from inspect import signature
 from typing import Any
 
 import numpy as np
-import tunits
-from qxcore import Expression
 from qxpulse import (
     Blank,
     Drag,
@@ -24,7 +22,9 @@ from qxpulse import (
     Waveform,
     set_sampling_period,
 )
-from qxschema import (
+
+from qubex.core import Expression, Value, ValueArray
+from qubex.schema import (
     ParameterSweepConfig,
     ParametricSequencePulseCommand,
     SweepMeasurementConfig,
@@ -415,14 +415,14 @@ class SweepMeasurementBuilder:
         Parameters
         ----------
         value : Any
-            Numeric-like value, including tunits and NumPy scalars.
+            Numeric-like value, including Value and NumPy scalars.
 
         Returns
         -------
         float
             Converted float value.
         """
-        if isinstance(value, tunits.Value):
+        if isinstance(value, Value):
             return float(value.value)
         if isinstance(value, np.generic):
             return float(value.item())
@@ -436,7 +436,7 @@ class SweepMeasurementBuilder:
         Parameters
         ----------
         values : Any
-            Sequence or array-like values (including tunits.ValueArray).
+            Sequence or array-like values (including ValueArray).
         index : int
             Index to retrieve.
 
@@ -445,7 +445,7 @@ class SweepMeasurementBuilder:
         float
             Value at the specified index.
         """
-        if isinstance(values, tunits.ValueArray):
+        if isinstance(values, ValueArray):
             values = values.value
         arr = np.asarray(values)
         return float(arr[index])

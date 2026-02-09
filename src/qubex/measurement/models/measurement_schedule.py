@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from qxcore.model import Model
 from qxpulse import PulseSchedule
+
+from qubex.core import Model
 
 from .capture_schedule import CaptureSchedule
 

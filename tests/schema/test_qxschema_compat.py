@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
-from qxcore import Frequency, Time
+
+from qubex.core import Frequency, Time
 
 
 def test_qxschema_exports_sweep_measurement_config_models() -> None:
