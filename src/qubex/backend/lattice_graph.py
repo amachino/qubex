@@ -13,16 +13,12 @@ import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 
 from qubex.analysis.visualization import save_figure_image
+from qubex.constants import MUX_SIZE, PREFIX_MUX, PREFIX_QUBIT, PREFIX_RESONATOR
 
 # TODO: Remove hardcoded constants
 
-MUX_SIZE = 4
 NODE_SIZE = 24
 TEXT_SIZE = 10
-
-PREFIX_QUBIT = "Q"
-PREFIX_RESONATOR = "RQ"
-PREFIX_MUX = "MUX"
 
 
 class QubitNode(TypedDict):

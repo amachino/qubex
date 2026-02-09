@@ -7,12 +7,19 @@ import math
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import yaml
 from typing_extensions import deprecated
 
-from qubex.constants import DEFAULT_CONFIG_DIR
+from qubex.constants import (
+    BOX_FILE,
+    CHIP_FILE,
+    DEFAULT_CONFIG_DIR,
+    PARAMS_FILE,
+    PROPS_FILE,
+    WIRING_FILE,
+)
 from qubex.typing import ConfigurationMode
 
 from .control_system import Box, ControlSystem
@@ -20,13 +27,6 @@ from .experiment_system import ControlParams, ExperimentSystem, WiringInfo
 from .quantum_system import Chip, QuantumSystem
 
 logger = logging.getLogger(__name__)
-
-CHIP_FILE: Final = "chip.yaml"
-BOX_FILE: Final = "box.yaml"
-WIRING_FILE: Final = "wiring.yaml"
-PROPS_FILE: Final = "props.yaml"  # legacy
-PARAMS_FILE: Final = "params.yaml"  # legacy
-
 
 PARAMS_MAP = {
     "qubit_frequency": ("qubit_frequency", "props"),
