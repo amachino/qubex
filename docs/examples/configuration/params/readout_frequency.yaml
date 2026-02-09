@@ -1,4 +1,4 @@
-# Example resonator frequency configuration file.
+# Example readout frequency configuration file.
 #
 # Format
 # ------
@@ -18,74 +18,90 @@
 #     Qubit label with zero padding determined by n_qubits.
 #     Example: n_qubits=64 -> Q00..Q63, n_qubits=144 -> Q000..Q143.
 # frequency : float
-#     Resonator frequency associated with each qubit.
+#     Readout frequency associated with each qubit.
 
 
 meta:
-  description: Example resonator frequencies for 64Q chip
+  description: Example readout frequencies for 64Q chip
   unit: GHz
 
 data:
+  # MUX00
   Q00: 10.706502
   Q01: 9.883797
   Q02: 10.047309
   Q03: 9.889833
+  # MUX01
   Q04: 10.431873
   Q05: 10.020236
   Q06: 10.318419
   Q07: 10.364104
+  # MUX02
   Q08: 10.118344
   Q09: 10.565377
   Q10: 9.891052
   Q11: 10.693042
+  # MUX03
   Q12: 10.639901
   Q13: 10.707719
   Q14: 10.193729
   Q15: 9.940927
+  # MUX04
   Q16: 10.595721
   Q17: 10.480575
   Q18: 9.827899
   Q19: 10.327645
+  # MUX05
   Q20: 10.589332
   Q21: 10.670546
   Q22: 10.102813
   Q23: 10.493277
+  # MUX06
   Q24: 10.414049
   Q25: 10.075832
   Q26: 10.688446
   Q27: 9.800478
+  # MUX07
   Q28: 9.806175
   Q29: 9.995996
   Q30: 10.402342
   Q31: 10.333372
+  # MUX08
   Q32: 10.442017
   Q33: 10.695771
   Q34: 10.629906
   Q35: 10.201936
+  # MUX09
   Q36: 10.539606
   Q37: 10.538654
   Q38: 10.466721
   Q39: 10.108848
+  # MUX10
   Q40: 9.880560
   Q41: 9.943543
   Q42: 10.728534
   Q43: 10.460210
+  # MUX11
   Q44: 10.736702
   Q45: 10.106743
   Q46: 9.948093
   Q47: 10.592232
+  # MUX12
   Q48: 9.995867
   Q49: 10.770400
   Q50: 9.806750
   Q51: 10.283014
+  # MUX13
   Q52: 10.655693
   Q53: 10.231446
   Q54: 10.783879
   Q55: 10.395699
+  # MUX14
   Q56: 10.577785
   Q57: 10.147125
   Q58: 10.271504
   Q59: 9.861295
+  # MUX15
   Q60: 10.654089
   Q61: 10.757535
   Q62: 10.589469
