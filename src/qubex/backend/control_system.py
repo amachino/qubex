@@ -500,7 +500,15 @@ class BoxPool(MutableModel):
 
 
 class Box(MutableModel):
-    """Representation of a control box and its ports."""
+    """
+    Representation of a control box and its ports.
+
+    Notes
+    -----
+    This model graph includes back-references from channels to parent ports and
+    is intended for runtime use. Generic round-trip restoration via
+    `from_dict()` / `from_json()` is not supported.
+    """
 
     id: str
     name: str

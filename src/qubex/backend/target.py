@@ -7,10 +7,9 @@ from collections.abc import Collection
 from enum import Enum
 from typing import Literal
 
-from pydantic.dataclasses import dataclass
+from qubex.core import MutableModel
 
 from .control_system import CapChannel, GenChannel
-from .model import Model
 from .quantum_system import Mux, Qubit, Resonator
 
 # TODO: Make target label formats configurable
@@ -30,8 +29,7 @@ class TargetType(Enum):
 PhysicalObject = Qubit | Resonator | Mux
 
 
-@dataclass
-class CapTarget(Model):
+class CapTarget(MutableModel):
     """Capture target metadata for readout channels."""
 
     label: str
@@ -57,8 +55,7 @@ class CapTarget(Model):
         )
 
 
-@dataclass
-class Target(Model):
+class Target(MutableModel):
     """Generator target metadata for control and readout channels."""
 
     label: str

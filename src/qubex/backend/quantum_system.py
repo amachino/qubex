@@ -5,14 +5,14 @@ from __future__ import annotations
 import math
 from typing import Final
 
-from pydantic.dataclasses import dataclass
+from pydantic import Field
+
+from qubex.core import MutableModel
 
 from .lattice_graph import LatticeGraph
-from .model import Model
 
 
-@dataclass
-class Chip(Model):
+class Chip(MutableModel):
     """Chip metadata and collections of qubits and resonators."""
 
     id: str
@@ -84,18 +84,63 @@ class Chip(Model):
         )
 
 
-@dataclass
-class Qubit(Model):
+class Qubit(MutableModel):
     """Qubit metadata and derived frequency helpers."""
 
     index: int
     label: str
     chip_id: str
     resonator: str
-    _bare_frequency: float | None = None
-    _anharmonicity: float | None = None
-    _control_frequency_ge: float | None = None
-    _control_frequency_ef: float | None = None
+    bare_frequency_value: float | None = Field(default=None, alias="_bare_frequency")
+    anharmonicity_value: float | None = Field(default=None, alias="_anharmonicity")
+    control_frequency_ge_value: float | None = Field(
+        default=None,
+        alias="_control_frequency_ge",
+    )
+    control_frequency_ef_value: float | None = Field(
+        default=None,
+        alias="_control_frequency_ef",
+    )
+
+    @property
+    def _bare_frequency(self) -> float | None:
+        """Backward-compatible alias for bare frequency storage."""
+        return self.bare_frequency_value
+
+    @_bare_frequency.setter
+    def _bare_frequency(self, value: float | None) -> None:
+        """Set bare frequency via legacy attribute name."""
+        self.bare_frequency_value = value
+
+    @property
+    def _anharmonicity(self) -> float | None:
+        """Backward-compatible alias for anharmonicity storage."""
+        return self.anharmonicity_value
+
+    @_anharmonicity.setter
+    def _anharmonicity(self, value: float | None) -> None:
+        """Set anharmonicity via legacy attribute name."""
+        self.anharmonicity_value = value
+
+    @property
+    def _control_frequency_ge(self) -> float | None:
+        """Backward-compatible alias for GE frequency storage."""
+        return self.control_frequency_ge_value
+
+    @_control_frequency_ge.setter
+    def _control_frequency_ge(self, value: float | None) -> None:
+        """Set GE control frequency via legacy attribute name."""
+        self.control_frequency_ge_value = value
+
+    @property
+    def _control_frequency_ef(self) -> float | None:
+        """Backward-compatible alias for EF frequency storage."""
+        return self.control_frequency_ef_value
+
+    @_control_frequency_ef.setter
+    def _control_frequency_ef(self, value: float | None) -> None:
+        """Set EF control frequency via legacy attribute name."""
+        self.control_frequency_ef_value = value
 
     def __repr__(self) -> str:
         """Return the debug representation of the qubit."""
@@ -104,44 +149,44 @@ class Qubit(Model):
     @property
     def frequency(self) -> float:
         """Return the control GE frequency in GHz."""
-        if self._control_frequency_ge is not None and not math.isnan(
-            self._control_frequency_ge
+        if self.control_frequency_ge_value is not None and not math.isnan(
+            self.control_frequency_ge_value
         ):
-            return self._control_frequency_ge
-        elif self._bare_frequency is not None:
-            return self._bare_frequency
+            return self.control_frequency_ge_value
+        elif self.bare_frequency_value is not None:
+            return self.bare_frequency_value
         else:
             return math.nan
 
     @property
     def bare_frequency(self) -> float:
         """Return the bare frequency in GHz."""
-        if self._bare_frequency is not None:
-            return self._bare_frequency
+        if self.bare_frequency_value is not None:
+            return self.bare_frequency_value
         else:
             return math.nan
 
     @property
     def anharmonicity(self) -> float:
         """Return the anharmonicity in GHz."""
-        if self._anharmonicity is not None:
-            return self._anharmonicity
+        if self.anharmonicity_value is not None:
+            return self.anharmonicity_value
         else:
             return -(1 / 19) * self.frequency  # E_J / E_C = 50
 
     @property
     def control_frequency_ge(self) -> float:
         """Return the configured GE control frequency in GHz."""
-        if self._control_frequency_ge is not None:
-            return self._control_frequency_ge
+        if self.control_frequency_ge_value is not None:
+            return self.control_frequency_ge_value
         else:
             return math.nan
 
     @property
     def control_frequency_ef(self) -> float:
         """Return the configured EF control frequency in GHz."""
-        if self._control_frequency_ef is not None:
-            return self._control_frequency_ef
+        if self.control_frequency_ef_value is not None:
+            return self.control_frequency_ef_value
         else:
             return self.frequency + self.anharmonicity
 
@@ -182,17 +227,48 @@ class Qubit(Model):
         return not math.isnan(self.frequency) and not math.isnan(self.anharmonicity)
 
 
-@dataclass
-class Resonator(Model):
+class Resonator(MutableModel):
     """Resonator metadata and frequency helpers."""
 
     index: int
     label: str
     chip_id: str
     qubit: str
-    _frequency_g: float | None = None
-    _frequency_e: float | None = None
-    _readout_frequency: float | None = None
+    frequency_g_value: float | None = Field(default=None, alias="_frequency_g")
+    frequency_e_value: float | None = Field(default=None, alias="_frequency_e")
+    readout_frequency_value: float | None = Field(
+        default=None, alias="_readout_frequency"
+    )
+
+    @property
+    def _frequency_g(self) -> float | None:
+        """Backward-compatible alias for ground-state frequency storage."""
+        return self.frequency_g_value
+
+    @_frequency_g.setter
+    def _frequency_g(self, value: float | None) -> None:
+        """Set ground-state frequency via legacy attribute name."""
+        self.frequency_g_value = value
+
+    @property
+    def _frequency_e(self) -> float | None:
+        """Backward-compatible alias for excited-state frequency storage."""
+        return self.frequency_e_value
+
+    @_frequency_e.setter
+    def _frequency_e(self, value: float | None) -> None:
+        """Set excited-state frequency via legacy attribute name."""
+        self.frequency_e_value = value
+
+    @property
+    def _readout_frequency(self) -> float | None:
+        """Backward-compatible alias for readout frequency storage."""
+        return self.readout_frequency_value
+
+    @_readout_frequency.setter
+    def _readout_frequency(self, value: float | None) -> None:
+        """Set readout frequency via legacy attribute name."""
+        self.readout_frequency_value = value
 
     def __repr__(self) -> str:
         """Return the debug representation of the resonator."""
@@ -205,36 +281,36 @@ class Resonator(Model):
     @property
     def frequency(self) -> float:
         """Return the readout frequency in GHz."""
-        if self._readout_frequency is not None and not math.isnan(
-            self._readout_frequency
+        if self.readout_frequency_value is not None and not math.isnan(
+            self.readout_frequency_value
         ):
-            return self._readout_frequency
-        elif self._frequency_g is not None:
-            return self._frequency_g
+            return self.readout_frequency_value
+        elif self.frequency_g_value is not None:
+            return self.frequency_g_value
         else:
             return math.nan
 
     @property
     def frequency_g(self) -> float:
         """Return the ground-state resonator frequency in GHz."""
-        if self._frequency_g is not None:
-            return self._frequency_g
+        if self.frequency_g_value is not None:
+            return self.frequency_g_value
         else:
             return math.nan
 
     @property
     def frequency_e(self) -> float:
         """Return the excited-state resonator frequency in GHz."""
-        if self._frequency_e is not None:
-            return self._frequency_e
+        if self.frequency_e_value is not None:
+            return self.frequency_e_value
         else:
             return math.nan
 
     @property
     def readout_frequency(self) -> float:
         """Return the readout frequency in GHz."""
-        if self._readout_frequency is not None:
-            return self._readout_frequency
+        if self.readout_frequency_value is not None:
+            return self.readout_frequency_value
         else:
             return math.nan
 
@@ -254,8 +330,7 @@ class Resonator(Model):
         return not math.isnan(self.frequency)
 
 
-@dataclass
-class Mux(Model):
+class Mux(MutableModel):
     """Mux metadata and resonator grouping."""
 
     index: int
@@ -299,7 +374,7 @@ class QuantumSystem:
         return self._graph
 
     @property
-    def hash(self) -> int:
+    def hash(self) -> str:
         """Return a hash of the chip model."""
         return self.chip.hash
 

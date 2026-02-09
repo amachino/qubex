@@ -8,9 +8,9 @@ from collections.abc import Collection
 from typing import Final, Literal
 
 import numpy as np
-from pydantic.dataclasses import dataclass
 from typing_extensions import TypedDict
 
+from qubex.core import MutableModel
 from qubex.typing import ConfigurationMode
 
 from .control_system import (
@@ -21,7 +21,6 @@ from .control_system import (
     GenPort,
     PortType,
 )
-from .model import Model
 from .quantum_system import Chip, Mux, QuantumSystem, Qubit, Resonator
 from .quel1.quel1_backend_constants import (
     AWG_MAX,
@@ -50,8 +49,7 @@ from .target import CapTarget, Target
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class WiringInfo(Model):
+class WiringInfo(MutableModel):
     """Wiring relationships between qubits, muxes, and ports."""
 
     ctrl: list[tuple[Qubit, GenPort]]
@@ -60,8 +58,7 @@ class WiringInfo(Model):
     pump: list[tuple[Mux, GenPort]]
 
 
-@dataclass
-class QubitPortSet(Model):
+class QubitPortSet(MutableModel):
     """Port assignments for a single qubit."""
 
     ctrl_port: GenPort
@@ -77,8 +74,7 @@ class JPAParam(TypedDict):
     pump_amplitude: float | None
 
 
-@dataclass
-class ControlParams(Model):
+class ControlParams(MutableModel):
     """Control parameters and access helpers for the system."""
 
     control_amplitude: dict[str, float]
