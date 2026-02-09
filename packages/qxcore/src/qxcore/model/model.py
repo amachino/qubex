@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -24,6 +26,7 @@ from qxcore.serialization import (
     deserialize_value,
     is_custom_serializable_class,
     serialize_value,
+    to_canonical_json,
 )
 
 
@@ -219,6 +222,45 @@ class Model(BaseModel):
         path_obj.write_text(self.to_json(indent=indent), encoding="utf-8")
         return path_obj
 
+    def _canonical_hash_bytes(self) -> bytes:
+        """
+        Return canonical bytes used for hash computation.
+
+        Returns
+        -------
+        bytes
+            UTF-8 encoded canonical payload bytes.
+        """
+        canonical = to_canonical_json(self.to_dict())
+        namespace = (
+            f"{self.__class__.__module__}.{self.__class__.__qualname__}:"
+            f"{self.format_version}:"
+        )
+        return f"{namespace}{canonical}".encode()
+
+    def _compute_hash(self) -> str:
+        """
+        Compute a SHA-256 hash of this model.
+
+        Returns
+        -------
+        str
+            SHA-256 digest as a hexadecimal string.
+        """
+        return hashlib.sha256(self._canonical_hash_bytes()).hexdigest()
+
+    @cached_property
+    def hash(self) -> str:
+        """
+        Return the cached SHA-256 hash of this model.
+
+        Returns
+        -------
+        str
+            SHA-256 digest as a hexadecimal string.
+        """
+        return self._compute_hash()
+
     @classmethod
     def load_json(cls, path: str | Path) -> Self:
         """
@@ -251,3 +293,15 @@ class MutableModel(Model):
         frozen=False,
         validate_assignment=True,
     )
+
+    @property
+    def hash(self) -> str:
+        """
+        Return a SHA-256 hash of this mutable model.
+
+        Returns
+        -------
+        str
+            SHA-256 digest as a hexadecimal string.
+        """
+        return self._compute_hash()

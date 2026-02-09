@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, TypeGuard
@@ -29,6 +30,29 @@ from .constants import (
 )
 
 _logger = logging.getLogger(__name__)
+
+
+def to_canonical_json(value: Any) -> str:
+    """
+    Serialize a value to canonical JSON.
+
+    Parameters
+    ----------
+    value : Any
+        JSON-serializable value.
+
+    Returns
+    -------
+    str
+        Canonical JSON string with stable key ordering and compact separators.
+    """
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=True,
+    )
 
 
 def is_numpy(value: Any) -> TypeGuard[np.ndarray | np.generic]:

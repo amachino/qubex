@@ -28,6 +28,7 @@ from .json_serializer import (
     serialize_numpy,
     serialize_tunits,
     serialize_value,
+    to_canonical_json,
 )
 from .netcdf_serializer import (
     deserialize_tunits_value_array,
@@ -64,4 +65,5 @@ __all__ = [
     "serialize_numpy",
     "serialize_tunits",
     "serialize_value",
+    "to_canonical_json",
 ]

@@ -7,9 +7,10 @@ from enum import Enum
 from typing import Final, Literal
 
 from pydantic import Field
-from pydantic.dataclasses import dataclass
+from typing_extensions import deprecated
 
-from .model import Model
+from qubex.core import MutableModel
+
 from .quel1.quel1_backend_constants import (
     DEFAULT_CLOCK_MASTER_ADDRESS,
     DEFAULT_CNCO_FREQ,
@@ -486,16 +487,19 @@ def create_ports(
     return tuple(ports)
 
 
-@dataclass
-class BoxPool(Model):
+class BoxPool(MutableModel):
     """Collection of boxes and clock master configuration."""
 
     clock_master_address: str
     boxes: tuple[Box, ...]
 
+    @property
+    def hash(self) -> int:
+        """Return a hash of the serialized box pool."""
+        return hash(self.to_json(indent=0))
 
-@dataclass
-class Box(Model):
+
+class Box(MutableModel):
     """Representation of a control box and its ports."""
 
     id: str
@@ -567,8 +571,7 @@ class Box(Model):
             ) from None
 
 
-@dataclass
-class Port(Model):
+class Port(MutableModel):
     """Base port definition shared by Gen and Cap ports."""
 
     id: str
@@ -623,7 +626,6 @@ class Port(Model):
         return self.type == PortType.FOGI
 
 
-@dataclass
 class GenPort(Port):
     """Generator port with frequency and output settings."""
 
@@ -641,7 +643,6 @@ class GenPort(Port):
         return tuple(channel.coarse_frequency for channel in self.channels)
 
 
-@dataclass
 class CapPort(Port):
     """Capture port with frequency settings."""
 
@@ -651,26 +652,36 @@ class CapPort(Port):
     rfswitch: Literal["open", "loop"] = "open"
 
 
-@dataclass
-class Channel(Model):
+class Channel(MutableModel):
     """Base channel with identifier and number."""
 
     id: str
     number: int
 
 
-@dataclass
 class GenChannel(Channel):
     """Generator channel with frequency parameters."""
 
-    _port: GenPort = Field(exclude=True)
+    port_ref: GenPort = Field(alias="_port", exclude=True, repr=False)
     fnco_freq: int = DEFAULT_FNCO_FREQ
     nwait: int = DEFAULT_NWAIT
 
     @property
     def port(self) -> GenPort:
         """Return the parent generator port."""
-        return self._port
+        return self.port_ref
+
+    @property
+    @deprecated("Use `port` instead.")
+    def _port(self) -> GenPort:
+        """Backward-compatible alias for the parent generator port."""
+        return self.port_ref
+
+    @_port.setter
+    @deprecated("Use `port` instead.")
+    def _port(self, port: GenPort) -> None:
+        """Set the parent generator port via legacy attribute name."""
+        self.port_ref = port
 
     @property
     def lo_freq(self) -> int:
@@ -734,18 +745,29 @@ class GenChannel(Channel):
                 raise ValueError(f"Invalid sideband: {sideband}")
 
 
-@dataclass
 class CapChannel(Channel):
     """Capture channel with frequency parameters."""
 
-    _port: CapPort = Field(exclude=True)
+    port_ref: CapPort = Field(alias="_port", exclude=True, repr=False)
     fnco_freq: int = DEFAULT_FNCO_FREQ
     ndelay: int = DEFAULT_NDELAY
 
     @property
     def port(self) -> CapPort:
         """Return the parent capture port."""
-        return self._port
+        return self.port_ref
+
+    @property
+    @deprecated("Use `port` instead.")
+    def _port(self) -> CapPort:
+        """Backward-compatible alias for the parent capture port."""
+        return self.port_ref
+
+    @_port.setter
+    @deprecated("Use `port` instead.")
+    def _port(self, port: CapPort) -> None:
+        """Set the parent capture port via legacy attribute name."""
+        self.port_ref = port
 
 
 class ControlSystem:
