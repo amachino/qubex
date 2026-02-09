@@ -20,7 +20,11 @@ from qubecalib.qubecalib import (
 
 
 class Quel1Sequencer(Sequencer):
-    """Modified qube-calib Sequencer class."""
+    """
+    Modified qube-calib Sequencer class.
+
+    This class does not pass driver (Quel1System) to PortConfigAcquirer.
+    """
 
     def generate_cap_resource_map(self, boxpool: BoxPool) -> dict[str, Any]:
         """Generate capture resource mappings for the box pool."""
