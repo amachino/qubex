@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from qubex.backend.backend_executor import (
     BackendExecutionRequest,
@@ -30,8 +30,27 @@ class Quel1ExecutionPayload:
 class Quel1BackendExecutor:
     """QuEL-1 backend executor using `Quel1BackendController.execute_sequencer`."""
 
-    def __init__(self, *, backend_controller: Quel1BackendController) -> None:
+    def __init__(
+        self,
+        *,
+        backend_controller: Quel1BackendController,
+        execution_mode: Literal["legacy", "parallel"] = "parallel",
+    ) -> None:
+        """
+        Initialize the backend executor.
+
+        Parameters
+        ----------
+        backend_controller : Quel1BackendController
+            Backend controller used to execute sequencers.
+        execution_mode : {"legacy", "parallel"}, optional
+            Execution path selector. ``"legacy"`` uses qubecalib's direct action
+            flow, while ``"parallel"`` uses the qubex-side parallelized flow.
+        """
+        if execution_mode not in {"legacy", "parallel"}:
+            raise ValueError(f"Unsupported execution mode: {execution_mode}")
         self._backend_controller = backend_controller
+        self._execution_mode = execution_mode
 
     def execute(self, *, request: BackendExecutionRequest) -> BackendExecutionResult:
         """Execute a prepared request on QuEL-1 hardware."""
@@ -40,7 +59,12 @@ class Quel1BackendExecutor:
             raise TypeError(
                 "Quel1BackendExecutor expects `Quel1ExecutionPayload` payload."
             )
-        return self._backend_controller.execute_sequencer(
+        execute_impl = (
+            self._backend_controller.execute_sequencer
+            if self._execution_mode == "legacy"
+            else self._backend_controller.execute_sequencer_parallel
+        )
+        return execute_impl(
             sequencer=payload.sequencer,
             repeats=payload.repeats,
             integral_mode=payload.integral_mode,

@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from typing_extensions import deprecated
 
+from .execution import SequencerExecutionEngine
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -1077,13 +1079,9 @@ class Quel1BackendController:
         RawResult
             Measurement result.
         """
-        if line_param0 is None:
-            line_param0 = (1, 0, 0)
-        if line_param1 is None:
-            line_param1 = (0, 1, 0)
-        sequencer.set_measurement_option(
+        SequencerExecutionEngine.set_measurement_options(
+            sequencer=sequencer,
             repeats=repeats,
-            interval=sequencer.interval,  # type: ignore
             integral_mode=integral_mode,
             dsp_demodulation=dsp_demodulation,
             software_demodulation=software_demodulation,
@@ -1097,6 +1095,78 @@ class Quel1BackendController:
             status=status,
             data=data,
             config=config,
+        )
+
+    def execute_sequencer_parallel(
+        self,
+        sequencer: Sequencer,
+        *,
+        repeats: int,
+        integral_mode: str = "integral",
+        dsp_demodulation: bool = True,
+        software_demodulation: bool = False,
+        enable_sum: bool = False,
+        enable_classification: bool = False,
+        line_param0: tuple[float, float, float] | None = None,
+        line_param1: tuple[float, float, float] | None = None,
+    ) -> Quel1BackendRawResult:
+        """
+        Execute a single sequence with parallelized multi-box action build.
+
+        Parameters
+        ----------
+        sequencer : Sequencer
+            The sequencer to execute.
+        repeats : int
+            Number of repeats of the sequence.
+        integral_mode : {"integral", "single"}, optional
+            Integral mode.
+        dsp_demodulation : bool, optional
+            Enable DSP demodulation.
+        software_demodulation : bool, optional
+            Enable software demodulation.
+        enable_sum : bool, optional
+            Enable DSP summation.
+        enable_classification : bool, optional
+            Enable DSP classification.
+        line_param0 : tuple[float, float, float] | None, optional
+            Classifier line parameter 0.
+        line_param1 : tuple[float, float, float] | None, optional
+            Classifier line parameter 1.
+
+        Returns
+        -------
+        Quel1BackendRawResult
+            Measurement result with qubecalib-compatible parsed payload.
+        """
+        SequencerExecutionEngine.set_measurement_options(
+            sequencer=sequencer,
+            repeats=repeats,
+            integral_mode=integral_mode,
+            dsp_demodulation=dsp_demodulation,
+            software_demodulation=software_demodulation,
+            enable_sum=enable_sum,
+            enable_classification=enable_classification,
+            line_param0=line_param0,
+            line_param1=line_param1,
+        )
+        parsed_status, parsed_data, parsed_config = (
+            SequencerExecutionEngine.execute_parallel(
+                sequencer=sequencer,
+                boxpool=self.boxpool,
+                system=self.quel1system,
+                action_builder=Action.build,
+                runit_setting_factory=RunitSetting,
+                runit_id_factory=RunitId,
+                awg_setting_factory=AwgSetting,
+                awg_id_factory=AwgId,
+                logger=logger,
+            )
+        )
+        return Quel1BackendRawResult(
+            status=parsed_status,
+            data=parsed_data,
+            config=parsed_config,
         )
 
     def _execute_sequencer(

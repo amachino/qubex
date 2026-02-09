@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from qubex.backend import (
     BackendExecutor,
     ExperimentSystem,
@@ -40,11 +42,24 @@ class MeasurementScheduleExecutor:
         *,
         backend_controller: Quel1BackendController,
         experiment_system: ExperimentSystem,
+        execution_mode: Literal["legacy", "parallel"] = "legacy",
     ) -> MeasurementScheduleExecutor:
-        """Create the default QuEL-backed schedule executor."""
+        """
+        Create the default QuEL-backed schedule executor.
+
+        Parameters
+        ----------
+        backend_controller : Quel1BackendController
+            Backend controller bound to connected hardware.
+        experiment_system : ExperimentSystem
+            Experiment-system model used by adapter/result conversion.
+        execution_mode : {"legacy", "parallel"}, optional
+            Backend execution mode.
+        """
         return cls(
             backend_executor=Quel1BackendExecutor(
                 backend_controller=backend_controller,
+                execution_mode=execution_mode,
             ),
             measurement_backend_adapter=Quel1MeasurementBackendAdapter(
                 backend_controller=backend_controller,
